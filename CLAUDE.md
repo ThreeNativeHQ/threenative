@@ -15,7 +15,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 2. **Name the layer before you fix the bug**: engine (`packages/`) or game (example or template)? Say which and why. An engine bug fixed in game code buys one green screenshot and leaves every other game broken.
 3. **Red-green for behavior changes, bugfixes included.** Reproduce the failure, fix it and run the regression check. Do not manufacture failures for planning or prose edits.
 4. **Never claim a gate you did not run.** Summarize the actual result in the PRD, PR or response; "unverified" is an acceptable answer. Separate verification reports are not required.
-5. **Keep the PRD current as you work, not at the end.** Tick each checkbox in the PRD the moment its work is done and verified, move the phase/status line with it, and write the actual result beside the box when it carries evidence. The PRD edit ships in the same commit as the change it describes. Never tick a box for work that is unrun, partial or unverified — leave it open and say why. Filing rules: `docs/PRDs/AGENTS.md`.
+5. **Keep the PRD current as you work, not at the end.** Tick each checkbox in the PRD the moment its work is done and verified, move the phase/status line with it, and write the actual result beside the box when it carries evidence. The PRD edit ships in the same commit as the change it describes. Never tick a box for work that is unrun, partial or unverified — leave it open and say why. Run `pnpm prd:progress <prd file>` before you start and after every phase: it reads the PRD's own boxes, prints the `prd:25/50/75/100` label to put on the PR, and **exits 1 when the PRD has no per-phase boxes** — the shape that stalled 80 of 143 open PRDs, so fix it before working. One PR per PRD, opened as a draft, never one per phase. Filing rules and the label table: `docs/PRDs/AGENTS.md`; the whole lifecycle: the `prd-lifecycle` skill.
 6. **Surgical.** Touch only what the task needs; tidying is its own change. Ask when the request is ambiguous — a silent interpretation costs more than a question.
 7. **Primary docs follow the executables.** README, `docs/architecture/` and package AGENTS files may name only commands and packages the CLIs and manifests ship (`scripts/__tests__/primary-docs.spec.ts` fails on drift); code is the source of truth, so fix the prose.
 
@@ -48,6 +48,7 @@ pnpm test:templates                        # playtests against each scaffolded t
 pnpm budgets                               # hard invariants fail; LOC triggers only report
 pnpm quality                               # file length, suppressions, lint holes; never fatal
 pnpm sync:agents                           # regenerate CLAUDE.md mirrors
+pnpm prd:progress <prd file>               # the PRD's own boxes -> prd:25/50/75/100 label; exit 1 = no phase boxes
 pnpm release:prepare                       # bump, build, and preflight the full release cohort
 pnpm --filter <example> dev                # there is no root `pnpm dev`
 

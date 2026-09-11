@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-262 — Matching public native runtime artifacts are available
 
-**Status:** PARTIAL — Phase 1 (candidate manifest + atomic installs, PR #169) and Phase 2 (consumer builds without engine compilers, PR #182, merged 2026-09-11) are implemented, independently reviewed PASS, and CI-green. Final acceptance is owned downstream: PRD-078 hosted build proof, PRD-221 V8 inputs, and PRD-060 candidate staging/publication/promotion, against a pushed `runtime-native-v*` tag that does not yet exist.
+**Status:** PARTIAL — Phase 1 (candidate manifest + atomic installs, PR #169 `f947bae99`) and Phase 2 (consumer builds without engine compilers, PR #182 `669154b9b`, caller gaps closed in #185 `b8eeee8fd`) are implemented and CI-green; `tests/distribution.test.mjs` is 36/36, re-run 2026-09-11.
+
+**Independent review is PENDING, not PASS.** Both phase evidence records read *"Local mechanics verified; phase readiness BLOCKED, independent review PENDING"* — this status line previously claimed "independently reviewed PASS", which neither record supports. Corrected 2026-09-11. Both phases were proved against loopback releases with synthetic payloads: no GPU adapter, rendered session, Android device or native gameplay was exercised, so no user-verification box is ticked.
+
+Final acceptance is owned downstream: PRD-078 hosted build proof, PRD-221 V8 inputs, and PRD-060 candidate staging/publication/promotion, against a pushed `runtime-native-v*` tag that does not yet exist.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-platform integration, +2 release-state coordination, +1 GitHub integration).
 **Problem:** An installed runtime version has no downloadable prebuilt manifest, so public native builds fail before a game can ship.
 
@@ -90,6 +94,15 @@ sequenceDiagram
 
 ### Phase 1 — A candidate consumer downloads every required runtime input
 
+**Progress:**
+
+- [x] Callers wired and building: `.github/workflows/native-release.yml`, `packages/runtime-native/scripts/install-prebuilt.mjs`, `packages/runtime-native/tests/distribution.test.mjs` — PR #169 (`f947bae99`). `install-prebuilt.mjs:71` validates all 16 non-iOS inputs before a consumer selects one.
+- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs` — 36/36 on 2026-09-11, re-run on `585fe61f7`.
+- [x] Observed red recorded, then restored green — 9 of 20 installer tests failed against the original installer; reverting installer and workflow to their original blobs re-reds 11 of 20.
+- [ ] User verification performed on the named platform
+- [x] Evidence record written: `docs/verification/prd-262-readiness-phase-1-<date>.md` — `docs/verification/prd-262-readiness-phase-1-2026-09-09.md`.
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `.github/workflows/native-release.yml` — stage complete non-iOS build matrix and lock.
@@ -113,6 +126,15 @@ pnpm publish:check
 **User verification:** On a clean host, the exact candidate URL returns the generated manifest and every claimed key downloads with matching hash; archive URL/status/hash without credentials.
 
 ### Phase 2 — An installed game builds native outputs without engine compilers
+
+**Progress:**
+
+- [x] Callers wired and building: `.github/workflows/native-release.yml`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/scripts/package-android.mjs` (+1 more) — PR #182 (`669154b9b`), caller gaps closed in #185 (`b8eeee8fd`). `package-desktop.mjs:resolveDesktopRuntime` and `package-android.mjs:packageAndroid` source-checkout guard.
+- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs` — 36/36 on 2026-09-11 (4 new consumer-gate tests plus 32 pre-existing).
+- [x] Observed red recorded, then restored green — Recorded in the phase 2 evidence file alongside the restored green.
+- [ ] User verification performed on the named platform
+- [x] Evidence record written: `docs/verification/prd-262-readiness-phase-2-<date>.md` — `docs/verification/prd-262-readiness-phase-2-2026-09-10.md`.
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 

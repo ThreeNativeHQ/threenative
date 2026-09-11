@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Existing phases fixed packed import/specifier mechanics. Current packageAndroid selects assembleDebug and app-debug.apk. App identity, icon and splash already flow from the game config. The report observed JDK 26 locally while supported Android builds need JDK 17; this is a prerequisite to diagnose, not a source-code workaround.
 
-Engine packaging layer. Owns SDK level and release APK/AAB/signing path through the existing build command. [PRD-221](PRD-221-android-v8-is-16kb-clean.md) supplies aligned libraries, [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies downloads, [PRD-153](PRD-153-game-branding-from-launch-to-play.md) owns brand appearance and [PRD-060](PRD-060-promoted-consumer-distribution.md) owns actual credentialed upload/promotion proof.
+Engine packaging layer. Owns SDK level and release APK/AAB/signing path through the existing build command. [PRD-221](PRD-221-android-v8-is-16kb-clean.md) supplies aligned libraries, [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies downloads, [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) owns brand appearance and [PRD-060](PRD-060-promoted-consumer-distribution.md) owns actual credentialed upload/promotion proof.
 
 ## Approach and boundaries
 
@@ -61,6 +61,15 @@ sequenceDiagram
 
 ### Phase 1 — The game builds against the current Android submission SDK
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/android/app/build.gradle.kts`, `packages/create-threenative/src/doctor.ts`, `packages/runtime-native/tests/android-manifest-config-changes.test.mjs`
+- [ ] Required test green: `packages/runtime-native/tests/android-manifest-config-changes.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-212-readiness-phase-1-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/runtime-native/android/app/build.gradle.kts` — compile/target SDK and compatible Android toolchain.
@@ -87,6 +96,15 @@ pnpm exec threenative doctor --text
 
 ### Phase 2 — One build command produces an explicitly selected release artifact
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/android/app/build.gradle.kts` (+1 more)
+- [ ] Required test green: `packages/create-threenative/__tests__/build.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-212-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/create-threenative/src/build.ts` — parse and dispatch mode/format with existing config.
@@ -112,6 +130,15 @@ pnpm exec threenative build --target android --mode release --format aab
 **User verification:** The project command prints the actual .aab output path and its unsigned/signed status honestly; debug remains available with no signing credentials.
 
 ### Phase 3 — A developer signs a non-debuggable release without editing engine files
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/android/app/build.gradle.kts`, `packages/runtime-native/tests/android-packaging.integration.test.mjs` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-212-readiness-phase-3-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 

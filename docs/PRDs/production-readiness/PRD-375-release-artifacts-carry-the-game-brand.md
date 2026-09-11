@@ -4,7 +4,16 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** PARTIAL — branding APIs implemented; non-iOS release-artifact appearance reopened. Revised 2026-09-08; planning only.
+**Status:** NOT STARTED — the two open phases are release-artifact appearance, which is new scope.
+Renumbered 2026-09-11.
+
+Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
+PRD-153's own web branding and is already delivered — `web-brand.spec.ts` green, `branding.playtest.json`
+tracked, re-confirmed by the readiness assessment — so it is dropped here rather than re-litigated.
+What remains is what PRD-153 explicitly did not claim: the installed Android **release artifact** and
+the **distributed desktop app** showing the developer brand.
+[PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) is restored to `done/`; this PRD
+extends it.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 platform packaging, +1 OS appearance validation).
 **Problem:** Game-owned branding controls exist, but their appearance on final distributed native artifacts has not been established for this release path.
 
@@ -59,41 +68,24 @@ sequenceDiagram
 
 ## Execution phases
 
-### Phase 1 — One distinctly branded starter proves web launch and loading
 
-**Files (maximum five):**
+### Phase 1 — The installed Android release carries the brand from launcher to gameplay
 
-- EDIT `packages/create-threenative/__tests__/web-brand.spec.ts` — deployed HTML/custom artwork assertions.
-- EDIT `packages/create-threenative/template-assets/loading.ts` — repair only demonstrated loading/handoff defects.
-- EDIT `scripts/stamp-template-loading.ts` — generate the same editable source consistently.
-- NEW `packages/create-threenative/templates/starter/playtests/branding.playtest.json` — NEW scenario registered by starter glob.
-- NEW `docs/verification/prd-153-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
+**Progress:**
 
-**Implementation and wiring:** Use a disposable scaffold, not permanent template rebranding: change public artwork, app name, bootSplash and live loading colors/logo/progress art in the game. Force a legitimate slow asset load to observe the handoff; do not add a fake default minimum duration. Ensure generated templates receive repaired source through the existing stamp tool. Template output fan-out must be split into at-most-four-template-file phases if regeneration changes more files.
-
-**Required test:** `packages/create-threenative/__tests__/web-brand.spec.ts`: should render the consumer brand when serving a built starter; branding.playtest.json must assert a nonblank correct-brand sequence and gameplay readiness.
-
-**Observed-red / revert control:** Remove web plugin registration in the disposable game, change logo bytes back to baseline and disconnect loading invocation independently; the relevant built-page/frame-sequence check fails. Restore and rerun.
-
-**Verification commands** (from repository root unless noted; proposed flags are explicitly identified):
-
-```sh
-pnpm exec vitest run packages/create-threenative/__tests__/web-brand.spec.ts packages/create-threenative/__tests__/loading-screen.spec.ts
-# In the distinctly branded candidate game:
-pnpm build:web
-pnpm test
-```
-
-**User verification:** Inspect pre-JS launch, live loading with real progress, and first playable frame at portrait/landscape sizes; changing loading source must visibly affect the new build without changing engine files.
-
-### Phase 2 — The installed Android release carries the brand from launcher to gameplay
+- [ ] Callers wired and building: `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs`, `packages/create-threenative/__tests__/config.spec.ts`
+- [ ] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-375-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
 - EDIT `packages/runtime-native/scripts/package-android.mjs` — repair demonstrated resource/handoff plumbing.
 - EDIT `packages/runtime-native/tests/android-packaging.integration.test.mjs` — inspect final signed icon/splash/identity resources.
 - EDIT `packages/create-threenative/__tests__/config.spec.ts` — invalid artwork is rejected before packaging.
-- NEW `docs/verification/prd-153-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-375-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Consume PRD-212 release artifacts and PRD-221 aligned inputs. Inspect adaptive icon foreground/background/monochrome, label, application ID, version and boot splash from the final APK/AAB-derived installed app. Run actual launcher → OS splash → live loading → play on Android. Artwork/layout remains game input; invalid declared variants fail rather than silently reverting to defaults.
 
@@ -110,14 +102,23 @@ pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts
 
 **User verification:** Inspect launcher icon, themed icon where the emulator supports it, OS splash and the real loading transition. Physical OEM appearance is a separately named observation, not inferred from emulator pixels.
 
-### Phase 3 — Distributed desktop apps display the developer brand
+### Phase 2 — Distributed desktop apps display the developer brand
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
+- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-375-readiness-phase-3-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
 - EDIT `packages/runtime-native/scripts/verify-starter-desktop.mjs` — launch packaged app and inspect configured brand evidence.
 - EDIT `packages/runtime-native/tests/starter-desktop.test.mjs` — wrong-resource and missing-brand controls.
 - EDIT `packages/create-threenative/README.md` — point users to game-owned branding surfaces.
-- NEW `docs/verification/prd-153-readiness-phase-3-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-375-readiness-phase-3-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Consume PRD-365 containers and their native icon resources; do not build another .app or Windows resource writer. Launch the installed Windows distribution, macOS .app and Linux launcher with distinctly branded artwork. Verify file-manager/launcher identity separately from runtime SDL title/icon. No claim of a nonexistent desktop OS splash: specify the platform-native launch surface and require the game loading sequence once rendering begins.
 

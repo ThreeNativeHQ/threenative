@@ -23,7 +23,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Current build.ts assertNativeUiRendererCompatible accepts Linux desktop only. ui_overlay.cpp reads an X11 window number and the Rust overlay uses wry plus Linux GTK/X11 helpers. The existing TnUiOverlay, hit regions, state bridge and generated React UI already own the correct seams. Historic Pixel and Linux input evidence is useful but cannot prove Windows/macOS.
 
-Engine platform mechanism. All styles/layout/React stay in the game. Reuse the original PRD-217 bridge and native UI opt-out; no CEF/Electron or renderer replacement. [PRD-365](PRD-365-consumer-desktop-distribution.md) owns distribution of required platform components; [PRD-153](PRD-153-game-branding-from-launch-to-play.md) owns visible branding; [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) owns candidate game qualification.
+Engine platform mechanism. All styles/layout/React stay in the game. Reuse the original PRD-217 bridge and native UI opt-out; no CEF/Electron or renderer replacement. [PRD-365](PRD-365-consumer-desktop-distribution.md) owns distribution of required platform components; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) owns visible branding; [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) owns candidate game qualification.
 
 ## Approach and boundaries
 
@@ -66,6 +66,15 @@ Before invoking that route, configure the selected existing CMake preset with `T
 
 ### Phase 1 — The default starter HUD receives real input on Windows
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-1-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/runtime-native/src/platform/ui_overlay.cpp` — dispatch SDL native handle and bridge lifecycle.
@@ -93,6 +102,15 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 **User verification:** On Windows, click a real starter HUD action, type/focus where supported, move with keyboard outside UI, resize at two DPI settings, minimize/restore and close. Record rendered UI, game-state effects and clean teardown.
 
 ### Phase 2 — The same HUD receives real input on macOS
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
@@ -122,6 +140,16 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 ### Phase 3A — Normal native builds include the proved desktop overlay
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/scripts/native-build.mjs`, `packages/runtime-native/scripts/build-native-ui-overlay.mjs`, `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+- [ ] Required test green: `tests/native-build-ui-overlay.test.mjs`
+      Left: the test is Linux-only — `the Linux native build links the desktop UI overlay into the runtime`, 1/1 green 2026-09-11. The phase demands each supported platform; Windows and macOS are unrun.
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/runtime-native/scripts/native-build.mjs` — invoke overlay compilation for each proved desktop host, removing the Linux-only branch.
@@ -143,6 +171,16 @@ pnpm native:build
 **User verification:** a maintainer running the normal host build gets a runtime that renders and handles the unchanged starter HUD through the internal proof route. Final installed consumer enablement remains phase 3B.
 
 ### Phase 3B — Installed desktop builds carry and use their proven WebView backend
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/create-threenative/src/build.ts`, `.github/workflows/native-platforms.yml`, `packages/create-threenative/__tests__/build.spec.ts`
+- [ ] Required test green: `packages/create-threenative/__tests__/build.spec.ts`
+      Left: `packages/create-threenative/__tests__/build.spec.ts` is 16/16 green 2026-09-11, but the current build guard still rejects `ui.renderer: "web"` on Windows and macOS, so the refusal path is proved and the supported path is not.
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3b-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
@@ -169,6 +207,16 @@ pnpm test:native
 **User verification:** A downloaded default starter builds and plays with its unchanged src/ui on Windows, macOS and Linux; no renderer override or runtime source path is supplied.
 
 ### Phase 4 — Linux session selection makes the default HUD usable or names the prerequisite
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/src/platform/window.cpp`, `packages/runtime-native/native/ui-overlay/src/argb.rs`, `packages/create-threenative/src/doctor.ts` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+      Left: same Linux-only overlay test. The 2026-09-08 assessment also recorded a Wayland/Xwayland overlay failure on the published Linux consumer, which this phase must resolve or name as a prerequisite.
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-4-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 

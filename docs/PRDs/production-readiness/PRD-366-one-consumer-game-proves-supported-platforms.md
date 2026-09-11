@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 The assessment built web output and reproduced a desktop prebuilt failure; it did not run new browser gameplay or native player/device flows. Existing golden-path, registry-install, template playtest and physical qualification harnesses provide the mechanism; no new test runner is needed.
 
-Consumer verification, not new gameplay systems. [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) owns installation/MCP fixes; [PRD-217](PRD-217-webview-ui-layer.md) HUD; [PRD-212](PRD-212-published-install-builds-android.md)/[PRD-365](PRD-365-consumer-desktop-distribution.md) artifacts; [PRD-153](PRD-153-game-branding-from-launch-to-play.md) brand. Existing PRD-054 owns conformance, PRD-056 owns physical collector schema, PRD-058 owns performance/reliability mechanisms, PRD-080 owns stranger-test protocol. Consume their non-iOS evidence without declaring their iOS scope done.
+Consumer verification, not new gameplay systems. [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) owns installation/MCP fixes; [PRD-217](PRD-217-webview-ui-layer.md) HUD; [PRD-212](PRD-212-published-install-builds-android.md)/[PRD-365](PRD-365-consumer-desktop-distribution.md) artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand. Existing PRD-054 owns conformance, PRD-056 owns physical collector schema, PRD-058 owns performance/reliability mechanisms, PRD-080 owns stranger-test protocol. Consume their non-iOS evidence without declaring their iOS scope done.
 
 ## Approach and boundaries
 
@@ -61,6 +61,15 @@ sequenceDiagram
 
 ### Phase 1 — The installed starter proves browser gameplay after a normal edit
 
+**Progress:**
+
+- [ ] Callers wired and building: `scripts/verify-registry-install.ts`, `scripts/__tests__/verify-registry-install.spec.ts`, `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` (+1 more)
+- [ ] Required test green: `scripts/__tests__/verify-registry-install.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-366-readiness-phase-1-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `scripts/verify-registry-install.ts` — run candidate template gameplay after game-only edit.
@@ -86,6 +95,15 @@ pnpm test:templates
 **User verification:** Play the edited starter from a deployed production build at site root and a subpath. Inspect missing asset URLs, WebGPU adapter and WebGL2 fallback separately; a generated manifest is not an offline/PWA claim.
 
 ### Phase 2 — The same distributed game plays on desktop and Android
+
+**Progress:**
+
+- [ ] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-366-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
@@ -114,6 +132,15 @@ pnpm exec threenative-playtest playtests/production-readiness.playtest.json --ta
 **User verification:** Play the actual distributed game on Windows, macOS, supported Linux sessions and Android emulator. Background/resume and close/reopen it; inspect save persistence on the action-rpg subject where the starter has no save system.
 
 ### Phase 3 — Physical Android and release limitations are measured honestly
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/scripts/qualify-physical-mobile.mjs`, `packages/runtime-native/tests/physical-mobile-qualification.test.mjs`, `scripts/verify-registry-install.ts` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/physical-mobile-qualification.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-366-readiness-phase-3-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 

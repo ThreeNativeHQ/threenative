@@ -23,7 +23,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Existing npm-release requires a promoted native release before publishing npm, while native-release promotes after local-tarball consumer checks. The report found runtime HTTP404 and old public package contents. Earlier PRD-060 mixed packaging, publisher implementation and broad all-platform claims; packaging now has explicit delegated owners.
 
-Release orchestration only. [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) owns package/MCP contents; [PRD-078](PRD-078-toolchain-free-consumer-proof.md)/[PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) hosted/prebuilt delivery; [PRD-221](PRD-221-android-v8-is-16kb-clean.md)/[PRD-212](PRD-212-published-install-builds-android.md) Android compatibility/artifacts; [PRD-217](PRD-217-webview-ui-layer.md)/[PRD-365](PRD-365-consumer-desktop-distribution.md) desktop UI/artifacts; [PRD-153](PRD-153-game-branding-from-launch-to-play.md) brand; [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) diagnosis; [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) actual game qualification. Existing PRD-059 provenance/SBOM, PRD-054 conformance and PRD-080 stranger protocol remain dependencies for their applicable non-iOS evidence. Do not duplicate their implementations or mark their iOS criteria complete.
+Release orchestration only. [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) owns package/MCP contents; [PRD-078](PRD-078-toolchain-free-consumer-proof.md)/[PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) hosted/prebuilt delivery; [PRD-221](PRD-221-android-v8-is-16kb-clean.md)/[PRD-212](PRD-212-published-install-builds-android.md) Android compatibility/artifacts; [PRD-217](PRD-217-webview-ui-layer.md)/[PRD-365](PRD-365-consumer-desktop-distribution.md) desktop UI/artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand; [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) diagnosis; [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) actual game qualification. Existing PRD-059 provenance/SBOM, PRD-054 conformance and PRD-080 stranger protocol remain dependencies for their applicable non-iOS evidence. Do not duplicate their implementations or mark their iOS criteria complete.
 
 ## Approach and boundaries
 
@@ -62,6 +62,15 @@ sequenceDiagram
 
 ### Phase 1 — The prepared release has one exact candidate and no publication-order cycle
 
+**Progress:**
+
+- [ ] Callers wired and building: `scripts/release.ts`, `.github/workflows/npm-release.yml`, `.github/workflows/native-release.yml` (+1 more)
+- [ ] Required test green: `scripts/__tests__/release.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-060-readiness-phase-1-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `scripts/release.ts` — candidate staging and source/cohort identity validation.
@@ -88,6 +97,15 @@ pnpm publish:check
 
 ### Phase 2 — A public consumer receives exactly the candidate and plays every target
 
+**Progress:**
+
+- [ ] Callers wired and building: `scripts/verify-registry-install.ts`, `scripts/__tests__/verify-registry-install.spec.ts`, `.github/workflows/native-release.yml`
+- [ ] Required test green: `scripts/__tests__/verify-registry-install.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-060-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `scripts/verify-registry-install.ts` — candidate exact-pin and all-template/manager/target options.
@@ -112,6 +130,15 @@ pnpm tsx scripts/verify-registry-install.ts
 **User verification:** From outside the engine repository, install candidate packages, discover MCPs, customize game files, build and play final outputs. Archive full expanded candidate/matrix invocation, per-template outcomes and exact artifact links.
 
 ### Phase 3 — Store validation and external users support the final readiness claim
+
+**Progress:**
+
+- [ ] Callers wired and building: `scripts/release.ts`, `scripts/__tests__/release.spec.ts`, `docs/strategy/PRODUCTION-READINESS.md` (+1 more)
+- [ ] Required test green: `scripts/__tests__/release.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-060-readiness-phase-3-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
@@ -138,6 +165,15 @@ pnpm check:docs
 **User verification:** Before phase 4 can promote defaults, review platform upload result, signed artifact trust, developer transcript and five-minute player record. Any missing credential/person is a pending external checkpoint, not an asserted production pass.
 
 ### Phase 4 — Promotion, rollback and revocation preserve trustworthy defaults
+
+**Progress:**
+
+- [ ] Callers wired and building: `scripts/release.ts`, `scripts/__tests__/release.spec.ts`, `.github/workflows/native-release.yml` (+1 more)
+- [ ] Required test green: `scripts/__tests__/release.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-060-readiness-phase-4-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 

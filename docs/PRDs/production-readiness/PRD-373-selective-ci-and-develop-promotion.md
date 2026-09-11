@@ -23,6 +23,14 @@ Reduce unnecessary execution and queue pressure; increasing PR size is not the s
 
 ### 1. Select checks from the complete PR diff and its dependencies
 
+**Progress:**
+
+- [ ] Implemented and wired: `scripts/ci-change-scope.mjs` classifies from the merge-base diff (deletions and both rename sides)
+- [ ] Required test green
+- [ ] Observed red recorded, then restored green
+- [ ] Verified on a real PR, not only locally
+
+
 Extend `scripts/ci-change-scope.mjs`; keep one classifier used by CI and local verification.
 Compare against the target branch's merge base, including deletions and both sides of renames.
 Emit selected check families and a readable reason for each selection or exemption.
@@ -43,6 +51,14 @@ fail visibly. Preserve an explicit manual full-run option. Do not use an LLM to 
 
 ### 2. Wire selection into protected feature PRs targeting develop
 
+**Progress:**
+
+- [ ] Implemented and wired: `ci.yml` and `native-platforms.yml` consume the same selection; `ci-required` verdict always evaluated
+- [ ] Required test green
+- [ ] Observed red recorded, then restored green
+- [ ] Verified on a real PR, not only locally
+
+
 Update `.github/workflows/ci.yml` and `.github/workflows/native-platforms.yml` to consume the
 same selection. Run only selected jobs and matrix entries. Replace native's independent
 classification with the caller's validated decision; manual invocation defaults to full.
@@ -59,6 +75,14 @@ concurrency using observed queue pressure; do not add shards merely to make indi
 shorter. Preserve diagnostics when one selected job fails.
 
 ### 3. Add daily qualification and protected promotion to main
+
+**Progress:**
+
+- [ ] Implemented and wired: daily qualification job and protected `develop` -> `main` promotion
+- [ ] Required test green
+- [ ] Observed red recorded, then restored green
+- [ ] Verified on a real PR, not only locally
+
 
 Feature branches start from `develop`; squash their focused PRs into `develop`. Capture a fixed
 `develop` SHA for each daily full run and each promotion candidate. Every job, including reusable
@@ -84,6 +108,14 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 
 ### 4. Improve caches without reusing stale products or test verdicts
 
+**Progress:**
+
+- [ ] Implemented and wired: caches keyed so no stale product or test verdict is reused
+- [ ] Required test green
+- [ ] Observed red recorded, then restored green
+- [ ] Verified on a real PR, not only locally
+
+
 Audit the existing workspace-dist, pnpm, browser, compiler and Android caches before adding
 anything. Reuse existing composite actions. Key dependency caches by lockfiles and toolchain;
 key native products by platform, architecture, compiler/SDK, configuration and relevant inputs.
@@ -99,6 +131,14 @@ Measure cold and warm runs, cache hit/miss, queue delay and execution duration s
 existing Actions summaries or the implementation PR. Compare equivalent candidate workloads.
 
 ### 5. Update instructions, local commands and repository settings together
+
+**Progress:**
+
+- [ ] Implemented and wired: instructions, local commands and repository settings updated together
+- [ ] Required test green
+- [ ] Observed red recorded, then restored green
+- [ ] Verified on a real PR, not only locally
+
 
 Edit root `AGENTS.md` and affected nested `AGENTS.md` files to describe feature branches from
 `develop`, selective PR checks, full promotion checks, local sync and worktree cleanup.

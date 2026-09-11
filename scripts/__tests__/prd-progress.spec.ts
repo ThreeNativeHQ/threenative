@@ -60,6 +60,31 @@ describe("progressOf", () => {
     expect(progressOf(TWO_PHASES).label).toEqual({ color: "#e36209", name: "prd:50%" });
   });
 
+  it("should count boxes rather than whole phases, so partial phases still register", () => {
+    // Two phases, neither complete, but four of six boxes ticked: half built, not 0%.
+    const partial = `### Phase 1 — a
+
+- [x] one
+- [x] two
+- [ ] three
+
+### Phase 2 — b
+
+- [x] one
+- [x] two
+- [ ] three
+
+## Acceptance criteria
+
+- [ ] done
+`;
+    const progress = progressOf(partial);
+    expect(progress.phasesComplete).toBe(0);
+    expect(progress.phaseBoxesTicked).toBe(4);
+    expect(progress.phaseBoxes).toBe(6);
+    expect(progress.label).toEqual({ color: "#e36209", name: "prd:50%" });
+  });
+
   it("should hold at 75% yellow while every phase is in but acceptance is open", () => {
     const phasesDone = TWO_PHASES.replace("- [ ] wire the caller", "- [x] wire the caller").replace(
       "- [ ] required test green",
@@ -69,6 +94,29 @@ describe("progressOf", () => {
     expect(progress.phasesComplete).toBe(progress.phases);
     expect(progress.acceptanceTicked).toBeLessThan(progress.acceptanceTotal);
     expect(progress.label).toEqual({ color: "#fbca04", name: "prd:75%" });
+  });
+
+  it("should treat numbered implementation-order sections as phases", () => {
+    // PRD-373 spells its phases "### 1. Select checks…" rather than "### Phase 1 — …".
+    const numbered = `## Implementation order
+
+### 1. Select checks from the diff
+
+- [x] implemented and wired
+- [ ] required test green
+
+### 2. Wire selection into CI
+
+- [ ] implemented and wired
+
+## Acceptance checks
+
+- [ ] the selector is right
+`;
+    const progress = progressOf(numbered);
+    expect(progress.phases).toBe(2);
+    expect(progress.phaseBoxesTicked).toBe(1);
+    expect(progress.label.name).toBe("prd:25%");
   });
 
   it("should only reach 100% green when phases and acceptance are both ticked", () => {
