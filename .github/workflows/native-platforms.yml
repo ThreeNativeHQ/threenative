@@ -25,6 +25,15 @@ on:
         required: false
         type: boolean
         default: false
+      # The caller's validated selection, in `ci.yml`'s fenced form. This lane no longer runs the
+      # classifier itself: two independent classifications of one diff can disagree, and the one
+      # that disagreed quietly is the one that skips platform evidence nobody notices missing.
+      # A manual dispatch supplies nothing and therefore gets the full set, which is the point of
+      # dispatching it by hand.
+      families:
+        required: false
+        type: string
+        default: "|docs|workspace|browser|playtest|templates|native|site|"
 
 concurrency:
   group: native-platforms-${{ github.ref }}
@@ -42,34 +51,32 @@ permissions:
   contents: read
 
 jobs:
-  # The native lane shares ci.yml's fail-closed merge-base classifier. Non-PR events are always
-  # full, which preserves scheduled, workflow-call and manual platform evidence.
+  # The caller decides; this job only records what it was told, so every leg below can read one
+  # value and a reader can see the decision on the run. `workflow_dispatch` supplies no input and
+  # takes the default, which is everything.
   scope:
-    name: Change scope
+    name: Selected check families
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      scope: ${{ steps.classify.outputs.scope }}
-      selection: ${{ steps.classify.outputs.selection }}
-      reason: ${{ steps.classify.outputs.reason }}
+      families: ${{ steps.decide.outputs.families }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: classify
-        name: Classify the complete pull-request diff
+      - id: decide
+        name: Record the caller's validated selection
         env:
-          TN_CI_EVENT: ${{ github.event_name }}
-          TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
-          TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+          TN_CI_FAMILIES: ${{ inputs.families }}
         run: |
           set -euo pipefail
-          node scripts/ci-change-scope.mjs \
-            --event-name "$TN_CI_EVENT" \
-            --base "$TN_CI_BASE" \
-            --head "$TN_CI_HEAD" \
-            --format github | tee "$RUNNER_TEMP/ci-scope.outputs"
-          cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+          families="${TN_CI_FAMILIES:-|docs|workspace|browser|playtest|templates|native|site|}"
+          case "$families" in
+            *"|native|"*) ;;
+            *)
+              echo "the caller selected '$families', which does not include the native family" >&2
+              exit 1
+              ;;
+          esac
+          echo "families=$families" >> "$GITHUB_OUTPUT"
+          echo "selected check families: $families"
 
   web-reference:
     needs: scope
@@ -79,7 +86,7 @@ jobs:
     # skipped dependant does not force this job to run, so the cost here is one browser capture on
     # pull requests that previously ran none. The prose-only scope skip is unrelated and kept.
     if: >-
-      needs.scope.outputs.selection != 'prose' &&
+      contains(needs.scope.outputs.families, '|native|') &&
       inputs.ios_only == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -118,7 +125,7 @@ jobs:
   android-v8-source:
     name: Android V8 source payload
     needs: scope
-    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
+    if: contains(needs.scope.outputs.families, '|native|') && inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -149,7 +156,7 @@ jobs:
   performance-coverage:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
-    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+    if: ${{ !cancelled() && contains(needs.scope.outputs.families, '|native|') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -242,7 +249,7 @@ jobs:
     # Restoring the label gate is the same `if` desktop-parity still carries. The prose-only
     # scope skip is unrelated and kept.
     if: >-
-      needs.scope.outputs.selection != 'prose' &&
+      contains(needs.scope.outputs.families, '|native|') &&
       inputs.ios_only != true &&
       needs.android-v8-source.result == 'success'
     runs-on: ubuntu-24.04
@@ -684,7 +691,7 @@ jobs:
     # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
     # them back on every pull request.
     if: >-
-      needs.scope.outputs.selection != 'prose' &&
+      contains(needs.scope.outputs.families, '|native|') &&
       inputs.ios_only != true &&
       (github.event_name != 'pull_request' ||
        contains(github.event.pull_request.labels.*.name, 'native'))
@@ -854,7 +861,7 @@ jobs:
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity. The only
     # remaining gate is the manual `ios_only` dispatch toggle, which exists to run the iOS lane
     # alone; it is not a skip of the default flow.
-    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
+    if: contains(needs.scope.outputs.families, '|native|') && inputs.ios_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -1045,7 +1052,7 @@ jobs:
   starter-linux:
     name: Scaffolded starter desktop artifact
     needs: scope
-    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
+    if: contains(needs.scope.outputs.families, '|native|') && inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -1152,7 +1159,7 @@ jobs:
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
     needs: scope
-    if: needs.scope.outputs.selection != 'prose'
+    if: contains(needs.scope.outputs.families, '|native|')
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60

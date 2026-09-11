@@ -1,6 +1,14 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  CI_JOB_SELECTION,
+  fenceFamilies,
+  parseFamilies,
+  pathSelection,
+  selectFamilies,
+} from "../ci-check-families.mjs";
+import { ciRequiredRows, formatCiRequired, parseArgs } from "../ci-required-verdict.mjs";
 import { formatRunSummary, summaryRows } from "../ci-run-summary.js";
 import { ciJobGraph, ciNeedsFindings, declaredNeeds, jobSections } from "../ci-workflow.js";
 
@@ -236,6 +244,116 @@ describe("ci run summary", () => {
     const jobs = ciJobGraph(workflow(BUILD));
     expect(() => summaryRows(jobs, "run-summary", { build: {} })).toThrow(
       /CI_SUMMARY_NO_RESULT: build/u,
+    );
+  });
+});
+
+/** A board where every job ran and passed, which is what a full selection should look like. */
+function greenBoard(): Record<string, { result: string }> {
+  return Object.fromEntries(
+    Object.keys(CI_JOB_SELECTION).map((job) => [job, { result: "success" }]),
+  );
+}
+
+const FULL = parseFamilies(
+  fenceFamilies(
+    new Set(["docs", "workspace", "browser", "playtest", "templates", "native", "site"]),
+  ),
+);
+const PROSE = parseFamilies("|docs|");
+
+describe("ci-required verdict", () => {
+  it("passes a full board and a narrowed one that skipped exactly what it deselected", () => {
+    expect(ciRequiredRows(greenBoard(), FULL, "pull_request").filter((row) => !row.ok)).toEqual([]);
+
+    const prose = Object.fromEntries(
+      Object.entries(CI_JOB_SELECTION).map(([job, entry]) => [
+        job,
+        { result: entry.family === null ? "success" : "skipped" },
+      ]),
+    );
+    expect(ciRequiredRows(prose, PROSE, "pull_request").filter((row) => !row.ok)).toEqual([]);
+  });
+
+  it("blocks on a selected job that failed, was cancelled or never reported", () => {
+    for (const result of ["failure", "cancelled", "skipped", "neutral", "timed_out"]) {
+      const rows = ciRequiredRows({ ...greenBoard(), budgets: { result } }, FULL, "pull_request");
+      const budgets = rows.find((row) => row.job === "budgets");
+      expect(budgets?.ok, `budgets=${result} did not block`).toBe(false);
+      expect(budgets?.why).toContain("selected but");
+    }
+
+    const missing: Record<string, { result: string } | undefined> = greenBoard();
+    missing.typecheck = undefined;
+    const rows = ciRequiredRows(missing, FULL, "pull_request");
+    expect(rows.find((row) => row.job === "typecheck")).toMatchObject({
+      ok: false,
+      result: "missing",
+    });
+    expect(formatCiRequired(rows, FULL)).toContain("block merging");
+  });
+
+  it("blocks on a deselected job that ran and went red, and on a job nothing decides", () => {
+    const prose = Object.fromEntries(
+      Object.entries(CI_JOB_SELECTION).map(([job, entry]) => [
+        job,
+        { result: entry.family === null ? "success" : "skipped" },
+      ]),
+    );
+    const leaked = ciRequiredRows(
+      { ...prose, "test-native": { result: "failure" } },
+      PROSE,
+      "pull_request",
+    );
+    expect(leaked.find((row) => row.job === "test-native")).toMatchObject({ ok: false });
+
+    const stranger = ciRequiredRows(
+      { ...greenBoard(), "visuals-gpu": { result: "success" } },
+      FULL,
+      "pull_request",
+    );
+    expect(stranger.find((row) => row.job === "visuals-gpu")?.why).toContain("CI_JOB_SELECTION");
+  });
+
+  it("lets the secret scan skip on the events its own condition excludes", () => {
+    const scheduled = { ...greenBoard(), "supply-chain": { result: "skipped" } };
+    expect(ciRequiredRows(scheduled, FULL, "schedule").filter((row) => !row.ok)).toEqual([]);
+    expect(
+      ciRequiredRows(scheduled, FULL, "pull_request").find((row) => row.job === "supply-chain")?.ok,
+    ).toBe(false);
+  });
+
+  it("refuses malformed input rather than reporting a green zero", () => {
+    expect(() => parseFamilies("docs")).toThrow(/CI_REQUIRED_MALFORMED_FAMILIES/u);
+    expect(() => parseFamilies("|docs|rendering|")).toThrow(/CI_REQUIRED_MALFORMED_FAMILIES/u);
+    expect(() => parseFamilies("||")).toThrow(/names no family/u);
+    expect(() => parseArgs(["--results", "x"])).toThrow(/CI_REQUIRED_MALFORMED_ARGUMENT/u);
+    expect(() => parseArgs(["--nope", "x"])).toThrow(/CI_REQUIRED_MALFORMED_ARGUMENT/u);
+  });
+});
+
+describe("ci change families", () => {
+  it("narrows only the paths a rule proves safe and broadens everything else", () => {
+    expect(pathSelection("docs/PRDs/PRD-1.md").families).toEqual(["docs"]);
+    expect(pathSelection("AGENTS.md").families).toEqual(["docs", "workspace"]);
+    expect(pathSelection("site/src/app.ts").families).toEqual(["docs", "workspace", "site"]);
+    // Fail-closed rows: a scaffold input, a Markdown file a gate parses, and an unmapped path.
+    for (const file of [
+      "packages/create-threenative/templates/starter/AGENTS.md",
+      "docs/verification/round-12.md",
+      "packages/core/src/index.ts",
+      "pnpm-lock.yaml",
+      "examples/quarry/src/main.ts",
+    ]) {
+      expect(pathSelection(file).families.length, `${file} narrowed`).toBe(7);
+    }
+  });
+
+  it("takes the union of the paths in one diff, never the narrowest", () => {
+    const { families } = selectFamilies(["docs/PRDs/a.md", "site/index.html"]);
+    expect(fenceFamilies(families)).toBe("|docs|workspace|site|");
+    expect(fenceFamilies(selectFamilies(["docs/PRDs/a.md", "src/x.ts"]).families)).toBe(
+      "|docs|workspace|browser|playtest|templates|native|site|",
     );
   });
 });

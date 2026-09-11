@@ -30,6 +30,8 @@ jobs:
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
       selection: ${{ steps.classify.outputs.selection }}
+      families: ${{ steps.classify.outputs.families }}
+      familyList: ${{ steps.classify.outputs.familyList }}
       reason: ${{ steps.classify.outputs.reason }}
     steps:
       - uses: actions/checkout@v7
@@ -65,7 +67,7 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|workspace|') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -92,10 +94,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Run the complete lint gate
-        if: needs.scope.outputs.selection != 'prose'
+        if: contains(needs.scope.outputs.families, '|workspace|')
         run: pnpm lint
       - name: Run the prose-only documentation and evidence gates
-        if: needs.scope.outputs.selection == 'prose'
+        if: ${{ !contains(needs.scope.outputs.families, '|workspace|') }}
         run: |
           set -euo pipefail
           pnpm check:docs
@@ -118,7 +120,7 @@ jobs:
   # of it. `scripts/__tests__/ci-structure.spec.ts` asserts the two halves partition the workspace.
   test:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|workspace|') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -151,7 +153,7 @@ jobs:
   # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
   test-unit:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|workspace|') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -180,7 +182,7 @@ jobs:
 
   test-native:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|native|') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -423,7 +425,7 @@ jobs:
 
   test-browser:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|browser|') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -468,7 +470,7 @@ jobs:
 
   test-playtest:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|playtest|') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -494,7 +496,7 @@ jobs:
 
   golden-path-template:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|templates|') }}
     strategy:
       fail-fast: false
       matrix:
@@ -664,7 +666,7 @@ jobs:
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|templates|') }}
     # One leg per template was one leg per *unit of naming*, not per unit of work: on run
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
     # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
@@ -787,17 +789,20 @@ jobs:
       - name: Require or report golden-path template applicability
         run: |
           set -euo pipefail
-          if [ '${{ needs.scope.outputs.selection }}' = prose ]; then
-            echo "golden-path templates: not applicable (prose-only change)"
-            exit 0
-          fi
+          case '${{ needs.scope.outputs.families }}' in
+            *"|templates|"*) ;;
+            *)
+              echo "golden-path templates: not applicable (no template or package change)"
+              exit 0
+              ;;
+          esac
           result='${{ needs.golden-path-template.result }}'
           echo "golden-path templates: $result"
           test "$result" = "success"
 
   benchmark:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|workspace|') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -839,30 +844,40 @@ jobs:
   # or skipped upstream reaches these assertions instead of silently skipping a required check.
   build:
     needs: [scope, build-artifacts, native-platforms]
-    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+    # Always evaluated, and it reports its own applicability: this is a protected context, and a
+    # required check that disappears on a narrowed selection is a check nobody can see go missing.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require workspace and native platform evidence
         env:
           CI_SCOPE_RESULT: ${{ needs.scope.result }}
+          CI_FAMILIES: ${{ needs.scope.outputs.families }}
           WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}
           NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
         run: |
           set -euo pipefail
           echo "scope: $CI_SCOPE_RESULT"
+          echo "selected families: $CI_FAMILIES"
           echo "build-artifacts: $WORKSPACE_BUILD_RESULT"
           echo "native-platforms: $NATIVE_PLATFORM_RESULT"
           test "$CI_SCOPE_RESULT" = "success"
-          test "$WORKSPACE_BUILD_RESULT" = "success"
-          test "$NATIVE_PLATFORM_RESULT" = "success"
+          case "$CI_FAMILIES" in
+            *"|workspace|"*) test "$WORKSPACE_BUILD_RESULT" = "success" ;;
+            *) echo "workspace bundles: not applicable to this change" ;;
+          esac
+          case "$CI_FAMILIES" in
+            *"|native|"*) test "$NATIVE_PLATFORM_RESULT" = "success" ;;
+            *) echo "native platform evidence: not applicable to this change" ;;
+          esac
 
   # Produce this commit's bundles and freshly packed templates as soon as scope is known.
   # Consumers need these bytes, not the native matrix's verdict. No verification is omitted:
   # the protected build join above requires both this producer and the complete native lane.
   build-artifacts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|workspace|') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -911,7 +926,7 @@ jobs:
 
   performance-contracts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' && !cancelled() }}
+    if: ${{ contains(needs.scope.outputs.families, '|workspace|') && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -973,7 +988,7 @@ jobs:
 
   budgets:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ contains(needs.scope.outputs.families, '|workspace|') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1001,8 +1016,10 @@ jobs:
   # legs passed on the corrected native build.
   native-platforms:
     needs: scope
-    if: needs.scope.outputs.selection != 'prose'
+    if: contains(needs.scope.outputs.families, '|native|')
     uses: ./.github/workflows/native-platforms.yml
+    with:
+      families: ${{ needs.scope.outputs.families }}
 
   supply-chain:
     needs: scope
@@ -1067,6 +1084,63 @@ jobs:
         with:
           fail-on-severity: moderate
 
+  # PRD-373 phase 2. One always-evaluated verdict, and the only check a protected branch needs to
+  # require.
+  #
+  # Requiring the individual jobs cannot work once the board is selective: the jobs a change
+  # deselects never report, and GitHub counts a missing or skipped required check as satisfied, so
+  # "required" would mean "required when it happened to run". This job asserts the shape of the
+  # whole run instead — the classifier succeeded, every selected job is green, and every job that
+  # did not run is one the classifier explicitly deselected. A selected job that failed, was
+  # cancelled, is missing, or skipped without being deselected fails here, and so does a job
+  # `ci.yml` declares that `scripts/ci-check-families.mjs` has no entry for.
+  #
+  # Like `run-summary` it reads `toJSON(needs)`, which is the exemption
+  # `scripts/__tests__/ci-needs.spec.ts` recognises: publishing an upstream verdict is its work,
+  # and it cannot do that without waiting on the jobs it judges. Unlike `run-summary` it gates, so
+  # it deliberately installs nothing — a verdict that can fail on a registry hiccup is not a verdict.
+  ci-required:
+    needs:
+      - scope
+      - typecheck
+      - lint
+      - test
+      - test-unit
+      - test-native
+      - test-browser
+      - test-playtest
+      - golden-path-template
+      - template-nonvisual
+      - golden-path
+      - benchmark
+      - build
+      - build-artifacts
+      - budgets
+      - performance-contracts
+      - supply-chain
+      - native-platforms
+    # `always()` and not `!cancelled()`: a cancelled run must reach this check and be told no, or a
+    # cancellation reads as a merge-ready board.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require every selected job, and only the selected ones
+        env:
+          # `toJSON(needs)` is every upstream result at once, passed through a file because it is
+          # multi-line JSON and an interpolated expression in a `run:` line is shell source.
+          TN_CI_NEEDS: ${{ toJSON(needs) }}
+          TN_CI_FAMILIES: ${{ needs.scope.outputs.families }}
+          TN_CI_EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$TN_CI_NEEDS" > "$RUNNER_TEMP/needs.json"
+          node scripts/ci-required-verdict.mjs \
+            --results "$RUNNER_TEMP/needs.json" \
+            --families "$TN_CI_FAMILIES" \
+            --event-name "$TN_CI_EVENT" | tee -a "$GITHUB_STEP_SUMMARY"
+
   # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every
   # run this repository had ever produced; nobody had seen any of them fail because nobody had
   # seen them run. The board looked like nine jobs of coverage and was six.
@@ -1083,6 +1157,7 @@ jobs:
   run-summary:
     needs:
       - scope
+      - ci-required
       - native-platforms
       - typecheck
       - lint
@@ -1120,6 +1195,7 @@ jobs:
           # shell source.
           TN_CI_NEEDS: ${{ toJSON(needs) }}
           TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}
+          TN_CI_FAMILIES: ${{ needs.scope.outputs.familyList }}
           TN_CI_SCOPE_REASON: ${{ needs.scope.outputs.reason }}
         run: |
           set -euo pipefail
@@ -1127,9 +1203,10 @@ jobs:
             echo "## CI change scope"
             echo ""
             echo "- Selection: `$TN_CI_SCOPE`"
+            echo "- Selected checks: $TN_CI_FAMILIES"
             echo "- Reason: $TN_CI_SCOPE_REASON"
-            if [ "$TN_CI_SCOPE" = prose ]; then
-              echo "- Not applicable: compilation, browser/playtest, native and full game-matrix jobs."
+            if [ "$TN_CI_SCOPE" != full ]; then
+              echo "- Every job outside those families is deliberately not selected; `ci-required` fails if one ran and went red."
             fi
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
@@ -1147,11 +1224,11 @@ jobs:
       - name: Report the performance contract through the shared comparison summary
         if: always()
         env:
-          TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}
+          TN_CI_SCOPE: ${{ needs.scope.outputs.families }}
         run: |
           set -euo pipefail
           required_lanes=""
-          if [ "$TN_CI_SCOPE" != prose ]; then
+          if [ "${TN_CI_SCOPE#*|native|}" != "$TN_CI_SCOPE" ]; then
             required_lanes="performance-contracts,native-linux-contract"
           else
             echo "performance collector evidence: not applicable (prose-only change)"

@@ -34,6 +34,7 @@ function runGate(overrides: Record<string, string> = {}) {
     encoding: "utf8",
     env: {
       PATH: process.env.PATH,
+      CI_FAMILIES: "|docs|workspace|browser|playtest|templates|native|site|",
       CI_SCOPE_RESULT: "success",
       NATIVE_PLATFORM_RESULT: "success",
       WORKSPACE_BUILD_RESULT: "success",
@@ -47,7 +48,7 @@ describe("CI efficiency without lost evidence", () => {
   it("produces workspace artifacts without waiting for native evidence", () => {
     const producer = job("build-artifacts");
     expect(declaredNeeds(producer)).toEqual(["scope"]);
-    expect(producer).toContain("needs.scope.outputs.selection != 'prose'");
+    expect(producer).toContain("contains(needs.scope.outputs.families, '|workspace|')");
     expect(producer).not.toContain("needs.native-platforms");
     expect(producer).toContain("uses: ./.github/actions/workspace-dist");
     expect(producer).toContain("pnpm --filter abyss-framework build");
@@ -60,7 +61,10 @@ describe("CI efficiency without lost evidence", () => {
   it("keeps the protected build context as a fail-closed join, not a second build", () => {
     const gate = job("build");
     expect(declaredNeeds(gate)).toEqual(["scope", "build-artifacts", "native-platforms"]);
-    expect(gate).toContain("!cancelled() && needs.scope.outputs.selection != 'prose'");
+    // Always evaluated now: it is a protected context, and a required check that vanishes on a
+    // narrowed selection is one nobody can see go missing. It reports its own applicability.
+    expect(gate).toContain("if: ${{ !cancelled() }}");
+    expect(gate).toContain("CI_FAMILIES: ${{ needs.scope.outputs.families }}");
     expect(gate).toContain("CI_SCOPE_RESULT: ${{ needs.scope.result }}");
     expect(gate).toContain("WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}");
     expect(gate).toContain("NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}");

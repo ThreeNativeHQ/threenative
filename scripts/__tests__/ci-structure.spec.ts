@@ -4,6 +4,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
+import { CI_JOB_SELECTION, CI_REPORTING_JOBS } from "../ci-check-families.mjs";
+import { declaredNeeds } from "../ci-workflow.js";
 import { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 import {
   collectorCoverage,
@@ -608,9 +610,13 @@ describe("CI pipeline structure", () => {
     ]) {
       const job = requiredJob(ci, name);
       expect(job, `${name} does not wait for scope`).toContain("scope");
-      expect(job, `${name} does not select the full board explicitly`).toContain(
-        "needs.scope.outputs.selection != 'prose'",
-      );
+      const entry = CI_JOB_SELECTION[name];
+      expect(entry, `${name} has no entry in the selection table`).toBeDefined();
+      const gate =
+        entry?.family === null || entry === undefined
+          ? "needs.scope.outputs.families"
+          : `contains(needs.scope.outputs.families, '|${entry.family}|')`;
+      expect(job, `${name} does not name the family that selects it`).toContain(gate);
     }
 
     const lint = requiredJob(ci, "lint");
@@ -626,9 +632,12 @@ describe("CI pipeline structure", () => {
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
+    // The native lane no longer classifies the diff a second time: it records what its caller
+    // decided, and refuses a call that did not select the native family.
     const nativeScope = requiredJob(native, "scope");
-    expect(nativeScope).toContain("scripts/ci-change-scope.mjs");
-    expect(nativeScope).toContain("scope: ${{ steps.classify.outputs.scope }}");
+    expect(nativeScope).not.toContain("scripts/ci-change-scope.mjs");
+    expect(nativeScope).toContain("families: ${{ steps.decide.outputs.families }}");
+    expect(nativeScope).toContain("TN_CI_FAMILIES: ${{ inputs.families }}");
     expect(nativeScope).not.toContain("pnpm install");
     for (const name of [
       "web-reference",
@@ -639,12 +648,12 @@ describe("CI pipeline structure", () => {
       "ios-simulator",
     ]) {
       expect(requiredJob(native, name), `${name} does not use shared scope`).toContain("scope");
-      expect(requiredJob(native, name), `${name} has no prose exemption`).toContain(
-        "needs.scope.outputs.selection != 'prose'",
+      expect(requiredJob(native, name), `${name} does not read the caller's selection`).toContain(
+        "contains(needs.scope.outputs.families, '|native|')",
       );
     }
     const performanceCoverage = requiredJob(native, "performance-coverage");
-    expect(performanceCoverage).toContain("needs.scope.outputs.selection != 'prose'");
+    expect(performanceCoverage).toContain("contains(needs.scope.outputs.families, '|native|')");
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
@@ -658,9 +667,9 @@ describe("CI pipeline structure", () => {
     const performance = summary.slice(
       summary.indexOf("Report the performance contract through the shared comparison summary"),
     );
-    expect(performance).toContain("TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}");
+    expect(performance).toContain("TN_CI_SCOPE: ${{ needs.scope.outputs.families }}");
     expect(performance).toContain('required_lanes=""');
-    expect(performance).toContain('if [ "$TN_CI_SCOPE" != prose ]; then');
+    expect(performance).toContain('if [ "${TN_CI_SCOPE#*|native|}" != "$TN_CI_SCOPE" ]; then');
     expect(performance).toContain('required_lanes="performance-contracts,native-linux-contract"');
     expect(performance).toContain('--required-lanes "$required_lanes"');
     expect(performance).not.toContain(
@@ -749,13 +758,136 @@ describe("CI pipeline structure", () => {
 
       expect(classifyScope(fixture.root, fixture.base, workflowHead)).toMatchObject({
         files: [".github/workflows/ci.yml"],
-        reason: '".github/workflows/ci.yml" is a non-Markdown path',
+        families: "|docs|workspace|browser|playtest|templates|native|site|",
+        reason: '".github/workflows/ci.yml" is a path no narrowing rule covers',
         scope: "full",
         selection: "full",
       });
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
+  });
+
+  it("selects check families from the diff, and falls through to the whole board", async () => {
+    // PRD-373 phase 1. The classifier no longer answers only "prose or everything": it names the
+    // families a change needs. Every rule here is a narrowing that has to stay explicit, because
+    // the fallthrough — a path no rule claims — is what keeps an unknown change fully verified.
+    const fixture = await scopeFixture();
+    try {
+      const agentHead = await commitScopeChange(
+        fixture,
+        "packages/core/AGENTS.md",
+        "# Package rules\n",
+        "agent instructions",
+      );
+      expect(classifyScope(fixture.root, fixture.base, agentHead)).toMatchObject({
+        families: "|docs|workspace|",
+        scope: "partial",
+        selection: "partial",
+      });
+
+      const siteHead = await commitScopeChange(
+        fixture,
+        "site/src/pages/index.astro",
+        "<p>site</p>\n",
+        "website only",
+      );
+      expect(classifyScope(fixture.root, agentHead, siteHead)).toMatchObject({
+        families: "|docs|workspace|site|",
+        selection: "partial",
+      });
+
+      // A template's AGENTS.md ships inside the scaffold, so it is a scaffold input and not prose.
+      const templateHead = await commitScopeChange(
+        fixture,
+        "packages/create-threenative/templates/starter/AGENTS.md",
+        "# Starter rules\n",
+        "template instructions",
+      );
+      expect(classifyScope(fixture.root, siteHead, templateHead)).toMatchObject({
+        families: "|docs|workspace|browser|playtest|templates|native|site|",
+        selection: "full",
+      });
+
+      // Mixing a narrow path with a broad one takes the broad answer, never the average.
+      const mixedHead = await commitScopeChange(
+        fixture,
+        "packages/core/src/selective.ts",
+        "export const selective = true;\n",
+        "shared runtime",
+      );
+      expect(classifyScope(fixture.root, siteHead, mixedHead)).toMatchObject({
+        reason: '"packages/core/src/selective.ts" is a path no narrowing rule covers',
+        selection: "full",
+      });
+
+      // An explicit full run stays available whatever the diff says.
+      const explicit = spawnSync(
+        process.execPath,
+        [
+          path.join(repo, "scripts/ci-change-scope.mjs"),
+          "--root",
+          fixture.root,
+          "--event-name",
+          "pull_request",
+          "--base",
+          fixture.base,
+          "--head",
+          agentHead,
+          "--full",
+          "--format",
+          "json",
+        ],
+        { encoding: "utf8", env: isolatedGitEnvironment() },
+      );
+      expect(explicit.status, explicit.stderr).toBe(0);
+      expect(JSON.parse(explicit.stdout)).toMatchObject({
+        reason: "a full run was requested explicitly",
+        selection: "full",
+      });
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("gates every ci.yml job on the family that selects it, and requires one verdict", async () => {
+    // PRD-373 phase 2. Two properties, both fail-closed: the workflow's jobs and the selection
+    // table are the same set — a job added to one and not the other is a gate nobody decides on —
+    // and `ci-required` waits on every job it is supposed to judge.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const declared = jobSections(ci).map(([name]) => name);
+    expect([...declared].sort()).toEqual(
+      [...Object.keys(CI_JOB_SELECTION), ...CI_REPORTING_JOBS].sort(),
+    );
+
+    const scope = requiredJob(ci, "scope");
+    expect(scope).toContain("families: ${{ steps.classify.outputs.families }}");
+    expect(scope).toContain("familyList: ${{ steps.classify.outputs.familyList }}");
+
+    for (const [job, entry] of Object.entries(CI_JOB_SELECTION)) {
+      if (entry.family === null) continue;
+      expect(requiredJob(ci, job), `${job} is not gated on its family`).toContain(
+        `contains(needs.scope.outputs.families, '|${entry.family}|')`,
+      );
+    }
+
+    const required = requiredJob(ci, "ci-required");
+    expect(required).toContain("if: ${{ always() }}");
+    expect(required).toContain("toJSON(needs)");
+    expect(required).toContain("scripts/ci-required-verdict.mjs");
+    expect(required).not.toContain("pnpm install");
+    const waitsOn = declaredNeeds(required);
+    expect([...waitsOn].sort()).toEqual([...Object.keys(CI_JOB_SELECTION)].sort());
+
+    // The native lane takes the caller's decision instead of classifying a second time.
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    expect(native).not.toContain("scripts/ci-change-scope.mjs");
+    expect(requiredJob(ci, "native-platforms")).toContain(
+      "contains(needs.scope.outputs.families, '|native|')",
+    );
   });
 
   it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
@@ -1845,7 +1977,7 @@ describe("CI pipeline structure", () => {
     expect(producerCommands, "web reference is an orphan on unlabelled pull requests").toContain(
       [
         "if: >-",
-        "      needs.scope.outputs.selection != 'prose' &&",
+        "      contains(needs.scope.outputs.families, '|native|') &&",
         "      inputs.ios_only == false",
       ].join("\n"),
     );
@@ -1873,7 +2005,7 @@ describe("CI pipeline structure", () => {
       expect(consumer, `${name} eligibility drifted from the web producer`).toContain(
         [
           "if: >-",
-          "      needs.scope.outputs.selection != 'prose' &&",
+          "      contains(needs.scope.outputs.families, '|native|') &&",
           "      inputs.ios_only != true",
         ].join("\n"),
       );
@@ -2207,8 +2339,10 @@ describe("CI pipeline structure", () => {
     // wrong spelling: it also fires when the run was cancelled, where the matrix result is
     // `cancelled` and this job then reported failure on a run nobody had broken.
     expect(aggregate).toContain("if: ${{ !cancelled() }}");
-    expect(aggregate).toContain('echo "golden-path templates: not applicable (prose-only change)"');
-    expect(aggregate).toContain("needs.scope.outputs.selection");
+    expect(aggregate).toContain(
+      'echo "golden-path templates: not applicable (no template or package change)"',
+    );
+    expect(aggregate).toContain("needs.scope.outputs.families");
     expect(aggregate).not.toMatch(/if: always\(\)/u);
     expect(aggregate).toContain("needs.golden-path-template.result");
     expect(aggregate).toMatch(/test "\$result" = "success"/u);

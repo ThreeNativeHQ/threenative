@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-
-const PROSE_ROOTS = ["docs/PRDs/", "docs/verification/"];
-const EXCLUDED_MARKDOWN = [
-  /^docs\/PRDs\/realism-effects\/README\.md$/u,
-  /^docs\/verification\/(?:PRD-289-conventions|alpha-bar|runtime-perf-state)\.md$/u,
-  /^docs\/verification\/realism-effects-ao(?:-|\.)/u,
-  /^docs\/verification\/worker-wake(?:-|\.)/u,
-  /^docs\/verification\/native-(?:runtime-)?(?:census|coverage)(?:-|\.)/u,
-  /^docs\/verification\/(?:round-|parity-|sweep-|tier-1-)/u,
-];
+import {
+  CHECK_FAMILIES,
+  allFamilies,
+  fenceFamilies,
+  listFamilies,
+  selectFamilies,
+} from "./ci-check-families.mjs";
 
 function requiredValue(argv, index, argument) {
   const value = argv[index + 1];
@@ -31,6 +28,7 @@ function parseArgs(argv) {
   const options = {
     eventName: undefined,
     format: "text",
+    full: false,
     head: undefined,
     root: process.cwd(),
     base: undefined,
@@ -41,6 +39,10 @@ function parseArgs(argv) {
     if (key !== undefined) {
       options[key] = requiredValue(argv, index, argument);
       index += 1;
+      continue;
+    }
+    if (argument === "--full") {
+      options.full = true;
       continue;
     }
     if (argument === "--format") {
@@ -65,17 +67,33 @@ function git(root, args) {
   });
 }
 
-function full(reason, files = []) {
-  return { files, reason, scope: "full", selection: "full" };
+/**
+ * The label a set of families carries on the board.
+ *
+ * `full` and `prose` are the two the workflows and their guards already name; `partial` is every
+ * narrowed selection in between, and it is deliberately one word rather than a family list, so a
+ * reader who wants the detail reads `families` instead of pattern-matching a label.
+ */
+function selectionLabel(families) {
+  if (families.size === CHECK_FAMILIES.length) return "full";
+  if (families.size === 1 && families.has("docs")) return "prose";
+  return "partial";
 }
 
-function prose(files) {
+function decision(families, reason, files = []) {
+  const label = selectionLabel(families);
   return {
+    families: fenceFamilies(families),
+    familyList: listFamilies(families),
     files,
-    reason: `all ${String(files.length)} changed path(s) are inert Markdown under docs/PRDs or docs/verification`,
-    scope: "prose",
-    selection: "prose",
+    reason,
+    scope: label,
+    selection: label,
   };
+}
+
+function full(reason, files = []) {
+  return decision(allFamilies(), reason, files);
 }
 
 function parseNameStatus(output) {
@@ -97,20 +115,6 @@ function parseNameStatus(output) {
     index += count;
   }
   return { paths: [...new Set(paths)].sort() };
-}
-
-function exclusionReason(file) {
-  if (/(?:^|\/)AGENTS\.md$/u.test(file) || /(?:^|\/)CLAUDE\.md$/u.test(file)) {
-    return "agent instruction mirror";
-  }
-  if (EXCLUDED_MARKDOWN.some((pattern) => pattern.test(file))) {
-    return "a Markdown file consumed by an executable fixture, parser or gate";
-  }
-  if (!file.endsWith(".md")) return "a non-Markdown path";
-  if (!PROSE_ROOTS.some((root) => file.startsWith(root))) {
-    return "outside the narrow prose roots";
-  }
-  return undefined;
 }
 
 function classify(options) {
@@ -146,11 +150,16 @@ function classify(options) {
   if ("error" in parsed) return full(`the pull-request diff is incomplete: ${parsed.error}`);
   if (parsed.paths.length === 0) return full("the pull-request diff is empty");
 
-  for (const file of parsed.paths) {
-    const reason = exclusionReason(file);
-    if (reason !== undefined) return full(`${JSON.stringify(file)} is ${reason}`, parsed.paths);
-  }
-  return prose(parsed.paths);
+  if (options.full) return full("a full run was requested explicitly", parsed.paths);
+
+  const { broadenedBy, families, reasons } = selectFamilies(parsed.paths);
+  if (families.size === 0) return full("no rule claimed any changed path", parsed.paths);
+  // One path that needs everything decides the run, and naming it is the whole explanation.
+  if (broadenedBy !== undefined) return full(broadenedBy, parsed.paths);
+  const reason = reasons
+    .map(({ family, file, reason: why }) => `${family} (${JSON.stringify(file)} is ${why})`)
+    .join("; ");
+  return decision(families, reason, parsed.paths);
 }
 
 function output(result, format) {
@@ -161,10 +170,13 @@ function output(result, format) {
   if (format === "github") {
     console.log(`scope=${result.scope}`);
     console.log(`selection=${result.selection}`);
+    console.log(`families=${result.families}`);
+    console.log(`familyList=${result.familyList}`);
     console.log(`reason=${result.reason}`);
     return;
   }
   console.log(`CI change scope: ${result.scope}`);
+  console.log(`Selected checks: ${result.familyList}`);
   console.log(`Reason: ${result.reason}`);
   if (result.files.length > 0) console.log(`Changed paths: ${result.files.join(", ")}`);
 }
