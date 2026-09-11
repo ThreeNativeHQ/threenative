@@ -25,12 +25,33 @@ jobs:
           set -euo pipefail
           git bundle create "$RUNNER_TEMP/source.bundle" --all
           tar --exclude='./.git' --exclude='./.cache' -czf "$RUNNER_TEMP/workspace.tar.gz" .
-          cp "$(readlink -f "$(command -v pnpm)")" "$RUNNER_TEMP/pnpm.cjs"
+          split -b 200M "$RUNNER_TEMP/workspace.tar.gz" "$RUNNER_TEMP/workspace.part-"
+          pnpm_root="$(dirname "$(dirname "$(readlink -f "$(command -v pnpm)")")")"
+          tar -czf "$RUNNER_TEMP/pnpm.tar.gz" -C "$pnpm_root" .
+          ls -lh "$RUNNER_TEMP"/workspace.part-* "$RUNNER_TEMP/source.bundle" "$RUNNER_TEMP/pnpm.tar.gz"
       - uses: actions/upload-artifact@v4
         with:
-          name: prd-373-workspace
+          name: prd-373-source
           path: |
             ${{ runner.temp }}/source.bundle
-            ${{ runner.temp }}/workspace.tar.gz
+            ${{ runner.temp }}/pnpm.tar.gz
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prd-373-workspace-aa
+          path: ${{ runner.temp }}/workspace.part-aa
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prd-373-workspace-ab
+          path: ${{ runner.temp }}/workspace.part-ab
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prd-373-workspace-ac
+          path: ${{ runner.temp }}/workspace.part-ac
           retention-days: 1
           compression-level: 0
