@@ -1,0 +1,137 @@
+name: PRD-373 cold-checkout validation
+on:
+  push:
+    branches: [verify/prd-373-cold-instructions]
+permissions:
+  contents: read
+env:
+  CANDIDATE_TREE: fa7287f1fc6b7e679824f1c42f93cb82b221cbf6
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 32e6a3def6382d00a8148d4b021c2f0fb3057d4f
+          persist-credentials: false
+      - name: Verify exact edits and store only source blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EDITS: 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
+        run: |
+          python3 - <<'PY'
+          import base64, bz2, hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path
+          raw = bz2.decompress(base64.b64decode(os.environ['EDITS']))
+          assert hashlib.sha256(raw).hexdigest() == 'c94caa8abe51102b3e93c9358217fdd4bc4790b9f4d2eae383432efc6633f093'
+          spec = json.loads(raw)
+          assert spec['base'] == '32e6a3def6382d00a8148d4b021c2f0fb3057d4f'
+          assert spec['tree'] == os.environ['CANDIDATE_TREE']
+          entries = []
+          for entry in spec['entries']:
+              path = Path(entry['path'])
+              assert not path.is_absolute() and '..' not in path.parts and path.parts[0] != '.git'
+              before = path.read_bytes()
+              assert hashlib.sha256(before).hexdigest() == entry['before'], str(path)
+              lines = before.decode().splitlines(keepends=True)
+              for start, end, replacement in reversed(entry['edits']):
+                  assert 0 <= start <= end <= len(lines)
+                  lines[start:end] = replacement.splitlines(keepends=True)
+              path.write_text(''.join(lines))
+              path.chmod(int(entry['mode'][-3:], 8))
+              subprocess.run(['git', 'add', '--', str(path)], check=True)
+              sha = subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+              assert sha == entry['sha'], str(path)
+              entries.append({'path': str(path), 'mode': entry['mode'], 'type': 'blob', 'sha': sha})
+          assert subprocess.check_output(['git', 'write-tree'], text=True).strip() == spec['tree']
+          directory = Path(os.environ['RUNNER_TEMP']) / 'candidate'
+          directory.mkdir()
+          patch = subprocess.check_output(['git', 'diff', '--cached', '--binary'])
+          (directory / 'candidate.patch').write_bytes(patch)
+          manifest = {'base': spec['base'], 'tree': spec['tree'], 'entries': entries, 'patch_sha256': hashlib.sha256(patch).hexdigest()}
+          (directory / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+          for entry in entries:
+              request = urllib.request.Request('https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/blobs', data=json.dumps({'content': Path(entry['path']).read_text(), 'encoding': 'utf-8'}).encode(), headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  assert json.load(response)['sha'] == entry['sha']
+          print(json.dumps(manifest, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cold-candidate
+          path: ${{ runner.temp }}/candidate
+          if-no-files-found: error
+          retention-days: 7
+  verify:
+    needs: prepare
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TN_SUITE_EXCLUDE_PACKAGES: '@threenative/runtime-native'
+      TN_ORPHAN_SETTLE_SECONDS: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 32e6a3def6382d00a8148d4b021c2f0fb3057d4f
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: cold-candidate
+          path: ${{ runner.temp }}/candidate
+      - name: Apply only the exact validated source
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          directory = Path(os.environ['RUNNER_TEMP']) / 'candidate'
+          manifest = json.loads((directory / 'manifest.json').read_text())
+          patch = directory / 'candidate.patch'
+          assert hashlib.sha256(patch.read_bytes()).hexdigest() == manifest['patch_sha256']
+          subprocess.run(['git', 'apply', '--index', str(patch)], check=True)
+          assert subprocess.check_output(['git', 'write-tree'], text=True).strip() == os.environ['CANDIDATE_TREE']
+          PY
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare cold instruction dependencies before importing contract tests
+        uses: ./.github/actions/workspace-dist
+      - name: Run 279 focused contract and regression tests
+        run: pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-fast.spec.ts scripts/__tests__/ci-local.spec.ts scripts/__tests__/release-candidate-gate.spec.ts scripts/__tests__/release.spec.ts scripts/__tests__/prepare-release.spec.ts scripts/__tests__/verify-native-release-commit.spec.ts scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts
+      - uses: ./.github/actions/playwright-chromium
+        if: ${{ !cancelled() }}
+      - name: Verify website types, build, units and actual browser behavior
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          pnpm --filter threenative-site typecheck
+          pnpm --filter threenative-site build
+          pnpm --filter threenative-site exec vitest run
+          pnpm --filter threenative-site exec playwright test --config=playwright.config.ts
+      - name: Typecheck, lint and documentation
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          pnpm typecheck
+          pnpm lint
+          pnpm check:docs
+          pnpm sync:agents --check
+      - name: Run the real JS CI suite with Chromium installed
+        if: ${{ !cancelled() }}
+        run: pnpm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cold-verification-evidence
+          path: |
+            artifacts/gates
+            site/test-results
+            site/playwright-report
+          retention-days: 7
