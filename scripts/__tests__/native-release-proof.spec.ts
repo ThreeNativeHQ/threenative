@@ -421,3 +421,67 @@ test("the main prerequisite wait outlasts a full-board main CI run", () => {
     `gates timeout-minutes ${timeout} cannot outlast its own ${budget} minute wait`,
   );
 });
+
+// `clean-consumer-ios` and `build-ios-simulator` are the two publishing-adjacent jobs that rely on
+// implicit skip-propagation rather than an explicit event condition, so they are exactly the two
+// worth pinning. Their guards are already correct; this closes a coverage gap, not a defect.
+for (const name of ["clean-consumer-ios", "build-ios-simulator"]) {
+  test(`${name} stays out of every non-tag proof route`, () => {
+    // Neither job carries an event condition; both are held out by `validate-tag` skipping and
+    // emitting no `candidate_sha`. So the route has to be modelled as it actually runs - with
+    // `validate-tag` skipped - rather than with the helper's default populated outputs.
+    for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
+      assert.equal(allowed(name, event, "branch", { "validate-tag": "skipped" }), false);
+    }
+    assert.equal(allowed(name, "workflow_dispatch", "tag", { "validate-tag": "skipped" }), false);
+    // And the skip has to be able to propagate: no `always()`/`!cancelled()` escape, and the
+    // dependency that does the holding must still be declared.
+    const body = job(name).split("\n    steps:")[0] ?? "";
+    assert.match(body, /\n\x20{4}needs: \[?[^\n]*validate-tag/u);
+    assert.doesNotMatch(body, /always\(\)|!cancelled\(\)/u);
+  });
+}
+
+test("the emulator lane reports acceleration instead of asserting it", () => {
+  // Read the step out of the job rather than via `script()`: that helper needs a line between
+  // `- name:` and `run: |`, and this step has none.
+  const consumerJob = job("clean-consumer");
+  const kvm =
+    consumerJob.split("- name: Enable KVM for the emulator\n")[1]?.split("\n      - name:")[0] ??
+    "";
+  assert.ok(kvm.length > 0, "missing the KVM step");
+  // `native-platforms.yml:317-332` records this exact defect and names this file as where it was
+  // copied from: "`test -w /dev/kvm` as the last line of this step ... turned 'this runner has no
+  // KVM' into a failed job, which is worse than the slow boot it was meant to fix." That lane was
+  // repaired; this one still asserted, and it gates every Android control in `clean-consumer`.
+  assert.doesNotMatch(
+    kvm,
+    /^\s*test -w \/dev\/kvm\s*$/mu,
+    "a runner without KVM must fall back to software emulation, not fail the job",
+  );
+  assert.match(kvm, /TN_EMULATOR_ACCEL:kvm/u);
+  assert.match(kvm, /TN_EMULATOR_ACCEL:software/u);
+});
+
+test("the packed consumer job outlasts its measured comparable", () => {
+  const consumer = job("clean-consumer");
+  const timeout = Number(consumer.match(/\n\x20{4}timeout-minutes: (\d+)/u)?.[1]);
+  assert.ok(Number.isSafeInteger(timeout), "clean-consumer must declare a timeout");
+  // Four successful `Android emulator visual parity` runs measured 27m00s, 27m33s, 27m50s and
+  // 30m18s (2026-09-09). That job is cached, does one Android build and one emulator boot, and had
+  // its own cap raised 35 -> 45 after measurement (`native-platforms.yml:217`). `clean-consumer` is
+  // an uncached superset of it: packing every workspace package, scaffolding and installing a
+  // consumer, a desktop build and 300-frame launch, an uncached system-image pull, three Android
+  // builds, an emulator boot and six playtests.
+  assert.ok(
+    timeout > 45,
+    `clean-consumer's ${timeout} minute cap is under its measured comparable`,
+  );
+  // The emulator's own boot budget, separately: a cold software-emulation boot was measured at
+  // 474s (`native-platforms.yml:335-341`), against the action's 600s default.
+  const boot = Number(consumer.match(/emulator-boot-timeout: (\d+)/u)?.[1]);
+  assert.ok(
+    Number.isSafeInteger(boot) && boot >= 900,
+    `the emulator boot timeout is ${boot}s, too close to the measured 474s cold boot`,
+  );
+});

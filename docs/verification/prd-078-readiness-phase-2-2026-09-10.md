@@ -152,6 +152,65 @@ d47457c35  -> no diagnostics                                   EXIT_CODE=0
 That is a compile result, not a hosted platform claim. The desktop rows remain owned by the hosted
 run recorded below.
 
+## Correction: the packed consumer job could not have finished, and refused its own runner
+
+`clean-consumer` has never started on any route, so neither of these had ever been executed. Both
+were found by review against measured durations already recorded in this repository.
+
+**The 35 minute cap.** Four successful `Android emulator visual parity` runs measured 27m00s,
+27m33s, 27m50s and 30m18s (2026-09-09: runs 34409182260, 34394025867, 34405960973, 34380548307),
+corroborating the 1858s cost note at `native-platforms.yml:197`. That job is cached, builds Android
+once and boots one emulator, and its own cap was raised 35 → 45 after measurement
+(`native-platforms.yml:217`). `clean-consumer` is an uncached superset: packing every workspace
+package, scaffolding and installing a consumer, a desktop build and 300-frame launch, an uncached
+system-image pull, three `pnpm build --target android`, an emulator boot and six playtests, plus
+this change's artifact download, loopback server and evidence collector. Raised to 60.
+
+One honest limit on that comparison: the consumer's three Android builds compile a game APK against
+a prebuilt runtime with the toolchain masked, so they are cheaper than `build-android`'s measured
+7m40s-8m36s in this same workflow. No number is claimed for them. The case rests on the 27.0-30.3
+minute comparable and the boot inside it.
+
+**The emulator boot budget.** A cold software-emulation boot was measured at 474s
+(`native-platforms.yml:335-341`), against this action's 600s default; the step set no boot timeout
+at all. It now sets 900, matching the lane that measured it, and takes the same cheap emulator
+options.
+
+**The KVM assertion.** `native-platforms.yml:317-332` already records this defect and names this
+file as its origin: asserting `test -w /dev/kvm` "turned 'this runner has no KVM' into a failed job,
+which is worse than the slow boot it was meant to fix". That lane was repaired and this one was not,
+so a runner without KVM failed `clean-consumer` outright — gating every packed Android control. It
+now reports `TN_EMULATOR_ACCEL:kvm` or `TN_EMULATOR_ACCEL:software` and warns, never asserts.
+
+Red then green, executed locally:
+
+```text
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts
+
+× the emulator lane reports acceleration instead of asserting it
+  AssertionError: a runner without KVM must fall back to software emulation, not fail the job
+× the packed consumer job outlasts its measured comparable
+  AssertionError: clean-consumer's 35 minute cap is under its measured comparable
+Tests  2 failed | 26 passed (28)
+EXIT_CODE=1
+```
+
+```text
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts
+Tests  28 passed (28)
+EXIT_CODE=0
+```
+
+Both tests read the workflow's own numbers, so a later edit that restores either failure reds again.
+
+**Coverage gap closed in the same file.** The publication-safety parametrisation covered
+`validate-tag`, `publish`, `finalize` and `cleanup-failed-release`, but not `clean-consumer-ios` or
+`build-ios-simulator` — the only two publishing-adjacent jobs with no event condition of their own,
+held out solely by `validate-tag` skipping and emitting no `candidate_sha`. They are now pinned
+against every non-tag route, including that the skip can still propagate: the dependency is declared
+and no `always()`/`!cancelled()` escape overrides it. Their guards were already correct; this is
+coverage, not a repair.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:
