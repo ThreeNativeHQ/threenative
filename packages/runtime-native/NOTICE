@@ -8,3 +8,5 @@ Imported maintained-fork state: c705b16eef02bc49e68fe6c9b4114698aa6b3d7f
 
 The upstream license is preserved in LICENSE. Third-party dependencies are not vendored;
 scripts/download-deps.mjs downloads them into the untracked third_party directory.
+Every payload is pinned in native-deps.lock.json; release auditors read the generated
+SBOM and license inventory attached to native prereleases (scripts/generate-native-sbom.mjs).
