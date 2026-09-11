@@ -481,7 +481,7 @@ int main(int argc, char** argv) {
         using namespace mystral::webgpu;
         auto* state = static_cast<BindingsState*>(runtime->getWebGPUBindingsState());
         auto& cache = state->pipelineCache;
-        if (arm == "disabled") {
+        if (arm == "disabled" || arm == "disabled-file") {
             require(cache.mode == "disabled" && cache.loadOutcome == "disabled", "disabled is not a cache miss");
             require(!cache.store && !cache.persistence.valid(), "disabled launch must not touch disk");
         } else {
@@ -506,7 +506,8 @@ int main(int argc, char** argv) {
             state->profiling.presentCount = 3;
             pollPipelineCachePersistence(state);
             require(cache.persistence.valid(), "settled cache must save while the process is alive");
-            if (arm == "shutdown") {
+            if (arm == "shutdown" || arm == "device-lost") {
+                if (arm == "device-lost") wgpuDeviceDestroy(state->device);
                 runtime.reset(); // joins the active snapshot before device/state destruction
                 std::cout << "persistent cache shutdown contract passed\n" << std::flush;
                 return 0;

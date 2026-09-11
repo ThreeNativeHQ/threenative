@@ -3,6 +3,7 @@
 #include "../storage/local_storage.h"
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <shared_mutex>
 #include <utility>
@@ -115,6 +116,20 @@ void qualifyAndLoad(BindingsState* state, bool load = true) {
 #endif
 } // namespace
 
+// Android's zygote cannot inherit the caller's shell environment. The equivalent negative
+// control is an app-private file created through `run-as`; it only disables an optimization.
+// No user data is cleared and the APK, device identity, shaders, and rendering stay identical.
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+static bool pipelineCacheDisabledForHost() {
+    const char* setting = std::getenv("TN_PIPELINE_CACHE");
+    if (setting != nullptr && std::string(setting) == "0") return true;
+    std::error_code error;
+    const std::filesystem::path root(storage::LocalStorage::getStorageDirectory());
+    return root.is_absolute() && std::filesystem::is_regular_file(root / "pipeline-cache.disabled", error);
+}
+
+#endif
+
 void initPipelineCache(BindingsState* state) {
     if (state == nullptr) return;
     auto& cache = state->pipelineCache;
@@ -124,14 +139,13 @@ void initPipelineCache(BindingsState* state) {
 #else
     cache.featureGranted = state->device != nullptr && wgpuDeviceHasFeature(state->device,
         static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache)) != 0;
-    const char* setting = std::getenv("TN_PIPELINE_CACHE");
     if (!cache.featureGranted) {
         cache.mode = "unavailable";
         cache.reason = "the device was not granted the pipeline-cache feature";
-    } else if (setting != nullptr && std::string(setting) == "0") {
+    } else if (pipelineCacheDisabledForHost()) {
         cache.mode = "disabled";
         cache.loadOutcome = "disabled";
-        cache.reason = "TN_PIPELINE_CACHE=0";
+        cache.reason = "operator-disabled";
         try { qualifyAndLoad(state, false); }
         catch (...) { cache.reason = "disabled-unqualified-identity"; }
     } else {

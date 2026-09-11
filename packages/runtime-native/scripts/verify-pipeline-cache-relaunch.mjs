@@ -45,6 +45,11 @@ try {
   assert.ok(existsSync(file));
   run('accepted');
   const beforeDisabled = digest(readFileSync(file));
+  const disableFile = join(root, 'mystral/storage/pipeline-cache.disabled');
+  writeFileSync(disableFile, '');
+  run('disabled-file');
+  rmSync(disableFile);
+  assert.equal(digest(readFileSync(file)), beforeDisabled, 'app-private control altered cache data');
   run('disabled', true);
   assert.equal(digest(readFileSync(file)), beforeDisabled, 'disabled process altered compiler data');
   const corrupt = readFileSync(file);
@@ -62,11 +67,12 @@ try {
   run('rejected'); // restore original bundled-source identity
   run('concurrent');
   run('shutdown');
+  run('device-lost');
   chmodSync(dirname(file), 0o555);
   run('read-only');
   chmodSync(dirname(file), 0o700);
   assert.ok(readdirSync(dirname(file)).length <= 3, 'unbounded per-generation files');
-  writeFileSync(join(output, 'result.json'), `${JSON.stringify({ status: 'passed', scope: lifecycleOnly ? 'envelope-lifecycle-only' : 'compiled-data-relaunch', compiledDataProof: !lifecycleOnly, processArms: 10, firstPlayableClaim: false, physicalDeviceClaim: false }, null, 2)}\n`);
+  writeFileSync(join(output, 'result.json'), `${JSON.stringify({ status: 'passed', scope: lifecycleOnly ? 'envelope-lifecycle-only' : 'compiled-data-relaunch', compiledDataProof: !lifecycleOnly, processArms: 12, firstPlayableClaim: false, physicalDeviceClaim: false }, null, 2)}\n`);
 } finally {
   if (file && existsSync(dirname(file))) chmodSync(dirname(file), 0o700);
   rmSync(root, { recursive: true, force: true });
