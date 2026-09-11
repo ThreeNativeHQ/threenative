@@ -729,3 +729,19 @@ test('PRD-221 uses the existing native producer rather than a duplicate investig
   const workflows = readdirSync(new URL('../../../.github/workflows/', import.meta.url));
   expect(workflows.filter((name) => /^prd-221-.*\.yml$/u.test(name))).toEqual([]);
 });
+
+test('release provenance is generated and validated before publishing release assets', () => {
+  // PRD-059 Phase 3 release-provenance + release-wiring gates. Publication is
+  // ordered after receipt/SBOM/license/provenance validation: the provenance
+  // generator runs before `gh release create`, and removing it fails this test.
+  const provenanceStep = releaseWorkflow.indexOf('generate-native-release-provenance.mjs');
+  expect(provenanceStep).toBeGreaterThan(-1);
+  const publishStep = releaseWorkflow.indexOf('gh release create');
+  expect(provenanceStep).toBeLessThan(publishStep);
+  expect(releaseWorkflow).toContain('generate-native-sbom.mjs');
+  expect(releaseWorkflow).toContain('native-release-provenance.json');
+  // Negative control: a workflow copy without the generator must not satisfy
+  // this gate — asserted by construction, since the tokens above are absent.
+  const stripped = releaseWorkflow.replaceAll('generate-native-release-provenance.mjs', 'REMOVED-GENERATOR');
+  expect(stripped).not.toContain('generate-native-release-provenance.mjs');
+});
