@@ -1,6 +1,14 @@
 # PRD-373 — Selective CI and develop-to-main promotion
 
-Status: PARTIAL — enabling implementation; protected-branch cutover and hosted acceptance pending
+Status: PARTIAL — phases 1 and 2 are implemented and wired on `main` (PR #190) with their tests
+green locally; each still owes a re-executed red/green control and a narrowed selection observed on
+a real PR, which needs the `develop` branch phase 5 creates. Phases 3-5 are repository settings and
+a protected-branch cutover, not code. Reviewed 2026-09-11 against `main` at `30f749f12`.
+
+A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
+`scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
+predated PR #190 and duplicates what landed. It is superseded and is not being merged; the branch is
+retained so nothing is lost.
 
 ## Outcome
 
@@ -25,10 +33,12 @@ Reduce unnecessary execution and queue pressure; increasing PR size is not the s
 
 **Progress:**
 
-- [ ] Implemented and wired: `scripts/ci-change-scope.mjs` classifies from the merge-base diff (deletions and both rename sides)
-- [ ] Required test green
+- [x] Implemented and wired: `scripts/ci-change-scope.mjs` classifies from the merge-base diff (deletions and both rename sides) — landed on `main` in PR #190; both workflows consume it (`ci.yml:55`, `native-platforms.yml:75`).
+- [x] Required test green — `scripts/__tests__/ci-structure.spec.ts`, `ci-needs.spec.ts`, `ci-efficiency.spec.ts`, `ci-local.spec.ts`, `ci-fast.spec.ts`: 188 passed across 5 files, run locally 2026-09-11 against `main` at `30f749f12`.
 - [ ] Observed red recorded, then restored green
+      NOT RUN by this session. The implementation landed through PR #190; no red/green control for it has been re-executed and recorded here, so the box stays open rather than being ticked on someone else's word.
 - [ ] Verified on a real PR, not only locally
+      PARTIAL, and honestly not enough. Run 34622294627 (a real `pull_request` on `work/prd-373-selective-ci`) shows the `Change scope` job emitting a validated plan with a per-job reason, and `ci-required` succeeding. But it classified `selection=full` under the "target main requires complete verification" policy, so a *narrowed* selection has not been observed on a real PR. That needs a feature PR targeting `develop`, which does not exist until the phase 5 cutover.
 
 
 Extend `scripts/ci-change-scope.mjs`; keep one classifier used by CI and local verification.
@@ -53,10 +63,12 @@ fail visibly. Preserve an explicit manual full-run option. Do not use an LLM to 
 
 **Progress:**
 
-- [ ] Implemented and wired: `ci.yml` and `native-platforms.yml` consume the same selection; `ci-required` verdict always evaluated
-- [ ] Required test green
+- [x] Implemented and wired: `ci.yml` and `native-platforms.yml` consume the same selection; `ci-required` verdict always evaluated — `ci.yml:1142` runs `scripts/ci-required.mjs`, which re-validates the plan, asserts the verdict executes the classified candidate SHA, and fails closed on a selected job that is missing, cancelled or unexpectedly skipped.
+- [x] Required test green — the same 188 tests above cover the workflow shape and the needs graph (`ci-structure.spec.ts`, `ci-needs.spec.ts`).
 - [ ] Observed red recorded, then restored green
+      NOT RUN by this session, for the same reason as phase 1.
 - [ ] Verified on a real PR, not only locally
+      PARTIAL — `ci-required` reported `success` on run 34622294627, a real PR. It has not been observed going red on a selected job that failed, which is the half of the contract that matters.
 
 
 Update `.github/workflows/ci.yml` and `.github/workflows/native-platforms.yml` to consume the
