@@ -214,3 +214,104 @@ them code.
 
 Answer decision 1 and decision 2. Then the first command of the day is
 `gh pr merge 194 --squash`, with lane 1 (PRD-374) opening its worktree while CI runs.
+
+---
+
+# Session handoff — 2026-09-11, first execution session
+
+Written when the session had to restart (Serena's MCP tools are enumerated only at startup and were
+missing). Everything below is *what actually happened*, not what was planned. Resume from here.
+
+## The two decisions are answered
+
+The owner answered both, and `README.md` rule 4 and rule 5 were amended to match in commit
+`97d0f5c51` on `main`. **Do not re-ask.**
+
+1. **Per-PRD archive.** A PRD that finishes ahead of its siblings moves to `done/` on its own.
+2. **Publishing a candidate is authorized** — an npm cohort under a **non-default dist-tag** plus its
+   matching public runtime assets. Store upload and contacting outside people remain unauthorized.
+
+Consequence: the day's ceiling is the best case in *Honest forecast* above, not the "0 PRDs by rule"
+floor. PRD-262's public-URL boxes are reachable.
+
+## What landed
+
+| Thing | State |
+| --- | --- |
+| PR #194 (PRD-262, release scope) | **merged** — `gh pr merge 194 --squash`, 2026-09-11T19:03:56Z. It unblocked the release scope for everything downstream. |
+| `main` commit `97d0f5c51` | the two decisions, recorded in this folder's README |
+| PR #198 (PRD-374) | **open, draft, `prd:25%`** — phase 1 implemented, locally verified, evidence written |
+| PR #197 (PRD-221) | **open** — opened by the lane-4 session; read its own PR body for state |
+
+## Merge queue — where it stands
+
+Order is still **#195 → #193 → #196**, and #194 is done.
+
+| PR | State when the session ended | Next action |
+| --- | --- | --- |
+| #195 | MERGEABLE, `BLOCKED` (1 check pending) | let CI finish, then merge |
+| #193 | MERGEABLE, `BLOCKED` (1 check pending) | the four contract reds named in the plan above appear to have cleared; re-read `gh pr checks 193` before believing that |
+| #196 | MERGEABLE, `BLOCKED`, **2 real reds**: `budgets` and `test-native` | `budgets` needs a built workspace; `test-native` is a genuine red, diagnose it |
+
+## Lane 1 — PRD-374, the furthest along
+
+Worktree `.claude/worktrees/prd374-doctor`, branch `prd374/doctor-target-prerequisites`, PR #198.
+Commits `c9dd6288a` (implementation) and `9e61a62a6` (PRD + evidence).
+
+**Phase 1 is done except its review.** Five of six boxes ticked with evidence on the line beside
+them; `docs/verification/prd-374-readiness-phase-1-2026-09-11.md` carries the full record.
+
+What it does: `threenative doctor --target web|desktop|android|ios [--mode debug|release]`. Naming
+the build makes that build's prerequisites decide the report instead of warning beside "available".
+Unrequested targets stay in the report with `fail` demoted to `warn`. The unscoped report is
+unchanged, pinned by a regression test.
+
+**The exact next two actions, in order:**
+
+1. **Spawn a fresh reviewer subagent** — never the implementing one — on the #198 diff. It is the
+   single open box in phase 1. Tick it only on a returned PASS.
+2. **Start phase 2** (tool discovery: MCP transport vs. external Blender vs. editor activation vs.
+   operation executed). Not started, no code written.
+
+**A contract another lane must honour:** `ANDROID_RELEASE_SIGNING_ENV` in
+`packages/create-threenative/src/doctor.ts` spells the four Gradle signing properties
+(`ORG_GRADLE_PROJECT_threenativeKeystore`, `…KeystoreAlias`, `…KeystorePassword`, `…KeyPassword`).
+PRD-212 phase 3 defines the signing property names and **must read these same four** from
+`packages/runtime-native/scripts/package-android.mjs`, or doctor will predict a prerequisite the
+build does not use. If PRD-212 picks different names, change them in doctor in the same PR.
+
+## Lanes 3 and 4 — interrupted mid-flight
+
+Both were running as subagents and were told to commit, push and report before the restart. Their
+worktrees hold the work either way:
+
+| Lane | PRD | Worktree | Branch |
+| --- | --- | --- | --- |
+| 3 | PRD-373 phases 1-2 (selective CI) | `.claude/worktrees/prd373-ci` | `prd373/selective-ci` |
+| 4 | PRD-221 (Android V8 16 KB) | `.claude/worktrees/prd221-16kb` | `prd221/android-v8-16kb` |
+
+**Before resuming either, check what is actually there** — `git -C <worktree> log --oneline -5` and
+`git -C <worktree> status --short`. A WIP-prefixed commit means the lane stopped mid-change. Lane 4
+opened PR #197; read that PR body for its own account of state. Lane 3 had not opened a PR.
+
+Lane 4 owns `packages/runtime-native/scripts/package-android.mjs` until PRD-221 is finished; lane 2
+(PRD-212) still cannot start until that file is free. That serialization is unchanged.
+
+## Two machine facts worth carrying forward
+
+- **A fresh worktree fails `pnpm test`** with ~18 `runtime-native` failures of the form
+  `<path>/build/tn-linux/<target> is not built`, because no C++ host is compiled there. It is
+  environmental, and it aborts the run before the root suite's ~2400 tests execute. Run
+  `pnpm exec vitest run` from the root separately, or build the natives.
+- **`pnpm lint` returned exit 254** — "Linter process terminated abnormally (possibly out of
+  memory)" — with three lanes building concurrently. Re-run alone: exit 0. 254 reads like a gate
+  failure and is not one; do not chase it.
+
+## Opening prompt for the next session
+
+> Read `docs/PRDs/production-readiness/EXECUTION-STRATEGY-2026-09-11.md`, including the session
+> handoff at the end, and follow the repository `AGENTS.md` chain. Both owner decisions are already
+> answered there — do not re-ask. Resume lane 1 (PRD-374) at its next action: a fresh reviewer
+> subagent on PR #198, then phase 2. Check `.claude/worktrees/prd373-ci` and
+> `.claude/worktrees/prd221-16kb` for what lanes 3 and 4 left behind before restarting either.
+> Prove each gate locally before pushing. Do not tick a box for anything unrun.
