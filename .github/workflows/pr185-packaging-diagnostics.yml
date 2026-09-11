@@ -1,0 +1,50 @@
+name: PR185 packaging diagnostics
+
+on:
+  push:
+    branches: [ci/pr185-packaging-diagnostics]
+
+permissions:
+  contents: read
+
+jobs:
+  packaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Collect exact diagnostics and formatter output
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pr185-diagnostics
+          git rev-parse HEAD > /tmp/pr185-diagnostics/source-sha.txt
+          pnpm exec biome check --diagnostic-level=error --max-diagnostics=none packages/create-threenative/src/build.ts packages/create-threenative/__tests__/native-consumer.spec.ts packages/runtime-native/scripts/install-prebuilt.mjs packages/runtime-native/scripts/package-desktop.mjs packages/runtime-native/scripts/package-android.mjs > /tmp/pr185-diagnostics/before.log 2>&1 || before=$?
+          printf 'Initial check exit: %s\n' "${before:-0}" >> /tmp/pr185-diagnostics/before.log
+          pnpm exec biome check --write packages/create-threenative/src/build.ts packages/create-threenative/__tests__/native-consumer.spec.ts > /tmp/pr185-diagnostics/format.log 2>&1
+          git diff -- packages/create-threenative/src/build.ts packages/create-threenative/__tests__/native-consumer.spec.ts > /tmp/pr185-diagnostics/format.patch
+          cp --parents packages/create-threenative/src/build.ts packages/create-threenative/__tests__/native-consumer.spec.ts /tmp/pr185-diagnostics
+          cp biome.json /tmp/pr185-diagnostics/biome.json
+          cp node_modules/.pnpm/@biomejs+cli-linux-x64@1.9.4/node_modules/@biomejs/cli-linux-x64/biome /tmp/pr185-diagnostics/biome
+          pnpm exec biome check --diagnostic-level=error --max-diagnostics=none packages/create-threenative/src/build.ts packages/create-threenative/__tests__/native-consumer.spec.ts packages/runtime-native/scripts/install-prebuilt.mjs packages/runtime-native/scripts/package-desktop.mjs packages/runtime-native/scripts/package-android.mjs > /tmp/pr185-diagnostics/after.log 2>&1
+      - uses: ./.github/actions/workspace-dist
+      - name: Run actual public caller and existing build tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run packages/create-threenative/__tests__/native-consumer.spec.ts packages/create-threenative/__tests__/build.spec.ts 2>&1 | tee /tmp/pr185-diagnostics/vitest.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr185-packaging-diagnostics
+          path: /tmp/pr185-diagnostics
+          retention-days: 1
+          if-no-files-found: error
