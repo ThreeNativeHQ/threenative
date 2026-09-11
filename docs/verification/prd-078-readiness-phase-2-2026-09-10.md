@@ -121,8 +121,14 @@ ENOENT: no such file or directory, copyfile
 Only a tag push reached that code, so no earlier gate could catch it. The filename is now derived
 from `SDL3_ANDROID_VERSION`, and `scripts/__tests__/native-release-android-staging.spec.ts` requires
 the derivation rather than a matching literal, so the next version bump cannot reintroduce the
-drift. It also binds `download-deps.mjs` to the same constant. Both corrections are executed by the
-hosted build rows recorded below, not by these tests alone.
+drift. It also binds `download-deps.mjs` to the same constant.
+
+The ENOENT was reproduced on this branch's PR run
+[34540703352](https://github.com/ThreeNativeHQ/threenative/actions/runs/34540703352), where
+`build-android` failed at the step named `Stage Android runtime payloads`. That run was itself
+later cancelled by the next push, which is the concurrency defect recorded above. After the repair,
+`build-android` succeeded on runs 34551637777 and 34553793360. Nothing beyond those rows is
+claimed: the desktop Linux row and every packed Android control remain open.
 
 ## Correction: the CLI contract test could not compile
 
@@ -210,6 +216,38 @@ held out solely by `validate-tag` skipping and emitting no `candidate_sha`. They
 against every non-tag route, including that the skip can still propagate: the dependency is declared
 and no `always()`/`!cancelled()` escape overrides it. Their guards were already correct; this is
 coverage, not a repair.
+
+## Correction: proof runs were cancelled before they could report
+
+Over this workflow's entire history — 18 runs — **13 cancelled, 4 failed, 1 in progress, zero
+successes.** Every cancellation was a proof run killed by the next push to its own branch, including
+run 34540703352, the run that reproduced the SDL-AAR ENOENT above. `clean-consumer` sits behind a
+~20 minute build matrix, so on an actively-pushed branch it cannot reach its own first line no
+matter what its timeout is. That is why this sits alongside the timeout raise rather than instead of
+it.
+
+`cancel-in-progress` was `${{ github.ref_type != 'tag' }}`, so every non-tag run was evictable. It
+is now `false`, and `github.event_name` joins the group key because a manual proof on main and an
+automatic one otherwise shared `native-release-refs/heads/main` and evicted each other. Evidence
+here is candidate-keyed, so a superseded run's output is still valid for the SHA it came from and is
+worth letting finish.
+
+Red then green:
+
+```text
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts -t "not cancelled by the next push"
+
+× a proof run is not cancelled by the next push to its own branch
+AssertionError: cancelling every non-tag run is what produced 13 cancellations in 18 runs
+Tests  1 failed | 28 skipped (29)
+EXIT_CODE=1
+```
+
+```text
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts
+Tests  29 passed (29)
+EXIT_CODE=0
+```
 
 ## Hosted evidence and handoff
 

@@ -485,3 +485,21 @@ test("the packed consumer job outlasts its measured comparable", () => {
     `the emulator boot timeout is ${boot}s, too close to the measured 474s cold boot`,
   );
 });
+
+test("a proof run is not cancelled by the next push to its own branch", () => {
+  const concurrency = workflow.split("\nconcurrency:\n")[1]?.split("\njobs:")[0] ?? "";
+  assert.ok(concurrency.length > 0, "the workflow declares no concurrency block");
+  // Measured over this workflow's entire history: 18 runs, 13 cancelled, 4 failed, zero successes.
+  // Every cancellation was a pull_request run killed by the next push to the branch. A consumer job
+  // sitting behind a ~20 minute build matrix cannot survive to completion on an actively-pushed
+  // branch no matter what its own timeout is, and its evidence is candidate-keyed, so a superseded
+  // run's output is still valid for the SHA it was produced from.
+  assert.doesNotMatch(
+    concurrency,
+    /cancel-in-progress:\s*\$\{\{[^}]*ref_type[^}]*\}\}/u,
+    "cancelling every non-tag run is what produced 13 cancellations in 18 runs",
+  );
+  assert.match(concurrency, /cancel-in-progress:\s*false/u);
+  // A manual proof on main and an automatic one must not evict each other.
+  assert.match(concurrency, /group:[^\n]*github\.event_name/u);
+});

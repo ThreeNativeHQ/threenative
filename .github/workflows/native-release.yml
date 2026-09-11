@@ -22,8 +22,16 @@ permissions:
   actions: read
 
 concurrency:
-  group: native-release-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  # Measured over this workflow's entire history: 18 runs, 13 cancelled, 4 failed, zero successes.
+  # Every cancellation was a proof run killed by the next push to its own branch. `clean-consumer`
+  # sits behind a ~20 minute build matrix, so on an actively-pushed branch it cannot reach its own
+  # first line no matter what its timeout is - which is why this sits alongside the timeout raise
+  # rather than instead of it. Evidence here is candidate-keyed, so a superseded run's output is
+  # still valid for the SHA it was produced from and is worth letting finish.
+  # `github.event_name` is in the group because a manual proof on main and an automatic one would
+  # otherwise share `native-release-refs/heads/main` and evict each other.
+  group: native-release-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
 
 jobs:
   validate-tag:

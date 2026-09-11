@@ -142,7 +142,8 @@ Reproduced in run [34546754768](https://github.com/ThreeNativeHQ/threenative/act
 
 ### Phase 5 — Release staging asked for an SDL AAR that no longer existed
 
-Reproduced historically on the only route that reached the step, a tag push.
+Reproduced on this branch's PR run
+[34540703352](https://github.com/ThreeNativeHQ/threenative/actions/runs/34540703352), where `build-android` failed at the step named `Stage Android runtime payloads` before the run was cancelled by the next push. The only tag run in this repository's history (33387137127) died at `gates` with `build-android` skipped, so it never reached the step and is not the reproduction.
 
 **Files (maximum five):**
 
