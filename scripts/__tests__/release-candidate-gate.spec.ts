@@ -573,3 +573,21 @@ describe("release candidate gate", () => {
     ).rejects.toThrow(/normalized|workspace|package/i);
   });
 });
+
+describe("PRD-373 promotion is not release provenance", () => {
+  it.each([
+    { event: "pull_request", headBranch: "promotion/frozen", headSha: CANDIDATE_SHA },
+    { event: "schedule", headBranch: "develop", headSha: CANDIDATE_SHA },
+    { event: "push", headBranch: "main", headSha: "d".repeat(40) },
+  ])("rejects a successful but non-authorizing qualification run: %o", (run) => {
+    const input = candidate();
+    const promoted = {
+      ...input,
+      requiredRuns: { ...input.requiredRuns, ci: { ...input.requiredRuns.ci, ...run } },
+    };
+    const verdict = validateReleaseCandidate(promoted, "ThreeNativeHQ/threenative");
+    expect(verdict.status).toBe("FAIL");
+    expect(verdict.exitCode).toBe(1);
+    expect(verdict.errors.join("\n")).toMatch(/push|main|headSha|candidate/u);
+  });
+});

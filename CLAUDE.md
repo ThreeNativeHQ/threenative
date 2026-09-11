@@ -68,18 +68,29 @@ pnpm native:build                          # opt-in; downloads deps, compiles th
 pnpm native:verify:desktop                 # 300 native frames + a non-blank screenshot
 ```
 
-The pre-push hook runs the bounded `pnpm ci:fast` drift board; it does not run whole-workspace
-typecheck or budgets and never proves runtime correctness. Use `pnpm ci:local` for full local
-verification. A pull request whose complete merge-base diff is only inert Markdown under
-`docs/PRDs/` or `docs/verification/`, excluding agent mirrors and executable Markdown inputs, uses
-the strict prose-only command above and skips compilation, browser/playtest, native and game-matrix
-jobs. Any other diff, plus main, nightly, release and manual invocations, runs the full board. CI
-runs `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, `test`, `test-browser`,
-`test-playtest`, the `golden-path` matrix, and the main/nightly `template-nonvisual` matrix;
-`native-platforms.yml` adds advisory Android, `desktop-parity`, desktop, starter-linux, and iOS
-evidence. **Prove it locally before you push** — CI is the slow lane and a red there costs more than
-a run here. Registry commands take
-the untracked local `.npmrc` explicitly (`npm --userconfig .npmrc <command>`); never print it.
+The pre-push hook runs bounded `pnpm ci:fast` drift checks and reports the shared classifier's
+selection; it never proves runtime correctness. `pnpm ci:local --full` runs the full local board.
+`pnpm ci:local --affected --base origin/develop --target develop` runs the same selected local
+families as CI; dirty, missing or unknown inputs fail safe to full. `scripts/ci-change-scope.mjs`
+uses the complete merge-base diff, including deleted files and both rename endpoints. Only
+explicit inert prose, root/playtest instruction contracts and isolated website consumers are exempt from
+native work; shared/package/template/dependency/CI changes remain full. Main PRs, main pushes,
+nightly and manual qualification are full. `ci-required` rejects missing or unsuccessful selected
+checks; full coverage retains `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, unit/browser/
+playtest gates, `golden-path`, `template-nonvisual`, and the required `native-platforms.yml` matrix including
+`desktop-parity`. Never cache test verdicts.
+
+**PRD-373 cutover is staged.** Until a qualified main has created a protected develop requiring
+`ci-required`, keep feature PRs based on main. After the owner enables `TN_DEVELOP_CI_ENABLED`,
+create feature branches/PRs from develop, squash feature merges there, and set each checkout's
+`git config threenative.integrationBranch develop`. Main takes full-checked frozen
+`promotion/<full-head-sha>` PRs with merge commits (never squash/rebase), or full-checked `hotfix/`
+PRs merged back to develop. Inventory `gh pr list` and `pnpm worktree:status` before cutover;
+retarget only with each owner's agreement, and never rewrite another worktree. Keep the existing
+release gates and exact-main push qualification. The activation and rollback procedure is in
+`docs/PRDs/production-readiness/PRD-373-selective-ci-and-develop-promotion.md`.
+**Prove it locally before you push** and record unrun platform gates honestly. Registry commands
+take the untracked local `.npmrc` explicitly (`npm --userconfig .npmrc <command>`); never print it.
 
 TypeScript 5.9 `strict`, **ESM only**; relative imports carry `.js` even though the file is `.ts`. Versions come from the `catalog:` in `pnpm-workspace.yaml`, templates excepted. Biome owns formatting — do not hand-format. Interfaces are `I`-prefixed, classes and type aliases are not. Unit tests are `<package>/__tests__/*.spec.ts`, vitest, node environment, DOM and GPU stubbed.
 

@@ -559,7 +559,12 @@ async function commitScopeChange(
   return fixture.git(["rev-parse", "HEAD"]);
 }
 
-function classifyScope(root: string, base: string, head: string): Record<string, unknown> {
+function classifyScope(
+  root: string,
+  base: string,
+  head: string,
+  extra: readonly string[] = [],
+): Record<string, unknown> {
   const result = spawnSync(
     process.execPath,
     [
@@ -574,6 +579,7 @@ function classifyScope(root: string, base: string, head: string): Record<string,
       head,
       "--format",
       "json",
+      ...extra,
     ],
     { encoding: "utf8", env: isolatedGitEnvironment() },
   );
@@ -609,13 +615,13 @@ describe("CI pipeline structure", () => {
       const job = requiredJob(ci, name);
       expect(job, `${name} does not wait for scope`).toContain("scope");
       expect(job, `${name} does not select the full board explicitly`).toContain(
-        "needs.scope.outputs.selection != 'prose'",
+        "needs.scope.outputs.selection == 'full'",
       );
     }
 
     const lint = requiredJob(ci, "lint");
     expect(lint).toContain("needs: scope");
-    expect(lint).toContain("Run the prose-only documentation and evidence gates");
+    expect(lint).toContain("Run the selected documentation and evidence gates");
     expect(lint).toContain("pnpm check:docs");
     expect(lint).toContain("scripts/__tests__/evidence-citations.spec.ts");
     expect(lint).toContain("scripts/__tests__/ci-needs.spec.ts");
@@ -640,11 +646,11 @@ describe("CI pipeline structure", () => {
     ]) {
       expect(requiredJob(native, name), `${name} does not use shared scope`).toContain("scope");
       expect(requiredJob(native, name), `${name} has no prose exemption`).toContain(
-        "needs.scope.outputs.selection != 'prose'",
+        "needs.scope.outputs.selection == 'full'",
       );
     }
     const performanceCoverage = requiredJob(native, "performance-coverage");
-    expect(performanceCoverage).toContain("needs.scope.outputs.selection != 'prose'");
+    expect(performanceCoverage).toContain("needs.scope.outputs.selection == 'full'");
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
@@ -660,7 +666,7 @@ describe("CI pipeline structure", () => {
     );
     expect(performance).toContain("TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}");
     expect(performance).toContain('required_lanes=""');
-    expect(performance).toContain('if [ "$TN_CI_SCOPE" != prose ]; then');
+    expect(performance).toContain('if [ "$TN_CI_SCOPE" = full ]; then');
     expect(performance).toContain('required_lanes="performance-contracts,native-linux-contract"');
     expect(performance).toContain('--required-lanes "$required_lanes"');
     expect(performance).not.toContain(
@@ -871,13 +877,13 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("keeps ordinary CI scoped to main and serializes release lanes", async () => {
+  it("preserves main qualification while enabling develop PRs and serializes release lanes", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
     const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
     expect(ci).toMatch(/push:\n\s+branches:\n\s+- main/u);
     expect(ci).toMatch(/pull_request:\n\s+branches:\n\s+- main/u);
-    expect(ci).toContain("group: ci-${{ github.ref }}");
+    expect(ci).toContain("group: ci-${{ github.event_name }}-${{ github.ref }}");
     expect(native).toContain("group: native-release-${{ github.ref }}");
     expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
     expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
@@ -1230,10 +1236,8 @@ describe("CI pipeline structure", () => {
     // Secret scanning remains on prose-only PRs: Markdown can contain credentials even when it
     // does not alter executable behavior.
     expect(supplyChain).toContain("needs: scope");
-    expect(supplyChain).not.toContain("needs.scope.outputs.selection != 'prose'");
-    expect(supplyChain).toContain(
-      "(github.event_name == 'pull_request' || github.event_name == 'push')",
-    );
+    expect(supplyChain).not.toContain("needs.scope.outputs.selection == 'full'");
+    expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head
     // ref, which a push does not supply, and ungating it made every push-to-main run red.
@@ -1423,7 +1427,8 @@ describe("CI pipeline structure", () => {
     expect(build, "build does not publish the packed tarballs").toContain(
       "actions/upload-artifact",
     );
-    expect(build).toContain("pnpm tsx scripts/workspace-packages.ts --archives");
+    expect(build).toContain("uses: ./.github/actions/workspace-dist");
+    expect(build).not.toContain("pnpm tsx scripts/workspace-packages.ts --archives");
 
     for (const name of ["golden-path-template", "template-nonvisual"]) {
       const job = requiredJob(ci, name);
@@ -1845,7 +1850,7 @@ describe("CI pipeline structure", () => {
     expect(producerCommands, "web reference is an orphan on unlabelled pull requests").toContain(
       [
         "if: >-",
-        "      needs.scope.outputs.selection != 'prose' &&",
+        "      needs.scope.outputs.selection == 'full' &&",
         "      inputs.ios_only == false",
       ].join("\n"),
     );
@@ -1857,7 +1862,7 @@ describe("CI pipeline structure", () => {
       labelGate,
     );
     expect(producer).toContain("actions/upload-artifact");
-    expect(producer).toContain("native-web-reference-${{ github.sha }}");
+    expect(producer).toContain("native-web-reference-${{ needs.scope.outputs.candidate_sha }}");
     expect(producer).toContain("if-no-files-found: error");
     expect(producer).toContain("check-lane-blocks.mjs");
 
@@ -1866,30 +1871,17 @@ describe("CI pipeline structure", () => {
       ["desktop", desktop],
     ] as const) {
       const consumer = commands(section);
-      // Both consumers share the scope and dispatch conditions; they differ only in the label,
-      // which `desktop-parity` still carries and `android-emulator-parity` shed on 2026-09-06.
+      // Both consumers share the caller-owned full scope and explicit dispatch conditions.
       // Matched against the comment-stripped section for the reason given above the producer's
       // assertion: the comments here quote the very gate being asserted absent.
       expect(consumer, `${name} eligibility drifted from the web producer`).toContain(
         [
           "if: >-",
-          "      needs.scope.outputs.selection != 'prose' &&",
+          "      needs.scope.outputs.selection == 'full' &&",
           "      inputs.ios_only != true",
         ].join("\n"),
       );
-      if (name === "desktop") {
-        expect(consumer, `${name} lost the label gate it is meant to keep`).toContain(
-          [
-            "      (github.event_name != 'pull_request' ||",
-            "       contains(github.event.pull_request.labels.*.name, 'native'))",
-          ].join("\n"),
-        );
-      } else {
-        expect(
-          consumer,
-          `${name} regained a label gate the web producer does not carry`,
-        ).not.toContain(labelGate);
-      }
+      expect(consumer, `${name} overrides the caller's full selection`).not.toContain(labelGate);
       expect(section, `${name} is not ordered behind the producer`).toContain(
         "needs: [scope, web-reference]",
       );
@@ -1897,7 +1889,7 @@ describe("CI pipeline structure", () => {
         "actions/download-artifact",
       );
       expect(section, `${name} can download another commit's reference`).toContain(
-        "native-web-reference-${{ github.sha }}",
+        "native-web-reference-${{ needs.scope.outputs.candidate_sha }}",
       );
       expect(section, `${name} does not validate its downloaded reference`).toContain(
         "check-lane-blocks.mjs",
@@ -2009,36 +2001,15 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("runs every native leg in the reusable invocation, bar the two that crowd the pool", async () => {
-    // The primary CI workflow owns push, pull-request, and nightly scheduling. Keeping those
-    // triggers in this reusable workflow too would run the same 24-minute matrix twice.
-    //
-    // Two legs were gated again as of 2026-09-03, and the reason was a measurement the earlier
-    // call did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s:
-    // together 84 of the ~130 runner-minutes this workflow spends per pull request, against ~60
-    // for all of CI, on one shared pool. On run 33782776626 CI took 457s while its longest job was
-    // 332s — the difference is its own 26 jobs queueing against slots these two legs were holding.
-    //
-    // `android-emulator-parity` is ungated again as of 2026-09-06, and only that leg. The cost
-    // measurement above still stands, but the clause carrying it was "both are red on main today":
-    // minutes spent on a leg that cannot produce a result are what made the trade lopsided. That
-    // leg was red for a reason unrelated to any pull request's diff — `stb` is fetched fresh from
-    // raw.githubusercontent.com on every run, unauthenticated, and returned 429 on run
-    // 34078916876, so `Install Android build prerequisites` exited 1 and the emulator never
-    // booted. With the fetch retried and authenticated the leg produces a result, and a reporting
-    // advisory leg is worth its 31 runner-minutes where an always-red one was not.
-    //
-    // `desktop-parity` stays gated: it is the larger half of those 84 minutes and nothing has made
-    // it green.
-    //
-    // Every other leg keeps the old rule. The only other conditions any leg may carry are the
-    // manual `ios_only` dispatch toggle and the prose-only `scope` skip.
+  it("runs every selected native leg without independent label exemptions", async () => {
+    // PRD-373 moves safe exemptions to the caller. Full includes desktop parity; a label must
+    // not silently turn a promotion's full qualification into partial native evidence.
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const gated = ["desktop-parity"] as const;
     const ungated = [
+      "desktop-parity",
       "android-emulator-parity",
       "desktop",
       "ios-simulator",
@@ -2049,21 +2020,6 @@ describe("CI pipeline structure", () => {
       const job = requiredJob(native, name);
       expect(job, name).not.toContain("github.event_name != 'pull_request'");
       expect(job, name).not.toContain("contains(github.event.pull_request.labels");
-    }
-
-    for (const name of gated) {
-      const job = requiredJob(native, name);
-      // A label gate and nothing else. Anything narrower — a path filter, a branch test — is the
-      // silent skip the 2026-09-01 call was made against, and would let a change through unproven
-      // rather than merely later.
-      expect(job, name).toContain("contains(github.event.pull_request.labels.*.name, 'native')");
-      expect(job, name).toContain("github.event_name != 'pull_request'");
-      expect(job, `${name} skips on a path filter rather than a label`).not.toMatch(
-        /paths(-ignore)?:/u,
-      );
-      expect(job, `${name} no longer runs on pushes to main`).not.toContain(
-        "github.ref == 'refs/heads/main'",
-      );
     }
 
     // The reusable workflow is invoked by ci.yml for every non-prose board selection.
@@ -2155,35 +2111,16 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("the golden-path proof cache cannot record a run that failed", async () => {
+  it("runs selected golden-path evidence again instead of caching test verdicts", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "golden-path-template");
-
-    // The combined `actions/cache` writes its entry in a post step whatever the job did, which
-    // would stamp a passing proof onto a failed run and then skip the lane for every later tree
-    // that hashes the same. Split restore/save with `if: success()` is the whole safety property.
-    expect(job).toContain("actions/cache/restore@v4");
-    expect(job).toContain("actions/cache/save@v4");
-    expect(job).not.toMatch(/uses: actions\/cache@v4/u);
-    const save = job.slice(job.indexOf("Save the proof for this tree"));
-    expect(save).toContain("if: success() && steps.proof.outputs.cache-hit != 'true'");
-
-    // A key that names only the "related" inputs is one forgotten file away from a gate that
-    // passes because nothing ran — which is how the native-platforms path filters let core,
-    // playtest and create-threenative changes through unproven. Keep it broad.
-    for (const input of ["pnpm-lock.yaml", "packages/**", "scripts/**", ".github/**"]) {
-      expect(job, input).toContain(input);
-    }
-
-    // Every step that does work must be behind the hit check. One that is not runs against a
-    // scaffold the cache hit never created.
-    const steps = job.split(/^ {6}- /mu).slice(1);
-    const unguarded = steps.filter(
-      (step) =>
-        /(?:pnpm |threenative-playtest|scaffold-from-tarballs|playwright)/u.test(step) &&
-        !step.includes("steps.proof.outputs.cache-hit"),
-    );
-    expect(unguarded, "steps that would run without a scaffold on a cache hit").toEqual([]);
+    expect(job).not.toContain(".golden-path-proof");
+    expect(job).not.toContain("steps.proof.outputs");
+    expect(job).not.toContain("Save the proof for this tree");
+    expect(job).toContain("uses: ./.github/actions/playwright-chromium");
+    expect(job).toContain("scaffold-from-tarballs");
+    expect(job).toContain("needs.scope.outputs.selection == 'full'");
+    expect(job).toContain("run: pnpm verify:golden-path");
   });
 
   it("the golden-path required context is still reported by a job of that exact name", async () => {
@@ -2199,8 +2136,12 @@ describe("CI pipeline structure", () => {
     // satisfied — the ruleset would pass on exactly the runs it exists to stop. `always()` is the
     // wrong spelling: it also fires when the run was cancelled, where the matrix result is
     // `cancelled` and this job then reported failure on a run nobody had broken.
-    expect(aggregate).toContain("if: ${{ !cancelled() }}");
-    expect(aggregate).toContain('echo "golden-path templates: not applicable (prose-only change)"');
+    expect(aggregate).toContain(
+      "if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}",
+    );
+    expect(aggregate).toContain(
+      'echo "golden-path templates: not applicable (explicit selective exemption)"',
+    );
     expect(aggregate).toContain("needs.scope.outputs.selection");
     expect(aggregate).not.toMatch(/if: always\(\)/u);
     expect(aggregate).toContain("needs.golden-path-template.result");
@@ -2783,5 +2724,144 @@ describe("CI pipeline structure", () => {
     expect(
       manifest.lanes.filter(({ provisioning }) => provisioning === "unprovisioned"),
     ).toHaveLength(6);
+  });
+});
+
+describe("PRD-373 selective feature verification", () => {
+  it.each([
+    ["docs/PRDs/inert.md", "prose"],
+    ["AGENTS.md", "instructions"],
+    ["packages/playtest/CLAUDE.md", "instructions"],
+    ["site/src/components/Hero.tsx", "website"],
+    ["site/e2e/drawer.spec.ts", "website"],
+  ])("selects %s on develop without scheduling native", async (relative, selection) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "changed\n", "feature");
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan).toMatchObject({ version: 1, selection });
+      const jobs = plan.jobs as Record<string, { required: boolean; reason: string }>;
+      expect(jobs["native-platforms"]).toMatchObject({ required: false });
+      expect(jobs["native-platforms"]?.reason.length).toBeGreaterThan(10);
+      expect(jobs["supply-chain"]?.required).toBe(true);
+      expect(jobs.lint?.required).toBe(true);
+      expect(jobs.website?.required).toBe(selection === "website");
+      expect((plan.checks as Record<string, boolean>).instructions).toBe(
+        selection === "instructions",
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "packages/core/src/index.ts",
+    "packages/playtest/src/runner/cli.ts",
+    "packages/create-threenative/templates/starter/src/game.ts",
+    "packages/runtime-native/native/CMakeLists.txt",
+    "packages/physics/src/index.ts",
+    "examples/native-smoke/src/index.ts",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "site/package.json",
+    "tsconfig.base.json",
+    ".github/workflows/ci.yml",
+    "some-new-folder/unknown.md",
+    "packages/runtime-native/AGENTS.md",
+    "templates/topdown/CLAUDE.md",
+  ])("retains all consumers and native checks for %s", async (relative) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan.selection).toBe("full");
+      expect(plan.jobs).toMatchObject({
+        "native-platforms": { required: true },
+        "test-native": { required: true },
+        "golden-path-template": { required: true },
+        "template-nonvisual": { required: true },
+        website: { required: true },
+      });
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("never narrows main promotions, unknown targets or manual full runs", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, "docs/PRDs/inert.md", "changed\n", "docs");
+      for (const extra of [
+        ["--target", "main"],
+        ["--target", "release"],
+        ["--target", "develop", "--full"],
+      ]) {
+        expect(classifyScope(fixture.root, fixture.base, head, extra).selection).toBe("full");
+      }
+      for (const event of ["push", "schedule", "workflow_dispatch", "merge_group"]) {
+        expect(
+          classifyScope(fixture.root, fixture.base, head, [
+            "--target",
+            "develop",
+            "--event-name",
+            event,
+          ]).selection,
+        ).toBe("full");
+      }
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("unions docs, instructions and website checks without losing either rename endpoint", async () => {
+    const fixture = await scopeFixture();
+    try {
+      await commitScopeChange(fixture, "site/src/old.ts", "export const old = 1;\n", "site");
+      await commitScopeChange(fixture, "AGENTS.md", "instructions\n", "agents");
+      let head = fixture.git(["rev-parse", "HEAD"]);
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]),
+      ).toMatchObject({
+        selection: "mixed",
+        checks: { instructions: true, website: true },
+        jobs: { website: { required: true }, "native-platforms": { required: false } },
+      });
+      await mkdir(path.join(fixture.root, "packages/core/src"), { recursive: true });
+      fixture.git(["mv", "site/src/old.ts", "packages/core/src/moved.ts"]);
+      fixture.git(["commit", "--quiet", "-m", "rename into shared runtime"]);
+      head = fixture.git(["rev-parse", "HEAD"]);
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
+      ).toBe("full");
+      const beforeDelete = head;
+      fixture.git(["rm", "packages/core/src/moved.ts"]);
+      fixture.git(["commit", "--quiet", "-m", "delete shared runtime"]);
+      expect(
+        classifyScope(fixture.root, beforeDelete, "HEAD", ["--target", "develop"]).selection,
+      ).toBe("full");
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not hide shared changes in an earlier commit or an unresolved local diff", async () => {
+    const fixture = await scopeFixture();
+    try {
+      await commitScopeChange(fixture, "packages/core/src/changed.ts", "export {};\n", "runtime");
+      const head = await commitScopeChange(fixture, "docs/PRDs/inert.md", "latest prose\n", "docs");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
+      ).toBe("full");
+      expect(
+        classifyScope(fixture.root, "unknown-base", head, ["--target", "develop"]).selection,
+      ).toBe("full");
+      await writeFile(path.join(fixture.root, "untracked-input.ts"), "export {};\n");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop", "--local"])
+          .selection,
+      ).toBe("full");
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
   });
 });

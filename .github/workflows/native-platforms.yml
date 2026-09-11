@@ -21,13 +21,21 @@ on:
         default: false
   workflow_call:
     inputs:
+      selection_plan:
+        description: Validated caller selection; empty manual calls fail safe to full coverage.
+        type: string
+        default: ""
+      candidate_sha:
+        description: Immutable source commit captured once by CI scope.
+        type: string
+        default: ""
       ios_only:
         required: false
         type: boolean
         default: false
 
 concurrency:
-  group: native-platforms-${{ github.ref }}
+  group: native-platforms-${{ github.event_name }}-${{ github.ref }}-${{ github.run_id }}
   # Superseded PR runs are dead weight — cancel them. A push to main is not supersession: this
   # lane exists to produce platform evidence, and at this repository's push cadence (~20 minutes)
   # against this lane's runtime (27-45 minutes) cancel-in-progress killed every main run before
@@ -42,49 +50,53 @@ permissions:
   contents: read
 
 jobs:
-  # The native lane shares ci.yml's fail-closed merge-base classifier. Non-PR events are always
-  # full, which preserves scheduled, workflow-call and manual platform evidence.
+  # The caller is the single selection authority. Dispatch has no exemption inputs and is full.
   scope:
-    name: Change scope
+    name: Validate caller selection and candidate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
       selection: ${{ steps.classify.outputs.selection }}
       reason: ${{ steps.classify.outputs.reason }}
+      plan: ${{ steps.classify.outputs.plan }}
+      candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          ref: ${{ inputs.candidate_sha || github.sha }}
       - id: classify
-        name: Classify the complete pull-request diff
         env:
-          TN_CI_EVENT: ${{ github.event_name }}
-          TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
-          TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+          TN_CI_PLAN: ${{ inputs.selection_plan }}
         run: |
           set -euo pipefail
-          node scripts/ci-change-scope.mjs \
-            --event-name "$TN_CI_EVENT" \
-            --base "$TN_CI_BASE" \
-            --head "$TN_CI_HEAD" \
-            --format github | tee "$RUNNER_TEMP/ci-scope.outputs"
+          candidate="$(git rev-parse HEAD)"
+          if [ -n "$TN_CI_PLAN" ]; then
+            node scripts/ci-change-scope.mjs --validate-plan "$TN_CI_PLAN" --format github > "$RUNNER_TEMP/ci-scope.outputs"
+          else
+            node scripts/ci-change-scope.mjs --full --candidate-sha "$candidate" --format github > "$RUNNER_TEMP/ci-scope.outputs"
+          fi
+          grep -Fx "candidate_sha=$candidate" "$RUNNER_TEMP/ci-scope.outputs"
           cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
 
   web-reference:
     needs: scope
     name: Commit-keyed web conformance reference
     # Ungated on pull requests with android-emulator-parity, which needs this reference to compare
-    # against and would otherwise skip with it. desktop-parity also needs it and stays gated; a
+    # against and would otherwise skip with it. desktop-parity also needs it; a
     # skipped dependant does not force this job to run, so the cost here is one browser capture on
     # pull requests that previously ran none. The prose-only scope skip is unrelated and kept.
     if: >-
-      needs.scope.outputs.selection != 'prose' &&
+      needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -111,18 +123,22 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: native-web-reference-${{ github.sha }}
+          name: native-web-reference-${{ needs.scope.outputs.candidate_sha }}
           path: packages/runtime-native/artifacts/conformance/web
           if-no-files-found: error
 
   performance-coverage:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
-    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+    if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -144,16 +160,20 @@ jobs:
             --manifest scripts/performance-regression/lanes.json \
             --coverage desktop-parity,Windows,macOS,android-emulator,ios-simulator \
             --required-lanes "$TN_PERF_REQUIRED_DESKTOP" \
-            --expected-sha "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+            --expected-sha "$TN_CI_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
 
   networking-matrix:
     name: Networking qualification matrix
-    needs: [android-emulator-parity, desktop-parity, desktop, ios-simulator]
-    if: always()
+    needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
+    if: ${{ always() && needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       # The aggregator is plain Node with no dependencies, so this job needs no pnpm
       # install and no toolchain setup. Its own suite already runs in CI's test-unit
       # shards; re-running it here would only duplicate that work.
@@ -211,12 +231,16 @@ jobs:
     # Restoring the label gate is the same `if` desktop-parity still carries. The prose-only
     # scope skip is unrelated and kept.
     if: >-
-      needs.scope.outputs.selection != 'prose' &&
+      needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -257,7 +281,7 @@ jobs:
             ${{ env.ANDROID_SDK_ROOT }}/ndk/27.1.12297006
             ${{ env.ANDROID_SDK_ROOT }}/system-images/android-35
             ${{ env.ANDROID_SDK_ROOT }}/emulator
-          key: android-sdk-35-ndk27.1.12297006-${{ runner.os }}
+          key: android-sdk-35-ndk27.1.12297006-${{ runner.os }}-${{ runner.arch }}
       - name: Restore the Gradle caches
         uses: actions/cache@v4
         with:
@@ -289,7 +313,7 @@ jobs:
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
         with:
-          name: native-web-reference-${{ github.sha }}
+          name: native-web-reference-${{ needs.scope.outputs.candidate_sha }}
           path: packages/runtime-native/artifacts/conformance/web
       - name: Verify the downloaded browser reference
         run: |
@@ -436,7 +460,7 @@ jobs:
           fi
           set -e
           printf '{"collectorExitCode":%s,"sourceSha":"%s","provenance":"android-emulator","status":"%s"}\n' \
-            "$status" "$GITHUB_SHA" "$([ "$status" -eq 0 ] && echo UNVERIFIED || echo BLOCKED)" \
+            "$status" "$TN_CI_SHA" "$([ "$status" -eq 0 ] && echo UNVERIFIED || echo BLOCKED)" \
             > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-status.json
           node packages/runtime-native/scripts/production-evidence.mjs \
             > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-contract.json
@@ -474,7 +498,7 @@ jobs:
             writeFileSync(
               join(outDir, "pump-silence-structural.json"),
               `${JSON.stringify(
-                { provenance: "android-emulator", sourceSha: process.env.GITHUB_SHA, ...payload },
+                { provenance: "android-emulator", sourceSha: process.env.TN_CI_SHA, ...payload },
                 null,
                 2,
               )}\n`,
@@ -584,34 +608,17 @@ jobs:
           if-no-files-found: error
 
   desktop-parity:
-    name: Desktop web/native parity
     needs: [scope, web-reference]
-    # Runs on every event except an unlabelled pull request — the only two legs that are gated,
-    # and the numbers behind it rather than a preference:
-    #
-    #   desktop-parity            3173s   android-emulator-parity   1858s
-    #
-    # 84 of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
-    # CI, on the same pool. That pool is what CI's wall clock is made of: on run 33782776626 the
-    # run took 457s while its longest job was 332s, and CI's own 26 jobs were queueing against
-    # ~10 slots that these legs were also holding.
-    #
-    # What that buys on a pull request is less than it looks. Both legs are advisory rather than
-    # required, both are red on main today, and both report 30-53 minutes after a pull request
-    # opens — long after CI is green and the pull request has been read. Evidence that arrives
-    # after the decision is not gating the decision.
-    #
-    # They still run on every push to main, every night, and on any pull request labelled
-    # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
-    # them back on every pull request.
+    # Full selection means full native coverage, including promotion PRs. Previously a label
+    # could suppress this leg independently of the caller's decision. Inert develop changes now
+    # avoid the whole native family instead of paying for a partial native qualification.
     if: >-
-      needs.scope.outputs.selection != 'prose' &&
-      inputs.ios_only != true &&
-      (github.event_name != 'pull_request' ||
-       contains(github.event.pull_request.labels.*.name, 'native'))
+      needs.scope.outputs.selection == 'full' &&
+      inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
       # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
       # after five runs, and every job recompiled from scratch while the workflow read as though
@@ -632,6 +639,8 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - name: Restore native third-party dependencies
         uses: actions/cache@v4
         with:
@@ -663,7 +672,7 @@ jobs:
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
         with:
-          name: native-web-reference-${{ github.sha }}
+          name: native-web-reference-${{ needs.scope.outputs.candidate_sha }}
           path: packages/runtime-native/artifacts/conformance/web
       - name: Verify the downloaded browser reference
         run: |
@@ -756,7 +765,7 @@ jobs:
           fi
           set -e
           printf '{"collectorExitCode":%s,"sourceSha":"%s","status":"%s"}\n' \
-            "$status" "$GITHUB_SHA" "$([ "$status" -eq 0 ] && echo PASS || echo BLOCKED)" \
+            "$status" "$TN_CI_SHA" "$([ "$status" -eq 0 ] && echo PASS || echo BLOCKED)" \
             > packages/runtime-native/artifacts/performance-contract/desktop-parity/collector-status.json
           node packages/runtime-native/scripts/production-evidence.mjs \
             > packages/runtime-native/artifacts/performance-contract/desktop-parity/collector-contract.json
@@ -775,7 +784,7 @@ jobs:
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity. The only
     # remaining gate is the manual `ios_only` dispatch toggle, which exists to run the iOS lane
     # alone; it is not a skip of the default flow.
-    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
+    if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -787,6 +796,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
       # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
       # after five runs, and every job recompiled from scratch while the workflow read as though
@@ -807,6 +817,8 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - name: Restore native third-party dependencies
         uses: actions/cache@v4
         with:
@@ -966,10 +978,11 @@ jobs:
   starter-linux:
     name: Scaffolded starter desktop artifact
     needs: scope
-    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
+    if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
       # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
       # after five runs, and every job recompiled from scratch while the workflow read as though
@@ -990,6 +1003,8 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - name: Restore native third-party dependencies
         uses: actions/cache@v4
         with:
@@ -1073,7 +1088,7 @@ jobs:
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
     needs: scope
-    if: needs.scope.outputs.selection != 'prose'
+    if: needs.scope.outputs.selection == 'full'
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60
@@ -1081,8 +1096,12 @@ jobs:
     # 33498394620 on 2026-09-01, including the worker proof, package telemetry, and consumer
     # physics scenarios. The job is fail-closed: a later regression is visible immediately on
     # every PR and every push, with no label to remember and no lane to opt into.
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:

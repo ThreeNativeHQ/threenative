@@ -16,6 +16,12 @@ cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 log_root="${TN_CI_FAST_LOGS:-$(mktemp -d /tmp/tn-ci-fast.XXXXXX)}"
 mkdir -p "$log_root"
 
+# Report the same complete-diff decision as CI without pretending this bounded hook runs it.
+target="${TN_CI_TARGET:-$(git config --get threenative.integrationBranch || echo main)}"
+if ! node scripts/ci-change-scope.mjs --event pull_request --target "$target" \
+  --base "${TN_CI_BASE:-origin/$target}" --head "${TN_CI_HEAD:-HEAD}" --local; then exit 2; fi
+echo 'ci:fast is bounded drift verification only; use ci:local --affected or --full for selected local checks. Native platforms are not executed here.'
+
 declare -a names=() cmds=()
 add() { names+=("$1"); cmds+=("$2"); }
 add lint      'pnpm lint'

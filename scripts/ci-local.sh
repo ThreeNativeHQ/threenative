@@ -9,24 +9,69 @@
 # Everything else — spec drift, hash drift, doc links, lint, budgets — reproduces exactly.
 set -u
 cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
-only="${1:-}"
+only=""
+affected=false
+target="${TN_CI_TARGET:-$(git config --get threenative.integrationBranch || echo main)}"
+base="${TN_CI_BASE:-}"
+head="${TN_CI_HEAD:-HEAD}"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --affected) affected=true ;;
+    --full) affected=false ;;
+    --base|--head|--target)
+      if [ "$#" -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "TN_CI_LOCAL_ARGUMENT: $1 requires a value" >&2; exit 2
+      fi
+      case "$1" in --base) base="$2" ;; --head) head="$2" ;; --target) target="$2" ;; esac
+      shift ;;
+    --*) echo "TN_CI_LOCAL_ARGUMENT: unknown option $1" >&2; exit 2 ;;
+    *) if [ -n "$only" ]; then echo 'TN_CI_LOCAL_ARGUMENT: only one focused job is allowed' >&2; exit 2; fi; only="$1" ;;
+  esac
+  shift
+done
+if [ "$affected" = true ] && [ -n "$only" ]; then
+  echo 'TN_CI_LOCAL_ARGUMENT: use a focused job or --affected, not both' >&2; exit 2
+fi
+base="${base:-origin/$target}"
 log_root="${TN_CI_LOCAL_LOGS:-$(mktemp -d /tmp/tn-ci-local.XXXXXX)}"
 mkdir -p "$log_root"
 echo "logs: $log_root"
 
+# One classifier for hosted and local runs. Dirty/unresolved inputs select the full board.
+scope_args=(--full)
+if [ "$affected" = true ]; then
+  scope_args=(--event pull_request --target "$target" --base "$base" --head "$head" --local)
+fi
+if ! node scripts/ci-change-scope.mjs "${scope_args[@]}" --format json > "$log_root/selection.json"; then exit 2; fi
+if ! node scripts/ci-change-scope.mjs --validate-plan "$(cat "$log_root/selection.json")"; then exit 2; fi
+selection="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).selection)' "$log_root/selection.json")" || exit 2
+case "$selection" in full|prose|instructions|website|mixed) ;; *) echo 'TN_CI_LOCAL_INVALID_SELECTION' >&2; exit 2 ;; esac
+
 declare -a names=() cmds=()
 add() { names+=("$1"); cmds+=("$2"); }
 
-add build     'pnpm build && pnpm exec tsx scripts/check-core-boundary.ts'
-add typecheck 'pnpm typecheck'
-add lint      'pnpm lint'
-add budgets   'pnpm budgets && pnpm quality && pnpm sync:agents --check'
-add test      'TN_SUITE_PREBUILT=1 TN_SUITE_PHASES=docs,package-test,unit pnpm test'
-add benchmark 'pnpm tsx scripts/count-loc.ts --check && pnpm --filter abyss-vanilla build && pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts'
-add test-playtest 'pnpm test:playtest:ci'
-add test-browser  'sh scripts/xvfb.sh pnpm test:browser'
-add golden-path   'TN_PLAYTEST_ALLOW_SOFTWARE=1 pnpm verify:golden-path'
-add visuals       'pnpm visuals'
+if [ "$selection" = full ]; then
+  add build     'pnpm build && pnpm exec tsx scripts/check-core-boundary.ts'
+  add typecheck 'pnpm typecheck'
+  add lint      'pnpm lint'
+  add budgets   'pnpm budgets && pnpm quality && pnpm sync:agents --check'
+  add test      'TN_SUITE_PREBUILT=1 TN_SUITE_PHASES=docs,package-test,unit pnpm test'
+  add benchmark 'pnpm tsx scripts/count-loc.ts --check && pnpm --filter abyss-vanilla build && pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts'
+  add test-playtest 'pnpm test:playtest:ci'
+  add test-browser  'sh scripts/xvfb.sh pnpm test:browser'
+  add golden-path   'TN_PLAYTEST_ALLOW_SOFTWARE=1 pnpm verify:golden-path'
+  add visuals       'pnpm visuals'
+
+else
+  add lint 'pnpm lint'
+  add docs 'pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/evidence-budget.spec.ts scripts/__tests__/evidence-citations.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts'
+  if [ "$selection" = instructions ] || [ "$selection" = mixed ]; then
+    add agents 'pnpm sync:agents --check && pnpm exec vitest run scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts'
+  fi
+  if [ "$selection" = website ] || [ "$selection" = mixed ]; then
+    add website 'pnpm --filter threenative-site typecheck && pnpm --filter threenative-site build && pnpm --filter threenative-site exec vitest run && pnpm --filter threenative-site exec playwright test --config=playwright.config.ts'
+  fi
+fi
 
 case "$only" in
   ""|build|typecheck|lint|budgets|test|benchmark|test-playtest|test-browser|golden-path|visuals)

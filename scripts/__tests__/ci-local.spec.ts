@@ -171,3 +171,93 @@ describe("ci-local build contract", () => {
     }
   });
 });
+
+describe("PRD-373 local selection", () => {
+  async function selected(file: string, extra: string[] = []) {
+    const fixture = await recorderRoot();
+    await mkdir(path.join(fixture.root, "scripts"), { recursive: true });
+    for (const name of ["ci-local.sh", "ci-change-scope.mjs"]) {
+      await copyFile(path.join(repo, "scripts", name), path.join(fixture.root, "scripts", name));
+    }
+    await writeFile(path.join(fixture.root, "scripts/xvfb.sh"), '#!/bin/sh\nexec "$@"\n');
+    await writeFile(path.join(fixture.root, ".gitignore"), "bin/\ntrace.log\nlogs/\n");
+    const git = (...args: string[]) => {
+      const result = spawnSync("git", args, { cwd: fixture.root, encoding: "utf8" });
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout.trim();
+    };
+    git("init", "-q");
+    git("config", "user.email", "ci@example.invalid");
+    git("config", "user.name", "CI fixture");
+    git("add", ".");
+    git("commit", "-qm", "base");
+    const base = git("rev-parse", "HEAD");
+    await mkdir(path.dirname(path.join(fixture.root, file)), { recursive: true });
+    await writeFile(path.join(fixture.root, file), "fixture\n");
+    git("add", ".");
+    git("commit", "-qm", "feature");
+    const result = spawnSync(
+      "bash",
+      [
+        "scripts/ci-local.sh",
+        "--affected",
+        "--target",
+        "develop",
+        "--base",
+        base,
+        "--head",
+        "HEAD",
+        ...extra,
+      ],
+      {
+        cwd: fixture.root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${fixture.bin}:${process.env.PATH}`,
+          TN_CI_LOCAL_LOGS: path.join(fixture.root, "logs"),
+          TN_CI_LOCAL_TRACE: fixture.trace,
+        },
+      },
+    );
+    const trace = await readFile(fixture.trace, "utf8").catch(() => "");
+    await rm(fixture.root, { recursive: true, force: true });
+    return { ...result, trace };
+  }
+
+  it("runs only documentation checks for a committed develop prose diff", async () => {
+    const result = await selected("docs/PRDs/fixture.md");
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toContain("CI change scope: prose");
+    expect(result.trace).toContain("check:docs");
+    expect(result.trace).not.toMatch(/^build\t|^typecheck\t|native:build/mu);
+    expect(result.stdout).toContain("native-platforms is not covered");
+  });
+
+  it("runs website types, build and tests without building native consumers", async () => {
+    const result = await selected("site/src/fixture.ts");
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.trace).toContain("--filter threenative-site typecheck");
+    expect(result.trace).toContain("--filter threenative-site build");
+    expect(result.trace).toContain("--filter threenative-site exec vitest run");
+    expect(result.trace).toContain("--filter threenative-site exec playwright test");
+    expect(result.trace).not.toMatch(/^build\t|native:build/mu);
+  });
+
+  it("keeps broad dependency checks for shared runtime inputs", async () => {
+    const result = await selected("packages/core/src/fixture.ts");
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.trace).toMatch(/^build\t/mu);
+    expect(result.trace).toContain("typecheck");
+  });
+
+  it("makes --full explicit and rejects misspelled selection arguments", async () => {
+    const full = await runLocal("--full");
+    expect(full.status, full.output).toBe(0);
+    expect(full.trace[0]).toMatch(/^build\t/u);
+    await rm(full.root, { recursive: true, force: true });
+    const invalid = await selected("docs/PRDs/fixture.md", ["--ful"]);
+    expect(invalid.status).toBe(2);
+    expect(invalid.trace).toBe("");
+  });
+});
