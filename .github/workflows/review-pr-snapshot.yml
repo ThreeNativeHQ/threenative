@@ -1,0 +1,65 @@
+name: PR review workspace snapshot
+
+on:
+  push:
+    branches: [review/prs-167-180-183-20260911]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 01c82dc69fe46cf7aa97727ae057c7ae49350c29
+          fetch-depth: 1
+      - name: Export exact deltas from the previously downloaded source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/review-source"
+          base=190bbe31a0e034aca903a36bac8b84a0d00c6fa5
+          git fetch --no-tags --depth=1 origin "$base" \
+            630c1a073d89509129bab2eeb3c79e5bb5995e58 \
+            c4e5ec716eddf9038f07438a3a47a289e2ad9ea8 \
+            b751635441d626bdd53fe39a7458fa1d218b935b
+          for row in \
+            main:01c82dc69fe46cf7aa97727ae057c7ae49350c29 \
+            167:630c1a073d89509129bab2eeb3c79e5bb5995e58 \
+            180:c4e5ec716eddf9038f07438a3a47a289e2ad9ea8 \
+            183:b751635441d626bdd53fe39a7458fa1d218b935b; do
+            name=${row%%:*}
+            sha=${row#*:}
+            git diff --binary --full-index "$base" "$sha" > "$RUNNER_TEMP/review-source/$name.patch"
+            git diff --binary --full-index 01c82dc69fe46cf7aa97727ae057c7ae49350c29 "$sha" > "$RUNNER_TEMP/review-source/$name-pr.patch"
+            printf '%s %s\n' "$sha" "$(git rev-parse "$sha^{tree}")" > "$RUNNER_TEMP/review-source/$name.txt"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: exact-pr-review-source
+          path: ${{ runner.temp }}/review-source
+          retention-days: 2
+          if-no-files-found: error
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Package Linux test dependencies without credentials or repository configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/review-deps"
+          npm pack pnpm@10.25.0 --pack-destination "$RUNNER_TEMP/review-deps"
+          find . -name node_modules -type d -prune -print0 > "$RUNNER_TEMP/dependency-paths"
+          tar --null -czf "$RUNNER_TEMP/review-deps/node_modules.tar.gz" --files-from "$RUNNER_TEMP/dependency-paths"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-pr-review-dependencies
+          path: ${{ runner.temp }}/review-deps
+          retention-days: 2
+          if-no-files-found: error
