@@ -22,22 +22,41 @@ const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
-const MCP_REQUEST_TIMEOUT_MS = 2_000;
-// creature_status probes optional Python/Chromium tooling; the published Chromium probe is
-// bounded at 10 seconds. The first guide call can also pay the payload load, so both need a
-// bounded margin beyond the general 2-second MCP request budget.
-const MCP_CREATURE_DISCOVERY_TIMEOUT_MS = 15_000;
-// The published creature compiler can spend up to 60 seconds in its bounded operation. Keep
-// ordinary discovery calls fast while allowing the response to arrive after that operation limit.
-const MCP_COMPILE_REQUEST_TIMEOUT_MS = 70_000;
-// `initialize` is the first thing a freshly spawned server answers, so it pays a cold Node start
-// and the server's whole module graph before it can reply — work that has nothing to do with the
-// scaffold wiring under test. Two seconds was enough on an idle desktop and not on a loaded CI
-// shard, where it failed as `MCP initialize timed out after 2000 ms`. Keeping the handshake tight
-// buys nothing now that `watchMcpChild` rejects on `close`/`error` the moment a server actually
-// dies: this budget only has to outlast a cold start and still fire on a server that is alive and
-// silent.
-const MCP_HANDSHAKE_TIMEOUT_MS = 30_000;
+// Every budget in this file is a hang detector, not a schedule - the rule vitest.config.ts:26
+// already states for `testTimeout`. `watchMcpChild` rejects the instant a server dies, with its
+// stderr attached, so every real failure is reported fast and precisely no matter how large these
+// are. What is left for a wall clock to catch is a server that is alive and silent forever, and
+// the only wrong answer there is a number small enough to fire on a slow machine.
+//
+// One budget covers every method, `initialize` included. Scoping the repair to one method name is
+// what left this defect live twice: #176 raised it at three real-server probes and missed the
+// liveness probes, and scoping it to `initialize` alone still left eight real-server `tools/list`
+// and `tools/call` sites racing a 2 000 ms clock against machine speed - the same class of
+// failure under a different method name.
+const MCP_REQUEST_TIMEOUT_MS = 30_000;
+// The one genuinely long call: the published creature compiler has a 60-second bounded operation
+// of its own, so its budget has to clear that before it can detect a hang at all.
+const MCP_COMPILE_REQUEST_TIMEOUT_MS = 90_000;
+
+// A test's own budget must outlast every MCP budget that test can spend, or vitest kills the test
+// first and the failure loses the server stderr the inner timer exists to attach. Deriving one
+// from the other keeps that ordering true by construction instead of by two hand-written numbers.
+const TEST_BUDGET_MARGIN = 2;
+function testBudget(...spent: readonly number[]): number {
+  return Math.max(...spent) * TEST_BUDGET_MARGIN;
+}
+
+// Removing scaffolded project trees is real file I/O, and 10 000 ms is vitest's default for a hook
+// rather than a measurement of this one; an oversubscribed run produced four
+// `Hook timed out in 10000ms`.
+const CLEANUP_HOOK_TIMEOUT_MS = 120_000;
+
+// Probes that spend an MCP budget derive their test budget from the largest one they can spend.
+const MCP_PROBE_TEST_TIMEOUT_MS = testBudget(MCP_REQUEST_TIMEOUT_MS);
+const COMPILE_PROBE_TEST_TIMEOUT_MS = testBudget(MCP_COMPILE_REQUEST_TIMEOUT_MS);
+// These two spawn no server and call `request` never; their cost is one `createProject` per
+// template, so their budget scales with the template count and not with any MCP budget.
+const SCAFFOLD_ONLY_TEST_TIMEOUT_MS = Math.max(30_000, templates.length * 6_000);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -68,7 +87,7 @@ afterEach(async () => {
   await Promise.all(
     temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
   );
-});
+}, CLEANUP_HOOK_TIMEOUT_MS);
 
 async function linkEngineMcp(target: string): Promise<void> {
   const destination = path.join(target, "node_modules", engineMcp);
@@ -263,7 +282,7 @@ describe("MCP probe liveness", () => {
         await closed;
       }),
     );
-  });
+  }, CLEANUP_HOOK_TIMEOUT_MS);
 
   it("bounds retained stderr while draining more than a pipe can buffer", async () => {
     const { child, lines, nextId, state } = startServer(`
@@ -297,21 +316,29 @@ describe("MCP probe liveness", () => {
     await assert.rejects(request(child, nextId, lines, "initialize"), /\(3\): last diagnostic/);
   });
 
-  it("rejects every pending request on exit without waiting for the compile budget", async () => {
-    const { child, lines, nextId, state, closed } = startServer("process.exitCode = 3;");
-    const results = await Promise.allSettled([
-      request(child, nextId, lines, "initialize", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
-      request(child, nextId, lines, "tools/list", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
-    ]);
-    for (const result of results) {
-      assert.equal(result.status, "rejected");
-      if (result.status === "rejected") assert.match(String(result.reason), /exited.*\(3\)/);
-    }
-    await closed;
-    assert.equal(state.pending.size, 0);
-    assert.equal(lines.listenerCount("line"), 0);
-    await assert.rejects(request(child, nextId, lines, "tools/list"), /exited.*\(3\)/);
-  });
+  it(
+    "rejects every pending request on exit without waiting for the compile budget",
+    async () => {
+      const { child, lines, nextId, state, closed } = startServer("process.exitCode = 3;");
+      const results = await Promise.allSettled([
+        request(child, nextId, lines, "initialize", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+        request(child, nextId, lines, "tools/list", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+      ]);
+      for (const result of results) {
+        assert.equal(result.status, "rejected");
+        if (result.status === "rejected") assert.match(String(result.reason), /exited.*\(3\)/);
+      }
+      await closed;
+      assert.equal(state.pending.size, 0);
+      assert.equal(lines.listenerCount("line"), 0);
+      await assert.rejects(request(child, nextId, lines, "tools/list"), /exited.*\(3\)/);
+      // This test spends the compile budget, which is deliberately larger than vitest's own default.
+      // Without its own budget it inherits `testTimeout: 60_000` (vitest.config.ts:26), so a
+      // regression in the early-`close` rejection - the exact thing this test exists to catch -
+      // would surface as a bare `Test timed out in 60000ms` with the server stderr discarded.
+    },
+    COMPILE_PROBE_TEST_TIMEOUT_MS,
+  );
 
   it("handles stdin errors and preserves the original failure after close", async () => {
     const { child, lines, nextId, state, closed } = startServer("setInterval(() => {}, 1000);");
@@ -333,6 +360,59 @@ describe("MCP probe liveness", () => {
     assert.equal(state.pending.size, 0);
     assert.equal(lines.listenerCount("line"), 0);
     await assert.rejects(request(child, nextId, lines, "tools/list"), { code: "ENOENT" });
+  });
+
+  // The red this holds down: restore `MCP_REQUEST_TIMEOUT_MS = 2_000` and this fails as
+  // `MCP initialize timed out after 2000 ms`, the message CI produced. The delay is a fixed
+  // `setTimeout` inside the server rather than a real cold start, so it asserts the budget that is
+  // applied and never races the machine it runs on. `tools/list` is asserted on the same server
+  // because scoping the previous repair to `initialize` alone left every other method racing.
+  it("outlasts a slow server on every method, not only initialize", async () => {
+    const replyAfterMs = 2_500;
+    assert.ok(
+      replyAfterMs < MCP_REQUEST_TIMEOUT_MS,
+      `a ${replyAfterMs} ms reply must fit the ${MCP_REQUEST_TIMEOUT_MS} ms budget`,
+    );
+    const { child, lines, nextId } = startServer(`
+      let id = 0;
+      require("node:readline")
+        .createInterface({ input: process.stdin })
+        .on("line", () => {
+          const current = ++id;
+          setTimeout(() => {
+            process.stdout.write(
+              JSON.stringify({ id: current, result: { ready: true } }) + "\\n",
+            );
+          }, ${replyAfterMs});
+        });
+      setInterval(() => {}, 1000);
+    `);
+    assert.deepEqual(await request(child, nextId, lines, "initialize"), { ready: true });
+    assert.deepEqual(await request(child, nextId, lines, "tools/list"), { ready: true });
+  });
+
+  // Load-bearing form of "a probe's budget stays under its test's budget": assert that no `it` in
+  // this file carries a hand-written millisecond literal. Comparing the derived constants against
+  // each other cannot fail - `testBudget` builds the budget from the spend, so every such row
+  // reduces to `x < margin * x` - and it would not notice the regression it names, because pasting
+  // a literal back into an `it(...)` call re-creates exactly the inversion this guards.
+  it("derives every per-test budget instead of hand-writing a millisecond literal", async () => {
+    const source = await readFile(new URL(import.meta.url), "utf8");
+    const literals = [...source.matchAll(/\n\x20{2,4}(\d[\d_]*),\n\x20{2}\);/gu)].map(
+      (match) => match[1] ?? "",
+    );
+    assert.deepEqual(
+      literals,
+      [],
+      `per-test budgets must come from testBudget(); found literal timeout(s): ${literals.join(", ")}`,
+    );
+    // The one budget larger than vitest's own default has to bring its own test budget, or vitest
+    // kills the test first and the server stderr goes with it.
+    assert.ok(
+      MCP_COMPILE_REQUEST_TIMEOUT_MS > 60_000 &&
+        COMPILE_PROBE_TEST_TIMEOUT_MS > MCP_COMPILE_REQUEST_TIMEOUT_MS,
+      `compile budget ${MCP_COMPILE_REQUEST_TIMEOUT_MS} needs a test budget above it, got ${COMPILE_PROBE_TEST_TIMEOUT_MS}`,
+    );
   });
 
   it("includes stderr and removes listeners when a live server times out", async () => {
@@ -362,18 +442,11 @@ async function probeEngineServer(target: string): Promise<void> {
   const lines = createInterface({ input: child.stdout });
   const nextId = { value: 1 };
   try {
-    await request(
-      child,
-      nextId,
-      lines,
-      "initialize",
-      {
-        capabilities: {},
-        clientInfo: { name: "scaffold-mcp-test", version: "0" },
-        protocolVersion: "2025-06-18",
-      },
-      MCP_HANDSHAKE_TIMEOUT_MS,
-    );
+    await request(child, nextId, lines, "initialize", {
+      capabilities: {},
+      clientInfo: { name: "scaffold-mcp-test", version: "0" },
+      protocolVersion: "2025-06-18",
+    });
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, nextId, lines, "tools/list");
     const tools = listed.tools as Array<{ name: string }>;
@@ -467,8 +540,13 @@ async function probeEngineServer(target: string): Promise<void> {
 }
 
 describe("scaffolded engine MCP", () => {
-  it("starts and discovers networking metadata from every template", async () => {
-    for (const template of templates) {
+  // One case per template rather than one loop over all of them. A shared budget made every
+  // template's cold start compete for the same 30 000 ms, so the tenth server paid for the nine
+  // before it and the failure named the whole loop instead of the kit that broke. Same scaffolds,
+  // same probes, same assertions - each now carries its own budget and its own name.
+  it.each(templates)(
+    "starts and discovers networking metadata from the %s template",
+    async (template) => {
       const root = await makeTempDir(`threenative-scaffold-mcp-${template}-`);
       temporaryRoots.push(root);
       const { target } = await createProject({ install: false, target: "game", template }, root);
@@ -490,223 +568,226 @@ describe("scaffolded engine MCP", () => {
         readFile(path.join(target, "node_modules/@threenative/physics/package.json"), "utf8"),
       ).resolves.toContain('"name": "@threenative/physics"');
       await probeEngineServer(target);
-    }
-  }, 30_000);
+    },
+    MCP_PROBE_TEST_TIMEOUT_MS,
+  );
 });
 
 describe("scaffolded asset MCP", () => {
-  it("copies the complete creature workflow through the generated agent bundle", async () => {
-    for (const template of templates) {
-      const root = await makeTempDir(`threenative-scaffold-creatures-${template}-`);
-      temporaryRoots.push(root);
-      const { target } = await createProject({ install: false, target: "game", template }, root);
+  it(
+    "copies the complete creature workflow through the generated agent bundle",
+    async () => {
+      for (const template of templates) {
+        const root = await makeTempDir(`threenative-scaffold-creatures-${template}-`);
+        temporaryRoots.push(root);
+        const { target } = await createProject({ install: false, target: "game", template }, root);
 
-      const recipe = await readFile(
-        path.join(target, "agent-docs", "creating-creatures.md"),
-        "utf8",
-      );
-      expect(recipe).toContain("creature_status");
-      expect(recipe).toContain("creature_guide");
-      expect(recipe).toContain("creature_compile");
-      expect(recipe).toContain("creature_preview");
-      expect(recipe).toContain("creature_check");
-      expect(recipe).toContain("idle");
-      expect(recipe).toContain("move");
-      expect(recipe).toContain("attack");
-      expect(recipe).toContain("independent visual review");
-      expect(recipe).toContain("assets/");
+        const recipe = await readFile(
+          path.join(target, "agent-docs", "creating-creatures.md"),
+          "utf8",
+        );
+        expect(recipe).toContain("creature_status");
+        expect(recipe).toContain("creature_guide");
+        expect(recipe).toContain("creature_compile");
+        expect(recipe).toContain("creature_preview");
+        expect(recipe).toContain("creature_check");
+        expect(recipe).toContain("idle");
+        expect(recipe).toContain("move");
+        expect(recipe).toContain("attack");
+        expect(recipe).toContain("independent visual review");
+        expect(recipe).toContain("assets/");
 
-      const findingAssets = await readFile(
-        path.join(target, "agent-docs", "finding-assets.md"),
-        "utf8",
-      );
-      expect(findingAssets).toContain("creating-creatures.md");
-      for (const host of [".agents", ".claude"]) {
-        await expect(
-          readFile(path.join(target, host, "skills", "threenative-assets", "SKILL.md"), "utf8"),
-        ).resolves.toContain("agent-docs/creating-creatures.md");
+        const findingAssets = await readFile(
+          path.join(target, "agent-docs", "finding-assets.md"),
+          "utf8",
+        );
+        expect(findingAssets).toContain("creating-creatures.md");
+        for (const host of [".agents", ".claude"]) {
+          await expect(
+            readFile(path.join(target, host, "skills", "threenative-assets", "SKILL.md"), "utf8"),
+          ).resolves.toContain("agent-docs/creating-creatures.md");
+        }
       }
-    }
-  }, 30_000);
+    },
+    SCAFFOLD_ONLY_TEST_TIMEOUT_MS,
+  );
 
-  it("runs the published anyCreature loop through the generated assets shim", async () => {
-    const root = await makeTempDir("threenative-scaffold-asset-");
-    temporaryRoots.push(root);
-    const { target } = await createProject(
-      { install: false, target: "game", template: "minimal" },
-      root,
-    );
-    await mkdir(path.join(target, ".threenative", "creatures"), { recursive: true });
-    await mkdir(path.join(target, "assets", "creatures"), { recursive: true });
-    await writeFile(
-      path.join(target, ".threenative", "creatures", "compact.json"),
-      `${JSON.stringify({
-        height: 0.6,
-        palette: { body: { color: "#888888", rough: 0.8 } },
-        joints: { Root: [0, 0.4, 0], Top: { from: "Root", up: 0.6 } },
-        chains: { body: ["Root", "Top"] },
-        volumes: [
-          {
-            chain: "body",
-            material: "body",
-            sides: 8,
-            smooth_angle: 20,
-            profile: [
-              [0, 0.2, 0.2],
-              [0.5, 0.25, 0.2],
-              [1, 0.1, 0.1],
-            ],
-          },
-        ],
-        animations: {
-          idle: {
-            duration: 1,
-            loop: true,
-            tracks: {
-              Root: {
-                ry: [
-                  [0, -2],
-                  [0.5, 2],
-                  [1, -2],
-                ],
+  it(
+    "runs the published anyCreature loop through the generated assets shim",
+    async () => {
+      const root = await makeTempDir("threenative-scaffold-asset-");
+      temporaryRoots.push(root);
+      const { target } = await createProject(
+        { install: false, target: "game", template: "minimal" },
+        root,
+      );
+      await mkdir(path.join(target, ".threenative", "creatures"), { recursive: true });
+      await mkdir(path.join(target, "assets", "creatures"), { recursive: true });
+      await writeFile(
+        path.join(target, ".threenative", "creatures", "compact.json"),
+        `${JSON.stringify({
+          height: 0.6,
+          palette: { body: { color: "#888888", rough: 0.8 } },
+          joints: { Root: [0, 0.4, 0], Top: { from: "Root", up: 0.6 } },
+          chains: { body: ["Root", "Top"] },
+          volumes: [
+            {
+              chain: "body",
+              material: "body",
+              sides: 8,
+              smooth_angle: 20,
+              profile: [
+                [0, 0.2, 0.2],
+                [0.5, 0.25, 0.2],
+                [1, 0.1, 0.1],
+              ],
+            },
+          ],
+          animations: {
+            idle: {
+              duration: 1,
+              loop: true,
+              tracks: {
+                Root: {
+                  ry: [
+                    [0, -2],
+                    [0.5, 2],
+                    [1, -2],
+                  ],
+                },
               },
             },
           },
-        },
-      })}\n`,
-    );
-    await linkCore(target);
-    await linkRegistryAssetMcp(target);
+        })}\n`,
+      );
+      await linkCore(target);
+      await linkRegistryAssetMcp(target);
 
-    const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
-      mcpServers: Record<string, { args: string[]; command: string }>;
-    };
-    const server = config.mcpServers["threenative-assets"];
-    if (server === undefined) throw new Error("scaffold has no threenative-assets server");
-    expect(server.args[0]).toBe("./node_modules/@threenative/core/mcp/assets.mjs");
+      const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
+        mcpServers: Record<string, { args: string[]; command: string }>;
+      };
+      const server = config.mcpServers["threenative-assets"];
+      if (server === undefined) throw new Error("scaffold has no threenative-assets server");
+      expect(server.args[0]).toBe("./node_modules/@threenative/core/mcp/assets.mjs");
 
-    const child = spawn(server.command, server.args, { cwd: target, stdio: "pipe" });
-    const lines = createInterface({ input: child.stdout });
-    const nextId = { value: 1 };
-    try {
-      const initialized = await request(
-        child,
-        nextId,
-        lines,
-        "initialize",
-        {
+      const child = spawn(server.command, server.args, { cwd: target, stdio: "pipe" });
+      const lines = createInterface({ input: child.stdout });
+      const nextId = { value: 1 };
+      try {
+        const initialized = await request(child, nextId, lines, "initialize", {
           capabilities: {},
           clientInfo: { name: "scaffold-asset-test", version: "0" },
           protocolVersion: "2025-06-18",
-        },
-        MCP_HANDSHAKE_TIMEOUT_MS,
-      );
-      expect(initialized.serverInfo).toEqual({ name: "threenative-asset-mcp", version: "0.8.0" });
-      child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+        });
+        expect(initialized.serverInfo).toEqual({ name: "threenative-asset-mcp", version: "0.8.0" });
+        child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
-      const listed = await request(child, nextId, lines, "tools/list");
-      const toolNames = (listed.tools as Array<{ name: string }>).map((tool) => tool.name);
-      expect(toolNames).toHaveLength(40);
-      expect(toolNames.slice(-3)).toEqual([
-        "creature_compile",
-        "creature_preview",
-        "creature_check",
-      ]);
-      expect(toolNames).toEqual(
-        expect.arrayContaining(["creature_status", "creature_guide", "creature_compile"]),
-      );
+        const listed = await request(child, nextId, lines, "tools/list");
+        const toolNames = (listed.tools as Array<{ name: string }>).map((tool) => tool.name);
+        expect(toolNames).toHaveLength(40);
+        expect(toolNames.slice(-3)).toEqual([
+          "creature_compile",
+          "creature_preview",
+          "creature_check",
+        ]);
+        expect(toolNames).toEqual(
+          expect.arrayContaining(["creature_status", "creature_guide", "creature_compile"]),
+        );
 
-      const status = toolText(
-        await request(
-          child,
-          nextId,
-          lines,
-          "tools/call",
-          {
-            arguments: {},
-            name: "creature_status",
-          },
-          MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
-        ),
-      );
-      const statusTooling = status.tooling;
-      const statusOperations = status.operations;
-      expect(isRecord(statusTooling) && isRecord(statusTooling.compiler)).toBe(true);
-      expect((statusTooling as Record<string, unknown>).compiler).toMatchObject({
-        available: true,
-      });
-      expect(isRecord(statusOperations) && isRecord(statusOperations.creature_compile)).toBe(true);
-      expect((statusOperations as Record<string, unknown>).creature_compile).toMatchObject({
-        available: true,
-      });
-
-      const guide = toolText(
-        await request(
-          child,
-          nextId,
-          lines,
-          "tools/call",
-          {
-            arguments: { section: "syntax" },
-            name: "creature_guide",
-          },
-          MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
-        ),
-      );
-      expect(guide.section).toBe("syntax");
-      expect(guide.guide).toEqual(expect.stringContaining('"palette"'));
-
-      const compile = toolText(
-        await request(
-          child,
-          nextId,
-          lines,
-          "tools/call",
-          {
-            arguments: {
-              outputPath: "assets/creatures/compact.glb",
-              specPath: ".threenative/creatures/compact.json",
+        const status = toolText(
+          await request(
+            child,
+            nextId,
+            lines,
+            "tools/call",
+            {
+              arguments: {},
+              name: "creature_status",
             },
-            name: "creature_compile",
-          },
-          MCP_COMPILE_REQUEST_TIMEOUT_MS,
-        ),
-      );
-      expect(compile).toMatchObject({
-        operation: "creature_compile",
-        outputPath: "assets/creatures/compact.glb",
-        specPath: ".threenative/creatures/compact.json",
-      });
-      expect(compile.outputSha256).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/u));
-      expect(compile.receiptPath).toEqual(
-        expect.stringMatching(/^\.threenative\/creatures\/receipts\/.+\.json$/u),
-      );
-      const measurements = compile.measurements;
-      expect(isRecord(measurements)).toBe(true);
-      expect((measurements as Record<string, unknown>).vertices).toEqual(expect.any(Number));
-      expect((measurements as Record<string, unknown>).faces).toEqual(expect.any(Number));
-      expect((measurements as Record<string, unknown>).joints).toBe(2);
+            MCP_REQUEST_TIMEOUT_MS,
+          ),
+        );
+        const statusTooling = status.tooling;
+        const statusOperations = status.operations;
+        expect(isRecord(statusTooling) && isRecord(statusTooling.compiler)).toBe(true);
+        expect((statusTooling as Record<string, unknown>).compiler).toMatchObject({
+          available: true,
+        });
+        expect(isRecord(statusOperations) && isRecord(statusOperations.creature_compile)).toBe(
+          true,
+        );
+        expect((statusOperations as Record<string, unknown>).creature_compile).toMatchObject({
+          available: true,
+        });
 
-      const output = await readFile(path.join(target, "assets/creatures/compact.glb"));
-      expect(output.subarray(0, 4).toString("ascii")).toBe("glTF");
-      const receiptPath = compile.receiptPath as string;
-      const receipt = JSON.parse(await readFile(path.join(target, receiptPath), "utf8")) as Record<
-        string,
-        unknown
-      >;
-      expect(receipt).toMatchObject({
-        operation: "creature_compile",
-        outputPath: "assets/creatures/compact.glb",
-        outputSha256: compile.outputSha256,
-      });
-    } finally {
-      lines.close();
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill();
-        await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+        const guide = toolText(
+          await request(
+            child,
+            nextId,
+            lines,
+            "tools/call",
+            {
+              arguments: { section: "syntax" },
+              name: "creature_guide",
+            },
+            MCP_REQUEST_TIMEOUT_MS,
+          ),
+        );
+        expect(guide.section).toBe("syntax");
+        expect(guide.guide).toEqual(expect.stringContaining('"palette"'));
+
+        const compile = toolText(
+          await request(
+            child,
+            nextId,
+            lines,
+            "tools/call",
+            {
+              arguments: {
+                outputPath: "assets/creatures/compact.glb",
+                specPath: ".threenative/creatures/compact.json",
+              },
+              name: "creature_compile",
+            },
+            MCP_COMPILE_REQUEST_TIMEOUT_MS,
+          ),
+        );
+        expect(compile).toMatchObject({
+          operation: "creature_compile",
+          outputPath: "assets/creatures/compact.glb",
+          specPath: ".threenative/creatures/compact.json",
+        });
+        expect(compile.outputSha256).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/u));
+        expect(compile.receiptPath).toEqual(
+          expect.stringMatching(/^\.threenative\/creatures\/receipts\/.+\.json$/u),
+        );
+        const measurements = compile.measurements;
+        expect(isRecord(measurements)).toBe(true);
+        expect((measurements as Record<string, unknown>).vertices).toEqual(expect.any(Number));
+        expect((measurements as Record<string, unknown>).faces).toEqual(expect.any(Number));
+        expect((measurements as Record<string, unknown>).joints).toBe(2);
+
+        const output = await readFile(path.join(target, "assets/creatures/compact.glb"));
+        expect(output.subarray(0, 4).toString("ascii")).toBe("glTF");
+        const receiptPath = compile.receiptPath as string;
+        const receipt = JSON.parse(
+          await readFile(path.join(target, receiptPath), "utf8"),
+        ) as Record<string, unknown>;
+        expect(receipt).toMatchObject({
+          operation: "creature_compile",
+          outputPath: "assets/creatures/compact.glb",
+          outputSha256: compile.outputSha256,
+        });
+      } finally {
+        lines.close();
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill();
+          await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+        }
       }
-    }
-  }, 120_000);
+    },
+    COMPILE_PROBE_TEST_TIMEOUT_MS,
+  );
 });
 
 // A host whose config the scaffold does not write is a host whose agent silently has no asset,
@@ -714,32 +795,40 @@ describe("scaffolded asset MCP", () => {
 // like a missing file. Every host in `MCP_HOSTS` is checked, so adding one to that table fails
 // here until the templates carry it.
 describe("scaffolded host MCP configs", () => {
-  it("wires every project-scoped agent host from every template", async () => {
-    for (const template of templates) {
-      const root = await makeTempDir(`threenative-scaffold-hosts-${template}-`);
-      temporaryRoots.push(root);
-      const { target } = await createProject({ install: false, target: "game", template }, root);
+  it(
+    "wires every project-scoped agent host from every template",
+    async () => {
+      for (const template of templates) {
+        const root = await makeTempDir(`threenative-scaffold-hosts-${template}-`);
+        temporaryRoots.push(root);
+        const { target } = await createProject({ install: false, target: "game", template }, root);
 
-      for (const host of MCP_HOSTS) {
-        const source = await readFile(path.join(target, host.file), "utf8").catch(() => undefined);
-        expect(source, `${template} is missing ${host.file} for ${host.label}`).toBeDefined();
-        for (const name of Object.keys(MCP_SERVERS)) {
-          expect(source, `${template} ${host.file} omits ${name}`).toContain(name);
+        for (const host of MCP_HOSTS) {
+          const source = await readFile(path.join(target, host.file), "utf8").catch(
+            () => undefined,
+          );
+          expect(source, `${template} is missing ${host.file} for ${host.label}`).toBeDefined();
+          for (const name of Object.keys(MCP_SERVERS)) {
+            expect(source, `${template} ${host.file} omits ${name}`).toContain(name);
+          }
         }
-      }
 
-      const cursor = JSON.parse(await readFile(path.join(target, ".cursor/mcp.json"), "utf8")) as {
-        mcpServers: Record<string, { args: string[] }>;
-      };
-      expect(cursor.mcpServers["threenative-assets"]?.args[0], template).toBe(
-        "./node_modules/@threenative/core/mcp/assets.mjs",
-      );
-      const code = JSON.parse(await readFile(path.join(target, ".vscode/mcp.json"), "utf8")) as {
-        servers: Record<string, { type: string }>;
-      };
-      expect(code.servers["threenative-engine"]?.type, template).toBe("stdio");
-    }
-  }, 60_000);
+        const cursor = JSON.parse(
+          await readFile(path.join(target, ".cursor/mcp.json"), "utf8"),
+        ) as {
+          mcpServers: Record<string, { args: string[] }>;
+        };
+        expect(cursor.mcpServers["threenative-assets"]?.args[0], template).toBe(
+          "./node_modules/@threenative/core/mcp/assets.mjs",
+        );
+        const code = JSON.parse(await readFile(path.join(target, ".vscode/mcp.json"), "utf8")) as {
+          servers: Record<string, { type: string }>;
+        };
+        expect(code.servers["threenative-engine"]?.type, template).toBe("stdio");
+      }
+    },
+    SCAFFOLD_ONLY_TEST_TIMEOUT_MS,
+  );
 });
 
 // `pnpm sync:mcp` writes these files and `pnpm budgets` runs its `--check`. That gate lives at the
@@ -753,97 +842,94 @@ describe("scaffolded host MCP configs", () => {
 // `PATH` scrubbed and no `THREENATIVE_BLENDER_PATH`, and the assertions read a real `tools/list`
 // and a real `tools/call` — never `MCP_SERVERS` asserting about `MCP_SERVERS`.
 describe("scaffolded blender MCP", () => {
-  it("should list blender tools with no Blender installed", async () => {
-    const root = await makeTempDir("threenative-scaffold-blender-");
-    temporaryRoots.push(root);
-    const { target } = await createProject(
-      { install: false, target: "game", template: "minimal" },
-      root,
-    );
-    await linkCore(target);
-    await linkBlenderMcp(target);
+  it(
+    "should list blender tools with no Blender installed",
+    async () => {
+      const root = await makeTempDir("threenative-scaffold-blender-");
+      temporaryRoots.push(root);
+      const { target } = await createProject(
+        { install: false, target: "game", template: "minimal" },
+        root,
+      );
+      await linkCore(target);
+      await linkBlenderMcp(target);
 
-    // The server to probe is looked up in core's table, not spelled here: removing the entry from
-    // `MCP_SERVERS` must stop this gate probing it, which is the revert check for the wiring. A
-    // hardcoded name would have kept probing the committed template bytes and passed.
-    const servers = MCP_SERVERS as Record<string, { args: readonly string[] }>;
-    const blenderServerName = Object.keys(servers).find((name) =>
-      (servers[name]?.args[0] ?? "").endsWith("/blender.mjs"),
-    );
-    expect(blenderServerName, "MCP_SERVERS declares no blender server").toBeDefined();
-    const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
-      mcpServers: Record<string, { args: string[]; command: string }>;
-    };
-    const server = config.mcpServers[blenderServerName ?? ""];
-    expect(server?.args[0]).toBe("./node_modules/@threenative/core/mcp/blender.mjs");
+      // The server to probe is looked up in core's table, not spelled here: removing the entry from
+      // `MCP_SERVERS` must stop this gate probing it, which is the revert check for the wiring. A
+      // hardcoded name would have kept probing the committed template bytes and passed.
+      const servers = MCP_SERVERS as Record<string, { args: readonly string[] }>;
+      const blenderServerName = Object.keys(servers).find((name) =>
+        (servers[name]?.args[0] ?? "").endsWith("/blender.mjs"),
+      );
+      expect(blenderServerName, "MCP_SERVERS declares no blender server").toBeDefined();
+      const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
+        mcpServers: Record<string, { args: string[]; command: string }>;
+      };
+      const server = config.mcpServers[blenderServerName ?? ""];
+      expect(server?.args[0]).toBe("./node_modules/@threenative/core/mcp/blender.mjs");
 
-    // A PATH with one empty directory: `blender` cannot be found, and neither can anything else,
-    // so nothing on this machine can accidentally satisfy the probe.
-    const emptyBin = path.join(root, "empty-bin");
-    const emptyHome = path.join(root, "empty-home");
-    await mkdir(emptyBin, { recursive: true });
-    await mkdir(emptyHome, { recursive: true });
-    // `process.execPath`, not "node": PATH is scrubbed to a single empty directory so nothing
-    // on this machine can satisfy the Blender probe, and that leaves no node on PATH either.
-    const child = spawn(process.execPath, [server?.args[0] ?? ""], {
-      cwd: target,
-      env: {
-        ...process.env,
-        // An empty HOME as well as an empty PATH: detection also looks in `~/.local/bin`, and a
-        // developer machine with Blender installed there would otherwise pass this gate for the
-        // opposite reason to the one it is written for.
-        HOME: emptyHome,
-        PATH: emptyBin,
-        THREENATIVE_BLENDER_PATH: "",
-        USERPROFILE: emptyHome,
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const lines = createInterface({ input: child.stdout });
-    const nextId = { value: 1 };
-    try {
-      await request(
-        child,
-        nextId,
-        lines,
-        "initialize",
-        {
+      // A PATH with one empty directory: `blender` cannot be found, and neither can anything else,
+      // so nothing on this machine can accidentally satisfy the probe.
+      const emptyBin = path.join(root, "empty-bin");
+      const emptyHome = path.join(root, "empty-home");
+      await mkdir(emptyBin, { recursive: true });
+      await mkdir(emptyHome, { recursive: true });
+      // `process.execPath`, not "node": PATH is scrubbed to a single empty directory so nothing
+      // on this machine can satisfy the Blender probe, and that leaves no node on PATH either.
+      const child = spawn(process.execPath, [server?.args[0] ?? ""], {
+        cwd: target,
+        env: {
+          ...process.env,
+          // An empty HOME as well as an empty PATH: detection also looks in `~/.local/bin`, and a
+          // developer machine with Blender installed there would otherwise pass this gate for the
+          // opposite reason to the one it is written for.
+          HOME: emptyHome,
+          PATH: emptyBin,
+          THREENATIVE_BLENDER_PATH: "",
+          USERPROFILE: emptyHome,
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const lines = createInterface({ input: child.stdout });
+      const nextId = { value: 1 };
+      try {
+        await request(child, nextId, lines, "initialize", {
           capabilities: {},
           clientInfo: { name: "scaffold-blender-test", version: "0" },
           protocolVersion: "2025-06-18",
-        },
-        MCP_HANDSHAKE_TIMEOUT_MS,
-      );
-      child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+        });
+        child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
-      const listed = await request(child, nextId, lines, "tools/list");
-      const tools = listed.tools as Array<{ name: string }>;
-      expect(tools.map((tool) => tool.name)).toContain("blender_status");
+        const listed = await request(child, nextId, lines, "tools/list");
+        const tools = listed.tools as Array<{ name: string }>;
+        expect(tools.map((tool) => tool.name)).toContain("blender_status");
 
-      const called = await request(child, nextId, lines, "tools/call", {
-        arguments: {},
-        name: "blender_status",
-      });
-      const content = called.content as Array<{ text: string }>;
-      const status = JSON.parse(content[0]?.text ?? "null") as {
-        available: boolean;
-        cause?: string;
-        install: Record<string, string>;
-        installCommand: string;
-      };
-      // The whole point: absent Blender is a result an agent can act on, not a dead server.
-      expect(status.available).toBe(false);
-      expect(status.cause).toBe("blender-missing");
-      expect(Object.keys(status.install).sort()).toEqual(["linux", "macos", "windows"]);
-      expect(status.installCommand.length).toBeGreaterThan(0);
-    } finally {
-      lines.close();
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill();
-        await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+        const called = await request(child, nextId, lines, "tools/call", {
+          arguments: {},
+          name: "blender_status",
+        });
+        const content = called.content as Array<{ text: string }>;
+        const status = JSON.parse(content[0]?.text ?? "null") as {
+          available: boolean;
+          cause?: string;
+          install: Record<string, string>;
+          installCommand: string;
+        };
+        // The whole point: absent Blender is a result an agent can act on, not a dead server.
+        expect(status.available).toBe(false);
+        expect(status.cause).toBe("blender-missing");
+        expect(Object.keys(status.install).sort()).toEqual(["linux", "macos", "windows"]);
+        expect(status.installCommand.length).toBeGreaterThan(0);
+      } finally {
+        lines.close();
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill();
+          await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+        }
       }
-    }
-  }, 30_000);
+    },
+    MCP_PROBE_TEST_TIMEOUT_MS,
+  );
 });
 
 describe("committed template MCP host configs", () => {
