@@ -329,3 +329,93 @@ Lane 4 owns `packages/runtime-native/scripts/package-android.mjs` until PRD-221 
 > subagent on PR #198, then phase 2. Check `.claude/worktrees/prd373-ci` and
 > `.claude/worktrees/prd221-16kb` for what lanes 3 and 4 left behind before restarting either.
 > Prove each gate locally before pushing. Do not tick a box for anything unrun.
+
+---
+
+# Session log — 2026-09-11, second execution session
+
+Live. Updated as work lands, not at the end. Everything below was executed; nothing is projected.
+
+## Where each lane stands right now
+
+| Lane | PRD | PR | Label | State |
+| --- | --- | --- | --- | --- |
+| 1 | PRD-374 | [#198](https://github.com/ThreeNativeHQ/threenative/pull/198) draft | `prd:75%` | **Phases 1 and 2 both implemented and locally verified.** Only the two independent reviews are open. |
+| 3 | PRD-373 | [#199](https://github.com/ThreeNativeHQ/threenative/pull/199) draft | `prd:25%` | Resolved as a *finding*, not a build: phases 1-2 were already on `main`. 4 of 20 boxes ticked. |
+| 4 | PRD-221 | [#197](https://github.com/ThreeNativeHQ/threenative/pull/197) draft | none | Untouched this session. Real code committed, **zero PRD boxes ticked**, `CONFLICTING` against `main`. |
+| M | merge queue | — | — | #195 reds cleared and re-run; #193 clean; #196 still has two real reds. |
+
+## What this session did
+
+**Lane 1 — PRD-374, phase 1 rebuilt and phase 2 built.**
+
+The branch was based on a `main` that had since re-applied its base commits under different SHAs,
+so it read as 10 commits and `CONFLICTING`. Replaying it would have refought the same conflicts ten
+times; instead the net diff of its two real commits was applied to current `main` as two clean
+commits. Verified before pushing: `pnpm typecheck` exit 0, `pnpm lint` exit 0, doctor + cli specs
+73 passed. The pre-rebase tip is kept as `backup/prd374-preRebase`.
+
+**Phase 2 then landed** (`b8f776966`): tool discovery now reports four facts where it reported one.
+
+| Check | Fact | What it stopped claiming |
+| --- | --- | --- |
+| `capability search` | each MCP server starts and advertises tools | that any application its tools drive is installed |
+| `editor activation` | which of the installer's **seven** project-scoped host configs carry the servers | that an editor loaded one — a CLI cannot observe that, and the report now says so |
+| `model conversion` (was `blender`) | Blender is on this machine; separately, that its server's transport is up | that a conversion ever ran |
+| `model conversion` detail | what `public/assets.manifest.json` records as converted | anything at all, when there is no manifest |
+
+The old healthy line read *"all three configured MCP servers resolve"* — wrong about the count
+since the fourth server landed, and read as a complete authoring toolchain on the strength of four
+processes that started. Doctor also consulted `.mcp.json` alone, so a game opened in VS Code, Zed or
+opencode was told capability search was ready on the strength of a file that host never reads.
+
+Gates, all run locally: `pnpm typecheck` 0, `pnpm lint` 0, `pnpm check:docs` 0, the whole
+`create-threenative` package **656 tests across 38 files**, plus `mcp-install` and `sync-agent-docs`
+38 passed. `doctor.spec.ts` went 68 → 75.
+
+Red, then green, in a real project rather than a fixture: renaming the check broke exactly the three
+incumbent tests (`3 failed | 65 passed`); then `.vscode/mcp.json` overwritten with `{ not json` and
+`threenative-blender` deleted from `.zed/settings.json` gave `5 of 7 host configs are complete`, and
+`PATH=/usr/bin:/bin` gave `conversion is unavailable`. Restoring both returned the green text, and
+the malformed config was **preserved**, named by exact path, never rewritten.
+
+Evidence: `docs/verification/prd-374-readiness-phase-2-2026-09-11.md`.
+
+**Lane 3 — PRD-373 was mostly already done, and nobody had said so.**
+
+The PRD read 0 of 20 boxes while `scripts/ci-change-scope.mjs` and the `ci-required` verdict it
+plans were already on `main`, landed by PR #190 and consumed by both workflows. Lane 3's draft
+(`ci-check-families.mjs`, `ci-required-verdict.mjs`) was written from a base predating that and
+duplicates it; it is superseded, not merged, and retained as `backup/prd373-lane3-draft`.
+
+Four boxes ticked against the landed code — the wiring for both phases, and 188 tests across the
+five CI specs run locally at `30f749f12`. **Four boxes deliberately left open**: no red/green
+control was re-executed here, and the real-PR evidence is partial. Run 34622294627 shows
+`Change scope` emitting a validated per-job plan and `ci-required` succeeding, but it classified
+`selection=full` under the main-target policy — so a *narrowed* selection has still not been seen on
+a real PR, and `ci-required` has not been seen going red. Both need the `develop` branch phase 5
+creates.
+
+**Merge lane.** #195's two reds were diagnosed and cleared: `build` failed only because
+`native-platforms` failed, and that job hit **exit 124 after 2h** when its NDK/V8 cache failed to
+restore (`tar` exit 2) and it rebuilt V8 cold. Infrastructure, not the diff — re-run, and it now
+reads 50 pass / 0 fail. #193's four contract reds named in the plan above have cleared on their own.
+**#196 still has two real reds**, `budgets` and `test-native`, undiagnosed.
+
+## The next actions, in order
+
+1. **Both PRD-374 reviews.** A reviewer subagent is running on phases 1 and 2 as separate verdicts.
+   Tick each review box only on a returned PASS. These are the only boxes between #198 and `prd:100%`.
+2. **Merge #195** the moment its last two checks finish, then **#193**.
+3. **#196's two reds.** `budgets` needs a built workspace; `test-native` is genuinely red.
+4. **Lane 4 (PRD-221)** needs the same treatment lane 1 got: rebuild on current `main`, then run its
+   tests and the `threenative_ps16k` emulator. Its code is real and its PRD is at zero — that gap is
+   the lane's whole remaining cost.
+
+## Machine facts this session adds
+
+- **A branch cut before a squash-merge cannot be rebased sanely.** `main` re-applies the base under
+  new SHAs, so `git rebase` refights every conflict per commit. Apply the net diff of the lane's own
+  commits onto current `main` instead, and keep the old tip as a backup branch.
+- **A 2-hour CI job that ends in exit 124 is a cache miss, not a test failure.** Check whether the
+  restore step reported `tar` failing before reading anything into the diff.
