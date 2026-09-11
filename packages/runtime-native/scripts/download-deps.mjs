@@ -89,9 +89,9 @@ const DEPS = {
     getUrl: () => {
       // wgpu-native releases: https://github.com/gfx-rs/wgpu-native/releases
       // Windows releases include toolchain suffix: wgpu-windows-x86_64-msvc-release.zip
-      // Asset arches are arm64/x64 (not the aarch64/x86_64 that ARCH_MAP produces).
+      // Asset arches are aarch64/x86_64 (the ARCH_MAP names, not raw ARCH).
       const platform = platformName === 'macos' ? 'macos' : platformName;
-      const arch = ARCH;
+      const arch = archName;
       if (platformName === 'windows') {
         return `https://github.com/gfx-rs/wgpu-native/releases/download/${DEPS.wgpu.version}/wgpu-${platform}-${arch}-msvc-release.zip`;
       }
