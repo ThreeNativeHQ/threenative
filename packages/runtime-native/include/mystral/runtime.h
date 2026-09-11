@@ -29,6 +29,10 @@ struct RuntimeConfig {
     uint32_t maxFps = 60;
     // Test-only seam: install timers after JS engine creation. Production callers leave this false.
     bool testEngineFirstTimers = false;
+    // Native host inputs, not game options. Packaged entrypoints hash the complete bundled source
+    // before device creation. Empty means unqualified (memory-only), never guess from a shim eval.
+    std::string pipelineCacheAppIdentity;
+    std::string pipelineCacheSourceIdentity;
     // `display.backgroundMode`. Default pauses the loop off-screen; "continue" is the named
     // override, and it turns pausing off without turning the lifecycle markers off.
     platform::BackgroundMode backgroundMode = platform::BackgroundMode::Pause;

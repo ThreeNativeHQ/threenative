@@ -675,6 +675,7 @@ void presentPendingSurface(BindingsState* state) {
             // the counts are read at an instant a reader can name. Prints only when they changed,
             // and says nothing about whether the game is playable — see reportPipelineCheckpoint.
             reportPipelineCheckpoint(state, state->profiling.presentCount);
+            pollPipelineCachePersistence(state);
         } else {
             std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
         }
