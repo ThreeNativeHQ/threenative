@@ -805,12 +805,24 @@ function verifyBytesBeforeExtract(kind, id, url, bytes, expected) {
 }
 
 function verifyFinalUrl(id, requested, response) {
+  // GitHub release assets answer from a signed release-assets redirect on
+  // every fetch; the signed query carries expiry and token material, so it is
+  // never a lockable identity. What the lock pins is the requested URL, and
+  // what the digest proves is the bytes. A redirect to a different *host path*
+  // outside the release-asset signer would still be a lock miss, so only the
+  // release-asset signer is accepted as a same-payload answer.
   const final = response?.url;
-  if (typeof final === 'string' && final.length > 0 && final !== requested) {
-    throw new Error(
-      `TN_NATIVE_DEP_URL_MISMATCH: payload '${id}' requested ${requested} but answered from ${final}. Lock the redirect target instead of accepting it silently.`,
-    );
+  if (typeof final !== 'string' || final.length === 0 || final === requested) return;
+  let finalHost = '';
+  try {
+    finalHost = new URL(final).hostname;
+  } catch {
+    finalHost = '';
   }
+  if (finalHost === 'release-assets.githubusercontent.com') return;
+  throw new Error(
+    `TN_NATIVE_DEP_URL_MISMATCH: payload '${id}' requested ${requested} but answered from ${final}. Lock the redirect target instead of accepting it silently.`,
+  );
 }
 
 async function ensureGradleWrapper() {
