@@ -7,16 +7,17 @@ on:
   pull_request:
     branches:
       - main
+      - develop
+  workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
   schedule:
     - cron: "17 3 * * *"
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'latest' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
-# run; that mechanism is gone (see the note above `jobs:`), and nothing else here calls the
-# Actions API.
+# run; that mechanism is gone. Only run-summary additionally reads Actions timestamps.
 permissions:
   contents: read
 
@@ -31,24 +32,35 @@ jobs:
       scope: ${{ steps.classify.outputs.scope }}
       selection: ${{ steps.classify.outputs.selection }}
       reason: ${{ steps.classify.outputs.reason }}
+      plan: ${{ steps.classify.outputs.plan }}
+      candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # Until protected develop exists, retain the qualified-main scheduled flow.
+          ref: ${{ github.event_name == 'schedule' && vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop' || github.sha }}
       - id: classify
         name: Classify the complete pull-request diff
         env:
           TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_TARGET: ${{ github.base_ref }}
+          TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          node scripts/ci-change-scope.mjs \
+          extra=()
+          if [ "$TN_CI_FORCE_FULL" = true ]; then extra+=(--full); fi
+          node scripts/ci-change-scope.mjs "${extra[@]}" \
+            --target "$TN_CI_TARGET" \
+            --candidate-sha "$(git rev-parse HEAD)" \
             --event-name "$TN_CI_EVENT" \
             --base "$TN_CI_BASE" \
             --head "$TN_CI_HEAD" \
             --format github | tee "$RUNNER_TEMP/ci-scope.outputs"
           cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+          printf 'Candidate checked out once: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
   # A red job no longer stops the rest of the run, and that is deliberate. The fail-fast this
   # replaces cancelled the whole run through the Actions API from inside the job that failed —
@@ -65,11 +77,15 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -77,14 +93,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
       - run: pnpm typecheck
 
   lint:
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -92,12 +114,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Run the complete lint gate
-        if: needs.scope.outputs.selection != 'prose'
+        if: needs.scope.outputs.selection == 'full'
         run: pnpm lint
-      - name: Run the prose-only documentation and evidence gates
-        if: needs.scope.outputs.selection == 'prose'
+      - name: Run the selected documentation and evidence gates
+        if: needs.scope.outputs.selection != 'full'
         run: |
           set -euo pipefail
+          pnpm lint
           pnpm check:docs
           pnpm exec vitest run \
             scripts/__tests__/check-doc-links.spec.ts \
@@ -106,6 +129,17 @@ jobs:
             scripts/__tests__/sync-agent-docs.spec.ts \
             scripts/__tests__/ci-structure.spec.ts \
             scripts/__tests__/ci-needs.spec.ts
+
+      - name: Prepare instruction contract dependencies
+        if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
+        uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
+      - name: Verify selected agent-instruction consumers
+        if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
+        run: |
+          pnpm sync:agents --check
+          pnpm exec vitest run scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts
 
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
@@ -116,12 +150,14 @@ jobs:
   # consumer: `@threenative/runtime-native`'s own `test` script, which drives real contract
   # executables. That moved to `test-native` below, which runs beside this job instead of in front
   # of it. `scripts/__tests__/ci-structure.spec.ts` asserts the two halves partition the workspace.
+
   test:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_SUITE_EXCLUDE_PACKAGES: "@threenative/runtime-native"
       # The unit run moved to `test-unit` below. What is left here is the part that only makes
       # sense once: the docs check, the build that proves every workspace and example still
@@ -132,6 +168,8 @@ jobs:
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -151,7 +189,7 @@ jobs:
   # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
   test-unit:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -159,6 +197,7 @@ jobs:
       matrix:
         shard: ["1/3", "2/3", "3/3"]
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_SUITE_PHASES: unit
       TN_SUITE_UNIT_SHARD: ${{ matrix.shard }}
       # The orphan gate waits for Playwright's asynchronous profile cleanup; its 30s default is a
@@ -166,6 +205,8 @@ jobs:
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -175,15 +216,18 @@ jobs:
       # The specs import the compiled workspace; `test` builds it in its own `build` phase, and
       # this job takes the cached result rather than repeating it three times over.
       - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test
 
   test-native:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
       # never existed. The save skipped every time, `gh cache list` held no native-ccache entry
       # after five runs, and every job recompiled from scratch while the workflow read as though
@@ -229,6 +273,7 @@ jobs:
       # objects rebuilt behind a cache that had just been restored.
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
           fetch-depth: 0
       - name: Restore native third-party dependencies
         uses: actions/cache@v4
@@ -249,29 +294,6 @@ jobs:
       # can be newer than the commit timestamp restored for the changed source. That produces a
       # mixed tree which reaches the linker with missing symbols. The compiler cache below still
       # reuses safe content-addressed objects; this cache must be exact-key only.
-      - name: Restore the compiled native tree
-        uses: actions/cache@v4
-        with:
-          # Cargo's output belongs here too. With the C++ compile eliminated by #78, the host build
-          # step was still ~112s and all of it was Rust: `threenative_native_physics` and the
-          # `ui-overlay` crate with its webkit2gtk bindings. Measured locally, physics alone is a
-          # 19s cold build producing 248 MB, and 0s warm.
-          #
-          # The physics crate's output is `.runtime/physics-target`, not `native/physics/target`:
-          # `build-native-physics.mjs` passes `--target-dir` explicitly because it cross-compiles
-          # to five targets. Caching the directory `cargo build` would have used by default cached
-          # nothing at all, and the ~50s physics build kept running behind a warm cache.
-          #
-          # It needs no timestamp help, unlike ninja: touching every `.rs` source the way a
-          # checkout does and rebuilding takes 0s, because cargo fingerprints content rather than
-          # trusting mtimes alone. So the cache is the whole change here, and the key grows to
-          # cover the crate sources and their lockfiles — a Rust source that moves has to miss.
-          path: |
-            packages/runtime-native/build/tn-linux
-            packages/runtime-native/build/tn-linux-quickjs
-            packages/runtime-native/.runtime/physics-target
-            packages/runtime-native/native/ui-overlay/target
-          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
       - name: Restore native compiler cache
         uses: actions/cache@v4
         with:
@@ -314,6 +336,37 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      - name: Identify the complete native build toolchain
+        id: native-toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ImageVersion:=unknown}"
+          identity="$( { printf '%s\n' "$ImageVersion"; c++ --version; cmake --version; rustc --version; node --version; dpkg-query -W; } | sha256sum | cut -d' ' -f1)"
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+      - name: Restore the compiled native tree
+        uses: actions/cache@v4
+        with:
+          # Cargo's output belongs here too. With the C++ compile eliminated by #78, the host build
+          # step was still ~112s and all of it was Rust: `threenative_native_physics` and the
+          # `ui-overlay` crate with its webkit2gtk bindings. Measured locally, physics alone is a
+          # 19s cold build producing 248 MB, and 0s warm.
+          #
+          # The physics crate's output is `.runtime/physics-target`, not `native/physics/target`:
+          # `build-native-physics.mjs` passes `--target-dir` explicitly because it cross-compiles
+          # to five targets. Caching the directory `cargo build` would have used by default cached
+          # nothing at all, and the ~50s physics build kept running behind a warm cache.
+          #
+          # It needs no timestamp help, unlike ninja: touching every `.rs` source the way a
+          # checkout does and rebuilding takes 0s, because cargo fingerprints content rather than
+          # trusting mtimes alone. So the cache is the whole change here, and the key grows to
+          # cover the crate sources and their lockfiles — a Rust source that moves has to miss.
+          path: |
+            packages/runtime-native/build/tn-linux
+            packages/runtime-native/build/tn-linux-quickjs
+            packages/runtime-native/.runtime/physics-target
+            packages/runtime-native/native/ui-overlay/target
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('packages/runtime-native/scripts/**', 'packages/runtime-native/*.json', 'pnpm-lock.yaml', '.github/workflows/ci.yml', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**', 'packages/runtime-native/native/**/build.rs', 'packages/runtime-native/native/**/.cargo/**', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
       # `ccache --show-stats` at the end of the job reports one number for three builds, and that
       # number has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — identical
       # before and after each lane got its own restore-key namespace, and with the restore
@@ -423,11 +476,15 @@ jobs:
 
   test-browser:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -468,11 +525,15 @@ jobs:
 
   test-playtest:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -494,7 +555,7 @@ jobs:
 
   golden-path-template:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     strategy:
       fail-fast: false
       matrix:
@@ -510,6 +571,7 @@ jobs:
     # job measures how long it took.
     timeout-minutes: 45
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # This job proves a stranger can scaffold a project, install it, build it and have its own
       # playtests run. The scaffold's `test` script refuses a software adapter, which is right for
       # the developer machine it was written for and impossible on a runner with no GPU — so the
@@ -519,32 +581,11 @@ jobs:
       TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}
     steps:
       - uses: actions/checkout@v7
-      # Skip the whole lane when this exact tree has already proved it. The key hashes everything
-      # the lane consumes — every package source and manifest, every template, the scripts that
-      # pack and verify, the lockfile, and the workflow itself — so a hit means the inputs are
-      # byte-identical to a run that passed, on any branch. A PR that only touches docs or PRDs
-      # skips ~12 minutes; a rebase that changes nothing here reuses the proof rather than
-      # re-earning it; anything that could change the answer misses and runs in full.
-      #
-      # Deliberately broad rather than clever. A key that names only the "related" files is one
-      # forgotten input away from a gate that passes because nothing ran, and this repository has
-      # already been bitten by exactly that reasoning: the path filters on native-platforms let
-      # core, playtest and create-threenative changes through unproven. Extra misses cost minutes.
-      # A false pass costs a broken release.
-      - name: Restore the proof that this tree already passed
-        id: proof
-        uses: actions/cache/restore@v4
         with:
-          path: .golden-path-proof
-          key: golden-path-proof-${{ matrix.template }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**', 'scripts/**', '.github/**') }}
-      - if: steps.proof.outputs.cache-hit == 'true'
-        run: |
-          echo "golden-path ${{ matrix.template }}: reusing the proof recorded for this tree"
-          cat .golden-path-proof/commit
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      # Cache products, never verdicts: selected golden-path scenarios execute on this candidate.
       - uses: ./.github/actions/pnpm
-        if: steps.proof.outputs.cache-hit != 'true'
       - uses: actions/setup-node@v7
-        if: steps.proof.outputs.cache-hit != 'true'
         with:
           node-version: 20
           cache: pnpm
@@ -558,7 +599,6 @@ jobs:
             pnpm-lock.yaml
             packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
-        if: steps.proof.outputs.cache-hit != 'true'
       # Everything this lane needs before the smoke, and nothing template-nonvisual already does.
       # It used to pack the workspace, scaffold both templates and run their non-visual scenarios
       # here, and then `verify:golden-path` below packed and scaffolded the same template all over
@@ -574,12 +614,11 @@ jobs:
       # ERR_MODULE_NOT_FOUND before the verifier reaches its first step, which is what run
       # 33697267947 did. The scaffold below stays starter-only; the compiled workspace does not.
       - name: Take the packed workspace from build
-        if: steps.proof.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: workspace-packages
       - name: Scaffold the starter the HUD smoke drives
-        if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
+        if: matrix.template == 'starter'
         uses: ./.github/actions/scaffold-from-tarballs
         with:
           archives-directory: ${{ github.workspace }}/artifacts/workspace-packages
@@ -587,12 +626,11 @@ jobs:
           target: ${{ runner.temp }}/threenative-starter
           template: starter
       - name: Install the scaffolded starter
-        if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
+        if: matrix.template == 'starter'
         run: pnpm --dir "$RUNNER_TEMP/threenative-starter" install
       - uses: ./.github/actions/playwright-chromium
-        if: steps.proof.outputs.cache-hit != 'true'
       - name: Drive the starter's interactive HUD smoke
-        if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
+        if: matrix.template == 'starter'
         run: |
           target="$RUNNER_TEMP/threenative-starter"
           pnpm --dir "$target" dev --host 127.0.0.1 --port 4175 > "$RUNNER_TEMP/threenative-starter.log" 2>&1 &
@@ -633,7 +671,6 @@ jobs:
       # path. Measured on run 33710335121: `verify:golden-path` 425s of a 472s job, behind `build`
       # at 98s. Unset on a developer machine, so `pnpm verify:golden-path` still packs its own.
       - run: pnpm verify:golden-path
-        if: steps.proof.outputs.cache-hit != 'true'
         env:
           TN_GOLDEN_PATH_ARCHIVES: ${{ github.workspace }}/artifacts/workspace-packages
           # The `test` layer proves a stranger's `pnpm test` reaches a running scene and comes
@@ -644,27 +681,13 @@ jobs:
           # on the run's critical path and proved nothing the run did not already know. The layer
           # prints which scenarios it drove and which it left to the other lane.
           TN_GOLDEN_PATH_SCENARIOS: "1"
-      - name: Record the proof for this tree
-        if: success() && steps.proof.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p .golden-path-proof
-          echo "$GITHUB_SHA" > .golden-path-proof/commit
-      # cache/save rather than the combined action on purpose: the combined action's post step
-      # writes the entry whatever the job did, which would record a proof for a run that failed.
-      # `if: success()` is the whole safety property here.
-      - name: Save the proof for this tree
-        if: success() && steps.proof.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .golden-path-proof
-          key: golden-path-proof-${{ matrix.template }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**', 'scripts/**', '.github/**') }}
 
   template-nonvisual:
     # Ran only on push/schedule until 2026-09-01 (owner call): every template now proves itself
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     # One leg per template was one leg per *unit of naming*, not per unit of work: on run
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
     # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
@@ -678,6 +701,8 @@ jobs:
     # lane has always used, and the step fails closed if the slices do not add back up to the list.
     strategy:
       fail-fast: false
+      # Initial cap for the PRD-373 45-job / 6–18 minute queue baseline; measure before raising.
+      max-parallel: 4
       matrix:
         include:
           - { template: action-rpg, shard: "1/1" }
@@ -698,9 +723,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -780,15 +808,17 @@ jobs:
     # by the next push, and `golden-path` the only red check on the board. A cancelled run must read
     # as cancelled, so the skip is correct there; it still cannot be mistaken for a pass, because a
     # cancelled run has no passing checks to merge on.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - name: Require or report golden-path template applicability
         run: |
           set -euo pipefail
           if [ '${{ needs.scope.outputs.selection }}' = prose ]; then
-            echo "golden-path templates: not applicable (prose-only change)"
+            echo "golden-path templates: not applicable (explicit selective exemption)"
             exit 0
           fi
           result='${{ needs.golden-path-template.result }}'
@@ -797,11 +827,15 @@ jobs:
 
   benchmark:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -809,6 +843,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
       - run: pnpm tsx scripts/count-loc.ts --check
       - run: pnpm --filter abyss-vanilla build
       - run: pnpm --filter abyss-framework build
@@ -839,9 +875,11 @@ jobs:
   # or skipped upstream reaches these assertions instead of silently skipping a required check.
   build:
     needs: [scope, build-artifacts, native-platforms]
-    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+    if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - name: Require workspace and native platform evidence
         env:
@@ -862,11 +900,15 @@ jobs:
   # the protected build join above requires both this producer and the complete native lane.
   build-artifacts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -884,15 +926,6 @@ jobs:
       # so it packs once and the legs download the result. The specs file travels with the
       # archives because it names them; deriving it again on the other side would be a second
       # source of truth for which packages exist.
-      - name: Pack the workspace once for every lane that scaffolds from tarballs
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/workspace-packages
-          pnpm tsx scripts/workspace-packages.ts --archives > artifacts/workspace-packages/specs
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            pnpm --filter "$package_name" pack --pack-destination artifacts/workspace-packages
-          done < artifacts/workspace-packages/specs
       # Every `packages/*/dist` rides along, not just the CLI's. The scaffold action runs
       # `create-threenative` from `dist/index.js`, and that file imports `@threenative/assets`,
       # which pnpm resolves through a workspace symlink to `packages/assets/dist/index.js`. Ship
@@ -911,11 +944,15 @@ jobs:
 
   performance-contracts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' && !cancelled() }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -928,7 +965,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/performance-contract
-          node --input-type=module -e 'import { writeFile } from "node:fs/promises"; await writeFile("artifacts/performance-contract/summary-input.json", JSON.stringify({expectedSha: process.env.GITHUB_SHA, requiredLanes: ["performance-contracts"], results: [{artifactHash: process.env.TN_PERF_ARTIFACT_HASH, lane: "performance-contracts", reason: "bounded performance contract has not completed", required: true, sourceSha: process.env.GITHUB_SHA, status: "BLOCKED"}]}));'
+          node --input-type=module -e 'import { writeFile } from "node:fs/promises"; await writeFile("artifacts/performance-contract/summary-input.json", JSON.stringify({expectedSha: process.env.TN_CI_SHA, requiredLanes: ["performance-contracts"], results: [{artifactHash: process.env.TN_PERF_ARTIFACT_HASH, lane: "performance-contracts", reason: "bounded performance contract has not completed", required: true, sourceSha: process.env.TN_CI_SHA, status: "BLOCKED"}]}));'
       - name: Invoke the bounded production collector control
         run: |
           set +e
@@ -950,7 +987,7 @@ jobs:
           set +e
           pnpm tsx scripts/performance-regression/ci-summary.ts \
             --input artifacts/performance-contract/summary-input.json \
-            --expected-sha "$GITHUB_SHA" \
+            --expected-sha "$TN_CI_SHA" \
             --out artifacts/performance-contract/summary.json \
             | tee artifacts/performance-contract/summary.md >> "$GITHUB_STEP_SUMMARY"
           status=${PIPESTATUS[0]}
@@ -973,11 +1010,15 @@ jobs:
 
   budgets:
     needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -992,6 +1033,8 @@ jobs:
       # `needs: build` orders this job behind the build but hands it no artifact, so the ordering
       # reads like a guarantee it does not make. The shared action is what actually supplies dist.
       - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
@@ -1001,8 +1044,11 @@ jobs:
   # legs passed on the corrected native build.
   native-platforms:
     needs: scope
-    if: needs.scope.outputs.selection != 'prose'
+    if: needs.scope.outputs.selection == 'full'
     uses: ./.github/workflows/native-platforms.yml
+    with:
+      selection_plan: ${{ needs.scope.outputs.plan }}
+      candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
 
   supply-chain:
     needs: scope
@@ -1010,15 +1056,16 @@ jobs:
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
     # PR range and immune to force-push SHAs the checkout may not have.
-    if: >-
-      (github.event_name == 'pull_request' || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
           fetch-depth: 0
       - name: Verify the PR commit range is present
         if: github.event_name == 'pull_request'
@@ -1044,7 +1091,7 @@ jobs:
           --log-opts="$TN_GITLEAKS_RANGE"
           /repo
       - name: Scan the full git history for leaked secrets
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         run: >-
           docker run --rm
           -e GIT_CONFIG_COUNT=1
@@ -1066,6 +1113,51 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           fail-on-severity: moderate
+
+  website:
+    needs: scope
+    if: ${{ fromJSON(needs.scope.outputs.plan).checks.website }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm --filter threenative-site typecheck
+      - run: pnpm --filter threenative-site build
+      - run: pnpm --filter threenative-site exec vitest run
+      - run: pnpm --filter threenative-site exec playwright test --config=playwright.config.ts
+
+  # The only required context after protected-develop cutover. Explicit exemptions are not passes.
+  # Legacy main contexts stay in place until the owner changes protection after full qualification.
+  ci-required:
+    needs: [scope, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, native-platforms, supply-chain, website]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      - name: Reject every unsuccessful or missing selected job
+        env:
+          TN_CI_NEEDS: ${{ toJSON(needs) }}
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_CUTOVER: ${{ vars.TN_DEVELOP_CI_ENABLED }}
+          TN_CI_BASE_REF: ${{ github.base_ref }}
+          TN_CI_HEAD_REF: ${{ github.head_ref }}
+          TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci-required.mjs
 
   # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every
   # run this repository had ever produced; nobody had seen any of them fail because nobody had
@@ -1100,19 +1192,39 @@ jobs:
       - budgets
       - performance-contracts
       - supply-chain
+      - website
+      - ci-required
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Collect queue and execution timestamps for this attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            --jq '[.[].jobs[]]' > "$RUNNER_TEMP/job-timings.json"; then
+            echo '[]' > "$RUNNER_TEMP/job-timings.json"
+            echo 'Timing API unavailable; no queue/execution improvement is claimed.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          printf 'Tested candidate: `%s`; workflow definition: `%s`\n' "$TN_CI_SHA" '${{ github.workflow_sha }}' >> "$GITHUB_STEP_SUMMARY"
       - name: Report every job's verdict, and why a skipped one never ran
         env:
           # `toJSON(needs)` is every upstream result at once. Passed through a file rather than an
@@ -1126,9 +1238,9 @@ jobs:
           {
             echo "## CI change scope"
             echo ""
-            echo "- Selection: `$TN_CI_SCOPE`"
+            printf -- '- Selection: `%s`\n' "$TN_CI_SCOPE"
             echo "- Reason: $TN_CI_SCOPE_REASON"
-            if [ "$TN_CI_SCOPE" = prose ]; then
+            if [ "$TN_CI_SCOPE" != full ]; then
               echo "- Not applicable: compilation, browser/playtest, native and full game-matrix jobs."
             fi
             echo ""
@@ -1137,9 +1249,9 @@ jobs:
           pnpm tsx scripts/ci-run-summary.ts \
             --workflow .github/workflows/ci.yml \
             --results "$RUNNER_TEMP/needs.json" \
-            --reporter run-summary | tee -a "$GITHUB_STEP_SUMMARY"
+            --reporter run-summary --timings "$RUNNER_TEMP/job-timings.json" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Download real performance collector artifacts
-        if: always()
+        if: ${{ always() && needs.scope.outputs.selection == 'full' }}
         uses: actions/download-artifact@v7
         with:
           pattern: '*performance*evidence*'
@@ -1151,15 +1263,15 @@ jobs:
         run: |
           set -euo pipefail
           required_lanes=""
-          if [ "$TN_CI_SCOPE" != prose ]; then
+          if [ "$TN_CI_SCOPE" = full ]; then
             required_lanes="performance-contracts,native-linux-contract"
           else
-            echo "performance collector evidence: not applicable (prose-only change)"
+            echo "performance collector evidence: not applicable (explicit selective exemption)"
           fi
           pnpm tsx scripts/performance-regression/ci-summary.ts \
             --artifact-dir artifacts/performance-coverage \
             --manifest scripts/performance-regression/lanes.json \
             --coverage performance-contracts,native-linux-contract,Windows,macOS,android-emulator,ios-simulator \
             --required-lanes "$required_lanes" \
-            --expected-sha "$GITHUB_SHA" \
+            --expected-sha "$TN_CI_SHA" \
             | tee -a "$GITHUB_STEP_SUMMARY"

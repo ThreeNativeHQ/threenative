@@ -5,6 +5,10 @@ description: >-
   what gets cached.
 
 inputs:
+  pack-archives:
+    description: Pack and validate current published files; false only for bundle-only consumers.
+    required: false
+    default: "true"
   key-suffix:
     description: Extra text to vary the cache key when a caller needs its own entry.
     required: false
@@ -13,11 +17,17 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Record the workspace toolchain
+      id: toolchain
+      shell: bash
+      run: |
+        echo "node=$(node --version)" >> "$GITHUB_OUTPUT"
+        echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
     # The key names everything the bundles are built from and nothing else. `src/**`, the package
     # manifests, the tsup configs, the per-package generators that write files into the bundle, and
     # the script that decides which packages get built at all. Templates are deliberately absent:
     # they ship as files and no bundle embeds their bytes, so keying on them would miss on every
-    # template edit and buy nothing. `__tests__` is absent for the same reason.
+    # template edit and buy nothing. Shared build helpers/configuration intentionally remain broad.
     #
     # A key that names too little serves a stale bundle, which is the one failure this must not
     # have — so when in doubt an input belongs in the list. A key that names too much only costs a
@@ -26,36 +36,31 @@ runs:
       id: dist
       uses: actions/cache@v4
       with:
-        # The tarballs travel with the bundles they are made of. `pnpm pack` is a pure function of
-        # `dist` plus the manifests, so it is covered by the same key, and three lanes needed the
-        # archives rather than the bundles — `playwright.config.ts` was rebuilding and repacking
-        # every package itself before a single browser test ran.
+        # Only compiled bundles are cacheable. Shipped templates and mirrors are repacked below.
         path: |
           packages/*/dist
-          artifacts/workspace-packages
-        key: workspace-dist-${{ runner.os }}-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsup.config.ts', 'packages/*/scripts/**', 'scripts/workspace-packages.ts', 'pnpm-lock.yaml') }}${{ inputs.key-suffix }}
-    # A cache hit restores `packages/*/dist` and the tarballs, and that used to be the whole story.
-    # It is not: core's build also copies `packages/engine-mcp/dist/index.js` to
-    # `packages/core/mcp/engine-server.mjs`, a generated file that lives outside `dist` and is
-    # therefore in no cache path. On a hit it did not exist, and the `build` job re-packs
-    # unconditionally afterwards (it must — the key deliberately omits templates, so a
-    # template-only edit hits and still needs a fresh tarball). The re-pack then overwrote the
-    # good cached core tarball with one missing its capability server, ten scaffolds installed it,
-    # and `engine.mjs` fell through to an `npx` registry fetch that answered nothing for 30 s.
-    #
-    # The bundle's own source is restored by this cache, so a hit can just redo the copy. That is
-    # cheaper than widening the cache and it keeps the invariant local to the thing that breaks it.
-    - if: steps.dist.outputs.cache-hit == 'true'
+        key: workspace-dist-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.node }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json', 'tsconfig.base.json', 'patches/**', 'packages/*/src/**', 'packages/*/package.json', 'packages/*/tsup.config.ts', 'packages/*/*.json', 'packages/*/*.ts', 'packages/*/scripts/**', 'packages/*/mcp/**', 'scripts/workspace-packages.ts', 'scripts/**', '.github/actions/workspace-dist/**') }}${{ inputs.key-suffix }}
+    # Core's capability server lives outside dist. Restore it from the cached engine-mcp bundle
+    # BEFORE every repack, or a warm-cache core tarball silently loses its offline MCP server.
+    - name: Restore generated files outside dist
+      if: steps.dist.outputs.cache-hit == 'true'
       shell: bash
       run: |
         set -euo pipefail
         echo "workspace dist restored for these sources; skipping the build"
         node packages/core/scripts/bundle-engine-mcp.mjs
-    - if: steps.dist.outputs.cache-hit != 'true'
+    - name: Build missing workspace bundles
+      if: steps.dist.outputs.cache-hit != 'true'
       shell: bash
       run: |
         set -euo pipefail
         pnpm tsx scripts/workspace-packages.ts build
+    - name: Pack current workspace files
+      if: inputs.pack-archives != 'false'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Templates, mirrors and other published non-dist files are never restored from cache.
         rm -rf artifacts/workspace-packages
         mkdir -p artifacts/workspace-packages
         pnpm tsx scripts/workspace-packages.ts --archives > artifacts/workspace-packages/specs
@@ -63,9 +68,6 @@ runs:
           [ -n "$package_name" ] || continue
           pnpm --filter "$package_name" pack --pack-destination artifacts/workspace-packages
         done < artifacts/workspace-packages/specs
-    # Fail closed rather than hand the caller a partial restore. A cache entry saved from a run
-    # that died mid-build would otherwise be indistinguishable from a good one, and every consumer
-    # of this action imports from these files.
     # Fail closed rather than hand the caller a partial restore. An entry saved from a run that
     # died mid-build would otherwise be indistinguishable from a good one, and every consumer of
     # this action imports from these files. The set is derived, not listed: a package builds a
@@ -84,7 +86,13 @@ runs:
           echo "TN_WORKSPACE_DIST_INCOMPLETE: ${missing[*]}" >&2
           exit 1
         fi
-        # And the archives, for the lanes that scaffold rather than import.
+        echo "workspace compiled bundles validated"
+    - name: Validate current archive payloads
+      if: inputs.pack-archives != 'false'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Archives belong only to lanes that scaffold rather than import.
         archives="$(ls artifacts/workspace-packages/*.tgz 2>/dev/null | wc -l)"
         bundles="$(ls -d packages/*/dist | wc -l)"
         expected="$(pnpm tsx scripts/workspace-packages.ts --archives | grep -c .)"
@@ -122,3 +130,12 @@ runs:
         done
         rm -f "$core_listing"
         echo "workspace dist complete: $bundles bundles, $archives tarballs, core archive carries its MCP server"
+    - name: Report workspace product reuse and elapsed time
+      if: always()
+      shell: bash
+      env:
+        DIST_CACHE_HIT: ${{ steps.dist.outputs.cache-hit }}
+        DIST_STARTED: ${{ steps.toolchain.outputs.started }}
+      run: |
+        printf 'Workspace bundle cache hit: `%s`; restore/build/repack/validation execution: `%ss`. This is product reuse, not a test verdict.\n' \
+          "${DIST_CACHE_HIT:-unavailable}" "$(( $(date +%s) - ${DIST_STARTED:-$(date +%s)} ))" >> "$GITHUB_STEP_SUMMARY"

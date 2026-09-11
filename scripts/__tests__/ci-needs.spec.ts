@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { formatRunSummary, summaryRows } from "../ci-run-summary.js";
+import { formatJobTimings, formatRunSummary, summaryRows } from "../ci-run-summary.js";
 import { ciJobGraph, ciNeedsFindings, declaredNeeds, jobSections } from "../ci-workflow.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
@@ -237,5 +237,36 @@ describe("ci run summary", () => {
     expect(() => summaryRows(jobs, "run-summary", { build: {} })).toThrow(
       /CI_SUMMARY_NO_RESULT: build/u,
     );
+  });
+});
+
+describe("PRD-373 measured queue and execution time", () => {
+  it("keeps runner queue time distinct from execution time", () => {
+    const summary = formatJobTimings([
+      {
+        name: "website",
+        created_at: "2026-09-10T00:00:00Z",
+        started_at: "2026-09-10T00:02:00Z",
+        completed_at: "2026-09-10T00:02:45Z",
+      },
+    ]);
+    expect(summary).toContain("| website | 120s | 45s |");
+    expect(summary).toContain("Queue");
+    expect(summary).toContain("Execution");
+  });
+
+  it("does not manufacture zero-duration evidence for skipped or malformed jobs", () => {
+    const summary = formatJobTimings([
+      { name: "native | skipped", started_at: null, completed_at: null },
+      {
+        name: "invalid",
+        created_at: "bad",
+        started_at: "2026-09-10T00:02:00Z",
+        completed_at: "2026-09-10T00:01:00Z",
+      },
+    ]);
+    expect(summary).toContain("native &#124; skipped");
+    expect(summary).toContain("| unavailable | unavailable |");
+    expect(summary).not.toContain("0s");
   });
 });

@@ -97,7 +97,7 @@ test('native platform failures fail the exact protected build context', () => {
   // `build` context, and it is asserted against the real gate shell below.
   expect(buildJob).toContain('needs: [scope, build-artifacts, native-platforms]');
   expect(buildJob).toContain(
-    "if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}",
+    "if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}",
   );
   expect(buildJob).toContain('CI_SCOPE_RESULT: ${{ needs.scope.result }}');
   expect(buildJob).toContain(
@@ -158,16 +158,19 @@ test('Android V8 source is produced once and consumed as a verified artifact', (
     /\n\x20{2}android-v8-source:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
   )?.[0] ?? '';
   expect(producer).toContain('needs: scope');
+  expect(producer).toContain("if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true");
+  expect(producer).toContain('ref: ${{ needs.scope.outputs.candidate_sha }}');
+  expect(producer).toContain('TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}');
   expect(producer).toContain('uses: ./.github/actions/android-v8-source');
   expect(producer).toContain('actions/upload-artifact@v7');
-  expect(producer).toContain('name: android-v8-${{ github.sha }}');
+  expect(producer).toContain('name: android-v8-${{ needs.scope.outputs.candidate_sha }}');
   const android = workflow.match(
     /\n\x20{2}android-emulator-parity:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
   )?.[0] ?? '';
   expect(android).toContain('needs: [scope, web-reference, android-v8-source]');
   expect(android).toContain('needs.android-v8-source.result == \'success\'');
   expect(android).toContain('actions/download-artifact@v7');
-  expect(android).toContain('name: android-v8-${{ github.sha }}');
+  expect(android).toContain('name: android-v8-${{ needs.scope.outputs.candidate_sha }}');
   expect(android).toContain('native-android-third-party-');
 });
 

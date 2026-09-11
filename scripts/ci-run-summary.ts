@@ -88,6 +88,37 @@ export function formatRunSummary(rows: readonly ISummaryRow[]): string {
   return lines.join("\n");
 }
 
+/** API timestamps are separate observations, not an inference from total workflow duration. */
+export interface IJobTiming {
+  readonly name: string;
+  readonly created_at?: string | null;
+  readonly started_at?: string | null;
+  readonly completed_at?: string | null;
+}
+
+function elapsed(start: string | null | undefined, end: string | null | undefined): string {
+  const duration = Date.parse(end ?? "") - Date.parse(start ?? "");
+  return Number.isFinite(duration) && duration >= 0
+    ? `${Math.round(duration / 1_000)}s`
+    : "unavailable";
+}
+
+export function formatJobTimings(jobs: readonly IJobTiming[]): string {
+  return [
+    "## Observed job timing",
+    "",
+    "Queue starts at the API job-created timestamp; execution starts when a runner accepts it. Missing timestamps are unavailable, never zero or a passing test.",
+    "",
+    "| Job | Queue | Execution |",
+    "| --- | --- | --- |",
+    ...jobs.map(
+      (job) =>
+        `| ${job.name.replaceAll("|", "&#124;").replaceAll(/\r?\n/gu, " ")} | ${elapsed(job.created_at, job.started_at)} | ${elapsed(job.started_at, job.completed_at)} |`,
+    ),
+    "",
+  ].join("\n");
+}
+
 function argument(name: string): string {
   const at = process.argv.indexOf(`--${name}`);
   const value = at < 0 ? undefined : process.argv[at + 1];
@@ -102,6 +133,13 @@ async function main(): Promise<void> {
     IJobResult
   >;
   console.log(formatRunSummary(summaryRows(jobs, argument("reporter"), results)));
+  if (process.argv.includes("--timings")) {
+    const timings = JSON.parse(await readFile(argument("timings"), "utf8")) as IJobTiming[];
+    if (!Array.isArray(timings) || timings.some((job) => !job || typeof job.name !== "string")) {
+      throw new Error("CI_SUMMARY_INVALID_TIMINGS: expected API job records");
+    }
+    console.log(formatJobTimings(timings));
+  }
 }
 
 if (process.argv[1]?.endsWith("ci-run-summary.ts") === true) {
