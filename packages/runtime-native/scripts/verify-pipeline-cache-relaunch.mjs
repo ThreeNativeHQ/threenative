@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const [executableArg, outputArg] = process.argv.slice(2);
+const [executableArg, outputArg, scopeArg] = process.argv.slice(2);
+const lifecycleOnly = scopeArg === "--envelope-lifecycle-only";
+if (scopeArg && !lifecycleOnly) throw new Error("unknown relaunch scope");
 if (!executableArg) throw new Error('usage: verify-pipeline-cache-relaunch.mjs <host-contract-executable> [output-directory]');
 const executable = resolve(executableArg);
 const output = resolve(outputArg ?? 'artifacts/pipeline-cache-relaunch');
@@ -27,6 +29,7 @@ function run(arm, disabled = false) {
   assert.ifError(child.error);
   assert.equal(child.status, 0, `${arm} exited ${child.status} (${child.signal}):\n${log.slice(-5000)}`);
   assert.match(log, /persistent cache (?:relaunch|shutdown) contract passed/);
+  assert.equal(log.includes('TN_PIPELINE_TEST_SCOPE:envelope-lifecycle-only; compiled-data-proof=false'), lifecycleOnly, 'requested scope must match the actual executable');
   const records = log.split('\n').filter((line) => line.startsWith('TN_PIPELINE_CACHE:'))
     .map((line) => JSON.parse(line.slice('TN_PIPELINE_CACHE:'.length)));
   assert.ok(records.length > 0, 'missing real cache observations');
@@ -63,7 +66,7 @@ try {
   run('read-only');
   chmodSync(dirname(file), 0o700);
   assert.ok(readdirSync(dirname(file)).length <= 3, 'unbounded per-generation files');
-  writeFileSync(join(output, 'result.json'), `${JSON.stringify({ status: 'passed', processArms: 10, firstPlayableClaim: false, physicalDeviceClaim: false }, null, 2)}\n`);
+  writeFileSync(join(output, 'result.json'), `${JSON.stringify({ status: 'passed', scope: lifecycleOnly ? 'envelope-lifecycle-only' : 'compiled-data-relaunch', compiledDataProof: !lifecycleOnly, processArms: 10, firstPlayableClaim: false, physicalDeviceClaim: false }, null, 2)}\n`);
 } finally {
   if (file && existsSync(dirname(file))) chmodSync(dirname(file), 0o700);
   rmSync(root, { recursive: true, force: true });
