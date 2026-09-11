@@ -281,6 +281,24 @@ and `pnpm budgets` is green.
 **Still not claimed:** the hosted Linux row. Its green is owned by the run on this head, not by this
 record.
 
+### Reverted on independent acceptance review (2026-09-11)
+
+The three `isObject` guards were **removed again** before this PRD was archived.
+`packages/runtime-native/src/raytracing/bindings.cpp` is now byte-identical to its pre-PR-180 state.
+
+Two rules required it, and neither is discharged by the measurement above. No phase of PRD-078 names
+this file, so it was edited outside every declared five-file assignment, which the verification
+contract forbids; and it is a runtime behaviour change carrying no automated regression — no test
+under `packages/runtime-native/tests/` references `getGeometryId`, `getBLASId` or `getTLASId`, and
+the hand-run binary comparison above is not a check anything re-runs. The correction immediately
+below already withdrew the diagnosis that motivated the edit: Phase 6's Xvfb wrapper repaired the
+Linux row, not these guards.
+
+The observation itself stands and is not being disclaimed — the pre-repair source really does print
+six `_id` TypeErrors and the guarded source prints zero. Reinstating the guards is therefore
+reasonable future work, but it belongs to a phase that names the file and ships a regression test,
+not to this PRD.
+
 ## Correction: the contract lane ran without a display, and the `_id` line was not the cause
 
 The `_id` diagnostic analysed above is real, and the repair for it is correct, but it was **not**
@@ -468,10 +486,13 @@ record.
 
 ## Hosted proof executed: the packed consumer and all six Android controls
 
-Run [34569827906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34569827906), attempt 1,
-candidate `6ddf1bc1bc759dd059b2793ca9a2684d565c52b8`. **`clean-consumer` succeeded** — the first time
-it has completed on any route in this repository's history, across twenty-plus runs of this
-workflow. Job window 06:44:50Z to 06:52:59Z.
+Run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952), attempt 2,
+candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, the head that merged as `a3baa7efe`. The same
+six-row green was first observed on [run 34569827906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34569827906),
+attempt 1, candidate `6ddf1bc1bc759dd059b2793ca9a2684d565c52b8`, whose `build-android` predates the
+NDK 28.2 change; the numbers below are from 34593258952. **`clean-consumer` succeeded** — the first
+time it has completed on any route in this repository's history, across twenty-plus runs of this
+workflow. Job window 14:37:42Z to 14:45:14Z.
 
 Every job row:
 
@@ -481,7 +502,7 @@ Every job row:
 | `build (linux-x64)` · `(darwin-arm64)` · `(win32-x64)` | success |
 | `build-android` | success |
 | `clean-consumer` | **success** |
-| `validate-tag` · `publish` · `finalize` · `clean-consumer-ios` · `build-ios-simulator` | skipped, as the non-publishing route requires |
+| `validate-tag` · `publish` · `finalize` · `cleanup-failed-release` · `clean-consumer-ios` · `build-ios-simulator` | skipped, as the non-publishing route requires |
 
 Every `clean-consumer` step succeeded, including the four that had never executed anywhere: the
 same-run tool-helper placement, the toolchain-free build, the 300-frame desktop launch and the
@@ -503,8 +524,8 @@ step exit codes:
 
 `failures: 0`. Every row carries a **non-zero** observed assertion count, so no control passed
 vacuously — the failure mode this PRD exists to prevent. The three variants are distinct builds, not
-one APK relabelled: `sha256` prefixes `d37d064e9bd5cbbc` (normal), `486e77ccf0eb4dec` (masked) and
-`0422348753811380` (wrong-gravity), each control keyed to the variant it belongs to.
+one APK relabelled: `sha256` prefixes `01edd619fad714df` (normal), `44296795e99c7403` (masked) and
+`68af418eb8d1d0a3` (wrong-gravity), each control keyed to the variant it belongs to.
 
 ### Toolchain-free, and a real frame
 
@@ -513,7 +534,7 @@ points — `cargo`, `cc`, `clang`, `clang++`, `cmake`, `c++`, `g++`, `gcc`, `ndk
 `rustc`, `xcodebuild` — was invoked while the consumer installed, built its desktop artifact, ran
 300 frames and built three Android APKs.
 
-`threenative-consumer.png` (39,171 bytes) is a genuine render, inspected: a magenta overlay marker,
+`threenative-consumer.png` (39,739 bytes) is a genuine render, inspected: a magenta overlay marker,
 an orange box and a blue rotated square on white, at 1280x720. Not a blank frame.
 
 The consumer was scaffolded from eleven packed workspace archives (`create-threenative@0.2.4`,
