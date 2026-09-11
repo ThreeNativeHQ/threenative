@@ -2,11 +2,17 @@ name: Pipeline cache verification
 
 on:
   workflow_dispatch:
-  push:
-    branches: [feat/prd-368-persistent-pipeline-cache]
+  pull_request:
+    branches: [main]
     paths:
       - .github/workflows/pipeline-cache.yml
-      - .github/prd-368.patch
+      - packages/runtime-native/**
+      - packages/playtest/**
+      - patches/wgpu-native@25.0.2.2.patch
+  push:
+    branches: [main, feat/prd-368-persistent-pipeline-cache]
+    paths:
+      - .github/workflows/pipeline-cache.yml
       - packages/runtime-native/**
       - packages/playtest/**
       - patches/wgpu-native@25.0.2.2.patch
@@ -15,40 +21,80 @@ permissions:
   contents: read
 
 concurrency:
-  group: pipeline-cache-${{ github.ref }}
-  cancel-in-progress: false
+  group: pipeline-cache-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
-  prepare:
-    # Temporary feature-branch delivery bridge, removed before final review.
+  storage-contract:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      contents: write
-    outputs:
-      revision: ${{ steps.apply.outputs.revision }}
     steps:
       - uses: actions/checkout@v7
-      - id: apply
-        name: Apply this task's source patch to its feature branch
+        with:
+          persist-credentials: false
+      - name: Execute filesystem faults under ASan and UBSan
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/feat/prd-368-persistent-pipeline-cache
-          if test -f .github/prd-368.patch; then
-            git apply --check .github/prd-368.patch
-            git apply --index .github/prd-368.patch
-            git rm .github/prd-368.patch
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'feat(native): persist qualified compiled pipeline caches across relaunches'
-            git push origin HEAD:feat/prd-368-persistent-pipeline-cache
-          fi
-          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "Physical performance resource provisioned: ${{ vars.TN_PERF_PHYSICAL_PROVISIONED == 'true' }}"
+          mkdir -p artifacts/pipeline-cache-storage
+          g++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+            packages/runtime-native/tests/pipeline_cache_test.cpp \
+            packages/runtime-native/src/webgpu/pipeline_cache.cpp -o /tmp/cache-contract
+          ASAN_OPTIONS=detect_leaks=1 /tmp/cache-contract 2>&1 | tee artifacts/pipeline-cache-storage/result.log
+          git rev-parse HEAD > artifacts/pipeline-cache-storage/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-cache-storage-contract
+          path: artifacts/pipeline-cache-storage
+          retention-days: 14
+          if-no-files-found: error
+
+  measurement-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+      - name: Verify protocol, parser integration, and owned playtest build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/pipeline-cache-measurement
+          node --test packages/runtime-native/tests/pipeline-cache-measurement.test.mjs \
+            packages/runtime-native/tests/pipeline-cache-protocol.test.mjs \
+            packages/runtime-native/tests/wgpu-cache-toolchain.test.mjs \
+            2>&1 | tee artifacts/pipeline-cache-measurement/node.log
+          pnpm exec vitest run packages/playtest/__tests__/pipeline-cache-perf.spec.ts \
+            packages/playtest/__tests__/perf.spec.ts \
+            2>&1 | tee artifacts/pipeline-cache-measurement/vitest.log
+          pnpm --filter @threenative/playtest typecheck 2>&1 | tee artifacts/pipeline-cache-measurement/typecheck.log
+          pnpm --filter @threenative/playtest build 2>&1 | tee artifacts/pipeline-cache-measurement/build.log
+          pnpm exec biome check packages/playtest/src/runner/perf.ts \
+            packages/playtest/src/runner/pipeline-cache-observations.ts packages/playtest/__tests__/pipeline-cache-perf.spec.ts \
+            packages/runtime-native/scripts/measure-pipeline-cache.mjs packages/runtime-native/scripts/pipeline-cache-measurement.mjs \
+            packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs \
+            packages/runtime-native/tests/pipeline-cache-measurement.test.mjs packages/runtime-native/tests/pipeline-cache-protocol.test.mjs \
+            2>&1 | tee artifacts/pipeline-cache-measurement/lint.log
+          git rev-parse HEAD > artifacts/pipeline-cache-measurement/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-cache-measurement-contract
+          path: artifacts/pipeline-cache-measurement
+          retention-days: 14
+          if-no-files-found: error
 
   patched-backend:
-    needs: prepare
     name: Patched cache ABI (${{ matrix.target }})
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -61,18 +107,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
-      - name: Test pinned toolchain resolution
-        run: node --test packages/runtime-native/tests/wgpu-cache-toolchain.test.mjs
+      - run: node --test packages/runtime-native/tests/wgpu-cache-toolchain.test.mjs
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Provision the pinned NDK and Rust target
+      - name: Provision pinned compiler tools
         run: |
           sdkmanager 'ndk;27.1.12297006'
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
@@ -86,7 +130,7 @@ jobs:
             ~/.cargo/git
             .cache/wgpu-cache-${{ matrix.target }}
           key: wgpu-cache-25.0.2.2-rust1.90-ndk27-${{ matrix.target }}-${{ hashFiles('patches/wgpu-native@25.0.2.2.patch') }}
-      - name: Reconstruct the patched backend from the pinned archive
+      - name: Reconstruct owned patched backend
         shell: bash
         run: |
           set -euo pipefail
@@ -94,28 +138,48 @@ jobs:
           dep=wgpu
           if test '${{ matrix.target }}' = android-arm64; then dep=wgpu-android; fi
           node packages/runtime-native/scripts/download-deps.mjs --only "$dep"
-          node packages/runtime-native/scripts/download-deps.mjs \
-            --rebuild-wgpu-cache-api --wgpu-cache-target '${{ matrix.target }}' \
-            2>&1 | tee artifacts/pipeline-cache/reconstruction.log
+          node packages/runtime-native/scripts/download-deps.mjs --rebuild-wgpu-cache-api \
+            --wgpu-cache-target '${{ matrix.target }}' 2>&1 | tee artifacts/pipeline-cache/reconstruction.log
           git rev-parse HEAD > artifacts/pipeline-cache/revision.txt
           tar czf artifacts/pipeline-cache/backend.tar.gz -C packages/runtime-native/third_party "$dep"
+      - name: Compile Android host against reconstructed backend
+        if: matrix.target == 'android-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dep in v8-android sdl3-android stb webp-source; do
+            node packages/runtime-native/scripts/download-deps.mjs --only "$dep"
+          done
+          cmake -S packages/runtime-native -B packages/runtime-native/build/prd368-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF -DMYSTRAL_USE_JSC=OFF \
+            -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF \
+            -DTN_ENABLE_CANVAS2D=OFF -DTN_ENABLE_WEBTRANSPORT=OFF -DTN_ENABLE_DEBUG_SERVER=OFF \
+            -DTN_ENABLE_NATIVE_PHYSICS=OFF -DTN_ENABLE_VIDEO=OFF \
+            2>&1 | tee artifacts/pipeline-cache/android-configure.log
+          cmake --build packages/runtime-native/build/prd368-android --target mystral-runtime -j 2 \
+            2>&1 | tee artifacts/pipeline-cache/android-build.log
+          find packages/runtime-native/build/prd368-android -name libmystral-runtime.so -exec sha256sum {} \; \
+            > artifacts/pipeline-cache/android-runtime.sha256
+          test -s artifacts/pipeline-cache/android-runtime.sha256
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pipeline-cache-backend-${{ matrix.target }}
           path: artifacts/pipeline-cache
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: error
 
   host-contract:
-    needs: [prepare, patched-backend]
-    name: Real host cache contract (software Vulkan, not Pixel timing)
+    needs: patched-backend
+    name: Real device and storage lifetime (not compiled-data or Pixel proof)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
@@ -138,33 +202,45 @@ jobs:
           for dep in sdl3 v8 stb webp swc libuv; do
             node packages/runtime-native/scripts/download-deps.mjs --only "$dep"
           done
-          mkdir -p packages/runtime-native/third_party
           tar xzf artifacts/backend/backend.tar.gz -C packages/runtime-native/third_party
-      - name: Build the real linked host contract
+      - name: Build strict and envelope-only executables
+        shell: bash
         run: |
+          set -euo pipefail
+          mkdir -p artifacts/pipeline-cache-host
           cmake -S packages/runtime-native -B packages/runtime-native/build/prd368 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
             -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF \
             -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF \
             -DTN_ENABLE_CANVAS2D=OFF -DTN_ENABLE_WEBTRANSPORT=OFF \
-            -DTN_ENABLE_NATIVE_PHYSICS=OFF -DTN_ENABLE_VIDEO=OFF
-          cmake --build packages/runtime-native/build/prd368 --target threenative-pipeline-cache-api-test -j 2
-      - name: Execute cache-attached and disabled controls
+            -DTN_ENABLE_NATIVE_PHYSICS=OFF -DTN_ENABLE_VIDEO=OFF \
+            2>&1 | tee artifacts/pipeline-cache-host/configure.log
+          cmake --build packages/runtime-native/build/prd368 \
+            --target threenative-pipeline-cache-api-test threenative-pipeline-cache-lifecycle-test -j 2 \
+            2>&1 | tee artifacts/pipeline-cache-host/build.log
+      - name: Preserve strict rejection and execute lifetime controls
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/pipeline-cache-host
           vulkaninfo --summary > artifacts/pipeline-cache-host/adapter.txt 2>&1
-          executable=packages/runtime-native/build/prd368/threenative-pipeline-cache-api-test
-          "$executable" 2>&1 | tee artifacts/pipeline-cache-host/attached.log
-          TN_PIPELINE_CACHE=0 "$executable" 2>&1 | tee artifacts/pipeline-cache-host/disabled.log
-          grep 'host cache mode=attached' artifacts/pipeline-cache-host/attached.log
-          grep 'host cache mode=disabled' artifacts/pipeline-cache-host/disabled.log
+          grep -i llvmpipe artifacts/pipeline-cache-host/adapter.txt
+          strict=packages/runtime-native/build/prd368/threenative-pipeline-cache-api-test
+          set +e
+          "$strict" > artifacts/pipeline-cache-host/strict-empty-driver.log 2>&1
+          strict_status=$?
+          set -e
+          test "$strict_status" = 1
+          grep 'device cache did not grow' artifacts/pipeline-cache-host/strict-empty-driver.log
+          executable=packages/runtime-native/build/prd368/threenative-pipeline-cache-lifecycle-test
+          "$executable" 2>&1 | tee artifacts/pipeline-cache-host/lifetime-attached.log
+          TN_PIPELINE_CACHE=0 "$executable" 2>&1 | tee artifacts/pipeline-cache-host/lifetime-disabled.log
+          node packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs \
+            "$executable" artifacts/pipeline-cache-host/relaunch --envelope-lifecycle-only
           git rev-parse HEAD > artifacts/pipeline-cache-host/revision.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pipeline-cache-host-contract
           path: artifacts/pipeline-cache-host
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: error

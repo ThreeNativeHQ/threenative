@@ -141,3 +141,24 @@ for 120 empty yields, and 24 frames/timer callbacks during sustained work (exit 
 `scheduler-quickjs-contract.log`). The required native test now executes both host variants;
 the existing QuickJS CI build additionally builds `mystral`. This extends JS-engine coverage,
 not platform coverage: physical Android and iOS/JSC remain unexecuted for this change.
+
+
+## PRD-368 qualified compiler-cache persistence — 2026-09-10
+
+The device owner now loads a versioned app/build/shader/adapter/driver/backend/ABI-qualified
+compiler blob before pipeline creation. After settled compiles and later presents, one background
+snapshot writes a bounded, checksum-validated, atomic replacement in existing app-private storage.
+The compile workers and snapshot share device lifetime; teardown joins both. Unsupported backends
+remain explicit. The game’s materials, warm-up choices, and scheduling policy are unchanged.
+
+`TN_PIPELINE_CACHE` now separates load acceptance/rejection, serialized bytes, durable store
+outcome, and load/snapshot/write costs. The owned cold-start CLI accepts `--pipeline-cache-pairs`
+and `--startup-scenario`; the same installed APK runs empty, populated, and disabled-before/after
+controls. Its validator requires complete matching compile populations, observed first-playable
+and movement receipts, and qualified device conditions. A successful blob import is not a hit.
+
+[The verification record](../../../docs/verification/prd-368-persistence-2026-09-10.md) distinguishes
+executed sanitizer/filesystem and pinned dependency builds from host lifetime and physical timing
+evidence still being collected. Hosted Lavapipe serializes only a header: its separate lifecycle
+contract cannot prove compiled-data persistence, a speedup, or Pixel performance. The original
+compiled-data-growth test stays strict. No <=8,000 ms or >=75% startup compile reduction is claimed.

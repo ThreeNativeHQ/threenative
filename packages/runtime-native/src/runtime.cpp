@@ -726,6 +726,8 @@ public:
         // For no-SDL mode, pass nullptr for surface (offscreen rendering uses texture directly)
         WGPUSurface surface = config_.noSdl ? nullptr : webgpu_->getSurface();
         bindingsState_ = webgpu::createBindingsState();
+        bindingsState_->pipelineCache.identity.app = config_.pipelineCacheAppIdentity;
+        bindingsState_->pipelineCache.identity.shaders = config_.pipelineCacheSourceIdentity;
         if (!webgpu::initBindings(bindingsState_, jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter())) {
             std::cerr << "[Mystral] Failed to initialize WebGPU bindings" << std::endl;
             webgpu::destroyBindingsState(bindingsState_);
