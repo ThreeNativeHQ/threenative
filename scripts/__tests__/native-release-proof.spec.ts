@@ -503,3 +503,32 @@ test("a proof run is not cancelled by the next push to its own branch", () => {
   // A manual proof on main and an automatic one must not evict each other.
   assert.match(concurrency, /group:[^\n]*github\.event_name/u);
 });
+
+test("the scaffolded consumer receives every module its entry imports", () => {
+  // Read it out of the job: `script()` needs a line between `- name:` and `run: |`, and this
+  // step has none.
+  const prepare =
+    job("clean-consumer")
+      .split("- name: Prepare the scaffolded consumer proof\n")[1]
+      ?.split("\n      - ")[0] ?? "";
+  assert.ok(prepare.length > 0, "missing the prepare step");
+  const copied = new Set(
+    [...prepare.matchAll(/copyFileSync\("([^"]+)"/gu)].map((match) => match[1]),
+  );
+  const entry = [...copied].find((path) => path.endsWith("/game.ts"));
+  assert.ok(entry, "the prepare step no longer copies a game entry");
+  const source = readFileSync(join(root, entry), "utf8");
+  // Derived from the entry rather than hard-coded: the step copied `game.ts` alone, and the
+  // consumer build died with
+  //   [UNRESOLVED_IMPORT] Could not resolve './networking-game.js' in src/game.ts
+  //   [UNRESOLVED_IMPORT] Could not resolve './worker-proof.js' in src/game.ts
+  // so the next sibling import added to the entry must be copied too, not discovered on a runner.
+  const directory = entry.slice(0, entry.lastIndexOf("/"));
+  for (const match of source.matchAll(/from "\.\/([^"]+)\.js"/gu)) {
+    const sibling = `${directory}/${match[1]}.ts`;
+    assert.ok(
+      copied.has(sibling),
+      `${entry} imports ./${match[1]}.js, so ${sibling} must be copied into the consumer`,
+    );
+  }
+});

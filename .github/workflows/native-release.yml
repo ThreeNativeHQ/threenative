@@ -680,6 +680,12 @@ jobs:
           CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
           import { copyFileSync } from "node:fs";
           copyFileSync("examples/native-smoke/src/game.ts", `${process.env.CONSUMER_TARGET}/src/game.ts`);
+          // The entry's own siblings. Copying `game.ts` alone left the consumer build with
+          //   [UNRESOLVED_IMPORT] Could not resolve './networking-game.js' in src/game.ts
+          //   [UNRESOLVED_IMPORT] Could not resolve './worker-proof.js' in src/game.ts
+          // on the first run that ever reached this job.
+          copyFileSync("examples/native-smoke/src/networking-game.ts", `${process.env.CONSUMER_TARGET}/src/networking-game.ts`);
+          copyFileSync("examples/native-smoke/src/worker-proof.ts", `${process.env.CONSUMER_TARGET}/src/worker-proof.ts`);
           copyFileSync("examples/native-smoke/vite.config.ts", `${process.env.CONSUMER_TARGET}/vite.config.ts`);
           copyFileSync("packages/physics/__tests__/fixtures/physics-parity.scenario.json", `${process.env.CONSUMER_TARGET}/physics-parity.scenario.json`);
           NODE

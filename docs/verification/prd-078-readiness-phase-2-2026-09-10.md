@@ -319,6 +319,41 @@ display, so it could not reproduce a failure that depends on not having one. `sc
 no-op where a display exists, so macOS and Windows are unaffected, and `xvfb-run` is not used
 because its exit status is its own failing cleanup kill.
 
+## First hosted proof: every build row green, and what `clean-consumer` found
+
+Run [34557447467](https://github.com/ThreeNativeHQ/threenative/actions/runs/34557447467) on
+`0dcadaada` is the first in this workflow's history to get past the build matrix:
+
+| Job | Result |
+| --- | --- |
+| `gates` | success |
+| `build (linux-x64)` | success — first ever |
+| `build (darwin-arm64)` | success |
+| `build (win32-x64)` | success |
+| `build-android` | success |
+| `validate-tag`, `publish`, `clean-consumer-ios`, `build-ios-simulator` | skipped, as the proof route requires |
+| `clean-consumer` | **reached for the first time**, failed at `Install and build without a native toolchain` |
+
+The Phase 6 display repair is confirmed hosted: the Linux row passed the contract lane that had
+failed it four times, matching the local pre-flight of the same lane under the same no-display
+conditions (41 PASS, 0 FAIL, exit 0).
+
+`clean-consumer` then failed 3 minutes in, before reaching any of the emulator repairs, because
+`Prepare the scaffolded consumer proof` copied `game.ts` without the two modules it imports:
+
+```text
+[UNRESOLVED_IMPORT] Could not resolve './networking-game.js' in src/game.ts
+[UNRESOLVED_IMPORT] Could not resolve './worker-proof.js' in src/game.ts
+```
+
+Repaired in Phase 7. The steps that did run first — artifact download, the loopback asset server,
+package packing, scaffolding from tarballs, the Android SDK exposure and the toolchain mask — all
+succeeded, so the failure is bounded to that copy.
+
+**Still unexecuted:** the desktop 300-frame launch, the KVM report, the packed Android build and all
+six Android controls. The emulator repairs recorded above remain untested, and acceptance criterion
+4 still has no evidence.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:

@@ -61,7 +61,7 @@ sequenceDiagram
 
 ## Execution phases
 
-The six bounded assignments below are reviewed separately. None is accepted merely because implementation or fixture tests are green. Phases 1 and 2 are the planned work; Phases 3 to 6 each repair one failure the hosted proof reproduced, split out rather than widening an existing assignment. Phases 3-6 record their evidence in Phase 2's record rather than opening three more tracked files, which the evidence budget discourages; each names that record among its own files. The source work from PR #168 is retained, not rewritten to recreate August defects.
+The seven bounded assignments below are reviewed separately. None is accepted merely because implementation or fixture tests are green. Phases 1 and 2 are the planned work; Phases 3 to 7 each repair one failure the hosted proof reproduced, split out rather than widening an existing assignment. Phases 3-7 record their evidence in Phase 2's record rather than opening three more tracked files, which the evidence budget discourages; each names that record among its own files. The source work from PR #168 is retained, not rewritten to recreate August defects.
 
 ### Phase 1 — The actual release job distinguishes old evidence from a runnable candidate
 
@@ -175,6 +175,23 @@ Reproduced on every Linux row of this proof route: runs
 **Required test:** `packages/runtime-native/tests/desktop-core-gate.test.mjs`: the native contract lane gets a display like the rest of the desktop chain.
 
 **Observed-red / revert control:** Run the built target with `DISPLAY` unset: exit 1 with `SDL_Init failed: x11 not available` and `testCliSubsystem failed`. The same binary under `scripts/xvfb.sh` exits 0.
+
+### Phase 7 — The scaffolded consumer was missing its entry's siblings
+
+Reproduced on the first run that ever reached `clean-consumer`,
+[34557447467](https://github.com/ThreeNativeHQ/threenative/actions/runs/34557447467).
+
+**Files (maximum five):**
+
+- EDIT `.github/workflows/native-release.yml` — copy the entry's sibling modules into the consumer.
+- EDIT `scripts/__tests__/native-release-proof.spec.ts` — derive the requirement from the entry's own imports.
+- EDIT `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — this phase's evidence record.
+
+**Implementation and wiring:** `Prepare the scaffolded consumer proof` copied `game.ts` alone, while that entry imports `./networking-game.js` and `./worker-proof.js`. The test reads the entry's relative imports rather than naming the two files, so a sibling added later is caught here instead of on a runner.
+
+**Required test:** `scripts/__tests__/native-release-proof.spec.ts`: the scaffolded consumer receives every module its entry imports.
+
+**Observed-red / revert control:** Drop either copy; the test names the missing module. The hosted control is the run above, `UNRESOLVED_IMPORT` on both specifiers.
 
 ## Verification contract
 
