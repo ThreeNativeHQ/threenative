@@ -91,6 +91,39 @@ pnpm lint       EXIT_CODE=0 (678 pre-existing warnings, 0 errors)
 The test parses the workflow's own loop bound, poll interval and job timeout, so a later edit that
 shortens either one fails again rather than silently restoring the false refusal.
 
+## Correction: the headless desktop gate had no sound card
+
+`native-platforms.yml`'s desktop-core matrix is macOS and Windows only, so `verify-desktop-core.mjs`
+had never run on Linux until this proof route executed it on `ubuntu-24.04`. Run
+[34543393235](https://github.com/ThreeNativeHQ/threenative/actions/runs/34543393235) aborted before
+the first frame:
+
+```text
+[Audio] Failed to open audio device: ALSA: Couldn't open audio device: No such file or directory
+```
+
+`SDL_AUDIODRIVER` is now defaulted, not forced (`??=`), inside the same
+`process.platform === 'linux'` branch that already scopes `SDL_VIDEODRIVER`. A machine with a real
+device keeps it, and the audio contract stays with `verify-desktop-audio.mjs`, which owns the
+suspend/resume lifecycle against real AudioContexts and runs first in the same command. The gate
+test binds both drivers to that one branch and refuses an unconditional override at the spawn site.
+
+## Correction: release staging asked for an SDL AAR that no longer existed
+
+`package-android.mjs` moved to SDL3 3.2.30 deliberately, because 3.2.8's 64-bit libraries are not
+16 KB `LOAD`-aligned, while the staging step still spelled out the old filename:
+
+```text
+ENOENT: no such file or directory, copyfile
+  'packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar'
+```
+
+Only a tag push reached that code, so no earlier gate could catch it. The filename is now derived
+from `SDL3_ANDROID_VERSION`, and `scripts/__tests__/native-release-android-staging.spec.ts` requires
+the derivation rather than a matching literal, so the next version bump cannot reintroduce the
+drift. It also binds `download-deps.mjs` to the same constant. Both corrections are executed by the
+hosted build rows recorded below, not by these tests alone.
+
 ## Correction: the CLI contract test could not compile
 
 Commit `4a8fb124b` installed Web Streams before `webtransport::initBindings` in

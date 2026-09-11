@@ -107,6 +107,55 @@ gh workflow run native-release.yml --repo ThreeNativeHQ/threenative --ref main
 
 **User verification:** Inspect the selected workflow page and retained `release-prerequisites-<SHA>-<attempt>` and `clean-consumer-linux-x64` artifacts. Every claimed platform row must link to its actual frame/physics/artifact output. `proof-consumer-evidence.json` distinguishes same-run artifacts from public installation. Any reproduced platform repair becomes a named bounded correction, not adjacent cleanup.
 
+### Phase 3 — The headless desktop gate reached a runner with no sound card
+
+Reproduced in run [34543393235](https://github.com/ThreeNativeHQ/threenative/actions/runs/34543393235), the first Linux execution of `native:verify:desktop` this proof route created.
+
+**Files (maximum five):**
+
+- EDIT `packages/runtime-native/scripts/verify-desktop-core.mjs` — default the Linux SDL audio driver where the video driver is already scoped.
+- EDIT `packages/runtime-native/tests/desktop-core-gate.test.mjs` — bind both drivers to the one Linux branch and forbid an unconditional override.
+- EDIT `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — this phase's evidence record.
+
+**Implementation and wiring:** `native-platforms.yml`'s desktop-core matrix is macOS and Windows only, so no Linux run reached this line until the proof route executed it on `ubuntu-24.04`. The audio contract is not weakened: `verify-desktop-audio.mjs` owns it and runs first in the same command, and an explicit `SDL_AUDIODRIVER` still wins.
+
+**Required test:** `packages/runtime-native/tests/desktop-core-gate.test.mjs`: desktop verifier preserves evidence and scopes its SDL drivers to Linux.
+
+**Observed-red / revert control:** Force the driver for every platform, or move it out of the Linux branch; the test must fail.
+
+### Phase 4 — The CLI contract test could not compile its own prerequisite
+
+Reproduced in run [34546754768](https://github.com/ThreeNativeHQ/threenative/actions/runs/34546754768), where all three desktop rows failed inside `native:verify:desktop`.
+
+**Files (maximum five):**
+
+- EDIT `packages/runtime-native/tests/cli_network_fs_test.cpp` — install Web Streams before `initBindings` through the qualified embedded script table.
+- EDIT `packages/runtime-native/CMakeLists.txt` — give that target its generated include directory and script dependency.
+- NEW `packages/runtime-native/tests/webtransport-polyfill-prerequisites.test.mjs` — hold the prerequisite under vitest.
+- EDIT `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — this phase's evidence record.
+
+**Implementation and wiring:** `webtransport::initBindings` reads `globalThis.__wtDispatch`, which the polyfill installs only when Web Streams exist, so a bare engine drove the binding outside its documented prerequisite. The test now fails on a missing embedded script and on a false return instead of continuing.
+
+**Required test:** `packages/runtime-native/tests/webtransport-polyfill-prerequisites.test.mjs`, plus the compiled `threenative-cli-network-fs-test` contract target.
+
+**Observed-red / revert control:** Compile the pre-repair source: `cli_network_fs_test.cpp:1049:30: error: 'runtime_scripts' has not been declared`.
+
+### Phase 5 — Release staging asked for an SDL AAR that no longer existed
+
+Reproduced historically on the only route that reached the step, a tag push.
+
+**Files (maximum five):**
+
+- EDIT `.github/workflows/native-release.yml` — derive the staged AAR filename from the module that owns the version.
+- NEW `scripts/__tests__/native-release-android-staging.spec.ts` — require the derivation, not a matching literal.
+- EDIT `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — this phase's evidence record.
+
+**Implementation and wiring:** `package-android.mjs` moved to SDL3 3.2.30 deliberately, because 3.2.8's 64-bit libraries are not 16 KB `LOAD`-aligned, while the workflow still spelled out `SDL3-3.2.8.aar`. Asserting the literal matches would only detect the next drift; requiring derivation removes the failure mode, and the test also binds `download-deps.mjs` to the same constant.
+
+**Required test:** `scripts/__tests__/native-release-android-staging.spec.ts`: native release stages the SDL3 Android AAR version owned by the packager.
+
+**Observed-red / revert control:** Restore a literal version in the staging step; the test must fail.
+
 ## Verification contract
 
 Each phase edits its named pre-existing caller and includes its phase evidence record within the five-file budget. File lists are bounded implementation assignments, not permission for adjacent cleanup. If investigation needs more files, split the phase before implementing; do not silently widen it. Query `engine_search_capabilities` and inspect every hit before qualifying package/helper work, as the repository requires.
