@@ -805,12 +805,11 @@ function verifyBytesBeforeExtract(kind, id, url, bytes, expected) {
 }
 
 function verifyFinalUrl(id, requested, response) {
-  // GitHub release assets answer from a signed release-assets redirect on
-  // every fetch; the signed query carries expiry and token material, so it is
-  // never a lockable identity. What the lock pins is the requested URL, and
-  // what the digest proves is the bytes. A redirect to a different *host path*
-  // outside the release-asset signer would still be a lock miss, so only the
-  // release-asset signer is accepted as a same-payload answer.
+  // GitHub answers archive fetches from same-payload signer hosts on every
+  // request: release assets from a signed release-assets URL (expiry/token
+  // query, never a lockable identity), source archives from codeload. What the
+  // lock pins is the requested URL, and what the digest proves is the bytes.
+  // A redirect anywhere else is still a lock miss.
   const final = response?.url;
   if (typeof final !== 'string' || final.length === 0 || final === requested) return;
   let finalHost = '';
@@ -820,6 +819,15 @@ function verifyFinalUrl(id, requested, response) {
     finalHost = '';
   }
   if (finalHost === 'release-assets.githubusercontent.com') return;
+  if (finalHost === 'codeload.github.com') {
+    let requestedPath = '';
+    try {
+      requestedPath = new URL(requested).pathname;
+    } catch {
+      requestedPath = '';
+    }
+    if (requestedPath.includes('/archive/refs/tags/')) return;
+  }
   throw new Error(
     `TN_NATIVE_DEP_URL_MISMATCH: payload '${id}' requested ${requested} but answered from ${final}. Lock the redirect target instead of accepting it silently.`,
   );
