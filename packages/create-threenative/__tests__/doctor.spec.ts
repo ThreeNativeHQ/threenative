@@ -1435,6 +1435,51 @@ describe("threenative doctor --target/--mode", () => {
     expect(report.pass).toBe(false);
   });
 
+  it("should list only unmet requirements as blockers, never satisfied ones", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    // The SDK is present. A met requirement is not a reason the build cannot start, and printing
+    // it among the blockers makes the prediction unusable.
+    expect(requested.detail).toMatch(/JDK 26\.0\.2/u);
+    expect(requested.detail).not.toMatch(/android-35 .*found/u);
+    // It stays in the standing target line, which reports every probed fact, met or not.
+    expect(check(report, "target android").detail).toMatch(/android-35 .*found/u);
+  });
+
+  it("should block a requested desktop build on a failing overlay", () => {
+    const overlay = {
+      detail: "no X11 compositor, so the desktop UI overlay cannot start",
+      fix: "Start a compositor.",
+      status: "fail" as const,
+    };
+    const report = diagnoseProject(snapshot({ desktopOverlay: overlay }), { target: "desktop" });
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain("overlay cannot start");
+    expect(report.pass).toBe(false);
+  });
+
+  it("should not call the requested target available while its build cannot start", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    // The defect this PRD names: a line reading "available" beside a verdict of "not buildable".
+    const target = check(report, "target android");
+    expect(target.detail).not.toMatch(/^available/u);
+    expect(target.detail).toContain("not buildable");
+    expect(target.status).toBe("fail");
+  });
+
   it("should fail the requested Android build when the runtime artifact never downloaded", () => {
     const report = diagnoseProject(
       snapshot({

@@ -63,6 +63,12 @@ export interface IDoctorRequest {
  *
  * `packages/runtime-native/scripts/package-android.mjs` (PRD-212 phase 3) is the consumer that
  * must read the same four names; this constant is the single place they are spelled.
+ *
+ * **Nothing reads them yet.** On `main` the Android packager contains no `ORG_GRADLE_PROJECT_`
+ * string and only runs `assembleDebug`, so today these are a forecast of PRD-212's contract, not a
+ * description of a build that exists. When PRD-212 lands, either it reads exactly these four or
+ * this constant changes with it in the same PR — the two drifting apart is how doctor would start
+ * predicting a prerequisite no build has.
  */
 export const ANDROID_RELEASE_SIGNING_ENV = [
   "ORG_GRADLE_PROJECT_threenativeKeystore",
@@ -719,26 +725,47 @@ function assetPipelineCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   };
 }
 
-function androidToolchainStatus(probe: IAndroidToolchainProbe): IDoctorCheck {
+/**
+ * The toolchain report, with its met and unmet requirements kept apart.
+ *
+ * `details` is everything, for the standing `android toolchain` line. `blockers` is only what
+ * would stop a build, because a prediction that lists `Android SDK platform android-35 2 found`
+ * among the reasons a build cannot start is not a prediction anyone can act on.
+ */
+function androidToolchainFacts(probe: IAndroidToolchainProbe): {
+  readonly blockers: readonly string[];
+  readonly details: readonly string[];
+  readonly status: DoctorStatus;
+} {
   const details: string[] = [];
+  const blockers: string[] = [];
   let status: DoctorStatus = probe.status ?? "ok";
   if (probe.jdkVersion === undefined || probe.jdkMajor === undefined) {
-    details.push(`JDK not found; Android builds require JDK ${ANDROID_JDK_MAJOR}`);
+    const blocker = `JDK not found; Android builds require JDK ${ANDROID_JDK_MAJOR}`;
+    details.push(blocker);
+    blockers.push(blocker);
     status = "warn";
   } else if (probe.jdkMajor !== ANDROID_JDK_MAJOR) {
-    details.push(
-      `JDK ${probe.jdkVersion} found; Android builds support JDK ${ANDROID_JDK_MAJOR} only`,
-    );
+    const blocker = `JDK ${probe.jdkVersion} found; Android builds support JDK ${ANDROID_JDK_MAJOR} only`;
+    details.push(blocker);
+    blockers.push(blocker);
     status = "warn";
   } else {
     details.push(`JDK ${probe.jdkVersion} found (supported JDK ${ANDROID_JDK_MAJOR})`);
   }
   if (probe.sdkVersion === undefined) {
-    details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} not found`);
+    const blocker = `Android SDK platform android-${ANDROID_COMPILE_SDK} not found`;
+    details.push(blocker);
+    blockers.push(blocker);
     status = "warn";
   } else {
     details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} ${probe.sdkVersion} found`);
   }
+  return { blockers, details, status };
+}
+
+function androidToolchainStatus(probe: IAndroidToolchainProbe): IDoctorCheck {
+  const { details, status } = androidToolchainFacts(probe);
   return {
     detail: details.join("; "),
     fix:
@@ -1308,7 +1335,13 @@ function requestedBuildBlockers(
   // Every native target ships the downloaded runtime; its install status is the download's receipt.
   if (nativeRuntime.status !== "ok")
     blockers.push(nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
-  if (request.target === "desktop") return blockers;
+  if (request.target === "desktop") {
+    // The phase names overlay capability among the prerequisites that must prevent a buildable
+    // result. A desktop game whose overlay cannot start is not a desktop build that works.
+    const overlay = snapshot.desktopOverlay;
+    if (overlay?.status === "fail") blockers.push(overlay.detail);
+    return blockers;
+  }
   if (request.target === "ios") {
     if (process.platform !== "darwin" || process.arch !== "arm64")
       blockers.push(
@@ -1324,10 +1357,7 @@ function requestedBuildBlockers(
     snapshot.androidToolchain ??
     (snapshot.projectRoot === undefined ? undefined : probeAndroidToolchain());
   if (androidToolchain === undefined) blockers.push("the Android toolchain was not probed");
-  else {
-    const toolchain = androidToolchainStatus(androidToolchain);
-    if (toolchain.status !== "ok") blockers.push(toolchain.detail);
-  }
+  else blockers.push(...androidToolchainFacts(androidToolchain).blockers);
   if (request.mode === "release") {
     // Presence only: doctor never reads a signing value, so a wrong password is the build's red,
     // not a diagnosis this command can honestly make.
@@ -1372,10 +1402,32 @@ function unrequestedTarget(check: IDoctorCheck): IDoctorCheck {
   return check.status === "fail" ? { ...check, status: "warn" } : check;
 }
 
+/**
+ * The requested target may not describe itself as `available` while the build of it cannot start.
+ *
+ * A target line says "is the packager installed?", which is a true and much weaker fact than "can
+ * this build run?". Beside an explicit `--target android` that answer still *appears* ready, which
+ * is the exact wording the acceptance criteria forbid, so the requested target borrows the
+ * verdict's word. Unrequested targets keep the weaker fact: nobody asked them to predict anything.
+ */
+function requestedTarget(
+  check: IDoctorCheck,
+  requestedBuild: IDoctorCheck | undefined,
+): IDoctorCheck {
+  if (requestedBuild?.status !== "fail") return check;
+  if (!check.detail.startsWith("available — ")) return check;
+  return {
+    ...check,
+    detail: `not buildable — ${check.detail.slice("available — ".length)}`,
+    status: "fail",
+  };
+}
+
 function targetChecks(
   snapshot: IProjectSnapshot,
   nativeRuntime: IDoctorCheck,
   request: IDoctorRequest,
+  requestedBuild?: IDoctorCheck,
 ): readonly IDoctorCheck[] {
   const webAvailable = snapshot.files.has("src/main.ts");
   const desktopDetail =
@@ -1400,7 +1452,9 @@ function targetChecks(
   ];
   if (request.target === undefined) return checks;
   return checks.map((check) =>
-    check.name === `target ${request.target}` ? check : unrequestedTarget(check),
+    check.name === `target ${request.target}`
+      ? requestedTarget(check, requestedBuild)
+      : unrequestedTarget(check),
   );
 }
 
@@ -1594,7 +1648,7 @@ export function diagnoseProject(
     ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
       ? []
       : [desktopOverlayCheck(snapshot.desktopOverlay)]),
-    ...targetChecks(snapshot, nativeRuntime, options),
+    ...targetChecks(snapshot, nativeRuntime, options, requestedBuild),
     ...(requestedBuild === undefined ? [] : [requestedBuild]),
     snapshot.files.has("src/main.ts")
       ? { detail: "src/main.ts is the web entry", name: "web entry", status: "ok" }
