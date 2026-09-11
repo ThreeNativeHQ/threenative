@@ -113,9 +113,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # The toolchain probe below resolves the real NDK on this runner, so it is worth failing
+      # on before the Rust build. It runs under vitest like the rest of that suite, which needs
+      # the workspace toolchain this job previously did without.
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       # Same runner as the suite that owns the file; see the note on the measurement step.
       - run: >-
           pnpm --filter @threenative/runtime-native exec vitest run
