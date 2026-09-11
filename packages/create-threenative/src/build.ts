@@ -13,6 +13,7 @@ export type NativeOrientation = IResolvedThreeNativeConfig["display"]["orientati
 export interface IBuildOptions {
   cwd?: string;
   target: BuildTarget;
+  allowSourceBuild?: boolean;
   viteArgs?: readonly string[];
 }
 
@@ -425,15 +426,11 @@ async function bundleNative(
   return output;
 }
 
-function installedRuntime(runtimeRoot: string): string {
-  if (process.env.THREENATIVE_RUNTIME_BINARY)
-    return path.resolve(process.env.THREENATIVE_RUNTIME_BINARY);
-  const key = `${process.platform}-${process.arch}`;
-  const filename = process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime";
-  return path.join(runtimeRoot, "prebuilt", key, filename);
-}
-
-async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
+async function buildNative(
+  target: NativeBuildTarget,
+  cwd: string,
+  allowSourceBuild = false,
+): Promise<void> {
   const config = await loadConfig(cwd);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
   // The target decides whether compression can ship: android and iOS carry no WebAssembly, so
@@ -480,6 +477,7 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
       process.execPath,
       [
         path.join(runtimeRoot, "scripts", "package-android.mjs"),
+        ...(allowSourceBuild ? ["--allow-source-build"] : []),
         "--bundle",
         bundle,
         "--assets",
@@ -508,8 +506,11 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
       ...(ui === undefined ? [] : ["--ui", ui]),
       "--config",
       configPath,
-      "--runtime",
-      installedRuntime(runtimeRoot),
+      // Only a user-supplied binary is explicit. Otherwise the packager owns verified
+      // cache reuse, installation and rejection of a stale source-checkout override.
+      ...(process.env.THREENATIVE_RUNTIME_BINARY
+        ? ["--runtime", path.resolve(process.env.THREENATIVE_RUNTIME_BINARY)]
+        : []),
       "--output",
       output,
     ],
@@ -518,6 +519,9 @@ async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void
 }
 
 export async function build(options: IBuildOptions): Promise<void> {
+  if (options.allowSourceBuild && options.target !== "android") {
+    throw new Error("--allow-source-build is only supported with --target android.");
+  }
   const cwd = path.resolve(options.cwd ?? process.cwd());
   if (options.target === "web") await buildWeb(cwd, options.viteArgs);
   else {
@@ -526,7 +530,7 @@ export async function build(options: IBuildOptions): Promise<void> {
         `${options.target} build does not accept ${options.viteArgs?.join(" ")}. iOS output is simulator-only; device signing remains OPEN.`,
       );
     }
-    await buildNative(options.target, cwd);
+    await buildNative(options.target, cwd, options.allowSourceBuild === true);
   }
 }
 
@@ -536,6 +540,7 @@ export function buildHelp(): string {
     "",
     "Options:",
     "  --target <target>  Choose web, desktop, android, or ios (default: web).",
+    "  --allow-source-build  Explicitly allow Android maintainer source builds.",
     "  --help             Show this help.",
   ].join("\n")}\n`;
 }
@@ -549,13 +554,21 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   if (!TARGETS.includes(value as BuildTarget)) {
     throw new Error(`Unknown build target '${value ?? ""}'. Choose ${TARGETS.join(", ")}.`);
   }
+  const allowSourceBuild = argv.includes("--allow-source-build");
+  if (allowSourceBuild && value !== "android") {
+    throw new Error("--allow-source-build is only supported with --target android.");
+  }
   const consumed = new Set([0]);
+  for (let index = 1; index < argv.length; index += 1) {
+    if (argv[index] === "--allow-source-build") consumed.add(index);
+  }
   if (targetIndex !== -1) {
     consumed.add(targetIndex);
     consumed.add(targetIndex + 1);
   }
   return {
     target: value as BuildTarget,
+    ...(allowSourceBuild ? { allowSourceBuild: true } : {}),
     viteArgs: argv.filter((_, index) => !consumed.has(index)),
   };
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -258,6 +258,32 @@ export async function downloadReleaseArtifact(key, options = {}) {
     throw new Error(`Prebuilt release size verification failed for '${key}': received ${contents.length} bytes.`);
   }
   return contents;
+}
+
+/** Reuse only a verified install for this platform, package version and manifest selection. */
+export function findInstalledPrebuilt(options = {}) {
+  const plan = createInstallPlan(options);
+  try {
+    platformKey(plan.platform, options.arch);
+    const status = JSON.parse(readFileSync(plan.statusPath, 'utf8'));
+    if (status.ok !== true || status.key !== plan.key ||
+        status.version !== packageVersion || status.url !== plan.status.url) return undefined;
+    const contents = readFileSync(plan.output);
+    if (contents.length === 0) return undefined;
+    verifyChecksum(contents, status.sha256, plan.key);
+    // An explicit local pin can change in place; do not let its old success record override it.
+    const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
+    if (manifestPath) {
+      const release = readRelease(resolve(manifestPath), plan.key);
+      verifyChecksum(contents, release.sha256, plan.key);
+      if (release.size !== undefined && contents.length !== release.size) return undefined;
+    }
+    if (plan.platform !== 'win32') accessSync(plan.output, constants.X_OK);
+    return plan.output;
+  } catch {
+    // Missing, malformed or tampered installs go through the existing fail-closed installer.
+    return undefined;
+  }
 }
 
 export async function installPrebuilt(options = {}) {

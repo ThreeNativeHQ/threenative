@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
-import { installPrebuilt } from './install-prebuilt.mjs';
+import { findInstalledPrebuilt, installPrebuilt } from './install-prebuilt.mjs';
 
 const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -44,7 +44,8 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
         'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
     );
   }
-  return installPrebuilt(options.install ?? {});
+  const install = options.install ?? {};
+  return findInstalledPrebuilt(install) ?? installPrebuilt(install);
 }
 
 export const DEFAULT_DESKTOP_CONFIG = {
@@ -68,7 +69,7 @@ export function parseArgs(args) {
     const flag = args[index];
     const value = args[index + 1];
     if (!['--assets', '--bundle', '--config', '--output', '--runtime', '--ui'].includes(flag) || !value) {
-      throw new Error('Usage: package-desktop.mjs --bundle FILE --runtime FILE --output FILE [--assets DIR] [--ui DIR] [--config FILE]');
+      throw new Error('Usage: package-desktop.mjs --bundle FILE --output FILE [--runtime FILE] [--assets DIR] [--ui DIR] [--config FILE]');
     }
     options[flag.slice(2)] = resolve(value);
   }
