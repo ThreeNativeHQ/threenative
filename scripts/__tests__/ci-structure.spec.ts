@@ -1890,9 +1890,16 @@ describe("CI pipeline structure", () => {
           `${name} regained a label gate the web producer does not carry`,
         ).not.toContain(labelGate);
       }
-      expect(section, `${name} is not ordered behind the producer`).toContain(
-        "needs: [scope, web-reference]",
-      );
+      // The property is that the consumer waits on `scope` and the web-reference producer, not
+      // that those are its *only* dependencies. PRD-221 adds `android-v8-source` to the Android
+      // leg, which is a second producer it legitimately waits on; a literal match on the whole
+      // bracket rejected that correct workflow.
+      const needs = section.match(/\n\x20{4}needs: \[([^\]]*)\]/u)?.[1];
+      expect(needs, `${name} declares no needs list`).toBeDefined();
+      const declared = (needs ?? "").split(",").map((entry) => entry.trim());
+      for (const producer of ["scope", "web-reference"]) {
+        expect(declared, `${name} is not ordered behind ${producer}`).toContain(producer);
+      }
       expect(section, `${name} does not download the commit-keyed reference`).toContain(
         "actions/download-artifact",
       );
