@@ -617,6 +617,29 @@ jobs:
           }
           console.log(`TN_PUMP_ANDROID_STRUCTURAL_OK ${JSON.stringify(result.detail)}`);
           NODE
+      - name: Emit gate-schema parity and provenance evidence reports
+        if: always()
+        run: |
+          set +e
+          node packages/runtime-native/scripts/generate-native-sbom.mjs --out /tmp/sbom-evidence >/dev/null 2>&1
+          node packages/runtime-native/scripts/generate-release-reports.mjs \
+            --candidate "$GITHUB_SHA" \
+            --registry-sha256 "$(sha256sum packages/runtime-native/conformance/registry.json | cut -d' ' -f1)" \
+            --android packages/runtime-native/artifacts/conformance/android/report.json \
+            --desktop packages/runtime-native/artifacts/conformance/desktop/report.json \
+            --web packages/runtime-native/artifacts/conformance/web/report.json \
+            --lock packages/runtime-native/native-deps.lock.json \
+            --sbom /tmp/sbom-evidence/native-dependencies.cdx.json \
+            --inventory /tmp/sbom-evidence/native-license-inventory.json \
+            --pnpm-lock-sha "$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)" \
+            --cargo-lock-sha "$(sha256sum packages/runtime-native/native/physics/Cargo.lock | cut -d' ' -f1)" \
+            --out packages/runtime-native/artifacts/reports
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then echo "TN_RELEASE_REPORTS_DEFERRED: conformance reports absent on this leg"; fi
+          mkdir -p reports
+          cp packages/runtime-native/artifacts/reports/parity.json reports/parity.json 2>/dev/null || true
+          cp packages/runtime-native/artifacts/reports/provenance.json reports/provenance.json 2>/dev/null || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -626,6 +649,18 @@ jobs:
             packages/runtime-native/artifacts/android/multitouch/
             packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-release-parity
+          path: reports/parity.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-release-provenance
+          path: reports/provenance.json
+          if-no-files-found: warn
 
   desktop-parity:
     name: Desktop web/native parity

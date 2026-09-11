@@ -607,3 +607,17 @@ test('release provenance is generated and validated before publishing release as
   const stripped = releaseWorkflow.replaceAll('generate-native-release-provenance.mjs', 'REMOVED-GENERATOR');
   expect(stripped).not.toContain('generate-native-release-provenance.mjs');
 });
+
+test('emulator parity leg publishes gate-schema candidate evidence reports', () => {
+  // The release-candidate gate resolves parity/provenance reports by artifact
+  // reference; the emulator leg (which holds all three conformance reports)
+  // emits and uploads them. Removing either upload fails this test.
+  const job = workflow.match(
+    /\n {2}android-emulator-parity:\n[\s\S]*?(?=\n {2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(job).toContain('generate-release-reports.mjs');
+  expect(job).toContain('name: native-release-parity');
+  expect(job).toContain('reports/parity.json');
+  expect(job).toContain('name: native-release-provenance');
+  expect(job).toContain('reports/provenance.json');
+});
