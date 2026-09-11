@@ -55,6 +55,31 @@ out of reach. Split it: one box per platform, per artifact, per property. Boxes 
 yet — a host you do not own, a credential you do not have — are still separate boxes, each naming
 its blocker on the line below.
 
+## One PR per PRD
+
+**A PRD gets exactly one pull request, opened as a draft before phase 1 starts.** Never one PR per
+phase: phase-sized PRs split the evidence across branches nobody re-reads, and the PRD's progress
+stops being visible anywhere. Open the draft early, push each phase to it as that phase lands, and
+let the PR grow.
+
+The PR body carries the PRD's checklist — copy the boxes, keep them in the same order — and you
+tick them there in the same push that ticks them in the PRD. The two must agree; a PR box ticked
+ahead of the PRD is the same lie as a claimed gate.
+
+Progress is a label, applied on every push and never more than one at a time:
+
+| Label | Meaning | Colour |
+|---|---|---|
+| `prd:25%` | phase 1 landed and verified | `#d73a4a` red |
+| `prd:50%` | half the phases landed and verified | `#e36209` orange |
+| `prd:75%` | all but the last phase landed and verified | `#fbca04` yellow |
+| `prd:100% — ready` | every phase and every acceptance box ticked; take the PR out of draft | `#0e8a16` green |
+
+Round to the nearest bucket by *verified* phases, never by lines written or files touched. A PRD
+whose phases are all in but whose acceptance criteria are not yet ticked is `prd:75%`, not ready.
+`scripts/prd-progress.ts` computes the bucket from the PRD file; `pnpm prd:progress <file>` prints
+the label to apply.
+
 ## Try a blocked reason before you believe it
 
 `BLOCKED/` folders name a missing tool or lane, and several have outlived the condition that put
