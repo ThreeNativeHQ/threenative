@@ -1,0 +1,35 @@
+name: PRD-264 verification
+on:
+  push:
+    branches: [codex/prd-264-doctor-readiness]
+permissions:
+  contents: read
+concurrency:
+  group: prd-264-verification
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Snapshot tracked development inputs
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess, tarfile
+          allowed = {'.ts', '.tsx', '.js', '.mjs', '.cjs', '.json', '.yaml', '.yml', '.toml', '.md', '.sh', '.html', '.css', '.txt', '.patch'}
+          paths = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
+          with tarfile.open('doctor-source.tar.gz', 'w:gz') as archive:
+              for value in paths:
+                  p = pathlib.Path(value)
+                  if value and p.is_file() and (p.suffix in allowed or p.name.startswith('.')):
+                      archive.add(p, arcname=value, recursive=False)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prd-264-source
+          path: doctor-source.tar.gz
+          retention-days: 3
+          if-no-files-found: error
