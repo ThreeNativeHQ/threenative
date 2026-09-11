@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { join } from "node:path";
 import { NodeIO } from "@gltf-transform/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildFixtureDocument } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
-import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { makeTempDir, makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import {
   type IAssetPass,
@@ -32,7 +31,9 @@ const DEBOUNCE_MS = 25;
 const BURST_WRITES = 5;
 
 function measureBurstCostMs(): number {
-  const probeDir = mkdtempSync(join(tmpdir(), "threenative-watch-calibrate-"));
+  // makeTempDirSync, not mkdtempSync: scripts/__tests__/temp-dir-guard.spec.ts requires every
+  // test-owned temporary directory to come from the helper that registers its cleanup.
+  const probeDir = makeTempDirSync("threenative-watch-calibrate-");
   const probe = join(probeDir, "probe.bin");
   try {
     const started = Date.now();
