@@ -299,3 +299,27 @@ test('an absent audio device does not fail a run that rendered correctly', () =>
   const broken = `${rendered}\n[Audio] Failed to open audio device: device in use`;
   expect(analyzeDesktopLog(broken)).toContain('[Audio] Failed to open audio device: device in use');
 });
+
+test('the native contract lane gets a display like the rest of the desktop chain', () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  const chain = manifest.scripts['native:verify:desktop'];
+  expect(chain).toBeDefined();
+  // `verify-desktop-core.mjs` wraps itself, and `verify-desktop-loading.mjs` is wrapped here, but
+  // the contract lane was wrapped by nothing. `native-platforms.yml`'s desktop-core matrix is macOS
+  // and Windows only, so no Linux run reached it until native-release.yml's ubuntu-24.04 build did,
+  // and `testCliSubsystem` creates a window:
+  //   [Window] SDL_Init failed: x11 not available
+  //   [Mystral] Failed to create window
+  //   testCliSubsystem failed
+  // Reproduced locally by running the built target with DISPLAY unset (exit 1, both lines) and
+  // cleared by the same wrapper (exit 0). `scripts/xvfb.sh` is a no-op where a display exists, so
+  // macOS and Windows are unaffected.
+  const contracts = chain
+    .split('&&')
+    .map((part) => part.trim())
+    .find((part) => part.includes('verify-native-contracts.mjs'));
+  expect(contracts).toBeDefined();
+  expect(contracts).toMatch(/^sh \.\.\/\.\.\/scripts\/xvfb\.sh node scripts\/verify-native-contracts\.mjs$/u);
+});

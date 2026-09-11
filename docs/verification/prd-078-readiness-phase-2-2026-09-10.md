@@ -281,6 +281,44 @@ and `pnpm budgets` is green.
 **Still not claimed:** the hosted Linux row. Its green is owned by the run on this head, not by this
 record.
 
+## Correction: the contract lane ran without a display, and the `_id` line was not the cause
+
+The `_id` diagnostic analysed above is real, and the repair for it is correct, but it was **not**
+what failed the Linux row. Counting the three Linux logs settles it:
+
+| Run | `testCliSubsystem failed` | `SDL_Init failed: x11 not available` | `dispatch threw` |
+| --- | --- | --- | --- |
+| 34551637777 | present | present | present |
+| 34553793360 | present | present | present |
+| 34555922045 (after the RT repair) | present | present | **absent** |
+
+The RT repair did exactly what it claimed — the `dispatch threw` line is gone — and the row still
+failed, because `testCliSubsystem` had been failing in all three. The loudest line was not the fatal
+one.
+
+`verify-desktop-core.mjs` wraps itself in `scripts/xvfb.sh` and `verify-desktop-loading.mjs` is
+wrapped in the script chain, but `verify-native-contracts.mjs` was wrapped by nothing.
+`testCliSubsystem` creates a window, so on a runner with no display it fails and takes
+`threenative-cli-network-fs-test` down with it while all ~40 other contract targets pass. Same root
+as the audio default in Phase 3: `native-platforms.yml`'s desktop-core matrix is macOS and Windows
+only, so no Linux run reached this lane until this proof route existed.
+
+Reproduced and cleared locally on Linux x86_64, against a build of the branch source:
+
+```text
+./threenative-cli-network-fs-test                                   EXIT_CODE=0   (a display exists)
+env -u DISPLAY -u WAYLAND_DISPLAY ./threenative-cli-network-fs-test  EXIT_CODE=1
+  [Window] SDL_Init failed: x11 not available
+  testCliSubsystem failed
+env -u DISPLAY -u WAYLAND_DISPLAY sh scripts/xvfb.sh ./threenative-cli-network-fs-test  EXIT_CODE=0
+  0 occurrences of either line
+```
+
+The first line is also why the earlier local run in this record exited 0: this machine has a
+display, so it could not reproduce a failure that depends on not having one. `scripts/xvfb.sh` is a
+no-op where a display exists, so macOS and Windows are unaffected, and `xvfb-run` is not used
+because its exit status is its own failing cleanup kill.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:
