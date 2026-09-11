@@ -400,3 +400,24 @@ for (const change of [
     assert.ok(report.failures.length > 0);
   });
 }
+
+test("the main prerequisite wait outlasts a full-board main CI run", () => {
+  const wait = script("Wait for the exact main CI run to finish");
+  const attempts = Number(wait.match(/for attempt in \$\(seq 1 (\d+)\); do/u)?.[1]);
+  const interval = Number(wait.match(/\n\s*sleep (\d+)\n/u)?.[1]);
+  assert.ok(Number.isSafeInteger(attempts) && attempts > 0, "missing bounded attempt count");
+  assert.ok(Number.isSafeInteger(interval) && interval > 0, "missing poll interval");
+  // Observed successful ci.yml push runs on main (2026-09-10): 61.2, 62.5, 63.0, 64.8, 70.7,
+  // 73.7, 88.5 and 115.4 minutes on the full board. A shorter budget refuses the candidate for
+  // elapsed time instead of for its evidence, which is a false refusal.
+  const budget = (attempts * interval) / 60;
+  assert.ok(
+    budget >= 120,
+    `the prerequisite wait budget is ${budget} minutes, under the 115.4 minute worst observed main CI run`,
+  );
+  const timeout = Number(job("gates").match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
+  assert.ok(
+    Number.isSafeInteger(timeout) && timeout > budget,
+    `gates timeout-minutes ${timeout} cannot outlast its own ${budget} minute wait`,
+  );
+});

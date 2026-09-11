@@ -96,7 +96,7 @@ jobs:
     needs: validate-tag
     if: ${{ !cancelled() && (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 65
+    timeout-minutes: 160
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm
@@ -138,7 +138,10 @@ jobs:
         run: |
           set -euo pipefail
           # Bounded polling: a red CI run is inspected by the gate below, never retried to green.
-          for attempt in $(seq 1 180); do
+          # 150 attempts at 60s is a 150 minute budget. Successful ci.yml push runs on main took
+          # 61.2 to 115.4 minutes on the full board (2026-09-10), so a shorter budget would refuse
+          # the candidate for elapsed time rather than for its evidence.
+          for attempt in $(seq 1 150); do
             gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
               --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha \
               > "$RUNNER_TEMP/native-release-prerequisites/ci-wait.json"
@@ -150,7 +153,7 @@ jobs:
           NODE
             )
             if [ "$state" = completed ]; then exit 0; fi
-            sleep 20
+            sleep 60
           done
           echo "No completed exact-candidate main CI run became available." >&2
           exit 1
