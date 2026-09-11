@@ -1,0 +1,84 @@
+--- a/.github/workflows/native-release.yml
++++ b/.github/workflows/native-release.yml
+@@ -678,8 +678,8 @@
+         run: |
+           target="$RUNNER_TEMP/threenative-consumer-proof"
+           CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
+-          import { copyFileSync } from "node:fs";
+-          copyFileSync("examples/native-smoke/src/game.ts", `${process.env.CONSUMER_TARGET}/src/game.ts`);
++          import { copyFileSync, cpSync } from "node:fs";
++          cpSync("examples/native-smoke/src", `${process.env.CONSUMER_TARGET}/src`, { recursive: true });
+           copyFileSync("examples/native-smoke/vite.config.ts", `${process.env.CONSUMER_TARGET}/vite.config.ts`);
+           copyFileSync("packages/physics/__tests__/fixtures/physics-parity.scenario.json", `${process.env.CONSUMER_TARGET}/physics-parity.scenario.json`);
+           NODE
+@@ -989,7 +989,7 @@
+       - name: Install the exact iOS consumer packages
+         run: |
+           target="$RUNNER_TEMP/threenative-ios-release-consumer"
+-          cp examples/native-smoke/src/game.ts "$target/src/game.ts"
++          cp -R examples/native-smoke/src/. "$target/src/"
+           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
+           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
+             "$target/physics-parity.scenario.json"
+--- a/scripts/__tests__/native-release-proof.spec.ts
++++ b/scripts/__tests__/native-release-proof.spec.ts
+@@ -1,6 +1,6 @@
+ import assert from "node:assert/strict";
+ import { spawnSync } from "node:child_process";
+-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
++import { chmodSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+ import { join, resolve } from "node:path";
+ import { test } from "vitest";
+ import { makeTempDirSync } from "../../test-support/temp-dir.js";
+@@ -31,7 +31,7 @@
+ function script(name: string): string {
+   const step = workflow.split(`      - name: ${name}\n`)[1];
+   assert.ok(step, `missing step ${name}`);
+-  const block = step.split(/\n\x20{6}- /u)[0]?.split(/\n\x20{8}run: \|\n/u)[1];
++  const block = step.split(/\n\x20{6}- /u)[0]?.split(/(?:^|\n)\x20{8}run: \|\n/u)[1];
+   assert.ok(block, `missing script ${name}`);
+   return block
+     .split("\n")
+@@ -560,3 +560,42 @@
+   // A manual proof on main and an automatic one must not evict each other.
+   assert.match(concurrency, /group:[^\n]*github\.event_name/u);
+ });
++
++for (const [step, folder] of [
++  ["Prepare the scaffolded consumer proof", "threenative-consumer-proof"],
++  ["Install the exact iOS consumer packages", "threenative-ios-release-consumer"],
++] as const) {
++  test(`${step} stages the complete smoke source import graph`, () => {
++    const directory = makeTempDirSync("threenative-consumer-sources-");
++    const target = join(directory, folder);
++    mkdirSync(join(target, "src"), { recursive: true });
++    const bin = join(directory, "bin");
++    mkdirSync(bin);
++    // Exercise the actual copy commands without installing packages in this unit test.
++    const pnpm = join(bin, "pnpm");
++    writeFileSync(pnpm, "#!/bin/sh\nexit 0\n");
++    chmodSync(pnpm, 0o755);
++    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script(step)], {
++      cwd: root,
++      encoding: "utf8",
++      env: {
++        ...process.env,
++        GITHUB_ENV: join(directory, "github-env"),
++        PATH: `${bin}:${process.env.PATH}`,
++        RUNNER_TEMP: directory,
++      },
++    });
++    assert.equal(result.status, 0, result.stdout + result.stderr);
++    const source = join(root, "examples/native-smoke/src");
++    for (const entry of readdirSync(source, { recursive: true, withFileTypes: true })) {
++      if (!entry.isFile()) continue;
++      const sourceFile = join(entry.parentPath, entry.name);
++      const relative = sourceFile.slice(source.length + 1);
++      assert.deepEqual(
++        readFileSync(join(target, "src", relative)),
++        readFileSync(sourceFile),
++        `consumer source omitted or changed: ${relative}`,
++      );
++    }
++  });
++}

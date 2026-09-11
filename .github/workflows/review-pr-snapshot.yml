@@ -6,49 +6,43 @@ permissions:
   contents: read
 jobs:
   validate:
-    name: Validate PR ${{ matrix.pr }} fixes
+    name: Validate PR 180 staging and evidence fixes
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - pr: 180
-            head: 0dcadaada4f45a347fe6a79200f5a358e8da4d8a
-          - pr: 183
-            head: b751635441d626bdd53fe39a7458fa1d218b935b
     env:
       CI: '1'
       NODE_OPTIONS: --max-old-space-size=4096
-      REVIEW_PR: ${{ matrix.pr }}
+      REVIEW_PR: '180'
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Decode and authenticate the locally tested patch
+      - name: Authenticate the locally tested patches
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import base64, gzip, hashlib, json, os, pathlib
-          records = json.load(open('.github/review/fixes.json'))
-          record = next(r for r in records if str(r['pr']) == os.environ['REVIEW_PR'])
+          record = next(r for r in json.load(open('.github/review/fixes.json')) if r['pr'] == 180)
           encoded = record.pop('patch')
-          # Correct transfer transcription only; the original local SHA-256 remains authoritative.
-          for before, after in [('AcnIhzszCEV','AcnIhzszBEV'),('nNrJKLLtao','nNrJKLtao'),('qTlnyqTnEm','qTlnyqPnEm'),('EUmMxII8T','EUmMxI8T'),('ldXIP10vRrZZ/w','ldXIP10vRrZ/w'),('NrapZKK+x','NrapZK+x')]:
+          for before, after in [('AcnIhzszCEV','AcnIhzszBEV'),('nNrJKLLtao','nNrJKLtao')]:
               encoded = encoded.replace(before, after)
           patch = gzip.decompress(base64.b64decode(encoded, validate=True))
           assert hashlib.sha256(patch).hexdigest() == record['sha256'], 'patch SHA-256 mismatch'
+          extra = pathlib.Path('.github/review/staging.patch').read_bytes()
+          record['staging_sha256'] = '9e16860d44f51580f01b0fdbb35142f4cb22d2d83cdcdaecfcb0c1457f19fc5d'
+          assert hashlib.sha256(extra).hexdigest() == record['staging_sha256'], 'staging patch SHA-256 mismatch'
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           (root / 'review.patch').write_bytes(patch)
+          (root / 'staging.patch').write_bytes(extra)
           (root / 'review-record.json').write_text(json.dumps(record))
           (root / 'review-result').mkdir()
           PY
       - uses: actions/checkout@v7
         with:
-          ref: ${{ matrix.head }}
+          ref: 0dcadaada4f45a347fe6a79200f5a358e8da4d8a
           persist-credentials: false
       - name: Apply only the reviewed file changes
         shell: bash
@@ -56,6 +50,8 @@ jobs:
           set -euo pipefail
           git apply --index --check "$RUNNER_TEMP/review.patch"
           git apply --index "$RUNNER_TEMP/review.patch"
+          git apply --index --check "$RUNNER_TEMP/staging.patch"
+          git apply --index "$RUNNER_TEMP/staging.patch"
           git diff --cached --check
           python3 - <<'PY'
           import json, os, subprocess
@@ -83,15 +79,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$REVIEW_PR" = 180 ]; then
-            pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
-            cd packages/runtime-native
-            pnpm exec vitest run --config vitest.config.ts tests/desktop-core-gate.test.mjs tests/native-platform-workflow.test.mjs tests/webtransport-polyfill-prerequisites.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
-          else
-            pnpm exec vitest run packages/playtest/__tests__/pipeline-cache-perf.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
-            cd packages/runtime-native
-            pnpm exec vitest run --config vitest.config.ts tests/pipeline-cache-measurement.test.mjs tests/pipeline-cache-protocol.test.mjs tests/wgpu-cache-toolchain.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
-          fi
+          pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
+          cd packages/runtime-native
+          pnpm exec vitest run --config vitest.config.ts tests/desktop-core-gate.test.mjs tests/native-platform-workflow.test.mjs tests/webtransport-polyfill-prerequisites.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
       - name: Upload tested Git tree only; do not move any branch
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,7 +114,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: review-fix-tree-${{ matrix.pr }}
+          name: review-fix-tree-180-staging
           path: ${{ runner.temp }}/review-result
           retention-days: 2
           if-no-files-found: error
