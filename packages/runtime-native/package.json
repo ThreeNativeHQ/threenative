@@ -59,6 +59,7 @@
   ],
   "scripts": {
     "deps:download": "node scripts/download-deps.mjs",
+    "deps:verify": "node scripts/download-deps.mjs --check-lock",
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
     "native:coverage": "sh ../../scripts/xvfb.sh node scripts/measure-native-coverage.mjs",
     "native:test:cpp": "node scripts/measure-native-coverage.mjs --ctest",
