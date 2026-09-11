@@ -130,6 +130,11 @@ jobs:
             scripts/__tests__/ci-structure.spec.ts \
             scripts/__tests__/ci-needs.spec.ts
 
+      - name: Prepare instruction contract dependencies
+        if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
+        uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
       - name: Verify selected agent-instruction consumers
         if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
         run: |

@@ -244,6 +244,16 @@ describe("PRD-373 local selection", () => {
     expect(result.trace).not.toMatch(/^build\t|native:build/mu);
   });
 
+  it("builds instruction dependencies before contracts without starting native checks", async () => {
+    const result = await selected("AGENTS.md");
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toContain("CI change scope: instructions");
+    const build = result.trace.indexOf("build\t");
+    expect(build).toBeGreaterThan(-1);
+    expect(build).toBeLessThan(result.trace.indexOf("primary-docs.spec.ts"));
+    expect(result.trace).not.toMatch(/native:build|test:browser|verify:golden-path/u);
+  });
+
   it("keeps broad dependency checks for shared runtime inputs", async () => {
     const result = await selected("packages/core/src/fixture.ts");
     expect(result.status, result.stdout + result.stderr).toBe(0);

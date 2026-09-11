@@ -45,6 +45,19 @@ function runGate(overrides: Record<string, string> = {}) {
 }
 
 describe("CI efficiency without lost evidence", () => {
+  it("builds cold-checkout instruction dependencies before importing their contracts", () => {
+    const lane = job("lint");
+    const prepare = lane.indexOf("name: Prepare instruction contract dependencies");
+    const contracts = lane.indexOf("name: Verify selected agent-instruction consumers");
+    expect(prepare).toBeGreaterThan(-1);
+    expect(prepare).toBeLessThan(contracts);
+    const prerequisite = lane.slice(prepare, contracts);
+    expect(prerequisite).toContain("needs.scope.outputs.selection != 'full'");
+    expect(prerequisite).toContain("fromJSON(needs.scope.outputs.plan).checks.instructions");
+    expect(prerequisite).toContain("uses: ./.github/actions/workspace-dist");
+    expect(prerequisite).toContain('pack-archives: "false"');
+  });
+
   it("produces workspace artifacts without waiting for native evidence", () => {
     const producer = job("build-artifacts");
     expect(declaredNeeds(producer)).toEqual(["scope"]);

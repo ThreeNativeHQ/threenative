@@ -267,7 +267,7 @@ checks never relax during either rollback.
 
 - Local workspace `pnpm build`, complete `pnpm typecheck`, `pnpm lint`, `pnpm check:docs`
   and `pnpm sync:agents --check` passed. Mirrors were regenerated with `pnpm sync:agents`.
-- The final focused run passed **277 tests across 15 existing suites**, including real-Git
+- The final focused run passed **279 tests across 15 existing suites**, including real-Git
   classifier/rename/deletion/shared-dependency fixtures, every unsuccessful selected-job state,
   merge-parent/frozen-promotion negatives, release authorization negatives, local runners,
   instruction consumers and real template-tarball regeneration. New behavior was tested red-green.
@@ -282,3 +282,10 @@ checks never relax during either rollback.
 - Administrative cutover, full hosted qualification, representative protected-develop canaries,
   main-promotion protection and equivalent cold/warm timing acceptance remain **pending**. Do not
   check off the end-to-end acceptance boxes on the strength of these local regression tests.
+
+- Cold-run follow-up: source-verification run 34564425607 passed 270 tests but could not load
+  `primary-docs.spec.ts` before `@threenative/assets` was built. The instruction lane and matching
+  local command now prepare their JavaScript workspace dependencies before those contracts;
+  two new regressions failed before the fix and passed after it. This does not enable native
+  compilation for instruction-only changes. The website types/build and 20 unit tests passed
+  in that run; browser execution was blocked because the preceding failure skipped installation.
