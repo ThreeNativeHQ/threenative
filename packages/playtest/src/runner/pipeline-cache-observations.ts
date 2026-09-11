@@ -44,7 +44,11 @@ export function parsePipelineCacheObservations(text: string): IPipelineCacheObse
     for (const field of ["reason", "storeReason"]) if (record[field] !== undefined && typeof record[field] !== "string") malformed();
     if (record.identity !== undefined && (typeof record.identity !== "string" || !/^[a-f0-9]{64}$/u.test(record.identity))) malformed();
     const key = JSON.stringify(record);
-    if (!seen.has(key)) { seen.add(key); observations.push(record as unknown as IPipelineCacheObservation); }
+    if (!seen.has(key)) {
+      seen.add(key);
+      // quality-allow: every field is validated immediately above - phase, the numeric counters, reason/storeReason and the 64-hex identity - and malformed() throws, so this narrows a checked record rather than asserting an unchecked shape
+      observations.push(record as unknown as IPipelineCacheObservation);
+    }
   }
   return observations;
 }
