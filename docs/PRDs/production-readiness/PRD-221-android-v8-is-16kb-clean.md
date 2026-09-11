@@ -107,10 +107,20 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 - [x] Callers wired and building: `packages/runtime-native/scripts/check-android-16kb-alignment.mjs`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs` — this branch. `pnpm typecheck` exit 0, `pnpm lint` exit 0.
 - [x] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs` — 46 passed together with `android-16kb-alignment.test.mjs`, plus `tests/distribution.test.mjs` 36 passed and `create-threenative/__tests__/native-consumer.spec.ts` 33 passed. Run under vitest from `packages/runtime-native`, which is how `vitest.config.ts` collects `tests/**/*.test.mjs`.
-- [ ] Observed red recorded, then restored green
-      NOT RUN. The phase's control — an omitted or corrupted library fed to the packaged-archive census — has not been executed against a real packaged APK.
-- [ ] User verification performed on the named platform
-      NOT RUN. Belongs with phase 3's emulator run.
+- [x] Observed red recorded, then restored green — **against a real packaged APK, not a fixture.**
+      The first real build of a scaffolded starter was refused by the census:
+      `Android 16 KB alignment check failed for …/prd221-16kb-starter.apk!lib/arm64-v8a/libSDL3.so:`
+      `uncompressed library stored at archive offset 0x11d000, which is not a multiple of 0x4000`.
+      That was a genuine defect, not a fixture: **AGP 8.2.2 stores shared libraries uncompressed
+      but aligns them to 4 KB**, so every APK this repository has ever produced was unmappable on a
+      16 KB device. The packager now aligns the finished archive (`zipalign -P 16`) and re-signs it
+      before the census runs; the same build then reports all **8** libraries 16 KB clean across
+      both ABIs, `archive offsets confirmed by …/build-tools/36.0.0/zipalign`. The new test
+      `the packager aligns the finished APK to 16 KB before censusing it, and fails closed` fails
+      against the pre-fix packager (`1 failed | 12 passed`) and passes after (`13 passed`).
+- [x] User verification performed on the named platform — a real starter APK, built and installed
+      on `threenative_ps16k`: `adb install -r` → `Success`, and the app's libraries map. What then
+      fails is V8's own initialisation, which is phase 3's finding, not this phase's.
 - [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-2-<date>.md`
 - [ ] Independent reviewer returned PASS
 
@@ -145,7 +155,31 @@ pnpm build:android
 - [x] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs` — 41 passed (6 new), plus `ci-structure`/`ci-needs`/`ci-efficiency` 175 passed.
 - [x] Observed red recorded, then restored green — the test asserting the lane records its page size failed before the workflow was touched (`AssertionError: The input did not match /getconf PAGE_SIZE/u`, 1 failed | 40 passed), and passes after. The checker was also run against the live device (16384, exit 0), a 4096 observation (`TN_ANDROID_PAGE_SIZE_MISMATCH`, exit 1) and a missing file (`TN_ANDROID_PAGE_SIZE_MISSING`, exit 1).
 - [ ] User verification performed on the named platform
-      PARTIAL. The 16 KB environment is observed and recorded: AVD `threenative_ps16k`, `system-images;android-36;google_apis_ps16k;x86_64`, `getconf PAGE_SIZE` **16384**, API 36, x86_64, fingerprint `google/sdk_gphone16k_x86_64/emu64xa16k:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`. The phase also asks for the default starter launched on it, with HUD and player interaction, a background/resume cycle and a linker check of the logs — **not run**, because it needs a compiled native host and a packaged APK this worktree does not have.
+      **RUN, and it FAILED — the finding this PRD exists to produce.** The 16 KB environment is
+      observed and recorded: AVD `threenative_ps16k`, `system-images;android-36;google_apis_ps16k;x86_64`,
+      `getconf PAGE_SIZE` **16384**, API 36, x86_64, fingerprint
+      `google/sdk_gphone16k_x86_64/emu64xa16k:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`.
+      A default **starter** was scaffolded (`../sandbox/prd221-16kb-starter`), built against this
+      branch's runtime source, installed and launched on that AVD. It **crashes inside V8's own
+      initialisation**, before a frame:
+
+      ```
+      E v8  : # Fatal error in , line 0
+      E v8  : Check failed: 0 == mprotect(address, size, 0x1).
+      F DEBUG: #01 libv8android.so (V8_Fatal)
+      F DEBUG: #02 libv8android.so (v8::base::OS::SetDataReadOnly(void*, unsigned long)+37)
+      F DEBUG: #04 libv8android.so (v8::V8::Initialize(int)+23)
+      F DEBUG: #05 libmystral-runtime.so (mystral::js::V8Engine::V8Engine()+1130)
+      ```
+
+      Every one of the APK's 8 native libraries is 16 KB clean and the archive offsets are confirmed
+      by the SDK's own `zipalign` (see phase 2 below), so this is **not** an alignment failure:
+      `v8::base::OS::SetDataReadOnly` calls `mprotect` on a region sized against a 4096-byte page,
+      and the kernel refuses it at 16384. **Aligned `.so` files are necessary and not sufficient** —
+      V8 11.0.226.16 itself must be built for a 16 KB page. No HUD interaction or background/resume
+      cycle was reachable; the process dies in `SDL_main`. This box stays open, and the PRD is not
+      done: `A default-V8 starter executes gameplay on an observed 16384-byte Android environment`
+      is currently **false on this machine**.
 - [x] Evidence record written: `docs/verification/prd-221-readiness-phase-3-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
 

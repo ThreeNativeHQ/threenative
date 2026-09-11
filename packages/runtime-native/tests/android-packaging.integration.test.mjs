@@ -470,6 +470,9 @@ test('real Android packaging emits configured and no-config artifacts through th
     // The fixture's stand-in libraries are not compiled objects, so the ELF reader is injected.
     // Everything else in the 16 KB census — the archive parse, the per-ABI roll call — runs real.
     artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    // The fixture archive is assembled by hand at the offsets the census reads, so the real
+    // zipalign/apksigner pass has nothing to do here. It has its own tests below.
+    alignArchive: false,
   };
   const config = {
     app: {
@@ -567,6 +570,9 @@ test('THREENATIVE_RUNTIME_SOURCE points the packager at a runtime source checkou
       ensureGradleWrapper: async () => undefined,
       prepareAndroidPrebuilts: async () => undefined,
       artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    // The fixture archive is assembled by hand at the offsets the census reads, so the real
+    // zipalign/apksigner pass has nothing to do here. It has its own tests below.
+    alignArchive: false,
     });
     assert.ok(output.startsWith(runtime), `expected an artifact under ${runtime}, got ${output}`);
   } finally {
@@ -817,13 +823,78 @@ test('the packager runs the census on the artifact it produced and refuses a mis
       ...build(compliantEntries().map((entry) =>
         entry.name === 'lib/arm64-v8a/libv8android.so' ? { ...entry, align: 4096 } : entry,
       )),
+      alignArchive: false,
     }),
     (error) => error.code === 'ANDROID_16KB_MISALIGNED',
   );
 
   const output = await packageAndroid(bundle, join(root, 'good.apk'), undefined, undefined, undefined, {
     ...build(compliantEntries()),
+    alignArchive: false,
     artifact16Kb: alignedOptions,
   });
   assert.equal(output, join(root, 'good.apk'));
+});
+
+test('the packager aligns the finished APK to 16 KB before censusing it, and fails closed', async () => {
+  const root = makeTempDirSync('threenative-android-align-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const runtime = createFakeAndroidRuntime();
+  const apkPath = join(runtime, 'android/app/build/outputs/apk/debug/app-debug.apk');
+  const build = (entries) => ({
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    spawnSync: () => {
+      mkdirSync(dirname(apkPath), { recursive: true });
+      writeArchive(apkPath, entries);
+      return { status: 0, stdout: '' };
+    },
+  });
+
+  // AGP 8.2.2 stores shared libraries uncompressed on 4 KB boundaries, so alignment is the
+  // packager's job, not the compiler's. The aligner is a real shell-out; here it is injected, and
+  // what the test pins is that it runs, that it runs *before* the census, and that its arguments
+  // ask for 16 KB.
+  const calls = [];
+  const spawnAlign = (command, args) => {
+    calls.push({ args, command });
+    if (String(command).endsWith('zipalign'))
+      writeArchive(`${String(args[args.length - 1])}`, compliantEntries());
+    return { status: 0, stdout: '' };
+  };
+  const keystore = join(root, 'debug.keystore');
+  writeFileSync(keystore, 'not a real keystore, only its presence is checked here');
+  await packageAndroid(bundle, apkPath, undefined, undefined, undefined, {
+    ...build(
+      compliantEntries().map((entry) =>
+        entry.name === 'lib/arm64-v8a/libv8android.so' ? { ...entry, align: 4096 } : entry,
+      ),
+    ),
+    align: { keystore, spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+    artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+  });
+  assert.deepEqual(
+    calls.map(({ command }) => command),
+    ['/fake/build-tools/zipalign', '/fake/build-tools/apksigner'],
+  );
+  assert.deepEqual(calls[0]?.args.slice(0, 4), ['-P', '16', '-f', '4']);
+  // The census passed on an archive Gradle wrote misaligned, which is only possible because the
+  // aligner replaced it first.
+
+  // Fail closed: a non-zero zipalign is an error, never a skip that ships a 4 KB archive.
+  await assert.rejects(
+    packageAndroid(bundle, join(root, 'refused.apk'), undefined, undefined, undefined, {
+      ...build(compliantEntries()),
+      align: {
+        keystore,
+        spawnSync: () => ({ status: 1, stdout: '' }),
+        zipalign: '/fake/build-tools/zipalign',
+      },
+      artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    }),
+    /zipalign exited with code 1/u,
+  );
 });
