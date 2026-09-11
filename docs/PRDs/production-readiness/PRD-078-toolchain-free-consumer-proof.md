@@ -61,7 +61,7 @@ sequenceDiagram
 
 ## Execution phases
 
-The two bounded assignments below are reviewed separately. Neither is accepted merely because implementation or fixture tests are green. The source work from PR #168 is retained, not rewritten to recreate August defects.
+The five bounded assignments below are reviewed separately. None is accepted merely because implementation or fixture tests are green. Phases 1 and 2 are the planned work; Phases 3, 4 and 5 each repair one failure the hosted proof reproduced, split out rather than widening an existing assignment. Phases 3-5 record their evidence in Phase 2's record rather than opening three more tracked files, which the evidence budget discourages; each names that record among its own files. The source work from PR #168 is retained, not rewritten to recreate August defects.
 
 ### Phase 1 — The actual release job distinguishes old evidence from a runnable candidate
 
