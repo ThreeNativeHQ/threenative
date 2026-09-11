@@ -749,16 +749,27 @@ test('release provenance is generated and validated before publishing release as
   expect(stripped).not.toContain('generate-native-release-provenance.mjs');
 });
 
-test('emulator parity leg publishes gate-schema candidate evidence reports', () => {
+test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   // The release-candidate gate resolves parity/provenance reports by artifact
-  // reference; the emulator leg (which holds all three conformance reports)
-  // emits and uploads them. Removing either upload fails this test.
+  // reference. These were emitted from android-emulator-parity on the premise
+  // that it holds all three conformance reports; it does not - desktop is
+  // produced by desktop-parity, a sibling job - so the generator exited
+  // non-zero on every run, the step swallowed it, and both uploads warned
+  // instead of failing. Run 34618061045 was green and carried neither
+  // artifact. The reports now come from a job downstream of both legs.
   const job = workflow.match(
-    /\n {2}android-emulator-parity:\n[\s\S]*?(?=\n {2}[a-z0-9-]+:|\s*$)/u,
+    /\n {2}release-reports:\n[\s\S]*?(?=\n {2}[a-z0-9-]+:|\s*$)/u,
   )?.[0] ?? '';
+  expect(job).toContain('needs: [scope, android-emulator-parity, desktop-parity]');
   expect(job).toContain('generate-release-reports.mjs');
   expect(job).toContain('name: native-release-parity');
   expect(job).toContain('reports/parity.json');
   expect(job).toContain('name: native-release-provenance');
   expect(job).toContain('reports/provenance.json');
+  // Each subject is read from the artifact that actually produced it.
+  expect(job).toContain('--android evidence/android/conformance/android/report.json');
+  expect(job).toContain('--desktop evidence/desktop/conformance/desktop/report.json');
+  expect(job).toContain('--web evidence/desktop/conformance/web/report.json');
+  // `warn` is what let a green run ship with no reports; both uploads fail closed now.
+  expect(job).not.toContain('if-no-files-found: warn');
 });
