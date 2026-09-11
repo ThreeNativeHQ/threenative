@@ -1,4 +1,4 @@
-name: PRD-373 workspace snapshot
+name: PRD-373 exact source verification
 on:
   push:
     branches: [work/prd-373-selective-ci]
@@ -6,52 +6,143 @@ on:
 permissions:
   contents: read
 jobs:
-  snapshot:
+  delivery:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 5
+          ref: e0d1bc31f4d63b2403dec72e512de8647abfb26c
           persist-credentials: false
+      - name: Reconstruct hash-checked edits and store only an unreferenced Git tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, bz2, hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path
+          base = 'e0d1bc31f4d63b2403dec72e512de8647abfb26c'
+          expected_tree = 'b8cf745e29e4c97f64d61b8e7e5e2caf992f47f8'
+          expected_json = 'c986f8852cad5d08f06e05ee98fe2c128d479ddc8f18175dd53dd61c136acd70'
+          parts = ['3c25e56674a952d506a618440f32ecfab0a554b6', '9b7d0203b0e5fad1b3fafe79c608f79b0d6194ae', 'e283a28cf15663ca07cc000c90a204a4da32dabe']
+          api = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY']
+          def request(path, data=None):
+              req = urllib.request.Request(api + path, data=None if data is None else json.dumps(data).encode(), headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
+              with urllib.request.urlopen(req, timeout=60) as response:
+                  return json.load(response)
+          compressed = b''.join(base64.b64decode(request('/git/blobs/' + sha)['content']) for sha in parts)
+          raw = bz2.decompress(compressed)
+          assert hashlib.sha256(raw).hexdigest() == expected_json, 'edit payload hash mismatch'
+          spec = json.loads(raw)
+          assert spec['base'] == base and spec['tree'] == expected_tree
+          entries = []
+          for entry in spec['entries']:
+              path = Path(entry['path'])
+              assert not path.is_absolute() and '..' not in path.parts and path.parts[0] != '.git'
+              assert entry['mode'] in ['100644', '100755']
+              if entry['before'] is None:
+                  assert not path.exists()
+                  lines = []
+              else:
+                  original = path.read_bytes()
+                  assert hashlib.sha256(original).hexdigest() == entry['before'], str(path)
+                  lines = original.decode().splitlines(keepends=True)
+              for start, end, replacement in reversed(entry['edits']):
+                  assert 0 <= start <= end <= len(lines)
+                  lines[start:end] = replacement.splitlines(keepends=True)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(''.join(lines))
+              path.chmod(int(entry['mode'][-3:], 8))
+              subprocess.run(['git', 'add', '--', str(path)], check=True)
+              entries.append({'path': str(path), 'mode': entry['mode'], 'type': 'blob', 'content': path.read_text()})
+          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          assert tree == expected_tree, (tree, expected_tree)
+          assert not Path('.github/workflows/prd-373-workspace-snapshot.yml').exists()
+          base_tree = subprocess.check_output(['git', 'rev-parse', base + '^{tree}'], text=True).strip()
+          stored = request('/git/trees', {'base_tree': base_tree, 'tree': entries})
+          assert stored['sha'] == expected_tree, stored['sha']
+          # No commit, ref, branch, protection, release or publication endpoint is called here.
+          directory = Path(os.environ['RUNNER_TEMP']) / 'delivery'
+          directory.mkdir()
+          patch = subprocess.check_output(['git', 'diff', '--cached', '--binary', base])
+          (directory / 'candidate.patch').write_bytes(patch)
+          manifest = {'base': base, 'tree': tree, 'patch_sha256': hashlib.sha256(patch).hexdigest(), 'files': [e['path'] for e in entries]}
+          (directory / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+          print(json.dumps(manifest, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prd373-candidate
+          path: ${{ runner.temp }}/delivery
+          retention-days: 7
+  verification:
+    needs: delivery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      TN_SUITE_EXCLUDE_PACKAGES: '@threenative/runtime-native'
+      TN_ORPHAN_SETTLE_SECONDS: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: e0d1bc31f4d63b2403dec72e512de8647abfb26c
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: prd373-candidate
+          path: ${{ runner.temp }}/delivery
+      - name: Verify exact source tree before executing it
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          directory = Path(os.environ['RUNNER_TEMP']) / 'delivery'
+          manifest = json.loads((directory / 'manifest.json').read_text())
+          assert manifest['tree'] == 'b8cf745e29e4c97f64d61b8e7e5e2caf992f47f8'
+          patch = directory / 'candidate.patch'
+          assert hashlib.sha256(patch.read_bytes()).hexdigest() == manifest['patch_sha256']
+          subprocess.run(['git', 'apply', '--index', str(patch)], check=True)
+          assert subprocess.check_output(['git', 'write-tree'], text=True).strip() == manifest['tree']
+          PY
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Export source and installed dependencies for offline regression tests
+      - name: Run classifier, verdict, promotion, packaging and local-runner regressions
+        run: |
+          pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-fast.spec.ts scripts/__tests__/ci-local.spec.ts scripts/__tests__/release-candidate-gate.spec.ts scripts/__tests__/release.spec.ts scripts/__tests__/prepare-release.spec.ts scripts/__tests__/verify-native-release-commit.spec.ts scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts
+      - uses: ./.github/actions/workspace-dist
+      - uses: ./.github/actions/playwright-chromium
+      - name: Typecheck, lint and generated documentation
         run: |
           set -euo pipefail
-          git bundle create "$RUNNER_TEMP/source.bundle" --all
-          tar --exclude='./.git' --exclude='./.cache' -czf "$RUNNER_TEMP/workspace.tar.gz" .
-          split -b 200M "$RUNNER_TEMP/workspace.tar.gz" "$RUNNER_TEMP/workspace.part-"
-          pnpm_root="$(dirname "$(dirname "$(readlink -f "$(command -v pnpm)")")")"
-          tar -czf "$RUNNER_TEMP/pnpm.tar.gz" -C "$pnpm_root" .
-          ls -lh "$RUNNER_TEMP"/workspace.part-* "$RUNNER_TEMP/source.bundle" "$RUNNER_TEMP/pnpm.tar.gz"
+          pnpm typecheck
+          pnpm lint
+          pnpm check:docs
+          pnpm sync:agents --check
+      - name: Run the real JS CI suite with Chromium installed
+        run: pnpm test
+      - name: Verify the isolated website lane including browser checks
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          pnpm --filter threenative-site typecheck
+          pnpm --filter threenative-site build
+          pnpm --filter threenative-site exec vitest run
+          pnpm --filter threenative-site exec playwright test --config=playwright.config.ts
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: prd-373-source
+          name: prd373-verification-evidence
           path: |
-            ${{ runner.temp }}/source.bundle
-            ${{ runner.temp }}/pnpm.tar.gz
-          retention-days: 1
-          compression-level: 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: prd-373-workspace-aa
-          path: ${{ runner.temp }}/workspace.part-aa
-          retention-days: 1
-          compression-level: 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: prd-373-workspace-ab
-          path: ${{ runner.temp }}/workspace.part-ab
-          retention-days: 1
-          compression-level: 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: prd-373-workspace-ac
-          path: ${{ runner.temp }}/workspace.part-ac
-          retention-days: 1
-          compression-level: 0
+            artifacts/gates
+            site/test-results
+            site/playwright-report
+          retention-days: 7
