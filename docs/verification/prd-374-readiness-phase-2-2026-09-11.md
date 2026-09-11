@@ -50,7 +50,15 @@ pnpm check:docs                                           exit 0, 2027 links acr
 pnpm exec vitest run packages/create-threenative/__tests__/   38 files, 656 tests passed
 pnpm exec vitest run packages/core/__tests__/mcp-install.spec.ts scripts/__tests__/sync-agent-docs.spec.ts
                                                           2 files, 38 tests passed
+pnpm budgets                                              exit 0
 ```
+
+`pnpm budgets` was red when phase 2 was committed, and the independent reviewer caught it, not this
+record. Phase 1's evidence file took `docs/verification` to 830 tracked files while
+`docs/benchmark/SCREENSHOT-RETENTION.md` still recorded 829, so `generate-retention-index.ts
+--check` failed. Regenerated with `pnpm tsx scripts/generate-retention-index.ts` — never
+hand-edited, as the retention rules require — and committed. The lesson is the reviewer's, and it is
+the gate the PRD's own verification contract names for executable changes.
 
 `doctor.spec.ts` went 68 → 75 tests; with `cli.spec.ts`, 73 → 80.
 

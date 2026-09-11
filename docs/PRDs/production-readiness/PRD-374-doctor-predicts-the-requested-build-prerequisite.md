@@ -74,7 +74,7 @@ sequenceDiagram
 
 **Progress:**
 
-- [x] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more) — commit `c9dd6288a`; `pnpm typecheck` clean, `pnpm lint` exit 0.
+- [x] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more) — commit `9d50cb878` (was `c9dd6288a` before the branch was rebuilt on current `main`; same net diff); `pnpm typecheck` exit 0, `pnpm lint` exit 0, and `pnpm budgets` exit 0 after the retention index was regenerated (it was red — the reviewer found it, and regenerating `docs/benchmark/SCREENSHOT-RETENTION.md` fixed it).
 - [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — 68 passed (7 new), plus `cli.spec.ts` 5 passed for the argument validation.
 - [x] Observed red recorded, then restored green — `examples/abyss-framework` with JDK 26.0.2 and no install status: `requested build: not buildable — android release: …` exit 1; the same command with `JAVA_HOME=java-17-openjdk` and the four signing properties drops exactly those two blockers.
 - [x] User verification performed on the named platform — linux-x64, real built CLI in two real projects; `examples/engine-load-test --target web` prints `buildable — web` and demotes the broken desktop target to `warn`.
@@ -110,7 +110,7 @@ pnpm exec threenative doctor --target android --mode release --text
 
 **Progress:**
 
-- [x] Callers wired and building: `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts`, `packages/create-threenative/README.md` — `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm check:docs` exit 0.
+- [x] Callers wired and building: `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts`, `packages/create-threenative/README.md` — `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm check:docs` exit 0, `pnpm budgets` exit 0 (red until the retention index was regenerated; the reviewer found it).
 - [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — 75 passed (68 before), and the whole package 656 passed across 38 files. Both named cases exist: conversion unavailable when the Blender MCP starts with Blender missing, and a malformed host config preserved while its exact path is reported.
 - [x] Observed red recorded, then restored green — the three incumbent `blender` tests failed on the rename (`3 failed | 65 passed`); in a real project, `.vscode/mcp.json` made unreadable and `threenative-blender` deleted from `.zed/settings.json` gave `5 of 7 host configs are complete`, and `PATH=/usr/bin:/bin` gave `conversion is unavailable`. Restoring both returned the green text.
 - [x] User verification performed on the named platform — linux-x64, real built CLI in two real projects; `examples/engine-load-test` names all seven host paths it looked for, the scaffolded-shape project reports 7 of 7 and says activation is not observable from here.

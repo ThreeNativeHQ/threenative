@@ -1,8 +1,15 @@
 # PRD-374 phase 1 — doctor predicts the requested build's prerequisite failure
 
-Candidate: branch `prd374/doctor-target-prerequisites`, implementation commit `c9dd6288a`, based on
-`main` at `97d0f5c51`. Host: linux-x64, Node `process.execPath` from the repo toolchain.
+Candidate: branch `prd374/doctor-target-prerequisites`, implementation commit **`9d50cb878`**, based
+on `main` at `30f749f12`. Host: linux-x64, Node `process.execPath` from the repo toolchain.
 Worktree: `.claude/worktrees/prd374-doctor`.
+
+The gates below were first run against commit `c9dd6288a` on `main` at `97d0f5c51`. That base was
+re-applied on `main` under different SHAs, so the branch was rebuilt as the same net diff on current
+`main`: `c9dd6288a` → `9d50cb878`, `9e61a62a6` → `4568451c9`, content unchanged
+(`backup/prd374-preRebase` keeps the old tip). The suites were re-run on the rebuilt commits and
+report the same results: `pnpm typecheck` exit 0, `pnpm lint` exit 0, `doctor.spec.ts` 68 passed and
+`cli.spec.ts` 5 passed.
 
 ## What changed
 
