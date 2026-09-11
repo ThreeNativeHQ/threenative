@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-374 — Doctor predicts the requested build's prerequisite failure
 
-**Status:** NOT STARTED — both phases are new scope on top of a finished PRD. Renumbered 2026-09-11.
+**Status:** PARTIAL — phase 1 implemented and locally verified (commit `c9dd6288a`, evidence
+[prd-374-readiness-phase-1-2026-09-11](../../verification/prd-374-readiness-phase-1-2026-09-11.md));
+its independent review is still NOT RUN. Phase 2 NOT STARTED. Renumbered 2026-09-11.
 
 This work was drafted on 2026-09-08 as a rewrite of PRD-264, which un-filed that PRD from `done/`
 and deleted its sixteen ticked boxes. The phases below were never part of PRD-264: it shipped
@@ -69,12 +71,13 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more)
-- [ ] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts`
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-374-readiness-phase-1-<date>.md`
+- [x] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more) — commit `c9dd6288a`; `pnpm typecheck` clean, `pnpm lint` exit 0.
+- [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — 68 passed (7 new), plus `cli.spec.ts` 5 passed for the argument validation.
+- [x] Observed red recorded, then restored green — `examples/abyss-framework` with JDK 26.0.2 and no install status: `requested build: not buildable — android release: …` exit 1; the same command with `JAVA_HOME=java-17-openjdk` and the four signing properties drops exactly those two blockers.
+- [x] User verification performed on the named platform — linux-x64, real built CLI in two real projects; `examples/engine-load-test --target web` prints `buildable — web` and demotes the broken desktop target to `warn`.
+- [x] Evidence record written: `docs/verification/prd-374-readiness-phase-1-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
+      NOT RUN — no reviewer subagent has seen this diff. This is the only thing between phase 1 and closed.
 
 **Files (maximum five):**
 
