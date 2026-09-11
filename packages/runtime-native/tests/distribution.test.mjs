@@ -79,7 +79,7 @@ async function packRuntime(root) {
 }
 
 afterEach(() => {
-  delete process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT;
+  Reflect.deleteProperty(process.env, 'THREENATIVE_ALLOW_INSECURE_PREBUILT');
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
 
@@ -199,8 +199,8 @@ test('the native release workflow covers every exported prebuilt key', () => {
     join(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'native-release.yml'),
     'utf8',
   );
-  assert.match(workflow, /PREBUILT_ASSET_NAMES/u);
-  assert.match(workflow, /const names = PREBUILT_ASSET_NAMES/u);
+  assert.match(workflow, /generateReleaseManifest/u);
+  assert.match(workflow, /RELEASE_SHA: \$\{\{ needs\.validate-tag\.outputs\.candidate_sha \}\}/u);
   assert.deepEqual(Object.keys(PREBUILT_ASSET_NAMES).sort(), [...PREBUILT_KEYS].sort());
 });
 
@@ -212,9 +212,9 @@ test('the installer can bootstrap a remote checksum lock before fetching the run
   const server = createServer((request, response) => {
     if (request.url === '/prebuilt-lock.json') {
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({
-        artifacts: { 'linux-x64': { sha256: sha256(runtime), url: runtimeUrl } },
-      }));
+      const artifacts = candidateArtifacts(runtime);
+      for (const release of Object.values(artifacts)) release.url = runtimeUrl;
+      response.end(JSON.stringify(candidateLock(artifacts)));
       return;
     }
     response.end(runtime);
@@ -276,7 +276,7 @@ test('Android QuickJS prebuilts verify every runtime, SDL, and Java payload befo
     );
     assert.equal(existsSync(rejectedRoot), false);
 
-    delete artifacts['android-x86_64-runtime'];
+    Reflect.deleteProperty(artifacts, 'android-x86_64-runtime');
     writeFileSync(manifest, `${JSON.stringify({ artifacts })}\n`);
     await assert.rejects(
       prepareAndroidPrebuilts({ engine: 'quickjs', manifestPath: manifest, outputRoot: rejectedRoot }),
@@ -366,7 +366,7 @@ test('a clean-room install builds for Android from a fixture manifest, with no e
     );
     assert.equal(existsSync(join(root, 'game.apk')), true);
   } finally {
-    delete process.env.THREENATIVE_PREBUILT_MANIFEST;
+    Reflect.deleteProperty(process.env, 'THREENATIVE_PREBUILT_MANIFEST');
     await release.close();
   }
 }, 300_000);
@@ -396,7 +396,7 @@ test('the clean-room Android build fails loudly on a corrupt fixture manifest', 
     assert.equal(existsSync(outputRoot), false);
 
     release.rewrite((artifacts) => {
-      delete artifacts['android-sdl3-aar'];
+      Reflect.deleteProperty(artifacts, 'android-sdl3-aar');
     });
     await assert.rejects(
       prepareAndroidPrebuilts({ manifestPath: release.manifest, outputRoot }),
@@ -745,4 +745,398 @@ test('a QuickJS prebuilt directory cannot satisfy a V8 build', async () => {
 
   // Missing files are listed, so the message says which engine the directory was populated for.
   assert.match(gradle, /Missing: \$missing/u, 'the refusal must name the files it wanted');
+});
+
+// PRD-262: exercise the shipped installer and the release workflow's lock generator.
+function candidateLock(artifacts) {
+  return {
+    schemaVersion: 1,
+    version: JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version,
+    sourceSha: '1'.repeat(40),
+    artifacts,
+  };
+}
+
+function candidateArtifacts(payload = Buffer.from('candidate runtime')) {
+  return Object.fromEntries(PREBUILT_KEYS.map((key) => [key, {
+    url: `${releaseManifestUrl().replace('/prebuilt-lock.json', '')}/${PREBUILT_ASSET_NAMES[key]}`,
+    sha256: sha256(payload),
+    size: payload.length,
+  }]));
+}
+
+test('a candidate rejects every missing non-iOS key before selecting a desktop artifact', () => {
+  const root = makeTempDirSync('threenative-candidate-keys-');
+  roots.push(root);
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  for (const key of PREBUILT_KEYS.filter((entry) => !entry.startsWith('ios-'))) {
+    const manifest = candidateLock(candidateArtifacts());
+    Reflect.deleteProperty(manifest.artifacts, key);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    assert.throws(() => readRelease(manifestPath, 'linux-x64'),
+      (error) => error.message.includes(key), `accepted a candidate without ${key}`);
+  }
+  const manifest = candidateLock(candidateArtifacts());
+  Reflect.deleteProperty(manifest.artifacts, 'ios-simulator-arm64');
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.deepEqual(readRelease(manifestPath, 'linux-x64'), manifest.artifacts['linux-x64']);
+});
+
+test('a candidate rejects wrong version, missing provenance, malformed metadata and crossed release URLs', () => {
+  const root = makeTempDirSync('threenative-candidate-identity-');
+  roots.push(root);
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  const mutations = [
+    [(lock) => { lock.version = '999.0.0'; }, /version/u],
+    [(lock) => { Reflect.deleteProperty(lock, 'sourceSha'); }, /source SHA/u],
+    [(lock) => { lock.sourceSha = 'not-a-commit'; }, /source SHA/u],
+    [(lock) => { Reflect.deleteProperty(lock, 'schemaVersion'); }, /schema/u],
+    [(lock) => { lock.schemaVersion = 2; }, /schema/u],
+    [(lock) => { lock.artifacts['android-x86_64-v8-snapshot'].sha256 = 'bad'; }, /android-x86_64-v8-snapshot/u],
+    [(lock) => { lock.artifacts['android-arm64-v8a-runtime-v8'].size = 0; }, /android-arm64-v8a-runtime-v8/u],
+    [(lock) => { lock.artifacts['linux-x64'].url = 'https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v999.0.0/threenative-runtime-linux-x64'; }, /linux-x64/u],
+  ];
+  for (const [mutate, expected] of mutations) {
+    const manifest = candidateLock(candidateArtifacts());
+    mutate(manifest);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    assert.throws(() => readRelease(manifestPath, 'linux-x64'), expected);
+  }
+});
+
+test('legacy explicit artifact-only pins remain readable', () => {
+  const root = makeTempDirSync('threenative-legacy-pin-');
+  roots.push(root);
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  const release = { url: 'https://example.com/pinned-runtime', sha256: sha256('legacy') };
+  writeFileSync(manifestPath, JSON.stringify({ artifacts: { 'linux-x64': release } }));
+  assert.deepEqual(readRelease(manifestPath, 'linux-x64'), release);
+});
+
+test('a remote candidate missing an ABI snapshot fails before any artifact download', async () => {
+  let downloads = 0;
+  const manifest = candidateLock(candidateArtifacts());
+  Reflect.deleteProperty(manifest.artifacts, 'android-x86_64-v8-snapshot');
+  const server = createServer((request, response) => {
+    if (request.url === '/prebuilt-lock.json') response.end(JSON.stringify(manifest));
+    else { downloads += 1; response.end('candidate runtime'); }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    for (const release of Object.values(manifest.artifacts)) {
+      release.url = `http://127.0.0.1:${address.port}/runtime`;
+    }
+    await assert.rejects(downloadReleaseArtifact('linux-x64', {
+      manifestUrl: `http://127.0.0.1:${address.port}/prebuilt-lock.json`,
+    }), /android-x86_64-v8-snapshot/u);
+    assert.equal(downloads, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('a public-style remote lock cannot downgrade to an artifact-only legacy manifest', async () => {
+  const server = createServer((request, response) => {
+    if (request.url !== '/prebuilt-lock.json') { response.end('candidate runtime'); return; }
+    const artifacts = candidateArtifacts();
+    for (const release of Object.values(artifacts)) {
+      release.url = `http://127.0.0.1:${server.address().port}/runtime`;
+    }
+    response.end(JSON.stringify({ artifacts }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    await assert.rejects(downloadReleaseArtifact('linux-x64', {
+      manifestUrl: `http://127.0.0.1:${address.port}/prebuilt-lock.json`,
+    }), /schema/u);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('a failed reinstall removes the old executable and success marker', async () => {
+  const root = makeTempDirSync('threenative-reinstall-');
+  roots.push(root);
+  const expected = Buffer.from('verified runtime');
+  const release = await serveFixtureRelease(root, { 'linux-x64': expected });
+  const output = join(root, 'runtime');
+  const statusPath = join(root, 'install-status.json');
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    await installPrebuilt({ platform: 'linux', arch: 'x64', output, statusPath, manifestPath: release.manifest });
+    // Seed the old lifecycle marker too: pre-PRD-262 only the CLI wrote it.
+    writeInstallStatus({ ok: true, reason: 'installed' }, statusPath);
+    release.rewrite((artifacts) => { artifacts['linux-x64'].sha256 = sha256('tampered'); });
+    await assert.rejects(installPrebuilt({ platform: 'linux', arch: 'x64', output, statusPath, manifestPath: release.manifest }),
+      /Checksum verification failed.*linux-x64/u);
+    assert.equal(existsSync(output), false, 'a failed reinstall left a usable old executable');
+    assert.equal(JSON.parse(readFileSync(statusPath, 'utf8')).ok, false);
+  } finally {
+    await release.close();
+  }
+});
+
+test('an interrupted download invalidates an existing runtime and never leaves a successful install', async () => {
+  const root = makeTempDirSync('threenative-truncated-');
+  roots.push(root);
+  const output = join(root, 'runtime');
+  const statusPath = join(root, 'install-status.json');
+  writeFileSync(output, 'old runtime');
+  writeInstallStatus({ ok: true }, statusPath);
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-length': '4096' });
+    response.write('truncated');
+    response.destroy();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const manifestPath = join(root, 'prebuilt-lock.json');
+    writeFileSync(manifestPath, JSON.stringify({ artifacts: { 'linux-x64': {
+      url: `http://127.0.0.1:${address.port}/runtime`, sha256: sha256('complete runtime'),
+    } } }));
+    await assert.rejects(installPrebuilt({ platform: 'linux', arch: 'x64', output, statusPath, manifestPath }));
+    assert.equal(existsSync(output), false);
+    const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+    assert.equal(status.ok, false);
+    assert.match(status.reason, /linux-x64/u);
+    const { readdirSync } = await import('node:fs');
+    assert.equal(readdirSync(root).some((name) => name.endsWith('.tmp')), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('a successful install records the verified output only after publishing the executable', async () => {
+  const root = makeTempDirSync('threenative-install-commit-');
+  roots.push(root);
+  const contents = Buffer.from('verified runtime');
+  const release = await serveFixtureRelease(root, { 'linux-x64': contents });
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const output = join(root, 'runtime');
+    const statusPath = join(root, 'install-status.json');
+    assert.equal(await installPrebuilt({ platform: 'linux', arch: 'x64', output, statusPath, manifestPath: release.manifest }), output);
+    assert.deepEqual(readFileSync(output), contents);
+    const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+    assert.equal(status.ok, true);
+    assert.equal(status.sha256, sha256(contents));
+    assert.equal(status.version, candidateLock({}).version);
+    const { readdirSync } = await import('node:fs');
+    assert.equal(readdirSync(root).some((name) => name.endsWith('.tmp')), false);
+  } finally {
+    await release.close();
+  }
+});
+
+test('the workflow lock generator rejects a missing matrix output and empty payload', async () => {
+  const { generateReleaseManifest } = await import('../scripts/install-prebuilt.mjs');
+  assert.equal(typeof generateReleaseManifest, 'function', 'the workflow needs the shared executable lock validator');
+  const root = makeTempDirSync('threenative-release-matrix-');
+  roots.push(root);
+  const payload = Buffer.from('candidate payload');
+  for (const name of Object.values(PREBUILT_ASSET_NAMES)) writeFileSync(join(root, name), payload);
+  const identity = { sourceSha: '1'.repeat(40), repository: RELEASE_REPOSITORY, tag: `runtime-native-v${candidateLock({}).version}` };
+  const manifest = generateReleaseManifest(root, identity);
+  assert.equal(manifest.sourceSha, identity.sourceSha);
+  assert.equal(manifest.version, candidateLock({}).version);
+  assert.deepEqual(Object.keys(manifest.artifacts).sort(), [...PREBUILT_KEYS].sort());
+  for (const release of Object.values(manifest.artifacts)) {
+    assert.equal(release.sha256, sha256(payload));
+    assert.equal(release.size, payload.length);
+  }
+  const snapshot = join(root, PREBUILT_ASSET_NAMES['android-x86_64-v8-snapshot']);
+  rmSync(snapshot);
+  assert.throws(() => generateReleaseManifest(root, identity), /snapshot/u);
+  writeFileSync(snapshot, '');
+  assert.throws(() => generateReleaseManifest(root, identity), /empty/u);
+  writeFileSync(snapshot, payload);
+  assert.equal(generateReleaseManifest(root, identity).sourceSha, identity.sourceSha);
+  assert.throws(() => generateReleaseManifest(root, { ...identity, sourceSha: 'stale' }), /source SHA/u);
+  assert.throws(() => generateReleaseManifest(root, { ...identity, tag: 'runtime-native-v999.0.0' }), /tag/u);
+});
+
+test('the real publication step emits candidate identity and refuses a removed matrix output', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const workflow = readFileSync(new URL('../../../.github/workflows/native-release.yml', import.meta.url), 'utf8');
+  const step = workflow.split('      - name: Generate the checksum lock from the verified assets\n')[1]
+    ?.split('      - name: Publish runtimes and checksum lock\n')[0];
+  assert.ok(step, 'the existing publication caller must remain reachable');
+  const match = /node --input-type=module <<'NODE'\n([\s\S]*?)\n {10}NODE/u.exec(step);
+  assert.ok(match, 'the publication step must execute the lock generator');
+  const script = match[1].replace(/^ {10}/gmu, '');
+  const root = makeTempDirSync('threenative-publication-step-');
+  roots.push(root);
+  mkdirSync(join(root, 'packages/runtime-native/scripts'), { recursive: true });
+  mkdirSync(join(root, 'release'));
+  writeFileSync(join(root, 'packages/runtime-native/scripts/install-prebuilt.mjs'),
+    readFileSync(new URL('../scripts/install-prebuilt.mjs', import.meta.url)));
+  writeFileSync(join(root, 'packages/runtime-native/package.json'),
+    readFileSync(new URL('../package.json', import.meta.url)));
+  for (const name of Object.values(PREBUILT_ASSET_NAMES)) writeFileSync(join(root, 'release', name), `payload:${name}`);
+  const env = { ...process.env, RELEASE_REPOSITORY, RELEASE_TAG: `runtime-native-v${candidateLock({}).version}`,
+    RELEASE_SHA: '2'.repeat(40) };
+  const invoke = () => execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: root, env, stdio: 'pipe' });
+  invoke();
+  const manifestPath = join(root, 'release/prebuilt-lock.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  assert.equal(manifest.version, candidateLock({}).version);
+  assert.equal(manifest.sourceSha, env.RELEASE_SHA);
+  assert.deepEqual(Object.keys(manifest.artifacts).sort(), [...PREBUILT_KEYS].sort());
+  rmSync(manifestPath);
+  const snapshot = join(root, 'release', PREBUILT_ASSET_NAMES['android-arm64-v8a-v8-snapshot']);
+  const original = readFileSync(snapshot);
+  rmSync(snapshot);
+  assert.throws(invoke, (error) => error.status === 1 && /snapshot/u.test(String(error.stderr)));
+  assert.equal(existsSync(manifestPath), false);
+  writeFileSync(snapshot, original);
+  invoke();
+  assert.equal(JSON.parse(readFileSync(manifestPath, 'utf8')).sourceSha, env.RELEASE_SHA);
+});
+
+test('release generation preserves encoded candidate version URLs', async () => {
+  const root = makeTempDirSync('threenative-candidate-version-');
+  roots.push(root);
+  mkdirSync(join(root, 'scripts'));
+  mkdirSync(join(root, 'release'));
+  const version = '0.3.1-rc.1+build.262';
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ version }));
+  writeFileSync(join(root, 'scripts/install-prebuilt.mjs'),
+    readFileSync(new URL('../scripts/install-prebuilt.mjs', import.meta.url)));
+  for (const name of Object.values(PREBUILT_ASSET_NAMES)) {
+    writeFileSync(join(root, 'release', name), `payload:${name}`);
+  }
+  const { stdout } = await run(process.execPath, ['--input-type=module', '-e', `
+    import { generateReleaseManifest } from './scripts/install-prebuilt.mjs';
+    console.log(JSON.stringify(generateReleaseManifest('release', {
+      repository: ${JSON.stringify(RELEASE_REPOSITORY)},
+      tag: ${JSON.stringify(`runtime-native-v${version}`)},
+      sourceSha: ${JSON.stringify('1'.repeat(40))},
+    })));
+  `], { cwd: root });
+  const manifest = JSON.parse(stdout);
+  assert.equal(manifest.version, version);
+  for (const [key, release] of Object.entries(manifest.artifacts)) {
+    assert.equal(release.url,
+      `${releaseManifestUrl(version).replace('/prebuilt-lock.json', '')}/${PREBUILT_ASSET_NAMES[key]}`);
+  }
+});
+
+// PRD-262 Phase 2: the consumer gate fails when a packager consumes a source override
+// without an explicit opt-in. The desktop resolver names the override and its fix.
+test('the desktop consumer gate fails closed on a source override with no runtime', async () => {
+  const { packageDesktop } = await import('../scripts/package-desktop.mjs');
+  const root = makeTempDirSync('threenative-desktop-override-red-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default 1;\n');
+  const previous = process.env.THREENATIVE_RUNTIME_SOURCE;
+  process.env.THREENATIVE_RUNTIME_SOURCE = join(root, 'checkout');
+  try {
+    // Observed red: a stale THREENATIVE_RUNTIME_SOURCE must not silently select a
+    // checkout as the runtime. The failure names the override and the fix.
+    await assert.rejects(
+      packageDesktop({ bundle, output: join(root, 'game') }),
+      /source-checkout preflight.*THREENATIVE_RUNTIME_SOURCE/u,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.THREENATIVE_RUNTIME_SOURCE;
+    else process.env.THREENATIVE_RUNTIME_SOURCE = previous;
+  }
+});
+
+test('the desktop consumer gate packages with an explicit runtime and no network', async () => {
+  const { packageDesktop } = await import('../scripts/package-desktop.mjs');
+  const root = makeTempDirSync('threenative-desktop-consumer-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default 1;\n');
+  const fakeRuntime = join(root, 'fake-runtime.mjs');
+  writeFileSync(
+    fakeRuntime,
+    '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\n' +
+      'const index = process.argv.indexOf("--out");\n' +
+      'if (index >= 0) writeFileSync(process.argv[index + 1], "desktop artifact");\n',
+  );
+  chmodSync(fakeRuntime, 0o755);
+  const output = join(root, 'game');
+  await packageDesktop({ bundle, output, runtime: fakeRuntime });
+  assert.equal(readFileSync(output, 'utf8'), 'desktop artifact');
+});
+
+test('the android consumer gate fails closed on a source checkout without opt-in', async () => {
+  const { packageAndroid } = await import('../scripts/package-android.mjs');
+  const root = makeTempDirSync('threenative-android-source-red-');
+  roots.push(root);
+  // A directory shaped like a source checkout: CMakeLists.txt plus the SDL3 AAR marker
+  // the packager's own sourceCheckout detection requires.
+  mkdirSync(join(root, 'android', 'app'), { recursive: true });
+  writeFileSync(join(root, 'CMakeLists.txt'), '# fake checkout\n');
+  mkdirSync(join(root, 'third_party', 'sdl3-android'), { recursive: true });
+  writeFileSync(join(root, 'third_party', 'sdl3-android', 'SDL3-3.2.30.aar'), 'fake-aar');
+  writeFileSync(join(root, 'android', 'gradlew'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(root, 'android', 'gradlew'), 0o755);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  // Observed red: resolving a source checkout without an explicit opt-in fails
+  // naming the checkout, instead of silently compiling from it.
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: root,
+      ensureGradleWrapper: async () => undefined,
+    }),
+    /source checkout.*explicit opt-in/u,
+  );
+});
+
+test('the android source-checkout failure names the prebuilt path, not the toolchain', async () => {
+  const { packageAndroid } = await import('../scripts/package-android.mjs');
+  const root = makeTempDirSync('threenative-android-source-cause-');
+  roots.push(root);
+  mkdirSync(join(root, 'android', 'app'), { recursive: true });
+  writeFileSync(join(root, 'CMakeLists.txt'), '# fake checkout\n');
+  mkdirSync(join(root, 'third_party', 'sdl3-android'), { recursive: true });
+  writeFileSync(join(root, 'third_party', 'sdl3-android', 'SDL3-3.2.30.aar'), 'fake-aar');
+  writeFileSync(join(root, 'android', 'gradlew'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(root, 'android', 'gradlew'), 0o755);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  // The masked-compiler shape of the same gate: with toolchain shims (exit 97) on PATH,
+  // a consumer build must still fail on the source-checkout guard before any compiler
+  // could run — the error names the opt-in, never a toolchain invocation.
+  const mask = join(root, 'mask');
+  mkdirSync(mask);
+  for (const command of ['cmake', 'ninja', 'cargo', 'rustc']) {
+    const shim = join(mask, command);
+    writeFileSync(shim, '#!/bin/sh\necho "$0 $*" >> "$TN_TOOLCHAIN_LOG"\nexit 97\n');
+    chmodSync(shim, 0o755);
+  }
+  const log = join(root, 'toolchain.log');
+  const previousPath = process.env.PATH;
+  const previousLog = process.env.TN_TOOLCHAIN_LOG;
+  process.env.PATH = `${mask}${previousPath ? `:${previousPath}` : ''}`;
+  process.env.TN_TOOLCHAIN_LOG = log;
+  try {
+    await assert.rejects(
+      packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+        runtimeRoot: root,
+        ensureGradleWrapper: async () => undefined,
+      }),
+      /explicit opt-in/u,
+    );
+    assert.equal(existsSync(log), false, 'no masked compiler was invoked');
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousLog === undefined) delete process.env.TN_TOOLCHAIN_LOG;
+    else process.env.TN_TOOLCHAIN_LOG = previousLog;
+  }
 });

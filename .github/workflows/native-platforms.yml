@@ -282,8 +282,9 @@ jobs:
               'packages/runtime-native/native/physics/Cargo.lock') }}
           restore-keys: cargo-android-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
+      # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
       - name: Build browser reference workspace imports
-        run: pnpm tsx scripts/workspace-packages.ts build
+        uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
@@ -361,8 +362,8 @@ jobs:
           # adb's stderr goes to its own file rather than into the log. Folded into the capture it
           # would make "device offline" indistinguishable from "the observer emitted nothing": the
           # log would be non-empty, carry no marker, and the next step would blame the observer.
-          # The conformance status is recorded for the same reason — exit 2 means rows were
-          # blocked and the app may never have launched, which is not an observer failure.
+          # The conformance status is recorded for the same reason — exit 2 means rows blocked by
+          # this machine, and the app may never have launched, which is not an observer failure.
           script: >-
             node packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
@@ -655,8 +656,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
+      # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
       - name: Build browser reference workspace imports
-        run: pnpm tsx scripts/workspace-packages.ts build
+        uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
@@ -682,7 +684,7 @@ jobs:
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Report the compiler cache hit rate
-        if: always()
+        if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --show-stats
       - name: Compare the desktop host with browser references
@@ -833,14 +835,50 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
           done < <(pnpm tsx scripts/workspace-packages.ts --archives)
       - run: pnpm --filter threenative-native-smoke build
+      # ccache makes this build faster; it never makes it correct. So a package feed that is slow
+      # or down must not turn a compiler cache into a failed platform leg — which is exactly what
+      # happened on 2026-09-10, when `choco install ccache` timed out after 100 s against
+      # community.chocolatey.org and took `build` and `golden-path`, both required checks, down
+      # with it on a pull request that changed one test file.
+      #
+      # Prefer an existing cache, then retry the install. If it still will not install, drop the
+      # compiler launcher and build without it: slower, byte-identical output, and the compile and
+      # test assertions below are untouched. `CCACHE_UNAVAILABLE` is the honest record of that,
+      # printed in the step summary rather than swallowed.
       - name: Install ccache on macOS
         if: runner.os == 'macOS'
-        run: brew install ccache
+        shell: bash
+        run: |
+          # Reuse a working runner-provided cache before contacting the package feed.
+          ccache --version 2>/dev/null && exit 0
+          for attempt in 1 2 3; do
+            brew install ccache && ccache --version && exit 0
+            echo "brew install ccache failed (attempt $attempt)"
+            sleep $((attempt * 15))
+          done
+          echo "CCACHE_UNAVAILABLE=1" >> "$GITHUB_ENV"
+          echo "::warning::ccache unavailable after 3 attempts; building without the compiler cache"
       - name: Install ccache on Windows
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install ccache --yes --no-progress
+        shell: bash
+        run: |
+          # Reuse a working runner-provided cache before contacting the package feed.
+          ccache --version 2>/dev/null && exit 0
+          for attempt in 1 2 3; do
+            choco install ccache --yes --no-progress && ccache --version && exit 0
+            echo "choco install ccache failed (attempt $attempt)"
+            sleep $((attempt * 15))
+          done
+          echo "CCACHE_UNAVAILABLE=1" >> "$GITHUB_ENV"
+          echo "::warning::ccache unavailable after 3 attempts; building without the compiler cache"
+      - name: Drop the compiler launcher when ccache is unavailable
+        if: env.CCACHE_UNAVAILABLE == '1'
+        shell: bash
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=" >> "$GITHUB_ENV"
       - name: Zero the compiler cache counters
+        if: env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --zero-stats
       - name: Install Windows HTTP build dependencies
@@ -863,7 +901,7 @@ jobs:
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Report the compiler cache hit rate
-        if: always()
+        if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --show-stats
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
@@ -999,7 +1037,7 @@ jobs:
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Report the compiler cache hit rate
-        if: always()
+        if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --show-stats
       - name: Scaffold the native starter from local tarballs
