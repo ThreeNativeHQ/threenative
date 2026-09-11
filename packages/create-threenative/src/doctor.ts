@@ -221,6 +221,7 @@ export const BLENDER_SERVER = ((): string => {
 /** The part of one installer host entry doctor reads. */
 interface IMcpHost {
   readonly file: string;
+  readonly format: string;
   readonly id: string;
   readonly label: string;
 }
@@ -241,6 +242,34 @@ const MANUAL_GLOBAL_MCP_HOSTS: readonly string[] = Object.freeze([
   "Amp",
   "the JetBrains assistants",
 ]);
+
+/** This list is prose in the installer, not data, so it is the one thing here that is retyped.
+ * The guard is the compensation: the day core starts wiring one of these project-scoped, the
+ * sentence doctor prints becomes false, and this throws instead of printing it. */
+for (const host of MCP_HOSTS as readonly IMcpHost[]) {
+  const claimed = MANUAL_GLOBAL_MCP_HOSTS.find(
+    (name) => host.label.toLowerCase() === name.toLowerCase(),
+  );
+  if (claimed !== undefined) {
+    throw new Error(
+      `TN_DOCTOR_MCP_TABLE: '${claimed}' is wired project-scoped now, so doctor must stop calling it machine-wide only.`,
+    );
+  }
+}
+
+/**
+ * The hosts whose config doctor can validate by shape, not merely by name.
+ *
+ * `mcpServerMatches` knows one server shape — the `mcpServers` table Claude Code, Cursor and the
+ * Gemini CLI all read. VS Code, Zed, opencode and Codex each spell a server differently, and
+ * reproducing those four here would be a second copy of the installer's `SERVER_FORMATS`. So the
+ * per-server checks read the formats they can actually verify, and the ones they cannot are
+ * reported by name presence in `editor activation` instead. Both facts are stated; neither is
+ * inflated into the other.
+ */
+const SHAPE_VERIFIABLE_HOSTS: readonly IMcpHost[] = (MCP_HOSTS as readonly IMcpHost[]).filter(
+  ({ format }) => format === "mcpServers",
+);
 
 type CompositorProbe = (environment: NodeJS.ProcessEnv) => boolean | undefined;
 
@@ -412,29 +441,50 @@ function mcpServerMatches(spec: IMcpServerSpec, value: unknown): boolean {
   );
 }
 
-function mcpConfig(
+function readServerTable(
   snapshot: IProjectSnapshot,
-):
-  | { readonly kind: "missing" }
-  | { readonly kind: "malformed"; readonly detail: string }
-  | { readonly kind: "ready"; readonly servers: Record<string, unknown> } {
-  if (!snapshot.files.has(".mcp.json")) return { kind: "missing" };
-  const source = snapshot.readText(".mcp.json");
-  if (source === undefined) return { detail: ".mcp.json could not be read", kind: "malformed" };
+  host: IMcpHost,
+): { readonly detail: string } | { readonly servers: Record<string, unknown> } {
+  const source = snapshot.readText(host.file);
+  if (source === undefined) return { detail: `${host.file} could not be read` };
   let parsed: unknown;
   try {
     parsed = JSON.parse(source) as unknown;
   } catch (error) {
     return {
-      detail: `invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-      kind: "malformed",
+      detail: `${host.file} is invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-  const root = record(parsed);
-  const servers = record(root?.mcpServers);
+  const servers = record(record(parsed)?.mcpServers);
   return servers === undefined
-    ? { detail: "missing an object-valued mcpServers property", kind: "malformed" }
-    : { kind: "ready", servers };
+    ? { detail: `${host.file} is missing an object-valued mcpServers property` }
+    : { servers };
+}
+
+/**
+ * The server table to diagnose, from whichever supported host config carries one.
+ *
+ * Keyed to `.mcp.json` alone, this failed a correctly wired Cursor-only project: `capability
+ * search` reported "no .mcp.json" and exited 1 beside an `editor activation` line that had just
+ * found the servers in `.cursor/mcp.json`. Two checks contradicting each other about the same
+ * project. It now reads every host whose format this file can actually validate, in the
+ * installer's own order, and takes the first that parses.
+ */
+function mcpConfig(
+  snapshot: IProjectSnapshot,
+):
+  | { readonly kind: "missing" }
+  | { readonly kind: "malformed"; readonly detail: string }
+  | { readonly kind: "ready"; readonly host: IMcpHost; readonly servers: Record<string, unknown> } {
+  const present = SHAPE_VERIFIABLE_HOSTS.filter(({ file }) => snapshot.files.has(file));
+  if (present.length === 0) return { kind: "missing" };
+  const malformed: string[] = [];
+  for (const host of present) {
+    const result = readServerTable(snapshot, host);
+    if ("servers" in result) return { host, kind: "ready", servers: result.servers };
+    malformed.push(result.detail);
+  }
+  return { detail: malformed.join("; "), kind: "malformed" };
 }
 
 function mcpServerCheck(
@@ -578,7 +628,7 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
   return { detail: `transport initialized and advertised ${tools.length} tool(s)`, status: "ok" };
 }
 
-function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
+function mcpSummary(serverChecks: readonly IDoctorCheck[], host: IMcpHost): IDoctorCheck {
   const failed = serverChecks.filter(({ status }) => status === "fail").length;
   const warned = serverChecks.filter(({ status }) => status === "warn").length;
   const status: DoctorStatus = failed > 0 ? "fail" : warned > 0 ? "warn" : "ok";
@@ -590,8 +640,8 @@ function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
     // server landed.
     detail:
       status === "ok"
-        ? `all ${serverChecks.length} configured MCP servers resolve; transport only, external applications are reported separately`
-        : `${serverChecks.length - failed - warned} of ${serverChecks.length} server(s) resolve; ${warned} reachable by npx only; ${failed} malformed or missing; transport only, external applications are reported separately`,
+        ? `all ${serverChecks.length} servers in ${host.file} resolve; transport only, external applications are reported separately`
+        : `${serverChecks.length - failed - warned} of ${serverChecks.length} server(s) in ${host.file} resolve; ${warned} reachable by npx only; ${failed} malformed or missing; transport only, external applications are reported separately`,
     fix: status === "ok" ? undefined : "Inspect the per-server capability search checks below.",
     name: "capability search",
     status,
@@ -600,11 +650,26 @@ function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
 
 function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorCheck[] {
   const config = mcpConfig(snapshot);
+  const verifiable = SHAPE_VERIFIABLE_HOSTS.map(({ file }) => file).join(", ");
   if (config.kind === "missing") {
+    // A host doctor cannot validate by shape may still be wired; `editor activation` is the check
+    // that can see it, and saying so beats a bare "no .mcp.json" on a working Zed project.
+    const elsewhere = MCP_HOST_TABLE.filter((host) => hostWiring(snapshot, host) === "wired").map(
+      ({ label }) => label,
+    );
+    if (elsewhere.length > 0) {
+      return [
+        {
+          detail: `no server table this check can validate (${verifiable}); ${elsewhere.join(", ")} carry the servers in a format only 'editor activation' reads`,
+          fix: `Reinstall @threenative/core if you also want ${verifiable} wired; an agent in ${elsewhere[0]} already has capability search.`,
+          name: "capability search",
+          status: "warn",
+        },
+      ];
+    }
     return [
       {
-        detail:
-          "no .mcp.json, so an agent here cannot search engine capabilities and will hand-write what exists",
+        detail: `no ${verifiable}, so an agent here cannot search engine capabilities and will hand-write what exists`,
         fix: "Restore the .mcp.json a scaffolded project ships, which wires the ThreeNative MCP servers.",
         name: "capability search",
         status: "fail",
@@ -614,8 +679,8 @@ function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorChe
   if (config.kind === "malformed") {
     return [
       {
-        detail: `.mcp.json is malformed: ${config.detail}`,
-        fix: "Restore a valid generated .mcp.json, preserving any unrelated servers.",
+        detail: `no readable server table: ${config.detail}`,
+        fix: "Restore a valid generated config, preserving any unrelated servers.",
         name: "capability search",
         status: "fail",
       },
@@ -624,7 +689,7 @@ function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorChe
   const serverChecks = MCP_SERVER_SPECS.map((spec) =>
     mcpServerCheck(snapshot, spec, config.servers[spec.configName]),
   );
-  return [mcpSummary(serverChecks), ...serverChecks];
+  return [mcpSummary(serverChecks, config.host), ...serverChecks];
 }
 
 function readJsonSync(file: string): unknown {
@@ -1506,33 +1571,40 @@ function editorActivationCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   const broken = wirings.filter(({ wiring }) => wiring === "incomplete" || wiring === "unreadable");
   const wired = wirings.filter(({ wiring }) => wiring === "wired");
   const manual = `${MANUAL_GLOBAL_MCP_HOSTS.join(", ")} read a machine-wide config only and are wired by hand`;
-  if (broken.length > 0) {
-    const named = broken
-      .map(
-        ({ host, wiring }) =>
-          `${host.file} is ${wiring === "unreadable" ? "unreadable" : "missing ThreeNative servers"}`,
-      )
-      .join("; ");
-    return {
-      // The file is the user's: doctor names it and never rewrites it.
-      detail: `${named} — ${wired.length} of ${MCP_HOST_TABLE.length} host configs are complete`,
-      fix: "Reinstall @threenative/core to rewrite the host configs it owns, or restore the listed file by hand; doctor never edits it.",
-      name: "editor activation",
-      status: "warn",
-    };
-  }
+  const named = broken
+    .map(
+      ({ host, wiring }) =>
+        `${host.file} is ${wiring === "unreadable" ? "unreadable" : "missing ThreeNative servers"}`,
+    )
+    .join("; ");
+  // Nothing wired is the hard failure, and it is tested first. Ordered the other way, corrupting a
+  // config *downgraded* the report: a project where no host worked said `warn`, because its broken
+  // files were counted before its zero working ones.
   if (wired.length === 0) {
     return {
-      detail: `no project-scoped host config carries the ThreeNative servers (looked for ${MCP_HOST_TABLE.map(({ file }) => file).join(", ")})`,
+      detail: `no project-scoped host config carries the ThreeNative servers (looked for ${MCP_HOST_TABLE.map(({ file }) => file).join(", ")})${named === "" ? "" : `; ${named}`}. ${manual}`,
       fix: "Reinstall @threenative/core in this project; its postinstall writes every project-scoped host config.",
       name: "editor activation",
       status: "fail",
     };
   }
+  if (broken.length > 0) {
+    return {
+      // The file is the user's: doctor names it and never rewrites it.
+      detail: `${named} — ${wired.length} of ${MCP_HOST_TABLE.length} host configs are complete. ${manual}`,
+      fix: "Reinstall @threenative/core to rewrite the host configs it owns, or restore the listed file by hand; doctor never edits it.",
+      name: "editor activation",
+      status: "warn",
+    };
+  }
+  // One wired host is enough for the agent working in it, so this is `ok` below seven — said out
+  // loud, because a green tick at 1 of 7 that does not explain itself reads like a miscount.
   return {
     detail: `${wired.length} of ${MCP_HOST_TABLE.length} host configs carry the servers (${wired
       .map(({ host }) => host.label)
-      .join(", ")}); whether an editor loaded one is not observable from here. ${manual}`,
+      .join(
+        ", ",
+      )}); one is enough for the host you work in. Whether an editor loaded it is not observable from here. ${manual}`,
     name: "editor activation",
     status: "ok",
   };
@@ -1745,7 +1817,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
   const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
   const mcpServerHealth = new Map<string, IMcpServerHealth>();
-  if (files.has(".mcp.json")) {
+  if (SHAPE_VERIFIABLE_HOSTS.some(({ file }) => files.has(file))) {
     for (const spec of MCP_SERVER_SPECS) {
       if (existsSync(path.resolve(projectRoot, spec.expectedArgs))) {
         mcpServerHealth.set(spec.configName, probeMcpServer(projectRoot, spec));

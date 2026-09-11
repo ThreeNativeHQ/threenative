@@ -1395,6 +1395,61 @@ describe("threenative doctor and editor activation", () => {
     expect(activation.detail).toContain(".zed/settings.json is missing ThreeNative servers");
   });
 
+  it("should not contradict itself on a project wired for one host only", () => {
+    // The defect: keyed to .mcp.json alone, capability search reported "no .mcp.json" and exited 1
+    // beside an editor activation line that had just found the servers in .cursor/mcp.json.
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set(
+        [...base.files].filter((file) => file !== ".mcp.json").concat(".cursor/mcp.json"),
+      ),
+      readText: (relative) =>
+        relative === ".cursor/mcp.json" ? MCP_CONFIG : base.readText(relative),
+    });
+    expect(check(report, "editor activation").status).toBe("ok");
+    // Cursor's table is fully diagnosed, not merely acknowledged: the per-server checks are the
+    // proof, because the "some other host has it" fallback emits none of them.
+    const perServer = report.checks.filter(({ name }) => name.startsWith("capability search: "));
+    expect(perServer).toHaveLength(MCP_SERVER_SPECS.length);
+    expect(check(report, "capability search").detail).toContain(".cursor/mcp.json");
+    expect(check(report, "capability search").status).not.toBe("fail");
+  });
+
+  it("should warn rather than fail when only an unvalidatable host format is wired", () => {
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set(
+        [...base.files].filter((file) => file !== ".mcp.json").concat(".zed/settings.json"),
+      ),
+      readText: (relative) =>
+        relative === ".zed/settings.json" ? MCP_CONFIG : base.readText(relative),
+    });
+    const search = check(report, "capability search");
+    expect(search.status).toBe("warn");
+    expect(search.detail).toContain("Zed");
+  });
+
+  it("should fail, not warn, when every host config is broken", () => {
+    // Inverted severity: counting broken files before counting working ones meant that corrupting
+    // a config downgraded the report from fail to warn.
+    const base = snapshot({});
+    const files = new Set([...base.files, ...MCP_HOST_TABLE.map(({ file }) => file)]);
+    const report = diagnoseProject({
+      ...base,
+      files,
+      readText: (relative) =>
+        MCP_HOST_TABLE.some(({ file }) => file === relative)
+          ? "{ not json"
+          : base.readText(relative),
+    });
+    const activation = check(report, "editor activation");
+    expect(activation.status).toBe("fail");
+    // And the audience with nothing working is the one that most needs the manual-setup sentence.
+    expect(activation.detail).toContain("Windsurf");
+  });
+
   it("should fail when no project-scoped host config carries the servers", () => {
     const base = snapshot({});
     const report = diagnoseProject({

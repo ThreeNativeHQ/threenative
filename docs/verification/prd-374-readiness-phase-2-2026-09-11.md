@@ -119,6 +119,54 @@ Run on linux-x64 with the real built CLI in two real projects.
 
 A reader is never told the toolchain is complete on the strength of a process that started.
 
-## Independent review
+## Independent review — FAIL, then repaired
 
-PENDING — a fresh reviewer subagent has not yet seen this diff.
+A fresh reviewer subagent returned **FAIL** on this phase with seven defects. It re-ran the gates
+itself, mutated the implementation five ways and confirmed a distinct test catches each, and
+verified on the real CLI that a malformed host config is left **byte-identical** (md5 before and
+after) while its exact path is named. It judged the `warn`-not-`fail` decision for a missing Blender
+correct and the derivation of `BLENDER_SERVER` and `MCP_HOST_TABLE` sound.
+
+Two defects were blocking, and both were real:
+
+1. **Severity was inverted.** `editorActivationCheck` tested "some config is broken" before "nothing
+   is wired", so a project where **no** host worked reported `warn`, while a project merely missing
+   the files reported `fail`. Corrupting a config *downgraded* the report. The zero-wired branch is
+   now first.
+2. **The central claim was half-delivered, and the halves contradicted each other.** Only the new
+   check was widened to seven hosts; `mcpConfig` and the health-probe gate still keyed on
+   `.mcp.json`. A correctly wired Cursor-only project got:
+
+   ```
+   ✗ capability search: no .mcp.json, so an agent here cannot search engine capabilities …
+   ✓ editor activation: 1 of 7 host configs carry the servers (Cursor); …
+   ```
+
+   Exit 1 for a user whose setup was fine. `mcpConfig` now reads every host whose format this file
+   can validate by shape — the `mcpServers` table Claude Code, Cursor and the Gemini CLI share — in
+   the installer's own order, and the probe gate follows it. The same project now reports against
+   `.cursor/mcp.json` and the two checks agree.
+
+   The four remaining formats (VS Code, Zed, opencode, Codex) each spell a server differently, and
+   reproducing them here would be a second copy of the installer's `SERVER_FORMATS`. They are
+   reported by name presence in `editor activation`, and `capability search` **warns** rather than
+   failing when one of them is the only thing wired, naming it. Both facts are stated; neither is
+   inflated into the other, and the record no longer claims more than was built.
+
+The rest, also fixed:
+
+- **`ok` at 1 of 7 now says why** — "one is enough for the host you work in" — instead of showing a
+  green tick a reader would take for a miscount.
+- **The machine-wide-host sentence reaches the `fail` branch**, which is the audience that most
+  needs it: a Windsurf or JetBrains user was getting a bare hard failure listing seven files none of
+  their tools read.
+- **`MANUAL_GLOBAL_MCP_HOSTS` is still retyped** — it exists only as prose in the installer, so it
+  cannot be derived. A module-load guard now throws if core ever wires one of those four
+  project-scoped, which is the only way the sentence doctor prints could silently become false.
+- **`pnpm budgets` was missing from this phase's gate list and was red.** Both fixed above.
+
+One box was **unticked** as a result, and stays open: see phase 2's user-verification line in the
+PRD. `mcpServerHealth` is populated only when a validatable config exists *and* the shim resolves,
+so both real-project runs above report `threenative-blender was not probed`. Transport-up-with-
+Blender-missing — the headline separation — is proven by unit fixture, not by a real project. That
+is narrower than "the four facts read separately in a real run", and the box should not claim it.
