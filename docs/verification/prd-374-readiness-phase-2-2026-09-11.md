@@ -217,10 +217,10 @@ executed operation, three separate facts in one line, in a real run.
 Observed red first, both: `should name the host config it actually read in every per-server
 message` and `should diagnose the host config that carries the servers, not the first that parses`
 fail against the pre-fix implementation (`3 failed | 81 passed`, with phase 1's blocker test) and
-pass after (`84 passed`). Confirmed on the real built CLI in a temporary project wired by
+pass after (`84 passed` at that commit; `87` at the branch tip, after the fourth and fifth reviews added regression tests). Confirmed on the real built CLI in a temporary project wired by
 `ensureHostMcpConfigs`: with a user-owned `.mcp.json` the summary now reads
 `0 of 4 server(s) in .cursor/mcp.json resolve`, and with `threenative-assets` deleted from Cursor's
 table the per-server line reads `threenative-assets is missing from .cursor/mcp.json`.
 
 Gates after the fixes: `pnpm typecheck` 0, `pnpm lint` 0, `pnpm quality` 0,
-`pnpm exec vitest run packages/create-threenative/__tests__` **665 passed across 38 files**.
+`pnpm exec vitest run packages/create-threenative/__tests__` **665 passed across 38 files** at that commit, **668** at the branch tip.

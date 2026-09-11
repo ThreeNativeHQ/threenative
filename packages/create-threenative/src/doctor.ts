@@ -1409,6 +1409,10 @@ function requestedBuildBlockers(
   // Every native target ships the downloaded runtime; its install status is the download's receipt.
   if (nativeRuntime.status !== "ok")
     blockers.push(nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
+  // The thing the native host actually starts. Left out, a project with no portable entry read
+  // `buildable — android` on a supported JDK while the build it predicted cannot start at all.
+  const nativeEntry = nativeEntryCheck(snapshot);
+  if (nativeEntry.status === "fail") blockers.push(nativeEntry.detail);
   if (request.target === "desktop") {
     // The phase names overlay capability among the prerequisites that must prevent a buildable
     // result. A desktop game whose overlay cannot start is not a desktop build that works.
@@ -1482,6 +1486,8 @@ function requestedBuildCheck(
 const TARGET_PREREQUISITE_OWNERS: Readonly<Record<string, readonly DoctorTarget[]>> = Object.freeze(
   {
     "desktop overlay": Object.freeze(["desktop"] as const),
+    // Its own words are "so a native build has nothing to start"; a web build starts src/main.ts.
+    "native entry": Object.freeze(["android", "desktop", "ios"] as const),
     "native runtime": Object.freeze(["android", "desktop", "ios"] as const),
   },
 );

@@ -1669,6 +1669,39 @@ describe("threenative doctor --target/--mode", () => {
     expect(report.pass).toBe(true);
   });
 
+  it("should not fail a web request on the native entry only a native build starts", () => {
+    // `native entry` says so itself — "so a native build has nothing to start" — and a web build
+    // starts src/main.ts. It was the last check still voting on a scoped exit code.
+    const base = snapshot({});
+    const missingEntry = {
+      ...base,
+      files: new Set([...base.files].filter((file) => file !== "src/game.ts")),
+    };
+    const web = diagnoseProject(missingEntry, { target: "web" });
+    expect(check(web, "native entry").status).toBe("warn");
+    expect(check(web, "requested build").status).toBe("ok");
+    // Nothing else is red, so the exit code is the request's alone.
+    expect(web.checks.filter(({ status }) => status === "fail").map(({ name }) => name)).toEqual(
+      [],
+    );
+    expect(web.pass).toBe(true);
+  });
+
+  it("should name the missing native entry among a native build's blockers", () => {
+    // The other direction of the same omission: the verdict line has to carry what stops the
+    // build, or a supported JDK makes it read `buildable` on a project that cannot start.
+    const base = snapshot({});
+    const missingEntry = {
+      ...base,
+      files: new Set([...base.files].filter((file) => file !== "src/game.ts")),
+    };
+    const android = diagnoseProject(missingEntry, { target: "android" });
+    expect(check(android, "requested build").status).toBe("fail");
+    expect(check(android, "requested build").detail).toMatch(/nothing to start/u);
+    expect(check(android, "native entry").status).toBe("fail");
+    expect(android.pass).toBe(false);
+  });
+
   it("should not fail a web request on the desktop overlay it never needs", () => {
     const overlay = {
       detail: "no compositor is running, so the desktop UI overlay cannot start",
