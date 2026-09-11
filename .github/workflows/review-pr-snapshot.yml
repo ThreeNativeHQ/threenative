@@ -1,65 +1,130 @@
-name: PR review workspace snapshot
-
+name: Validate review fixes and stage Git trees
 on:
   push:
     branches: [review/prs-167-180-183-20260911]
-
 permissions:
   contents: read
-
 jobs:
-  snapshot:
+  validate:
+    name: Validate PR ${{ matrix.pr }} fixes
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pr: 180
+            head: 0dcadaada4f45a347fe6a79200f5a358e8da4d8a
+          - pr: 183
+            head: b751635441d626bdd53fe39a7458fa1d218b935b
+    env:
+      CI: '1'
+      NODE_OPTIONS: --max-old-space-size=4096
+      REVIEW_PR: ${{ matrix.pr }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 01c82dc69fe46cf7aa97727ae057c7ae49350c29
-          fetch-depth: 1
-      - name: Export exact deltas from the previously downloaded source snapshot
+          persist-credentials: false
+      - name: Decode and authenticate the locally tested patch
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/review-source"
-          base=190bbe31a0e034aca903a36bac8b84a0d00c6fa5
-          git fetch --no-tags --depth=1 origin "$base" \
-            630c1a073d89509129bab2eeb3c79e5bb5995e58 \
-            c4e5ec716eddf9038f07438a3a47a289e2ad9ea8 \
-            b751635441d626bdd53fe39a7458fa1d218b935b
-          for row in \
-            main:01c82dc69fe46cf7aa97727ae057c7ae49350c29 \
-            167:630c1a073d89509129bab2eeb3c79e5bb5995e58 \
-            180:c4e5ec716eddf9038f07438a3a47a289e2ad9ea8 \
-            183:b751635441d626bdd53fe39a7458fa1d218b935b; do
-            name=${row%%:*}
-            sha=${row#*:}
-            git diff --binary --full-index "$base" "$sha" > "$RUNNER_TEMP/review-source/$name.patch"
-            git diff --binary --full-index 01c82dc69fe46cf7aa97727ae057c7ae49350c29 "$sha" > "$RUNNER_TEMP/review-source/$name-pr.patch"
-            printf '%s %s\n' "$sha" "$(git rev-parse "$sha^{tree}")" > "$RUNNER_TEMP/review-source/$name.txt"
-          done
-      - uses: actions/upload-artifact@v7
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, os, pathlib
+          records = json.load(open('.github/review/fixes.json'))
+          record = next(r for r in records if str(r['pr']) == os.environ['REVIEW_PR'])
+          encoded = record.pop('patch')
+          # Correct transfer transcription only; the original local SHA-256 remains authoritative.
+          for before, after in [('AcnIhzszCEV','AcnIhzszBEV'),('nNrJKLLtao','nNrJKLtao'),('qTlnyqTnEm','qTlnyqPnEm'),('EUmMxII8T','EUmMxI8T'),('ldXIP10vRrZZ/w','ldXIP10vRrZ/w'),('NrapZKK+x','NrapZK+x')]:
+              encoded = encoded.replace(before, after)
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == record['sha256'], 'patch SHA-256 mismatch'
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          (root / 'review.patch').write_bytes(patch)
+          (root / 'review-record.json').write_text(json.dumps(record))
+          (root / 'review-result').mkdir()
+          PY
+      - uses: actions/checkout@v7
         with:
-          name: exact-pr-review-source
-          path: ${{ runner.temp }}/review-source
-          retention-days: 2
-          if-no-files-found: error
+          ref: ${{ matrix.head }}
+          persist-credentials: false
+      - name: Apply only the reviewed file changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --index --check "$RUNNER_TEMP/review.patch"
+          git apply --index "$RUNNER_TEMP/review.patch"
+          git diff --cached --check
+          python3 - <<'PY'
+          import json, os, subprocess
+          record = json.load(open(os.environ['RUNNER_TEMP'] + '/review-record.json'))
+          assert subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() == record['head']
+          paths = subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().split('\0')[:-1]
+          assert sorted(paths) == sorted(record['files']), 'unexpected changed files'
+          PY
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Package Linux test dependencies without credentials or repository configuration
+      - name: Build the complete workspace
+        run: pnpm build > "$RUNNER_TEMP/review-result/build.log" 2>&1
+      - name: Typecheck, lint and budgets without weakening gates
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/review-deps"
-          npm pack pnpm@10.25.0 --pack-destination "$RUNNER_TEMP/review-deps"
-          find . -name node_modules -type d -prune -print0 > "$RUNNER_TEMP/dependency-paths"
-          tar --null -czf "$RUNNER_TEMP/review-deps/node_modules.tar.gz" --files-from "$RUNNER_TEMP/dependency-paths"
+          pnpm typecheck > "$RUNNER_TEMP/review-result/typecheck.log" 2>&1
+          pnpm lint > "$RUNNER_TEMP/review-result/lint.log" 2>&1
+          pnpm budgets > "$RUNNER_TEMP/review-result/budgets.log" 2>&1
+      - name: Execute owned regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$REVIEW_PR" = 180 ]; then
+            pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
+            cd packages/runtime-native
+            pnpm exec vitest run --config vitest.config.ts tests/desktop-core-gate.test.mjs tests/native-platform-workflow.test.mjs tests/webtransport-polyfill-prerequisites.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
+          else
+            pnpm exec vitest run packages/playtest/__tests__/pipeline-cache-perf.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
+            cd packages/runtime-native
+            pnpm exec vitest run --config vitest.config.ts tests/pipeline-cache-measurement.test.mjs tests/pipeline-cache-protocol.test.mjs tests/wgpu-cache-toolchain.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
+          fi
+      - name: Upload tested Git tree only; do not move any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          record = json.loads((root / 'review-record.json').read_text())
+          tree = []
+          for path in record['files']:
+              data = subprocess.check_output(['git','show', ':' + path]).decode('utf-8')
+              tree.append({'path':path, 'mode':'100644', 'type':'blob', 'content':data})
+          base = subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip()
+          (root / 'tree-input.json').write_text(json.dumps({'base_tree':base,'tree':tree}))
+          PY
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/trees" --input "$RUNNER_TEMP/tree-input.json" > "$RUNNER_TEMP/tree-response.json"
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          record = json.loads((root / 'review-record.json').read_text())
+          record['tree'] = json.loads((root / 'tree-response.json').read_text())['sha']
+          assert record['tree'] == subprocess.check_output(['git','write-tree'], text=True).strip(), 'staged tree mismatch'
+          record['blobs'] = {p:subprocess.check_output(['git','rev-parse', ':' + p], text=True).strip() for p in record['files']}
+          record['run'] = os.environ['GITHUB_RUN_ID']
+          (root / 'review-result/result.json').write_text(json.dumps(record, indent=2) + '\n')
+          PY
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: linux-pr-review-dependencies
-          path: ${{ runner.temp }}/review-deps
+          name: review-fix-tree-${{ matrix.pr }}
+          path: ${{ runner.temp }}/review-result
           retention-days: 2
           if-no-files-found: error
