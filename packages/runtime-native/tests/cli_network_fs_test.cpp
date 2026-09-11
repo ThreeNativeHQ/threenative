@@ -1098,6 +1098,18 @@ bool testRaytracingAndWebTransport() {
     mystral::webtransport::hasActiveSessions();
     mystral::webtransport::shutdown();
 
+    // Name which half failed. This returned a bare `false` before, so the contract runner could
+    // only report "exited 1" and the cause had to be guessed from surrounding log noise - the
+    // engine prints caught exceptions too, so the loudest line is routinely not the failure. Both
+    // halves are `engine->evalScript`, and a script that throws returns false here.
+    if (!rtPassed) {
+        std::cerr << "TN_CLI_NETWORK_FS_RT_SCRIPT_FAILED: rt_test.js did not evaluate cleanly: "
+                  << engine->getException() << std::endl;
+    }
+    if (!wtPassed) {
+        std::cerr << "TN_CLI_NETWORK_FS_WT_SCRIPT_FAILED: wt_test.js did not evaluate cleanly: "
+                  << engine->getException() << std::endl;
+    }
     return rtPassed && wtPassed;
 }
 
