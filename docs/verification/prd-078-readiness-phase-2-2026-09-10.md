@@ -249,6 +249,38 @@ Tests  29 passed (29)
 EXIT_CODE=0
 ```
 
+## The RT handle repair, measured locally
+
+The repair guards the three RT ID readers with `isObject` before they read `_id`, so the exception
+is never created rather than drained downstream. Executed on this machine, Linux x86_64, against a
+build of the branch source:
+
+```text
+packages/runtime-native/build/tn-linux-coverage/threenative-cli-network-fs-test
+EXIT_CODE=0
+native CLI network and FS comprehensive contract passed
+```
+
+Exit 0 alone does not discriminate: the dispatch event that exposed the defect is not delivered on
+this machine, and the pre-repair binary also exits 0 here. The discriminating observation is the
+diagnostic `reportException` prints, since that is the same function that sets `lastException_`:
+
+| Binary | `[V8] rt_test.js:NN: TypeError: Cannot read properties of null (reading '_id')` |
+| --- | --- |
+| pre-repair source | 6 |
+| repaired source | 0 |
+
+Zero prints means zero writes to the sticky string, so nothing remains for the next `hasException()`
+caller to misattribute. The two binaries differ in more than this one change, but the lines
+themselves originate in the RT block, which is identical apart from the guards.
+
+The regenerated coverage record moves consistently with it: `src/raytracing/` gains 3 instrumented
+lines (the three guards) and `src/webtransport/` loses 3 covered lines. Totals stay above the floors
+and `pnpm budgets` is green.
+
+**Still not claimed:** the hosted Linux row. Its green is owned by the run on this head, not by this
+record.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:
