@@ -8,28 +8,31 @@ concurrency:
   group: prd-264-verification
   cancel-in-progress: true
 jobs:
-  source:
+  baseline:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Snapshot tracked development inputs
-        run: |
-          python3 - <<'PY'
-          import pathlib, subprocess, tarfile
-          allowed = {'.ts', '.tsx', '.js', '.mjs', '.cjs', '.json', '.yaml', '.yml', '.toml', '.md', '.sh', '.html', '.css', '.txt', '.patch'}
-          paths = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
-          with tarfile.open('doctor-source.tar.gz', 'w:gz') as archive:
-              for value in paths:
-                  p = pathlib.Path(value)
-                  if value and p.is_file() and (p.suffix in allowed or p.name.startswith('.')):
-                      archive.add(p, arcname=value, recursive=False)
-          PY
-      - uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
         with:
-          name: prd-264-source
-          path: doctor-source.tar.gz
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter create-threenative... --filter threenative-engine-mcp run build
+      - name: Baseline doctor and CLI regressions
+        run: pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts packages/create-threenative/__tests__/cli.spec.ts
+      - name: Export offline test environment
+        if: always()
+        run: |
+          tar -czf doctor-tools.tar.gz node_modules packages/*/node_modules packages/*/dist packages/create-threenative/template-assets
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prd-264-tools
+          path: doctor-tools.tar.gz
           retention-days: 3
+          compression-level: 0
           if-no-files-found: error
