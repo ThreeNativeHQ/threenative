@@ -629,32 +629,24 @@ export async function packageAndroid(
   config = undefined,
   options = {},
 ) {
-  // `THREENATIVE_RUNTIME_SOURCE` remains a maintainer escape hatch: it points the packager
-  // at a runtime **source checkout** for local development, and fails closed below instead of
-  // silently becoming the consumer path. A published install ships no `CMakeLists.txt`, so the
-  // source check always takes the download path — which fetches the release manifest Phase 1
-  // validates. `options.runtimeRoot` stays the explicit test seam; the env var is never an
-  // implicit consumer fallback.
-  // `THREENATIVE_RUNTIME_SOURCE` points the packager at a runtime **source checkout** for
-  // maintainer builds. It stays reachable here, but it is never silent: when the resolved root
-  // is a source checkout (CMakeLists.txt present) the build records that fact in its provenance
-  // below, and the distribution suite asserts the marker is absent for consumer builds.
+  // Source identity must not depend on whether downloaded dependencies are already present.
+  // Otherwise a partially provisioned checkout silently takes the consumer download path.
   const packageRoot = resolve(
     options.runtimeRoot ?? process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
   );
   const { androidRoot } = androidPaths(packageRoot);
-  // Provenance the consumer gate asserts: a build that would compile from a source
-  // checkout says so up front, so a maintainer build can never masquerade as a prebuilt one.
-  // The distribution suite fails the consumer gate when this guard fires without an explicit
-  // `options.allowSourceBuild` opt-in. The guard sits before the wrapper/manifest checks so
-  // the failure names the checkout, not a missing wrapper or manifest fetch.
-  const sourceCheckout =
-    existsSync(join(packageRoot, 'CMakeLists.txt')) &&
-    existsSync(join(packageRoot, 'third_party', 'sdl3-android', `SDL3-${SDL3_ANDROID_VERSION}.aar`));
+  const sourceCheckout = existsSync(join(packageRoot, 'CMakeLists.txt'));
   if (sourceCheckout && options.allowSourceBuild !== true) {
     throw new Error(
       `Android build resolved a source checkout at ${packageRoot} with no explicit opt-in. ` +
-        'Pass { allowSourceBuild: true } for a maintainer build; consumer builds resolve a published install whose source check fails and take the prebuilt path.',
+        'Pass --allow-source-build (or { allowSourceBuild: true }) for a maintainer build; ' +
+        'consumer builds use the prebuilt path from a published install.',
+    );
+  }
+  if (sourceCheckout && !existsSync(join(packageRoot, 'third_party', 'sdl3-android', `SDL3-${SDL3_ANDROID_VERSION}.aar`))) {
+    throw new Error(
+      `Android source checkout at ${packageRoot} is missing SDL3-${SDL3_ANDROID_VERSION}.aar. ` +
+        'Provision the maintainer dependencies with node scripts/download-deps.mjs --android from the runtime checkout, then retry --allow-source-build.',
     );
   }
   const declared = configValue(config, orientation);
@@ -676,7 +668,7 @@ export async function packageAndroid(
       // Name the cause and the way out. The bare HTTP status told a person which URL failed and
       // nothing about why a published install can never satisfy it.
       throw new Error(
-        `${error instanceof Error ? error.message : String(error)}\n\nThis install has no runtime source checkout at ${packageRoot}, so it tried to download\nprebuilt Android artifacts from a GitHub release. Point the packager at a source\ncheckout of @threenative/runtime-native instead:\n\n  THREENATIVE_RUNTIME_SOURCE=/path/to/packages/runtime-native pnpm build:android\n`,
+        `${error instanceof Error ? error.message : String(error)}\n\nThis install has no runtime source checkout at ${packageRoot}, so it tried to download\nprebuilt Android artifacts from a GitHub release. Point the packager at a source\ncheckout of @threenative/runtime-native instead:\n\n  THREENATIVE_RUNTIME_SOURCE=/path/to/packages/runtime-native pnpm exec threenative build --target android --allow-source-build\n`,
         { cause: error },
       );
     }

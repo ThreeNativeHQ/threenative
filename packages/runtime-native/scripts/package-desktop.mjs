@@ -44,7 +44,7 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
         'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
     );
   }
-  return installPrebuilt(options.install ?? {});
+  return installPrebuilt({ ...options.install, reuse: true });
 }
 
 export const DEFAULT_DESKTOP_CONFIG = {
@@ -68,7 +68,7 @@ export function parseArgs(args) {
     const flag = args[index];
     const value = args[index + 1];
     if (!['--assets', '--bundle', '--config', '--output', '--runtime', '--ui'].includes(flag) || !value) {
-      throw new Error('Usage: package-desktop.mjs --bundle FILE --runtime FILE --output FILE [--assets DIR] [--ui DIR] [--config FILE]');
+      throw new Error('Usage: package-desktop.mjs --bundle FILE --output FILE [--runtime FILE] [--assets DIR] [--ui DIR] [--config FILE]');
     }
     options[flag.slice(2)] = resolve(value);
   }
@@ -97,7 +97,7 @@ export function packageDesktop(options) {
     }
     return compileDesktopArtifact(options, options.runtime);
   }
-  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource }).then((runtime) =>
+  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource, install: options.install }).then((runtime) =>
     compileDesktopArtifact(options, runtime),
   );
 }
