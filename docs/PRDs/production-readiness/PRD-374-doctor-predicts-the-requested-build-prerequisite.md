@@ -2,9 +2,16 @@
 prd_contract: v1
 ---
 
-# PRD-264 — Doctor reports the actual consumer prerequisites and limits
+# PRD-374 — Doctor predicts the requested build's prerequisite failure
 
-**Status:** PARTIAL — existing transport/tool probes retained; readiness semantics reopened. Revised 2026-09-08; planning only.
+**Status:** NOT STARTED — both phases are new scope on top of a finished PRD. Renumbered 2026-09-11.
+
+This work was drafted on 2026-09-08 as a rewrite of PRD-264, which un-filed that PRD from `done/`
+and deleted its sixteen ticked boxes. The phases below were never part of PRD-264: it shipped
+truthful *craft/test/ship* diagnosis, and these add target-scoped build-prerequisite prediction and
+a separation between MCP transport, external Blender availability and editor activation.
+[PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md) is restored to
+`done/` and re-verified on `main`; this PRD extends it and must not re-litigate its checks.
 **Complexity:** 7 → HIGH (+2 files, +2 multi-package, +2 target/prerequisite state, +1 external tool probes).
 **Problem:** A developer can see a target described as available because its packager exists while downloads, UI, signing or SDK prerequisites prevent the intended build.
 
@@ -66,7 +73,7 @@ sequenceDiagram
 - EDIT `packages/create-threenative/src/doctor.ts` — derive requirements from build/runtime evidence.
 - EDIT `packages/create-threenative/__tests__/doctor.spec.ts` — scoped target failure semantics.
 - EDIT `packages/create-threenative/__tests__/cli.spec.ts` — doctor argument validation.
-- NEW `docs/verification/prd-264-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-374-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** For the requested target/mode, missing binary, overlay capability, supported SDK/JDK or signing prerequisite must prevent a buildable/ready result. A configured but unexecuted store upload is PENDING evidence, not an install prerequisite failure. Reuse PRD-212/365 mode semantics and preserve debug builds without signing keys. Runtime manifest lookup must retain bounded timeout/error status. Do not edit/read engine source as a consumer requirement.
 
@@ -91,7 +98,7 @@ pnpm exec threenative doctor --target android --mode release --text
 - EDIT `packages/create-threenative/src/doctor.ts` — separate MCP transport and tool prerequisites.
 - EDIT `packages/create-threenative/__tests__/doctor.spec.ts` — Blender/config/script-policy controls.
 - EDIT `packages/create-threenative/README.md` — document exact game-only repair actions.
-- NEW `docs/verification/prd-264-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-374-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Keep real transport probing from earlier work. Derive current required servers from core table. Distinguish server installed, config loaded by a supported editor, external Blender executable present, and operation executed. Show commands for missing prerequisites without modifying global configuration or silently installing applications. Preserve malformed/unwritable config and report the exact file. Document hosts that need manual global setup.
 
