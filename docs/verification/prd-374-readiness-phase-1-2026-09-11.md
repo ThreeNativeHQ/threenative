@@ -8,7 +8,7 @@ The gates below were first run against commit `c9dd6288a` on `main` at `97d0f5c5
 re-applied on `main` under different SHAs, so the branch was rebuilt as the same net diff on current
 `main`: `c9dd6288a` → `9d50cb878`, `9e61a62a6` → `4568451c9`, content unchanged
 (`backup/prd374-preRebase` keeps the old tip). The suites were re-run on the rebuilt commits and
-report the same results: `pnpm typecheck` exit 0, `pnpm lint` exit 0, `doctor.spec.ts` 68 passed and
+report the same results: `pnpm typecheck` exit 0, `pnpm lint` exit 0, `doctor.spec.ts` 68 passed at the time of writing and
 `cli.spec.ts` 5 passed.
 
 ## What changed
@@ -28,7 +28,7 @@ is the consumer that must read the same four; that handoff is **not yet made** �
 
 | Command | Result |
 | --- | --- |
-| `pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts` | 68 passed (7 new), exit 0 |
+| `pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts` | 68 passed (7 new), exit 0. **84 passed** after the two independent reviews' fixes; this record describes `9d50cb878`, and the later fixes are `c037860f2` and the second review's blocker fix. |
 | `pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts` | 5 passed, exit 0 |
 | `pnpm typecheck` | clean, exit 0 |
 | `pnpm lint` | exit 0 (696 pre-existing warnings; one biome format error on the new test was autofixed before commit) |
@@ -86,5 +86,7 @@ That project still exits 1 on three failures of its own (`capability search`, `p
   `<path>/build/tn-linux/<target> is not built` plus the `pump-silence` suite, because this fresh
   worktree has no compiled C++ host. Environmental, not caused by a TypeScript change confined to
   `packages/create-threenative`. The root suite was not separately completed in this session.
-- `pnpm budgets` NOT RUN.
+- `pnpm budgets` exit 0 — added after the first independent review found it red on this branch
+  (a stale `docs/benchmark/SCREENSHOT-RETENTION.md`, regenerated in `811eae6ef`). Re-run against
+  the review fixes: exit 0.
 - Phase 2 (tool discovery / Blender / editor activation) NOT STARTED.

@@ -74,13 +74,13 @@ sequenceDiagram
 
 **Progress:**
 
-- [x] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more) — commit `9d50cb878` (was `c9dd6288a` before the branch was rebuilt on current `main`; same net diff); `pnpm typecheck` exit 0, `pnpm lint` exit 0, and `pnpm budgets` exit 0 after the retention index was regenerated (it was red — the reviewer found it, and regenerating `docs/benchmark/SCREENSHOT-RETENTION.md` fixed it).
-- [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — 68 passed (7 new), plus `cli.spec.ts` 5 passed for the argument validation.
+- [x] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more) — commits `9d50cb878` (wiring; was `c9dd6288a` before the branch was rebuilt on current `main`, same net diff), `c037860f2` (six defects from the first independent review) and the second review's blocker fix in this commit; `pnpm typecheck` exit 0, `pnpm lint` exit 0, and `pnpm budgets` exit 0 after the retention index was regenerated (it was red — the reviewer found it, and regenerating `docs/benchmark/SCREENSHOT-RETENTION.md` fixed it).
+- [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — **84 passed** (68 when the phase first landed, then the review fixes), plus `cli.spec.ts` 5 passed for the argument validation. Whole package **665 passed across 38 files**.
 - [x] Observed red recorded, then restored green — `examples/abyss-framework` with JDK 26.0.2 and no install status: `requested build: not buildable — android release: …` exit 1; the same command with `JAVA_HOME=java-17-openjdk` and the four signing properties drops exactly those two blockers.
 - [x] User verification performed on the named platform — linux-x64, real built CLI in two real projects; `examples/engine-load-test --target web` prints `buildable — web` and demotes the broken desktop target to `warn`.
 - [x] Evidence record written: `docs/verification/prd-374-readiness-phase-1-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
-      NOT RUN — no reviewer subagent has seen this diff. This is the only thing between phase 1 and closed.
+      Two reviews run, both **FAIL**, both acted on. Review 1 (2026-09-11) found `pnpm budgets` red on the branch and a dead commit SHA; fixed in `811eae6ef`. Review 2 found the requested target line naming only *satisfied* facts (`not buildable — JDK 17.0.19 found; android-35 found`) while the real blocker sat on another line; fixed in this commit, with `should name the blocker on the requested target line, not only satisfied probes` pinning it. **A third review has not seen the fix**, so this box stays open.
 
 **Files (maximum five):**
 
@@ -111,13 +111,12 @@ pnpm exec threenative doctor --target android --mode release --text
 **Progress:**
 
 - [x] Callers wired and building: `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts`, `packages/create-threenative/README.md` — `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm check:docs` exit 0, `pnpm budgets` exit 0 (red until the retention index was regenerated; the reviewer found it).
-- [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — 75 passed (68 before), and the whole package 656 passed across 38 files. Both named cases exist: conversion unavailable when the Blender MCP starts with Blender missing, and a malformed host config preserved while its exact path is reported.
-- [x] Observed red recorded, then restored green — the three incumbent `blender` tests failed on the rename (`3 failed | 65 passed`); in a real project, `.vscode/mcp.json` made unreadable and `threenative-blender` deleted from `.zed/settings.json` gave `5 of 7 host configs are complete`, and `PATH=/usr/bin:/bin` gave `conversion is unavailable`. Restoring both returned the green text.
-- [ ] User verification performed on the named platform
-      PARTIAL, and unticked after the independent review. linux-x64 with the real built CLI in three real projects does cover the host-config facts: `examples/engine-load-test` names all seven paths it looked for, a scaffolded-shape project reports 7 of 7, and a Cursor-only project is diagnosed against `.cursor/mcp.json` with both checks agreeing. But `mcpServerHealth` is only populated when a shim resolves, so every real run reports `threenative-blender was not probed` — the headline transport-up-with-Blender-missing separation is proven by unit fixture only. That needs a project with `@threenative/core` actually installed and Blender off `PATH`.
+- [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — **84 passed** (75 when the phase first landed, 68 before it), and the whole package **665 passed across 38 files**. Both named cases exist: conversion unavailable when the Blender MCP starts with Blender missing, and a malformed host config preserved while its exact path is reported.
+- [x] Observed red recorded, then restored green — the three incumbent `blender` tests failed on the rename (`3 failed | 65 passed`); in a real project, `.vscode/mcp.json` made unreadable and `threenative-blender` deleted from `.zed/settings.json` gave `5 of 7 host configs are complete`, and `PATH=/usr/bin:/bin` **with `HOME` also scrubbed** gave `conversion is unavailable`. Restoring both returned the green text. The second independent review caught that `PATH` alone does not reproduce it: `resolveBlender` falls back to `$HOME/.local/bin/blender` (`packages/blender-mcp/src/detect.ts:104`), which is where Blender 5.2.0 lives on this machine, so the check stays `ok` until `HOME` is scrubbed too.
+- [x] User verification performed on the named platform — linux-x64, real built CLI. The gap the independent review left open is closed: in `../sandbox/caravel`, a real game with `@threenative/core` installed, with Blender removed from both `PATH` and `HOME`, the four facts read separately in one real report — `model conversion: threenative-blender transport is up, but conversion is unavailable: No Blender 4.2 or newer was found … no bake manifest here, so no conversion is proven`, beside `editor activation: 7 of 7 host configs carry the servers … whether an editor loaded it is not observable from here` and `capability search: threenative-sculpt … transport initialized and advertised 5 tool(s)`. No `was not probed` line appears, so the separation is no longer fixture-only. The same project with Blender present reports `Blender 5.2.0 converts .fbx, .blend, .obj and .dae on this machine`.
 - [x] Evidence record written: `docs/verification/prd-374-readiness-phase-2-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
-      NOT RUN — no reviewer subagent has seen this diff.
+      Two reviews run, both **FAIL**, both acted on. Review 1 found the severity inversion and the Cursor-only exit 1; review 2 (on the fixed code) confirmed those but found two more: every per-server message hardcoded `.mcp.json` while the summary named the host actually read, and `mcpConfig` took the first host that *parses* rather than the one carrying the servers — so a project with all seven configs wired but a user-owned `.mcp.json` reported `0 of 4 server(s) resolve` beside `7 of 7`. Both fixed in this commit, each with its own regression test, both observed red first. **A third review has not seen the fix**, so this box stays open.
 
 **Files (maximum five):**
 
@@ -126,10 +125,15 @@ pnpm exec threenative doctor --target android --mode release --text
 - EDIT `packages/create-threenative/README.md` — document exact game-only repair actions.
 - NEW `docs/verification/prd-374-readiness-phase-2-2026-09-11.md` — commands, identities, red/green and reviewer decision.
 
-Four files used. A fifth, `packages/core/mcp/install.d.mts`, was written and reverted: typing the
-installer made two previously untyped consumers type-check for the first time and would have
-widened the phase past its budget. Doctor uses the `@ts-expect-error` import its sibling consumers
-already use.
+Five files used. The fifth is `packages/core/mcp/install.d.mts` (NEW), written after CI rejected
+the alternative: doctor's `@ts-expect-error` import of the plain-JavaScript installer is a new
+suppression-class finding, and `pnpm quality` fails closed on it, which failed both `budgets` and
+`test-unit (2/3)` on PR #198. Typing the installer once — the pattern `servers.d.mts` already
+establishes for `servers.mjs` — removes the directive from all five of its TypeScript consumers
+rather than waiving it at one site. That touches three further files
+(`packages/core/__tests__/mcp-install.spec.ts`, `packages/create-threenative/__tests__/scaffold-mcp.spec.ts`,
+`scripts/sync-mcp-configs.ts`), each a one-line deletion of the directive the declaration makes
+unnecessary; they are counted here rather than left unsaid. Commit `199aebed8`.
 
 **Implementation and wiring:** Keep real transport probing from earlier work. Derive current required servers from core table. Distinguish server installed, config loaded by a supported editor, external Blender executable present, and operation executed. Show commands for missing prerequisites without modifying global configuration or silently installing applications. Preserve malformed/unwritable config and report the exact file. Document hosts that need manual global setup.
 

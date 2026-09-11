@@ -1415,6 +1415,51 @@ describe("threenative doctor and editor activation", () => {
     expect(check(report, "capability search").status).not.toBe("fail");
   });
 
+  it("should name the host config it actually read in every per-server message", () => {
+    // The defect: the summary named .cursor/mcp.json while each per-server line told the user to
+    // restore an entry in .mcp.json — a file that does not exist in this project.
+    const base = snapshot({});
+    const withoutEngine = JSON.stringify({
+      mcpServers: Object.fromEntries(
+        Object.entries(
+          (JSON.parse(MCP_CONFIG) as { mcpServers: Record<string, unknown> }).mcpServers,
+        ).filter(([name]) => name !== MCP_SERVER_SPECS[0]?.configName),
+      ),
+    });
+    const report = diagnoseProject({
+      ...base,
+      files: new Set(
+        [...base.files].filter((file) => file !== ".mcp.json").concat(".cursor/mcp.json"),
+      ),
+      readText: (relative) =>
+        relative === ".cursor/mcp.json" ? withoutEngine : base.readText(relative),
+    });
+    const missing = check(report, `capability search: ${MCP_SERVER_SPECS[0]?.packageName}`);
+    expect(missing.status).toBe("fail");
+    expect(missing.detail).toContain(".cursor/mcp.json");
+    expect(missing.detail).not.toContain("from .mcp.json");
+    expect(missing.fix).toContain(".cursor/mcp.json");
+  });
+
+  it("should diagnose the host config that carries the servers, not the first that parses", () => {
+    // The defect: a user's own .mcp.json parsed first, so a project whose other hosts were
+    // correctly wired reported "0 of 4 server(s) in .mcp.json resolve" beside "7 of 7 wired".
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set([...base.files, ".cursor/mcp.json"]),
+      readText: (relative) =>
+        relative === ".mcp.json"
+          ? JSON.stringify({ mcpServers: { "my-own-server": { command: "node" } } })
+          : relative === ".cursor/mcp.json"
+            ? MCP_CONFIG
+            : base.readText(relative),
+    });
+    const summary = check(report, "capability search");
+    expect(summary.detail).toContain(".cursor/mcp.json");
+    expect(summary.status).not.toBe("fail");
+  });
+
   it("should warn rather than fail when only an unvalidatable host format is wired", () => {
     const base = snapshot({});
     const report = diagnoseProject({
@@ -1504,6 +1549,24 @@ describe("threenative doctor --target/--mode", () => {
     expect(requested.detail).not.toMatch(/android-35 .*found/u);
     // It stays in the standing target line, which reports every probed fact, met or not.
     expect(check(report, "target android").detail).toMatch(/android-35 .*found/u);
+  });
+
+  it("should name the blocker on the requested target line, not only satisfied probes", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    // The target line borrows the verdict's word, so it must also borrow the verdict's reason:
+    // "not buildable — <every fact that is satisfied>" is the shape the PRD forbids. The probed
+    // facts stay, but behind the blocker and labelled as probes.
+    const target = check(report, "target android").detail;
+    expect(target).toMatch(/^not buildable — JDK 26\.0\.2/u);
+    expect(target).toContain("; probed: ");
+    expect(target.slice(0, target.indexOf("; probed: "))).not.toMatch(/android-35/u);
+    expect(target).toMatch(/probed: .*android-35 .*found/u);
   });
 
   it("should block a requested desktop build on a failing overlay", () => {

@@ -35,11 +35,14 @@ transport** does fail — that is a package the project installed, not an applic
 - `packages/create-threenative/README.md`
 - this record
 
-Four of the phase's five-file budget. The planned `packages/core/mcp/install.d.mts` was written
-and then reverted: giving the installer a declaration file made two previously untyped consumers
-(`packages/core/__tests__/mcp-install.spec.ts`, `packages/create-threenative/__tests__/scaffold-mcp.spec.ts`)
-type-check for the first time and would have widened the phase past its budget. Doctor uses the
-`@ts-expect-error` import this repository's existing consumers of that module already use.
+All five of the phase's file budget. `packages/core/mcp/install.d.mts` was written and reverted
+once, then written for good in `199aebed8`: doctor's `@ts-expect-error` import of the installer is
+a suppression-class finding that `pnpm quality` fails closed on, and it failed both `budgets` and
+`test-unit (2/3)` on PR #198. Typing the installer once — the pattern `servers.d.mts` already
+establishes — removes the directive from all five of its TypeScript consumers instead of waiving
+it at one site, at the cost of a one-line deletion in three further files
+(`packages/core/__tests__/mcp-install.spec.ts`, `packages/create-threenative/__tests__/scaffold-mcp.spec.ts`,
+`scripts/sync-mcp-configs.ts`).
 
 ## Gates, with results
 
@@ -96,7 +99,9 @@ Green, before breaking anything:
 The control the phase asks for — remove Blender from the probe path while keeping its server
 bundle, and remove one declared MCP entry separately. `.vscode/mcp.json` overwritten with
 `{ not json`, `threenative-blender` deleted from `.zed/settings.json`, and a second run with
-`PATH=/usr/bin:/bin`:
+`PATH=/usr/bin:/bin` **and `HOME` scrubbed** — the second independent review showed `PATH` alone
+does not reproduce this, because `resolveBlender` falls back to `$HOME/.local/bin/blender`
+(`packages/blender-mcp/src/detect.ts:104`), where Blender 5.2.0 lives on this machine:
 
 ```
 ! editor activation: .vscode/mcp.json is unreadable; .zed/settings.json is missing ThreeNative
@@ -174,3 +179,48 @@ PRD. `mcpServerHealth` is populated only when a validatable config exists *and* 
 so both real-project runs above report `threenative-blender was not probed`. Transport-up-with-
 Blender-missing — the headline separation — is proven by unit fixture, not by a real project. That
 is narrower than "the four facts read separately in a real run", and the box should not claim it.
+
+## User verification, closed 2026-09-11 (second execution session)
+
+The independent review left this open because `mcpServerHealth` was only populated when a shim
+resolved, so every real run printed `threenative-blender was not probed` and the headline
+separation was fixture-only. Run in `../sandbox/caravel` — a real game with `@threenative/core`
+installed, outside this repository — with Blender removed from both `PATH` and `HOME`:
+
+```
+! model conversion: threenative-blender transport is up, but conversion is unavailable: No Blender
+  4.2 or newer was found. Set THREENATIVE_BLENDER_PATH, or install it: … — no .fbx, .blend, .obj
+  or .dae in this project, so nothing needs it yet; no bake manifest here, so no conversion is proven
+✓ editor activation: 7 of 7 host configs carry the servers (Claude Code, Codex, Cursor, VS Code,
+  Gemini CLI, opencode, Zed); one is enough for the host you work in. Whether an editor loaded it
+  is not observable from here
+✓ capability search: threenative-sculpt-mcp: threenative-sculpt resolves threenative-sculpt-mcp@0.1.1;
+  transport initialized and advertised 5 tool(s)
+```
+
+No `was not probed` line appears. The same project with Blender on `PATH` reports
+`threenative-blender transport is up and Blender 5.2.0 converts .fbx, .blend, .obj and .dae on this
+machine; no bake manifest here, so no conversion is proven` — transport, external application and
+executed operation, three separate facts in one line, in a real run.
+
+## Second independent review, 2026-09-11 — FAIL, two defects fixed here
+
+1. **Every per-server message hardcoded `.mcp.json`** while the summary named the host actually
+   read. A Cursor-only project printed `threenative-engine is missing from .mcp.json` with a fix
+   naming a file that does not exist. The host file is now threaded through `mcpServerCheck`.
+2. **`mcpConfig` took the first host that *parses*,** not the one carrying the servers. A project
+   with all seven configs correctly wired but a user-owned `.mcp.json` holding their own table
+   reported `0 of 4 server(s) in .mcp.json resolve` and exit 1, beside `editor activation: 7 of 7`.
+   It now picks the table carrying the most ThreeNative servers, the installer's host order
+   breaking ties.
+
+Observed red first, both: `should name the host config it actually read in every per-server
+message` and `should diagnose the host config that carries the servers, not the first that parses`
+fail against the pre-fix implementation (`3 failed | 81 passed`, with phase 1's blocker test) and
+pass after (`84 passed`). Confirmed on the real built CLI in a temporary project wired by
+`ensureHostMcpConfigs`: with a user-owned `.mcp.json` the summary now reads
+`0 of 4 server(s) in .cursor/mcp.json resolve`, and with `threenative-assets` deleted from Cursor's
+table the per-server line reads `threenative-assets is missing from .cursor/mcp.json`.
+
+Gates after the fixes: `pnpm typecheck` 0, `pnpm lint` 0, `pnpm quality` 0,
+`pnpm exec vitest run packages/create-threenative/__tests__` **665 passed across 38 files**.

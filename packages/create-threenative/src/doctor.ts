@@ -467,7 +467,9 @@ function readServerTable(
  * search` reported "no .mcp.json" and exited 1 beside an `editor activation` line that had just
  * found the servers in `.cursor/mcp.json`. Two checks contradicting each other about the same
  * project. It now reads every host whose format this file can actually validate, in the
- * installer's own order, and takes the first that parses.
+ * installer's own order, and takes the one carrying the most ThreeNative servers — not merely the
+ * first that parses, which reported "0 of 4 servers resolve" on a project whose other six configs
+ * were correctly wired and whose `.mcp.json` held the user's own unrelated table.
  */
 function mcpConfig(
   snapshot: IProjectSnapshot,
@@ -478,24 +480,32 @@ function mcpConfig(
   const present = SHAPE_VERIFIABLE_HOSTS.filter(({ file }) => snapshot.files.has(file));
   if (present.length === 0) return { kind: "missing" };
   const malformed: string[] = [];
+  const parsed: { host: IMcpHost; servers: Record<string, unknown> }[] = [];
   for (const host of present) {
     const result = readServerTable(snapshot, host);
-    if ("servers" in result) return { host, kind: "ready", servers: result.servers };
-    malformed.push(result.detail);
+    if ("servers" in result) parsed.push({ host, servers: result.servers });
+    else malformed.push(result.detail);
   }
-  return { detail: malformed.join("; "), kind: "malformed" };
+  if (parsed.length === 0) return { detail: malformed.join("; "), kind: "malformed" };
+  const wired = ({ servers }: { servers: Record<string, unknown> }): number =>
+    MCP_SERVER_SPECS.filter(({ configName }) => servers[configName] !== undefined).length;
+  // First by how many ThreeNative servers the table actually carries, then by the installer's own
+  // host order, which `present` preserves.
+  const best = parsed.reduce((left, right) => (wired(right) > wired(left) ? right : left));
+  return { host: best.host, kind: "ready", servers: best.servers };
 }
 
 function mcpServerCheck(
   snapshot: IProjectSnapshot,
   spec: IMcpServerSpec,
   value: unknown,
+  file: string,
 ): IDoctorCheck {
   const name = `capability search: ${spec.packageName}`;
   if (value === undefined) {
     return {
-      detail: `${spec.configName} is missing from .mcp.json; expected ${spec.packageName}@${spec.version}`,
-      fix: "Restore the server entry from the generated .mcp.json.",
+      detail: `${spec.configName} is missing from ${file}; expected ${spec.packageName}@${spec.version}`,
+      fix: `Restore the server entry in ${file}, which @threenative/core generates.`,
       name,
       status: "fail",
     };
@@ -503,7 +513,7 @@ function mcpServerCheck(
   if (!mcpServerMatches(spec, value)) {
     return {
       detail: `${spec.configName} is hand-edited or malformed; expected ${JSON.stringify(expectedMcpServer(spec))}`,
-      fix: "Restore the generated .mcp.json entry so the ThreeNative shim and asset directories remain wired.",
+      fix: `Restore the generated ${file} entry so the ThreeNative shim and asset directories remain wired.`,
       name,
       status: "fail",
     };
@@ -549,7 +559,7 @@ function mcpServerCheck(
   }
   if (installedVersion !== spec.version) {
     return {
-      detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}; the .mcp.json fallback is ${spec.packageName}@${spec.version}`,
+      detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}; the ${file} fallback is ${spec.packageName}@${spec.version}`,
       fix: `Install ${spec.packageName}@${spec.version} so the capability contract is version-matched.`,
       name,
       status: "warn",
@@ -686,7 +696,7 @@ function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorChe
     ];
   }
   const serverChecks = MCP_SERVER_SPECS.map((spec) =>
-    mcpServerCheck(snapshot, spec, config.servers[spec.configName]),
+    mcpServerCheck(snapshot, spec, config.servers[spec.configName], config.host.file),
   );
   return [mcpSummary(serverChecks, config.host), ...serverChecks];
 }
@@ -1480,9 +1490,18 @@ function requestedTarget(
 ): IDoctorCheck {
   if (requestedBuild?.status !== "fail") return check;
   if (!check.detail.startsWith("available — ")) return check;
+  // The blockers lead. This line's own facts are what was *probed*, met and unmet alike, so
+  // "not buildable — JDK 17.0.19 found; android-35 found" reads as a prediction nobody can act
+  // on: every reason it names is satisfied. They stay, behind the word `probed`, because the
+  // standing report of what was seen is still useful. `requestedBuild.detail` is
+  // `not buildable — <scope>: <blockers>`.
+  const blockers =
+    /^not buildable — [^:]*: (?<why>.+)$/su.exec(requestedBuild.detail)?.groups?.why ??
+    requestedBuild.detail;
   return {
     ...check,
-    detail: `not buildable — ${check.detail.slice("available — ".length)}`,
+    detail: `not buildable — ${blockers}; probed: ${check.detail.slice("available — ".length)}`,
+    fix: requestedBuild.fix ?? check.fix,
     status: "fail",
   };
 }
