@@ -58,7 +58,7 @@ jobs:
   # had nothing marked failed to re-run. The runner minutes it saved cost the one thing a red
   # run exists to produce: the name of the gate that broke. The matrices already carry
   # `fail-fast: false` for the same reason, and the expensive jobs already `needs:` the gate
-  # they depend on, so a broken `build` still skips them without erasing anything.
+  # they depend on, so broken artifact production still skips its consumers without erasing anything.
   #
   # Every job below checks out and installs for itself, so nothing gains from a shared `install`
   # job that discards its own node_modules — it only added a serial edge in front of the run.
@@ -716,7 +716,7 @@ jobs:
             pnpm-lock.yaml
             packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
-      # Packed once by `build-artifacts`. See the producer note there.
+      # Packed once by `build`. See the note there.
       - name: Take the packed workspace from build
         uses: actions/download-artifact@v4
         with:
@@ -796,7 +796,7 @@ jobs:
           test "$result" = "success"
 
   benchmark:
-    needs: [scope, build-artifacts]
+    needs: scope
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -833,10 +833,33 @@ jobs:
   # the thing no automated gate on this runner can judge anyway, which the templates' own
   # AGENTS.md says in as many words: every gate here is blind to how the game looks.
 
-  # Building the workspace and checking the entity-registry boundary needs neither the native host
-  # nor a browser, so the artifact producer can run beside the native suite instead of putting every
-  # scaffold and benchmark lane ~15 minutes behind it. The protected `build` verdict below waits
-  # for both producers and reports either failure explicitly.
+  # Keep the exact protected `build` context, but make it a verdict join rather than the
+  # artifact producer. Native evidence still blocks merging; it no longer blocks independent
+  # web/template evidence from running. !cancelled() overrides implicit success(), so a failed
+  # or skipped upstream reaches these assertions instead of silently skipping a required check.
+  build:
+    needs: [scope, build-artifacts, native-platforms]
+    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require workspace and native platform evidence
+        env:
+          CI_SCOPE_RESULT: ${{ needs.scope.result }}
+          WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}
+          NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
+        run: |
+          set -euo pipefail
+          echo "scope: $CI_SCOPE_RESULT"
+          echo "build-artifacts: $WORKSPACE_BUILD_RESULT"
+          echo "native-platforms: $NATIVE_PLATFORM_RESULT"
+          test "$CI_SCOPE_RESULT" = "success"
+          test "$WORKSPACE_BUILD_RESULT" = "success"
+          test "$NATIVE_PLATFORM_RESULT" = "success"
+
+  # Produce this commit's bundles and freshly packed templates as soon as scope is known.
+  # Consumers need these bytes, not the native matrix's verdict. No verification is omitted:
+  # the protected build join above requires both this producer and the complete native lane.
   build-artifacts:
     needs: scope
     if: ${{ needs.scope.outputs.selection != 'prose' }}
@@ -886,27 +909,8 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # This exact job is the protected `build` context. It reports both producers explicitly, so a
-  # native cancellation or an artifact failure is red while independent consumers still run.
-  build:
-    needs: [scope, native-platforms, build-artifacts]
-    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Require the native platform and workspace artifact lanes
-        env:
-          NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
-          BUILD_ARTIFACT_RESULT: ${{ needs.build-artifacts.result }}
-        run: |
-          set -euo pipefail
-          echo "native-platforms: $NATIVE_PLATFORM_RESULT"
-          echo "build-artifacts: $BUILD_ARTIFACT_RESULT"
-          test "$NATIVE_PLATFORM_RESULT" = "success"
-          test "$BUILD_ARTIFACT_RESULT" = "success"
-
   performance-contracts:
-    needs: [scope, build-artifacts]
+    needs: scope
     if: ${{ needs.scope.outputs.selection != 'prose' && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -968,7 +972,7 @@ jobs:
           if-no-files-found: warn
 
   budgets:
-    needs: [scope, build-artifacts]
+    needs: scope
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1091,8 +1095,8 @@ jobs:
       - template-nonvisual
       - golden-path
       - benchmark
-      - build-artifacts
       - build
+      - build-artifacts
       - budgets
       - performance-contracts
       - supply-chain

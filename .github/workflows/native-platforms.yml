@@ -319,8 +319,9 @@ jobs:
               'packages/runtime-native/native/physics/Cargo.lock') }}
           restore-keys: cargo-android-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
+      # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
       - name: Build browser reference workspace imports
-        run: pnpm tsx scripts/workspace-packages.ts build
+        uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
@@ -699,8 +700,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
+      # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
       - name: Build browser reference workspace imports
-        run: pnpm tsx scripts/workspace-packages.ts build
+        uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
