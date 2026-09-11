@@ -4,26 +4,51 @@ Recorded September 10, 2026 (America/Vancouver). PR: [#183](https://github.com/T
 
 ## Status and evidence boundary
 
-**PARTIAL, not performance-complete.** The host persistence and measurement protocol are implemented. Physical Pixel 8 measurements, rendered Bayview equivalence, human/independent review, and the full shared gate suite have not been verified for this change. This record does not close the PRD or earlier startup PRDs.
+**PARTIAL, not performance-complete.** Host persistence and the paired measurement protocol are implemented. Physical Pixel 8 performance, rendered Bayview equivalence, human/independent review, and the complete shared gate suite remain unverified. This record does not close this PRD or earlier startup PRDs.
 
-[Run 34544321624](https://github.com/ThreeNativeHQ/threenative/actions/runs/34544321624) reconstructed the owned patched wgpu-native library for Linux x64 and Android arm64. [Run 34544917308](https://github.com/ThreeNativeHQ/threenative/actions/runs/34544917308) built the production Linux C++ host and passed the real filesystem sanitizer contract. The latter has 8,248 assertions, including individual byte comparisons; it is not 8,248 independent scenarios. [Run 34547004643](https://github.com/ThreeNativeHQ/threenative/actions/runs/34547004643) passed 45 Node protocol/toolchain tests and 41 playtest tests; its first typecheck attempt failed because workspace subpath exports had not been built. The workflow now uses the owned workspace build before typechecking. The current CI run must be checked independently before treating later changes as verified.
+[Run 34547004643](https://github.com/ThreeNativeHQ/threenative/actions/runs/34547004643), source `d9bf3213ac864fc5f1fdd6aa8b47a1786678f2c7`, executed:
 
-A crucial negative result: hosted Mesa/Lavapipe reports the cache feature but serializes only a header. The strict host API test correctly fails when ten real pipeline creations leave serialized bytes equal to the empty-cache floor. The separate `threenative-pipeline-cache-lifecycle-test` exercises real Vulkan, device, process, and filesystem lifetime on that driver. It is explicitly compiled and reported as **envelope-lifecycle-only, compiledDataProof=false**. It cannot substitute for hardware compiled-artifact persistence or speedup. The original strict executable still requires cache growth.
+| Verification | Actual result |
+| --- | --- |
+| Owned patched wgpu-native, Linux x64 | Reconstructed successfully from pinned inputs |
+| Owned patched wgpu-native, Android arm64 | Reconstructed successfully; alignment checked |
+| Android arm64 C++ host | Configured, compiled and linked `libmystral-runtime.so` |
+| Linux C++ host and cache executables | Built and executed |
+| Real filesystem failures under ASan/UBSan | Passed 8,248 assertions, including individual payload-byte comparisons, not 8,248 independent scenarios |
+| Real Vulkan/storage/process lifetime | Twelve fresh-process arms passed, explicitly **envelope-lifecycle-only** |
+| Measurement/protocol/toolchain Node tests | 45 passed |
+| New and existing playtest performance tests | 41 passed |
+| Playtest typecheck | Failed: dependency workspace subpath exports had not been built |
 
-The repository's physical-performance provisioning flag was false during this task. No Pixel measurements were executed and no synthetic parser fixture is presented as a measurement.
+The host artifact retains `revision.txt`, adapter identity, configure/build logs, the strict negative result, both raw API controls, and per-process JSON/logs. The relaunch receipt says `compiledDataProof: false`, `firstPlayableClaim: false`, and `physicalDeviceClaim: false`.
+
+Subsequent reviewed source `4568329d04a822a7e9dbd0d26263e826080948ba` adds the native-clock readiness fix, a stronger disabled-file compile assertion, API-probe parser compatibility, and CTest registration. Local red/green execution passed 42 measurement/protocol tests and the sanitizer contract's 8,256 assertions. The original native tests above are not silently relabelled as execution of these later changes.
+
+[Run 34548977281](https://github.com/ThreeNativeHQ/threenative/actions/runs/34548977281), source/workflow `af7c31757c4c4ba4e419dbbdc2bd84f3b729021d`, is the final read-only revalidation lane. At this record's update it was still running/queued: consult its actual outcome rather than reading this link as a pass. The workflow now builds the owned workspace before typechecking. Temporary source-writing jobs and patch payloads were removed; verification has `contents: read` and non-persistent checkout credentials.
+
+## Why the CPU-driver proof is deliberately limited
+
+Hosted Mesa/Lavapipe exposes the feature but serializes only a Vulkan header. Ten real host pipeline creations leave the serialized cache at the empty-cache floor. The original strict `threenative-pipeline-cache-api-test` correctly fails that condition; its greater-than-empty requirement remains intact.
+
+The separate `threenative-pipeline-cache-lifecycle-test` executes real Vulkan, device lifetime, filesystem operations and independent processes, but is compiled and reported as **envelope-lifecycle-only**. It cannot prove persistence of compiled shader data or a speedup. The workflow retains the strict rejection before running this narrower contract. The earlier hardware prototype in the PRD is historical evidence, not a new hardware run of this implementation.
+
+The repository's physical-performance provisioning flag was false during this task. No actual Pixel measurements were executed. Synthetic parser fixtures are tests of refusal and arithmetic, never measurements.
 
 ## Implementation and caller ledger
 
-- `RuntimeConfig` carries host-only application and bundled-source identities before `initBindings`. Android owned asset bundles and desktop embedded releases supply their actual SHA-256; unqualified loose module trees stay memory-only.
-- `bindings_pipeline_cache.cpp` owns the existing device cache. All four render/compute sync/worker creation sites still attach it. Shared compile locks preserve two-worker concurrency; the background snapshot takes exclusive ownership only around backend serialization, not file I/O.
-- `pipeline_cache.cpp` validates a versioned envelope before unsafe backend import: size, exact length, all seven identity dimensions, and SHA-256. A successful envelope check is not backend acceptance. A rejected import keeps the empty cache and ordinary compilation.
-- Storage uses the existing host-private root, one cache per application, a 32 MiB payload limit, process writer lock, fixed temporary name, file synchronization, atomic rename, and directory synchronization. Symlink, FIFO, oversized, corrupt, interrupted, concurrent, and read-only controls are tested. One cache plus lock and at most one interrupted temporary file bounds each application's generation count.
-- A later post-present poll, after worker settlement and a stable attachment count, starts the asynchronous snapshot. No write occurs on first present or from each pipeline creation. Device/cache references remain retained until the future is joined at teardown. Fresh-process tests deliberately bypass destructors to expose shutdown-only persistence.
-- `TN_PIPELINE_CACHE` reports load/store state, bytes, reasons, and separate load/snapshot/write costs. `playtest perf` retains these without inventing cache hits. Browser, stock-backend, Metal, D3D12, and iOS caching claims are unchanged.
+- `RuntimeConfig` carries host-only application and bundled-source identities before `initBindings`. Android owned asset bundles and desktop embedded releases supply their source SHA-256; loose module trees remain memory-only rather than guessing their imported shader identities.
+- `bindings_pipeline_cache.cpp` owns one device cache. All four render/compute synchronous/worker creation paths still attach it. Two compile workers take shared locks; snapshots take exclusive ownership only for backend serialization, never for filesystem I/O. Cache/device references survive until the snapshot and compiler workers are joined.
+- `pipeline_cache.cpp` checks version, bounded exact length, all seven identity dimensions and SHA-256 before unsafe import. Envelope validation is distinct from backend acceptance. Rejected data leaves an empty cache and normal compilation.
+- Storage reuses the app-private root with one 32 MiB-bounded cache per application, a process writer lock, fixed temporary name, file synchronization, atomic rename and directory synchronization. Corruption, foreign identities, symlinks, FIFOs, oversized input, interrupted writes, concurrent writers and read-only storage are covered. One cache, one lock and at most one interrupted temporary file bound generation leftovers.
+- Later post-present polling starts a background save after workers settle and the attachment count is stable. No save runs on first present or per pipeline creation. Relaunch tests deliberately bypass destructors, detecting shutdown-only persistence.
+- `TN_PIPELINE_CACHE` reports actual load/store outcomes, bytes, reasons and separate load/snapshot/write costs. `playtest perf` preserves them without inventing hits. Existing API-probe boolean attachments remain readable; device attachment counts remain numeric.
+- Native `TN_COLD_START:first_playable` observes the existing readiness flag and a subsequent actual present. It uses the same native clock as `process`; the later-created JavaScript clock remains a separate reported diagnostic, not the 8-second metric. Cache-disabled controls use the same boundary.
+
+Game materials and warm-up scheduling are unchanged. Browser/stock-backend/Metal/D3D12/iOS cache claims remain explicitly unverified or unsupported.
 
 ## Reproduce dependency and storage proofs
 
-The explicit reconstruction path requires Linux x64, Rust 1.90.0 and Android NDK 27.1.12297006. Set `ANDROID_HOME` to the SDK containing that NDK (or explicitly select the matching NDK). The downloader rejects mismatched versions and verifies the pinned source archive and public header; the stage records source/header/patch/library checksums and licenses. Normal stock dependency downloads still work and report the absent cache API rather than pretending to persist.
+Use Linux x64, Rust 1.90.0 and NDK 27.1.12297006. Set `ANDROID_HOME` to the SDK containing that NDK. Reconstruction verifies pinned source/header inputs and retains patch/library checksums and licenses; stock downloads still report the absent cache API honestly.
 
 ```sh
 rustup toolchain install 1.90.0 --profile minimal
@@ -40,9 +65,7 @@ g++ -std=c++17 -Wall -Wextra -Werror -pthread \
 ASAN_OPTIONS=detect_leaks=1 /tmp/tn-cache-storage
 ```
 
-The workflow retains exact reconstruction commands, library digests, adapter identity, CMake/build logs, and per-process receipts. Its Android build additionally compiles and links the C++ host; that is a build check, not on-phone execution.
-
-For a cache-capable hardware Vulkan build, use the **strict** executable with the relaunch harness:
+On cache-capable hardware Vulkan, use the strict executable:
 
 ```sh
 node packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs \
@@ -50,24 +73,24 @@ node packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs \
   artifacts/pipeline-cache-hardware-relaunch
 ```
 
-The CPU-driver contract uses the explicitly different `threenative-pipeline-cache-lifecycle-test` executable and `--envelope-lifecycle-only` argument. The executable's scope marker must match the requested scope. Twelve independently executed arms include missing/accepted data, environment and app-private disabled controls, corrupt envelopes and backend bytes, changed source, concurrent compiles, shutdown, device destruction, and unwritable storage. Headless present counters in this contract test scheduling boundaries; they are not a presented-game or first-playable measurement.
+Only the separate CPU lifecycle executable accepts `--envelope-lifecycle-only`; its compiled scope must match the harness. Twelve arms cover missing/accepted data, both disabled controls, corrupt envelopes and backend bytes, changed source, concurrent compiles, shutdown, device destruction and unwritable storage. Headless counters test scheduling boundaries, not presented gameplay. The strengthened disabled-file arm also requires actual host compilation with zero cache attachments.
 
-## Real-phone protocol and remaining acceptance
+## Physical Pixel protocol and unclosed acceptance
 
-Install one release/O2 Bayview APK built against the patched Android dependency. Retain its build command and optimization evidence separately: the measurement hashes the installed APK but labels the optimization flag as the operator's declaration. Use the game's real config and a scenario whose subject/inputs prove its movement and sustained-frame readiness. The supplied startup scenario is a starting fixture, not an asserted Bayview receipt.
+Install one O2 Bayview APK built against the patched Android backend. Retain its build command and optimization evidence: the protocol independently hashes the installed APK but correctly labels optimization as an operator declaration. Resolve the real game's config and readiness/movement scenario; the supplied fixture is not a Bayview receipt.
 
 ```sh
 node packages/runtime-native/scripts/measure-cold-start.mjs \
   --device "$PIXEL_WIFI_ADB_SERIAL" \
   --config "$BAYVIEW_CONFIG" \
-  --optimization=-O2 \
+  --optimization -O2 \
   --pipeline-cache-pairs 3 \
   --startup-scenario "$BAYVIEW_STARTUP_SCENARIO" \
   --report artifacts/pixel8-pipeline-cache-pairs.json
 ```
 
-Use `--optimization -O2` if the existing CLI is invoked with separate option values. Device validation requires a physical Pixel 8, Wi-Fi ADB, discharging battery at least 50%, thermal status NONE, and screen on; provisional overrides are rejected. The protocol force-stops and verifies no process remains between launches. It does not reinstall the APK, clear application data, or clear driver caches. It deletes only the named disposable pipeline cache for the empty arm. A regular app-private `pipeline-cache.disabled` file supplies Android's same-APK negative control, because zygote launches do not inherit the desktop environment variable. An existing operator control is not overwritten; cleanup failures fail the report.
+Requirements: physical Pixel 8, Wi-Fi ADB, discharging battery at least 50%, thermal status NONE, screen on, and no provisional override. The runner force-stops and verifies no process survives. It neither reinstalls the APK nor clears application or driver data; only the disposable named cache is removed for the empty arm. Android's app-private disable file changes attachment without rebuilding the APK. Existing operator controls are not overwritten; cleanup failures fail the report.
 
-Each of at least three groups runs disabled-before, empty, populated, and disabled-after. Retained raw logs, installed-APK checksums, device conditions, gameplay/readiness receipts, cache outcomes, complete compile populations, service/wall/elapsed clocks, and medians must all match. Baseline collection may allow up to 60 seconds to observe readiness; **the final populated first-playable median remains capped at 8,000 ms**. The evaluator requires populated compile median <=25% of empty and lower than both disabled controls. Human inspection must also establish unchanged rendered output and sensible raw timing.
+Each group runs disabled-before, empty, populated and disabled-after. Complete matching pipeline populations, raw logs, installed-APK hashes, pre/post device conditions, movement/readiness receipts and cache outcomes are required. Baselines may collect readiness up to 60 seconds; the final **native process-to-first-playable median remains <=8,000 ms**. Populated compile median must be <=25% of empty and lower than both disabled controls. Service, summed wall and elapsed clocks remain separately reported.
 
-Remaining acceptance is explicit: successful strict hardware relaunches, actual Pixel pairs and thresholds, visual/human review, independent code review, full runtime/native/game gates, and freshly measured native coverage where required. Do not restamp an old coverage digest without executing its owned measurement lane. Missing evidence is not a passing result.
+Still required: successful strict hardware relaunches; actual Pixel pairs meeting the thresholds; unchanged rendered output and human timing review; independent code review; full runtime/native/game gates and freshly measured native coverage where required. Do not restamp a coverage digest without running its owned measurement lane. Missing evidence is not a passing result.
