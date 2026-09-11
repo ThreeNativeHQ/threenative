@@ -17,6 +17,8 @@ export interface IPrdLabel {
 export interface IPrdProgress {
   readonly phases: number;
   readonly phasesComplete: number;
+  readonly phaseBoxes: number;
+  readonly phaseBoxesTicked: number;
   readonly acceptanceTotal: number;
   readonly acceptanceTicked: number;
   readonly percent: 0 | 25 | 50 | 75 | 100;
@@ -32,7 +34,8 @@ const LABELS: ReadonlyMap<number, IPrdLabel> = new Map([
   [100, { color: "#0e8a16", name: "prd:100% — ready" }],
 ]);
 
-const PHASE_HEADING = /^#{3,4}\s+Phase\b/iu;
+/** "### Phase 2 — …" and the numbered "### 3. …" form used under an Implementation order heading. */
+const PHASE_HEADING = /^#{3,4}\s+(?:Phase\b|\d+\.\s)/iu;
 const ACCEPTANCE_HEADING = /^#{2,4}\s+Acceptance criteria\b/iu;
 const ANY_HEADING = /^#{2,4}\s/u;
 const BOX = /^\s*[-*]\s+\[([ xX])\]/u;
@@ -75,6 +78,10 @@ export function progressOf(markdown: string): IPrdProgress {
   const acceptanceTotal = acceptance.reduce((sum, section) => sum + section.total, 0);
   const acceptanceTicked = acceptance.reduce((sum, section) => sum + section.ticked, 0);
   const phasesComplete = phases.filter((section) => section.ticked === section.total).length;
+  // Bucket on boxes, not whole phases: a PRD with every phase four-sixths done is half built, and
+  // reporting it as 0% is the same discouraging lie that stalled the production-readiness batch.
+  const phaseBoxes = phases.reduce((sum, section) => sum + section.total, 0);
+  const phaseBoxesTicked = phases.reduce((sum, section) => sum + section.ticked, 0);
 
   const ready =
     phases.length > 0 &&
@@ -86,7 +93,7 @@ export function progressOf(markdown: string): IPrdProgress {
   if (ready) percent = 100;
   else if (phases.length === 0) percent = 0;
   else {
-    const ratio = phasesComplete / phases.length;
+    const ratio = phaseBoxes === 0 ? 0 : phaseBoxesTicked / phaseBoxes;
     percent = ratio >= 1 ? 75 : ratio >= 0.75 ? 75 : ratio >= 0.5 ? 50 : ratio > 0 ? 25 : 0;
   }
 
@@ -97,6 +104,8 @@ export function progressOf(markdown: string): IPrdProgress {
     acceptanceTotal,
     label,
     percent,
+    phaseBoxes,
+    phaseBoxesTicked,
     phases: phases.length,
     phasesComplete,
   };
@@ -117,7 +126,8 @@ function main(): void {
   }
   process.stdout.write(
     `${file}\n` +
-      `  phases     ${progress.phasesComplete}/${progress.phases} complete\n` +
+      `  phases     ${progress.phasesComplete}/${progress.phases} complete` +
+      ` (${progress.phaseBoxesTicked}/${progress.phaseBoxes} boxes)\n` +
       `  acceptance ${progress.acceptanceTicked}/${progress.acceptanceTotal} ticked\n` +
       `  label      ${progress.label.name}  ${progress.label.color}\n`,
   );

@@ -67,6 +67,15 @@ sequenceDiagram
 
 ### Phase 1 — Doctor predicts the requested build prerequisite failure
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more)
+- [ ] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-374-readiness-phase-1-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/create-threenative/src/threenative.ts` — validate target/mode arguments and pass scoped request.
@@ -92,6 +101,15 @@ pnpm exec threenative doctor --target android --mode release --text
 **User verification:** The user receives one concrete cause/path/fix for the intended target. It does not advise pointing at an installed runtime package as a source checkout or imply a warning is a successful release.
 
 ### Phase 2 — Tool discovery explains external applications and editor setup
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts`, `packages/create-threenative/README.md`
+- [ ] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-374-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 

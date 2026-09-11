@@ -61,6 +61,16 @@ sequenceDiagram
 
 ### Phase 1 — Default V8 is provisioned with aligned libraries for both Android ABIs
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/scripts/download-deps.mjs`, `packages/runtime-native/android/app/build.gradle.kts`, `packages/runtime-native/tests/android-16kb-alignment.test.mjs`
+      Left: `docs/verification/prd-221-readiness-phase-1-2026-09-10.md` reads **INCOMPLETE — implementation preparation, not Android 16 KB qualification**. Continue in PR #167, branch `codex/prd-221-android-v8-16kb`; slices #171, #172 and #173 are already included.
+- [ ] Required test green: `packages/runtime-native/tests/android-16kb-alignment.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-1-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/runtime-native/scripts/download-deps.mjs` — pin/provision compatible aligned V8 inputs.
@@ -84,6 +94,15 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 **User verification:** Build the default V8 native Android host and boot a real-game candidate; log identifies V8 and matching ABI, rather than silently choosing QuickJS.
 
 ### Phase 2 — The packaged application rejects any misaligned native dependency
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/scripts/check-android-16kb-alignment.mjs`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs`
+- [ ] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
@@ -109,6 +128,15 @@ pnpm build:android
 **User verification:** Inspect the final artifact report listing each library/ABI/alignment and artifact hash; no uninspected library is credited.
 
 ### Phase 3 — The real game launches on a verified 16 KB Android environment
+
+**Progress:**
+
+- [ ] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/tests/native-platform-workflow.test.mjs`
+- [ ] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-3-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 

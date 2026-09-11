@@ -15,7 +15,7 @@
 | [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | Target-scoped build prerequisite prediction; Blender/editor separation | NOT STARTED | Extends done [PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md); consumes contracts from 196/212/217/365 |
 | [PRD-212](PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | Moved from mobile/; PARTIAL | 221 inputs; 262 downloaded artifacts |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | Complete desktop containers and signing/notarization | NEW; PROPOSED | 217 overlays; 212 mode parsing; 262 binaries |
-| [PRD-153](PRD-153-game-branding-from-launch-to-play.md) | Custom brand in launcher, splash, loading and game | Moved from done/; PARTIAL | 212/365 final artifacts; 217 UI |
+| [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | Android release artifact and distributed desktop app carry the brand | NOT STARTED | 212/365 final artifacts; 217 UI |
 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | Complete version-matched downloadable runtime assets | Moved from mobile/; PROPOSED | 078 hosted proof; 196 package contents; 221/217 final inputs |
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | Actual consumer game and physical Android qualification | NEW; PROPOSED | 196/212/217/221/262/365; 153 captures |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | Public candidate verification, recovery, promotion, stores and outside users | Moved from BLOCKED/; PROPOSED | All applicable owner results; external credentials/people only at their checkpoint |
@@ -86,7 +86,7 @@ flowchart TD
 | Android target SDK35 and debug-only output | PRD-212 | Current SDK and explicit release APK/AAB; real signer/non-debuggable metadata and failure controls |
 | Android default V8 16 KB gap | PRD-221 | Both ABI binaries, all packaged libraries and ZIP alignment, observed 16 KB execution |
 | Desktop raw binary/UI directory; OS dependency and signing gaps | PRD-365 | Relocatable complete containers, clean player machine, signature/notarization and offline launch |
-| User app name/ID/version/icon/splash/loading customization | PRD-153 + PRD-365 resource mechanics | Game-only edits change both artifact resources and observed launcher-to-game sequence |
+| User app name/ID/version/icon/splash/loading customization | PRD-375 + PRD-365 resource mechanics | Game-only edits change both artifact resources and observed launcher-to-game sequence |
 | Web deployment/subpaths/fallback; unsupported codecs/browser globals; “any game” | PRD-366 | Built browser gameplay at root/subpath, compatibility census and explicit supported envelope |
 | Physics/audio/input/save/lifecycle and physical performance unproved for final game | PRD-366 | Exact artifact scenario results, target identity, real Android device and performance evidence |
 | Store validation, public defaults, N-1/recovery, stranger developer/player | PRD-060 | Server-side Android validation, signed desktop handoff, default-install proof, promoted revocation/deprecation, Linux identity-bound attestation and recorded external experience |

@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 packageDesktop runs the matching host runtime compile command and stages ui/ beside its output. It does not cross-compile arbitrary desktop OSes, embed all OS launcher metadata or validate a signed installed application. PRD-060 previously owned a broad desktop phase; that phase is sliced here, with promotion remaining in PRD-060.
 
-Engine distribution mechanism; game identity/icon remains authored config. [PRD-217](PRD-217-webview-ui-layer.md) supplies functional overlays; [PRD-153](PRD-153-game-branding-from-launch-to-play.md) validates appearance; [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies prebuilt host inputs. A native package exists only in runtime-native; do not add a second desktop framework/package.
+Engine distribution mechanism; game identity/icon remains authored config. [PRD-217](PRD-217-webview-ui-layer.md) supplies functional overlays; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) validates appearance; [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies prebuilt host inputs. A native package exists only in runtime-native; do not add a second desktop framework/package.
 
 ## Approach and boundaries
 
@@ -61,6 +61,15 @@ sequenceDiagram
 
 ### Phase 1 — A game command creates a complete native desktop container
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/scripts/desktop-distribution.mjs` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-1-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/create-threenative/src/build.ts` — pass release mode to desktop packager.
@@ -87,6 +96,15 @@ pnpm exec threenative build --target desktop --mode release
 
 ### Phase 2 — Public packaging includes the new adapter and supports player dependencies
 
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/package.json`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-2-<date>.md`
+- [ ] Independent reviewer returned PASS
+
 **Files (maximum five):**
 
 - EDIT `packages/runtime-native/package.json` — ship imported distribution helper and required assets.
@@ -111,6 +129,15 @@ pnpm publish:check
 **User verification:** A second clean OS user can unpack/install and play the artifact. Instructions list only normal player prerequisites; none asks for engine source or build compilers.
 
 ### Phase 3 — A developer signs and verifies distribution using external OS credentials
+
+**Progress:**
+
+- [ ] Callers wired and building: `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/tests/distribution.test.mjs` (+1 more)
+- [ ] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
+- [ ] Observed red recorded, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-3-<date>.md`
+- [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
@@ -157,4 +184,4 @@ No implementation gate was run by this planning revision. Every new phase is **N
 - [ ] Installed-player proof uses no Node/engine checkout/native build tools and includes offline launch plus documented system WebView/library prerequisites.
 - [ ] Signed Windows and notarized macOS artifacts are verified on their real hosts; unsigned preparation never claims signed readiness.
 - [ ] Debug raw executable behavior remains supported; no cross-OS compiler or new public command is invented.
-- [ ] PRD-153 appearance and PRD-366 gameplay consume the same container hashes; public promotion remains PRD-060.
+- [ ] PRD-375 appearance and PRD-366 gameplay consume the same container hashes; public promotion remains PRD-060.
