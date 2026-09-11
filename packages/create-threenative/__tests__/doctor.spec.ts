@@ -1659,9 +1659,36 @@ describe("threenative doctor --target/--mode", () => {
     );
     expect(check(report, "requested build").status).toBe("ok");
     expect(check(report, "target desktop").status).toBe("warn");
-    // The native runtime check itself stays honest; only the unrequested target stops voting.
-    expect(check(report, "native runtime").status).toBe("fail");
-    expect(report.pass).toBe(false);
+    // `native runtime` carries the same fact one level down, so demoting only the target line left
+    // a web request exiting 1 on a broken desktop prebuilt — the help text promises the opposite.
+    // The fact stays in the report; it stops voting, exactly like the target line above it.
+    expect(check(report, "native runtime").status).toBe("warn");
+    expect(check(report, "native runtime").detail).toMatch(/unavailable|unknown/u);
+    expect(report.pass).toBe(true);
+  });
+
+  it("should not fail a web request on the desktop overlay it never needs", () => {
+    const overlay = {
+      detail: "no compositor is running, so the desktop UI overlay cannot start",
+      fix: "Start a compositor.",
+      status: "fail" as const,
+    };
+    const overlayProject = {
+      config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
+      desktopOverlay: overlay,
+    };
+    const scoped = diagnoseProject(snapshot(overlayProject), { target: "web" });
+    expect(check(scoped, "desktop overlay").status).toBe("warn");
+    expect(check(scoped, "requested build").status).toBe("ok");
+    expect(scoped.pass).toBe(true);
+    // Ask for desktop and the same overlay decides the exit code again.
+    const desktop = diagnoseProject(snapshot(overlayProject), { target: "desktop" });
+    expect(check(desktop, "desktop overlay").status).toBe("fail");
+    expect(desktop.pass).toBe(false);
+    // Unscoped, nothing is demoted: the report is unchanged for everyone who did not ask.
+    const unscoped = diagnoseProject(snapshot(overlayProject));
+    expect(check(unscoped, "desktop overlay").status).toBe("fail");
+    expect(unscoped.pass).toBe(false);
   });
 
   it("should fail a requested web build with no web entry", () => {

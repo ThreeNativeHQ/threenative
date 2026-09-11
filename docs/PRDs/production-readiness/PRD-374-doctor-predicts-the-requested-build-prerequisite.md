@@ -175,7 +175,13 @@ No implementation gate was run by this planning revision. Every new phase is **N
 
 ## Acceptance criteria
 
-- [x] The requested build target/mode cannot appear ready when a required download, SDK/JDK, UI runtime or signing prerequisite is missing.
+**Each criterion below is verified on the real built CLI and the evidence is written beside it, but
+every box stays unticked until both independent reviews return PASS** — this PRD's own rule at the
+top of the file, and the fourth review was right to call ticking them a contradiction. Reviews have
+found a real defect in every round so far, including one *after* these criteria first read as met.
+
+
+- [ ] The requested build target/mode cannot appear ready when a required download, SDK/JDK, UI runtime or signing prerequisite is missing.
       All four classes observed on the real CLI in `../sandbox/prd221-16kb-starter`, a scaffolded
       game with no engine checkout: `doctor --target android --mode release` reports
       `✗ target android: not buildable — linux-x64: Prebuilt release manifest fetch failed … HTTP 404.;`
@@ -184,25 +190,25 @@ No implementation gate was run by this planning revision. Every new phase is **N
       first. The UI-runtime class is the desktop overlay, pinned by
       `should block a requested desktop build on a failing overlay`, which now asserts the target
       line as well as the verdict.
-- [x] Doctor shares the build/config/runtime sources of truth and remains useful without engine source.
+- [ ] Doctor shares the build/config/runtime sources of truth and remains useful without engine source.
       Every run cited here is in a project outside this repository with no engine checkout
       (`../sandbox/prd221-16kb-starter`, `../sandbox/caravel`). The signing property names come
       from `ANDROID_RELEASE_SIGNING_ENV`, the host list from the installer's own `MCP_HOSTS`, and
       the runtime status from the packager's install record — read, never retyped.
-- [x] MCP transport success is distinguished from external Blender availability, editor activation and actual operation proof.
+- [ ] MCP transport success is distinguished from external Blender availability, editor activation and actual operation proof.
       Four separate facts in one real report (`../sandbox/caravel`, Blender removed from `PATH`
       *and* `HOME`): `capability search … transport initialized and advertised 5 tool(s)`;
       `editor activation: 7 of 7 host configs carry the servers … whether an editor loaded it is
       not observable from here`; `model conversion: threenative-blender transport is up, but
       conversion is unavailable: No Blender 4.2 or newer was found`; `no bake manifest here, so no
       conversion is proven`. Independently re-run by the phase-2 reviewer with `env -i`.
-- [x] Unscoped doctor remains compatible; non-iOS target checks do not demand iOS evidence.
+- [ ] Unscoped doctor remains compatible; non-iOS target checks do not demand iOS evidence.
       `doctor --target web` on linux-x64 prints `✓ requested build: buildable — web` while iOS
       stays in the report demoted to a warning
       (`! target ios: unavailable — iOS simulator packaging requires darwin-arm64; received
       linux-x64`), and the desktop 404 goes `✗` → `!` in the same run. The unscoped report is
       byte-unchanged and carries no `requested build` line, pinned by its own regression test.
-- [x] Malformed inputs and missing observations fail honestly; documents name only flags implemented by these phases.
+- [ ] Malformed inputs and missing observations fail honestly; documents name only flags implemented by these phases.
       `--target bogus` exits 1, `--mode release` without a target exits 1, and `--target` with no
       value exits 1 — verified on the built CLI by two independent reviewers as well as here. A
       malformed host config is reported by exact path and left byte-identical (`md5sum -c`,

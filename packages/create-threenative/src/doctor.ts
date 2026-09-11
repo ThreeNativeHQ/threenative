@@ -1472,6 +1472,20 @@ function requestedBuildCheck(
  * must not demand iOS evidence, and a broken desktop runtime must not fail a web build. Unrequested
  * targets stay in the report — they are still useful — but they stop voting on the exit code.
  */
+
+/**
+ * Which build each standing prerequisite check belongs to, for the same reason `unrequestedTarget`
+ * exists: a request narrows what decides the exit code. `native runtime` is a prerequisite of
+ * every native target and of none of the web one; `desktop overlay` is desktop's alone. A check
+ * absent from this table belongs to the project rather than to a target, and always votes.
+ */
+const TARGET_PREREQUISITE_OWNERS: Readonly<Record<string, readonly DoctorTarget[]>> = Object.freeze(
+  {
+    "desktop overlay": Object.freeze(["desktop"] as const),
+    "native runtime": Object.freeze(["android", "desktop", "ios"] as const),
+  },
+);
+
 function unrequestedTarget(check: IDoctorCheck): IDoctorCheck {
   return check.status === "fail" ? { ...check, status: "warn" } : check;
 }
@@ -1768,7 +1782,21 @@ export function diagnoseProject(
     editorActivationCheck(snapshot),
     ...(blender === undefined ? [] : [blender]),
   ];
-  return { checks, pass: checks.every(({ status }) => status !== "fail") };
+  // A target line is not the only thing that votes. `native runtime` and `desktop overlay` carry
+  // the same facts one level down, and demoting only the `target *` checks left `--target web`
+  // exiting 1 on a 404 desktop prebuilt and on a missing compositor — both prerequisites of a
+  // build nobody asked for, and neither one something a web build can fail on. The help text
+  // promises the exit code follows the request, so the prerequisites have to follow it too.
+  const scoped =
+    options.target === undefined
+      ? checks
+      : checks.map((check) => {
+          const owners = TARGET_PREREQUISITE_OWNERS[check.name];
+          return owners === undefined || owners.includes(options.target as DoctorTarget)
+            ? check
+            : unrequestedTarget(check);
+        });
+  return { checks: scoped, pass: scoped.every(({ status }) => status !== "fail") };
 }
 
 async function collectFiles(root: string, relative = "", depth = 0): Promise<string[]> {
