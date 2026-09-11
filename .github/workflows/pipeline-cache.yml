@@ -16,12 +16,11 @@ permissions:
 
 concurrency:
   group: pipeline-cache-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   prepare:
-    # Temporary delivery bridge for the offline authoring workspace, restricted to this branch.
-    # Removed before review. No main-branch or release write is permitted here.
+    # Temporary feature-branch delivery bridge, removed before final review.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -70,9 +69,14 @@ jobs:
       - name: Test pinned toolchain resolution
         run: node --test packages/runtime-native/tests/wgpu-cache-toolchain.test.mjs
       - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Provision the pinned NDK and Rust target
         run: |
           sdkmanager 'ndk;27.1.12297006'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
           rustup toolchain install 1.90.0 --profile minimal
           rustup target add --toolchain 1.90.0 aarch64-linux-android
       - uses: actions/cache@v4
