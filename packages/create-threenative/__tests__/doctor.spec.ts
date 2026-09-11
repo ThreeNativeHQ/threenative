@@ -15,6 +15,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
+  ANDROID_RELEASE_SIGNING_ENV,
   type IProjectSnapshot,
   MCP_SERVER_SPECS,
   detectX11Compositor,
@@ -1278,5 +1279,115 @@ describe("threenative doctor and Blender", () => {
   it("should omit the check entirely when nothing probed for Blender", () => {
     const report = diagnoseProject(snapshot({}));
     expect(report.checks.some(({ name }) => name === "blender")).toBe(false);
+  });
+});
+
+describe("threenative doctor --target/--mode", () => {
+  const BROKEN_RUNTIME_STATUS = JSON.stringify({
+    key: `${process.platform}-${process.arch}`,
+    ok: false,
+    reason: "HTTP 404 downloading the prebuilt runtime",
+    url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
+    version: "0.4.0",
+  });
+
+  const SIGNING_ENV: NodeJS.ProcessEnv = Object.fromEntries(
+    ANDROID_RELEASE_SIGNING_ENV.map((name) => [name, "supplied"]),
+  );
+
+  it("should fail the requested Android release when the JDK is unsupported", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain("not buildable");
+    expect(requested.detail).toMatch(/JDK 26\.0\.2/u);
+    expect(requested.fix).toMatch(/JDK 17/u);
+    expect(report.pass).toBe(false);
+  });
+
+  it("should fail the requested Android build when the runtime artifact never downloaded", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+      }),
+      { target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toMatch(/HTTP 404/u);
+    expect(report.pass).toBe(false);
+  });
+
+  it("should fail a requested Android release with no signing inputs and pass the same debug build", () => {
+    const buildable = snapshot({
+      androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+      environment: {},
+    });
+    const release = diagnoseProject(buildable, { mode: "release", target: "android" });
+    expect(check(release, "requested build").status).toBe("fail");
+    expect(check(release, "requested build").detail).toContain(ANDROID_RELEASE_SIGNING_ENV[0]);
+    expect(release.pass).toBe(false);
+
+    const debug = diagnoseProject(buildable, { mode: "debug", target: "android" });
+    expect(check(debug, "requested build").status).toBe("ok");
+    expect(check(debug, "requested build").detail).toContain("buildable");
+    expect(debug.pass).toBe(true);
+  });
+
+  it("should not demand iOS evidence for an Android request", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+        environment: {},
+      }),
+      { mode: "debug", target: "android" },
+    );
+    expect(check(report, "requested build").status).toBe("ok");
+    expect(check(report, "target ios").status).not.toBe("fail");
+    expect(report.pass).toBe(true);
+  });
+
+  it("should keep a broken non-requested target from failing the requested one", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+      }),
+      { target: "web" },
+    );
+    expect(check(report, "requested build").status).toBe("ok");
+    expect(check(report, "target desktop").status).toBe("warn");
+    // The native runtime check itself stays honest; only the unrequested target stops voting.
+    expect(check(report, "native runtime").status).toBe("fail");
+    expect(report.pass).toBe(false);
+  });
+
+  it("should fail a requested web build with no web entry", () => {
+    const base = snapshot({});
+    const report = diagnoseProject(
+      { ...base, files: new Set([...base.files].filter((file) => file !== "src/main.ts")) },
+      { target: "web" },
+    );
+    expect(check(report, "requested build").status).toBe("fail");
+    expect(check(report, "requested build").detail).toContain("src/main.ts");
+  });
+
+  it("should leave the unscoped report exactly as it was", () => {
+    const unsupported = snapshot({
+      androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+    });
+    const report = diagnoseProject(unsupported);
+    expect(report.checks.some(({ name }) => name === "requested build")).toBe(false);
+    expect(check(report, "target android").status).toBe("warn");
+    expect(check(report, "target android").detail).toContain("available —");
+    expect(report.pass).toBe(true);
   });
 });

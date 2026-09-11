@@ -39,6 +39,36 @@ import {
 
 export type DoctorStatus = "ok" | "warn" | "fail";
 
+/** The targets `threenative build --target` accepts; doctor scopes its diagnosis to the same set. */
+export type DoctorTarget = "android" | "desktop" | "ios" | "web";
+
+/** The build modes PRD-212 defines for `threenative build`; only release adds signing inputs. */
+export type DoctorMode = "debug" | "release";
+
+/**
+ * What the developer said they are about to build. Absent means the legacy unscoped report: every
+ * target is described, none of them decides the exit code.
+ */
+export interface IDoctorRequest {
+  readonly mode?: DoctorMode;
+  readonly target?: DoctorTarget;
+}
+
+/**
+ * The Gradle project properties an Android *release* needs, in their environment transport spelling.
+ * Release signing is owned by the game, never by the engine, so doctor only reports whether the
+ * developer supplied them — it never reads a value, and never prints one.
+ *
+ * `packages/runtime-native/scripts/package-android.mjs` (PRD-212 phase 3) is the consumer that
+ * must read the same four names; this constant is the single place they are spelled.
+ */
+export const ANDROID_RELEASE_SIGNING_ENV = [
+  "ORG_GRADLE_PROJECT_threenativeKeystore",
+  "ORG_GRADLE_PROJECT_threenativeKeystoreAlias",
+  "ORG_GRADLE_PROJECT_threenativeKeystorePassword",
+  "ORG_GRADLE_PROJECT_threenativeKeyPassword",
+] as const;
+
 export interface IDoctorCheck {
   readonly detail: string;
   readonly fix?: string;
@@ -70,6 +100,8 @@ export interface IProjectSnapshot {
   readonly desktopOverlay?: IDesktopOverlayProbe;
   /** Optional seams used by the diagnostic checks and by deterministic unit fixtures. */
   readonly androidToolchain?: IAndroidToolchainProbe;
+  /** The build environment, read only for the presence of declared signing property names. */
+  readonly environment?: NodeJS.ProcessEnv;
   /** Blender discovery, injected so the check is testable on a machine either way. */
   readonly blender?: IBlenderProbe;
   readonly directoryWritable?: (relative: string) => boolean | undefined;
@@ -1200,16 +1232,102 @@ function iosTargetCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   };
 }
 
+/**
+ * Why a requested build cannot start, in the order the build itself would hit it.
+ *
+ * The defect this closes: every target check answered "is the packager installed?", so a project
+ * whose runtime download 404'd and whose only JDK was unsupported still read `available` with a
+ * warning beside it. A warning is not a prediction. When the developer names the build they are
+ * about to run, a missing prerequisite for *that* build is a failure.
+ */
+function requestedBuildBlockers(
+  snapshot: IProjectSnapshot,
+  request: Required<Pick<IDoctorRequest, "target">> & IDoctorRequest,
+  nativeRuntime: IDoctorCheck,
+): readonly string[] {
+  const blockers: string[] = [];
+  if (request.target === "web") {
+    if (!snapshot.files.has("src/main.ts")) blockers.push("src/main.ts is missing");
+    return blockers;
+  }
+  // Every native target ships the downloaded runtime; its install status is the download's receipt.
+  if (nativeRuntime.status !== "ok")
+    blockers.push(nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
+  if (request.target === "desktop") return blockers;
+  if (request.target === "ios") {
+    if (process.platform !== "darwin" || process.arch !== "arm64")
+      blockers.push(
+        `iOS packaging requires darwin-arm64; this host is ${process.platform}-${process.arch}`,
+      );
+    else if (!runtimeFileAvailable(snapshot, "scripts/package-ios.mjs"))
+      blockers.push(`${RUNTIME_PACKAGE} has no iOS packager`);
+    return blockers;
+  }
+  if (!runtimeFileAvailable(snapshot, "scripts/package-android.mjs"))
+    blockers.push(`${RUNTIME_PACKAGE} has no Android packager`);
+  const androidToolchain =
+    snapshot.androidToolchain ??
+    (snapshot.projectRoot === undefined ? undefined : probeAndroidToolchain());
+  if (androidToolchain === undefined) blockers.push("the Android toolchain was not probed");
+  else {
+    const toolchain = androidToolchainStatus(androidToolchain);
+    if (toolchain.status !== "ok") blockers.push(toolchain.detail);
+  }
+  if (request.mode === "release") {
+    // Presence only: doctor never reads a signing value, so a wrong password is the build's red,
+    // not a diagnosis this command can honestly make.
+    const environment = snapshot.environment ?? {};
+    const missing = ANDROID_RELEASE_SIGNING_ENV.filter(
+      (name) => (environment[name] ?? "").trim().length === 0,
+    );
+    if (missing.length > 0)
+      blockers.push(`release signing inputs are not set: ${missing.join(", ")}`);
+  }
+  return blockers;
+}
+
+function requestedBuildCheck(
+  snapshot: IProjectSnapshot,
+  request: IDoctorRequest,
+  nativeRuntime: IDoctorCheck,
+): IDoctorCheck | undefined {
+  const { target } = request;
+  if (target === undefined) return undefined;
+  const scope = `${target}${request.mode === undefined ? "" : ` ${request.mode}`}`;
+  const blockers = requestedBuildBlockers(snapshot, { ...request, target }, nativeRuntime);
+  if (blockers.length === 0)
+    return { detail: `buildable — ${scope}`, name: "requested build", status: "ok" };
+  return {
+    detail: `not buildable — ${scope}: ${blockers.join("; ")}`,
+    fix:
+      target === "android"
+        ? `Install JDK ${ANDROID_JDK_MAJOR} and Android SDK platform android-${ANDROID_COMPILE_SDK}, reinstall ${RUNTIME_PACKAGE} so its prebuilt downloads${request.mode === "release" ? `, and export ${ANDROID_RELEASE_SIGNING_ENV.join(", ")} from the game's build environment` : ""}.`
+        : `Resolve the cause above, then run 'threenative doctor --target ${target}' again.`,
+    name: "requested build",
+    status: "fail",
+  };
+}
+
+/**
+ * A named target's own prerequisites never veto a build of a different target: an Android request
+ * must not demand iOS evidence, and a broken desktop runtime must not fail a web build. Unrequested
+ * targets stay in the report — they are still useful — but they stop voting on the exit code.
+ */
+function unrequestedTarget(check: IDoctorCheck): IDoctorCheck {
+  return check.status === "fail" ? { ...check, status: "warn" } : check;
+}
+
 function targetChecks(
   snapshot: IProjectSnapshot,
   nativeRuntime: IDoctorCheck,
+  request: IDoctorRequest,
 ): readonly IDoctorCheck[] {
   const webAvailable = snapshot.files.has("src/main.ts");
   const desktopDetail =
     nativeRuntime.status === "ok"
       ? nativeRuntime.detail
       : `unavailable — ${nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, "")}`;
-  return [
+  const checks: readonly IDoctorCheck[] = [
     webAvailable
       ? { detail: "available — src/main.ts", name: "target web", status: "ok" }
       : {
@@ -1225,6 +1343,10 @@ function targetChecks(
     androidTargetCheck(snapshot),
     iosTargetCheck(snapshot),
   ];
+  if (request.target === undefined) return checks;
+  return checks.map((check) =>
+    check.name === `target ${request.target}` ? check : unrequestedTarget(check),
+  );
 }
 
 function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
@@ -1274,7 +1396,7 @@ function blenderCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
 
 export function diagnoseProject(
   snapshot: IProjectSnapshot,
-  options: { readonly capturePath?: string } = {},
+  options: IDoctorRequest & { readonly capturePath?: string } = {},
 ): IDoctorReport {
   if (record(snapshot.packageJson) === undefined) {
     return {
@@ -1294,6 +1416,7 @@ export function diagnoseProject(
   const nativeRuntime = nativeRuntimeCheck(snapshot);
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
+  const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime);
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
@@ -1304,7 +1427,8 @@ export function diagnoseProject(
     ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
       ? []
       : [desktopOverlayCheck(snapshot.desktopOverlay)]),
-    ...targetChecks(snapshot, nativeRuntime),
+    ...targetChecks(snapshot, nativeRuntime, options),
+    ...(requestedBuild === undefined ? [] : [requestedBuild]),
     snapshot.files.has("src/main.ts")
       ? { detail: "src/main.ts is the web entry", name: "web entry", status: "ok" }
       : {
@@ -1432,6 +1556,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       };
     })(),
     ...(usesDesktopOverlay(config) ? { desktopOverlay: probeDesktopOverlay() } : {}),
+    environment: process.env,
     ...(playtestRunnerPath === undefined
       ? {}
       : {
