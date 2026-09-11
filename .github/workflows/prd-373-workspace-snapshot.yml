@@ -1,0 +1,36 @@
+name: PRD-373 workspace snapshot
+on:
+  push:
+    branches: [work/prd-373-selective-ci]
+    paths: [.github/workflows/prd-373-workspace-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 5
+          persist-credentials: false
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Export source and installed dependencies for offline regression tests
+        run: |
+          set -euo pipefail
+          git bundle create "$RUNNER_TEMP/source.bundle" --all
+          tar --exclude='./.git' --exclude='./.cache' -czf "$RUNNER_TEMP/workspace.tar.gz" .
+          cp "$(readlink -f "$(command -v pnpm)")" "$RUNNER_TEMP/pnpm.cjs"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prd-373-workspace
+          path: |
+            ${{ runner.temp }}/source.bundle
+            ${{ runner.temp }}/workspace.tar.gz
+          retention-days: 1
+          compression-level: 0
