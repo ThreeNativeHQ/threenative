@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-221 — The default Android V8 distribution is 16 KB compatible
 
-**Status:** PROPOSED — prior toolchain blocker retained as history and must be retried. Revised 2026-09-08; planning only. **A 16 KB environment is available locally as of 2026-09-11**: `system-images;android-36;google_apis_ps16k;x86_64` boots headless on KVM and reports `getconf PAGE_SIZE` 16384, so phase 3's observation does not require a flashed physical device. Prove it there before editing the hosted workflow.
+**Status:** PARTIAL — **phase 1's implementation is already on `main`**, merged as PR #167 on
+2026-09-11, and the PRD had recorded none of it: it read 0 of 23 boxes while the provisioner, the
+Gradle staging and the alignment test were all landed. Phase 2's packager census is on this branch.
+Each phase still owes its red/green control and its evidence record, and phase 3's observed 16 KB
+execution has not been run. Prior toolchain blocker retained as history and must be retried. Revised 2026-09-08; planning only. **A 16 KB environment is available locally as of 2026-09-11**: `system-images;android-36;google_apis_ps16k;x86_64` boots headless on KVM and reports `getconf PAGE_SIZE` 16384, so phase 3's observation does not require a flashed physical device. Prove it there before editing the hosted workflow.
 **Complexity:** 8 → HIGH (+3 files, +2 native dependency integration, +2 multi-ABI release coordination, +1 upstream integration).
 **Problem:** The default V8 shared library has documented 4 KB alignment, so successful execution on ordinary devices does not establish Android 16 KB compatibility.
 
@@ -63,12 +67,14 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/download-deps.mjs`, `packages/runtime-native/android/app/build.gradle.kts`, `packages/runtime-native/tests/android-16kb-alignment.test.mjs`
-      Left: `docs/verification/prd-221-readiness-phase-1-2026-09-10.md` reads **INCOMPLETE — implementation preparation, not Android 16 KB qualification**. Continue in PR #167, branch `codex/prd-221-android-v8-16kb`; slices #171, #172 and #173 are already included.
-- [ ] Required test green: `packages/runtime-native/tests/android-16kb-alignment.test.mjs`
+- [x] Callers wired and building: `packages/runtime-native/scripts/download-deps.mjs`, `packages/runtime-native/android/app/build.gradle.kts`, `packages/runtime-native/tests/android-16kb-alignment.test.mjs` — **PR #167 merged to `main` 2026-09-11** (`48276b273`). `download-deps.mjs:31` imports `assertAndroid16KbAlignment` and calls it at `:1019` on every built `.so`; `build-android-v8.mjs:147` asserts it on the provisioned V8; `build.gradle.kts:35` records the 3.2.30 bump made for 16 KB alignment. Verified on `main`, not assumed.
+- [x] Required test green: `packages/runtime-native/tests/android-16kb-alignment.test.mjs` — 34 passed, run locally 2026-09-11 against `main`.
 - [ ] Observed red recorded, then restored green
+      NOT RUN by this session. The control the phase names — feed the historical misaligned binary to the provisioned-artifact check — has not been re-executed here, so this stays open rather than being ticked on the merged PR's word.
 - [ ] User verification performed on the named platform
+      NOT RUN. Needs a default-V8 native Android host built and a real-game candidate booted, with the log naming V8 and its ABI rather than silently choosing QuickJS.
 - [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-1-<date>.md`
+      The existing `prd-221-readiness-phase-1-2026-09-10.md` still reads **INCOMPLETE — implementation preparation, not Android 16 KB qualification**, and predates the merge. It needs rewriting against what actually landed.
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -97,10 +103,12 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/check-android-16kb-alignment.mjs`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs`
-- [ ] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs`
+- [x] Callers wired and building: `packages/runtime-native/scripts/check-android-16kb-alignment.mjs`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs` — this branch. `pnpm typecheck` exit 0, `pnpm lint` exit 0.
+- [x] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs` — 46 passed together with `android-16kb-alignment.test.mjs`, plus `tests/distribution.test.mjs` 36 passed and `create-threenative/__tests__/native-consumer.spec.ts` 33 passed. Run under vitest from `packages/runtime-native`, which is how `vitest.config.ts` collects `tests/**/*.test.mjs`.
 - [ ] Observed red recorded, then restored green
+      NOT RUN. The phase's control — an omitted or corrupted library fed to the packaged-archive census — has not been executed against a real packaged APK.
 - [ ] User verification performed on the named platform
+      NOT RUN. Belongs with phase 3's emulator run.
 - [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-2-<date>.md`
 - [ ] Independent reviewer returned PASS
 
