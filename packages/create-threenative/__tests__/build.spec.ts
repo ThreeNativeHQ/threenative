@@ -171,6 +171,40 @@ describe("threenative build", () => {
     expect(() => parseBuildArgs(["build", "--target", "console"])).toThrow(/console/u);
   });
 
+  // PRD-212 phase 2. The CLI must reject an unsupported request before any work, and pass a
+  // supported one through unchanged to the Android packager.
+  it("parses and validates the Android mode/format request", () => {
+    expect(
+      parseBuildArgs(["build", "--target", "android", "--mode", "release", "--format", "aab"]),
+    ).toEqual({ target: "android", mode: "release", format: "aab", viteArgs: [] });
+    expect(parseBuildArgs(["build", "--target", "android", "--mode", "release"])).toEqual({
+      target: "android",
+      mode: "release",
+      viteArgs: [],
+    });
+    expect(() => parseBuildArgs(["build", "--target", "android", "--format", "aab"])).toThrow(
+      /--format aab requires --mode release/u,
+    );
+    expect(() => parseBuildArgs(["build", "--mode", "release"])).toThrow(
+      /supported only for --target android/u,
+    );
+    expect(() => parseBuildArgs(["build", "--target", "android", "--mode", "staging"])).toThrow(
+      /Unknown build mode/u,
+    );
+    expect(() => parseBuildArgs(["build", "--target", "android", "--format"])).toThrow(
+      /--format requires a value/u,
+    );
+  });
+
+  it("rejects an unsupported mode/format request in build() before touching the project", async () => {
+    await expect(build({ cwd: "/unused", target: "web", mode: "release" })).rejects.toThrow(
+      /supported only for --target android/u,
+    );
+    await expect(
+      build({ cwd: "/unused", target: "android", mode: "debug", format: "aab" }),
+    ).rejects.toThrow(/--format aab requires --mode release/u);
+  });
+
   it("delegates byte-identically to the same Vite binary for every template", async () => {
     for (const template of ["minimal", "starter", "platformer"] as const) {
       const root = await makeTempDir(`threenative-web-${template}-`);

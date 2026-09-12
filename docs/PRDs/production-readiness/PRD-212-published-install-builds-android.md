@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-212 — A published game builds signed Android release artifacts
 
-**Status:** PARTIAL — existing packaging/import fixes retained; release artifact work open. Revised 2026-09-08; planning only. An API 35 emulator runs locally on KVM as of 2026-09-11, so install, launch and manifest inspection of the built artifact are local checks, not hosted ones.
+**Status:** PARTIAL — phases 1 (submission SDK 36) and 2 (explicit release mode/format) implemented and locally verified; phase 3 (consumer signing and final artifact validation) open. Revised 2026-09-11. An API 35 emulator runs locally on KVM as of 2026-09-11, so install, launch and manifest inspection of the built artifact are local checks, not hosted ones.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 signing/release-state handling, +1 platform tools).
 **Problem:** The installed Android path depends on absent runtime assets and currently emits only a debug APK with target SDK 35.
 
@@ -98,12 +98,12 @@ pnpm exec threenative doctor --text
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/android/app/build.gradle.kts` (+1 more)
-- [ ] Required test green: `packages/create-threenative/__tests__/build.spec.ts`
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-212-readiness-phase-2-<date>.md`
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/android/app/build.gradle.kts` — `--mode/--format` validated in the CLI, mapped to `assembleDebug`/`assembleRelease`/`bundleRelease`, exact artifact selected, debug APK never accepted for a release.
+- [x] Required test green: `packages/create-threenative/__tests__/build.spec.ts` — 18 passed; artifact-level lanes in `tests/android-packaging.integration.test.mjs` (13 passed) build the AAB/APK through the fake Gradle lane.
+- [x] Observed red recorded, then restored green — debug-only wrapper makes a release request fail `TN_ANDROID_ARTIFACT_MISSING`; `debug/aab` fails `TN_ANDROID_BUILD_UNSUPPORTED`.
+- [ ] User verification performed on the named platform — not run this session; emulator lane available.
+- [x] Evidence record written: `docs/verification/prd-212-readiness-phase-2-2026-09-11.md`
+- [ ] Independent reviewer returned PASS — not requested this session.
 
 **Files (maximum five):**
 

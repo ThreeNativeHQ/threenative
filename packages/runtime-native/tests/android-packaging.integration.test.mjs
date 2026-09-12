@@ -6,7 +6,7 @@ import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from 'node:path';
 import { afterEach, test } from 'vitest';
 
-import { packageAndroid } from '../scripts/package-android.mjs';
+import { packageAndroid, androidBuildRequest, androidArtifactCandidates } from '../scripts/package-android.mjs';
 
 const roots = [];
 const VALID_PNG = Buffer.from(
@@ -45,8 +45,16 @@ function createFakeAndroidRuntime() {
     wrapper,
     `#!/bin/sh
 set -eu
-mkdir -p app/build/outputs/apk/debug
-jar --create --file app/build/outputs/apk/debug/app-debug.apk \\
+task="\${1:-assembleDebug}"
+case "$task" in
+  assembleDebug) out="app/build/outputs/apk/debug/app-debug.apk" ;;
+  assembleRelease) out="app/build/outputs/apk/release/app-release-unsigned.apk" ;;
+  bundleRelease) out="app/build/outputs/bundle/release/app-release.aab" ;;
+  *) echo "unexpected Gradle task: $task" >&2; exit 2 ;;
+esac
+mkdir -p "$(dirname "$out")" app/build
+printf '%s' "$task" > app/build/last-task.txt
+jar --create --file "$out" \\
   -C app/src/main AndroidManifest.xml \\
   -C app/src/main/res values/strings.xml \\
   -C app/src/main/res values/themes.xml \\
@@ -54,24 +62,25 @@ jar --create --file app/build/outputs/apk/debug/app-debug.apk \\
   -C app build.gradle.kts \\
   -C app/build/generated/threenative/assets scripts/main.js
 if [ -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png ]; then
-  jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
+  jar --update --file "$out" \\
     -C app/src/main/res mipmap-xxxhdpi/ic_launcher.png
 fi
-for resource in \
-  mipmap-anydpi-v26/ic_launcher.xml \
-  drawable-nodpi/ic_launcher_foreground.png \
-  drawable-nodpi/ic_launcher_monochrome.png \
+for resource in \\
+  mipmap-anydpi-v26/ic_launcher.xml \\
+  drawable-nodpi/ic_launcher_foreground.png \\
+  drawable-nodpi/ic_launcher_monochrome.png \\
   drawable-nodpi/tn_boot_splash.png; do
   if [ -f "app/src/main/res/$resource" ]; then
-    jar --update --file app/build/outputs/apk/debug/app-debug.apk \
+    jar --update --file "$out" \\
       -C app/src/main/res "$resource"
   fi
 done
 if [ -f app/build/generated/threenative/assets/game/level.bin ]; then
-  jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
+  jar --update --file "$out" \\
     -C app/build/generated/threenative/assets game/level.bin
 fi
 `,
+
   );
   chmodSync(wrapper, 0o755);
   return runtime;
@@ -79,6 +88,24 @@ fi
 
 function artifactEntry(apk, entry) {
   return execFileSync('unzip', ['-p', apk, entry]);
+}
+
+// A wrapper that ignores the requested task and always produces the debug artifact. It is the
+// exact failure mode PRD-212 phase 2 forbids: a release request answered with app-debug.apk.
+function createDebugOnlyAndroidRuntime() {
+  const runtime = createFakeAndroidRuntime();
+  const wrapper = join(runtime, 'android', 'gradlew');
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh
+set -eu
+out="app/build/outputs/apk/debug/app-debug.apk"
+mkdir -p "$(dirname "$out")" app/build
+jar --create --file "$out" -C app/src/main AndroidManifest.xml
+`,
+  );
+  chmodSync(wrapper, 0o755);
+  return runtime;
 }
 
 function runActivityMetadataProbe() {
@@ -585,5 +612,95 @@ test('a failed prebuilt download names the cause and the environment variable th
       assert.match(error.message, /THREENATIVE_RUNTIME_SOURCE=/u);
       return true;
     },
+  );
+});
+
+// PRD-212 phase 2: an explicit mode/format selects the Gradle task and the artifact it must
+// produce. Every artifact below is built by the fake wrapper from the real shipped Gradle project.
+test('an explicit release/aab request runs bundleRelease and returns the bundle', async () => {
+  const root = makeTempDirSync('threenative-android-aab-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const output = join(root, 'dist', 'fox.aab');
+
+  const artifact = await packageAndroid(bundle, output, undefined, undefined, undefined, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    mode: 'release',
+    format: 'aab',
+  });
+
+  assert.equal(artifact, output);
+  assert.equal(readFileSync(join(runtime, 'android', 'app', 'build', 'last-task.txt'), 'utf8'), 'bundleRelease');
+  assert.match(artifactEntry(output, 'AndroidManifest.xml').toString('utf8'), /<manifest\b/u);
+});
+
+test('an explicit release/apk request runs assembleRelease and returns the release APK', async () => {
+  const root = makeTempDirSync('threenative-android-release-apk-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  const artifact = await packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    mode: 'release',
+    format: 'apk',
+  });
+
+  assert.match(artifact, /app-release(-unsigned)?\.apk$/u);
+  assert.equal(readFileSync(join(runtime, 'android', 'app', 'build', 'last-task.txt'), 'utf8'), 'assembleRelease');
+});
+
+test('the omitted flags keep the debug APK path', async () => {
+  const root = makeTempDirSync('threenative-android-default-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  const artifact = await packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+  });
+
+  assert.match(artifact, /app-debug\.apk$/u);
+  assert.equal(readFileSync(join(runtime, 'android', 'app', 'build', 'last-task.txt'), 'utf8'), 'assembleDebug');
+});
+
+test('a release request never accepts a debug APK returned in its place', async () => {
+  const root = makeTempDirSync('threenative-android-wrong-artifact-');
+  roots.push(root);
+  const runtime = createDebugOnlyAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+    }),
+    /TN_ANDROID_ARTIFACT_MISSING/u,
+  );
+});
+
+test('unsupported mode/format pairs fail before any work', () => {
+  assert.throws(() => androidBuildRequest('debug', 'aab'), /TN_ANDROID_BUILD_UNSUPPORTED/u);
+  assert.throws(() => androidBuildRequest('staging', 'apk'), /TN_ANDROID_BUILD_MODE_INVALID/u);
+  assert.throws(() => androidBuildRequest('release', 'zip'), /TN_ANDROID_BUILD_FORMAT_INVALID/u);
+  assert.equal(androidBuildRequest('release', 'aab').task, 'bundleRelease');
+  assert.equal(androidBuildRequest('release', 'apk').task, 'assembleRelease');
+  assert.deepEqual(
+    androidArtifactCandidates('/runtime', androidBuildRequest('debug', 'apk')),
+    ['/runtime/android/app/build/outputs/apk/debug/app-debug.apk'],
   );
 });

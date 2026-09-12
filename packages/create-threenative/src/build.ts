@@ -8,12 +8,20 @@ import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
 type NativeBuildTarget = Exclude<BuildTarget, "web">;
+/** PRD-212: a debug APK by default; release is an explicit request. */
+export type BuildMode = "debug" | "release";
+/** PRD-212: the Android artifact shape. An app bundle is only meaningful for a release. */
+export type BuildFormat = "apk" | "aab";
 export type NativeOrientation = IResolvedThreeNativeConfig["display"]["orientation"];
 
 export interface IBuildOptions {
   cwd?: string;
   target: BuildTarget;
   allowSourceBuild?: boolean;
+  /** Android only. Omitted keeps the current debug APK behavior. */
+  mode?: BuildMode;
+  /** Android only. `aab` requires `mode: "release"`. */
+  format?: BuildFormat;
   viteArgs?: readonly string[];
 }
 
@@ -430,6 +438,8 @@ async function buildNative(
   target: NativeBuildTarget,
   cwd: string,
   allowSourceBuild = false,
+  mode: BuildMode = "debug",
+  format: BuildFormat = "apk",
 ): Promise<void> {
   const config = await loadConfig(cwd);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
@@ -472,12 +482,20 @@ async function buildNative(
     return;
   }
   if (target === "android") {
-    const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.apk`);
+    const output = path.join(
+      cwd,
+      "dist-native",
+      `${await projectName(cwd)}.${format === "aab" ? "aab" : "apk"}`,
+    );
     await run(
       process.execPath,
       [
         path.join(runtimeRoot, "scripts", "package-android.mjs"),
         ...(allowSourceBuild ? ["--allow-source-build"] : []),
+        "--mode",
+        mode,
+        "--format",
+        format,
         "--bundle",
         bundle,
         "--assets",
@@ -520,6 +538,18 @@ export async function build(options: IBuildOptions): Promise<void> {
   if (options.allowSourceBuild && options.target !== "android") {
     throw new Error("--allow-source-build is supported only for --target android.");
   }
+  if (
+    (options.mode !== undefined || options.format !== undefined) &&
+    options.target !== "android"
+  ) {
+    throw new Error("--mode and --format are supported only for --target android.");
+  }
+  const mode = options.mode ?? "debug";
+  const format = options.format ?? "apk";
+  // An app bundle is a Play submission shape; there is no debug AAB to install.
+  if (format === "aab" && mode !== "release") {
+    throw new Error("--format aab requires --mode release.");
+  }
   const cwd = path.resolve(options.cwd ?? process.cwd());
   if (options.target === "web") await buildWeb(cwd, options.viteArgs);
   else {
@@ -528,16 +558,18 @@ export async function build(options: IBuildOptions): Promise<void> {
         `${options.target} build does not accept ${options.viteArgs?.join(" ")}. iOS output is simulator-only; device signing remains OPEN.`,
       );
     }
-    await buildNative(options.target, cwd, options.allowSourceBuild === true);
+    await buildNative(options.target, cwd, options.allowSourceBuild === true, mode, format);
   }
 }
 
 export function buildHelp(): string {
   return `${[
-    "Usage: threenative build [--target web|desktop|android|ios]",
+    "Usage: threenative build [--target web|desktop|android|ios] [--mode debug|release] [--format apk|aab]",
     "",
     "Options:",
     "  --target <target>  Choose web, desktop, android, or ios (default: web).",
+    "  --mode <mode>      Android only: debug (default) or release.",
+    "  --format <format>  Android only: apk (default) or aab. aab requires --mode release.",
     "  --allow-source-build  Explicitly allow Android maintainer source compilation.",
     "  --help             Show this help.",
   ].join("\n")}\n`;
@@ -556,10 +588,31 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   if (allowSourceBuild && value !== "android") {
     throw new Error("--allow-source-build is supported only for --target android.");
   }
+  const mode = flagValue(argv, "--mode");
+  if (mode !== undefined && mode !== "debug" && mode !== "release") {
+    throw new Error(`Unknown build mode '${mode}'. Choose debug or release.`);
+  }
+  const format = flagValue(argv, "--format");
+  if (format !== undefined && format !== "apk" && format !== "aab") {
+    throw new Error(`Unknown build format '${format}'. Choose apk or aab.`);
+  }
+  if ((mode !== undefined || format !== undefined) && value !== "android") {
+    throw new Error("--mode and --format are supported only for --target android.");
+  }
+  if (format === "aab" && (mode ?? "debug") !== "release") {
+    throw new Error("--format aab requires --mode release.");
+  }
   const consumed = new Set([0]);
   if (allowSourceBuild) {
     for (let index = 1; index < argv.length; index += 1) {
       if (argv[index] === "--allow-source-build") consumed.add(index);
+    }
+  }
+  for (const flag of ["--mode", "--format"]) {
+    const index = argv.indexOf(flag);
+    if (index !== -1) {
+      consumed.add(index);
+      consumed.add(index + 1);
     }
   }
   if (targetIndex !== -1) {
@@ -569,6 +622,17 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   return {
     target: value as BuildTarget,
     ...(allowSourceBuild ? { allowSourceBuild: true } : {}),
+    ...(mode === undefined ? {} : { mode: mode as BuildMode }),
+    ...(format === undefined ? {} : { format: format as BuildFormat }),
     viteArgs: argv.filter((_, index) => !consumed.has(index)),
   };
+}
+
+/** A single-valued long flag, or undefined when absent; a trailing flag with no value throws. */
+function flagValue(argv: readonly string[], flag: string): string | undefined {
+  const index = argv.indexOf(flag);
+  if (index === -1) return undefined;
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith("--")) throw new Error(`${flag} requires a value.`);
+  return value;
 }

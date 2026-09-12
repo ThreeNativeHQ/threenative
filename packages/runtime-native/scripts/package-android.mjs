@@ -660,6 +660,57 @@ export function stageAndroidUi(ui, renderer, destination) {
   return files;
 }
 
+export const ANDROID_BUILD_MODES = ['debug', 'release'];
+export const ANDROID_BUILD_FORMATS = ['apk', 'aab'];
+
+/**
+ * Resolve a requested mode/format pair into the Gradle task and the artifact it must produce.
+ *
+ * PRD-212 phase 2. `debug/apk` stays the default; a release APK and a release AAB are the two
+ * explicit routes. An AAB is a Play submission shape, so `debug/aab` is refused before any work.
+ */
+export function androidBuildRequest(mode = 'debug', format = 'apk') {
+  const resolvedMode = String(mode).toLowerCase();
+  const resolvedFormat = String(format).toLowerCase();
+  if (!ANDROID_BUILD_MODES.includes(resolvedMode)) {
+    throw new Error(
+      `TN_ANDROID_BUILD_MODE_INVALID: unknown mode '${mode}'; expected debug or release.`,
+    );
+  }
+  if (!ANDROID_BUILD_FORMATS.includes(resolvedFormat)) {
+    throw new Error(
+      `TN_ANDROID_BUILD_FORMAT_INVALID: unknown format '${format}'; expected apk or aab.`,
+    );
+  }
+  if (resolvedFormat === 'aab' && resolvedMode !== 'release') {
+    throw new Error('TN_ANDROID_BUILD_UNSUPPORTED: --format aab requires --mode release.');
+  }
+  const task =
+    resolvedFormat === 'aab'
+      ? 'bundleRelease'
+      : resolvedMode === 'release'
+        ? 'assembleRelease'
+        : 'assembleDebug';
+  return { format: resolvedFormat, mode: resolvedMode, task };
+}
+
+/**
+ * The exact artifacts a resolved request may produce, in preference order.
+ *
+ * A release APK with no signing config comes out as `app-release-unsigned.apk`; with signing it is
+ * `app-release.apk`. Both are named here and nothing else is: accepting `app-debug.apk` for a
+ * release request is how a debug artifact gets reported as a release.
+ */
+export function androidArtifactCandidates(packageRoot, request) {
+  const outputs = join(packageRoot, 'android', 'app', 'build', 'outputs');
+  if (request.format === 'aab') return [join(outputs, 'bundle', 'release', 'app-release.aab')];
+  if (request.mode === 'debug') return [join(outputs, 'apk', 'debug', 'app-debug.apk')];
+  return [
+    join(outputs, 'apk', 'release', 'app-release.apk'),
+    join(outputs, 'apk', 'release', 'app-release-unsigned.apk'),
+  ];
+}
+
 export async function packageAndroid(
   bundle,
   requestedOutput,
@@ -674,6 +725,9 @@ export async function packageAndroid(
     options.runtimeRoot ?? process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
   );
   const { androidRoot } = androidPaths(packageRoot);
+  // Validate the request before any asset work or Gradle: an unsupported mode/format pair must
+  // fail with a named reason, not after a ten-minute build produces the wrong artifact.
+  const request = androidBuildRequest(options.mode, options.format);
   const sourceCheckout = existsSync(join(packageRoot, 'CMakeLists.txt'));
   if (sourceCheckout && options.allowSourceBuild !== true) {
     throw new Error(
@@ -743,7 +797,7 @@ export async function packageAndroid(
     const extraGradleArgs = (process.env.THREENATIVE_GRADLE_ARGS ?? '')
       .split(' ')
       .filter((entry) => entry.length > 0);
-    const baseArgs = ['assembleDebug', '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
+    const baseArgs = [request.task, '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
     const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];
     const spawn = options.spawnSync ?? spawnSync;
     const result = spawn(command, args, {
@@ -754,23 +808,21 @@ export async function packageAndroid(
     if (result.error) throw result.error;
     if (result.status !== 0)
       throw new Error(`Gradle exited with code ${result.status ?? 'unknown'}.`);
-    const apk = join(
-      packageRoot,
-      'android',
-      'app',
-      'build',
-      'outputs',
-      'apk',
-      'debug',
-      'app-debug.apk',
-    );
-    if (!existsSync(apk)) throw new Error(`Gradle did not produce the expected APK: ${apk}`);
-    const output = requestedOutput ? resolve(requestedOutput) : apk;
-    if (output !== apk) {
-      mkdirSync(dirname(output), { recursive: true });
-      copyFileSync(apk, output);
+    const candidates = androidArtifactCandidates(packageRoot, request);
+    const artifact = candidates.find((candidate) => existsSync(candidate));
+    if (artifact === undefined) {
+      throw new Error(
+        `TN_ANDROID_ARTIFACT_MISSING: Gradle ${request.task} produced no ${request.format} at ${candidates.join(' or ')}.`,
+      );
     }
-    console.log(`ThreeNative Android APK: ${output}`);
+    const output = requestedOutput ? resolve(requestedOutput) : artifact;
+    if (output !== artifact) {
+      mkdirSync(dirname(output), { recursive: true });
+      copyFileSync(artifact, output);
+    }
+    const signing =
+      artifact.endsWith('-unsigned.apk') ? 'unsigned' : request.mode === 'release' ? 'signed' : 'debug';
+    console.log(`ThreeNative Android ${request.format.toUpperCase()}: ${output} (${signing})`);
     return output;
   } finally {
     restoreFiles();
@@ -784,6 +836,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const orientationIndex = process.argv.indexOf('--orientation');
   const configIndex = process.argv.indexOf('--config');
   const uiIndex = process.argv.indexOf('--ui');
+  const modeIndex = process.argv.indexOf('--mode');
+  const formatIndex = process.argv.indexOf('--format');
   const allowSourceBuild = process.argv.includes('--allow-source-build');
   if (
     bundleIndex === -1 ||
@@ -791,7 +845,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.argv[bundleIndex + 1].startsWith('--')
   ) {
     console.error(
-      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE] [--allow-source-build]',
+      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE] [--mode debug|release] [--format apk|aab] [--allow-source-build]',
     );
     process.exitCode = 1;
   } else if (
@@ -832,6 +886,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         readAndroidConfig(configPath),
         {
           ...(uiIndex === -1 ? {} : { ui: resolve(process.argv[uiIndex + 1]) }),
+          ...(modeIndex === -1 ? {} : { mode: process.argv[modeIndex + 1] }),
+          ...(formatIndex === -1 ? {} : { format: process.argv[formatIndex + 1] }),
           // Maintainer route for source-checkout builds: the guard requires an
           // explicit opt-in, and this flag is its CLI spelling.
           ...(allowSourceBuild ? { allowSourceBuild: true } : {}),

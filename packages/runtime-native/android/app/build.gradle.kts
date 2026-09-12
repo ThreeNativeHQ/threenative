@@ -397,6 +397,9 @@ android {
             }
         }
         release {
+            // PRD-212: a release artifact is never debuggable, whatever the default becomes. The
+            // debug variant stays the install-anywhere default; release is opt-in.
+            isDebuggable = false
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
