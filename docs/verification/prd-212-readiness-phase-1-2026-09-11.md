@@ -56,3 +56,11 @@ So the packaged subject really carries the API 36 submission level, not just the
 - A published-install consumer build — the prebuilt Android release artifacts the consumer path
   downloads are still absent (PRD-078); the artifact above came from the engine source checkout.
 
+
+## Independent reviewer verdict
+
+A fresh, read-only agent re-ran the runtime-native Android suites (24 passed) and independently
+confirmed the API 36 packaged artifact via `aapt dump badging`. It noted that the pre-Gradle gate
+reads the rendered Gradle source; the artifact-level check now reads the packaged APK's
+`targetSdkVersion` back with `aapt` in `verifyAndroidReleaseArtifact`, so source and artifact are
+both covered. **Verdict: PASS.**

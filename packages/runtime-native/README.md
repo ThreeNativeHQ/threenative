@@ -78,9 +78,10 @@ environment. Paths are resolved relative to the project; nothing is written into
 | `ORG_GRADLE_PROJECT_threenativeKeyPassword` | Key password. |
 
 Values are read only inside the signing subprocess and are never printed or serialized into
-packaging output. The final APK is verified with `apksigner` (and an AAB with `jarsigner`) and must
-report as non-debuggable; a signature that cannot be verified fails the build. Native symbols are
-stripped from the artifact by the Android Gradle plugin and are produced separately for symbol
+packaging output. The final APK is verified with `apksigner`, and its packaged `targetSdkVersion`
+and non-debuggable state are read back with `aapt`; a release AAB is verified with `jarsigner`. A
+signature, target level or debuggable check that cannot be satisfied fails the build. Native symbols
+are stripped from the artifact by the Android Gradle plugin and are produced separately for symbol
 archives.
 
 ## Links

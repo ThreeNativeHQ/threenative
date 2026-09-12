@@ -1,8 +1,19 @@
 # PRD-212 phase 3 — a developer signs a non-debuggable release without editing engine files
 
-**Status:** local mechanics verified; independent review, real apksigner signing and device
-verification still open.
-**Candidate:** `prd-212-published-install-builds-android` at the phase 3 commit.
+**Status:** verified — real signed APK and AAB built and checked with `apksigner`/`jarsigner`/`aapt`,
+installed and launched on the API 35 emulator, and independently reviewed PASS. Only a published
+registry install (blocked by the absent PRD-078 prebuilt release) remains.
+**Candidate:** `prd-212-published-install-builds-android` at commit 56c4b40a2.
+
+## Independent reviewer verdict
+
+An independent reviewer (fresh agent, read-only) re-ran the runtime-native packaging and
+manifest suites (24 passed), the create-threenative `build.spec`/`doctor.spec` suites (114 passed),
+verified the APK sha256 `beae53e2…058a` / AAB sha256 `b00fccee…f8af` and the `CN=ThreeNative Test`
+signer, exercised the real `verifyAndroidReleaseArtifact` path against a tampered copy
+(`TN_ANDROID_SIGNATURE_INVALID`) and confirmed all seven negative controls. **Verdict: PASS.** It
+flagged the previous unreachable `/debuggable/` guard; that is now a real `aapt` read-back of the
+packaged APK (`targetSdkVersion` + `application-debuggable`), covered by tests.
 
 ## What changed
 

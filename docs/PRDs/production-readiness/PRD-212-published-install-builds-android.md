@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-212 — A published game builds signed Android release artifacts
 
-**Status:** PARTIAL — phases 1 (submission SDK 36), 2 (explicit release mode/format) and 3 (consumer signing and fail-closed artifact verification) are implemented and locally verified, including a real signed release APK (targetSdk 36) installed and launched on the API 35 emulator on 2026-09-11. The only open per-phase box is the independent reviewer PASS; the public-consumer acceptance still needs the PRD-078 prebuilt Android release. Revised 2026-09-11.
+**Status:** PARTIAL — phases complete (18/18), acceptance open. All three phases are implemented, locally verified (a real signed release APK and AAB were built, checked with `apksigner`/`jarsigner`/`aapt`, and installed on the API 35 emulator) and independently reviewed PASS. Two acceptance criteria are ticked; the rest wait on the public-registry consumer install (blocked by the absent PRD-078 prebuilt Android release) and PRD-366/PRD-060 device and store proof. Revised 2026-09-11.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 signing/release-state handling, +1 platform tools).
 **Problem:** The installed Android path depends on absent runtime assets and currently emits only a debug APK with target SDK 35.
 
@@ -68,7 +68,7 @@ sequenceDiagram
 - [x] Observed red recorded, then restored green — the revert control is asserted in the same test file.
 - [x] User verification performed on the named platform — agent-run on the API 35 emulator (agent-run, 2026-09-11): source-built release APK installed (`adb install` Success), `dumpsys package` reports `versionCode=1 minSdk=24 targetSdk=36`, and the activity launched. See the phase evidence record.
 - [x] Evidence record written: `docs/verification/prd-212-readiness-phase-1-2026-09-11.md`
-- [ ] Independent reviewer returned PASS — not requested this session.
+- [x] Independent reviewer returned PASS — fresh read-only agent, 2026-09-11: re-ran the phase suites, verified the real artifact hashes/signer and all negative controls; verdict recorded in the phase evidence record.
 
 **Files (maximum five):**
 
@@ -103,7 +103,7 @@ pnpm exec threenative doctor --text
 - [x] Observed red recorded, then restored green — debug-only wrapper makes a release request fail `TN_ANDROID_ARTIFACT_MISSING`; `debug/aab` fails `TN_ANDROID_BUILD_UNSUPPORTED`.
 - [x] User verification performed on the named platform — agent-run on the API 35 emulator (agent-run, 2026-09-11): source-built release APK installed (`adb install` Success), `dumpsys package` reports `versionCode=1 minSdk=24 targetSdk=36`, and the activity launched. See the phase evidence record.
 - [x] Evidence record written: `docs/verification/prd-212-readiness-phase-2-2026-09-11.md`
-- [ ] Independent reviewer returned PASS — not requested this session.
+- [x] Independent reviewer returned PASS — fresh read-only agent, 2026-09-11: re-ran the phase suites, verified the real artifact hashes/signer and all negative controls; verdict recorded in the phase evidence record.
 
 **Files (maximum five):**
 
@@ -138,7 +138,7 @@ pnpm exec threenative build --target android --mode release --format aab
 - [x] Observed red recorded, then restored green — incomplete signing, unsigned output, verifier rejection and missing verifier each fail by name.
 - [x] User verification performed on the named platform — agent-run on the API 35 emulator (agent-run, 2026-09-11): source-built release APK installed (`adb install` Success), `dumpsys package` reports `versionCode=1 minSdk=24 targetSdk=36`, and the activity launched. See the phase evidence record.
 - [x] Evidence record written: `docs/verification/prd-212-readiness-phase-3-2026-09-11.md`
-- [ ] Independent reviewer returned PASS — not requested this session.
+- [x] Independent reviewer returned PASS — fresh read-only agent, 2026-09-11: re-ran the phase suites, verified the real artifact hashes/signer and all negative controls; verdict recorded in the phase evidence record.
 
 **Files (maximum five):**
 
@@ -196,9 +196,9 @@ PRD-078 prebuilt Android release.
 ## Acceptance criteria
 
 - [ ] Published SDK/JDK-only consumer builds Android without source checkout or patched node_modules.
-- [ ] Explicit debug APK, release APK and release AAB routes have correct artifact metadata and fail on unsupported requests.
-- [ ] Release signing uses developer-owned inputs, never debug fallback, and verification catches tampering without exposing keys/passwords.
-- [ ] Current target API, all native-library/ZIP alignment checks, package ID/version and native symbol outputs are validated for the exact artifact.
+- [x] Explicit debug APK, release APK and release AAB routes have correct artifact metadata and fail on unsupported requests. — Real `assembleRelease`/`bundleRelease` produced a release APK (aapt: `com.threenative.game`, versionCode 1, versionName 0.1.0, targetSdk 36) and a signed AAB; the debug default and the `debug/aab` / wrong-artifact refusals are asserted. See the phase 2 and 3 records.
+- [x] Release signing uses developer-owned inputs, never debug fallback, and verification catches tampering without exposing keys/passwords. — Real release APK signed with a developer key (`apksigner` signer `CN=ThreeNative Test`), no debug fallback (`TN_ANDROID_RELEASE_UNSIGNED`/`TN_ANDROID_SIGNING_INCOMPLETE`), tampering refused (`TN_ANDROID_SIGNATURE_INVALID`), and password sentinels never appear in output. See the phase 3 record.
+- [ ] Current target API, all native-library/ZIP alignment checks, package ID/version and native symbol outputs are validated for the exact artifact. — API 36, package ID and version are validated on the artifact; native-library/ZIP alignment (PRD-221) and native symbol outputs are not covered here.
 - [ ] The same release artifact reaches PRD-366 device proof and PRD-060 store validation; packaging alone does not claim store acceptance.
 
 ## Prior work retained

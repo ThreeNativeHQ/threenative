@@ -613,10 +613,11 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
     }
   }
   for (const flag of ["--mode", "--format"]) {
-    const index = argv.indexOf(flag);
-    if (index !== -1) {
-      consumed.add(index);
-      consumed.add(index + 1);
+    for (let index = 1; index < argv.length; index += 1) {
+      if (argv[index] === flag) {
+        consumed.add(index);
+        consumed.add(index + 1);
+      }
     }
   }
   if (targetIndex !== -1) {

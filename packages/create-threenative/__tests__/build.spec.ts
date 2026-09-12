@@ -195,6 +195,20 @@ describe("threenative build", () => {
     expect(() => parseBuildArgs(["build", "--target", "android", "--format"])).toThrow(
       /--format requires a value/u,
     );
+    // A repeated flag must not leak its value into viteArgs.
+    expect(
+      parseBuildArgs([
+        "build",
+        "--target",
+        "android",
+        "--mode",
+        "release",
+        "--mode",
+        "release",
+        "--format",
+        "apk",
+      ]).viteArgs,
+    ).toEqual([]);
   });
 
   it("rejects an unsupported mode/format request in build() before touching the project", async () => {

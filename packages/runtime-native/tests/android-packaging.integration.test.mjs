@@ -981,3 +981,78 @@ test('the signing properties the packager consumes are the four doctor predicts'
   assert.match(signing.missing.join(' '), /ORG_GRADLE_PROJECT_threenativeKeystorePassword/u);
   assert.equal(signing.keystore, '/consumer/k.jks');
 });
+
+// The real (non-injected) verification path: the signature tool and aapt are stubbed, but the
+// function's own parsing, refusal and fail-closed behaviour is what runs.
+function fakeToolRun(responses) {
+  return (executable, args) => {
+    const key = `${executable} ${args[0]}`;
+    const match = Object.keys(responses).find((name) => executable.includes(name));
+    if (match === undefined) return { status: 1, stdout: '', stderr: `unexpected tool ${executable}` };
+    return { status: 0, stdout: '', stderr: '', ...responses[match] };
+  };
+}
+
+test('the real signature path rejects an artifact the signer refuses', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => `/sdk/${name}`,
+        spawnSync: fakeToolRun({ apksigner: { status: 1, stderr: 'no signature found' } }),
+      }),
+    /TN_ANDROID_SIGNATURE_INVALID/u,
+  );
+});
+
+test('the real path needs aapt and fails closed without it', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => (name === 'aapt' ? undefined : `/sdk/${name}`),
+        spawnSync: fakeToolRun({ apksigner: { status: 0, stdout: 'Verified' } }),
+      }),
+    /TN_ANDROID_BADGING_TOOL_MISSING/u,
+  );
+});
+
+test('the packaged APK targetSdk is checked on the artifact, not the Gradle source', () => {
+  const badging = (target) => ({
+    status: 0,
+    stdout: `package: name='com.x' versionCode='1'\ntargetSdkVersion:'${target}'\n`,
+  });
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => `/sdk/${name}`,
+        spawnSync: (executable, args) =>
+          executable.endsWith('apksigner')
+            ? { status: 0, stdout: 'Verified' }
+            : badging(35),
+      }),
+    /TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION/u,
+  );
+  const ok = verifyAndroidReleaseArtifact(
+    '/tmp/candidate.apk',
+    androidBuildRequest('release', 'apk'),
+    {
+      findBuildTool: (name) => `/sdk/${name}`,
+      spawnSync: (executable) =>
+        executable.endsWith('apksigner') ? { status: 0, stdout: 'Verified' } : badging(36),
+    },
+  );
+  assert.equal(ok.targetSdk, 36);
+});
+
+test('a debuggable packaged APK is refused', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => `/sdk/${name}`,
+        spawnSync: (executable) =>
+          executable.endsWith('apksigner')
+            ? { status: 0, stdout: 'Verified' }
+            : { status: 0, stdout: "targetSdkVersion:'36'\napplication-debuggable\n" },
+      }),
+    /TN_ANDROID_ARTIFACT_DEBUGGABLE/u,
+  );
+});

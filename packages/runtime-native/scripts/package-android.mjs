@@ -149,12 +149,14 @@ export function findAndroidBuildTool(name, environment = process.env) {
 }
 
 /**
- * Prove a release artifact is really signed and not debuggable.
+ * Prove a release artifact is really signed, targets the submission SDK and is not debuggable.
  *
  * `verifyReleaseSignature` is the injectable seam the integration lane uses to stand in for the
  * SDK tools; on a real build the signature is read with `apksigner` (APK) or `jarsigner` (AAB), and
- * a missing verifier is a blocker rather than a silent pass. Nothing here reads a signing value
- * except the tool invocation Gradle already owns.
+ * a missing verifier is a blocker rather than a silent pass. An APK is additionally read back with
+ * `aapt`, so the gate checks the artifact itself — its packaged `targetSdkVersion` and absence of
+ * `application-debuggable` — rather than trusting the Gradle source. Nothing here reads a signing
+ * value except the tool invocations Gradle already owns.
  */
 export function verifyAndroidReleaseArtifact(artifact, request, options = {}) {
   const environment = options.environment ?? process.env;
@@ -162,11 +164,12 @@ export function verifyAndroidReleaseArtifact(artifact, request, options = {}) {
   if (options.verifyReleaseSignature !== undefined) {
     return options.verifyReleaseSignature(artifact, request);
   }
-  const tool = request.format === 'aab' ? 'jarsigner' : 'apksigner';
-  const executable =
+  const locate = (name) =>
     options.findBuildTool !== undefined
-      ? options.findBuildTool(tool)
-      : findAndroidBuildTool(tool, environment);
+      ? options.findBuildTool(name)
+      : findAndroidBuildTool(name, environment);
+  const tool = request.format === 'aab' ? 'jarsigner' : 'apksigner';
+  const executable = locate(tool);
   if (executable === undefined) {
     throw new Error(
       `TN_ANDROID_SIGNATURE_TOOL_MISSING: ${tool} is unavailable, so the ${request.format} signature cannot be verified. Install the Android build-tools, or set ANDROID_HOME.`,
@@ -181,10 +184,38 @@ export function verifyAndroidReleaseArtifact(artifact, request, options = {}) {
       `TN_ANDROID_SIGNATURE_INVALID: ${tool} rejected ${artifact}: ${output.trim() || 'unknown reason'}`,
     );
   }
-  if (/debuggable/iu.test(output)) {
+  const facts = { output };
+  if (request.format === 'aab') return facts;
+  // The APK's own badging is the artifact-level half of the phase-1 gate: a project whose source
+  // says 36 but whose packaged manifest says 35 is what a source-only check misses.
+  const aapt = locate('aapt');
+  if (aapt === undefined) {
+    throw new Error(
+      `TN_ANDROID_BADGING_TOOL_MISSING: aapt is unavailable, so the release APK's targetSdk and debuggable state cannot be read. Install the Android build-tools, or set ANDROID_HOME.`,
+    );
+  }
+  const badging = run(aapt, ['dump', 'badging', artifact], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (badging.error) throw badging.error;
+  const badgingText = `${badging.stdout ?? ''}${badging.stderr ?? ''}`;
+  if (badging.status !== 0) {
+    throw new Error(`TN_ANDROID_BADGING_FAILED: aapt could not read ${artifact}.`);
+  }
+  const targetSdk = /targetSdkVersion:'(\d+)'/u.exec(badgingText)?.[1];
+  if (targetSdk === undefined) {
+    throw new Error(`TN_ANDROID_BADGING_INCOMPLETE: aapt reported no targetSdkVersion for ${artifact}.`);
+  }
+  if (Number(targetSdk) < ANDROID_SUBMISSION_TARGET_SDK) {
+    throw new Error(
+      `TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION: packaged targetSdk ${targetSdk} is below the required API ${ANDROID_SUBMISSION_TARGET_SDK}.`,
+    );
+  }
+  if (/application-debuggable/u.test(badgingText)) {
     throw new Error(`TN_ANDROID_ARTIFACT_DEBUGGABLE: ${artifact} is debuggable.`);
   }
-  return { output };
+  return { output, targetSdk: Number(targetSdk) };
 }
 
 
