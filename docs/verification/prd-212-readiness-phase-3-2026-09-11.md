@@ -98,6 +98,19 @@ reports `jar verified.` and the bundle carries `base/manifest/AndroidManifest.xm
 merging `origin/develop`; the AAB route skips the APK-only align/census and uses Gradle's bundle
 signing.
 
+## Native symbol outputs (2026-09-11)
+
+The release build emits `android/app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip`
+(20,853,148 bytes, sha256 `7470658a32ca2197d8b7953fad43f002153f45ef40011fc226168753280fc3f0`). Every
+library/ABI the signed APK ships has a matching `.sym` inside it:
+
+```text
+APK libs:   lib/arm64-v8a/libmystral-runtime.so, lib/arm64-v8a/libSDL3.so,
+            lib/x86_64/libmystral-runtime.so, lib/x86_64/libSDL3.so
+symbol zip: arm64-v8a/libmystral-runtime.so.sym, arm64-v8a/libSDL3.so.sym,
+            x86_64/libmystral-runtime.so.sym, x86_64/libSDL3.so.sym
+```
+
 ## Not run
 
 - Independent reviewer PASS — not requested this session.
