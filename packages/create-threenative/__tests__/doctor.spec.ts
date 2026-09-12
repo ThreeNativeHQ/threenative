@@ -1612,6 +1612,38 @@ describe("threenative doctor --target/--mode", () => {
     expect(target).toMatch(/probed: .*android-35 .*found/u);
   });
 
+  it("should keep every blocker when one blocker contains a colon of its own", () => {
+    // Round 6: `^not buildable — [^:]*: (?<why>.+)$` strips the `<scope>: ` prefix off the verdict.
+    // Widen `[^:]*` to `.*` and it matches greedily to the LAST colon instead of the scope's, so
+    // the line silently drops every blocker before the final one - and the release signing blocker
+    // ends in a colon, so it is always the last. All 89 tests stayed green through that mutation.
+    const report = diagnoseProject(
+      snapshot({ androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" } }),
+      { mode: "release", target: "android" },
+    );
+    const target = check(report, "target android").detail;
+    const stated = target.slice(0, target.indexOf("; probed: "));
+    // The signing blocker is last and carries its own colon; the JDK blocker precedes it. Both survive.
+    expect(stated).toContain("JDK 26.0.2");
+    expect(stated).toContain("release signing inputs are not set:");
+    expect(stated).toContain("ORG_GRADLE_PROJECT_threenativeKeystore");
+    // And the scope prefix the regex exists to remove is gone.
+    expect(stated).not.toMatch(/^not buildable — android release: /u);
+  });
+
+  it("should give the requested target the requested build's fix, not the target's own", () => {
+    // Round 6: `fix: requestedBuild.fix ?? check.fix` is unpinned. Inverted, 89 tests stay green
+    // while the CLI prints the generic "install the SDK" advice instead of the one naming the
+    // runtime reinstall and the signing exports - the actionable half this phase exists to make.
+    const report = diagnoseProject(
+      snapshot({ androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" } }),
+      { mode: "release", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.fix).toBeDefined();
+    expect(check(report, "target android").fix).toBe(requested.fix);
+  });
+
   it("should block a requested desktop build on a failing overlay", () => {
     const overlay = {
       detail: "no X11 compositor, so the desktop UI overlay cannot start",
