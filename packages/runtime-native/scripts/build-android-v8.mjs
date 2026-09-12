@@ -23,7 +23,7 @@ import {
 // Keep the existing V8 API/ABI and reviewed upstream patches, not an unrelated engine upgrade.
 // The source commit also pins Chromium's build/DEPS inputs. Increment recipe when flags change.
 export const ANDROID_V8_BUILD = Object.freeze({
-	recipe: 5,
+	recipe: 6,
 	version: "11.0.226.16",
 	inspectorFix: "182d9c05e78b1ddb1cb8242cd3628a7855a0336f",
 	source: "7999223ca1644726339aae43d9435c721c8a4bb0",
@@ -417,6 +417,16 @@ export function provisionAndroidV8(
 				'v8_loadable_module("libv8android") {\n',
 				'v8_loadable_module("libv8android") {\n' +
 					'  ldflags = [ "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384" ]\n',
+			);
+			// V8 11 leaves `kMinimumOSPageSize` at 4 KB for Android, so `v8_flags` — statically
+			// aligned to that constant — is only 4 KB aligned. On a 16 KB kernel the `mprotect` in
+			// `OS::SetDataReadOnly` then fails with EINVAL and `V8::Initialize` aborts before the
+			// first frame; a real APK with a 16 KB LOAD-aligned library reproduced exactly that.
+			// Upstream later added Android to this condition, so apply the same clause here.
+			replaceOnce(
+				join(source, "src/base/build_config.h"),
+				"#if (defined(V8_OS_MACOS) && defined(V8_HOST_ARCH_ARM64)) || \\\n    defined(V8_HOST_ARCH_LOONG64) || defined(V8_HOST_ARCH_MIPS64)",
+				"#if (defined(V8_OS_ANDROID) && \\\n     (defined(V8_HOST_ARCH_ARM64) || defined(V8_HOST_ARCH_X64))) || \\\n    (defined(V8_OS_MACOS) && defined(V8_HOST_ARCH_ARM64)) || \\\n    defined(V8_HOST_ARCH_LOONG64) || defined(V8_HOST_ARCH_MIPS64)",
 			);
 			// V8 11 relied on a transitive standard-library include removed by modern host headers.
 			replaceOnce(
