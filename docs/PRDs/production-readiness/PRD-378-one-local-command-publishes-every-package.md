@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-377 — One local command publishes every package and its native runtime
+# PRD-378 — One local command publishes every package and its native runtime
 
 **Status:** NOT STARTED
 **Complexity:** 7 → HIGH (+2 six-to-ten files, +2 new module, +2 crosses the npm/native release boundary, +1 GitHub release API).
