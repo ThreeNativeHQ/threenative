@@ -149,4 +149,4 @@ Consumer-scoped: each one is false for a build a user could not tell apart from 
 
 ## Prior work retained
 
-None; this PRD is new. The gap it closes was found on 2026-09-11 while narrowing PRD-262's published cohort: Windows was added to the published set on the reasoning that SmartScreen warns rather than refuses, which makes shipping it safe — but nothing had ever installed and built from it. See [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) and [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md).
+None; this PRD is new. The gap it closes was found on 2026-09-11 while narrowing PRD-262's published cohort: Windows was added to the published set on the reasoning that SmartScreen warns rather than refuses, which makes shipping it safe — but nothing had ever installed and built from it. See [PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) and [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md).
