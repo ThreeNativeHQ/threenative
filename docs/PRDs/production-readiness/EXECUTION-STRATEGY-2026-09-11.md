@@ -8,7 +8,7 @@ folder get closed, in what order, on how many lanes; it changes no scope and tic
 
 | PRD | Phase boxes | Acceptance | Label | Δ today | Where the work is |
 | --- | --- | --- | --- | --- | --- |
-| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | **10/12** | **5/5** | `prd:75%` | **0 → 10** | PR #198 |
+| [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | **10/12** | **5/5** | `prd:75%` | **0 → 10** | PR #198 |
 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | **20/28** | **5/9** | `prd:50%` | 8 → 20 | PR #193 |
 | [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | 20/54 | 4/4 | `prd:25%` | — | main |
 | [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | **10/18** | 0/5 | `prd:50%` | **0 → 10** | PR #197 |
@@ -43,7 +43,7 @@ a regression `main`'s own test rejects), **#193 rebuilt on `main` and pushed**. 
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | 0/3 | 0/18 | 0/5 | `prd:0%` |
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | 0/3 | 0/18 | 0/5 | `prd:0%` |
 | [PRD-373](PRD-373-selective-ci-and-develop-promotion.md) | 0/5 | 0/20 | n/a | `prd:0%` |
-| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | 0/2 | 0/12 | 0/5 | `prd:0%` |
+| [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | 0/2 | 0/12 | 0/5 | `prd:0%` |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | 0/2 | 0/12 | 0/5 | `prd:0%` |
 
 
@@ -68,7 +68,7 @@ Lanes, each independent enough for its own session:
 
 | Lane | PRD | Worktree | State at handoff |
 | --- | --- | --- | --- |
-| 1 | [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | `.claude/worktrees/prd374-doctor` (already cut, branch `prd374/doctor-target-prerequisites`) | Defect confirmed: `androidTargetCheck` in `packages/create-threenative/src/doctor.ts:1160` returns `available — …` with status `warn` when the JDK is unusable. No code written yet. |
+| 1 | [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | `.claude/worktrees/prd374-doctor` (already cut, branch `prd374/doctor-target-prerequisites`) | Defect confirmed: `androidTargetCheck` in `packages/create-threenative/src/doctor.ts:1160` returns `available — …` with status `warn` when the JDK is unusable. No code written yet. |
 | 2 | [PRD-212](PRD-212-published-install-builds-android.md) | cut a new one | Not started. Owns `package-android.mjs` after lane 4 hands off. |
 | 3 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | use the open PRs' worktrees | `prd:50%`; PRs #193 and #194 carry the rest. Blocked on decision 2 for its user-verification boxes. |
 | 4 | [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | cut a new one | Not started. Phase 3 runs on the local 16 KB AVD. Hands `package-android.mjs` to lane 2 when done. |
