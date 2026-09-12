@@ -71,6 +71,14 @@ if [ -f app/build/generated/threenative/assets/game/level.bin ]; then
   jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
     -C app/build/generated/threenative/assets game/level.bin
 fi
+# A real Android app ships native libraries for both 64-bit ABIs, and PRD-221's census refuses to
+# credit an artifact that contains none. These stand in for them so the gate has something to read.
+mkdir -p app/build/fake-libs/lib/arm64-v8a app/build/fake-libs/lib/x86_64
+printf 'runtime' > app/build/fake-libs/lib/arm64-v8a/libmystral-runtime.so
+printf 'runtime' > app/build/fake-libs/lib/x86_64/libmystral-runtime.so
+jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
+  -C app/build/fake-libs lib/arm64-v8a/libmystral-runtime.so \\
+  -C app/build/fake-libs lib/x86_64/libmystral-runtime.so
 `,
   );
   chmodSync(wrapper, 0o755);
@@ -459,6 +467,12 @@ test('real Android packaging emits configured and no-config artifacts through th
     runtimeRoot: runtime,
     ensureGradleWrapper: async () => undefined,
     prepareAndroidPrebuilts: async () => undefined,
+    // The fixture's stand-in libraries are not compiled objects, so the ELF reader is injected.
+    // Everything else in the 16 KB census — the archive parse, the per-ABI roll call — runs real.
+    artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    // The fixture archive is assembled by hand at the offsets the census reads, so the real
+    // zipalign/apksigner pass has nothing to do here. It has its own tests below.
+    alignArchive: false,
   };
   const config = {
     app: {
@@ -555,6 +569,10 @@ test('THREENATIVE_RUNTIME_SOURCE points the packager at a runtime source checkou
     const output = await packageAndroid(bundle, undefined, undefined, undefined, undefined, {
       ensureGradleWrapper: async () => undefined,
       prepareAndroidPrebuilts: async () => undefined,
+      artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    // The fixture archive is assembled by hand at the offsets the census reads, so the real
+    // zipalign/apksigner pass has nothing to do here. It has its own tests below.
+    alignArchive: false,
     });
     assert.ok(output.startsWith(runtime), `expected an artifact under ${runtime}, got ${output}`);
   } finally {
@@ -585,5 +603,298 @@ test('a failed prebuilt download names the cause and the environment variable th
       assert.match(error.message, /THREENATIVE_RUNTIME_SOURCE=/u);
       return true;
     },
+  );
+});
+
+/**
+ * PRD-221 phase 2 — the final-artifact 16 KB census.
+ *
+ * These build archives byte by byte rather than shelling out to `jar` or `zip`, because the number
+ * under test is the *data offset of each entry inside the archive*, and no packaging tool lets a
+ * caller choose it. The ELF reader is injected; producing genuinely 16 KB-aligned arm64 objects
+ * would make the unit lane depend on an NDK toolchain it does not have.
+ */
+import { crc32, deflateRawSync } from 'node:zlib';
+
+import {
+  ANDROID_16KB_ALIGNMENT,
+  androidArtifactLibraryCensus,
+  assertAndroidArtifact16KbAlignment,
+  readZipEntries,
+} from '../scripts/check-android-16kb-alignment.mjs';
+
+const ALIGNED_LOAD = [
+  '    LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**14',
+  '    LOAD off 0x4000 vaddr 0x4000 paddr 0x4000 align 2**14',
+].join('\n');
+const FOUR_KB_LOAD = [
+  '    LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**12',
+  '    LOAD off 0x1000 vaddr 0x1000 paddr 0x1000 align 2**12',
+].join('\n');
+
+/** Minimal ZIP writer with explicit control over storage and entry alignment. */
+function writeArchive(path, entries) {
+  const locals = [];
+  const directory = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8');
+    const raw = Buffer.from(entry.data);
+    const stored = entry.stored === true;
+    const payload = stored ? raw : deflateRawSync(raw);
+    let extra = 0;
+    if (stored && entry.align) {
+      const start = offset + 30 + name.length;
+      extra = (entry.align - (start % entry.align)) % entry.align;
+    }
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(stored ? 0 : 8, 8);
+    header.writeUInt32LE(crc32(raw), 14);
+    header.writeUInt32LE(payload.length, 18);
+    header.writeUInt32LE(raw.length, 22);
+    header.writeUInt16LE(name.length, 26);
+    header.writeUInt16LE(extra, 28);
+    const block = Buffer.concat([header, name, Buffer.alloc(extra), payload]);
+    locals.push(block);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(stored ? 0 : 8, 10);
+    central.writeUInt32LE(crc32(raw), 16);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(raw.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    directory.push(Buffer.concat([central, name]));
+    offset += block.length;
+  }
+  const centralBytes = Buffer.concat(directory);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralBytes.length, 12);
+  end.writeUInt32LE(offset, 16);
+  writeFileSync(path, Buffer.concat([...locals, centralBytes, end]));
+  return path;
+}
+
+function archiveRoot() {
+  const root = makeTempDirSync('threenative-android-census-');
+  roots.push(root);
+  return root;
+}
+
+/** A complete, compliant artifact: both ABIs, stored and 16 KB aligned inside the archive. */
+function compliantEntries() {
+  return [
+    { data: 'manifest', name: 'AndroidManifest.xml' },
+    { align: ANDROID_16KB_ALIGNMENT, data: 'arm64-runtime', name: 'lib/arm64-v8a/libmystral-runtime.so', stored: true },
+    { align: ANDROID_16KB_ALIGNMENT, data: 'arm64-v8', name: 'lib/arm64-v8a/libv8android.so', stored: true },
+    { align: ANDROID_16KB_ALIGNMENT, data: 'x86-runtime', name: 'lib/x86_64/libmystral-runtime.so', stored: true },
+    { align: ANDROID_16KB_ALIGNMENT, data: 'x86-v8', name: 'lib/x86_64/libv8android.so', stored: true },
+  ];
+}
+
+const alignedOptions = { runObjdump: () => ALIGNED_LOAD, zipalign: false };
+
+test('the artifact census inspects every packaged library on every ABI, not a build directory', () => {
+  const apk = writeArchive(join(archiveRoot(), 'app.apk'), compliantEntries());
+  const inspected = [];
+  const census = assertAndroidArtifact16KbAlignment(apk, {
+    runObjdump: (path) => {
+      inspected.push(path);
+      return ALIGNED_LOAD;
+    },
+    zipalign: false,
+  });
+  // Four libraries, four objdump invocations: nothing was credited without being read.
+  assert.equal(inspected.length, 4);
+  assert.deepEqual(
+    census.libraries.map((library) => library.entry).sort(),
+    [
+      'lib/arm64-v8a/libmystral-runtime.so',
+      'lib/arm64-v8a/libv8android.so',
+      'lib/x86_64/libmystral-runtime.so',
+      'lib/x86_64/libv8android.so',
+    ],
+  );
+  for (const library of census.libraries) {
+    assert.equal(library.compression, 'stored');
+    assert.equal(library.dataOffset % ANDROID_16KB_ALIGNMENT, 0);
+  }
+});
+
+test('the artifact census rejects a 4 KB library packaged beside compliant ones', () => {
+  const apk = writeArchive(join(archiveRoot(), 'app.apk'), compliantEntries());
+  assert.throws(
+    () =>
+      assertAndroidArtifact16KbAlignment(apk, {
+        // One transitive dependency out of four, which is exactly how this ships unnoticed.
+        runObjdump: (path) => (path.includes('libv8android') ? FOUR_KB_LOAD : ALIGNED_LOAD),
+        zipalign: false,
+      }),
+    (error) => error.code === 'ANDROID_16KB_MISALIGNED' && /0x1000/u.test(error.message),
+  );
+});
+
+test('the artifact census rejects an uncompressed library stored at a 4 KB archive offset', () => {
+  // The ELF is perfect here. Only the archive offset is wrong, and a 16 KB device still cannot
+  // map it — which is why an ELF-only check is not final-app proof.
+  const entries = compliantEntries().map((entry) =>
+    entry.name === 'lib/x86_64/libv8android.so' ? { ...entry, align: 4096 } : entry,
+  );
+  const apk = writeArchive(join(archiveRoot(), 'app.apk'), entries);
+  const { entries: written } = readZipEntries(apk);
+  const offending = written.find((entry) => entry.name === 'lib/x86_64/libv8android.so');
+  assert.notEqual(offending.dataOffset % ANDROID_16KB_ALIGNMENT, 0);
+  assert.throws(
+    () => assertAndroidArtifact16KbAlignment(apk, alignedOptions),
+    (error) =>
+      error.code === 'ANDROID_16KB_MISALIGNED' &&
+      /uncompressed library stored at archive offset/u.test(error.message),
+  );
+});
+
+test('the artifact census rejects an omitted ABI and an artifact with no libraries at all', () => {
+  const omitted = writeArchive(
+    join(archiveRoot(), 'omitted.apk'),
+    compliantEntries().filter((entry) => !entry.name.startsWith('lib/x86_64/')),
+  );
+  assert.throws(
+    () => assertAndroidArtifact16KbAlignment(omitted, alignedOptions),
+    /no native libraries for x86_64/u,
+  );
+
+  const empty = writeArchive(join(archiveRoot(), 'empty.apk'), [{ data: 'manifest', name: 'AndroidManifest.xml' }]);
+  assert.throws(
+    () => assertAndroidArtifact16KbAlignment(empty, alignedOptions),
+    /no native libraries for arm64-v8a, x86_64/u,
+  );
+});
+
+test('the artifact census refuses an undeclared ABI rather than ignoring it', () => {
+  const apk = writeArchive(join(archiveRoot(), 'app.apk'), [
+    ...compliantEntries(),
+    { align: ANDROID_16KB_ALIGNMENT, data: 'armv7', name: 'lib/armeabi-v7a/libv8android.so', stored: true },
+  ]);
+  assert.throws(
+    () => assertAndroidArtifact16KbAlignment(apk, alignedOptions),
+    /undeclared ABIs.*armeabi-v7a/u,
+  );
+});
+
+test('the census is a function of the census input, not of an empty list silently passing', () => {
+  assert.throws(
+    () => androidArtifactLibraryCensus([], { artifactPath: 'app.apk' }),
+    /no native libraries for arm64-v8a, x86_64/u,
+  );
+  assert.throws(
+    () => assertAndroidArtifact16KbAlignment(join(archiveRoot(), 'absent.apk'), alignedOptions),
+    /cannot read/u,
+  );
+});
+
+test('the packager runs the census on the artifact it produced and refuses a misaligned one', async () => {
+  const root = archiveRoot();
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const apkPath = join(runtime, 'android/app/build/outputs/apk/debug/app-debug.apk');
+  const build = (entries) => ({
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    runtimeRoot: runtime,
+    spawnSync: () => {
+      mkdirSync(dirname(apkPath), { recursive: true });
+      writeArchive(apkPath, entries);
+      return { status: 0, stdout: '' };
+    },
+  });
+
+  // No injected alignment options at all: the packager's own default gate has to be the real one.
+  // A stored library at a 4 KB offset needs no objdump to reject, so this exercises the shipped
+  // path end to end on any host.
+  await assert.rejects(
+    packageAndroid(bundle, join(root, 'bad.apk'), undefined, undefined, undefined, {
+      ...build(compliantEntries().map((entry) =>
+        entry.name === 'lib/arm64-v8a/libv8android.so' ? { ...entry, align: 4096 } : entry,
+      )),
+      alignArchive: false,
+    }),
+    (error) => error.code === 'ANDROID_16KB_MISALIGNED',
+  );
+
+  const output = await packageAndroid(bundle, join(root, 'good.apk'), undefined, undefined, undefined, {
+    ...build(compliantEntries()),
+    alignArchive: false,
+    artifact16Kb: alignedOptions,
+  });
+  assert.equal(output, join(root, 'good.apk'));
+});
+
+test('the packager aligns the finished APK to 16 KB before censusing it, and fails closed', async () => {
+  const root = makeTempDirSync('threenative-android-align-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const runtime = createFakeAndroidRuntime();
+  const apkPath = join(runtime, 'android/app/build/outputs/apk/debug/app-debug.apk');
+  const build = (entries) => ({
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    spawnSync: () => {
+      mkdirSync(dirname(apkPath), { recursive: true });
+      writeArchive(apkPath, entries);
+      return { status: 0, stdout: '' };
+    },
+  });
+
+  // AGP 8.2.2 stores shared libraries uncompressed on 4 KB boundaries, so alignment is the
+  // packager's job, not the compiler's. The aligner is a real shell-out; here it is injected, and
+  // what the test pins is that it runs, that it runs *before* the census, and that its arguments
+  // ask for 16 KB.
+  const calls = [];
+  const spawnAlign = (command, args) => {
+    calls.push({ args, command });
+    if (String(command).endsWith('zipalign'))
+      writeArchive(`${String(args[args.length - 1])}`, compliantEntries());
+    return { status: 0, stdout: '' };
+  };
+  const keystore = join(root, 'debug.keystore');
+  writeFileSync(keystore, 'not a real keystore, only its presence is checked here');
+  await packageAndroid(bundle, apkPath, undefined, undefined, undefined, {
+    ...build(
+      compliantEntries().map((entry) =>
+        entry.name === 'lib/arm64-v8a/libv8android.so' ? { ...entry, align: 4096 } : entry,
+      ),
+    ),
+    align: { keystore, spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+    artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+  });
+  assert.deepEqual(
+    calls.map(({ command }) => command),
+    ['/fake/build-tools/zipalign', '/fake/build-tools/apksigner'],
+  );
+  assert.deepEqual(calls[0]?.args.slice(0, 4), ['-P', '16', '-f', '4']);
+  // The census passed on an archive Gradle wrote misaligned, which is only possible because the
+  // aligner replaced it first.
+
+  // Fail closed: a non-zero zipalign is an error, never a skip that ships a 4 KB archive.
+  await assert.rejects(
+    packageAndroid(bundle, join(root, 'refused.apk'), undefined, undefined, undefined, {
+      ...build(compliantEntries()),
+      align: {
+        keystore,
+        spawnSync: () => ({ status: 1, stdout: '' }),
+        zipalign: '/fake/build-tools/zipalign',
+      },
+      artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    }),
+    /zipalign exited with code 1/u,
   );
 });

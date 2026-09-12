@@ -1,6 +1,6 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -346,12 +346,28 @@ test('a clean-room install builds for Android from a fixture manifest, with no e
       spawnSync: (command, args) => {
         gradleInvocations.push({ args, command });
         mkdirSync(join(installed, 'android/app/build/outputs/apk/debug'), { recursive: true });
-        writeFileSync(
+        // PRD-221: the packager censuses the finished APK for 16 KB compliance, so a stranger's
+        // artifact has to be a real archive carrying a library per ABI. The masked Gradle stands
+        // in for the build, not for the gate.
+        const staged = join(installed, 'android/app/build/clean-room-libs');
+        for (const abi of ['arm64-v8a', 'x86_64']) {
+          mkdirSync(join(staged, 'lib', abi), { recursive: true });
+          writeFileSync(join(staged, 'lib', abi, 'libmystral-runtime.so'), 'clean-room apk');
+        }
+        execFileSync('jar', [
+          '--create',
+          '--file',
           join(installed, 'android/app/build/outputs/apk/debug/app-debug.apk'),
-          'clean-room apk',
-        );
+          '-C', staged, 'lib/arm64-v8a/libmystral-runtime.so',
+          '-C', staged, 'lib/x86_64/libmystral-runtime.so',
+        ]);
         return { status: 0, stdout: '' };
       },
+      artifact16Kb: { runObjdump: () => 'LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**14', zipalign: false },
+      // The fixture Gradle above builds a real-but-unrelated archive; the aligner would run the
+      // real zipalign/apksigner against it. Alignment is exercised in
+      // android-packaging.integration.test.mjs, so opt out here.
+      alignArchive: false,
     });
 
     // Every prebuilt the fixture manifest named landed where the Gradle build expects it.

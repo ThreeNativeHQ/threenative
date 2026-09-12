@@ -128,12 +128,12 @@ Report what ran, per platform, and never write mobile-ready while a row below is
   one does not carry to the other; say which you ran.
 - **iOS on physical hardware** — open. arm64 with real Metal, signing, touch input, thermal and
   battery still need a phone.
-- **Android 16 KB pages** — open, and blocked upstream rather than here. Android 15+ can run with
-  16 KB memory pages, where a 4 KB-aligned shared library cannot be loaded at all; the system warns
-  on 4 KB devices with a modal dialog over the game that names each offending library. Everything
-  this repository controls is aligned — `libmystral-runtime.so` by a link option, `libSDL3.so` by
-  the 3.2.30 pin. `libv8android.so` is not: it is a prebuilt whose newest upstream release predates
-  the requirement, so the V8 default cannot be 16 KB-clean until that changes or V8 is built here.
+- **Android 16 KB pages** — green on the local 16 KB AVD as of 2026-09-11. Android 15+ can run with
+  16 KB memory pages, where a 4 KB-aligned shared library cannot be loaded at all. Everything this
+  repository controls is aligned — `libmystral-runtime.so` by a link option, `libSDL3.so` by the
+  3.2.30 pin, and `libv8android.so` by the `kMinimumOSPageSize` source patch in
+  `scripts/build-android-v8.mjs` (recipe 6), which `download-deps.mjs --android` provisions. A
+  recipe-6 payload boots V8 11.0.226.16 and presents frames on `threenative_ps16k`.
   `-PthreenativeJsEngine=quickjs` ships no V8 at all.
 
 ## Device lanes, before you record one as unavailable

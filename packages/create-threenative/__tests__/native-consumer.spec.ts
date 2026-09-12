@@ -130,6 +130,7 @@ async function probe(
       "--eval",
       `
     import * as runtime from ${JSON.stringify(pathToFileURL(path.join(packageDirectory, "scripts", script)).href)};
+    import { execFileSync } from 'node:child_process';
     import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
     import { join, dirname } from 'node:path';
     ${body}
@@ -364,9 +365,22 @@ async function androidProbe(root: string, allowSourceBuild: boolean | string) {
       runtimeRoot: root, allowSourceBuild: ${JSON.stringify(allowSourceBuild)},
       ensureGradleWrapper: async () => {},
       prepareAndroidPrebuilts: async () => { downloads += 1; },
+      // PRD-221: the packager censuses the finished APK, so the fixture has to be a real archive
+      // carrying a library per ABI. Only the ELF reader is stubbed; these bytes are not objects.
+      artifact16Kb: { runObjdump: () => 'LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**14', zipalign: false },
+      // The fixture builds a stand-in archive; real zipalign/apksigner have nothing to do here.
+      alignArchive: false,
       spawnSync: () => {
         const apk = join(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
-        mkdirSync(dirname(apk), { recursive: true }); writeFileSync(apk, 'fixture');
+        mkdirSync(dirname(apk), { recursive: true });
+        const staged = join(root, 'android/app/build/fixture-libs');
+        for (const abi of ['arm64-v8a', 'x86_64']) {
+          mkdirSync(join(staged, 'lib', abi), { recursive: true });
+          writeFileSync(join(staged, 'lib', abi, 'libmystral-runtime.so'), 'fixture');
+        }
+        execFileSync('jar', ['--create', '--file', apk,
+          '-C', staged, 'lib/arm64-v8a/libmystral-runtime.so',
+          '-C', staged, 'lib/x86_64/libmystral-runtime.so']);
         return { status: 0 };
       },
     });
