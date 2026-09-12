@@ -479,7 +479,10 @@ test('Android workflows install and select the pinned V8 NDK', () => {
 
 test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibility backport', () => {
   assert.equal(ANDROID_V8_BUILD.inspectorFix, '182d9c05e78b1ddb1cb8242cd3628a7855a0336f');
-  assert.equal(ANDROID_V8_BUILD.recipe, 5);
+  assert.equal(ANDROID_V8_BUILD.recipe, 6);
+  // The receipt records this value, so a build that stopped requesting 16 KB pages would still
+  // produce a self-consistent receipt unless the source-of-truth constant is pinned here.
+  assert.equal(ANDROID_V8_BUILD.loadAlignment, 16384);
   const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
   assert.match(script, /ANDROID_V8_BUILD\.inspectorFix/u);
   assert.match(script, /adaptAndroidV8InspectorPatch/u);
@@ -494,6 +497,17 @@ test('the Android V8 source patch overrides Chromium\'s arm64 4 KB linker defaul
   assert.ok(script.includes(
     "'    ldflags += [ \"-Wl,-z,max-page-size=16384\", \"-Wl,-z,common-page-size=16384\" ]'",
   ));
+});
+
+// Link-time alignment is not enough. `v8_flags` is statically aligned to `kMinimumOSPageSize`,
+// which V8 11 leaves at 4 KB for Android, so V8::Initialize's `mprotect` of that region fails with
+// EINVAL on a 16 KB kernel. Upstream later added Android to this condition; the source patch must
+// apply the same change or the rebuilt library still aborts.
+test('the Android V8 source patch raises kMinimumOSPageSize to 16 KB for Android', () => {
+  const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
+  assert.match(script, /join\(source, "src\/base\/build_config\.h"\)/u);
+  assert.ok(script.includes('defined(V8_OS_ANDROID) && \\'));
+  assert.ok(script.includes('(defined(V8_HOST_ARCH_ARM64) || defined(V8_HOST_ARCH_X64))'));
 });
 
 test('the source build keeps a recipe-keyed checkout so interrupted Ninja work can resume', () => {
