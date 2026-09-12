@@ -743,6 +743,30 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  it("classifies a modified rename from its zero-padded similarity score", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const lines = Array.from({ length: 12 }, (_, index) => `line ${index + 1}\n`).join("");
+      const proseHead = await commitScopeChange(
+        fixture,
+        "docs/PRDs/long.md",
+        lines,
+        "long planning prose",
+      );
+      fixture.git(["mv", "docs/PRDs/long.md", "docs/PRDs/moved.md"]);
+      await writeFile(path.join(fixture.root, "docs/PRDs/moved.md"), `${lines}changed\n`);
+      fixture.git(["add", "-A"]);
+      fixture.git(["commit", "--quiet", "-m", "rename and edit"]);
+      const renamedHead = fixture.git(["rev-parse", "HEAD"]);
+      expect(classifyScope(fixture.root, proseHead, renamedHead)).toMatchObject({
+        scope: "prose",
+        selection: "prose",
+      });
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("classifies workflow-only changes as full CI with no prose skip", async () => {
     const fixture = await scopeFixture();
     try {
