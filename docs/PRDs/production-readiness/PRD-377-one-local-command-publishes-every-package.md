@@ -129,9 +129,9 @@ The phase boxes above are the record. `docs/benchmark/SCREENSHOT-RETENTION.md` i
 
 Execution record:
 
-- Worktree `.worktrees/prd377-local-release`; branch `prd377/execute-local-release`; tip `df01fa54`.
+- Worktree `.worktrees/prd377-local-release`; branch `prd377/execute-local-release`.
 - Draft PR https://github.com/ThreeNativeHQ/threenative/pull/212 (base `develop`), fetched into this checkout as
-  `refs/remotes/origin/pr/212` (`git rev-parse origin/pr/212` = `df01fa54`).
+  `refs/remotes/origin/pr/212` by `git fetch origin refs/pull/212/head:refs/remotes/origin/pr/212`.
 - `pnpm prd:progress` = `prd:50%`.
 
 ## Acceptance criteria
