@@ -1561,6 +1561,28 @@ describe("threenative doctor --target/--mode", () => {
     ANDROID_RELEASE_SIGNING_ENV.map((name) => [name, "supplied"]),
   );
 
+  it("should treat a blank signing input as missing, not as supplied", () => {
+    // Round 7: `(environment[name] ?? "").trim().length === 0` was pinned by nothing. Every fixture
+    // set all four names or none, so `environment[name] === undefined` passed all 91 tests — and
+    // `environment` is the real `process.env` on a real run. A blank value is how a signing input
+    // most often goes missing: `export ORG_GRADLE_PROJECT_threenativeKeystore=` in a CI job or a
+    // .env file. Under that mutation doctor prints `buildable — android release` and exits 0 while
+    // Gradle cannot sign, which is verbatim what acceptance criterion 1 forbids.
+    for (const blank of ["", "   "]) {
+      const report = diagnoseProject(
+        snapshot({
+          androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.19", sdkVersion: "35.0.0" },
+          environment: Object.fromEntries(ANDROID_RELEASE_SIGNING_ENV.map((name) => [name, blank])),
+        }),
+        { mode: "release", target: "android" },
+      );
+      const requested = check(report, "requested build");
+      expect(requested.status).toBe("fail");
+      expect(requested.detail).toContain("release signing inputs are not set:");
+      for (const name of ANDROID_RELEASE_SIGNING_ENV) expect(requested.detail).toContain(name);
+    }
+  });
+
   it("should fail the requested Android release when the JDK is unsupported", () => {
     const report = diagnoseProject(
       snapshot({
