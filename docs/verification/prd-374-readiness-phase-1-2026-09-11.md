@@ -31,7 +31,7 @@ is the consumer that must read the same four; that handoff is **not yet made** �
 | `pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts` | 68 passed (7 new), exit 0 **at `9d50cb878`, which is the commit this record describes**. Measured now: **89 passed**. The growth is the five review rounds' regression tests, added in `c037860f2`, `6d3b1b4e8`, `7cc0b1890`, `6fc5e50db`, `3b33d026c`, `3513ee8ad` and `6f4b344f4`. |
 | `pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts` | 5 passed, exit 0 |
 | `pnpm typecheck` | clean, exit 0 |
-| `pnpm lint` | exit 0 (696 pre-existing warnings; one biome format error on the new test was autofixed before commit) |
+| `pnpm lint` | exit 0. **697 pre-existing warnings measured now**; the 696 this row used to carry was overtaken by the review rounds' tests, which the fifth review caught. One biome format error on the new test was autofixed before commit. |
 
 An earlier `pnpm lint` returned 254 — "Linter process terminated abnormally (possibly out of
 memory)" — under three concurrent lanes building on this machine. Re-run alone: exit 0. Recorded
