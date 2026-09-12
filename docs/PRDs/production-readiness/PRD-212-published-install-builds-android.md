@@ -75,7 +75,7 @@ sequenceDiagram
 - EDIT `packages/runtime-native/android/app/build.gradle.kts` — compile/target SDK and compatible Android toolchain.
 - EDIT `packages/create-threenative/src/doctor.ts` — derive supported Android prerequisites.
 - EDIT `packages/runtime-native/tests/android-manifest-config-changes.test.mjs` — inspect packaged target/version fields.
-- NEW `docs/verification/prd-212-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-212-readiness-phase-1-2026-09-11.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Confirm current official target-API requirements at implementation; baseline is API36 for ordinary new apps/updates as of the report. Update compileSdk/targetSdk coherently and provision their real SDK in the existing lane as a separately bounded workflow phase if needed. Doctor reads the shipped Android requirement rather than introducing a second literal. Keep minSdk/device claim explicit and test behavior changes on the chosen target.
 
@@ -111,7 +111,7 @@ pnpm exec threenative doctor --text
 - EDIT `packages/runtime-native/scripts/package-android.mjs` — choose tasks/output by validated request.
 - EDIT `packages/runtime-native/android/app/build.gradle.kts` — release artifact configuration.
 - EDIT `packages/create-threenative/__tests__/build.spec.ts` — CLI-to-artifact mode contract.
-- NEW `docs/verification/prd-212-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-212-readiness-phase-2-2026-09-11.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Introduce proposed mode/format flags into buildHelp and parsing. Pass the validated request to the existing Android packager; release APK uses assembleRelease and AAB uses bundleRelease. Choose exact expected outputs and fail on missing output. Unsigned output may be inspected during this phase, but cannot be reported as store-ready; signing closure is phase 3. No guessed path accepts app-debug.apk for a release request.
 
@@ -146,7 +146,7 @@ pnpm exec threenative build --target android --mode release --format aab
 - EDIT `packages/runtime-native/android/app/build.gradle.kts` — consumer property-backed signing config.
 - EDIT `packages/runtime-native/tests/android-packaging.integration.test.mjs` — real test-key signing and failure controls.
 - EDIT `packages/runtime-native/README.md` — game-side signing instructions and symbols.
-- NEW `docs/verification/prd-212-readiness-phase-3-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-212-readiness-phase-3-2026-09-11.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Define names for the Gradle signing properties in this phase and use standard ORG_GRADLE_PROJECT_ transport or a user-owned Gradle properties file; no password CLI arguments. Resolve keystore paths relative to the consumer project. Validate configured key/alias and never fall back to debug keys for release. Verify APK with apksigner; validate AAB and derived APKs with bundletool/jarsigner as appropriate. Invoke PRD-221 alignment checks on final artifacts and keep signing material out of output/diagnostics.
 
@@ -184,7 +184,14 @@ Local proof: runtime-native `tests/android-packaging.integration.test.mjs` +
 `tests/android-manifest-config-changes.test.mjs` 24 passed; create-threenative `__tests__` 679
 passed; `pnpm typecheck` exit 0; `pnpm budgets` exit 0.
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+**Planning revision (2026-09-08, superseded):** no implementation gate was run; every phase was
+NOT RUN. The 2026-09-11 execution later implemented phases 1–3 and wrote their records to
+`docs/verification/prd-212-readiness-phase-1-2026-09-11.md`,
+`docs/verification/prd-212-readiness-phase-2-2026-09-11.md` and
+`docs/verification/prd-212-readiness-phase-3-2026-09-11.md` (linked from each phase). Acceptance
+boxes below remain unchecked until all phase checkpoints pass; the open checkpoint is the
+independent reviewer PASS, and the public-consumer acceptance is blocked by the still-absent
+PRD-078 prebuilt Android release.
 
 ## Acceptance criteria
 

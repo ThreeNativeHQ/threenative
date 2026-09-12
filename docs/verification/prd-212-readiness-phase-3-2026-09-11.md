@@ -73,8 +73,17 @@ This is the phase-3 user-verification observation (agent-run on the emulator). I
 the independent reviewer PASS, and it used the engine source checkout rather than a published
 install because PRD-078's prebuilt Android release is still absent.
 
+## Real signed AAB (2026-09-11)
+
+The same real Gradle path with `format: aab` ran `bundleRelease` and `signReleaseBundle`:
+`BUILD SUCCESSFUL`, `ThreeNative Android AAB: .../game-release.aab (signed)`. Artifact 19,009,649
+bytes, sha256 `b00fcceec802d22960d6a6c9f2b073e0d23896eb36425962fe3902cee544f8af`; `jarsigner -verify`
+reports `jar verified.` and the bundle carries `base/manifest/AndroidManifest.xml`.
+
 ## Not run
 
 - Independent reviewer PASS — not requested this session.
-- The same proof from a published registry install with no engine checkout (blocked on PRD-078).
+- The public-registry consumer install with no engine checkout (blocked by the absent PRD-078
+  prebuilt Android release); the proofs above came from the engine source checkout.
+
 
