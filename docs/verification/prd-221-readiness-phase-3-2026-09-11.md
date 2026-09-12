@@ -155,6 +155,38 @@ one. V8 initializes and the game presents frames on a 16 KB environment; the cra
 interaction and a background/resume cycle were not separately exercised, and the in-repo Android
 playtest target was not run here; the process stayed alive past first playable.
 
+## Fresh run — the default starter itself, on 16 KB
+
+The gap above (the default starter was never launched on the environment) was closed on the same
+day by rebuilding the starter with this branch's packager against the recipe-6 V8 and running it
+on `threenative_ps16k`. Candidate `prd221-16kb-starter.apk`, sha256
+`6acd46affa374b022a88a506c9e173178c58b1b4abd45b740983a16376f14aab`; installed over the stale
+pre-recipe-6 build, whose launch had died in the tombstone exactly as the V8 finding predicts.
+
+```
+$ adb shell getconf PAGE_SIZE
+16384
+$ adb logcat --pid=<starter>  |  [V8] Initializing V8 JavaScript engine...
+[V8] Using external startup snapshot (45421 bytes)
+[V8] V8 initialized successfully
+[V8] Version: 11.0.226.16
+TN_COLD_START:{"segment":"first_playable","atMs":…}
+TN_SURFACE_FRAME:{"view":true,"present":64}     (250 frames counted across the session)
+```
+
+A screenshot at first playable is 2400×1080 with 1504 distinct colours. The HUD and menu render
+(`ui.renderer: "web"`); a touch on the `pause` button was owned by the UI overlay
+(`TN_UI_HITTEST:{"x":1490,"y":963,"w":2400,"h":1080,"regions":2,"owns":true}`), confirming the
+native input host routes the gesture to the WebView rather than the game surface. The button's
+visible label did **not** flip to `resume`, so the intent's effect was not observed — recorded as
+a limitation, not asserted as working.
+
+Background/resume was exercised: `KEYCODE_HOME` produced `SDL onPause()`,
+`TN_LIFECYCLE:{"event":"observed","mode":"pause","applied":false}`, `surfaceDestroyed()` and an
+audio suspend; `am start` returned the surface and frames continued (present 120 → 125). The
+process stayed alive throughout with no linker failure and no `V8_Fatal`. HUD interaction and the
+default starter are now both exercised; the one unobserved detail is the pause label change.
+
 ## Independent review
 
-NOT RUN.
+PENDING.

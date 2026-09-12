@@ -4,13 +4,15 @@ prd_contract: v1
 
 # PRD-221 — The default Android V8 distribution is 16 KB compatible
 
-**Status:** PARTIAL — **phase 1's implementation is already on `main`**, merged as PR #167 on
-2026-09-11, and the PRD had recorded none of it: it read 0 of 23 boxes while the provisioner, the
-Gradle staging and the alignment test were all landed. Phase 2's packager census is on this branch, and
-phase 3's page-size gate with it: **`getconf PAGE_SIZE` 16384 observed on the local
-`threenative_ps16k` AVD**, with the lane now failing closed when that observation is missing or
-4096. Phases 1 and 2 still owe their red/green controls and evidence records, and phase 3 still
-owes the default starter actually launched on that environment. Prior toolchain blocker retained as history and must be retried. Revised 2026-09-08; planning only. **A 16 KB environment is available locally as of 2026-09-11**: `system-images;android-36;google_apis_ps16k;x86_64` boots headless on KVM and reports `getconf PAGE_SIZE` 16384, so phase 3's observation does not require a flashed physical device. Prove it there before editing the hosted workflow.
+**Status:** PARTIAL — all three phases are implemented and locally verified; **only the three
+independent-reviewer boxes remain open**. Phase 1's implementation landed on `main` as PR #167
+(2026-09-11) and its red/green control and user verification are now recorded. Phase 2's packager
+census rejects a real misaligned APK and passes the freshly rebuilt starter. Phase 3's
+`getconf PAGE_SIZE` **16384** is observed on the local `threenative_ps16k` AVD, the default starter
+boots V8 11.0.226.16 there and presents frames, and a background/resume cycle is observed. Prior
+toolchain blocker retried and resolved (recipe 6). **A 16 KB environment is available locally as of
+2026-09-11**: `system-images;android-36;google_apis_ps16k;x86_64` boots headless on KVM and reports
+`getconf PAGE_SIZE` 16384, so phase 3's observation does not require a flashed physical device.
 **Complexity:** 8 → HIGH (+3 files, +2 native dependency integration, +2 multi-ABI release coordination, +1 upstream integration).
 **Problem:** The default V8 shared library has documented 4 KB alignment, so successful execution on ordinary devices does not establish Android 16 KB compatibility.
 
@@ -71,12 +73,17 @@ sequenceDiagram
 
 - [x] Callers wired and building: `packages/runtime-native/scripts/download-deps.mjs`, `packages/runtime-native/android/app/build.gradle.kts`, `packages/runtime-native/tests/android-16kb-alignment.test.mjs` — **PR #167 merged to `main` 2026-09-11** (`48276b273`). `download-deps.mjs:31` imports `assertAndroid16KbAlignment` and calls it at `:1019` on every built `.so`; `build-android-v8.mjs:147` asserts it on the provisioned V8; `build.gradle.kts:35` records the 3.2.30 bump made for 16 KB alignment. Verified on `main`, not assumed.
 - [x] Required test green: `packages/runtime-native/tests/android-16kb-alignment.test.mjs` — 34 passed, run locally 2026-09-11 against `main`.
-- [ ] Observed red recorded, then restored green
-      NOT RUN by this session. The control the phase names — feed the historical misaligned binary to the provisioned-artifact check — has not been re-executed here, so this stays open rather than being ticked on the merged PR's word.
-- [ ] User verification performed on the named platform
-      NOT RUN. Needs a default-V8 native Android host built and a real-game candidate booted, with the log naming V8 and its ABI rather than silently choosing QuickJS.
-- [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-1-<date>.md`
-      The existing `prd-221-readiness-phase-1-2026-09-10.md` still reads **INCOMPLETE — implementation preparation, not Android 16 KB qualification**, and predates the merge. It needs rewriting against what actually landed.
+- [x] Observed red recorded, then restored green — the historical 4 KB payload still in the
+      primary checkout (`arm64` sha256 `eddea92d4cea2ac34e373629327c6293981444fdaf93f8b16986a17effd33124`)
+      is rejected by `assertAndroid16KbAlignment` as `ANDROID_16KB_MISALIGNED` with LOAD `0x1000`;
+      the recipe-6 replacement (sha256 `aa3b488c35ddb346097c3b058526cd7e8d6ba5321e2ea46afc7349fa9af3f221`)
+      passes with LOAD `0x4000`. Real binaries, not fixtures.
+- [x] User verification performed on the named platform — a default-V8 starter (`prd221-16kb-starter.apk`,
+      sha256 `6acd46affa374b022a88a506c9e173178c58b1b4abd45b740983a16376f14aab`) booted on
+      `threenative_ps16k` (`getconf PAGE_SIZE` 16384) and logged `[V8] V8 initialized successfully`,
+      `Version: 11.0.226.16`, then presented frames. V8, not QuickJS.
+- [x] Evidence record written: `docs/verification/prd-221-readiness-phase-1-2026-09-11.md` — supersedes the
+      INCOMPLETE `…-2026-09-10.md` record.
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -121,7 +128,9 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 - [x] User verification performed on the named platform — a real starter APK, built and installed
       on `threenative_ps16k`: `adb install -r` → `Success`, and the app's libraries map. What then
       fails is V8's own initialisation, which is phase 3's finding, not this phase's.
-- [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-2-<date>.md`
+- [x] Evidence record written: `docs/verification/prd-221-readiness-phase-2-2026-09-11.md` — the real red
+      (stale unaligned APK refused at `lib/arm64-v8a/libSDL3.so` offset `0x11d000`) and the fresh green
+      (rebuilt starter, all 8 libraries 16 KB clean, `zipalign -c -P 16` corroboration).
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -209,13 +218,20 @@ No implementation gate was run by this planning revision. Every new phase is **N
 
 ## Acceptance criteria
 
-- [ ] Both shipped 64-bit ABIs use reproducible aligned V8 inputs with matching snapshot/STL/engine configuration.
-- [ ] Every final packaged shared library and relevant APK archive alignment is checked; omission/corruption controls fail.
+- [x] Both shipped 64-bit ABIs use reproducible aligned V8 inputs with matching snapshot/STL/engine configuration.
+      Recipe-6 receipt (`third_party/v8-android/build-receipt.json`) binds source `7999223c…`, NDK `28.2.13676358`,
+      recipe `6`, `loadAlignment` 16384, both ABI `libv8android.so`/`libc++_shared.so` and per-ABI snapshots.
+- [x] Every final packaged shared library and relevant APK archive alignment is checked; omission/corruption controls fail.
+      `assertAndroidArtifact16KbAlignment` censuses the shipped APK's stored libraries by ABI and rejects a misaligned
+      or empty set; phase 2 records the real red and green.
 - [x] A default-V8 starter executes gameplay on an observed 16384-byte Android environment. V8
       11.0.226.16 initializes and a real default-V8 game presents frames on `threenative_ps16k`
       after the `kMinimumOSPageSize` build fix (recipe 6); see phase 3.
-- [ ] No switch to QuickJS, dismissed warning dialog or unchanged 4 KB execution substitutes for compatibility.
-- [ ] Prior upstream/toolchain blocker is retried; unresolved prerequisites keep this PRD incomplete.
+- [x] No switch to QuickJS, dismissed warning dialog or unchanged 4 KB execution substitutes for compatibility.
+      The device log names `[V8] Version: 11.0.226.16`; the 4 KB execution was replaced by the recipe-6 build,
+      and no warning was dismissed to reach the run.
+- [x] Prior upstream/toolchain blocker is retried; unresolved prerequisites keep this PRD incomplete.
+      The V8 source/toolchain retry succeeded: recipe 6 built both ABIs and the payload ran.
 
 ## Prior work retained
 
