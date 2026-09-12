@@ -993,6 +993,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const orientationIndex = process.argv.indexOf('--orientation');
   const configIndex = process.argv.indexOf('--config');
   const uiIndex = process.argv.indexOf('--ui');
+  const projectRootIndex = process.argv.indexOf('--project-root');
   const modeIndex = process.argv.indexOf('--mode');
   const formatIndex = process.argv.indexOf('--format');
   const allowSourceBuild = process.argv.includes('--allow-source-build');
@@ -1002,7 +1003,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.argv[bundleIndex + 1].startsWith('--')
   ) {
     console.error(
-      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE] [--mode debug|release] [--format apk|aab] [--allow-source-build]',
+      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE] [--mode debug|release] [--format apk|aab] [--project-root DIR] [--allow-source-build]',
     );
     process.exitCode = 1;
   } else if (
@@ -1045,6 +1046,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
           ...(uiIndex === -1 ? {} : { ui: resolve(process.argv[uiIndex + 1]) }),
           ...(modeIndex === -1 ? {} : { mode: process.argv[modeIndex + 1] }),
           ...(formatIndex === -1 ? {} : { format: process.argv[formatIndex + 1] }),
+          // The consumer project root: a relative keystore path in the environment must resolve
+          // against the game, not the engine's Android project the packager runs inside.
+          ...(projectRootIndex === -1
+            ? {}
+            : { projectRoot: resolve(process.argv[projectRootIndex + 1]) }),
           // Maintainer route for source-checkout builds: the guard requires an
           // explicit opt-in, and this flag is its CLI spelling.
           ...(allowSourceBuild ? { allowSourceBuild: true } : {}),
