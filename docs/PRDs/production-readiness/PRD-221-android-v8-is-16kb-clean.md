@@ -180,6 +180,14 @@ pnpm build:android
       cycle was reachable; the process dies in `SDL_main`. This box stays open, and the PRD is not
       done: `A default-V8 starter executes gameplay on an observed 16384-byte Android environment`
       is currently **false on this machine**.
+
+      A second subject was tried later the same day: `../sandbox/fps-framework`
+      (`com.threenative.bayview`), built against this branch's runtime source and installed on the
+      same AVD. Rebuilding its APK against the branch's **16 KB LOAD-aligned** V8 (receipt
+      `loadAlignment: 16384`; `readelf` LOAD align `0x4000`) produced the **identical**
+      `SetDataReadOnly` abort — so the failure survives link-time alignment, and the V8 build itself
+      must target 16 KB pages. That game's native Linux build ran 900 frames, confirming the failure
+      is page-size-specific rather than a game break. Details in the phase-3 record.
 - [x] Evidence record written: `docs/verification/prd-221-readiness-phase-3-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
 

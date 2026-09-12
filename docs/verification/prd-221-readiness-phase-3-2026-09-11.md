@@ -92,6 +92,41 @@ worktree does not have. The page size is observed; the game running on it is not
 
 The 4 KB result is kept separate, as the phase requires: the hosted lane asserts 4096 and says so.
 
+## Follow-up, same day: a real game, and the aligned V8 still fails
+
+The starter was not the only subject. `../sandbox/fps-framework` (`com.threenative.bayview`) was
+built against a local runtime source checkout — `THREENATIVE_RUNTIME_SOURCE=<runtime-native>` —
+because no `runtime-native` release exists to download (`prebuilt-lock.json` 404), and installed on
+the same `threenative_ps16k` AVD (`getconf PAGE_SIZE` 16384).
+
+Two builds, and the second is the finding:
+
+| APK's `libv8android.so` | LOAD align | Result on 16384-byte pages |
+| --- | --- | --- |
+| primary checkout (4 KB V8) | — | `Check failed: 0 == mprotect(address, size, 0x1)` |
+| this branch's receipted V8 | `0x4000` (16 KB) | **identical abort** |
+
+The rebuilt APK's `libv8android.so` carries `LOAD align 0x4000` (read from the packaged `.so`), so
+this is not the alignment defect phase 2 removed. It still dies at:
+
+```
+signal 5 (SIGTRAP)  SDLThread  com.threenative.bayview
+#00 libv8android.so  v8::base::OS::Abort()
+#01 libv8android.so  V8_Fatal(char const*, ...)
+#02 libv8android.so  v8::base::OS::SetDataReadOnly(void*, unsigned long)
+#04 libv8android.so  v8::V8::Initialize(int)
+#05 libmystral-runtime.so  mystral::js::V8Engine::V8Engine()
+```
+
+`SetDataReadOnly` sizes its `mprotect` against V8's build-time page size; link-time alignment does
+not change that. **The V8 build itself must target 16 KB pages** — the remaining work is a V8 build
+configuration, not a packaging change.
+
+Control that isolates it to the page size: the same game's native Linux build
+(`dist-native/fps-framework`, built from the same runtime source) ran under `scripts/xvfb.sh` to 900
+presented frames with `[V8] V8 initialized successfully` (13.1.201.22). The game is fine; the 16 KB
+Android environment is not.
+
 ## Independent review
 
 NOT RUN.
