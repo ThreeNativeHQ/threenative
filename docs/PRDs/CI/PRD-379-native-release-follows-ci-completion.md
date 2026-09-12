@@ -78,6 +78,6 @@ Risks: `workflow_run` always reads the workflow file from the default branch, so
 **Verification:** E2 — CI run URL + triggered native-release run URL, `gates` conclusion and duration recorded; exactly one native-release run per CI completion.
 **Checkpoint:** pending
 
-- [ ] Draft PR opened, `prd:` label applied from `pnpm prd:progress`
+- [x] Draft PR opened, `prd:` label applied from `pnpm prd:progress` — PR #209 (draft vs develop, `prd:50%`)
 - [ ] Post-merge CI completion triggered exactly one native-release run (URLs recorded)
 - [ ] Triggered run's `gates` finished in minutes with no polling step
