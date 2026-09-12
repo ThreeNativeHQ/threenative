@@ -74,12 +74,17 @@ The pre-push hook runs bounded `pnpm ci:fast` drift checks and reports the share
 selection; it never proves runtime correctness. `pnpm ci:local --full` runs the full local board.
 `pnpm ci:local --affected --base origin/develop --target develop` runs the same selected local
 families as CI; dirty, missing or unknown inputs fail safe to full. `scripts/ci-change-scope.mjs`
-uses the complete merge-base diff, including deleted files and both rename endpoints. Only
-explicit inert prose, root/playtest instruction contracts and isolated website consumers are exempt from
-native work; shared/package/template/dependency/CI changes remain full. Main PRs, main pushes,
-nightly and manual qualification are full. `ci-required` rejects missing or unsuccessful selected
-checks; full coverage retains `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, unit/browser/
-playtest gates, `golden-path`, `template-nonvisual`. The `native-platforms.yml` matrix including `desktop-parity` still runs on full selections, but it is **not part of the merge verdict** — the release lane validates the native rows for the exact candidate SHA, so a slow or red native matrix cannot hold every merge. Never cache test verdicts.
+uses the complete merge-base diff, including deleted files and both rename endpoints. A change that
+touches **only Markdown the executable fixtures do not consume** (any `.md` except `AGENTS.md`/
+`CLAUDE.md` instruction consumers and the fixture-consumed ledger files) runs **no CI job**: docs
+links, evidence budgets and secret scans are re-validated on the develop nightly run and at
+promotion. Everything else stays full — shared/package/template/dependency/CI changes remain full.
+Main PRs, main pushes, nightly and manual qualification are full. `ci-required` rejects missing or
+unsuccessful selected checks; full coverage retains `typecheck`, `lint`, `build`, `budgets`,
+`supply-chain`, unit/browser/playtest gates, `golden-path`, `template-nonvisual`. The
+`native-platforms.yml` matrix including `desktop-parity` still runs on full selections, but it is
+**not part of the merge verdict** — the release lane validates the native rows for the exact
+candidate SHA, so a slow or red native matrix cannot hold every merge. Never cache test verdicts.
 
 **The integration flow is active (PRD-373).** `develop` is protected and requires `ci-required`;
 start feature branches from `develop`, open their PRs against `develop`, and squash-merge there.

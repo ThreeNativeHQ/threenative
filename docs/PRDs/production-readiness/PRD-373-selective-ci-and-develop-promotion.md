@@ -414,3 +414,15 @@ candidate SHA, and `npm-release.yml` refuses to publish without the matching nat
 tag on the same commit. So a native red does not block a merge but does block a
 release. Fixing the Android V8 build time and the iOS worker proof remains open, and
 is tracked against PRD-221 (16 KB V8) and the native platform lanes.
+
+### 2026-09-12 — a Markdown-only PR runs nothing
+
+The prose family now matches **any** `.md` the executable fixtures do not consume, not only
+`docs/PRDs/` and `docs/verification/`. A diff whose every path is such a `.md` selects `prose`,
+where `lint` and `supply-chain` are `required: false` and the workflow skips both jobs, so the only
+work is the `scope` classification and the trivial `ci-required` verdict. This is deliberately lean
+and deliberately weaker: broken doc links, stale evidence budgets and leaked secrets in Markdown
+are no longer caught on the PR — the develop nightly run and every promotion still scan the full
+history and re-run the docs lane, so the regression is caught before it reaches main. `AGENTS.md`
+and `CLAUDE.md` remain instruction consumers (the instruction lane still runs), and ledger Markdown
+consumed by a fixture remains full.
