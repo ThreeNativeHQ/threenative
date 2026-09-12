@@ -19,7 +19,7 @@ jobs:
           ref: develop
           fetch-depth: 0
 
-      - name: Merge main and resolve the two known conflicts
+      - name: Merge main and resolve the known test conflict
         shell: bash
         run: |
           set -euo pipefail
@@ -33,7 +33,7 @@ jobs:
           set -e
 
           conflicts="$(git diff --name-only --diff-filter=U | sort)"
-          expected_conflicts=$'.github/workflows/native-platforms.yml\npackages/runtime-native/tests/native-platform-workflow.test.mjs'
+          expected_conflicts='packages/runtime-native/tests/native-platform-workflow.test.mjs'
           if [ "$merge_status" -ne 0 ] && [ -z "$conflicts" ]; then
             echo "merge failed without ordinary file conflicts" >&2
             exit "$merge_status"
@@ -44,31 +44,24 @@ jobs:
             exit 1
           fi
 
-          git checkout --ours -- \
-            .github/workflows/native-platforms.yml \
-            packages/runtime-native/tests/native-platform-workflow.test.mjs
+          # Keep develop's newer PRD-221/page-size tests, then fold in main's stronger CI-contract
+          # assertions. native-platforms.yml merges cleanly on its own, preserving both develop's
+          # page-size evidence work and main's restored desktop-parity job name.
+          git checkout --ours -- packages/runtime-native/tests/native-platform-workflow.test.mjs
 
           python3 <<'PY'
           from pathlib import Path
 
-          workflow_path = Path('.github/workflows/native-platforms.yml')
-          workflow = workflow_path.read_text()
-          workflow_needle = "  desktop-parity:\n    needs: [scope, web-reference]\n"
-          workflow_replacement = "  desktop-parity:\n    name: Desktop web/native parity\n    needs: [scope, web-reference]\n"
-          if workflow.count(workflow_needle) != 1:
-              raise SystemExit(f"expected exactly one desktop-parity insertion point, found {workflow.count(workflow_needle)}")
-          workflow = workflow.replace(workflow_needle, workflow_replacement, 1)
-          workflow_path.write_text(workflow)
+          path = Path('packages/runtime-native/tests/native-platform-workflow.test.mjs')
+          text = path.read_text()
 
-          test_path = Path('packages/runtime-native/tests/native-platform-workflow.test.mjs')
-          test_text = test_path.read_text()
           old_loop = """  for (const result of ['failure', 'cancelled', 'skipped', '']) {
             expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
             expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
           }
           });
           """
-          new_loop = """  for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', '']) {
+          merged_loop = """  for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', '']) {
             expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
             expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
           }
@@ -80,9 +73,9 @@ jobs:
           expect(required).toContain('native-platforms');
           });
           """
-          if test_text.count(old_loop) != 1:
-              raise SystemExit(f"expected exactly one protected-build loop, found {test_text.count(old_loop)}")
-          test_text = test_text.replace(old_loop, new_loop, 1)
+          if text.count(old_loop) != 1:
+              raise SystemExit(f"expected exactly one protected-build loop, found {text.count(old_loop)}")
+          text = text.replace(old_loop, merged_loop, 1)
 
           marker = "test('Android V8 source is produced once and consumed as a verified artifact', () => {"
           desktop_guard = """test('the desktop parity job keeps the name the release gate requires', () => {
@@ -96,17 +89,15 @@ jobs:
           });
 
           """
-          if test_text.count(marker) != 1:
-              raise SystemExit(f"expected exactly one Android V8 test marker, found {test_text.count(marker)}")
-          if "test('the desktop parity job keeps the name the release gate requires'" in test_text:
+          if text.count(marker) != 1:
+              raise SystemExit(f"expected exactly one Android V8 test marker, found {text.count(marker)}")
+          if "test('the desktop parity job keeps the name the release gate requires'" in text:
               raise SystemExit('desktop parity guard unexpectedly already present')
-          test_text = test_text.replace(marker, desktop_guard + marker, 1)
-          test_path.write_text(test_text)
+          text = text.replace(marker, desktop_guard + marker, 1)
+          path.write_text(text)
           PY
 
-          git add \
-            .github/workflows/native-platforms.yml \
-            packages/runtime-native/tests/native-platform-workflow.test.mjs
+          git add packages/runtime-native/tests/native-platform-workflow.test.mjs
 
           if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
             echo "unresolved conflicts remain" >&2
@@ -114,7 +105,7 @@ jobs:
             exit 1
           fi
 
-          # This resolver is intentionally one-shot; do not leave automation debris in develop/main.
+          # One-shot only: the merge commit deletes the temporary resolver.
           git rm .github/workflows/resolve-pr-222.yml
 
           git diff --cached --check
@@ -122,6 +113,8 @@ jobs:
           grep -Fq 'name: Desktop web/native parity' .github/workflows/native-platforms.yml
           grep -Fq "expect(required).toContain('native-platforms');" packages/runtime-native/tests/native-platform-workflow.test.mjs
           grep -Fq "'neutral', 'timed_out'" packages/runtime-native/tests/native-platform-workflow.test.mjs
+          grep -Fq 'TN_ANDROID_EXPECTED_PAGE_SIZE' .github/workflows/native-platforms.yml
+          grep -Fq 'assertObservedPageSize' packages/runtime-native/tests/native-platform-workflow.test.mjs
 
           git commit -m "merge: resolve main/develop conflicts for PR #222"
           git push origin HEAD:develop
