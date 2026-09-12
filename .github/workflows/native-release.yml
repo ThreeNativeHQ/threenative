@@ -872,6 +872,24 @@ jobs:
             echo "::warning::/dev/kvm is not writable on this runner; the emulator falls back to \
           software emulation, which is the 474-second boot this step exists to avoid."
           fi
+      - name: Provision the Android debug keystore the aligner re-signs with
+        run: |
+          # `alignAndroidArchive` re-signs the APK after `zipalign` rewrites it, and it fails
+          # closed when `$HOME/.android/debug.keystore` is absent. This lane builds the consumer
+          # APK through `package-android.mjs` instead of a Gradle debug install, so the debug
+          # store Gradle would normally auto-create is not guaranteed to exist. Create the
+          # standard Android debug key (same alias, passwords and distinguished name Gradle
+          # uses) so the aligner has one to sign with.
+          keystore="$HOME/.android/debug.keystore"
+          if [ ! -f "$keystore" ]; then
+            mkdir -p "$(dirname "$keystore")"
+            keytool -genkeypair -v \
+              -keystore "$keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          test -f "$keystore"
       - name: Build the packed Android target without NDK, CMake, or Rust
         run: |
           cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/game.ts"
