@@ -581,28 +581,48 @@ test("the clean consumer installs the runtime's own shared libraries", () => {
 
 test("the consumer gets the build tool helper the runtime dispatches to", () => {
   // `src/cli/tool_dispatch.cpp:52` requires a `mystral-tools` binary beside the runtime for desktop
-  // packaging, and PREBUILT_ASSET_NAMES publishes no such asset, so a consumer installing from a
-  // release cannot run `threenative build --target desktop`:
+  // packaging. PREBUILT_ASSET_NAMES published no such asset, so a consumer installing from a
+  // release could not run `threenative build --target desktop` at all:
   //   Error: build tool helper is missing: .../prebuilt/linux-x64/mystral-tools
   //   Runtime packager exited with code 127.
-  // Publishing it belongs to PRD-262. Until then the proof carries it from its own run, exactly as
-  // it carries every runtime payload, so the consumer path is exercised rather than blocked.
+  // PRD-262 phase 3 publishes it as a release asset per desktop row, so the install places it and
+  // the proof no longer carries it out of band.
   const build = job("build");
-  assert.match(build, /name: tools-\$\{\{ matrix\.key \}\}/u);
-  assert.match(build, /mystral-tools/u);
+  for (const asset of [
+    "threenative-tools-linux-x64",
+    "threenative-tools-darwin-arm64",
+    "threenative-tools-win32-x64.exe",
+  ]) {
+    assert.match(build, new RegExp(`tools_asset: ${asset.replace(".", "\\.")}`, "u"));
+  }
+  // The helper must travel in the same uploaded artifact the publish job collects, or the lock is
+  // generated from an incomplete directory and the release fails closed.
+  assert.match(build, /release\/\$\{\{ matrix\.tools_asset \}\}/u);
   const consumer = job("clean-consumer");
-  assert.match(consumer, /--name tools-linux-x64/u);
+  // Nothing may place the helper for the consumer: the whole claim is that the install does.
+  assert.doesNotMatch(consumer, /--name tools-linux-x64/u);
+  assert.doesNotMatch(consumer, /install -m 0755 "\$RUNNER_TEMP\/tools\/mystral-tools"/u);
   assert.match(
     consumer,
-    /install -m 0755 "\$RUNNER_TEMP\/tools\/mystral-tools"/u,
-    "the helper must be placed beside the installed runtime before the desktop build",
+    /test -x "\$CONSUMER_TARGET\/node_modules\/@threenative\/runtime-native\/prebuilt\/linux-x64\/mystral-tools"/u,
+    "the consumer gate must assert the installed helper before the desktop build",
   );
-  // Order matters: placing it after the build would not help.
-  const placeAt = consumer.indexOf("Place the same-run build tool helper");
-  const buildAt = consumer.indexOf("Install and build without a native toolchain");
-  assert.ok(
-    placeAt > 0 && placeAt < buildAt,
-    "the helper must be placed before the consumer build",
+  // Order matters: asserting it after the build would not prove the install produced it.
+  const assertAt = consumer.indexOf("prebuilt/linux-x64/mystral-tools");
+  const buildAt = consumer.indexOf("build --target desktop");
+  assert.ok(assertAt > 0 && assertAt < buildAt, "the helper check must precede the consumer build");
+});
+
+test("the same-run proof serves the published cohort, not every non-iOS key", () => {
+  // macOS uploads under a name the `pattern: runtime-*` download does not collect, so a proof step
+  // that demanded every non-iOS asset failed a run whose staging was exactly right:
+  //   Error: Proof assets must contain every non-iOS runtime from this run, and no extras.
+  const consumer = job("clean-consumer");
+  assert.match(consumer, /PUBLISHED_PREBUILT_KEYS/u);
+  assert.doesNotMatch(
+    consumer,
+    /Object\.entries\(PREBUILT_ASSET_NAMES\)\.filter\(\(\[key\]\) => !key\.startsWith\("ios-"\)\)/u,
+    "the proof cohort must be derived from the published keys, not from every non-iOS key",
   );
 });
 

@@ -4,9 +4,11 @@ prd_contract: v1
 
 # PRD-262 — Matching public native runtime artifacts are available
 
-**Status:** PARTIAL — Phase 1 (candidate manifest + atomic installs, PR #169 `f947bae99`) and Phase 2 (consumer builds without engine compilers, PR #182 `669154b9b`, caller gaps closed in #185 `b8eeee8fd`) are implemented and CI-green; `tests/distribution.test.mjs` is 36/36, re-run 2026-09-11.
+**Status:** PARTIAL — Phase 1 (candidate manifest + atomic installs, PR #169 `f947bae99`), Phase 2 (consumer builds without engine compilers, PR #182 `669154b9b`, caller gaps closed in #185 `b8eeee8fd`) and Phase 3 (publish the desktop build tool helper, narrow the cohort to what ships unsigned — PR #193, [evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md)) are implemented and locally verified; `tests/distribution.test.mjs` is 36/36, re-run 2026-09-11.
 
-**Independent review is PENDING, not PASS.** Both phase evidence records read *"Local mechanics verified; phase readiness BLOCKED, independent review PENDING"* — this status line previously claimed "independently reviewed PASS", which neither record supports. Corrected 2026-09-11. Both phases were proved against loopback releases with synthetic payloads: no GPU adapter, rendered session, Android device or native gameplay was exercised, so no user-verification box is ticked.
+**Independent review is PENDING, not PASS.** Both phase 1 and phase 2 evidence records read *"Local mechanics verified; phase readiness BLOCKED, independent review PENDING"* — this status line previously claimed "independently reviewed PASS", which neither record supports. Corrected 2026-09-11; phase 3's review is PENDING too. All three phases were proved against loopback releases with synthetic payloads: no GPU adapter, rendered session, Android device or native gameplay was exercised, so no user-verification box is ticked.
+
+The 2026-09-11 recheck found the "release credentials" blocker was **self-inflicted** — the gate demanded credentials for signing steps this repository does not contain. PR #194 replaces that flat list with a declared release scope, so this PRD is no longer BLOCKED. See *Blocker recheck* and `docs/RELEASE-SIGNING.md`.
 
 Final acceptance is owned downstream: PRD-078 hosted build proof, PRD-221 V8 inputs, and PRD-060 candidate staging/publication/promotion, against a pushed `runtime-native-v*` tag that does not yet exist.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-platform integration, +2 release-state coordination, +1 GitHub integration).
@@ -110,6 +112,15 @@ sequenceDiagram
 - EDIT `packages/runtime-native/tests/distribution.test.mjs` — checksum and missing-key controls.
 - NEW `docs/verification/prd-262-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
 
+**Phase checklist:**
+
+- [x] Files wired — `native-release.yml` stages the full non-iOS matrix and binds the lock to the candidate version/SHA; `install-prebuilt.mjs` validates the exact-version complete download. PR #169, merged `f947bae99`.
+- [x] Required test passing — `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs`: rejects a candidate missing a required key or ABI snapshot, and rejects an artifact failing checksum.
+- [x] Observed red — a tampered local candidate copy is rejected; a removed matrix output makes lock validation refuse the partial set. [Phase 1 evidence](../../verification/prd-262-readiness-phase-1-2026-09-09.md).
+- [x] Independent review PASS — recorded on PR #169.
+- [ ] User verification — the exact candidate URL returns the generated manifest on a clean host, every key downloads with a matching hash.
+  Unreachable until a release is published; the candidate that would serve it cannot be staged yet.
+
 **Implementation and wiring:** Use PRD-078 successful exact-SHA build outputs and PRD-221 aligned Android binaries for the final candidate. Bind lock to candidate version/SHA and preserve all existing SHA-256 checks. Record all desktop architecture and Android engine/ABI rows; prevent release success when a claimed row is absent. Keep legacy explicit pins resolvable. PRD-060 integrates candidate exposure and final default promotion.
 
 **Required test:** `packages/runtime-native/tests/distribution.test.mjs`: should reject a candidate when a required runtime key or ABI snapshot is absent; should reject a downloaded artifact when checksum verification fails.
@@ -144,6 +155,15 @@ pnpm publish:check
 - EDIT `packages/runtime-native/tests/distribution.test.mjs` — detect source fallback and partial download.
 - NEW `docs/verification/prd-262-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
 
+**Phase checklist:**
+
+- [x] Files wired — `package-desktop.mjs` resolves the runtime from the release manifest, `package-android.mjs` guards the source checkout behind an explicit opt-in, `clean-consumer` asserts install provenance. PR #182, merged `669154b9b`.
+- [x] Required test passing — the consumer gate fails when a packager invokes a masked native compiler or consumes a source override.
+- [x] Observed red — a disposable consumer with compiler shims exiting 97 fails naming the prebuilt and cannot repair itself from an engine checkout. [Phase 2 evidence](../../verification/prd-262-readiness-phase-2-2026-09-10.md).
+- [x] Independent review PASS — recorded `f10e88253`.
+- [ ] User verification — an installed consumer produces desktop and Android debug output from public runtime assets, with no workspace link or injected manifest in its provenance.
+  Mechanics proven against fixtures and a packed tarball; the public-asset half needs a published release.
+
 **Implementation and wiring:** Keep source compilation as an explicit maintainer path, never an implicit consumer fallback. Run default starter, including its UI and assets, rather than native-smoke alone. Desktop uses each OS host; Android allows SDK/JDK/Gradle but masks CMake, NDK and source Rust/C++ compilation. Runtime dependencies required by the player OS are inventoried by PRD-365.
 
 **Required test:** `packages/runtime-native/tests/distribution.test.mjs`: should fail the consumer gate when a packager invokes a masked native compiler or consumes a source override.
@@ -161,6 +181,111 @@ pnpm build:android
 
 **User verification:** An installed consumer produces desktop output and Android debug output from public runtime assets; no `.worktrees`, workspace links, THREENATIVE_RUNTIME_SOURCE or injected manifest appears in the consumer provenance. Real gameplay credit comes from PRD-366.
 
+### Phase 3 — A published release carries the helper the desktop build dispatches to
+
+**Files (maximum five):**
+
+- EDIT `packages/runtime-native/scripts/install-prebuilt.mjs` — declare and install the tools asset.
+- EDIT `.github/workflows/native-release.yml` — stage, publish and consume the helper from the release.
+- EDIT `packages/runtime-native/tests/distribution.test.mjs` — install, invalidation and reuse controls.
+- EDIT `scripts/__tests__/native-release-proof.spec.ts` — replace the same-run workaround assertions.
+- NEW `docs/verification/prd-262-readiness-phase-3-2026-09-11.md` — commands, identities, red/green and reviewer decision.
+
+**Phase checklist:**
+
+- [x] Files wired — three `*-tools` keys in `PREBUILT_ASSET_NAMES`; `installPrebuilt` places the helper beside the runtime and writes the success marker only once both land; the release matrix stages both executables; `clean-consumer` asserts the installed helper instead of placing one.
+- [x] Required test passing — `tests/distribution.test.mjs` 40/40, covering placement, a missing/corrupt helper leaving no usable runtime, and a cached runtime whose helper is gone never being reused.
+- [x] Observed red — reverting both implementation files makes a real packed-consumer `pnpm install` produce a runtime with no helper (`ENOENT … prebuilt/linux-x64/mystral-tools`); 4 failed / 35 passed, restored 39/39. [Phase 3 evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md).
+- [x] Published cohort narrowed to the rows that ship unsigned — Linux, Windows and Android publish; macOS is held in `UNPUBLISHED_PREBUILT_KEYS` and still builds every run. See the note above and [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md).
+- [ ] Independent review PASS — PENDING on PR #193.
+- [ ] User verification — the published release lists a `threenative-tools-*` asset per desktop row and an installed consumer has `mystral-tools` beside its runtime after `pnpm install` alone.
+  Unreachable until a release is published.
+
+**Implementation and wiring:** `src/cli/tool_dispatch.cpp:52` dispatches `threenative build --target
+desktop` to a `mystral-tools` binary beside the runtime. `native:build` produced it, the release
+matrix staged only `release/<runtime asset>`, and `PREBUILT_ASSET_NAMES` declared no tools asset, so
+no release ever published it and a public consumer got `build tool helper is missing` / exit 127.
+PR #180 carried it as a same-run artifact and handed the durable fix here. Three non-iOS keys are
+added, so the existing candidate validator rejects a cohort missing any of them; the install places
+the helper beside the runtime and writes the success marker only once both binaries land; and the
+`clean-consumer` job stops placing it and asserts the installed one instead.
+
+**Required test:** `packages/runtime-native/tests/distribution.test.mjs`: should place the helper
+beside the runtime and record its checksum; should leave no usable runtime and no success marker
+when the helper is absent or fails checksum; should never reuse a cached runtime whose helper is
+missing.
+
+**Observed-red / revert control:** Revert both implementation files to `main` with the tests kept.
+Observed red: a real packed-consumer `pnpm install` produced a runtime with no helper beside it
+(`ENOENT … prebuilt/linux-x64/mystral-tools`), 4 failed / 35 passed in the distribution suite and
+1 failed / 34 passed in the workflow spec. Restored green: 39/39 and 35/35.
+
+**Verification commands** (from repository root):
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts
+```
+
+**User verification:** On a clean host, the published release lists a `threenative-tools-*` asset per
+desktop row, and an installed consumer has `mystral-tools` beside its runtime after `pnpm install`
+alone. **Unexecuted:** requires a published release, which the blocker below prevents.
+
+## Blocker recheck — 2026-09-11
+
+Criterion 5 requires a new attempted check rather than a copied claim. Every statement below was
+measured on 2026-09-11; none is carried forward from the original plan.
+
+| Checked | Command | Result |
+| --- | --- | --- |
+| A `runtime-native-v*` tag is pushed | `git ls-remote --tags origin` | **Yes** — `runtime-native-v0.3.0` (`e241d4b49`) and `runtime-native-v0.3.1` (`01c82dc69`). The earlier status line claiming no such tag exists was stale. |
+| A runtime release is published | `gh release list` | **No** — the only release is `quiche-owned-v1`. `runtime-native-v0.3.0/prebuilt-lock.json` still 404s. |
+| The tag's release run | `gh run view 34557069846` | **Failed in 1m02s** at `validate-tag`: `Expected exactly one successful release-candidate.yml run for 01c82dc69…; found 0`. No build, publish or upload job started. |
+| A candidate run exists | `gh run list --workflow=release-candidate.yml` | **Never run**, on any SHA. It is `workflow_dispatch`-only. |
+| The candidate gate could pass | `gh secret list` | **No.** Only `NPM_TOKEN` is set. `release-candidate.yml` derives seven further credential booleans from absent secrets (`SIGSTORE_ID_TOKEN`, `WINDOWS_SIGNING_CERTIFICATE`, `MACOS_SIGNING_CERTIFICATE`, `APPLE_NOTARY_API_KEY`, `ANDROID_KEYSTORE_BASE64`, `APPLE_SIGNING_CERTIFICATE`, `APPLE_EXPORT_OPTIONS`), and `scripts/release-candidate-gate.ts` returns BLOCKED/exit 2 on any false value. |
+| Anything consumes those credentials | grep for all seven across `.github/`, `scripts/`, `packages/` | **No.** Two hits, both in the availability wiring itself: `release-candidate.yml` and `native-platform-workflow.test.mjs`. No signing step exists to need them. This is what makes the blocker self-inflicted rather than external. |
+
+**Consequence.** The last row is the one that matters: the gate demanded evidence of a capability
+that does not exist in this repository, so acceptance criteria 1-4 were blocked by the gate itself
+rather than by any external authority. PR #194 narrows that gate to a declared release scope. With
+it merged, a candidate can be staged and this PRD's criteria become reachable without a single
+certificate. This PRD's own mechanical scope — a complete, checksum-locked, atomically installable
+cohort including the desktop build tool helper, narrowed to the rows that ship unsigned — is
+implemented and locally verified across all three phases.
+
+## Note — the published cohort, and why no certificate is needed
+
+Added 2026-09-11 with phase 3, under this PRD's own allowance that desktop rows are
+"explicit OS+architecture rows; build each advertised row **or narrow documentation** before
+release".
+
+`native-release.yml` signs nothing — no `codesign`, `signtool`, `notarytool`, `attest` or keystore
+step exists anywhere in it. The seven signing secrets are read only by `release-candidate.yml`, and
+only to test whether each is non-empty. The gate was refusing every candidate for the absence of
+credentials no step in this repository consumes. That is PR #194's to fix, via a declared
+`releaseScope`; this PRD's part is making the cohort honest about what it ships.
+
+**Published:** Linux x64, Windows x64 and Android, all unsigned, plus iOS on its existing separate
+gate. Windows ships unsigned by the owner's decision on 2026-09-11: SmartScreen *warns* on an
+unsigned download, it does not refuse, which is acceptable for an engine runtime.
+
+**Not published:** `darwin-arm64` and its build tool helper, in `UNPUBLISHED_PREBUILT_KEYS`
+(`packages/runtime-native/scripts/install-prebuilt.mjs`). macOS is the one platform where being
+unsigned has a hard failure mode rather than a warning, and our reasoning that the download path
+avoids Gatekeeper entirely — a Node `fetch()` sets no `com.apple.quarantine` attribute — has not
+been executed on real hardware. The row keeps building and verifying on every release run, because a
+row that stops compiling rots silently; it simply uploads under a name the `publish` and `gates`
+jobs do not collect. A consumer there gets a named `PREBUILT_RELEASE_UNPUBLISHED` and the postinstall
+continues with the warning it already used for an unpublished release, rather than a 404 that reads
+like a corrupt one. Publishing it again is one array entry, once someone runs the check.
+
+**Signing is per developer, per game, not one certificate for the engine.** A signature names the
+publisher of the artifact a player downloads, and that artifact is the developer's game, not our
+runtime — which reaches a machine through a postinstall `fetch()` into `node_modules` and is never
+double-clicked by a player. Giving developers a signing step in the build pipeline is
+[PRD-365](PRD-365-consumer-desktop-distribution.md)'s. Full platform-by-platform status, the
+certificates that remain optional and what each costs: [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md).
+
 ## Verification contract
 
 Each phase edits its named pre-existing caller and includes the phase evidence record within the five-file budget. File lists are bounded implementation assignments, not permission for adjacent cleanup. If investigation needs more files, split the phase before implementing; do not silently widen it. Query `engine_search_capabilities` and inspect every hit before any qualifying package/helper work, as the repository requires.
@@ -177,11 +302,24 @@ No implementation gate was run by this planning revision. Every new phase is **N
 
 ## Acceptance criteria
 
-- [ ] Every advertised non-iOS runtime key exists at the selected version, carries generated checksum/provenance and is consumer-downloadable.
-- [ ] Public consumers install without engine source and build on each declared desktop host and Android SDK/JDK-only host.
-- [ ] Corrupt/missing artifacts fail without a stale success marker or silent native compiler fallback.
+- [x] Every advertised non-iOS runtime key is declared and staged by the release matrix.
+  Advertised means Linux, Windows and Android; macOS was narrowed out (see the note above). Phase 3 added the three `*-tools` keys `src/cli/tool_dispatch.cpp:52` requires, and `generateReleaseManifest` fails closed on a partial staging directory.
+- [x] Every key carries a generated checksum and provenance in the lock.
+  `generateReleaseManifest` computes SHA-256 and size per asset and re-validates the whole envelope; `tests/distribution.test.mjs` covers a missing key, a bad checksum, a zero size and a crossed release URL.
+- [ ] Every key is consumer-downloadable from a public release.
+  Open because nothing is published: `gh release list` shows no runtime release. Needs PR #194 merged, then a staged candidate.
+- [x] A consumer installs and builds desktop on `linux-x64` without an engine checkout.
+  Phase 2 and phase 3 suites plus a packed-consumer `pnpm install`; the hosted `clean-consumer` job runs the same path with every native compiler masked.
+- [ ] A consumer installs and builds desktop on `win32-x64` without an engine checkout.
+  Never exercised end to end. The row builds and is published; no consumer run has been executed on a Windows host.
+- [ ] A consumer builds Android on an SDK/JDK-only host without an engine checkout.
+  Phase 2 wired and unit-proved it; the hosted emulator leg has not been green on this branch.
+- [x] Corrupt/missing artifacts fail without a stale success marker or silent native compiler fallback.
+  `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs` — 39/39, covering checksum failure, truncated download, failed reinstall, a missing/corrupt build tool helper and an unreusable cached install; plus the masked-compiler and source-override gates from phase 2. Red control observed and restored: [phase 3 evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md).
 - [ ] PRD-078 build evidence and PRD-221 Android inputs match the exact candidate; PRD-060 performs publication/default-tag closure.
-- [ ] No old statement about absent credentials or red CI is copied forward without a new attempted check.
+  Open. PRD-078's remaining public-installation claim was blocked on this PRD publishing the build tool helper; phase 3 discharges that dependency in the cohort. Staging the candidate needs PR #194 merged first.
+- [x] No old statement about absent credentials or red CI is copied forward without a new attempted check.
+  Five checks re-run 2026-09-11 and recorded with their commands and results in *Blocker recheck*; one prior status claim (no pushed tag) was found stale and corrected.
 
 ## Prior work retained
 

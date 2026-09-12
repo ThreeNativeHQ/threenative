@@ -16,8 +16,9 @@
 | [PRD-212](PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | Moved from mobile/; PARTIAL | 221 inputs; 262 downloaded artifacts |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | Complete desktop containers and signing/notarization | NEW; PROPOSED | 217 overlays; 212 mode parsing; 262 binaries |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | Android release artifact and distributed desktop app carry the brand | NOT STARTED | 212/365 final artifacts; 217 UI |
-| [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | Complete version-matched downloadable runtime assets | Moved from mobile/; PROPOSED | 078 hosted proof; 196 package contents; 221/217 final inputs |
+| [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | Complete version-matched downloadable runtime assets | Moved from mobile/; PARTIAL, phases 1-3 landed | 078 hosted proof; 196 package contents; 221/217 final inputs |
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | Actual consumer game and physical Android qualification | NEW; PROPOSED | 196/212/217/221/262/365; 153 captures |
+| [PRD-376](PRD-376-windows-consumer-builds-and-runs.md) | A Windows consumer installs the published runtime, builds and runs | NEW; PROPOSED | 262 publishes the win32-x64 cohort; prerequisite for 365 and 366 |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | Public candidate verification, recovery, promotion, stores and outside users | Moved from BLOCKED/; PROPOSED | All applicable owner results; external credentials/people only at their checkpoint |
 
 Dependencies in the table are acceptance dependencies, not a prohibition on preparing tests/configuration earlier. Candidate production is deliberately split from final public proof: PRD-060 phase 1 stages, PRD-262 supplies downloads, PRD-366 qualifies, then PRD-060 phases 2–3 verify public consumers and obtain credentialed/external-user evidence before phase 4 promotes. Do not create an all-phases dependency cycle by requiring final promotion before candidate testing.
