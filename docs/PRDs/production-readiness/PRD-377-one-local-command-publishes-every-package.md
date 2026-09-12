@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-377 — One local command publishes every package and its native runtime
 
-**Status:** IN PROGRESS — Phases 1–2 implemented and locally verified on Linux x64; Phase 3 code and tests complete, the real GitHub release and browser-consumer run are not executed (irreversible).
+**Status:** IN PROGRESS — Phases 1–2 implemented and locally verified on Linux x64; Phase 3 code and tests complete, the real GitHub release and browser-consumer run are not executed (irreversible). Execution record: worktree `.worktrees/prd377-local-release`, branch `prd377/execute-local-release`, draft PR [#212](https://github.com/ThreeNativeHQ/threenative/pull/212) against `develop` (base `develop`), label `prd:50%`.
 **Complexity:** 7 → HIGH (+2 six-to-ten files, +2 new module, +2 crosses the npm/native release boundary, +1 GitHub release API).
 **Owner:** engine release tooling.
 **Problem:** Publishing is two unrelated mechanisms. `pnpm release --yes` already publishes every npm package in dependency order from a workstation, but it then **refuses** because `@threenative/runtime-native` demands a `runtime-native-v<version>/prebuilt-lock.json` that only the multi-runner CI release lane can produce. So a local release cannot make the runtime installable, and a consumer's first `threenative build` fails on an HTTP 404. The owner's ask is one local `pnpm` command that publishes everything, so people can install the cohort and build their games without waiting on CI.
@@ -126,6 +126,13 @@ Each phase edits its named pre-existing caller and stays within the five-file bu
 ## Verification evidence
 
 The phase boxes above are the record. `docs/benchmark/SCREENSHOT-RETENTION.md` is regenerated when an evidence file is added.
+
+Execution record:
+
+- Worktree `.worktrees/prd377-local-release`; branch `prd377/execute-local-release`; tip `df01fa54`.
+- Draft PR https://github.com/ThreeNativeHQ/threenative/pull/212 (base `develop`), fetched into this checkout as
+  `refs/remotes/origin/pr/212` (`git rev-parse origin/pr/212` = `df01fa54`).
+- `pnpm prd:progress` = `prd:50%`.
 
 ## Acceptance criteria
 
