@@ -553,11 +553,11 @@ describe("threenative doctor", () => {
     expect(check(report, "target android").detail).toMatch(/JDK 21\.0\.1.*17/u);
     expect(check(report, "target android").status).toBe("warn");
     expect(check(report, "target android").detail).not.toContain("checked by build");
-    expect(check(report, "target android").fix).toMatch(/Install Android SDK platform android-35/u);
+    expect(check(report, "target android").fix).toMatch(/Install Android SDK platform android-36/u);
     expect(check(report, "target android").fix).toMatch(/ANDROID_HOME|ANDROID_SDK_ROOT/u);
     expect(check(report, "target android").fix).not.toContain("THREENATIVE_ANDROID_SDK");
     expect(formatDoctorReport(report)).toMatch(
-      /fix: Install Android SDK platform android-35 and JDK 17/u,
+      /fix: Install Android SDK platform android-36 and JDK 17/u,
     );
   });
 
@@ -593,7 +593,7 @@ describe("threenative doctor", () => {
       [packagerSdk, "35.0.0"],
       [doctorOnlySdk, "34.0.0"],
     ] as const) {
-      const platform = path.join(sdk, "platforms", "android-35");
+      const platform = path.join(sdk, "platforms", "android-36");
       await mkdir(platform, { recursive: true });
       await writeFile(path.join(platform, "source.properties"), `Pkg.Revision = ${revision}\n`);
     }
@@ -1218,8 +1218,8 @@ describe("threenative doctor edge coverage", () => {
 
     const { makeTempDir } = await import("../../../test-support/temp-dir.js");
     const sdk = await makeTempDir("tn-doctor-sdk-");
-    await mkdir(path.join(sdk, "platforms", "android-35"), { recursive: true });
-    await writeFile(path.join(sdk, "platforms", "android-35", "source.properties"), "Pkg.Name=x\n");
+    await mkdir(path.join(sdk, "platforms", "android-36"), { recursive: true });
+    await writeFile(path.join(sdk, "platforms", "android-36", "source.properties"), "Pkg.Name=x\n");
     spawnSyncMock.mockReturnValueOnce({ stderr: "not a java version", stdout: "" });
     expect(
       probeAndroidToolchain({ ANDROID_HOME: sdk, HOME: path.join(sdk, "no-home") }).sdkVersion,
@@ -1611,9 +1611,9 @@ describe("threenative doctor --target/--mode", () => {
     // The SDK is present. A met requirement is not a reason the build cannot start, and printing
     // it among the blockers makes the prediction unusable.
     expect(requested.detail).toMatch(/JDK 26\.0\.2/u);
-    expect(requested.detail).not.toMatch(/android-35 .*found/u);
+    expect(requested.detail).not.toMatch(/android-36 .*found/u);
     // It stays in the standing target line, which reports every probed fact, met or not.
-    expect(check(report, "target android").detail).toMatch(/android-35 .*found/u);
+    expect(check(report, "target android").detail).toMatch(/android-36 .*found/u);
   });
 
   it("should name the blocker on the requested target line, not only satisfied probes", () => {
@@ -1630,8 +1630,8 @@ describe("threenative doctor --target/--mode", () => {
     const target = check(report, "target android").detail;
     expect(target).toMatch(/^not buildable — JDK 26\.0\.2/u);
     expect(target).toContain("; probed: ");
-    expect(target.slice(0, target.indexOf("; probed: "))).not.toMatch(/android-35/u);
-    expect(target).toMatch(/probed: .*android-35 .*found/u);
+    expect(target.slice(0, target.indexOf("; probed: "))).not.toMatch(/android-36/u);
+    expect(target).toMatch(/probed: .*android-36 .*found/u);
   });
 
   it("should keep every blocker when one blocker contains a colon of its own", () => {

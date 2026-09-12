@@ -6,7 +6,15 @@ import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from 'node:path';
 import { afterEach, test } from 'vitest';
 
-import { packageAndroid } from '../scripts/package-android.mjs';
+import {
+  ANDROID_RELEASE_SIGNING_PROPERTIES,
+  packageAndroid,
+  androidBuildRequest,
+  androidArtifactCandidates,
+  androidReleaseSigning,
+  androidUnsignedReleaseApk,
+  verifyAndroidReleaseArtifact,
+} from '../scripts/package-android.mjs';
 
 const roots = [];
 const VALID_PNG = Buffer.from(
@@ -45,8 +53,22 @@ function createFakeAndroidRuntime() {
     wrapper,
     `#!/bin/sh
 set -eu
-mkdir -p app/build/outputs/apk/debug
-jar --create --file app/build/outputs/apk/debug/app-debug.apk \\
+task="\${1:-assembleDebug}"
+case "$task" in
+  assembleDebug) out="app/build/outputs/apk/debug/app-debug.apk" ;;
+  assembleRelease)
+    if [ -n "\${ORG_GRADLE_PROJECT_threenativeKeystore:-}" ]; then
+      out="app/build/outputs/apk/release/app-release.apk"
+      printf '%s' "$ORG_GRADLE_PROJECT_threenativeKeystore" > app/build/last-keystore.txt
+    else
+      out="app/build/outputs/apk/release/app-release-unsigned.apk"
+    fi ;;
+  bundleRelease) out="app/build/outputs/bundle/release/app-release.aab" ;;
+  *) echo "unexpected Gradle task: $task" >&2; exit 2 ;;
+esac
+mkdir -p "$(dirname "$out")" app/build
+printf '%s' "$task" > app/build/last-task.txt
+jar --create --file "$out" \\
   -C app/src/main AndroidManifest.xml \\
   -C app/src/main/res values/strings.xml \\
   -C app/src/main/res values/themes.xml \\
@@ -54,21 +76,21 @@ jar --create --file app/build/outputs/apk/debug/app-debug.apk \\
   -C app build.gradle.kts \\
   -C app/build/generated/threenative/assets scripts/main.js
 if [ -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png ]; then
-  jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
+  jar --update --file "$out" \\
     -C app/src/main/res mipmap-xxxhdpi/ic_launcher.png
 fi
-for resource in \
-  mipmap-anydpi-v26/ic_launcher.xml \
-  drawable-nodpi/ic_launcher_foreground.png \
-  drawable-nodpi/ic_launcher_monochrome.png \
+for resource in \\
+  mipmap-anydpi-v26/ic_launcher.xml \\
+  drawable-nodpi/ic_launcher_foreground.png \\
+  drawable-nodpi/ic_launcher_monochrome.png \\
   drawable-nodpi/tn_boot_splash.png; do
   if [ -f "app/src/main/res/$resource" ]; then
-    jar --update --file app/build/outputs/apk/debug/app-debug.apk \
+    jar --update --file "$out" \\
       -C app/src/main/res "$resource"
   fi
 done
 if [ -f app/build/generated/threenative/assets/game/level.bin ]; then
-  jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
+  jar --update --file "$out" \\
     -C app/build/generated/threenative/assets game/level.bin
 fi
 # A real Android app ships native libraries for both 64-bit ABIs, and PRD-221's census refuses to
@@ -76,17 +98,61 @@ fi
 mkdir -p app/build/fake-libs/lib/arm64-v8a app/build/fake-libs/lib/x86_64
 printf 'runtime' > app/build/fake-libs/lib/arm64-v8a/libmystral-runtime.so
 printf 'runtime' > app/build/fake-libs/lib/x86_64/libmystral-runtime.so
-jar --update --file app/build/outputs/apk/debug/app-debug.apk \\
+jar --update --file "$out" \\
   -C app/build/fake-libs lib/arm64-v8a/libmystral-runtime.so \\
   -C app/build/fake-libs lib/x86_64/libmystral-runtime.so
 `,
+
   );
   chmodSync(wrapper, 0o755);
   return runtime;
 }
 
+// A stand-in for the consumer's build environment: the four ORG_GRADLE_PROJECT_ properties the
+// doctor predicts and the packager forwards. The keystore path is relative on purpose so a test can
+// assert the packager resolves it against the consumer project, not the engine.
+const SIGNING_ENV = Object.freeze({
+  ORG_GRADLE_PROJECT_threenativeKeystore: 'release/my-release.keystore',
+  ORG_GRADLE_PROJECT_threenativeKeystoreAlias: 'release',
+  ORG_GRADLE_PROJECT_threenativeKeystorePassword: 'store-password-sentinel',
+  ORG_GRADLE_PROJECT_threenativeKeyPassword: 'key-password-sentinel',
+});
+
+function releaseOptions(projectRoot, overrides = {}) {
+  return {
+    projectRoot,
+    environment: { ...SIGNING_ENV },
+    // The integration lane stands in for apksigner/jarsigner; the real verification path is a
+    // separate test below. The seam is the only thing faked here.
+    verifyReleaseSignature: () => ({ verified: true }),
+    // The fake wrapper ships stand-in libraries, so the injected ELF reader answers the census;
+    // the real 16 KB alignment path has its own PRD-221 tests below.
+    alignArchive: false,
+    artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    ...overrides,
+  };
+}
+
 function artifactEntry(apk, entry) {
   return execFileSync('unzip', ['-p', apk, entry]);
+}
+
+// A wrapper that ignores the requested task and always produces the debug artifact. It is the
+// exact failure mode PRD-212 phase 2 forbids: a release request answered with app-debug.apk.
+function createDebugOnlyAndroidRuntime() {
+  const runtime = createFakeAndroidRuntime();
+  const wrapper = join(runtime, 'android', 'gradlew');
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh
+set -eu
+out="app/build/outputs/apk/debug/app-debug.apk"
+mkdir -p "$(dirname "$out")" app/build
+jar --create --file "$out" -C app/src/main AndroidManifest.xml
+`,
+  );
+  chmodSync(wrapper, 0o755);
+  return runtime;
 }
 
 function runActivityMetadataProbe() {
@@ -603,6 +669,415 @@ test('a failed prebuilt download names the cause and the environment variable th
       assert.match(error.message, /THREENATIVE_RUNTIME_SOURCE=/u);
       return true;
     },
+  );
+});
+
+// PRD-212 phase 2: an explicit mode/format selects the Gradle task and the artifact it must
+// produce. Every artifact below is built by the fake wrapper from the real shipped Gradle project.
+test('an explicit release/aab request runs bundleRelease and returns the bundle', async () => {
+  const root = makeTempDirSync('threenative-android-aab-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const output = join(root, 'dist', 'fox.aab');
+
+  const artifact = await packageAndroid(bundle, output, undefined, undefined, undefined, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    mode: 'release',
+    format: 'aab',
+    ...releaseOptions('/consumer/fox'),
+  });
+
+  assert.equal(artifact, output);
+  assert.equal(readFileSync(join(runtime, 'android', 'app', 'build', 'last-task.txt'), 'utf8'), 'bundleRelease');
+  assert.match(artifactEntry(output, 'AndroidManifest.xml').toString('utf8'), /<manifest\b/u);
+});
+
+test('an explicit release/apk request runs assembleRelease and returns the release APK', async () => {
+  const root = makeTempDirSync('threenative-android-release-apk-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  const artifact = await packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    mode: 'release',
+    format: 'apk',
+    ...releaseOptions('/consumer/fox'),
+  });
+
+  assert.match(artifact, /app-release\.apk$/u);
+  assert.equal(readFileSync(join(runtime, 'android', 'app', 'build', 'last-task.txt'), 'utf8'), 'assembleRelease');
+  // The relative keystore from the environment was resolved against the consumer project, and the
+  // password sentinels are never written into the artifact.
+  assert.equal(
+    readFileSync(join(runtime, 'android', 'app', 'build', 'last-keystore.txt'), 'utf8'),
+    '/consumer/fox/release/my-release.keystore',
+  );
+  assert.doesNotMatch(
+    artifactEntry(artifact, 'build.gradle.kts').toString('utf8'),
+    /store-password-sentinel|key-password-sentinel/u,
+  );
+});
+
+test('the omitted flags keep the debug APK path', async () => {
+  const root = makeTempDirSync('threenative-android-default-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  const artifact = await packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    alignArchive: false,
+    artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+  });
+
+  assert.match(artifact, /app-debug\.apk$/u);
+  assert.equal(readFileSync(join(runtime, 'android', 'app', 'build', 'last-task.txt'), 'utf8'), 'assembleDebug');
+});
+
+test('a release request never accepts a debug APK returned in its place', async () => {
+  const root = makeTempDirSync('threenative-android-wrong-artifact-');
+  roots.push(root);
+  const runtime = createDebugOnlyAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+      ...releaseOptions('/consumer/fox'),
+    }),
+    /TN_ANDROID_ARTIFACT_MISSING/u,
+  );
+});
+
+// A wrapper that ignores the signing environment and emits the unsigned release artifact, the shape
+// AGP produces when a signing config does not apply. A release must refuse it by name.
+function createUnsignedReleaseRuntime() {
+  const runtime = createFakeAndroidRuntime();
+  const wrapper = join(runtime, 'android', 'gradlew');
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh
+set -eu
+out="app/build/outputs/apk/release/app-release-unsigned.apk"
+mkdir -p "$(dirname "$out")" app/build
+jar --create --file "$out" -C app/src/main AndroidManifest.xml
+`,
+  );
+  chmodSync(wrapper, 0o755);
+  return runtime;
+}
+
+test('release signing inputs are required and named when incomplete', () => {
+  const partial = androidReleaseSigning({
+    ORG_GRADLE_PROJECT_threenativeKeystore: 'release.keystore',
+  });
+  assert.equal(partial.complete, false);
+  assert.deepEqual(partial.missing, [
+    'ORG_GRADLE_PROJECT_threenativeKeystoreAlias',
+    'ORG_GRADLE_PROJECT_threenativeKeystorePassword',
+    'ORG_GRADLE_PROJECT_threenativeKeyPassword',
+  ]);
+});
+
+test('a release request with no signing environment is refused before Gradle', async () => {
+  const root = makeTempDirSync('threenative-android-no-signing-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+    }),
+    /TN_ANDROID_SIGNING_INCOMPLETE/u,
+  );
+});
+
+test('an unsigned release artifact is refused, never reported as a release', async () => {
+  const root = makeTempDirSync('threenative-android-unsigned-');
+  roots.push(root);
+  const runtime = createUnsignedReleaseRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+      ...releaseOptions('/consumer/fox'),
+    }),
+    /TN_ANDROID_RELEASE_UNSIGNED/u,
+  );
+});
+
+test('a release whose verifier rejects it is refused and the unsigned path is named', async () => {
+  const root = makeTempDirSync('threenative-android-tampered-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+      ...releaseOptions('/consumer/fox', {
+        verifyReleaseSignature: () => {
+          throw new Error('TN_ANDROID_SIGNATURE_INVALID: tampered');
+        },
+      }),
+    }),
+    /TN_ANDROID_SIGNATURE_INVALID/u,
+  );
+});
+
+test('a missing signature verifier is a blocker, not a silent pass', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: () => undefined,
+      }),
+    /TN_ANDROID_SIGNATURE_TOOL_MISSING/u,
+  );
+});
+
+test('the unsigned release APK path is the AGP default the packager refuses', () => {
+  assert.match(
+    androidUnsignedReleaseApk('/runtime'),
+    /android\/app\/build\/outputs\/apk\/release\/app-release-unsigned\.apk$/u,
+  );
+});
+
+test('unsupported mode/format pairs fail before any work', () => {
+  assert.throws(() => androidBuildRequest('debug', 'aab'), /TN_ANDROID_BUILD_UNSUPPORTED/u);
+  assert.throws(() => androidBuildRequest('staging', 'apk'), /TN_ANDROID_BUILD_MODE_INVALID/u);
+  assert.throws(() => androidBuildRequest('release', 'zip'), /TN_ANDROID_BUILD_FORMAT_INVALID/u);
+  assert.equal(androidBuildRequest('release', 'aab').task, 'bundleRelease');
+  assert.equal(androidBuildRequest('release', 'apk').task, 'assembleRelease');
+  assert.deepEqual(
+    androidArtifactCandidates('/runtime', androidBuildRequest('debug', 'apk')),
+    ['/runtime/android/app/build/outputs/apk/debug/app-debug.apk'],
+  );
+});
+
+// PRD-212 phase 3: release signing is the developer's, never a debug fallback, and the final
+// artifact must prove it is signed and not debuggable.
+test('release signing inputs must be complete, and the error names only the missing properties', async () => {
+  const root = makeTempDirSync('threenative-android-signing-incomplete-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+      projectRoot: '/consumer/fox',
+      environment: { ORG_GRADLE_PROJECT_threenativeKeystore: 'release/my.keystore' },
+    }),
+    (error) => {
+      assert.match(error.message, /TN_ANDROID_SIGNING_INCOMPLETE/u);
+      assert.match(error.message, /ORG_GRADLE_PROJECT_threenativeKeystoreAlias/u);
+      assert.match(error.message, /ORG_GRADLE_PROJECT_threenativeKeystorePassword/u);
+      assert.match(error.message, /ORG_GRADLE_PROJECT_threenativeKeyPassword/u);
+      // The one value that was supplied is not echoed back.
+      assert.doesNotMatch(error.message, /release\/my\.keystore/u);
+      return true;
+    },
+  );
+});
+
+test('a release that Gradle leaves unsigned is refused, never shipped as signed', async () => {
+  const root = makeTempDirSync('threenative-android-release-unsigned-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  // A wrapper that ignores the signing environment, which is what a misconfigured Gradle project
+  // looks like from the packager's side.
+  const wrapper = join(runtime, 'android', 'gradlew');
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh
+set -eu
+out="app/build/outputs/apk/release/app-release-unsigned.apk"
+mkdir -p "$(dirname "$out")" app/build
+jar --create --file "$out" -C app/src/main AndroidManifest.xml
+`,
+  );
+  chmodSync(wrapper, 0o755);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+      ...releaseOptions('/consumer/fox'),
+    }),
+    /TN_ANDROID_RELEASE_UNSIGNED/u,
+  );
+});
+
+test('a release whose signature verifier rejects is refused', async () => {
+  const root = makeTempDirSync('threenative-android-signature-tamper-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+      ...releaseOptions('/consumer/fox', {
+        verifyReleaseSignature: () => {
+          throw new Error('TN_ANDROID_SIGNATURE_INVALID: apksigner rejected the tampered artifact');
+        },
+      }),
+    }),
+    /TN_ANDROID_SIGNATURE_INVALID/u,
+  );
+});
+
+test('a missing signature verifier is a blocker, not a silent pass', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: () => undefined,
+        environment: {},
+      }),
+    /TN_ANDROID_SIGNATURE_TOOL_MISSING/u,
+  );
+});
+
+test('the signing properties the packager consumes are the four doctor predicts', () => {
+  const expected = [
+    'threenativeKeystore',
+    'threenativeKeystoreAlias',
+    'threenativeKeystorePassword',
+    'threenativeKeyPassword',
+  ];
+  assert.deepEqual(Object.values(ANDROID_RELEASE_SIGNING_PROPERTIES).sort(), [...expected].sort());
+  const signing = androidReleaseSigning(
+    {
+      ORG_GRADLE_PROJECT_threenativeKeystore: 'k.jks',
+      ORG_GRADLE_PROJECT_threenativeKeystoreAlias: 'a',
+    },
+    '/consumer',
+  );
+  assert.equal(signing.complete, false);
+  assert.match(signing.missing.join(' '), /ORG_GRADLE_PROJECT_threenativeKeystorePassword/u);
+  assert.equal(signing.keystore, '/consumer/k.jks');
+});
+
+// The real (non-injected) verification path: the signature tool and aapt are stubbed, but the
+// function's own parsing, refusal and fail-closed behaviour is what runs.
+function fakeToolRun(responses) {
+  return (executable, args) => {
+    const key = `${executable} ${args[0]}`;
+    const match = Object.keys(responses).find((name) => executable.includes(name));
+    if (match === undefined) return { status: 1, stdout: '', stderr: `unexpected tool ${executable}` };
+    return { status: 0, stdout: '', stderr: '', ...responses[match] };
+  };
+}
+
+test('the real signature path rejects an artifact the signer refuses', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => `/sdk/${name}`,
+        spawnSync: fakeToolRun({ apksigner: { status: 1, stderr: 'no signature found' } }),
+      }),
+    /TN_ANDROID_SIGNATURE_INVALID/u,
+  );
+});
+
+test('the real path needs aapt and fails closed without it', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => (name === 'aapt' ? undefined : `/sdk/${name}`),
+        spawnSync: fakeToolRun({ apksigner: { status: 0, stdout: 'Verified' } }),
+      }),
+    /TN_ANDROID_BADGING_TOOL_MISSING/u,
+  );
+});
+
+test('the packaged APK targetSdk is checked on the artifact, not the Gradle source', () => {
+  const badging = (target) => ({
+    status: 0,
+    stdout: `package: name='com.x' versionCode='1'\ntargetSdkVersion:'${target}'\n`,
+  });
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => `/sdk/${name}`,
+        spawnSync: (executable, args) =>
+          executable.endsWith('apksigner')
+            ? { status: 0, stdout: 'Verified' }
+            : badging(35),
+      }),
+    /TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION/u,
+  );
+  const ok = verifyAndroidReleaseArtifact(
+    '/tmp/candidate.apk',
+    androidBuildRequest('release', 'apk'),
+    {
+      findBuildTool: (name) => `/sdk/${name}`,
+      spawnSync: (executable) =>
+        executable.endsWith('apksigner') ? { status: 0, stdout: 'Verified' } : badging(36),
+    },
+  );
+  assert.equal(ok.targetSdk, 36);
+});
+
+test('a debuggable packaged APK is refused', () => {
+  assert.throws(
+    () =>
+      verifyAndroidReleaseArtifact('/tmp/candidate.apk', androidBuildRequest('release', 'apk'), {
+        findBuildTool: (name) => `/sdk/${name}`,
+        spawnSync: (executable) =>
+          executable.endsWith('apksigner')
+            ? { status: 0, stdout: 'Verified' }
+            : { status: 0, stdout: "targetSdkVersion:'36'\napplication-debuggable\n" },
+      }),
+    /TN_ANDROID_ARTIFACT_DEBUGGABLE/u,
   );
 });
 
