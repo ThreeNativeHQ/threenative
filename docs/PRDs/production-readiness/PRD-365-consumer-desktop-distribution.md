@@ -71,8 +71,8 @@ sequenceDiagram
   - Skipping dependency recording in `desktop-distribution.mjs` made the relocation row fail (`Tests 1 failed`); restoring the recording returned `Tests 1 passed`.
 - [ ] User verification performed on the named platform
   - Not run. The relocated launch from a path containing spaces reached the runtime event loop (`TN_PRESENTS_TICK`), but the fixture entry draws nothing; the starter HUD/assets and OS-identity check needs the starter on a real desktop with a human looking at it.
-- [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-1-<date>.md`
-  - Pending at this implementation commit; the record is added, and this box ticked, in the next commit of the same PR.
+- [x] Evidence record written: `docs/verification/prd-365-readiness-phase-1-2026-09-12.md`
+  - Commands, the end-to-end archive hash, the observed red and the unrun gates are in the record.
 - [ ] Independent reviewer returned PASS
   - Not run. No self-awarded PASS.
 
@@ -182,7 +182,7 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+The planning revision itself ran no implementation gate. **Phase 1 is now implemented and its focused gates were run against local inputs**; its commands, the end-to-end archive hash, the observed red and the unrun gates (starter user verification, independent review, macOS/Windows execution, signing) are in `docs/verification/prd-365-readiness-phase-1-2026-09-12.md`. Phases 2 and 3 are **NOT RUN**. Write each remaining phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
 
 ## Acceptance criteria
 
