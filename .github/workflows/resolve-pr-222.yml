@@ -19,7 +19,7 @@ jobs:
           ref: develop
           fetch-depth: 0
 
-      - name: Merge main and resolve the known test conflict
+      - name: Build verified merge objects for the authorized final write
         shell: bash
         run: |
           set -euo pipefail
@@ -44,9 +44,6 @@ jobs:
             exit 1
           fi
 
-          # Keep develop's newer PRD-221/page-size tests, then fold in main's stronger CI-contract
-          # assertions. native-platforms.yml merges cleanly on its own, preserving both develop's
-          # page-size evidence work and main's restored desktop-parity job name.
           git checkout --ours -- packages/runtime-native/tests/native-platform-workflow.test.mjs
 
           python3 <<'PY'
@@ -95,21 +92,11 @@ jobs:
           if "test('the desktop parity job keeps the name the release gate requires'" in text:
               raise SystemExit('desktop parity guard unexpectedly already present')
 
-          text = text[:start] + block + desktop_guard + text[end:]
-          path.write_text(text)
+          path.write_text(text[:start] + block + desktop_guard + text[end:])
           PY
 
           git add packages/runtime-native/tests/native-platform-workflow.test.mjs
-
-          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
-            echo "unresolved conflicts remain" >&2
-            git diff --name-only --diff-filter=U >&2
-            exit 1
-          fi
-
-          # One-shot only: the merge commit deletes the temporary resolver.
-          git rm .github/workflows/resolve-pr-222.yml
-
+          test -z "$(git diff --name-only --diff-filter=U)"
           git diff --cached --check
           node --check packages/runtime-native/tests/native-platform-workflow.test.mjs
           grep -Fq 'name: Desktop web/native parity' .github/workflows/native-platforms.yml
@@ -118,5 +105,17 @@ jobs:
           grep -Fq 'TN_ANDROID_EXPECTED_PAGE_SIZE' .github/workflows/native-platforms.yml
           grep -Fq 'assertObservedPageSize' packages/runtime-native/tests/native-platform-workflow.test.mjs
 
-          git commit -m "merge: resolve main/develop conflicts for PR #222"
-          git push origin HEAD:develop
+          mkdir -p "$RUNNER_TEMP/pr222-resolved"
+          cp .github/workflows/native-platforms.yml "$RUNNER_TEMP/pr222-resolved/native-platforms.yml"
+          cp packages/runtime-native/tests/native-platform-workflow.test.mjs "$RUNNER_TEMP/pr222-resolved/native-platform-workflow.test.mjs"
+
+          # Upload the verified blobs on an unprotected scratch ref without changing any workflow
+          # path. The final two-parent merge commit is created through the authorized GitHub app.
+          git merge --abort
+          git switch -C tmp/pr222-merge-objects
+          mkdir -p .pr222-merge
+          cp "$RUNNER_TEMP/pr222-resolved/native-platforms.yml" .pr222-merge/native-platforms.yml
+          cp "$RUNNER_TEMP/pr222-resolved/native-platform-workflow.test.mjs" .pr222-merge/native-platform-workflow.test.mjs
+          git add .pr222-merge
+          git commit -m "chore: stage verified PR #222 merge objects"
+          git push -f origin HEAD:refs/heads/tmp/pr222-merge-objects
