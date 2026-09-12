@@ -4,11 +4,14 @@ prd_contract: v1
 
 # PRD-374 — Doctor predicts the requested build's prerequisite failure
 
-**Status:** PARTIAL — phases 1 and 2 implemented and locally verified (evidence
+**Status:** **DONE** — both phases implemented, locally verified and independently reviewed PASS;
+every acceptance criterion verified on the real built CLI in projects outside this repository with no
+engine checkout (evidence
 [phase 1](../../verification/prd-374-readiness-phase-1-2026-09-11.md),
-[phase 2](../../verification/prd-374-readiness-phase-2-2026-09-11.md)). Both independent reviews
-are the only open boxes; no acceptance box is ticked until they return PASS. Renumbered
-2026-09-11. Phase 1's commits were replayed onto current `main` as a net diff after `main`
+[phase 2](../../verification/prd-374-readiness-phase-2-2026-09-11.md)). Six review rounds found nine
+real defects; the last found none. Gates at the finishing commit: `pnpm typecheck` 0, `pnpm lint` 0,
+`pnpm check:docs` 0, `pnpm budgets` 0, **672 passed across 38 files**, `doctor.spec.ts` 91.
+Renumbered 2026-09-11. Phase 1's commits were replayed onto current `main` as a net diff after `main`
 re-applied their base under different SHAs.
 
 This work was drafted on 2026-09-08 as a rewrite of PRD-264, which un-filed that PRD from `done/`
@@ -20,7 +23,7 @@ a separation between MCP transport, external Blender availability and editor act
 **Complexity:** 7 → HIGH (+2 files, +2 multi-package, +2 target/prerequisite state, +1 external tool probes).
 **Problem:** A developer can see a target described as available because its packager exists while downloads, UI, signing or SDK prerequisites prevent the intended build.
 
-Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](../production-readiness/README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
 
@@ -33,7 +36,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Published doctor correctly initialized three MCPs and caught the runtime 404, Linux overlay failure and unsupported JDK. It still described Android as available with a prerequisite warning. Current source adds Blender probing. A successful build-tool probe must not become a store-ready claim.
 
-Engine developer-tool layer. Owns actionable diagnosis only; [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) repairs installation, [PRD-217](PRD-217-webview-ui-layer.md) repairs UI, [PRD-212](PRD-212-published-install-builds-android.md) supplies Android requirements and [PRD-365](PRD-365-consumer-desktop-distribution.md) supplies desktop distribution requirements. Doctor never installs external tools, changes keys or fabricates proof.
+Engine developer-tool layer. Owns actionable diagnosis only; [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) repairs installation, [PRD-217](../production-readiness/PRD-217-webview-ui-layer.md) repairs UI, [PRD-212](../production-readiness/PRD-212-published-install-builds-android.md) supplies Android requirements and [PRD-365](../production-readiness/PRD-365-consumer-desktop-distribution.md) supplies desktop distribution requirements. Doctor never installs external tools, changes keys or fabricates proof.
 
 ## Approach and boundaries
 
@@ -87,7 +90,7 @@ sequenceDiagram
       is `unknown — no install status recorded` and therefore **already** `warn`, so that run showed
       no demotion and the record annotating it `(demoted from fail to warn)` was wrong.
 - [x] Evidence record written: `docs/verification/prd-374-readiness-phase-1-2026-09-11.md`
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS - the sixth review. It found **no behavioural defect** - the shipped code was correct on all sixteen target x mode runs it drove - and two mutations that survived all 89 tests, on `doctor.ts:1531` and `:1536`, the two lines acceptance criteria 1 and 2 rest on. Both are now pinned by their own test (`a97f83236`), each observed red against its own mutation (`1 failed | 90 passed`) and green restored (`91 passed`). Rounds 1-5 found seven further real defects, every one recorded above. **PASS returned on `a97f83236`.**
       **Five reviews run, every one FAIL, every one acted on.** Review 1 found `pnpm budgets` red on the branch (a stale retention index) and a dead commit SHA; fixed in `811eae6ef`. Review 2 found the requested target line naming only *satisfied* facts (`not buildable — JDK 17.0.19 found; android-35 found`) while the real blocker sat on another line; fixed in `6d3b1b4e8`, pinned by `should name the blocker on the requested target line, not only satisfied probes`. Review 3 found a box ticked on a demotion that never happened — `engine-load-test`'s desktop target is already `warn`, so both forms print the identical line — and the record is corrected against a project that can show it. Review 4 found the same "available beside not buildable" defect **surviving on `--target desktop`**, whose line reads `available (linux-x64)` rather than `available — …` (`7cc0b1890`), and that the scoped exit code was never recorded (`6fc5e50db`, `3b33d026c`, `3513ee8ad`). Review 5 found **no code defect** — *"the implementation passes every check I could devise"*, six mutations all caught — and six documentation defects, corrected in this commit. **The box stays open until a review returns PASS.**
 
 **Files (maximum five):**
@@ -123,7 +126,7 @@ pnpm exec threenative doctor --target android --mode release --text
 - [x] Observed red recorded, then restored green — the three incumbent `blender` tests failed on the rename (`3 failed | 65 passed`); in a real project, `.vscode/mcp.json` made unreadable and `threenative-blender` deleted from `.zed/settings.json` gave `5 of 7 host configs are complete`, and `PATH=/usr/bin:/bin` **with `HOME` also scrubbed** gave `conversion is unavailable`. Restoring both returned the green text. The second independent review caught that `PATH` alone does not reproduce it: `resolveBlender` falls back to `$HOME/.local/bin/blender` (`packages/blender-mcp/src/detect.ts:104`), which is where Blender 5.2.0 lives on this machine, so the check stays `ok` until `HOME` is scrubbed too. **Round 5 adds two more, both observed red first:** the malformed-config rescue (`1 failed | 87 passed` on the new test, `88 passed` after the fix) and, on the real built CLI in a copy of `../sandbox/caravel` with `.mcp.json`, `.cursor/mcp.json` and `.gemini/settings.json` all corrupted, `✗ capability search: no readable server table: …` → `! capability search: …; Codex, VS Code, opencode, Zed carry the servers in a format only 'editor activation' reads` — the three corrupted files byte-identical afterwards. The unprobed-transport test was confirmed against its own mutation (`1 failed | 88 passed`, `89 passed` restored).
 - [x] User verification performed on the named platform — linux-x64, real built CLI. The gap the independent review left open is closed: in `../sandbox/caravel`, a real game with `@threenative/core` installed, with Blender removed from both `PATH` and `HOME`, the four facts read separately in one real report — `model conversion: threenative-blender transport is up, but conversion is unavailable: No Blender 4.2 or newer was found … no bake manifest here, so no conversion is proven`, beside `editor activation: 7 of 7 host configs carry the servers … whether an editor loaded it is not observable from here` and `capability search: threenative-sculpt … transport initialized and advertised 5 tool(s)`. No `was not probed` line appears, so the separation is no longer fixture-only. The same project with Blender present reports `Blender 5.2.0 converts .fbx, .blend, .obj and .dae on this machine`.
 - [x] Evidence record written: `docs/verification/prd-374-readiness-phase-2-2026-09-11.md`
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS - **PASS**, returned twice independently at this code. Between them the two reviewers ran eleven mutations of their own, each caught by exactly one distinct test, drove the real built CLI across five project shapes in a copy of `../sandbox/caravel` outside this repository, proved by `md5sum -c` that a malformed host config is byte-identical after a run, and reproduced the Blender control honestly - `PATH` alone leaves Blender resolvable through `$HOME/.local/bin/blender`, so `HOME` must be scrubbed too. `src/doctor.ts` md5-identical after every revert. Defects: none.
       **Four reviews run.** Review 3 returned the first PASS this batch produced, on an earlier commit; rounds 1, 2 and 5 returned FAIL, all acted on. Review 1 found the severity inversion and the Cursor-only exit 1; review 2 (on the fixed code) confirmed those but found two more: every per-server message hardcoded `.mcp.json` while the summary named the host actually read, and `mcpConfig` took the first host that *parses* rather than the one carrying the servers — so a project with all seven configs wired but a user-owned `.mcp.json` reported `0 of 4 server(s) resolve` beside `7 of 7`. Both fixed in this commit, each with its own regression test, both observed red first. **A third review has not seen the fix**, so this box stays open. **Review 5 (this commit) found two more.** First, the same defect class as review 2's, surviving one branch over: `capabilitySearchChecks` gave the `missing` branch a "another host carries them" rescue and the `malformed` branch never got it, so three unreadable shape-verifiable configs hard-failed a project whose Codex, VS Code, opencode and Zed configs were fully wired — two checks contradicting each other about the same project. Second, nothing pinned `was not probed` versus `transport is up`: mutating the unprobed branch to claim a transport doctor never opened left 87 passed, 0 failed, and that is exactly the separation acceptance criterion 3 rests on. Both fixed in `6f4b344f4`. **The box stays open until a review returns PASS on this commit.**
 
 **Files (maximum five):**
@@ -181,7 +184,7 @@ top of the file, and the fourth review was right to call ticking them a contradi
 found a real defect in every round so far, including one *after* these criteria first read as met.
 
 
-- [ ] The requested build target/mode cannot appear ready when a required download, SDK/JDK, UI runtime or signing prerequisite is missing.
+- [x] The requested build target/mode cannot appear ready when a required download, SDK/JDK, UI runtime or signing prerequisite is missing.
       All four classes observed on the real CLI in `../sandbox/prd221-16kb-starter`, a scaffolded
       game with no engine checkout: `doctor --target android --mode release` reports
       `✗ target android: not buildable — linux-x64: Prebuilt release manifest fetch failed … HTTP 404.;`
@@ -190,19 +193,19 @@ found a real defect in every round so far, including one *after* these criteria 
       first. The UI-runtime class is the desktop overlay, pinned by
       `should block a requested desktop build on a failing overlay`, which now asserts the target
       line as well as the verdict.
-- [ ] Doctor shares the build/config/runtime sources of truth and remains useful without engine source.
+- [x] Doctor shares the build/config/runtime sources of truth and remains useful without engine source.
       Every run cited here is in a project outside this repository with no engine checkout
       (`../sandbox/prd221-16kb-starter`, `../sandbox/caravel`). The signing property names come
       from `ANDROID_RELEASE_SIGNING_ENV`, the host list from the installer's own `MCP_HOSTS`, and
       the runtime status from the packager's install record — read, never retyped.
-- [ ] MCP transport success is distinguished from external Blender availability, editor activation and actual operation proof.
+- [x] MCP transport success is distinguished from external Blender availability, editor activation and actual operation proof.
       Four separate facts in one real report (`../sandbox/caravel`, Blender removed from `PATH`
       *and* `HOME`): `capability search … transport initialized and advertised 5 tool(s)`;
       `editor activation: 7 of 7 host configs carry the servers … whether an editor loaded it is
       not observable from here`; `model conversion: threenative-blender transport is up, but
       conversion is unavailable: No Blender 4.2 or newer was found`; `no bake manifest here, so no
       conversion is proven`. Independently re-run by the phase-2 reviewer with `env -i`.
-- [ ] Unscoped doctor remains compatible; non-iOS target checks do not demand iOS evidence.
+- [x] Unscoped doctor remains compatible; non-iOS target checks do not demand iOS evidence.
       `doctor --target web` on linux-x64 prints `✓ requested build: buildable — web` while iOS
       stays in the report demoted to a warning
       (`! target ios: unavailable — iOS simulator packaging requires darwin-arm64; received
@@ -213,7 +216,7 @@ found a real defect in every round so far, including one *after* these criteria 
       `../sandbox/prd221-16kb-starter`: `--target web` exit **0**, `--target desktop` exit **1**,
       unscoped exit **1**. The unscoped report is byte-unchanged and carries no `requested build`
       line, pinned by its own regression test.
-- [ ] Malformed inputs and missing observations fail honestly; documents name only flags implemented by these phases.
+- [x] Malformed inputs and missing observations fail honestly; documents name only flags implemented by these phases.
       `--target bogus` exits 1, `--mode release` without a target exits 1, and `--target` with no
       value exits 1 — verified on the built CLI by two independent reviewers as well as here. A
       malformed host config is reported by exact path and left byte-identical (`md5sum -c`,

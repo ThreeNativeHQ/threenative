@@ -15,7 +15,7 @@ Was independent of the publish chain.
 `production-readiness/` and replaced it with a fresh plan, deleting all sixteen ticked boxes. The
 replacement's phases were new scope, not a regression of this one: target-scoped build-prerequisite
 prediction and Blender/editor-activation separation, neither of which this PRD ever claimed. That
-scope now lives in [PRD-374](../production-readiness/PRD-374-doctor-predicts-the-requested-build-prerequisite.md),
+scope now lives in [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md),
 which cites this one. Every box below was re-verified against `main` on 2026-09-11 before being
 restored — see the per-phase notes.
 
