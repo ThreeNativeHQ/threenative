@@ -12,6 +12,7 @@
       ".linchpin/**",
       ".worktrees/**",
       ".claude/worktrees/**",
+      ".opencode/**",
       ".linchpin/**",
       ".tnshots/**",
       ".mcp.json",
