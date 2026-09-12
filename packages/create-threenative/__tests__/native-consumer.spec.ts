@@ -148,6 +148,9 @@ async function probe(
   return stdout;
 }
 
+/** One install downloads the runtime and the build tool helper that sits beside it. */
+const ARTIFACTS_PER_INSTALL = 2;
+
 async function releaseFixture() {
   const root = await makeTempDir("threenative-consumer-release-");
   const payload = Buffer.from(
@@ -168,6 +171,12 @@ async function releaseFixture() {
       artifacts: {
         "linux-x64": {
           url: `http://127.0.0.1:${address.port}/runtime`,
+          sha256: createHash("sha256").update(payload).digest("hex"),
+        },
+        // `src/cli/tool_dispatch.cpp:52` dispatches desktop packaging to a `mystral-tools` helper
+        // beside the runtime, so an install fetches it too. This server answers any path.
+        "linux-x64-tools": {
+          url: `http://127.0.0.1:${address.port}/tools`,
           sha256: createHash("sha256").update(payload).digest("hex"),
         },
       },
@@ -197,7 +206,7 @@ test("desktop resolver reuses the checksum-verified install without network acce
       "package-desktop.mjs",
       `await runtime.resolveDesktopRuntime(undefined, { install: ${JSON.stringify(fixture.install)} });`,
     );
-    assert.equal(fixture.requests(), 1);
+    assert.equal(fixture.requests(), ARTIFACTS_PER_INSTALL);
   } finally {
     await fixture.close();
   }
@@ -239,7 +248,7 @@ for (const corruption of [
         await writeFile(statusPath, JSON.stringify(status));
       }
       await probe("package-desktop.mjs", call);
-      assert.equal(fixture.requests(), 2);
+      assert.equal(fixture.requests(), ARTIFACTS_PER_INSTALL * 2);
       assert.equal(JSON.parse(await readFile(statusPath, "utf8")).ok, true);
     } finally {
       await fixture.close();
@@ -308,7 +317,7 @@ posixTest("desktop packaging forwards install options and emits an artifact", as
       consumer,
     );
     assert.equal(await readFile(output, "utf8"), "packed");
-    assert.equal(fixture.requests(), 1);
+    assert.equal(fixture.requests(), ARTIFACTS_PER_INSTALL);
   } finally {
     await fixture.close();
   }
