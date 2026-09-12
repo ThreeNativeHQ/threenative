@@ -25,9 +25,12 @@ import os from "node:os";
 import path from "node:path";
 import { init, parse } from "es-module-lexer";
 
-const { releaseManifestUrl } = (await import(
+const { platformKey, releaseManifestUrl } = (await import(
   new URL("../packages/runtime-native/scripts/install-prebuilt.mjs", import.meta.url).href
-)) as { readonly releaseManifestUrl: (version?: string) => string };
+)) as {
+  readonly platformKey: (platform?: string, arch?: string) => string;
+  readonly releaseManifestUrl: (version?: string) => string;
+};
 import { publicWorkspacePackages, workspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
@@ -357,6 +360,50 @@ export function templatePinCensus(
 
 export type PrebuiltReleaseProbe = (url: string) => "absent" | "present" | "unreachable";
 
+/** The parsed lock at a present release URL, or undefined when it cannot be read. */
+export type PrebuiltLockProvider = (url: string) => unknown;
+
+/**
+ * Accept a scoped lock for the key this workstation installs, and refuse one that omits it.
+ *
+ * A locally published release advertises only the platform matrices this host built. The preflight
+ * only ever asked whether the lock exists, so a scoped lock that omits the runtime this checkout
+ * would install was indistinguishable from a complete one. The key is present or it is not.
+ */
+export function scopedPrebuiltLockFindings(lock: unknown, url: string): readonly IPublishFinding[] {
+  if (typeof lock !== "object" || lock === null) return [];
+  let key: string;
+  try {
+    key = platformKey();
+  } catch {
+    // A host without a published runtime row cannot ask this question; the strict default still runs.
+    return [];
+  }
+  const artifacts = (lock as { artifacts?: unknown }).artifacts;
+  if (typeof artifacts !== "object" || artifacts === null || Array.isArray(artifacts)) return [];
+  if (Object.hasOwn(artifacts, key)) return [];
+  return [
+    {
+      detail: `The prebuilt lock at ${url} does not advertise '${key}', the runtime this workstation installs. Publish a lock that carries it.`,
+      package: "@threenative/runtime-native",
+      severity: "fail",
+    },
+  ];
+}
+
+function fetchPrebuiltLock(url: string): unknown {
+  try {
+    const stdout = execFileSync("curl", ["--silent", "--show-error", "--location", url], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
+    });
+    return JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+}
+
 function headPrebuiltRelease(url: string): ReturnType<PrebuiltReleaseProbe> {
   try {
     const status = execFileSync(
@@ -397,6 +444,7 @@ export function prebuiltReleaseCensus(
   probe: PrebuiltReleaseProbe = headPrebuiltRelease,
   version = runtimePackageVersion(repo),
   acknowledged = false,
+  lockProvider?: PrebuiltLockProvider,
 ): readonly IPublishFinding[] {
   if (version === undefined) return [];
   const url = releaseManifestUrl(version);
@@ -406,7 +454,8 @@ export function prebuiltReleaseCensus(
   } catch {
     state = "unreachable";
   }
-  if (state === "present") return [];
+  if (state === "present")
+    return lockProvider === undefined ? [] : scopedPrebuiltLockFindings(lockProvider(url), url);
   if (state === "absent") {
     return [
       {
@@ -742,6 +791,11 @@ export interface ICheckPublishOptions {
    */
   readonly allowMissingPrebuilt?: boolean;
   readonly lookup?: RegistryLookup;
+  /**
+   * The parsed lock at a present release URL. Defaults to a real fetch unless the caller injected a
+   * `prebuiltProbe`, which is how tests answer the existence question without the network.
+   */
+  readonly prebuiltLock?: PrebuiltLockProvider;
   readonly prebuiltProbe?: PrebuiltReleaseProbe;
   readonly repo?: string;
   readonly sourceCommits?: SourceCommits;
@@ -798,12 +852,17 @@ export async function checkPublishState(
       allowCurrentPublishSetPins: options.allowCurrentPublishSetPins,
     }),
   );
+  // A real run reads the lock to accept a scoped release for this host's key; an injected probe
+  // means the caller is answering the question itself, so the network is never touched.
+  const prebuiltLock =
+    options.prebuiltLock ?? (options.prebuiltProbe === undefined ? fetchPrebuiltLock : undefined);
   findings.push(
     ...prebuiltReleaseCensus(
       repo,
       options.prebuiltProbe,
       undefined,
       options.allowMissingPrebuilt === true,
+      prebuiltLock,
     ),
   );
   const readTarball = options.tarballs ?? pnpmPackReader();

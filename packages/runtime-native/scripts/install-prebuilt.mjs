@@ -117,6 +117,26 @@ function isLoopbackFixture(url) {
     !url.username && !url.password;
 }
 
+/**
+ * The keys a manifest declares it advertises.
+ *
+ * A manifest may carry `requiredKeys`; absent, the strict full-cohort default below is unchanged, so
+ * the official CI release keeps its guarantee. A scoped manifest is how a local release states which
+ * of the platform matrices this host actually built, without claiming the rest.
+ */
+function declaredRequiredKeys(manifest) {
+  if (manifest.requiredKeys === undefined) return undefined;
+  if (!Array.isArray(manifest.requiredKeys) || manifest.requiredKeys.some((key) => typeof key !== 'string')) {
+    throw new Error('Prebuilt manifest requiredKeys must be an array of prebuilt release keys.');
+  }
+  for (const key of manifest.requiredKeys) {
+    if (!Object.hasOwn(PREBUILT_ASSET_NAMES, key)) {
+      throw new Error(`Unknown prebuilt release key '${key}' in manifest requiredKeys.`);
+    }
+  }
+  return manifest.requiredKeys;
+}
+
 function validateManifestEnvelope(manifest, options) {
   if (manifest?.schemaVersion !== 1) throw new Error('Unsupported or missing prebuilt manifest schemaVersion.');
   const version = options.version ?? packageVersion;
@@ -129,6 +149,7 @@ function validateManifestEnvelope(manifest, options) {
   if (options.sourceSha !== undefined && manifest.sourceSha !== options.sourceSha) {
     throw new Error(`Prebuilt source SHA mismatch: expected ${options.sourceSha}, received ${manifest.sourceSha}.`);
   }
+  declaredRequiredKeys(manifest);
   if (!manifest.artifacts || typeof manifest.artifacts !== 'object' || Array.isArray(manifest.artifacts)) {
     throw new Error('Prebuilt manifest artifacts must be an object.');
   }
@@ -151,23 +172,39 @@ function validateManifestArtifact(manifest, key, version) {
 /** Validate the entire advertised cohort before selecting even one consumer artifact. */
 export function validateReleaseManifest(manifest, options = {}) {
   const version = validateManifestEnvelope(manifest, options);
-  // iOS retains its separate release gate; it is not a prerequisite for a non-iOS consumer.
-  const requiredKeys = options.requiredKeys ??
+  // A caller's explicit scope wins; then the manifest's own advertised keys; then the strict
+  // non-iOS cohort. iOS retains its separate release gate, so it is not a prerequisite for a
+  // non-iOS consumer, and a scoped local manifest is accepted for exactly the keys it names.
+  const requiredKeys = options.requiredKeys ?? declaredRequiredKeys(manifest) ??
     PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith('ios-'));
   for (const key of requiredKeys) releaseFromManifest(manifest, key);
   for (const key of Object.keys(manifest.artifacts)) validateManifestArtifact(manifest, key, version);
   return manifest;
 }
 
-/** The release workflow uses this same validator, including its existing iOS requirement. */
-export function generateReleaseManifest(directory, { repository, tag, sourceSha }) {
+/**
+ * The release workflow uses this same validator, including its existing iOS requirement.
+ *
+ * `keys` narrows the matrix to the artifacts this caller staged: the lock then advertises exactly
+ * those keys (`requiredKeys`) and refuses if one is missing from the directory. Omitted, the full
+ * published matrix is required and the lock carries no `requiredKeys`, so every consumer keeps the
+ * strict default.
+ */
+export function generateReleaseManifest(directory, { repository, tag, sourceSha, keys }) {
   if (repository !== RELEASE_REPOSITORY) {
     throw new Error(`Prebuilt releases must be published by ${RELEASE_REPOSITORY}, received ${repository}.`);
   }
-  if (tag !== `runtime-native-v${packageVersion}`) {
-    throw new Error(`Prebuilt release tag must be runtime-native-v${packageVersion}, received ${tag}.`);
+  if (tag !== releaseTag()) {
+    throw new Error(`Prebuilt release tag must be ${releaseTag()}, received ${tag}.`);
   }
-  const published = PUBLISHED_PREBUILT_KEYS.map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
+  const selectedKeys = keys === undefined ? [...PUBLISHED_PREBUILT_KEYS] : keys;
+  if (!Array.isArray(selectedKeys) || selectedKeys.length === 0) {
+    throw new Error('Prebuilt release keys must be a non-empty array.');
+  }
+  const published = selectedKeys.map((key) => {
+    if (!Object.hasOwn(PREBUILT_ASSET_NAMES, key)) throw new Error(`Unknown prebuilt release key '${key}'.`);
+    return [key, PREBUILT_ASSET_NAMES[key]];
+  });
   const expected = published.map(([, name]) => name).sort();
   const actual = readdirSync(directory).sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -179,8 +216,11 @@ export function generateReleaseManifest(directory, { repository, tag, sourceSha 
     return [key, { sha256: sha256(contents), size: contents.length,
       url: `${releaseManifestUrl().replace('/prebuilt-lock.json', '')}/${name}` }];
   }));
-  return validateReleaseManifest({ schemaVersion: 1, version: packageVersion, sourceSha, artifacts },
-    { sourceSha, requiredKeys: PUBLISHED_PREBUILT_KEYS });
+  return validateReleaseManifest(
+    { schemaVersion: 1, version: packageVersion, sourceSha, artifacts,
+      ...(keys === undefined ? {} : { requiredKeys: [...selectedKeys] }) },
+    { sourceSha, requiredKeys: selectedKeys },
+  );
 }
 
 export function readRelease(manifestPath, key) {
@@ -198,8 +238,13 @@ export function readRelease(manifestPath, key) {
   return releaseFromManifest(manifest, key);
 }
 
+/** The GitHub release tag a version's prebuilt payload is published under. */
+export function releaseTag(version = packageVersion) {
+  return `runtime-native-v${version}`;
+}
+
 export function releaseManifestUrl(version = packageVersion) {
-  return `https://github.com/${RELEASE_REPOSITORY}/releases/download/runtime-native-v${encodeURIComponent(version)}/prebuilt-lock.json`;
+  return `https://github.com/${RELEASE_REPOSITORY}/releases/download/${releaseTag(version)}/prebuilt-lock.json`;
 }
 
 export function writeInstallStatus(status, statusPath = join(packageRoot, 'prebuilt', 'install-status.json')) {

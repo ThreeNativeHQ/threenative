@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-377 — One local command publishes every package and its native runtime
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — Phases 1–2 implemented and locally verified on Linux x64; Phase 3 code and tests complete, the real GitHub release and browser-consumer run are not executed (irreversible).
 **Complexity:** 7 → HIGH (+2 six-to-ten files, +2 new module, +2 crosses the npm/native release boundary, +1 GitHub release API).
 **Owner:** engine release tooling.
 **Problem:** Publishing is two unrelated mechanisms. `pnpm release --yes` already publishes every npm package in dependency order from a workstation, but it then **refuses** because `@threenative/runtime-native` demands a `runtime-native-v<version>/prebuilt-lock.json` that only the multi-runner CI release lane can produce. So a local release cannot make the runtime installable, and a consumer's first `threenative build` fails on an HTTP 404. The owner's ask is one local `pnpm` command that publishes everything, so people can install the cohort and build their games without waiting on CI.
@@ -51,12 +51,12 @@ flowchart LR
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/install-prebuilt.mjs` — `validateReleaseManifest` reads `manifest.requiredKeys`; `generateReleaseManifest` accepts a `keys` subset; `fetchRelease`/`readRelease` pass the manifest through unchanged.
-- [ ] Required test green: `packages/runtime-native/tests/install-prebuilt.test.mjs` (or the existing prebuilt spec) covers a scoped manifest that installs its declared key and refuses an undeclared one.
-- [ ] Observed red recorded, then restored green — removing a declared key from a scoped manifest fails the install naming that key; restoring it is green.
-- [ ] User verification performed on the named platform — a local manifest install (`THREENATIVE_PREBUILT_MANIFEST`) installs the host runtime and tools helper.
-- [ ] Evidence record written: the boxes above carry it (command, exit code, key).
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `packages/runtime-native/scripts/install-prebuilt.mjs` — `validateReleaseManifest` reads `manifest.requiredKeys`; `generateReleaseManifest` accepts a `keys` subset; `fetchRelease`/`readRelease` pass the manifest through unchanged.
+- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs` — "a scoped manifest installs exactly the keys it advertises and refuses an undeclared one" and "generateReleaseManifest with keys scopes the lock…"; `pnpm --dir packages/runtime-native exec vitest run tests/distribution.test.mjs` exit 0 (42 passed).
+- [x] Observed red recorded, then restored green — dropping `linux-x64-tools` from a scoped manifest throws `/linux-x64-tools/`; rewriting the lock is green, in the same test.
+- [x] User verification performed on the named platform — Linux x64: a staged scoped lock served over loopback installed `threenative-runtime-linux-x64` (127,772,024 B) and `mystral-tools` (127,764,248 B); `install-status.json` records `ok:true` with both SHA-256s.
+- [x] Evidence record written: the boxes above carry it (command, exit code, key).
+- [ ] Independent reviewer returned PASS — not run; CI review pending.
 
 **Files (maximum five):**
 
@@ -74,12 +74,12 @@ flowchart LR
 
 **Progress:**
 
-- [ ] Callers wired and building: `scripts/release-native-local.mjs` is invoked by the `release-native-local.ts` CLI and by `scripts/release.ts`; it reads `PREBUILT_ASSET_NAMES` rather than repeating literals.
-- [ ] Required test green: the assembler stages `threenative-runtime-linux-x64` and `threenative-tools-linux-x64` from the built `packages/runtime-native/build/tn-linux/{mystral,mystral-tools}` and returns a scoped manifest.
-- [ ] Observed red recorded, then restored green — point the assembler at a missing binary; it fails naming the path and produces no manifest.
-- [ ] User verification performed on the named platform — the staged directory contains exactly the declared assets, each non-empty.
-- [ ] Evidence record written: the boxes above carry it.
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `scripts/release-native-local.mjs` is invoked by the `release-native-local.ts` CLI and by `scripts/release.ts`; it reads `PREBUILT_ASSET_NAMES` rather than repeating literals.
+- [x] Required test green: `scripts/__tests__/release-native-local.spec.ts` — the assembler stages `threenative-runtime-linux-x64` and `threenative-tools-linux-x64` from a fixture `build/tn-linux/{mystral,mystral-tools}` and returns a scoped manifest; `pnpm exec vitest run scripts/__tests__/release-native-local.spec.ts` exit 0.
+- [x] Observed red recorded, then restored green — deleting `build/tn-linux/mystral-tools` makes `stageLocalPayload` throw `TN_RELEASE_NATIVE_SOURCE_MISSING` naming the path and write no lock; the fixture tree in the prior case is green.
+- [x] User verification performed on the named platform — Linux x64 real build: staged `release-native/` with exactly `threenative-runtime-linux-x64` (127,772,024 B) and `threenative-tools-linux-x64` (127,764,248 B), each non-empty, hashes recorded in the scoped lock.
+- [x] Evidence record written: the boxes above carry it.
+- [ ] Independent reviewer returned PASS — not run; CI review pending.
 
 **Files (maximum five):**
 
@@ -99,12 +99,12 @@ flowchart LR
 
 **Progress:**
 
-- [ ] Callers wired and building: `scripts/release.ts --yes` invokes the native release after the npm publish; `pnpm release:native --yes` runs it alone.
-- [ ] Required test green: `scripts/__tests__/release-native.spec.ts` proves the native step is refused when a declared key has no staged asset, and invoked after a successful npm publish.
-- [ ] Observed red recorded, then restored green — a declared-but-missing key makes `pnpm release:native --yes` publish nothing and exit non-zero.
-- [ ] User verification performed on the named platform — a real `runtime-native-v<version>` release exists and a fresh sandbox install of the published package downloads the runtime and builds the desktop game.
-- [ ] Evidence record written: the boxes above carry it (release URL, lock, install log, build exit).
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `scripts/release.ts --yes` invokes the native release after the npm publish (staging before it, upload after); `pnpm release:native --yes` runs it alone; `pnpm release:native --dry-run` staged the host payload and uploaded nothing (exit 0).
+- [x] Required test green: `scripts/__tests__/release-native.spec.ts` — refusal when a declared key has no staged asset, `gh release view` → `create` → uploads → lock-last ordering, idempotent re-run, scoped-lock acceptance, and `release.ts` staging-before-publish/upload-after; `pnpm exec vitest run scripts/__tests__/release-native.spec.ts` exit 0.
+- [x] Observed red recorded, then restored green — `uploadNativeRelease` with `linux-x64-tools` declared but not staged throws `TN_RELEASE_NATIVE_ASSET_MISSING` and performs zero `gh` calls; the fully staged directory uploads.
+- [ ] User verification performed on the named platform — NOT run: publishing `runtime-native-v0.3.1` is irreversible and needs release credentials, so `pnpm release:native --yes` was not invoked; only the dry run above executed locally.
+- [ ] Evidence record written: blocked on the step above — no release URL, downloaded lock or sandbox build exit exists yet.
+- [ ] Independent reviewer returned PASS — not run; CI review pending.
 
 **Files (maximum five):**
 
@@ -129,11 +129,11 @@ The phase boxes above are the record. `docs/benchmark/SCREENSHOT-RETENTION.md` i
 
 ## Acceptance criteria
 
-- [ ] **local** — On a Linux workstation with the native toolchain, `pnpm release --yes` publishes every npm package and creates `runtime-native-v<version>` whose scoped lock names the host runtime and tools helper, with each asset's SHA-256 and size.
-- [ ] **local** — A fresh sandbox install of that published cohort downloads the runtime and builds and runs the desktop game; the same install requests a key absent from the scoped lock and fails closed naming it.
-- [ ] **local** — Dropping a declared key from the staged payload makes `pnpm release:native --yes` refuse and publish nothing; the manifest contract's full-cohort default still rejects a key-dropped manifest on the official CI path.
-- [ ] **shared** — The CI `native-release.yml` lane remains the producer for `win32-x64`/`ios-simulator-arm64`; this command does not claim a platform it did not build, and the header names that lane.
-- [ ] **local** — `pnpm release` (npm only, no `--yes`) stays a dry run, and `pnpm release --prepare` is unchanged.
+- [ ] **local** — On a Linux workstation with the native toolchain, `pnpm release --yes` publishes every npm package and creates `runtime-native-v<version>` whose scoped lock names the host runtime and tools helper, with each asset's SHA-256 and size. — NOT run; publishing is irreversible and needs release credentials.
+- [ ] **local** — A fresh sandbox install of that published cohort downloads the runtime and builds and runs the desktop game; the same install requests a key absent from the scoped lock and fails closed naming it. — NOT run; blocked on the publish above. The local-manifest install and the absent-key refusal are proven in Phase 1.
+- [ ] **local** — Dropping a declared key from the staged payload makes `pnpm release:native --yes` refuse and publish nothing; the manifest contract's full-cohort default still rejects a key-dropped manifest on the official CI path. — Code-level: `uploadNativeRelease` refuses with zero `gh` calls (Phase 3 test) and the full-cohort default is proven by the existing "a candidate rejects every missing non-iOS key" test; the real `--yes` run is unexecuted.
+- [x] **shared** — The CI `native-release.yml` lane remains the producer for `win32-x64`/`ios-simulator-arm64`; this command does not claim a platform it did not build, and the header names that lane. — the workflow is untouched in this branch and its publish job still generates the full-cohort lock.
+- [x] **local** — `pnpm release` (npm only, no `--yes`) stays a dry run, and `pnpm release --prepare` is unchanged. — native staging is gated on `willCreateNativeRelease = publish && !allowMissingPrebuilt`, both early returns precede it, and `scripts/__tests__/release.spec.ts` stays green.
 
 ## Prior work retained
 
