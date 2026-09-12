@@ -1,14 +1,19 @@
 name: Native runtime release
 
 on:
+  # Evidence for a main commit arrives via CI completion, not via the push itself: the
+  # `gates` job used to hold a runner for up to 150 minutes polling for the CI
+  # run, and at this repo's push cadence arrivals outran the org's runner concurrency.
+  # The `workflow_run` payload carries the CI conclusion, head SHA and jobs, so `gates`
+  # is a minutes-long verdict over the event instead of a wait. Tag publication and PR
+  # proof keep their own triggers below.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   push:
     tags:
       - "runtime-native-v*"
-    branches: [main]
-    paths:
-      - ".github/workflows/native-release.yml"
-      - "scripts/__tests__/native-release-proof.spec.ts"
-      - "scripts/__tests__/native-release-android-staging.spec.ts"
   pull_request:
     paths:
       - ".github/workflows/native-release.yml"
@@ -30,11 +35,16 @@ concurrency:
   # branch it cannot reach its own first line no matter what its timeout is - which is why this sits
   # alongside the timeout raise rather than instead of it. Evidence here is candidate-keyed, so a
   # superseded run's output is still valid for the SHA it was produced from and is worth letting
-  # finish. The cost is that a new push waits for the old run: cancel the superseded run by hand when
-  # you need the current SHA tested now.
+  # finish.
   # `github.event_name` is in the group because a manual proof on main and an automatic one would
   # otherwise share `native-release-refs/heads/main` and evict each other.
-  group: native-release-${{ github.ref }}-${{ github.event_name }}
+  # `github.event.workflow_run.head_sha` is in the group because every `workflow_run` run shares
+  # `github.ref` (the default branch) and `github.event_name` (`workflow_run`): without the head
+  # SHA they all serialize behind each other in one group while the Actions queue drains. A new CI
+  # completion for a newer main SHA gets its own group instead of queueing behind a superseded
+  # evidence run; a re-run for the same SHA still shares its group. Tag publication stays
+  # per-ref as before.
+  group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -108,9 +118,20 @@ jobs:
     needs: validate-tag
     if: ${{ !cancelled() && (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 160
+    # A verdict over the triggering CI completion, not a wait for it: the event payload
+    # carries the conclusion and head SHA, and the required-job table is read once from
+    # the Jobs API. Nothing here sleeps or polls; a red or mismatched CI run refuses.
+    timeout-minutes: 5
     steps:
+      # `GITHUB_SHA` on a `workflow_run` run is the last commit on the default branch, not
+      # the CI head, so the evidence candidate is checked out explicitly. Every other
+      # trigger keeps the default checkout it always had.
       - uses: actions/checkout@v7
+        if: github.event_name == 'workflow_run'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/checkout@v7
+        if: github.event_name != 'workflow_run'
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -143,35 +164,116 @@ jobs:
             "The existing native builds and packed controls run without publication. Main-CI prerequisites remain unavailable for this PR candidate.\n\n" +
             "| Required main CI job | Status |\n| --- | --- |\n" + names.map((name) => `| ${name} | unavailable on PR |`).join("\n") + "\n");
           NODE
-      - name: Wait for the exact main CI run to finish
-        if: github.event_name != 'pull_request'
+      # Aggregate CI success is not enough; every required row is validated below.
+      # The evidence path: CI on main just completed and triggered this run. The verdict
+      # reads the `workflow_run` payload (conclusion, head SHA, jobs) once and refuses
+      # anything but exact-candidate success - no `gh run list` search, no retry, no sleep.
+      - name: Require the triggering CI completion
+        if: github.event_name == 'workflow_run'
         env:
           GH_TOKEN: ${{ github.token }}
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_STATUS: ${{ github.event.workflow_run.status }}
+          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_NAME: ${{ github.event.workflow_run.name }}
         run: |
           set -euo pipefail
-          # Bounded polling: a red CI run is inspected by the gate below, never retried to green.
-          # 150 attempts at 60s is a 150 minute budget. Successful ci.yml push runs on main took
-          # 61.2 to 115.4 minutes on the full board (2026-09-10), so a shorter budget would refuse
-          # the candidate for elapsed time rather than for its evidence.
-          for attempt in $(seq 1 150); do
-            gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
-              --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha \
-              > "$RUNNER_TEMP/native-release-prerequisites/ci-wait.json"
-            state=$(node --input-type=module <<'NODE'
-          import { readFileSync } from "node:fs";
-          const runs = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/native-release-prerequisites/ci-wait.json`, "utf8"));
-          const run = runs.find((entry) => entry.event === "push" && entry.headBranch === "main" && entry.headSha === process.env.GITHUB_SHA);
-          console.log(run?.status ?? "pending");
+          evidence="$RUNNER_TEMP/native-release-prerequisites"
+          mkdir -p "$evidence"
+          trap 'status=$?; printf "exit_code=%s\n" "$status" > "$evidence/status.txt"' EXIT
+          candidate_sha="$WORKFLOW_RUN_HEAD_SHA"
+          candidate_run="$WORKFLOW_RUN_ID"
+          if ! [[ "$candidate_sha" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "Invalid triggering CI head SHA ${candidate_sha}." >&2
+            exit 1
+          fi
+          if ! [[ "$candidate_run" =~ ^[0-9]+$ ]] || [ "$candidate_run" -le 0 ]; then
+            echo "Invalid triggering CI run id ${candidate_run}." >&2
+            exit 1
+          fi
+          if [ "$WORKFLOW_RUN_NAME" != CI ] || [ "$WORKFLOW_RUN_STATUS" != completed ] || \
+             [ "$WORKFLOW_RUN_CONCLUSION" != success ] || [ "$WORKFLOW_RUN_EVENT" != push ] || \
+             [ "$WORKFLOW_RUN_HEAD_BRANCH" != main ]; then
+            echo "Refusing non-success main-push CI completion: workflow=$WORKFLOW_RUN_NAME status=$WORKFLOW_RUN_STATUS conclusion=$WORKFLOW_RUN_CONCLUSION event=$WORKFLOW_RUN_EVENT branch=$WORKFLOW_RUN_HEAD_BRANCH sha=$candidate_sha." >&2
+            exit 1
+          fi
+          printf '{"databaseId":%s,"attempt":1,"status":"%s","conclusion":"%s","event":"%s","headBranch":"%s","headSha":"%s"}\n' \
+            "$candidate_run" "$WORKFLOW_RUN_STATUS" "$WORKFLOW_RUN_CONCLUSION" "$WORKFLOW_RUN_EVENT" "$WORKFLOW_RUN_HEAD_BRANCH" "$candidate_sha" > "$evidence/ci-run.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=100" > "$evidence/ci-jobs.json"
+          CANDIDATE_RUN_ID="$candidate_run" CANDIDATE_SHA="$candidate_sha" node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          const directory = join(process.env.RUNNER_TEMP, "native-release-prerequisites");
+          const candidateSha = process.env.CANDIDATE_SHA ?? "";
+          const runId = Number(process.env.CANDIDATE_RUN_ID);
+          if (!/^[a-f0-9]{40}$/.test(candidateSha) || !Number.isSafeInteger(runId) || runId < 1) {
+            throw new Error(`Invalid triggering CI completion for candidate ${candidateSha}.`);
+          }
+          const run = JSON.parse(readFileSync(join(directory, "ci-run.json"), "utf8"));
+          const pages = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
+          if (!Array.isArray(pages) || pages.length === 0 || pages.some((page) => !Array.isArray(page?.jobs))) {
+            throw new Error(`Missing or malformed CI job pages for candidate ${candidateSha}.`);
+          }
+          const jobs = pages.flatMap((page) => page.jobs);
+          const failures = [];
+          if (run?.databaseId !== runId || run?.headSha !== candidateSha ||
+              run?.status !== "completed" || run?.conclusion !== "success" ||
+              run?.event !== "push" || run?.headBranch !== "main" ||
+              !Number.isSafeInteger(run?.attempt) || run.attempt < 1) {
+            failures.push(`Triggering CI run no longer proves exact candidate ${candidateSha}.`);
+          }
+          if (pages.some((page) => !Number.isSafeInteger(page.total_count) || page.total_count !== jobs.length)) {
+            failures.push("Incomplete CI job pagination: the observed count does not match total_count.");
+          }
+          if (jobs.some((job) => !Number.isSafeInteger(job?.id) || job.id < 1 ||
+              typeof job?.name !== "string" || job.run_id !== runId || job.head_sha !== candidateSha) ||
+              new Set(jobs.map((job) => job?.id)).size !== jobs.length) {
+            failures.push("Malformed, duplicate or wrong-candidate CI job identity.");
+          }
+          // Existing main-CI job names, not evidence that this release workflow has executed.
+          // iOS release/simulator gates remain separate and unchanged below.
+          const requiredNames = [
+            "typecheck", "lint", "test", "budgets", "build", "test-native",
+            "native-platforms / Windows desktop core",
+            "native-platforms / macOS desktop core",
+            "native-platforms / Scaffolded starter desktop artifact",
+            "native-platforms / Desktop web/native parity",
+            "native-platforms / Android emulator visual parity",
+          ];
+          const runUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${runId}`;
+          const requiredJobs = requiredNames.map((name) => {
+            const matches = jobs.filter((job) => job?.name === name);
+            const job = matches[0];
+            const status = job?.status ?? "missing";
+            const conclusion = job?.conclusion ?? null;
+            if (matches.length !== 1 || status !== "completed" || conclusion !== "success") {
+              failures.push(`${name}: ${matches.length} result(s), ${status}/${conclusion ?? "absent"}.`);
+            }
+            return { name, id: job?.id ?? null, status, conclusion,
+              url: Number.isSafeInteger(job?.id) && job.id > 0 ? `${runUrl}/job/${job.id}` : null };
+          });
+          const report = { candidateSha, run: { ...run, url: runUrl }, requiredJobs, failures };
+          writeFileSync(join(directory, "validation.json"), `${JSON.stringify(report, null, 2)}\n`);
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              `## Exact-candidate CI prerequisites (not release proof)\n\nSHA: ${candidateSha}\n\n` +
+              `[CI run ${runId}, attempt ${run?.attempt ?? "unknown"}](${runUrl})\n\n` +
+              "| Required job | Status | Conclusion |\n| --- | --- | --- |\n" +
+              requiredJobs.map((job) => `| ${job.url ? `[${job.name}](${job.url})` : job.name} | ${job.status} | ${job.conclusion ?? "absent"} |`).join("\n") +
+              `\n\nValidation: ${failures.length === 0 ? "accepted" : "REFUSED"}.\n`);
+          }
+          if (failures.length > 0) throw new Error(failures.join("\n"));
+          console.log(`Validated ${requiredJobs.length} required jobs in CI run ${runId} for ${candidateSha}.`);
           NODE
-            )
-            if [ "$state" = completed ]; then exit 0; fi
-            sleep 60
-          done
-          echo "No completed exact-candidate main CI run became available." >&2
-          exit 1
       # Aggregate CI success is not enough; every required row is validated below.
       - name: Require a green CI run for this commit
-        if: github.event_name != 'pull_request'
+        # Tag publication and manual proof keep the single-shot lookup they always had:
+        # one `gh` read of the exact-candidate main CI run, never a wait. The evidence
+        # path (`workflow_run`) is verified by the step above from the event payload.
+        if: github.event_name != 'pull_request' && github.event_name != 'workflow_run'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -317,7 +419,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
+      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
+        if: github.event_name == 'workflow_run'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/checkout@v7
+        if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -439,7 +547,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
+      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
+        if: github.event_name == 'workflow_run'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/checkout@v7
+        if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -678,7 +792,13 @@ jobs:
     # builds, an emulator boot and six playtests - and had never once run to completion under 35.
     timeout-minutes: 60
     steps:
+      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
+        if: github.event_name == 'workflow_run'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/checkout@v7
+        if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -693,6 +813,8 @@ jobs:
           merge-multiple: true
       - name: Serve same-run proof assets without publishing
         if: github.ref_type != 'tag'
+        env:
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF_TYPE" != tag
@@ -700,6 +822,8 @@ jobs:
           import { createHash } from "node:crypto";
           import { readFileSync, readdirSync, writeFileSync } from "node:fs";
           import { PREBUILT_ASSET_NAMES, PUBLISHED_PREBUILT_KEYS } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          // On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
+          const candidateSha = process.env.WORKFLOW_RUN_HEAD_SHA || process.env.GITHUB_SHA;
           // The published cohort, not every non-iOS key: rows in UNPUBLISHED_PREBUILT_KEYS upload
           // under a name the `pattern: runtime-*` download above does not collect, so demanding them
           // here fails a run whose staging is exactly right.
@@ -716,7 +840,7 @@ jobs:
           }));
           writeFileSync(`${process.env.RUNNER_TEMP}/proof-prebuilt-lock.json`, `${JSON.stringify({ artifacts }, null, 2)}\n`);
           writeFileSync(`${process.env.RUNNER_TEMP}/proof-asset-identity.json`, `${JSON.stringify({
-            candidateSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+            candidateSha, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
             scope: "same-run-artifacts-not-public-installation", artifacts }, null, 2)}\n`);
           NODE
           python3 -m http.server 8765 --bind 127.0.0.1 --directory "$GITHUB_WORKSPACE/release" \
@@ -872,24 +996,24 @@ jobs:
             echo "::warning::/dev/kvm is not writable on this runner; the emulator falls back to \
           software emulation, which is the 474-second boot this step exists to avoid."
           fi
-      - name: Provision the Android debug keystore the aligner re-signs with
+      - name: Provision the Android debug keystore for the packed build
         run: |
-          # `alignAndroidArchive` re-signs the APK after `zipalign` rewrites it, and it fails
-          # closed when `$HOME/.android/debug.keystore` is absent. This lane builds the consumer
-          # APK through `package-android.mjs` instead of a Gradle debug install, so the debug
-          # store Gradle would normally auto-create is not guaranteed to exist. Create the
-          # standard Android debug key (same alias, passwords and distinguished name Gradle
-          # uses) so the aligner has one to sign with.
+          set -euo pipefail
+          # The packager zipaligns the finished APK to 16 KB and re-signs it with the debug key
+          # afterwards, because zipalign rewrites the archive. A Gradle debug build normally
+          # creates ~/.android/debug.keystore on first signing, but the masked clean-consumer
+          # SDK never yields one, so the re-sign fails closed with "no keystore". Provision the
+          # conventional debug key explicitly; the alias and passwords match what the packager's
+          # apksigner invocation already assumes.
           keystore="$HOME/.android/debug.keystore"
           if [ ! -f "$keystore" ]; then
             mkdir -p "$(dirname "$keystore")"
-            keytool -genkeypair -v \
-              -keystore "$keystore" \
-              -storepass android -alias androiddebugkey -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
+            keytool -genkeypair -keystore "$keystore" -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass android -keypass android \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
-          test -f "$keystore"
+          test -s "$keystore"
       - name: Build the packed Android target without NDK, CMake, or Rust
         run: |
           cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/game.ts"
@@ -942,6 +1066,8 @@ jobs:
             test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Record packed consumer verification evidence
         if: ${{ always() }}
+        env:
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           node --input-type=module <<'NODE'
           import { createHash } from "node:crypto";
@@ -1021,8 +1147,10 @@ jobs:
             }
           } catch (error) { failures.push(`packages: ${error.message}`); }
           const checkoutSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-          if (checkoutSha !== process.env.GITHUB_SHA) failures.push("Checkout SHA differs from the workflow candidate.");
-          const report = { candidateSha: process.env.GITHUB_SHA, checkoutSha,
+          // On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
+          const candidateSha = process.env.WORKFLOW_RUN_HEAD_SHA || process.env.GITHUB_SHA;
+          if (checkoutSha !== candidateSha) failures.push("Checkout SHA differs from the workflow candidate.");
+          const report = { candidateSha, checkoutSha,
             runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
             scope: process.env.GITHUB_REF_TYPE === "tag" ? "tagged-release-consumer" : "same-run-artifacts-not-public-installation",
             controls, packages, failures };
