@@ -13,8 +13,11 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: execFileSyncMock, spawnSync: spawnSyncMock };
 });
 
+import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
+  ANDROID_RELEASE_SIGNING_ENV,
+  BLENDER_SERVER,
   type IProjectSnapshot,
   MCP_SERVER_SPECS,
   detectX11Compositor,
@@ -26,6 +29,8 @@ import {
   readProject,
 } from "../src/doctor.js";
 import { MCP_SERVERS } from "../src/mcp-servers.js";
+
+const MCP_HOST_TABLE = MCP_HOSTS as readonly { readonly file: string; readonly label: string }[];
 
 const CORE_PACKAGE_VERSION = (
   JSON.parse(readFileSync(new URL("../../core/package.json", import.meta.url), "utf8")) as {
@@ -1222,23 +1227,81 @@ describe("threenative doctor edge coverage", () => {
   });
 });
 
-describe("threenative doctor and Blender", () => {
+describe("threenative doctor and model conversion", () => {
+  const ABSENT = {
+    available: false,
+    detail: "No Blender 4.2 or newer was found.",
+    installCommand: "sudo snap install blender --classic",
+  };
+
   it("should warn, not fail, when Blender is absent", () => {
-    const report = diagnoseProject(
+    const report = diagnoseProject(snapshot({ blender: ABSENT }));
+    const conversion = check(report, "model conversion");
+    expect(conversion.status).toBe("warn");
+    expect(conversion.fix).toContain("sudo snap install blender --classic");
+    // The point of the whole check: a project with no importable source stays green.
+    expect(conversion.detail).toContain("nothing needs it yet");
+    expect(report.pass).toBe(true);
+  });
+
+  it("should say the transport was not probed rather than claiming it is up", () => {
+    // Mutation-proofing: nothing pinned the unprobed branch, so reporting "transport is up" for a
+    // server that was never probed passed the whole suite. The separation this phase exists for is
+    // between a transport observed to work and one nobody looked at.
+    const unprobed = diagnoseProject(snapshot({ blender: ABSENT }));
+    expect(check(unprobed, "model conversion").detail).toContain("was not probed");
+    expect(check(unprobed, "model conversion").detail).not.toContain("transport is up");
+    const probed = diagnoseProject(
       snapshot({
-        blender: {
-          available: false,
-          detail: "No Blender 4.2 or newer was found.",
-          installCommand: "sudo snap install blender --classic",
-        },
+        blender: ABSENT,
+        mcpServerHealth: new Map([
+          [
+            BLENDER_SERVER,
+            { detail: "transport initialized and advertised 3 tool(s)", status: "ok" as const },
+          ],
+        ]),
       }),
     );
-    const blender = check(report, "blender");
-    expect(blender.status).toBe("warn");
-    expect(blender.fix).toContain("sudo snap install blender --classic");
-    // The point of the whole check: a project with no importable source stays green.
-    expect(blender.detail).toContain("nothing needs it yet");
-    expect(report.pass).toBe(true);
+    expect(check(probed, "model conversion").detail).toContain("transport is up");
+    expect(check(probed, "model conversion").detail).not.toContain("was not probed");
+  });
+
+  it("should report conversion unavailable when the Blender MCP starts but Blender is missing", () => {
+    const report = diagnoseProject(
+      snapshot({
+        blender: ABSENT,
+        mcpServerHealth: new Map([
+          [
+            BLENDER_SERVER,
+            { detail: "transport initialized and advertised 3 tool(s)", status: "ok" as const },
+          ],
+        ]),
+      }),
+    );
+    const conversion = check(report, "model conversion");
+    // The four facts stay four: a transport that is up, and a conversion that cannot happen.
+    expect(conversion.detail).toContain("transport is up");
+    expect(conversion.detail).toContain("conversion is unavailable");
+    expect(conversion.status).toBe("warn");
+    // And the server check must not be the place a reader learns the toolchain is complete.
+    expect(check(report, "capability search").detail).toContain("transport only");
+  });
+
+  it("should fail when the Blender server's transport is down", () => {
+    const report = diagnoseProject(
+      snapshot({
+        blender: ABSENT,
+        mcpServerHealth: new Map([
+          [
+            BLENDER_SERVER,
+            { detail: "its MCP transport failed to start: exited 1", status: "fail" as const },
+          ],
+        ]),
+      }),
+    );
+    expect(check(report, "model conversion").status).toBe("fail");
+    expect(check(report, "model conversion").detail).toContain("no conversion tool is reachable");
+    expect(report.pass).toBe(false);
   });
 
   it("should report the version when Blender resolves", () => {
@@ -1252,31 +1315,618 @@ describe("threenative doctor and Blender", () => {
         },
       }),
     );
-    expect(check(report, "blender")).toMatchObject({ status: "ok" });
-    expect(check(report, "blender").detail).toContain("5.2.0");
+    expect(check(report, "model conversion")).toMatchObject({ status: "ok" });
+    expect(check(report, "model conversion").detail).toContain("5.2.0");
+  });
+
+  it("should never claim a conversion ran without the bake manifest saying so", () => {
+    const available = {
+      available: true,
+      detail: "Blender 5.2.0 at '/usr/bin/blender'.",
+      installCommand: "sudo snap install blender --classic",
+      version: "5.2.0",
+    };
+    const withoutManifest = diagnoseProject(snapshot({ blender: available }));
+    expect(check(withoutManifest, "model conversion").detail).toContain("no conversion is proven");
+
+    const base = snapshot({ blender: available });
+    const withManifest = diagnoseProject({
+      ...base,
+      files: new Set([...base.files, "public/assets.manifest.json"]),
+      readText: (relative) =>
+        relative === "public/assets.manifest.json"
+          ? JSON.stringify({
+              entries: [{ importedFrom: "fbx", path: "hero.glb" }, { path: "rock.glb" }],
+            })
+          : base.readText(relative),
+    });
+    expect(check(withManifest, "model conversion").detail).toContain("1 converted model(s)");
   });
 
   it("should name the sources that need Blender when the project carries them", () => {
-    const base = snapshot({
-      blender: {
-        available: false,
-        detail: "No Blender 4.2 or newer was found.",
-        installCommand: "sudo snap install blender --classic",
-      },
-    });
+    const base = snapshot({ blender: ABSENT });
     const report = diagnoseProject({
       ...base,
       files: new Set([...base.files, "assets/hero.fbx"]),
     });
-    const blender = check(report, "blender");
-    expect(blender.status).toBe("warn");
-    expect(blender.detail).toContain("assets/hero.fbx");
+    const conversion = check(report, "model conversion");
+    expect(conversion.status).toBe("warn");
+    expect(conversion.detail).toContain("assets/hero.fbx");
     // Still a warning: the hard failure belongs in the build, where the source is actually read.
     expect(report.pass).toBe(true);
   });
 
   it("should omit the check entirely when nothing probed for Blender", () => {
     const report = diagnoseProject(snapshot({}));
-    expect(report.checks.some(({ name }) => name === "blender")).toBe(false);
+    expect(report.checks.some(({ name }) => name === "model conversion")).toBe(false);
+  });
+});
+
+describe("threenative doctor and editor activation", () => {
+  const hostFiles = MCP_HOST_TABLE.map(({ file }) => file);
+
+  function wiredEverywhere(): IProjectSnapshot {
+    const base = snapshot({});
+    return {
+      ...base,
+      files: new Set([...base.files, ...hostFiles]),
+      readText: (relative) => (hostFiles.includes(relative) ? MCP_CONFIG : base.readText(relative)),
+    };
+  }
+
+  it("should count the host configs that carry the servers and stop short of claiming activation", () => {
+    const activation = check(diagnoseProject(wiredEverywhere()), "editor activation");
+    expect(activation.status).toBe("ok");
+    expect(activation.detail).toContain(`${hostFiles.length} of ${hostFiles.length}`);
+    // The fact doctor cannot observe is stated, not implied away.
+    expect(activation.detail).toContain("not observable from here");
+    expect(activation.detail).toContain("Windsurf");
+  });
+
+  it("should warn and name the exact file when a host config is unreadable", () => {
+    const base = wiredEverywhere();
+    const activation = check(
+      diagnoseProject({
+        ...base,
+        readText: (relative) =>
+          relative === ".vscode/mcp.json" ? "{ not json" : base.readText(relative),
+      }),
+      "editor activation",
+    );
+    expect(activation.status).toBe("warn");
+    expect(activation.detail).toContain(".vscode/mcp.json is unreadable");
+    // A config doctor cannot parse is still the user's: it says where, and never rewrites it.
+    expect(activation.fix).toContain("never edits it");
+  });
+
+  it("should warn when a present host config is missing a declared server", () => {
+    const base = wiredEverywhere();
+    const partial = JSON.stringify({
+      mcpServers: { "threenative-engine": { args: [], command: "node" } },
+    });
+    const activation = check(
+      diagnoseProject({
+        ...base,
+        readText: (relative) =>
+          relative === ".zed/settings.json" ? partial : base.readText(relative),
+      }),
+      "editor activation",
+    );
+    expect(activation.status).toBe("warn");
+    expect(activation.detail).toContain(".zed/settings.json is missing ThreeNative servers");
+  });
+
+  it("should not contradict itself on a project wired for one host only", () => {
+    // The defect: keyed to .mcp.json alone, capability search reported "no .mcp.json" and exited 1
+    // beside an editor activation line that had just found the servers in .cursor/mcp.json.
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set(
+        [...base.files].filter((file) => file !== ".mcp.json").concat(".cursor/mcp.json"),
+      ),
+      readText: (relative) =>
+        relative === ".cursor/mcp.json" ? MCP_CONFIG : base.readText(relative),
+    });
+    expect(check(report, "editor activation").status).toBe("ok");
+    // Cursor's table is fully diagnosed, not merely acknowledged: the per-server checks are the
+    // proof, because the "some other host has it" fallback emits none of them.
+    const perServer = report.checks.filter(({ name }) => name.startsWith("capability search: "));
+    expect(perServer).toHaveLength(MCP_SERVER_SPECS.length);
+    expect(check(report, "capability search").detail).toContain(".cursor/mcp.json");
+    expect(check(report, "capability search").status).not.toBe("fail");
+  });
+
+  it("should name the host config it actually read in every per-server message", () => {
+    // The defect: the summary named .cursor/mcp.json while each per-server line told the user to
+    // restore an entry in .mcp.json — a file that does not exist in this project.
+    const base = snapshot({});
+    const withoutEngine = JSON.stringify({
+      mcpServers: Object.fromEntries(
+        Object.entries(
+          (JSON.parse(MCP_CONFIG) as { mcpServers: Record<string, unknown> }).mcpServers,
+        ).filter(([name]) => name !== MCP_SERVER_SPECS[0]?.configName),
+      ),
+    });
+    const report = diagnoseProject({
+      ...base,
+      files: new Set(
+        [...base.files].filter((file) => file !== ".mcp.json").concat(".cursor/mcp.json"),
+      ),
+      readText: (relative) =>
+        relative === ".cursor/mcp.json" ? withoutEngine : base.readText(relative),
+    });
+    const missing = check(report, `capability search: ${MCP_SERVER_SPECS[0]?.packageName}`);
+    expect(missing.status).toBe("fail");
+    expect(missing.detail).toContain(".cursor/mcp.json");
+    expect(missing.detail).not.toContain("from .mcp.json");
+    expect(missing.fix).toContain(".cursor/mcp.json");
+  });
+
+  it("should diagnose the host config that carries the servers, not the first that parses", () => {
+    // The defect: a user's own .mcp.json parsed first, so a project whose other hosts were
+    // correctly wired reported "0 of 4 server(s) in .mcp.json resolve" beside "7 of 7 wired".
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set([...base.files, ".cursor/mcp.json"]),
+      readText: (relative) =>
+        relative === ".mcp.json"
+          ? JSON.stringify({ mcpServers: { "my-own-server": { command: "node" } } })
+          : relative === ".cursor/mcp.json"
+            ? MCP_CONFIG
+            : base.readText(relative),
+    });
+    const summary = check(report, "capability search");
+    expect(summary.detail).toContain(".cursor/mcp.json");
+    expect(summary.status).not.toBe("fail");
+  });
+
+  it("should warn rather than fail when only an unvalidatable host format is wired", () => {
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set(
+        [...base.files].filter((file) => file !== ".mcp.json").concat(".zed/settings.json"),
+      ),
+      readText: (relative) =>
+        relative === ".zed/settings.json" ? MCP_CONFIG : base.readText(relative),
+    });
+    const search = check(report, "capability search");
+    expect(search.status).toBe("warn");
+    expect(search.detail).toContain("Zed");
+  });
+
+  it("should rescue a malformed verifiable config when another host carries the servers", () => {
+    // The same defect review 2 found on the `missing` branch, surviving on its sibling: the
+    // `malformed` branch never got the "some other host carries them" rescue, so one unreadable
+    // .mcp.json hard-failed a project whose Zed config was wired correctly.
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set([...base.files, ".zed/settings.json"]),
+      readText: (relative) =>
+        relative === ".mcp.json"
+          ? "{ not json"
+          : relative === ".zed/settings.json"
+            ? MCP_CONFIG
+            : base.readText(relative),
+    });
+    const search = check(report, "capability search");
+    expect(search.status).toBe("warn");
+    expect(search.detail).toContain("Zed");
+    expect(search.detail).toContain(".mcp.json");
+  });
+
+  it("should fail, not warn, when every host config is broken", () => {
+    // Inverted severity: counting broken files before counting working ones meant that corrupting
+    // a config downgraded the report from fail to warn.
+    const base = snapshot({});
+    const files = new Set([...base.files, ...MCP_HOST_TABLE.map(({ file }) => file)]);
+    const report = diagnoseProject({
+      ...base,
+      files,
+      readText: (relative) =>
+        MCP_HOST_TABLE.some(({ file }) => file === relative)
+          ? "{ not json"
+          : base.readText(relative),
+    });
+    const activation = check(report, "editor activation");
+    expect(activation.status).toBe("fail");
+    // And the audience with nothing working is the one that most needs the manual-setup sentence.
+    expect(activation.detail).toContain("Windsurf");
+  });
+
+  it("should fail when no project-scoped host config carries the servers", () => {
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set([...base.files].filter((file) => !hostFiles.includes(file))),
+    });
+    expect(check(report, "editor activation").status).toBe("fail");
+    expect(report.pass).toBe(false);
+  });
+});
+
+describe("threenative doctor --target/--mode", () => {
+  const BROKEN_RUNTIME_STATUS = JSON.stringify({
+    key: `${process.platform}-${process.arch}`,
+    ok: false,
+    reason: "HTTP 404 downloading the prebuilt runtime",
+    url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
+    version: "0.4.0",
+  });
+
+  const SIGNING_ENV: NodeJS.ProcessEnv = Object.fromEntries(
+    ANDROID_RELEASE_SIGNING_ENV.map((name) => [name, "supplied"]),
+  );
+
+  it("should treat a blank signing input as missing, not as supplied", () => {
+    // Round 7: `(environment[name] ?? "").trim().length === 0` was pinned by nothing. Every fixture
+    // set all four names or none, so `environment[name] === undefined` passed all 91 tests — and
+    // `environment` is the real `process.env` on a real run. A blank value is how a signing input
+    // most often goes missing: `export ORG_GRADLE_PROJECT_threenativeKeystore=` in a CI job or a
+    // .env file. Under that mutation doctor prints `buildable — android release` and exits 0 while
+    // Gradle cannot sign, which is verbatim what acceptance criterion 1 forbids.
+    for (const blank of ["", "   "]) {
+      const report = diagnoseProject(
+        snapshot({
+          androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.19", sdkVersion: "35.0.0" },
+          environment: Object.fromEntries(ANDROID_RELEASE_SIGNING_ENV.map((name) => [name, blank])),
+        }),
+        { mode: "release", target: "android" },
+      );
+      const requested = check(report, "requested build");
+      expect(requested.status).toBe("fail");
+      expect(requested.detail).toContain("release signing inputs are not set:");
+      for (const name of ANDROID_RELEASE_SIGNING_ENV) expect(requested.detail).toContain(name);
+    }
+  });
+
+  it("should fail the requested Android release when the JDK is unsupported", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain("not buildable");
+    expect(requested.detail).toMatch(/JDK 26\.0\.2/u);
+    expect(requested.fix).toMatch(/JDK 17/u);
+    expect(report.pass).toBe(false);
+  });
+
+  it("should list only unmet requirements as blockers, never satisfied ones", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    // The SDK is present. A met requirement is not a reason the build cannot start, and printing
+    // it among the blockers makes the prediction unusable.
+    expect(requested.detail).toMatch(/JDK 26\.0\.2/u);
+    expect(requested.detail).not.toMatch(/android-35 .*found/u);
+    // It stays in the standing target line, which reports every probed fact, met or not.
+    expect(check(report, "target android").detail).toMatch(/android-35 .*found/u);
+  });
+
+  it("should name the blocker on the requested target line, not only satisfied probes", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    // The target line borrows the verdict's word, so it must also borrow the verdict's reason:
+    // "not buildable — <every fact that is satisfied>" is the shape the PRD forbids. The probed
+    // facts stay, but behind the blocker and labelled as probes.
+    const target = check(report, "target android").detail;
+    expect(target).toMatch(/^not buildable — JDK 26\.0\.2/u);
+    expect(target).toContain("; probed: ");
+    expect(target.slice(0, target.indexOf("; probed: "))).not.toMatch(/android-35/u);
+    expect(target).toMatch(/probed: .*android-35 .*found/u);
+  });
+
+  it("should keep every blocker when one blocker contains a colon of its own", () => {
+    // Round 6: `^not buildable — [^:]*: (?<why>.+)$` strips the `<scope>: ` prefix off the verdict.
+    // Widen `[^:]*` to `.*` and it matches greedily to the LAST colon instead of the scope's, so
+    // the line silently drops every blocker before the final one - and the release signing blocker
+    // ends in a colon, so it is always the last. All 89 tests stayed green through that mutation.
+    const report = diagnoseProject(
+      snapshot({ androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" } }),
+      { mode: "release", target: "android" },
+    );
+    const target = check(report, "target android").detail;
+    const stated = target.slice(0, target.indexOf("; probed: "));
+    // The signing blocker is last and carries its own colon; the JDK blocker precedes it. Both survive.
+    expect(stated).toContain("JDK 26.0.2");
+    expect(stated).toContain("release signing inputs are not set:");
+    expect(stated).toContain("ORG_GRADLE_PROJECT_threenativeKeystore");
+    // And the scope prefix the regex exists to remove is gone.
+    expect(stated).not.toMatch(/^not buildable — android release: /u);
+  });
+
+  it("should give the requested target the requested build's fix, not the target's own", () => {
+    // Round 6: `fix: requestedBuild.fix ?? check.fix` is unpinned. Inverted, 89 tests stay green
+    // while the CLI prints the generic "install the SDK" advice instead of the one naming the
+    // runtime reinstall and the signing exports - the actionable half this phase exists to make.
+    const report = diagnoseProject(
+      snapshot({ androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" } }),
+      { mode: "release", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.fix).toBeDefined();
+    expect(check(report, "target android").fix).toBe(requested.fix);
+  });
+
+  it("should block a requested desktop build on a failing overlay", () => {
+    const overlay = {
+      detail: "no X11 compositor, so the desktop UI overlay cannot start",
+      fix: "Start a compositor.",
+      status: "fail" as const,
+    };
+    const report = diagnoseProject(snapshot({ desktopOverlay: overlay }), { target: "desktop" });
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain("overlay cannot start");
+    expect(report.pass).toBe(false);
+    // The desktop target line borrows the native runtime's `available (linux-x64)` wording rather
+    // than the `available — …` the other targets use, and matching only the latter left this one
+    // line still reading `available` beside the verdict above.
+    const target = check(report, "target desktop");
+    expect(target.status).toBe("fail");
+    expect(target.detail).not.toMatch(/^available/u);
+    expect(target.detail).toMatch(/^not buildable — .*overlay cannot start/u);
+    // The desktop line's own facts are `available (linux-x64)`; the probe list must carry the key
+    // itself, not the surviving parentheses, which read as a truncation.
+    expect(target.detail).toMatch(/; probed: [^(]/u);
+  });
+
+  it("should not call the requested target available while its build cannot start", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+        environment: SIGNING_ENV,
+      }),
+      { mode: "release", target: "android" },
+    );
+    // The defect this PRD names: a line reading "available" beside a verdict of "not buildable".
+    const target = check(report, "target android");
+    expect(target.detail).not.toMatch(/^available/u);
+    expect(target.detail).toContain("not buildable");
+    expect(target.status).toBe("fail");
+  });
+
+  it("should fail the requested Android build when the runtime artifact never downloaded", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+      }),
+      { target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toMatch(/HTTP 404/u);
+    expect(report.pass).toBe(false);
+  });
+
+  it("should block a native build on a runtime that only warns, not just one that fails", () => {
+    // Round 7, final hunt: `if (nativeRuntime.status !== "ok")` was pinned by nothing. Every
+    // request-path fixture was either ok or a hard fail, so the boundary the code actually draws
+    // went untested and `=== "fail"` passed all 92. "no install status recorded" is a *warn*: under
+    // that mutation `examples/abyss-framework` prints `buildable — desktop` with no runtime
+    // downloaded at all, which is the missing-download class of acceptance criterion 1 and the very
+    // state this phase's observed-red control runs in.
+    const report = diagnoseProject(
+      // No install record and nothing resolved: `nativeRuntimeCheck` calls that `warn`, the same
+      // shape as `examples/abyss-framework` on this machine.
+      snapshot({
+        runtimeRoot: undefined,
+        readRuntimeText: undefined,
+        installedVersions: new Map(),
+      }),
+      { target: "desktop" },
+    );
+    const runtime = check(report, "native runtime");
+    expect(runtime.status).not.toBe("ok");
+    expect(runtime.status).not.toBe("fail");
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain(runtime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
+  });
+
+  it("should name the missing Android packager, and read the Android file to decide it", () => {
+    // Round 7, final hunt: nothing asserted this blocker at all - pointing the probe at
+    // `scripts/package-ios.mjs` instead left all 92 green. The spec mentioned
+    // `package-android.mjs` only in the fixture that makes it exist.
+    const base = snapshot({
+      androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+      environment: {},
+    });
+    const report = diagnoseProject(
+      {
+        ...base,
+        // Only the Android packager is gone; the iOS one stays, so a probe reading the wrong file
+        // sees nothing wrong.
+        runtimeFileExists: (relative) =>
+          relative === "scripts/package-android.mjs"
+            ? false
+            : (base.runtimeFileExists?.(relative) ?? false),
+      },
+      { mode: "debug", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain("no Android packager");
+  });
+
+  it("should fail a requested Android release with no signing inputs and pass the same debug build", () => {
+    const buildable = snapshot({
+      androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+      environment: {},
+    });
+    const release = diagnoseProject(buildable, { mode: "release", target: "android" });
+    expect(check(release, "requested build").status).toBe("fail");
+    expect(check(release, "requested build").detail).toContain(ANDROID_RELEASE_SIGNING_ENV[0]);
+    expect(release.pass).toBe(false);
+
+    const debug = diagnoseProject(buildable, { mode: "debug", target: "android" });
+    expect(check(debug, "requested build").status).toBe("ok");
+    expect(check(debug, "requested build").detail).toContain("buildable");
+    expect(debug.pass).toBe(true);
+
+    // Round 7: `--mode` is half this phase's CLI surface and the scope label is the only place it
+    // becomes visible, yet dropping the mode from that label left all 92 tests green — the two
+    // predictions then read identically. The acceptance criteria quote the `android release`
+    // spelling as their evidence, so it is asserted here rather than assumed.
+    expect(check(release, "requested build").detail).toContain("android release");
+    expect(check(debug, "requested build").detail).toContain("android debug");
+  });
+
+  it("should not demand iOS evidence for an Android request", () => {
+    const report = diagnoseProject(
+      snapshot({
+        androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+        environment: {},
+      }),
+      { mode: "debug", target: "android" },
+    );
+    expect(check(report, "requested build").status).toBe("ok");
+    expect(check(report, "target ios").status).not.toBe("fail");
+    expect(report.pass).toBe(true);
+  });
+
+  it("should keep a broken non-requested target from failing the requested one", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+      }),
+      { target: "web" },
+    );
+    expect(check(report, "requested build").status).toBe("ok");
+    expect(check(report, "target desktop").status).toBe("warn");
+    // `native runtime` carries the same fact one level down, so demoting only the target line left
+    // a web request exiting 1 on a broken desktop prebuilt — the help text promises the opposite.
+    // The fact stays in the report; it stops voting, exactly like the target line above it.
+    expect(check(report, "native runtime").status).toBe("warn");
+    expect(check(report, "native runtime").detail).toMatch(/unavailable|unknown/u);
+    expect(report.pass).toBe(true);
+  });
+
+  it("should not fail a web request on the native entry only a native build starts", () => {
+    // `native entry` says so itself — "so a native build has nothing to start" — and a web build
+    // starts src/main.ts. It was the last check still voting on a scoped exit code.
+    const base = snapshot({});
+    const missingEntry = {
+      ...base,
+      files: new Set([...base.files].filter((file) => file !== "src/game.ts")),
+    };
+    const web = diagnoseProject(missingEntry, { target: "web" });
+    expect(check(web, "native entry").status).toBe("warn");
+    expect(check(web, "requested build").status).toBe("ok");
+    // Nothing else is red, so the exit code is the request's alone.
+    expect(web.checks.filter(({ status }) => status === "fail").map(({ name }) => name)).toEqual(
+      [],
+    );
+    expect(web.pass).toBe(true);
+  });
+
+  it("should name the missing native entry among a native build's blockers", () => {
+    // The other direction of the same omission: the verdict line has to carry what stops the
+    // build, or a supported JDK makes it read `buildable` on a project that cannot start.
+    const base = snapshot({});
+    const missingEntry = {
+      ...base,
+      files: new Set([...base.files].filter((file) => file !== "src/game.ts")),
+    };
+    const android = diagnoseProject(missingEntry, { target: "android" });
+    expect(check(android, "requested build").status).toBe("fail");
+    expect(check(android, "requested build").detail).toMatch(/nothing to start/u);
+    expect(check(android, "native entry").status).toBe("fail");
+    expect(android.pass).toBe(false);
+  });
+
+  it("should not fail a web request on the desktop overlay it never needs", () => {
+    const overlay = {
+      detail: "no compositor is running, so the desktop UI overlay cannot start",
+      fix: "Start a compositor.",
+      status: "fail" as const,
+    };
+    const overlayProject = {
+      config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
+      desktopOverlay: overlay,
+    };
+    // Round 7: this asked only about web, so `desktop overlay`'s owner list was one target short
+    // of the invariant it names. Adding "android" to that list left all 92 tests green while
+    // `doctor --target android` exited 1 because a *desktop* overlay failed — review 4's defect
+    // returning through the one door left open. Every non-owner is asked now.
+    for (const target of ["web", "android", "ios"] as const) {
+      const scoped = diagnoseProject(snapshot(overlayProject), { target });
+      expect(check(scoped, "desktop overlay").status).toBe("warn");
+
+      // And the overlay is never a reason the requested build cannot go ahead. (Android and iOS
+      // may still fail this fixture on their own missing toolchains; that is their business.)
+      expect(check(scoped, "requested build").detail).not.toContain("overlay");
+    }
+    const scoped = diagnoseProject(snapshot(overlayProject), { target: "web" });
+    expect(check(scoped, "requested build").status).toBe("ok");
+    // Ask for desktop and the same overlay decides the exit code again.
+    const desktop = diagnoseProject(snapshot(overlayProject), { target: "desktop" });
+    expect(check(desktop, "desktop overlay").status).toBe("fail");
+    expect(desktop.pass).toBe(false);
+    // Unscoped, nothing is demoted: the report is unchanged for everyone who did not ask.
+    const unscoped = diagnoseProject(snapshot(overlayProject));
+    expect(check(unscoped, "desktop overlay").status).toBe("fail");
+    expect(unscoped.pass).toBe(false);
+  });
+
+  it("should let every native target own the native runtime, and only web demote it", () => {
+    // The sibling of the `desktop overlay` owners bug, and only visible on a runtime that actually
+    // fails: dropping "ios" from TARGET_PREREQUISITE_OWNERS["native runtime"] is severity drift -
+    // the requested build still fails and the exit code is still 1 - but it is the same shape, and
+    // it survived the suite. A resolved package with no runtime root is the failing case.
+    const broken = snapshot({
+      runtimeRoot: undefined,
+      readRuntimeText: undefined,
+      installedVersions: new Map([["@threenative/runtime-native", "0.4.0"]]),
+    });
+    expect(check(diagnoseProject(broken), "native runtime").status).toBe("fail");
+    // Web does not start it, so it is demoted and cannot decide a web request's exit code.
+    expect(check(diagnoseProject(broken, { target: "web" }), "native runtime").status).toBe("warn");
+    // Every native target does start it, so none of them demote it.
+    for (const target of ["android", "desktop", "ios"] as const) {
+      expect(check(diagnoseProject(broken, { target }), "native runtime").status).toBe("fail");
+    }
+  });
+
+  it("should fail a requested web build with no web entry", () => {
+    const base = snapshot({});
+    const report = diagnoseProject(
+      { ...base, files: new Set([...base.files].filter((file) => file !== "src/main.ts")) },
+      { target: "web" },
+    );
+    expect(check(report, "requested build").status).toBe("fail");
+    expect(check(report, "requested build").detail).toContain("src/main.ts");
+  });
+
+  it("should leave the unscoped report exactly as it was", () => {
+    const unsupported = snapshot({
+      androidToolchain: { jdkMajor: 26, jdkVersion: "26.0.2", sdkVersion: "35.0.0" },
+    });
+    const report = diagnoseProject(unsupported);
+    expect(report.checks.some(({ name }) => name === "requested build")).toBe(false);
+    expect(check(report, "target android").status).toBe("warn");
+    expect(check(report, "target android").detail).toContain("available —");
+    expect(report.pass).toBe(true);
   });
 });
