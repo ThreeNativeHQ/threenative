@@ -158,7 +158,7 @@ function parseNameStatus(output) {
   const paths = [];
   for (let index = 0; index < fields.length; ) {
     const status = fields[index++];
-    if (!status || !/^(?:[ADM]|[RC](?:100|[1-9]?[0-9]))$/u.test(status)) {
+    if (!status || !/^(?:[ADM]|[RC]\d{3})$/u.test(status)) {
       return { error: `unsupported or malformed diff status ${JSON.stringify(status ?? "")}` };
     }
     const count = status[0] === "R" || status[0] === "C" ? 2 : 1;
