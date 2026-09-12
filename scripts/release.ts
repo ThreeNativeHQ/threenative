@@ -249,21 +249,23 @@ export function unpublishedReleasePackages(
 async function waitForRegistry(name: string, version: string): Promise<void> {
   // A brand-new scoped package is not readable the instant it is published, and publishing the
   // scaffolder before its dependencies are visible produces an install nobody can reproduce.
-  const deadline = Date.now() + 180_000;
+  // The version endpoint is served straight from publish rather than through the packument's CDN
+  // cache, so it reflects a new version sooner; the deadline is generous because a real 0.3.1
+  // publish aborted after 180s while npm was still propagating (npm itself said "a few minutes").
+  const timeoutMs = 15 * 60_000;
+  const deadline = Date.now() + timeoutMs;
+  const url = `https://registry.npmjs.org/${name.replace("/", "%2f")}/${encodeURIComponent(version)}`;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2f")}`);
-      if (response.ok) {
-        const body = (await response.json()) as { versions?: Record<string, unknown> };
-        if (body.versions?.[version] !== undefined) return;
-      }
+      const response = await fetch(url);
+      if (response.ok) return;
     } catch {
       // Not visible yet; the deadline is the only thing that ends this loop.
     }
     await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
   throw new Error(
-    `TN_RELEASE_NOT_VISIBLE: ${name}@${version} did not become readable on the registry within 180s. Later packages would pin a version their consumers cannot resolve.`,
+    `TN_RELEASE_NOT_VISIBLE: ${name}@${version} did not become readable on the registry within ${Math.round(timeoutMs / 60_000)} minutes. Later packages would pin a version their consumers cannot resolve.`,
   );
 }
 
