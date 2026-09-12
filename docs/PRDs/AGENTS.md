@@ -98,7 +98,10 @@ are distinct from routine planning and editing.
 Evidence goes **live → cited → deleted**. What keeps a file is a *citation*, not its age: a round
 ledger, a done PRD, an open PRD, or a script that names it — or one that opens its directory as a
 root, which no by-name scan can see, so those roots are listed in `scripts/evidence-citations.ts`.
-`docs/benchmark/SCREENSHOT-RETENTION.md` is generated from that scan; never hand-edit it.
+The index generated from that scan (`tsx scripts/generate-retention-index.ts`) is build output, not
+tracked, and no gate compares it: it derives from every evidence file and every citing PRD, so a
+tracked copy restaled on each doc edit and conflicted on concurrent branches. Generate it when you
+want to read it.
 
 The tracked-byte caps in `scripts/check-evidence-budget.ts` fail closed, and raising one needs its
 own commit saying why. The report still prints file counts and duplicate-byte measurements for
