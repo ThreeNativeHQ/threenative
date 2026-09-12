@@ -60,6 +60,33 @@ describe("create-threenative CLI", () => {
     }
   });
 
+  it("rejects a doctor target or mode the build cannot run", async () => {
+    const cases: readonly [readonly string[], RegExp][] = [
+      [["doctor", "--target"], /'--target' requires a value/u],
+      [["doctor", "--target", "--text"], /'--target' requires a value/u],
+      [["doctor", "--target", "switch"], /'--target' must be one of web, desktop, android, ios/u],
+      [["doctor", "--target", "android", "--mode"], /'--mode' requires a value/u],
+      [
+        ["doctor", "--target", "android", "--mode", "ship"],
+        /'--mode' must be one of debug, release/u,
+      ],
+      [["doctor", "--mode", "release"], /'--mode' requires '--target'/u],
+    ];
+    for (const [argv, message] of cases) {
+      const failure = await run(process.execPath, [threenativeCli, ...argv]).then(
+        () => undefined,
+        (error: unknown) => error as { code?: number; stderr?: string },
+      );
+      expect(failure, argv.join(" ")).toBeDefined();
+      expect(failure?.code, argv.join(" ")).toBe(1);
+      expect(failure?.stderr ?? "", argv.join(" ")).toMatch(message);
+    }
+
+    const help = await run(process.execPath, [threenativeCli, "doctor", "--help"]);
+    expect(help.stdout).toContain("--target web|desktop|android|ios");
+    expect(help.stdout).toContain("--mode debug|release");
+  }, 30_000);
+
   it("prints successful help from the real threenative executable", async () => {
     const root = await run(process.execPath, [threenativeCli, "--help"]);
     expect(root.stderr).toBe("");
