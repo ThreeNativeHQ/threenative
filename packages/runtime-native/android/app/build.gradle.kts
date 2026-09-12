@@ -295,13 +295,17 @@ dependencies {
 
 android {
     namespace = "com.threenative.game"
-    compileSdk = 35
+    // Google Play requires new apps and updates to target API 36 (Android 16) from 2026-08-31;
+    // API 35 submissions are rejected. compileSdk and targetSdk move together: compiling against
+    // one platform while targeting another is how an API-36-only symbol silently ships.
+    // Required by PRD-212 phase 1.
+    compileSdk = 36
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.threenative.game"
         minSdk = 24  // Android 7.0 - minimum for Vulkan
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
 

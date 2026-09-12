@@ -10,7 +10,14 @@ import { fileURLToPath } from 'node:url';
 
 import { test } from 'vitest';
 
+import {
+  ANDROID_SUBMISSION_TARGET_SDK,
+  androidGradleTargetSdk,
+  assertAndroidSubmissionTargetSdk,
+} from '../scripts/package-android.mjs';
+
 const manifestPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
+const gradlePath = join(dirname(fileURLToPath(import.meta.url)), '..', 'android', 'app', 'build.gradle.kts');
 
 function activityConfigChanges() {
   const source = readFileSync(manifestPath, 'utf8');
@@ -46,5 +53,37 @@ test('every axis that must not recreate the activity is covered', () => {
     throw new Error(
       `AndroidManifest.xml is missing configChanges axes [${missing.join(', ')}]; an uncovered axis kills the process instead of resizing (PRD-222).`,
     );
+  }
+});
+
+// PRD-212 phase 1. The release subject is the Gradle project that will be compiled, not a literal
+// the packager hopes still matches it. A project whose targetSdk drops below the Play submission
+// floor must be refused before Gradle runs, and the revert control proves the gate is the thing
+// rejecting it rather than a stale source scan.
+test('the packaged subject declares the submission target SDK', () => {
+  const source = readFileSync(gradlePath, 'utf8');
+  const declared = androidGradleTargetSdk(source);
+  if (declared === undefined) throw new Error('build.gradle.kts declares no targetSdk');
+  if (declared < ANDROID_SUBMISSION_TARGET_SDK) {
+    throw new Error(
+      `build.gradle.kts targetSdk ${declared} is below the required API ${ANDROID_SUBMISSION_TARGET_SDK}`,
+    );
+  }
+  assertAndroidSubmissionTargetSdk(source);
+});
+
+test('the submission gate rejects a release subject below the target SDK', () => {
+  const reverted = readFileSync(gradlePath, 'utf8').replace(
+    /targetSdk\s*=\s*\d+/u,
+    'targetSdk = 35',
+  );
+  let error;
+  try {
+    assertAndroidSubmissionTargetSdk(reverted);
+  } catch (thrown) {
+    error = thrown;
+  }
+  if (!(error instanceof Error) || !error.message.includes('TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION')) {
+    throw new Error(`expected TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION, received ${String(error)}`);
   }
 });

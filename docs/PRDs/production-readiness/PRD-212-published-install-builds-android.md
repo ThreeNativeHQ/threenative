@@ -63,12 +63,12 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/android/app/build.gradle.kts`, `packages/create-threenative/src/doctor.ts`, `packages/runtime-native/tests/android-manifest-config-changes.test.mjs`
-- [ ] Required test green: `packages/runtime-native/tests/android-manifest-config-changes.test.mjs`
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-212-readiness-phase-1-<date>.md`
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `packages/runtime-native/android/app/build.gradle.kts`, `packages/create-threenative/src/doctor.ts`, `packages/runtime-native/tests/android-manifest-config-changes.test.mjs` — compileSdk/targetSdk 35→36; doctor reads the shipped Gradle requirement; packager refuses a below-floor rendered project.
+- [x] Required test green: `packages/runtime-native/tests/android-manifest-config-changes.test.mjs` — 3 passed (packaged subject declares API 36; revert to 35 throws `TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION`); `doctor.spec.ts` 95 passed; `pnpm typecheck` exit 0.
+- [x] Observed red recorded, then restored green — the revert control is asserted in the same test file.
+- [ ] User verification performed on the named platform — not run this session; emulator lane available.
+- [x] Evidence record written: `docs/verification/prd-212-readiness-phase-1-2026-09-11.md`
+- [ ] Independent reviewer returned PASS — not requested this session.
 
 **Files (maximum five):**
 

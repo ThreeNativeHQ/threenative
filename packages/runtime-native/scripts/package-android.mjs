@@ -27,6 +27,45 @@ export const ANDROID_ABIS = ['arm64-v8a', 'x86_64'];
 export const ANDROID_ENGINES = ['quickjs', 'v8'];
 
 /**
+ * The Android submission API level Google Play requires of a new app or update.
+ *
+ * PRD-212 phase 1. It is the one literal the packaging layer owns; the shipped
+ * `android/app/build.gradle.kts` carries the same number, and `assertAndroidSubmissionTargetSdk`
+ * refuses a build whose rendered project is below it. Raise both together — Play raises the floor
+ * on its own schedule, and a build that silently drops below it ships an artifact that is
+ * rejected at upload.
+ */
+export const ANDROID_SUBMISSION_TARGET_SDK = 36;
+
+/** The `targetSdk` a Gradle Android project source declares, if it declares one. */
+export function androidGradleTargetSdk(source) {
+  const match = /targetSdk\s*=\s*(\d+)/u.exec(String(source ?? ''));
+  return match === null ? undefined : Number(match[1]);
+}
+
+/**
+ * Refuse a rendered Android project whose `targetSdk` is below the submission floor.
+ *
+ * Fail closed on a missing `targetSdk`: an unparsable project is a project whose submission level
+ * nobody can vouch for, which is exactly what this gate exists to catch.
+ */
+export function assertAndroidSubmissionTargetSdk(source, required = ANDROID_SUBMISSION_TARGET_SDK) {
+  const declared = androidGradleTargetSdk(source);
+  if (declared === undefined) {
+    throw new Error(
+      `TN_ANDROID_TARGET_SDK_MISSING: android/app/build.gradle.kts declares no targetSdk; submission requires API ${required}.`,
+    );
+  }
+  if (declared < required) {
+    throw new Error(
+      `TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION: targetSdk ${declared} is below the required API ${required}; update android/app/build.gradle.kts before packaging a release.`,
+    );
+  }
+  return declared;
+}
+
+
+/**
  * The QuickJS prebuilt set. Unchanged, and still the meaning of the unqualified release keys.
  *
  * `libmystral-runtime.so` here is the QuickJS-linked runtime: the interpreter is compiled *into*
@@ -694,6 +733,9 @@ export async function packageAndroid(
   stageAndroidUi(options.ui, declared.ui.renderer === 'web' ? 'web' : 'native', join(generatedAssets, 'ui'));
   const restoreFiles = installAndroidFiles(declared, packageRoot);
   try {
+    // The subject of the build, after branding rewrote it: the submission floor is a property of
+    // the project Gradle is about to compile, not of a constant the packager hopes still matches it.
+    assertAndroidSubmissionTargetSdk(readFileSync(androidPaths(packageRoot).androidGradle, 'utf8'));
     const command = process.platform === 'win32' ? gradlew : 'sh';
     // Build variants the app already understands — `-PthreenativeJsEngine=v8`,
     // `-PthreenativeVsync=false` — are only reachable if something can pass them through. Without
