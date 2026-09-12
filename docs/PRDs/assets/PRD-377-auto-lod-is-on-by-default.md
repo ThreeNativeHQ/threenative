@@ -10,7 +10,7 @@ A developer authors one GLB and loads it through ThreeNative's normal asset path
 
 This is not a greenfield LOD renderer. The repository already has default-on virtual geometry for sufficiently dense primitives. Extend and reconcile that machinery, adding a conservative discrete-LOD path where it supplies missing value. Exactly one system owns detail selection for a primitive. Preserve the original source, the full-detail fallback, materials, object identity, and gameplay semantics.
 
-**Status:** NEW — implementation not started; this document does not enable or qualify any feature.
+**Status:** NOT STARTED — implementation not started; this document does not enable or qualify any feature.
 **Date:** 2026-09-11.
 **Scope:** Asset compilation, configuration, ordinary model loading, and existing render integration.
 **Complexity:** HIGH — default-on lossy processing crosses build, runtime, and platform boundaries.
@@ -167,7 +167,7 @@ Keep entity/node identity, names, transforms, materials, event mappings, authore
 
 Instances sharing an asset may need different detail. Do not mutate a shared geometry/index so that one instance changes every other instance, and do not silently de-instance a large batch into hundreds of draws. Reuse safe existing batches; otherwise decline that optimization and report the reason. Preserve shared resource lifetimes: disposing one instance or geometry must not destroy a sibling's attributes. Test unload, reload, scene restart, and device-resource recreation where supported.
 
-The ordinary frame performs no simplification, per-frame hierarchy discovery, new geometry allocation, synchronous GPU readback, or unnecessary buffer re-upload. Cache reusable state and upload only what the selected strategy actually changes. The absent/disabled path installs no automatic LOD controller.
+The ordinary frame performs no simplification, per-frame hierarchy discovery, new geometry allocation, synchronous GPU readback, or unnecessary buffer re-upload. Cache reusable state and upload only what the selected strategy actually changes. Assets without an eligible cooked representation, and explicitly disabled assets, install no automatic LOD controller; omitting configuration alone does not disable it.
 
 ## 7. Diagnostics and failures
 
@@ -188,6 +188,50 @@ Each phase extends the real caller chain and carries its own focused tests. Para
 | 2 — ordinary runtime | Wire normal model loading and engine-owned selection; test camera/projection/scale changes, views/shadows, picking, instances, opt-out, and lifetime behavior on real decoded artifacts. |
 | 3 — consumer qualification | Run an ordinary generated project through normal dev/build/loading paths on browser and native, capture visual comparisons around transitions, and measure frame-time and startup/storage impact. Enable each target only with its evidence. |
 | 4 — default and discovery | Make omission resolve to enabled only after qualification; document migration and escape hatches through existing config/scaffold/discovery surfaces, then rerun the zero-config and off-path consumer proof. |
+
+### Phase progress checklists
+
+Keep these boxes current in the implementation PR. They remain open in this specification-only PR.
+
+#### Phase 0 — trace and baseline
+
+- [ ] The current config-to-render caller chain and legacy settings are mapped.
+- [ ] The representative corpus has reproducible baseline measurements.
+
+#### Phase 1 — config and artifact
+
+- [ ] Public config resolution passes the precedence and invalid-input tests.
+- [ ] The normal compiler applies tested eligibility and error-driven generation.
+- [ ] Cooked GLBs pass extension round-trip and baseline-preservation tests.
+- [ ] Cache invalidation and atomic hot reload pass their integration tests.
+
+#### Phase 2 — ordinary runtime
+
+- [ ] Normal model loading reaches the single engine-owned LOD controller.
+- [ ] Projection and hysteresis tests pass on decoded assets.
+- [ ] Multi-view and shadow correctness tests pass.
+- [ ] Gameplay identity and precision-picking tests pass.
+- [ ] Instance isolation and shared-resource lifetime tests pass.
+
+#### Phase 3 — consumer qualification
+
+- [ ] Browser WebGPU consumer evidence establishes the default policy.
+- [ ] Windows native consumer evidence establishes the default policy.
+- [ ] macOS native consumer evidence establishes the default policy.
+- [ ] Linux native consumer evidence establishes the default policy.
+- [ ] Android's policy is backed by target evidence or explicitly remains baseline-only.
+- [ ] iOS's policy is backed by target evidence or explicitly remains baseline-only.
+- [ ] The dense-asset triangle-reduction gate passes.
+- [ ] The frame-time regression gates pass on every default-enabled target.
+- [ ] The rendered-quality gate passes on the declared corpus.
+- [ ] The new discrete-artifact byte budgets pass.
+
+#### Phase 4 — default and discovery
+
+- [ ] Omitted configuration enables the qualified policy through the real front door.
+- [ ] The global off switch passes its end-to-end negative control.
+- [ ] Existing config documentation and discovery expose the effective settings.
+- [ ] Generated-project guidance documents default behavior and migration.
 
 ### Minimum acceptance matrix
 
