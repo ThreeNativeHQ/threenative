@@ -176,6 +176,14 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
+**Implementation record (2026-09-11):** worktree `.worktrees/prd-212-android-release`, branch
+`prd-212-published-install-builds-android`, base `develop`. Draft PR
+[ThreeNativeHQ/threenative#210](https://github.com/ThreeNativeHQ/threenative/pull/210). Commits:
+`96b978b94` (phase 1), `d8ebc29c7` (phase 2), `a64ec2eb2` (phase 3), `e5f7d9fca` (project-root fix).
+Local proof: runtime-native `tests/android-packaging.integration.test.mjs` +
+`tests/android-manifest-config-changes.test.mjs` 24 passed; create-threenative `__tests__` 679
+passed; `pnpm typecheck` exit 0; `pnpm budgets` exit 0.
+
 No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
 
 ## Acceptance criteria
