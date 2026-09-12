@@ -364,6 +364,10 @@ test('a clean-room install builds for Android from a fixture manifest, with no e
         return { status: 0, stdout: '' };
       },
       artifact16Kb: { runObjdump: () => 'LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**14', zipalign: false },
+      // The fixture Gradle above builds a real-but-unrelated archive; the aligner would run the
+      // real zipalign/apksigner against it. Alignment is exercised in
+      // android-packaging.integration.test.mjs, so opt out here.
+      alignArchive: false,
     });
 
     // Every prebuilt the fixture manifest named landed where the Gradle build expects it.

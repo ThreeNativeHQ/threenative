@@ -368,6 +368,8 @@ async function androidProbe(root: string, allowSourceBuild: boolean | string) {
       // PRD-221: the packager censuses the finished APK, so the fixture has to be a real archive
       // carrying a library per ABI. Only the ELF reader is stubbed; these bytes are not objects.
       artifact16Kb: { runObjdump: () => 'LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**14', zipalign: false },
+      // The fixture builds a stand-in archive; real zipalign/apksigner have nothing to do here.
+      alignArchive: false,
       spawnSync: () => {
         const apk = join(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
         mkdirSync(dirname(apk), { recursive: true });

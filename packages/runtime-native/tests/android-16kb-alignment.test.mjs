@@ -480,6 +480,9 @@ test('Android workflows install and select the pinned V8 NDK', () => {
 test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibility backport', () => {
   assert.equal(ANDROID_V8_BUILD.inspectorFix, '182d9c05e78b1ddb1cb8242cd3628a7855a0336f');
   assert.equal(ANDROID_V8_BUILD.recipe, 6);
+  // The receipt records this value, so a build that stopped requesting 16 KB pages would still
+  // produce a self-consistent receipt unless the source-of-truth constant is pinned here.
+  assert.equal(ANDROID_V8_BUILD.loadAlignment, 16384);
   const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
   assert.match(script, /ANDROID_V8_BUILD\.inspectorFix/u);
   assert.match(script, /adaptAndroidV8InspectorPatch/u);

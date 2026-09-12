@@ -69,9 +69,12 @@ ThreeNative Android APK: …/prd221-16kb-starter.apk — 8 native libraries 16 K
   archive offsets confirmed by /home/joao/Android/Sdk/build-tools/36.0.0/zipalign
 ```
 
-An independent re-census of the installed APK (`adb pull` of the installed base.apk, sha256
-`b0ba6c6a02275fba4988802c6f5817038937d83f58a8108293c400b81acc96e4`) also reports 8 libraries
-16 KB clean with `zipalign` corroboration, so the artifact that shipped is the one inspected.
+After installation, `adb pull` of the installed `com.threenative.prd22116kbstarter` base.apk hashes
+to the same `6acd46affa374b022a88a506c9e173178c58b1b4abd45b740983a16376f14aab`, and a re-census of
+that pulled bytes reports 8 libraries 16 KB clean with `zipalign` corroboration, so the artifact
+that shipped is the one inspected. (An earlier pull on this machine, before the recipe-6 rebuild,
+hashed to `b0ba6c6a02275fba4988802c6f5817038937d83f58a8108293c400b81acc96e4`; it is the pre-rebuild
+artifact and is no longer installed.)
 
 ## User verification
 

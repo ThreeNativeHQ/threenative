@@ -89,6 +89,10 @@ packages/runtime-native  tests/android-16kb-alignment.test.mjs                  
 packages/runtime-native  android-16kb-alignment + android-packaging (phase 2)         48 passed
 ```
 
+An independent review mutated `ANDROID_V8_BUILD.loadAlignment` 16384 → 4096 and found no test
+caught it (the receipt check derives from the same constant). The source-of-truth assertion is now
+pinned in `android-16kb-alignment.test.mjs` beside the `recipe === 6` assertion.
+
 `pnpm typecheck`, `pnpm lint`, `pnpm budgets` are run for this candidate before the push that
 carries this record; their results are recorded in the PR conversation.
 

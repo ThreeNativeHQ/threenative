@@ -184,8 +184,11 @@ a limitation, not asserted as working.
 Background/resume was exercised: `KEYCODE_HOME` produced `SDL onPause()`,
 `TN_LIFECYCLE:{"event":"observed","mode":"pause","applied":false}`, `surfaceDestroyed()` and an
 audio suspend; `am start` returned the surface and frames continued (present 120 → 125). The
-process stayed alive throughout with no linker failure and no `V8_Fatal`. HUD interaction and the
-default starter are now both exercised; the one unobserved detail is the pause label change.
+process stayed alive throughout with no linker failure and no `V8_Fatal`. The default starter is
+therefore exercised on the 16 KB environment. "HUD interaction" is proven only to the extent that
+the native input host routes a touch to the WebView; the control's effect was not observed (the
+pause label did not flip), and the in-repo Android playtest target was not run. Those two items
+stay open.
 
 ## Independent review
 

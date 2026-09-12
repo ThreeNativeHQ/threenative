@@ -113,7 +113,7 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 **Progress:**
 
 - [x] Callers wired and building: `packages/runtime-native/scripts/check-android-16kb-alignment.mjs`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs` — this branch. `pnpm typecheck` exit 0, `pnpm lint` exit 0.
-- [x] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs` — 46 passed together with `android-16kb-alignment.test.mjs`, plus `tests/distribution.test.mjs` 36 passed and `create-threenative/__tests__/native-consumer.spec.ts` 33 passed. Run under vitest from `packages/runtime-native`, which is how `vitest.config.ts` collects `tests/**/*.test.mjs`.
+- [x] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs` — 48 passed together with `android-16kb-alignment.test.mjs` (13 + 35), plus `tests/distribution.test.mjs` 40 passed and `create-threenative/__tests__/native-consumer.spec.ts` 33 passed. Run under vitest from `packages/runtime-native`, which is how `vitest.config.ts` collects `tests/**/*.test.mjs`. An independent review found the new unconditional `alignAndroidArchive` call had left `distribution.test.mjs` and `native-consumer.spec.ts` red (they build stand-in archives and do not stub the aligner); both now opt out with `alignArchive: false`, and the aligner itself is exercised by `android-packaging.integration.test.mjs`.
 - [x] Observed red recorded, then restored green — **against a real packaged APK, not a fixture.**
       The first real build of a scaffolded starter was refused by the census:
       `Android 16 KB alignment check failed for …/prd221-16kb-starter.apk!lib/arm64-v8a/libSDL3.so:`
@@ -161,7 +161,7 @@ pnpm build:android
 **Progress:**
 
 - [x] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/tests/native-platform-workflow.test.mjs`, and NEW `packages/runtime-native/scripts/check-android-page-size.mjs` — the emulator script captures `getconf PAGE_SIZE` first, and an `if: always()` step verifies it against job-level `TN_ANDROID_EXPECTED_PAGE_SIZE`.
-- [x] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs` — 41 passed (6 new), plus `ci-structure`/`ci-needs`/`ci-efficiency` 175 passed.
+- [x] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs` — 41 passed (6 new). An independent review found the file's build-gate test was red at this HEAD: it still required `native-platforms` in `ci.yml`'s `build.needs`, while PR #206 (on `develop`) deliberately removed it; the test now asserts the shipped contract (`needs: [scope, build-artifacts]`) and still fails closed on scope and workspace results.
 - [x] Observed red recorded, then restored green — the test asserting the lane records its page size failed before the workflow was touched (`AssertionError: The input did not match /getconf PAGE_SIZE/u`, 1 failed | 40 passed), and passes after. The checker was also run against the live device (16384, exit 0), a 4096 observation (`TN_ANDROID_PAGE_SIZE_MISMATCH`, exit 1) and a missing file (`TN_ANDROID_PAGE_SIZE_MISSING`, exit 1).
 - [x] User verification performed on the named platform — the 16 KB environment is observed
       (AVD `threenative_ps16k`, `system-images;android-36;google_apis_ps16k;x86_64`,
@@ -174,8 +174,15 @@ pnpm build:android
       patches that and bumps the recipe to 6; a rebuilt `../sandbox/fps-framework`
       (`com.threenative.bayview`, APK sha256 `4764619f3ce1c518…`) installed on the AVD and ran:
       `[V8] V8 initialized successfully` (11.0.226.16), `TN_COLD_START first_playable`,
-      `TN_SURFACE_FRAME present 28`, a non-blank 2400x1080 capture. HUD interaction and a
-      background/resume cycle were not separately exercised. Details in the phase-3 record.
+      `TN_SURFACE_FRAME present 28`, a non-blank 2400x1080 capture. The same day the **default
+      starter** was rebuilt with this branch's packager against the recipe-6 V8
+      (`prd221-16kb-starter.apk`, sha256 `6acd46affa374b022a88a506c9e173178c58b1b4abd45b740983a16376f14aab`)
+      and run on the same AVD: V8 initialized, 250 frames presented, `TN_UI_HITTEST owns:true` on a
+      HUD touch, and a `KEYCODE_HOME` → `surfaceDestroyed` → `am start` resume cycle with frames
+      continuing. **Still open:** the HUD control's effect was not observed (the pause label did not
+      flip) and the in-repo Android playtest target was not run; "HUD interaction" is proven only to
+      the point where the native input host routes a touch to the WebView. Details in the phase-3
+      record.
 - [x] Evidence record written: `docs/verification/prd-221-readiness-phase-3-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
 
