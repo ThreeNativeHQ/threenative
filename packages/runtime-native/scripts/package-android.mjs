@@ -8,15 +8,20 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { homedir } from 'node:os';
 import { downloadReleaseArtifact, releaseManifestUrl, verifyChecksum } from './install-prebuilt.mjs';
 import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
+import {
+  assertAndroidArtifact16KbAlignment,
+  resolveZipalignCandidates,
+} from './check-android-16kb-alignment.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GRADLE_WRAPPER_URL =
@@ -869,6 +874,71 @@ export function androidUnsignedReleaseApk(packageRoot) {
   return join(packageRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release-unsigned.apk');
 }
 
+/**
+ * Align the finished APK's uncompressed libraries to 16 KB, then re-sign it.
+ *
+ * AGP 8.2.2 stores shared libraries uncompressed but aligns them to 4 KB, so a device with 16 KB
+ * pages cannot map them straight out of the archive — the census below caught exactly that on
+ * `lib/arm64-v8a/libSDL3.so`, at offset 0x11d000. Alignment is an archive property, not a
+ * compiler one, so no amount of correctly built `.so` files fixes it; the SDK's own `zipalign -P 16`
+ * does, and `apksigner` puts the signature back afterwards because zipalign rewrites the archive.
+ *
+ * Fails closed: no zipalign, no apksigner, or a non-zero exit is an error, never a skip. An APK
+ * that silently ships 4 KB-aligned libraries is the defect this whole path exists to prevent.
+ */
+function alignAndroidArchive(apkPath, options = {}) {
+  const spawn = options.spawnSync ?? spawnSync;
+  const zipalign =
+    options.zipalign ??
+    resolveZipalignCandidates().find(
+      (candidate) => candidate === 'zipalign' || existsSync(candidate),
+    );
+  if (zipalign === undefined)
+    throw new Error(
+      'No zipalign found. Install Android SDK build-tools, or set TN_ZIPALIGN, so the packaged ' +
+        'APK can be aligned to 16 KB.',
+    );
+  const aligned = `${apkPath}.aligned`;
+  rmSync(aligned, { force: true });
+  const alignResult = spawn(zipalign, ['-P', '16', '-f', '4', apkPath, aligned], {
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
+  if (alignResult.error) throw alignResult.error;
+  if (alignResult.status !== 0)
+    throw new Error(`${zipalign} exited with code ${alignResult.status ?? 'unknown'}.`);
+  const apksigner = zipalign === 'zipalign' ? 'apksigner' : join(dirname(zipalign), 'apksigner');
+  const keystore =
+    options.keystore ?? join(process.env.HOME ?? homedir(), '.android', 'debug.keystore');
+  if (!existsSync(keystore))
+    throw new Error(
+      `Cannot re-sign the aligned APK: no keystore at ${keystore}. Run a Gradle debug build once ` +
+        'to create the debug keystore, or pass an explicit keystore.',
+    );
+  const signResult = spawn(
+    apksigner,
+    [
+      'sign',
+      '--ks',
+      keystore,
+      '--ks-pass',
+      `pass:${options.keystorePassword ?? 'android'}`,
+      '--ks-key-alias',
+      options.keystoreAlias ?? 'androiddebugkey',
+      '--key-pass',
+      `pass:${options.keyPassword ?? 'android'}`,
+      aligned,
+    ],
+    { encoding: 'utf8', stdio: 'inherit' },
+  );
+  if (signResult.error) throw signResult.error;
+  if (signResult.status !== 0)
+    throw new Error(`${apksigner} exited with code ${signResult.status ?? 'unknown'}.`);
+  renameSync(aligned, apkPath);
+  rmSync(`${aligned}.idsig`, { force: true });
+  return zipalign;
+}
+
 export async function packageAndroid(
   bundle,
   requestedOutput,
@@ -999,18 +1069,44 @@ export async function packageAndroid(
         `TN_ANDROID_ARTIFACT_MISSING: Gradle ${request.task} produced no ${request.format} at ${candidates.join(' or ')}.`,
       );
     }
-    if (request.mode === 'release') {
-      // Signature and non-debuggable proof come from the artifact itself, not from the request. A
-      // release whose signature cannot be verified is not a release.
-      verifyAndroidReleaseArtifact(artifact, request, options);
-    }
     const output = requestedOutput ? resolve(requestedOutput) : artifact;
     if (output !== artifact) {
       mkdirSync(dirname(output), { recursive: true });
       copyFileSync(artifact, output);
     }
-    const signingLabel = request.mode === 'release' ? 'signed' : 'debug';
-    console.log(`ThreeNative Android ${request.format.toUpperCase()}: ${output} (${signingLabel})`);
+    // APKs are aligned to 16 KB and censused on the artifact that ships. A release APK is re-signed
+    // with the consumer's own key, never the debug keystore; an AAB is left to Gradle's signing.
+    if (request.format === 'apk') {
+      if (options.alignArchive !== false) {
+        alignAndroidArchive(output, {
+          ...(options.align ?? {}),
+          ...(request.mode === 'release'
+            ? {
+                keystore: signing.keystore,
+                keystoreAlias: signing.keyAlias,
+                keystorePassword: signing.keystorePassword,
+                keyPassword: signing.keyPassword,
+              }
+            : {}),
+        });
+      }
+      // The 16 KB census runs on the artifact that ships, not on the build directory it came from.
+      const census = assertAndroidArtifact16KbAlignment(output, options.artifact16Kb ?? {});
+      for (const library of census.libraries) {
+        console.log(
+          `  16 KB ok: ${library.entry} (${library.compression}, offset 0x${library.dataOffset.toString(16)}, ` +
+            `LOAD ${library.alignments.map((value) => `0x${value.toString(16)}`).join(', ')})`,
+        );
+      }
+      console.log(
+        `ThreeNative Android APK: ${output} — ${census.libraries.length} native libraries 16 KB clean` +
+          `${census.zipalign ? `, archive offsets confirmed by ${census.zipalign}` : ''}`,
+      );
+    }
+    if (request.mode === 'release') {
+      // Signature and non-debuggable proof come from the shipped artifact, after any alignment.
+      verifyAndroidReleaseArtifact(output, request, options);
+    }
     return output;
   } finally {
     restoreFiles();

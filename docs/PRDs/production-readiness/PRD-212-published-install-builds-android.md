@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Existing phases fixed packed import/specifier mechanics. Current packageAndroid selects assembleDebug and app-debug.apk. App identity, icon and splash already flow from the game config. The report observed JDK 26 locally while supported Android builds need JDK 17; this is a prerequisite to diagnose, not a source-code workaround.
 
-Engine packaging layer. Owns SDK level and release APK/AAB/signing path through the existing build command. [PRD-221](PRD-221-android-v8-is-16kb-clean.md) supplies aligned libraries, [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies downloads, [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) owns brand appearance and [PRD-060](PRD-060-promoted-consumer-distribution.md) owns actual credentialed upload/promotion proof.
+Engine packaging layer. Owns SDK level and release APK/AAB/signing path through the existing build command. [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) supplies aligned libraries, [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies downloads, [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) owns brand appearance and [PRD-060](PRD-060-promoted-consumer-distribution.md) owns actual credentialed upload/promotion proof.
 
 ## Approach and boundaries
 
