@@ -31,6 +31,13 @@ import {
 
 const repo = path.resolve(import.meta.dirname, "../..");
 
+// A git command can return while a background auto-gc still writes
+// .git/objects/pack, so a plain recursive rm races it and throws ENOTEMPTY.
+// Node retries ENOTEMPTY when maxRetries/retryDelay are set.
+async function removeFixture(root: string): Promise<void> {
+  await rm(root, { force: true, recursive: true, maxRetries: 10, retryDelay: 100 });
+}
+
 it("coverage consumes retained production evidence and blocks status-only artifacts", async () => {
   const directory = await makeTempDir("performance-coverage-");
   await writeFile(
@@ -739,7 +746,7 @@ describe("CI pipeline structure", () => {
         selection: "full",
       });
     } finally {
-      await rm(fixture.root, { force: true, recursive: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -763,7 +770,7 @@ describe("CI pipeline structure", () => {
         selection: "prose",
       });
     } finally {
-      await rm(fixture.root, { force: true, recursive: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -784,7 +791,7 @@ describe("CI pipeline structure", () => {
         selection: "full",
       });
     } finally {
-      await rm(fixture.root, { force: true, recursive: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2820,7 +2827,7 @@ describe("PRD-373 selective feature verification", () => {
         selection === "instructions",
       );
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2854,7 +2861,7 @@ describe("PRD-373 selective feature verification", () => {
       const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
       expect(native?.reason.length).toBeGreaterThan(10);
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2869,7 +2876,7 @@ describe("PRD-373 selective feature verification", () => {
         const jobs = plan.jobs as Record<string, { required: boolean }>;
         expect(Object.values(jobs).some((job) => job.required)).toBe(false);
       } finally {
-        await rm(fixture.root, { recursive: true, force: true });
+        await removeFixture(fixture.root);
       }
     },
   );
@@ -2896,7 +2903,7 @@ describe("PRD-373 selective feature verification", () => {
         ).toBe("full");
       }
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2927,7 +2934,7 @@ describe("PRD-373 selective feature verification", () => {
         classifyScope(fixture.root, beforeDelete, "HEAD", ["--target", "develop"]).selection,
       ).toBe("full");
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2948,7 +2955,7 @@ describe("PRD-373 selective feature verification", () => {
           .selection,
       ).toBe("full");
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 });
