@@ -36,6 +36,11 @@ import {
   npmLookup,
   publishSet,
 } from "./check-publish-state.js";
+import {
+  type INativeStaged,
+  stageNativeRelease,
+  uploadNativeRelease,
+} from "./release-native-local.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -293,6 +298,13 @@ async function main(argv: readonly string[]): Promise<void> {
     (arg) => !["--yes", "--prepare", "--skip-gates", "--allow-missing-prebuilt"].includes(arg),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
+  // A `--yes` release that did not ask to publish ahead of its prebuilt payload produces that
+  // payload itself, so the preflight may acknowledge its absence and the run finishes the job.
+  // Never in CI: the npm-release lane runs on a binary-less runner against the release the native
+  // lane already produced, and it holds no GitHub token here, so it must not try to stage one.
+  const willCreateNativeRelease =
+    publish && !allowMissingPrebuilt && process.env.GITHUB_ACTIONS !== "true";
+  const prebuiltAcknowledged = allowMissingPrebuilt || willCreateNativeRelease;
 
   // Publish from a committed tree, always. The 0.2.x releases went out of a working tree and
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
@@ -311,7 +323,7 @@ async function main(argv: readonly string[]): Promise<void> {
 
   const report = await checkPublishState({
     allowCurrentPublishSetPins: true,
-    allowMissingPrebuilt,
+    allowMissingPrebuilt: prebuiltAcknowledged,
     repo: REPO,
   });
   process.stdout.write(`\n${formatPublishReport(report)}`);
@@ -335,11 +347,25 @@ async function main(argv: readonly string[]): Promise<void> {
   }
   run("pnpm", ["build"], "pnpm build");
 
+  // Assemble the native payload before any npm publish: a declared key with no staged binary must
+  // refuse the whole release while nothing irreversible has happened, not after the cohort is up.
+  // When the tag already exists — the CI npm lane runs against the native lane's release — this is
+  // skipped, so a scoped host-only lock never clobbers the official full-cohort one.
+  let native: INativeStaged | undefined;
+  if (willCreateNativeRelease) {
+    native = await stageNativeRelease({ repo: REPO, skipIfReleased: true });
+    process.stdout.write(
+      native === undefined
+        ? "\nA native release already exists for this version; leaving it untouched.\n"
+        : `\nStaged ${native.keys.length} native asset(s) for ${native.tag} in ${native.directory}.\n`,
+    );
+  }
+
   if (publish) {
     assertCleanPackageTree(REPO);
     const postBuildReport = await checkPublishState({
       allowCurrentPublishSetPins: true,
-      allowMissingPrebuilt,
+      allowMissingPrebuilt: prebuiltAcknowledged,
       repo: REPO,
     });
     process.stdout.write(
@@ -389,6 +415,17 @@ async function main(argv: readonly string[]): Promise<void> {
     );
     process.stdout.write(`  waiting for ${name}@${version} to be readable…\n`);
     await waitForRegistry(name, version);
+  }
+
+  // The npm cohort is up; now publish the payload the runtime package installs against. The lock
+  // is uploaded last, so the clean-room install below reads a release whose advertised keys exist.
+  if (native !== undefined) {
+    const result = uploadNativeRelease({
+      directory: native.directory,
+      repository: native.repository,
+      tag: native.tag,
+    });
+    process.stdout.write(`\nPublished ${result.tag} with ${result.uploaded.length} asset(s).\n`);
   }
 
   run(
