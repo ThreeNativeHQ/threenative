@@ -16,6 +16,7 @@ import {
   parseBuildArgs,
   writePackagingConfig,
 } from "../src/build.js";
+import { ANDROID_RELEASE_SIGNING_ENV } from "../src/doctor.js";
 import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -203,6 +204,18 @@ describe("threenative build", () => {
     await expect(
       build({ cwd: "/unused", target: "android", mode: "debug", format: "aab" }),
     ).rejects.toThrow(/--format aab requires --mode release/u);
+  });
+
+  // PRD-212 phase 3. Doctor predicts the signing properties a release needs; the packager must
+  // read exactly those four or the prediction becomes a prerequisite no build has.
+  it("spells the release signing properties the same way doctor predicts them", async () => {
+    const source = await readFile(
+      path.resolve("packages/runtime-native/scripts/package-android.mjs"),
+      "utf8",
+    );
+    for (const name of ANDROID_RELEASE_SIGNING_ENV) {
+      expect(source, name).toContain(name);
+    }
   });
 
   it("delegates byte-identically to the same Vite binary for every template", async () => {

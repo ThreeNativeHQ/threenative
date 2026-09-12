@@ -293,6 +293,21 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
 }
 
+// PRD-212 phase 3. Release signing is owned by the game, never by the engine: these four project
+// properties arrive from the consumer's build environment as ORG_GRADLE_PROJECT_<name>, so no
+// keystore path or password is ever written into an engine file. When all four are present the
+// release variant is signed with them; when any is missing the release stays unsigned and
+// `package-android.mjs` refuses it. There is deliberately no debug-key fallback.
+val threenativeKeystore = providers.gradleProperty("threenativeKeystore")
+val threenativeKeystoreAlias = providers.gradleProperty("threenativeKeystoreAlias")
+val threenativeKeystorePassword = providers.gradleProperty("threenativeKeystorePassword")
+val threenativeKeyPassword = providers.gradleProperty("threenativeKeyPassword")
+val hasReleaseSigning =
+    threenativeKeystore.isPresent &&
+        threenativeKeystoreAlias.isPresent &&
+        threenativeKeystorePassword.isPresent &&
+        threenativeKeyPassword.isPresent
+
 android {
     namespace = "com.threenative.game"
     // Google Play requires new apps and updates to target API 36 (Android 16) from 2026-08-31;
@@ -382,6 +397,17 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = file(threenativeKeystore.get())
+                storePassword = threenativeKeystorePassword.get()
+                keyAlias = threenativeKeystoreAlias.get()
+                keyPassword = threenativeKeyPassword.get()
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // AGP pins the debug variant's native build to CMAKE_BUILD_TYPE=Debug and ignores
@@ -398,8 +424,10 @@ android {
         }
         release {
             // PRD-212: a release artifact is never debuggable, whatever the default becomes. The
-            // debug variant stays the install-anywhere default; release is opt-in.
+            // debug variant stays the install-anywhere default; release is opt-in and signed only
+            // by the consumer's own properties — never a debug key.
             isDebuggable = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

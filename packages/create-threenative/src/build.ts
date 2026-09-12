@@ -496,6 +496,10 @@ async function buildNative(
         mode,
         "--format",
         format,
+        // The consumer project, so a relative keystore path in the signing environment resolves
+        // against the game rather than the engine's Android project.
+        "--project-root",
+        cwd,
         "--bundle",
         bundle,
         "--assets",
