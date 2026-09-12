@@ -1203,8 +1203,192 @@ jobs:
             ${{ runner.temp }}/ios-toolchain-invocations.log
           if-no-files-found: warn
 
+  clean-consumer-windows:
+    needs: [validate-tag, gates, build, publish]
+    if: >-
+      ${{ !cancelled() && needs.gates.result == 'success' &&
+      needs.build.result == 'success' &&
+      ((github.ref_type != 'tag' && needs.publish.result == 'skipped') ||
+      (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
+    runs-on: windows-2025
+    # `clean-consumer`'s mechanisms all assume POSIX: a `/bin/sh` toolchain mask, an apt Vulkan
+    # ICD, WebKitGTK and an `xvfb` wrapper. Windows gets its own lane rather than a flag, because
+    # none of those has a Windows equivalent and every one of them is load-bearing. The claim is
+    # the same as the Linux lane's, about a different platform: install from the published cohort,
+    # build the desktop target with every native compiler masked, launch the packed game.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Download this run's proof assets
+        if: github.ref_type != 'tag'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: runtime-*
+          path: release
+          merge-multiple: true
+      - name: Serve same-run proof assets without publishing
+        if: github.ref_type != 'tag'
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" != tag
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+          import { PREBUILT_ASSET_NAMES, PUBLISHED_PREBUILT_KEYS } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          // The published cohort, not every non-iOS key: rows in UNPUBLISHED_PREBUILT_KEYS upload
+          // under a name the `pattern: runtime-*` download above does not collect, so demanding them
+          // here fails a run whose staging is exactly right.
+          const names = PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith("ios-"))
+            .map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
+          const expected = names.map(([, name]) => name).sort();
+          if (JSON.stringify(readdirSync("release").sort()) !== JSON.stringify(expected)) {
+            throw new Error("Proof assets must contain every published non-iOS runtime from this run, and no extras.");
+          }
+          const artifacts = Object.fromEntries(names.map(([key, name]) => {
+            const bytes = readFileSync(`release/${name}`);
+            if (!bytes.length) throw new Error(`Empty proof asset: ${name}`);
+            return [key, { sha256: createHash("sha256").update(bytes).digest("hex"), url: `http://127.0.0.1:8765/${name}` }];
+          }));
+          writeFileSync(`${process.env.RUNNER_TEMP}/proof-prebuilt-lock.json`, `${JSON.stringify({ artifacts }, null, 2)}\n`);
+          writeFileSync(`${process.env.RUNNER_TEMP}/proof-asset-identity.json`, `${JSON.stringify({
+            candidateSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+            scope: "same-run-artifacts-not-public-installation", artifacts }, null, 2)}\n`);
+          NODE
+          # `python`, not the Linux lane's `python3`: actions/setup-python puts `python` on PATH on
+          # Windows and does not guarantee the `python3` alias.
+          python -m http.server 8765 --bind 127.0.0.1 --directory "$GITHUB_WORKSPACE/release" \
+            > "$RUNNER_TEMP/proof-assets-server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/proof-assets-server.pid"
+          ready=false
+          for attempt in $(seq 1 30); do
+            # Node rather than curl: the probe must not depend on whether the runner resolves
+            # `curl` to Git Bash's build or Windows's, which spell their null sink differently.
+            if node -e 'fetch("http://127.0.0.1:8765/").then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          echo "THREENATIVE_PREBUILT_MANIFEST=$RUNNER_TEMP/proof-prebuilt-lock.json" >> "$GITHUB_ENV"
+          echo "THREENATIVE_ALLOW_INSECURE_PREBUILT=1" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      - name: Pack the exact scaffold consumer packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" --if-present run build
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/packages"
+          done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Scaffold from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-consumer-proof
+          template: minimal
+      - name: Prepare the scaffolded consumer proof
+        run: |
+          target="$RUNNER_TEMP/threenative-consumer-proof"
+          CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
+          import { copyFileSync } from "node:fs";
+          copyFileSync("examples/native-smoke/src/game.ts", `${process.env.CONSUMER_TARGET}/src/game.ts`);
+          // The entry's own siblings. Copying `game.ts` alone left the consumer build with
+          //   [UNRESOLVED_IMPORT] Could not resolve './networking-game.js' in src/game.ts
+          //   [UNRESOLVED_IMPORT] Could not resolve './worker-proof.js' in src/game.ts
+          copyFileSync("examples/native-smoke/src/networking-game.ts", `${process.env.CONSUMER_TARGET}/src/networking-game.ts`);
+          copyFileSync("examples/native-smoke/src/worker-proof.ts", `${process.env.CONSUMER_TARGET}/src/worker-proof.ts`);
+          copyFileSync("examples/native-smoke/vite.config.ts", `${process.env.CONSUMER_TARGET}/vite.config.ts`);
+          NODE
+          echo "CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
+      - name: Mask every native toolchain entry point
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolchain-mask"
+          TOOLCHAIN_MASK="$RUNNER_TEMP/toolchain-mask" node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          // Windows resolves a bare command through PATHEXT, so a `.cmd` shim in a directory ahead
+          // of the real one shadows the `.exe`. MSVC ships on this image, which is exactly why the
+          // mask has to be proved to shadow it rather than assumed to be the only copy.
+          const commands = ["cargo", "cl", "clang", "clang++", "cmake", "c++", "g++", "gcc", "link", "ninja", "rustc"];
+          for (const command of commands) {
+            writeFileSync(
+              `${process.env.TOOLCHAIN_MASK}/${command}.cmd`,
+              '@echo off\r\necho %0 %* >> "%TN_TOOLCHAIN_LOG%"\r\nexit /b 97\r\n',
+            );
+          }
+          NODE
+          # The runner prepends `GITHUB_PATH` entries for every shell, so the directory is written
+          # in Windows form; a Git Bash POSIX path means nothing to a PowerShell or cmd step.
+          echo "$(cygpath -w "$RUNNER_TEMP/toolchain-mask")" >> "$GITHUB_PATH"
+          echo "TN_TOOLCHAIN_LOG=$RUNNER_TEMP/toolchain-invocations.log" >> "$GITHUB_ENV"
+      - name: Install and build without a native toolchain
+        run: |
+          pnpm --dir "$CONSUMER_TARGET" install
+          # Provenance the PRD-262 consumer gate asserts: the installed runtime must record a
+          # successful prebuilt install, never a source-checkout build.
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const status = JSON.parse(readFileSync(`${process.env.CONSUMER_TARGET}/node_modules/@threenative/runtime-native/prebuilt/install-status.json`, "utf8"));
+          if (status.ok !== true) throw new Error(`prebuilt install-status.ok is ${status.ok}, not true`);
+          NODE
+          # Both binaries arrive from the release the install just read; no step here places either,
+          # so a regression in what the release publishes fails this consumer. The helper is checked
+          # before the build: asserting it after would not prove the install produced it.
+          test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/threenative-runtime.exe"
+          test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Launch the packed desktop game for 300 frames
+        run: |
+          log="$RUNNER_TEMP/threenative-consumer.log"
+          screenshot="$RUNNER_TEMP/threenative-consumer.png"
+          game="$CONSUMER_TARGET/dist-native/threenative-consumer-proof.exe"
+          test -s "$game"
+          # No `xvfb`: a hosted Windows session has a desktop. The windowed launcher prints the
+          # adapter it bound at `[WebGPU] Adapter:`, recorded rather than asserted because this
+          # runner has no GPU and a WARP adapter is the expected, honest answer.
+          "$game" --screenshot "$screenshot" --frames 300 > "$log" 2>&1
+          grep -F 'TN_NATIVE_SMOKE_READY:webgpu' "$log"
+          grep -F 'TN_NATIVE_SMOKE_FIRST_FRAME' "$log"
+          grep -F 'TN_NATIVE_SMOKE_300_FRAMES:300' "$log"
+          grep -E 'Rendered 300 frames in [0-9]+ms' "$log"
+          grep -E '\[WebGPU\] (Adapter|Vendor|Backend):' "$log" | tee "$RUNNER_TEMP/windows-adapter.txt"
+          SCREENSHOT="$screenshot" node --input-type=module <<'NODE'
+          import { inspectScreenshot } from "./packages/runtime-native/scripts/verify-desktop-core.mjs";
+          console.log(inspectScreenshot(process.env.SCREENSHOT));
+          NODE
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Stop the proof asset server
+        if: ${{ always() && github.ref_type != 'tag' }}
+        run: |
+          if [ -s "$RUNNER_TEMP/proof-assets-server.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/proof-assets-server.pid")" 2>/dev/null || true
+          fi
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: clean-consumer-windows-x64
+          path: |
+            ${{ runner.temp }}/threenative-consumer.log
+            ${{ runner.temp }}/threenative-consumer.png
+            ${{ runner.temp }}/windows-adapter.txt
+            ${{ runner.temp }}/toolchain-invocations.log
+            ${{ runner.temp }}/proof-*.json
+            ${{ runner.temp }}/proof-assets-server.log
+            ${{ runner.temp }}/packages/*.tgz
+
   finalize:
-    needs: [validate-tag, clean-consumer, clean-consumer-ios]
+    needs: [validate-tag, clean-consumer, clean-consumer-ios, clean-consumer-windows]
     if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1224,8 +1408,9 @@ jobs:
     if: >-
       ${{ always() && github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
       needs.publish.result == 'success' &&
-      (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success') }}
-    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios]
+      (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success' ||
+      needs.clean-consumer-windows.result != 'success') }}
+    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios, clean-consumer-windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

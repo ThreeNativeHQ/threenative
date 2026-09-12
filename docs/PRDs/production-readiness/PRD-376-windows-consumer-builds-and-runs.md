@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-376 — A Windows consumer installs the published runtime and builds a game that runs
 
-**Status:** PROPOSED. Filed 2026-09-11; planning only. No phase has been executed.
+**Status:** PARTIAL. Filed 2026-09-11. Phase 1 and Phase 2 are wired and the local spec is green; every hosted-Windows box is still open because the lane has not yet run on a Windows runner.
 **Complexity:** 4 → MEDIUM (+1 files, +2 a platform lane that does not exist, +1 hosted-runner and software-rasteriser integration). The code volume is small; the difficulty is that every assumption in the Linux lane — POSIX shims, `xvfb`, `install -m 0755`, a Vulkan ICD — is false on Windows.
 **Problem:** PRD-262 publishes `threenative-runtime-win32-x64.exe` and `threenative-tools-win32-x64.exe`, but `clean-consumer` runs on `ubuntu-24.04` only, so no consumer has ever installed those assets and built a game with them.
 
@@ -26,9 +26,9 @@ Engine distribution layer. This PRD owns the Windows consumer proof only. It doe
 
 | # | New or revised thing | Live caller at planning time | Replaces | Old path removed? | Negative control |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `clean-consumer-windows` job | `.github/workflows/native-release.yml` `finalize` job's `needs:` — TBD `file:line` at implementation | nothing; the Windows claim was previously unproved | n/a, new coverage | Delete the installed `mystral-tools.exe` before the build; the job must fail naming it, not silently succeed |
-| 2 | Windows toolchain mask (`.cmd` shims) | the new job's `Install and build` step — TBD `file:line` | the POSIX `printf`/`chmod` mask, which cannot run here | n/a, parallel lane for a different OS | Invoke `cl` directly in the job; the mask must record it and exit non-zero |
-| 3 | `scripts/__tests__/native-release-proof.spec.ts` assertions for the Windows job | the spec is already collected by `pnpm exec vitest run` | nothing | n/a | Rename the job in the workflow; the spec must go red |
+| 1 | `clean-consumer-windows` job | `.github/workflows/native-release.yml:1391` `finalize` job's `needs:` (job defined at `:1206`) | nothing; the Windows claim was previously unproved | n/a, new coverage | Delete the installed `mystral-tools.exe` before the build; the job must fail naming it, not silently succeed |
+| 2 | Windows toolchain mask (`.cmd` shims) | the new job's `Mask every native toolchain entry point` step, `.github/workflows/native-release.yml:1314` | the POSIX `printf`/`chmod` mask, which cannot run here | n/a, parallel lane for a different OS | Invoke `cl` directly in the job; the mask must record it and exit non-zero |
+| 3 | `scripts/__tests__/native-release-proof.spec.ts` assertions for the Windows job | the spec is already collected by `pnpm exec vitest run`; Windows tests at `:639` | nothing | n/a | Rename the job in the workflow; the spec must go red (observed: 5 tests fail with "missing job clean-consumer-windows") |
 
 ## Approach and boundaries
 
@@ -65,9 +65,9 @@ flowchart LR
 
 **Phase checklist:**
 
-- [ ] Files wired — the new job exists and `finalize` lists it in `needs:`
-- [ ] Required test passing — the spec asserts the job, its runner, its mask and its helper assertion
-- [ ] Observed red — a masked `cl` invocation fails the job; a deleted helper fails the build naming it
+- [x] Files wired — the new job exists and `finalize` lists it in `needs:` (`native-release.yml:1206`, `:1391`; also `cleanup-failed-release` at `:1413`)
+- [x] Required test passing — the spec asserts the job, its runner, its mask and its helper assertion (`pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts`: 41 passed; `native-platform-workflow.test.mjs` + `ios-packaging.test.mjs`: 55 passed; `ci-structure.spec.ts`: 108 passed)
+- [ ] Observed red — a masked `cl` invocation fails the job; a deleted helper fails the build naming it. Only the spec-level control ran locally (renaming the job fails 5 spec tests); the two Windows controls need a Windows runner.
 - [ ] Independent review PASS
 - [ ] User verification — the job is green on a real hosted Windows runner
 
@@ -97,9 +97,9 @@ gh run view <id> --json jobs --jq '.jobs[] | select(.name=="clean-consumer-windo
 
 **Phase checklist:**
 
-- [ ] Files wired — the launch step runs in the same job and `finalize` depends on its result
-- [ ] Required test passing — the spec asserts the frame count and the first-frame marker
-- [ ] Observed red — a build with no renderer reaches no first frame and fails the step
+- [x] Files wired — the launch step runs in the same job and `finalize` depends on its result
+- [x] Required test passing — the spec asserts the frame count and the first-frame marker (41 passed locally)
+- [ ] Observed red — a build with no renderer reaches no first frame and fails the step. Needs a Windows runner.
 - [ ] Independent review PASS
 - [ ] User verification — a non-blank capture from the hosted Windows runner, inspected by a human
 
