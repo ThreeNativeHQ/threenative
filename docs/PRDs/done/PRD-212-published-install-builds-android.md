@@ -200,22 +200,15 @@ downstream acceptance".
 - [x] Current target API, all native-library/ZIP alignment checks, package ID/version and native symbol outputs are validated for the exact artifact. — The signed release APK reports compileSdk/targetSdk 36, `com.threenative.game` versionCode 1 / versionName 0.1.0; PRD-221's census reports all 4 shipped libraries 16 KB clean with archive offsets confirmed by `zipalign`; the release build emits `native-debug-symbols.zip` carrying a `.sym` for every library/ABI the APK ships (`arm64-v8a`, `x86_64` × `libmystral-runtime.so`, `libSDL3.so`). See the phase 3 record.
 - [x] The verified artifact contract and its exact identity are handed to the PRDs that own the public-cohort and hardware proofs; PRD-212 makes no public-consumer or store-acceptance claim of its own. — The signed APK/AAB signer (`CN=ThreeNative Test`), targetSdk 36, `com.threenative.game` versionCode 1 / versionName 0.1.0, 16 KB alignment census and native symbol set are recorded in the phase 2 and 3 records and referenced by [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) and [PRD-366](../production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md); the downstream proofs stay open where they belong.
 
-**Delegated downstream acceptance.** Two criteria from the 2026-09-08 plan were never PRD-212's to
-satisfy: their prerequisites and verdicts live in the owning PRDs, which already carry them as
-acceptance and keep them open. Nothing here ticks them.
-- *A published SDK/JDK-only consumer building Android from public registry packages and runtime
-  downloads* is [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md)'s "One exact source/version
-  cohort resolves publicly … and all required non-iOS deep consumer rows passing". Its prerequisite
-  is the public Android runtime cohort from
-  [PRD-262](../production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md) /
-  [PRD-078](../production-readiness/PRD-078-toolchain-free-consumer-proof.md); as of 2026-09-12 the `runtime-native-v0.3.2`
-  release carries only `linux-x64` and `linux-x64-tools`, so this proof is not reachable and is not
-  claimed anywhere.
-- *The signed artifact reaching a device and a store* is
-  [PRD-366](../production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md)'s "Physical Android evidence
-  uses the exact signed artifact and real hardware" and
-  [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md)'s "Android upload validation … execute".
-  Both remain open and unclaimed.
+## Delegated downstream acceptance
+
+PRD-212 does not own these two criteria from the 2026-09-08 plan. They are quoted verbatim here and
+left unticked; the owning PRD carries each as its own acceptance and keeps it open.
+
+- [ ] Published SDK/JDK-only consumer builds Android without source checkout or patched node_modules.
+  Owner: PRD-060. Prerequisite: the public Android runtime cohort from PRD-262 and PRD-078. The runtime-native-v0.3.2 release carries only linux-x64 and linux-x64-tools, so this proof is not reachable and is claimed nowhere.
+- [ ] The same release artifact reaches PRD-366 device proof and PRD-060 store validation; packaging alone does not claim store acceptance.
+  Owners: PRD-366 for the physical Android device proof and PRD-060 for the store upload validation. Both remain open and unclaimed.
 
 ## Prior work retained
 
