@@ -49,14 +49,13 @@ produced on full selections but is deliberately **not part of the merge verdict*
 native rows for the exact candidate SHA, so a native red does not block a merge but does block a
 release. This keeps ordinary merges off the 120-minute native build.
 
-The develop flow activates only after PRD-373's enabling changes pass the existing protected-main
-flow and the owner protects develop with `ci-required`. Until then, target main. After activation,
-start feature branches from develop and explicitly open their PRs against develop; merge features
-there with squash. Qualify a fixed `promotion/<full-head-sha>` against current main and merge that
-PR with a merge commit, preserving ancestry. A changed head/base requires fresh checks. Emergency
-`hotfix/` PRs use full main checks and must be merged back to develop. The repository default may
-remain main for qualified workflow definitions; set `git config threenative.integrationBranch
-develop` in each migrated checkout. Do not retarget another person's PR or rewrite their worktree.
+The integration flow is active: `develop` is protected and requires `ci-required`. Start feature
+branches from develop and explicitly open their PRs against develop; merge features there with
+squash. Qualify a fixed `promotion/<full-head-sha>` against current main and merge that PR with a
+merge commit, preserving ancestry. A changed head/base requires fresh checks. Emergency `hotfix/`
+PRs use full main checks and must be merged back to develop. The repository default may remain main
+for qualified workflow definitions; set `git config threenative.integrationBranch develop` in each
+checkout. Do not retarget another person's PR or rewrite their worktree.
 
 `pnpm lint` prints several hundred warnings on a clean tree; only errors fail the build, so read
 the error count. If a package's types look stale against a change you did not make, rebuild it —
