@@ -996,6 +996,24 @@ jobs:
             echo "::warning::/dev/kvm is not writable on this runner; the emulator falls back to \
           software emulation, which is the 474-second boot this step exists to avoid."
           fi
+      - name: Provision the Android debug keystore for the packed build
+        run: |
+          set -euo pipefail
+          # The packager zipaligns the finished APK to 16 KB and re-signs it with the debug key
+          # afterwards, because zipalign rewrites the archive. A Gradle debug build normally
+          # creates ~/.android/debug.keystore on first signing, but the masked clean-consumer
+          # SDK never yields one, so the re-sign fails closed with "no keystore". Provision the
+          # conventional debug key explicitly; the alias and passwords match what the packager's
+          # apksigner invocation already assumes.
+          keystore="$HOME/.android/debug.keystore"
+          if [ ! -f "$keystore" ]; then
+            mkdir -p "$(dirname "$keystore")"
+            keytool -genkeypair -keystore "$keystore" -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          test -s "$keystore"
       - name: Build the packed Android target without NDK, CMake, or Rust
         run: |
           cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/game.ts"

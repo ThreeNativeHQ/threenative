@@ -570,6 +570,28 @@ test("the emulator lane reports acceleration instead of asserting it", () => {
   assert.match(kvm, /TN_EMULATOR_ACCEL:software/u);
 });
 
+test("the packed Android build provisions the debug key the re-sign step assumes", () => {
+  // The packager zipaligns the finished APK to 16 KB and re-signs it with the debug key, but
+  // the masked clean-consumer SDK never yields ~/.android/debug.keystore, so the re-sign fails
+  // closed with "no keystore" after a BUILD SUCCESSFUL Gradle run. The keystore is provisioned
+  // explicitly before the build, with the alias and passwords the packager already assumes.
+  const consumerJob = job("clean-consumer");
+  const keystore =
+    consumerJob
+      .split("- name: Provision the Android debug keystore for the packed build\n")[1]
+      ?.split("\n      - name:")[0] ?? "";
+  assert.ok(keystore.length > 0, "missing the keystore provisioning step");
+  assert.match(keystore, /\.android\/debug\.keystore/u);
+  assert.match(keystore, /androiddebugkey/u);
+  // Order matters: provisioning after the build would not save the re-sign.
+  const provisionAt = consumerJob.indexOf("Provision the Android debug keystore");
+  const buildAt = consumerJob.indexOf("Build the packed Android target without NDK");
+  assert.ok(
+    provisionAt > 0 && provisionAt < buildAt,
+    "the keystore provisioning must precede the packed Android build",
+  );
+});
+
 test("the packed consumer job outlasts its measured comparable", () => {
   const consumer = job("clean-consumer");
   const timeout = Number(consumer.match(/\n\x20{4}timeout-minutes: (\d+)/u)?.[1]);
