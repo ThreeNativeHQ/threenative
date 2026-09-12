@@ -1,8 +1,9 @@
 # PRD-365 phase 1 — a game command creates a complete native desktop container
 
 Candidate: branch `prd-365/desktop-distribution-phase-1`, implementation commit **`264153102`**,
-based on `origin/develop` at `97e1ba7e8`. Host: linux-x64, Node v20.19.6, pnpm 10.25.0.
-Worktree: `.worktrees/prd-365-phase1`.
+based on `origin/develop` at `97e1ba7e8`. Pull request:
+**https://github.com/ThreeNativeHQ/threenative/pull/224** (draft, base `develop`, label `prd:25%`).
+Host: linux-x64, Node v20.19.6, pnpm 10.25.0. Worktree: `.worktrees/prd-365-phase1`.
 
 Local-input path: phase 1 is implemented and proved against local inputs as the batch README allows
 ("212/365 can implement against local inputs before 262 publishes downloads"). The real host binary
@@ -88,12 +89,23 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 The generic-icon brand control is `assertContainerIdentity`: a manifest whose `app.iconSha256`
 does not match the configured icon's bytes throws `TN_DESKTOP_BRAND_MISMATCH`.
 
+## Independent review
+
+An independent reviewer (a read-only reviewer pinned to a different model, given the PRD phase, the
+diff at `264153102`, the test file and this record) returned **PASS**. It confirmed that
+`build --target desktop --mode release` reaches the helper while debug mode falls through to the
+unchanged `compileDesktopArtifact`; that the negative controls are real observations rather than
+tautologies; that the lazy import is justified by the phase-2 tarball deferral; and that no unrun
+gate is overclaimed. Its non-blocking notes (a manifest-path containment hardening, a `layout()`
+default guarded by earlier validation, `@rpath` dependencies failing closed) are recorded here but
+do not change the verdict; the manifest containment note is the one addressed in a later phase if
+the payload ever becomes externally supplied.
+
 ## Not run
 
 - **User verification** (starter HUD/assets and OS identity on a real desktop, human inspection):
   needs the starter on a machine with a compositor and a person looking at it. The fixture launch
   above only proves the relocated binary starts.
-- **Independent reviewer PASS**: not requested by this record; no self-awarded PASS.
 - **macOS and Windows container execution**: the phases and metadata are unit-tested, but no
   macOS or Windows host ran here, so no mac/Windows launch claim is made. Windows identity also
   needs `rcedit`, macOS `.icns` needs `sips`/`iconutil`; both fail closed with a named code when
