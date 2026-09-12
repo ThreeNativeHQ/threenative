@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-378 — One local command publishes every package and its native runtime
 
-**Status:** IN PROGRESS — all three phases implemented, verified and independently reviewed PASS; the cohort published as 0.3.2 with `runtime-native-v0.3.2` and a fresh consumer build verified. The version bump and the published evidence live on branch `prd377/execute-local-release` (PR [#212](https://github.com/ThreeNativeHQ/threenative/pull/212)), which needs a rebase before merge.
+**Status:** IN PROGRESS — all three phases implemented, verified and independently reviewed PASS; the cohort published as 0.3.2 with `runtime-native-v0.3.2` and a fresh consumer build verified. The version bump and the published evidence live on branch `prd377/execute-local-release` (PR [#212](https://github.com/ThreeNativeHQ/threenative/pull/212)), rebased on `develop` and awaiting merge. Renumbered from 377 to 378 to clear the collision with `docs/PRDs/assets/PRD-377-auto-lod-is-on-by-default.md`.
 **Complexity:** 7 → HIGH (+2 six-to-ten files, +2 new module, +2 crosses the npm/native release boundary, +1 GitHub release API).
 **Owner:** engine release tooling.
 **Problem:** Publishing is two unrelated mechanisms. `pnpm release --yes` already publishes every npm package in dependency order from a workstation, but it then **refuses** because `@threenative/runtime-native` demands a `runtime-native-v<version>/prebuilt-lock.json` that only the multi-runner CI release lane can produce. So a local release cannot make the runtime installable, and a consumer's first `threenative build` fails on an HTTP 404. The owner's ask is one local `pnpm` command that publishes everything, so people can install the cohort and build their games without waiting on CI.

@@ -20,7 +20,7 @@
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | Actual consumer game and physical Android qualification | NEW; PROPOSED | 196/212/217/221/262/365; 153 captures |
 | [PRD-376](PRD-376-windows-consumer-builds-and-runs.md) | A Windows consumer installs the published runtime, builds and runs | NEW; PROPOSED | 262 publishes the win32-x64 cohort; prerequisite for 365 and 366 |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | Public candidate verification, recovery, promotion, stores and outside users | Moved from BLOCKED/; PROPOSED | All applicable owner results; external credentials/people only at their checkpoint |
-| [PRD-378](PRD-378-one-local-command-publishes-every-package.md) | One local `pnpm` command publishes the npm cohort and the host native runtime | NEW; NOT STARTED | 262 release contents; 221 Android V8 payload; CI lane still owns win32/iOS |
+| [PRD-378](PRD-378-one-local-command-publishes-every-package.md) | One local `pnpm` command publishes the npm cohort and the host native runtime | IN PROGRESS — phases 1-3 landed; PR #212 in review | 262 release contents; 221 Android V8 payload; CI lane still owns win32/iOS |
 
 Dependencies in the table are acceptance dependencies, not a prohibition on preparing tests/configuration earlier. Candidate production is deliberately split from final public proof: PRD-060 phase 1 stages, PRD-262 supplies downloads, PRD-366 qualifies, then PRD-060 phases 2–3 verify public consumers and obtain credentialed/external-user evidence before phase 4 promotes. Do not create an all-phases dependency cycle by requiring final promotion before candidate testing.
 
