@@ -276,6 +276,7 @@ is against the depth-1 clone taken on **2026-08-28** at these exact commits:
 | `bandinopla/threejs-fluid-simulation` | `14ff3b0e55954685dc14648d5625715fa8e8c14a` | 249 |
 | `lo-th/phy` | `7fe6ca802f581bfdeb3835147bb1923f372cc622` | read, refused |
 | `owenyuwono/tiamat` | `e389a99192c5158fb3b95d9df5427feaf9d97fea` | read, refused |
+| `SkyeShark/Eanpa-Sky` | `2b7a5518a8ec6b3b2d679c2eb40dc3ba75318384` | [381](PRD-381-nine-mineable-seams-in-eanpa-sky.md) |
 
 ```sh
 # reproduce any of them
