@@ -12,6 +12,8 @@ import { PNG } from 'pngjs';
 import {
   PREBUILT_ASSET_NAMES,
   PREBUILT_KEYS,
+  PUBLISHED_PREBUILT_KEYS,
+  UNPUBLISHED_PREBUILT_KEYS,
   RELEASE_REPOSITORY,
   downloadReleaseArtifact,
   installPrebuilt,
@@ -19,6 +21,7 @@ import {
   readRelease,
   releaseManifestUrl,
   sha256,
+  toolsFilename,
   verifyChecksum,
   writeInstallStatus,
 } from '../scripts/install-prebuilt.mjs';
@@ -500,7 +503,10 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
     const manifest = join(root, 'prebuilt-lock.json');
     writeFileSync(
       manifest,
-      `${JSON.stringify({ artifacts: { 'linux-x64': { sha256: sha256(runtime), url: `http://127.0.0.1:${address.port}/runtime` } } })}\n`,
+      `${JSON.stringify({ artifacts: {
+        'linux-x64': { sha256: sha256(runtime), url: `http://127.0.0.1:${address.port}/runtime` },
+        'linux-x64-tools': { sha256: sha256(runtime), url: `http://127.0.0.1:${address.port}/tools` },
+      } })}\n`,
     );
     const consumer = join(root, 'consumer');
     mkdirSync(consumer);
@@ -530,6 +536,13 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
           consumer,
           'node_modules/@threenative/runtime-native/prebuilt/linux-x64/threenative-runtime',
         ),
+      ),
+      runtime,
+    );
+    // A packed consumer's desktop build dispatches to this helper; the postinstall must place it.
+    assert.deepEqual(
+      readFileSync(
+        join(consumer, 'node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools'),
       ),
       runtime,
     );
@@ -770,7 +783,7 @@ function candidateLock(artifacts) {
 }
 
 function candidateArtifacts(payload = Buffer.from('candidate runtime')) {
-  return Object.fromEntries(PREBUILT_KEYS.map((key) => [key, {
+  return Object.fromEntries(PUBLISHED_PREBUILT_KEYS.map((key) => [key, {
     url: `${releaseManifestUrl().replace('/prebuilt-lock.json', '')}/${PREBUILT_ASSET_NAMES[key]}`,
     sha256: sha256(payload),
     size: payload.length,
@@ -781,7 +794,7 @@ test('a candidate rejects every missing non-iOS key before selecting a desktop a
   const root = makeTempDirSync('threenative-candidate-keys-');
   roots.push(root);
   const manifestPath = join(root, 'prebuilt-lock.json');
-  for (const key of PREBUILT_KEYS.filter((entry) => !entry.startsWith('ios-'))) {
+  for (const key of PUBLISHED_PREBUILT_KEYS.filter((entry) => !entry.startsWith('ios-'))) {
     const manifest = candidateLock(candidateArtifacts());
     Reflect.deleteProperty(manifest.artifacts, key);
     writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -876,7 +889,7 @@ test('a failed reinstall removes the old executable and success marker', async (
   const root = makeTempDirSync('threenative-reinstall-');
   roots.push(root);
   const expected = Buffer.from('verified runtime');
-  const release = await serveFixtureRelease(root, { 'linux-x64': expected });
+  const release = await serveFixtureRelease(root, { 'linux-x64': expected, 'linux-x64-tools': Buffer.from('helper') });
   const output = join(root, 'runtime');
   const statusPath = join(root, 'install-status.json');
   try {
@@ -931,7 +944,7 @@ test('a successful install records the verified output only after publishing the
   const root = makeTempDirSync('threenative-install-commit-');
   roots.push(root);
   const contents = Buffer.from('verified runtime');
-  const release = await serveFixtureRelease(root, { 'linux-x64': contents });
+  const release = await serveFixtureRelease(root, { 'linux-x64': contents, 'linux-x64-tools': Buffer.from('helper') });
   try {
     process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
     const output = join(root, 'runtime');
@@ -955,12 +968,12 @@ test('the workflow lock generator rejects a missing matrix output and empty payl
   const root = makeTempDirSync('threenative-release-matrix-');
   roots.push(root);
   const payload = Buffer.from('candidate payload');
-  for (const name of Object.values(PREBUILT_ASSET_NAMES)) writeFileSync(join(root, name), payload);
+  for (const key of PUBLISHED_PREBUILT_KEYS) writeFileSync(join(root, PREBUILT_ASSET_NAMES[key]), payload);
   const identity = { sourceSha: '1'.repeat(40), repository: RELEASE_REPOSITORY, tag: `runtime-native-v${candidateLock({}).version}` };
   const manifest = generateReleaseManifest(root, identity);
   assert.equal(manifest.sourceSha, identity.sourceSha);
   assert.equal(manifest.version, candidateLock({}).version);
-  assert.deepEqual(Object.keys(manifest.artifacts).sort(), [...PREBUILT_KEYS].sort());
+  assert.deepEqual(Object.keys(manifest.artifacts).sort(), [...PUBLISHED_PREBUILT_KEYS].sort());
   for (const release of Object.values(manifest.artifacts)) {
     assert.equal(release.sha256, sha256(payload));
     assert.equal(release.size, payload.length);
@@ -993,7 +1006,7 @@ test('the real publication step emits candidate identity and refuses a removed m
     readFileSync(new URL('../scripts/install-prebuilt.mjs', import.meta.url)));
   writeFileSync(join(root, 'packages/runtime-native/package.json'),
     readFileSync(new URL('../package.json', import.meta.url)));
-  for (const name of Object.values(PREBUILT_ASSET_NAMES)) writeFileSync(join(root, 'release', name), `payload:${name}`);
+  for (const key of PUBLISHED_PREBUILT_KEYS) writeFileSync(join(root, 'release', PREBUILT_ASSET_NAMES[key]), `payload:${PREBUILT_ASSET_NAMES[key]}`);
   const env = { ...process.env, RELEASE_REPOSITORY, RELEASE_TAG: `runtime-native-v${candidateLock({}).version}`,
     RELEASE_SHA: '2'.repeat(40) };
   const invoke = () => execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: root, env, stdio: 'pipe' });
@@ -1002,7 +1015,7 @@ test('the real publication step emits candidate identity and refuses a removed m
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   assert.equal(manifest.version, candidateLock({}).version);
   assert.equal(manifest.sourceSha, env.RELEASE_SHA);
-  assert.deepEqual(Object.keys(manifest.artifacts).sort(), [...PREBUILT_KEYS].sort());
+  assert.deepEqual(Object.keys(manifest.artifacts).sort(), [...PUBLISHED_PREBUILT_KEYS].sort());
   rmSync(manifestPath);
   const snapshot = join(root, 'release', PREBUILT_ASSET_NAMES['android-arm64-v8a-v8-snapshot']);
   const original = readFileSync(snapshot);
@@ -1023,7 +1036,8 @@ test('release generation preserves encoded candidate version URLs', async () => 
   writeFileSync(join(root, 'package.json'), JSON.stringify({ version }));
   writeFileSync(join(root, 'scripts/install-prebuilt.mjs'),
     readFileSync(new URL('../scripts/install-prebuilt.mjs', import.meta.url)));
-  for (const name of Object.values(PREBUILT_ASSET_NAMES)) {
+  for (const key of PUBLISHED_PREBUILT_KEYS) {
+    const name = PREBUILT_ASSET_NAMES[key];
     writeFileSync(join(root, 'release', name), `payload:${name}`);
   }
   const { stdout } = await run(process.execPath, ['--input-type=module', '-e', `
@@ -1151,4 +1165,110 @@ test('the android source-checkout failure names the prebuilt path, not the toolc
     if (previousLog === undefined) delete process.env.TN_TOOLCHAIN_LOG;
     else process.env.TN_TOOLCHAIN_LOG = previousLog;
   }
+});
+
+test('a desktop install places the dispatched build tool helper beside the runtime', async () => {
+  const root = makeTempDirSync('threenative-tools-install-');
+  roots.push(root);
+  const runtime = Buffer.from('verified runtime');
+  const tools = Buffer.from('verified build tool helper');
+  const fixture = await serveFixtureRelease(root, { 'linux-x64': runtime, 'linux-x64-tools': tools });
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const output = join(root, 'prebuilt', 'linux-x64', 'threenative-runtime');
+    await installPrebuilt({ arch: 'x64', manifestPath: fixture.manifest, output, platform: 'linux' });
+    const helper = join(root, 'prebuilt', 'linux-x64', toolsFilename('linux'));
+    // `src/cli/tool_dispatch.cpp:52` resolves the helper from the runtime's own directory.
+    assert.deepEqual(readFileSync(helper), tools);
+    const status = JSON.parse(readFileSync(join(root, 'prebuilt', 'linux-x64', 'install-status.json'), 'utf8'));
+    assert.equal(status.ok, true);
+    assert.equal(status.sha256, sha256(runtime));
+    assert.equal(status.toolsSha256, sha256(tools));
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a missing or corrupt build tool helper leaves no usable runtime and no success marker', async () => {
+  const root = makeTempDirSync('threenative-tools-red-');
+  roots.push(root);
+  const runtime = Buffer.from('verified runtime');
+  const tools = Buffer.from('verified build tool helper');
+  const output = join(root, 'prebuilt', 'linux-x64', 'threenative-runtime');
+  const helper = join(root, 'prebuilt', 'linux-x64', toolsFilename('linux'));
+  const statusPath = join(root, 'prebuilt', 'linux-x64', 'install-status.json');
+  const fixture = await serveFixtureRelease(root, { 'linux-x64': runtime, 'linux-x64-tools': tools });
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    // 1. The helper is absent from the advertised candidate entirely.
+    fixture.rewrite((artifacts) => { Reflect.deleteProperty(artifacts, 'linux-x64-tools'); });
+    await assert.rejects(
+      installPrebuilt({ arch: 'x64', manifestPath: fixture.manifest, output, platform: 'linux' }),
+      /linux-x64-tools/u,
+    );
+    assert.equal(existsSync(output), false);
+    assert.equal(existsSync(helper), false);
+    assert.equal(JSON.parse(readFileSync(statusPath, 'utf8')).ok, false);
+
+    // 2. The helper is advertised but its bytes do not match the recorded checksum.
+    fixture.rewrite((artifacts) => {
+      artifacts['linux-x64-tools'] = { ...fixture.artifacts['linux-x64'], sha256: sha256(Buffer.from('other')) };
+    });
+    await assert.rejects(
+      installPrebuilt({ arch: 'x64', manifestPath: fixture.manifest, output, platform: 'linux' }),
+      /Checksum verification failed.*linux-x64-tools/u,
+    );
+    assert.equal(existsSync(output), false);
+    assert.equal(existsSync(helper), false);
+    assert.equal(JSON.parse(readFileSync(statusPath, 'utf8')).ok, false);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a cached runtime without its verified helper is never reused', async () => {
+  const root = makeTempDirSync('threenative-tools-reuse-');
+  roots.push(root);
+  const runtime = Buffer.from('verified runtime');
+  const tools = Buffer.from('verified build tool helper');
+  const output = join(root, 'prebuilt', 'linux-x64', 'threenative-runtime');
+  const helper = join(root, 'prebuilt', 'linux-x64', toolsFilename('linux'));
+  const fixture = await serveFixtureRelease(root, { 'linux-x64': runtime, 'linux-x64-tools': tools });
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const install = { arch: 'x64', manifestPath: fixture.manifest, output, platform: 'linux', reuse: true };
+    await installPrebuilt(install);
+    rmSync(helper, { force: true });
+    // A reuse that trusted the runtime alone would return here without restoring the helper,
+    // and the desktop packager would then die with exit 127 on a "successful" install.
+    await installPrebuilt(install);
+    assert.deepEqual(readFileSync(helper), tools);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('macOS is built but unpublished, and says so instead of 404ing', () => {
+  const root = makeTempDirSync('threenative-unpublished-');
+  roots.push(root);
+  // The published cohort is exactly what a release stages, and it excludes these four rows.
+  assert.deepEqual(
+    PREBUILT_KEYS.filter((key) => !PUBLISHED_PREBUILT_KEYS.includes(key)).sort(),
+    [...UNPUBLISHED_PREBUILT_KEYS].sort(),
+  );
+  // Windows ships unsigned - SmartScreen warns, Gatekeeper refuses - so only macOS is held back.
+  assert.deepEqual([...UNPUBLISHED_PREBUILT_KEYS].sort(), ['darwin-arm64', 'darwin-arm64-tools']);
+  assert.ok(PUBLISHED_PREBUILT_KEYS.includes('win32-x64'));
+  assert.ok(PUBLISHED_PREBUILT_KEYS.includes('win32-x64-tools'));
+  // A complete candidate still refuses them, and names the reason rather than a missing asset:
+  // an unpublished row must never read as a corrupt or partial release.
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  writeFileSync(manifestPath, JSON.stringify(candidateLock(candidateArtifacts())));
+  for (const key of UNPUBLISHED_PREBUILT_KEYS) {
+    assert.throws(() => readRelease(manifestPath, key), (error) =>
+      error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes(key));
+  }
+  // Linux and Android remain downloadable from the same candidate.
+  assert.ok(readRelease(manifestPath, 'linux-x64').sha256);
+  assert.ok(readRelease(manifestPath, 'android-arm64-v8a-runtime-v8').sha256);
 });

@@ -22,12 +22,16 @@ permissions:
   actions: read
 
 concurrency:
-  # Measured over this workflow's entire history: 18 runs, 13 cancelled, 4 failed, zero successes.
-  # Every cancellation was a proof run killed by the next push to its own branch. `clean-consumer`
-  # sits behind a ~20 minute build matrix, so on an actively-pushed branch it cannot reach its own
-  # first line no matter what its timeout is - which is why this sits alongside the timeout raise
-  # rather than instead of it. Evidence here is candidate-keyed, so a superseded run's output is
-  # still valid for the SHA it was produced from and is worth letting finish.
+  # Measured over this workflow's entire history, re-counted 2026-09-11: 41 runs, 18 cancelled,
+  # 17 failed, 4 succeeded. The four successes are PRD-078's non-publishing hosted proof, and they
+  # arrived only after this setting stopped evicting them - the earlier count behind this choice was
+  # 18 runs with zero successes. Every cancellation was a proof run killed by the next push to its
+  # own branch. `clean-consumer` sits behind a ~20 minute build matrix, so on an actively-pushed
+  # branch it cannot reach its own first line no matter what its timeout is - which is why this sits
+  # alongside the timeout raise rather than instead of it. Evidence here is candidate-keyed, so a
+  # superseded run's output is still valid for the SHA it was produced from and is worth letting
+  # finish. The cost is that a new push waits for the old run: cancel the superseded run by hand when
+  # you need the current SHA tested now.
   # `github.event_name` is in the group because a manual proof on main and an automatic one would
   # otherwise share `native-release-refs/heads/main` and evict each other.
   group: native-release-${{ github.ref }}-${{ github.event_name }}
@@ -291,20 +295,26 @@ jobs:
       matrix:
         include:
           - key: linux-x64
+            published: true
             runner: ubuntu-24.04
             preset: tn-linux
             executable: mystral
             asset: threenative-runtime-linux-x64
+            tools_asset: threenative-tools-linux-x64
           - key: darwin-arm64
+            published: false
             runner: macos-15
             preset: tn-macos
             executable: mystral
             asset: threenative-runtime-darwin-arm64
+            tools_asset: threenative-tools-darwin-arm64
           - key: win32-x64
+            published: true
             runner: windows-2025
             preset: tn-windows
             executable: mystral.exe
             asset: threenative-runtime-win32-x64.exe
+            tools_asset: threenative-tools-win32-x64.exe
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
@@ -381,36 +391,39 @@ jobs:
           ASSET_NAME: ${{ matrix.asset }}
           EXECUTABLE_NAME: ${{ matrix.executable }}
           PRESET: ${{ matrix.preset }}
+          TOOLS_ASSET_NAME: ${{ matrix.tools_asset }}
         run: |
           node --input-type=module <<'NODE'
           import { copyFileSync, mkdirSync, statSync } from "node:fs";
           import { join } from "node:path";
-          const source = join("packages", "runtime-native", "build", process.env.PRESET, process.env.EXECUTABLE_NAME);
-          const output = join("release", process.env.ASSET_NAME);
           mkdirSync("release", { recursive: true });
-          copyFileSync(source, output);
-          if (statSync(output).size === 0) throw new Error(`${output} is empty.`);
           // The runtime dispatches desktop packaging to a `mystral-tools` helper sitting beside it
-          // (`src/cli/tool_dispatch.cpp:52`). `native:build` produces it, but nothing published it,
-          // so a consumer installing from a release cannot run `threenative build --target desktop`
-          // at all - it fails with `build tool helper is missing`. Publishing it is PRD-262's
-          // contract to change; this proof carries it as a same-run artifact so the consumer path
-          // is exercised rather than blocked, and records the gap.
+          // (`src/cli/tool_dispatch.cpp:52`). It is a published release asset in its own right, so a
+          // consumer that installed only the runtime can no longer reach `build tool helper is
+          // missing` / exit 127 on `threenative build --target desktop`.
           const toolsName = process.env.EXECUTABLE_NAME.replace(/^mystral/u, "mystral-tools");
-          const toolsSource = join("packages", "runtime-native", "build", process.env.PRESET, toolsName);
-          mkdirSync("tools", { recursive: true });
-          const toolsOutput = join("tools", toolsName);
-          copyFileSync(toolsSource, toolsOutput);
-          if (statSync(toolsOutput).size === 0) throw new Error(`${toolsOutput} is empty.`);
+          const stage = [
+            [process.env.EXECUTABLE_NAME, process.env.ASSET_NAME],
+            [toolsName, process.env.TOOLS_ASSET_NAME],
+          ];
+          for (const [executable, assetName] of stage) {
+            const source = join("packages", "runtime-native", "build", process.env.PRESET, executable);
+            const output = join("release", assetName);
+            copyFileSync(source, output);
+            if (statSync(output).size === 0) throw new Error(`${output} is empty.`);
+          }
           NODE
+      # `publish` and `gates` collect `pattern: runtime-*`. macOS still builds and verifies above - a
+      # row that stops compiling rots silently - but uploads under a name those jobs do not match, so
+      # it is never staged into a release: Gatekeeper refuses an un-notarized download outright.
+      # Windows ships unsigned, because SmartScreen warns rather than refuses. See
+      # UNPUBLISHED_PREBUILT_KEYS and docs/RELEASE-SIGNING.md.
       - uses: actions/upload-artifact@v7
         with:
-          name: runtime-${{ matrix.key }}
-          path: release/${{ matrix.asset }}
-      - uses: actions/upload-artifact@v7
-        with:
-          name: tools-${{ matrix.key }}
-          path: tools/
+          name: ${{ matrix.published == true && 'runtime' || 'unpublished-runtime' }}-${{ matrix.key }}
+          path: |
+            release/${{ matrix.asset }}
+            release/${{ matrix.tools_asset }}
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: always()
@@ -687,11 +700,15 @@ jobs:
           node --input-type=module <<'NODE'
           import { createHash } from "node:crypto";
           import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-          import { PREBUILT_ASSET_NAMES } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
-          const names = Object.entries(PREBUILT_ASSET_NAMES).filter(([key]) => !key.startsWith("ios-"));
+          import { PREBUILT_ASSET_NAMES, PUBLISHED_PREBUILT_KEYS } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          // The published cohort, not every non-iOS key: rows in UNPUBLISHED_PREBUILT_KEYS upload
+          // under a name the `pattern: runtime-*` download above does not collect, so demanding them
+          // here fails a run whose staging is exactly right.
+          const names = PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith("ios-"))
+            .map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
           const expected = names.map(([, name]) => name).sort();
           if (JSON.stringify(readdirSync("release").sort()) !== JSON.stringify(expected)) {
-            throw new Error("Proof assets must contain every non-iOS runtime from this run, and no extras.");
+            throw new Error("Proof assets must contain every published non-iOS runtime from this run, and no extras.");
           }
           const artifacts = Object.fromEntries(names.map(([key, name]) => {
             const bytes = readFileSync(`release/${name}`);
@@ -808,29 +825,16 @@ jobs:
           NODE
           echo "$RUNNER_TEMP/toolchain-mask" >> "$GITHUB_PATH"
           echo "TN_TOOLCHAIN_LOG=$RUNNER_TEMP/toolchain-invocations.log" >> "$GITHUB_ENV"
-      - name: Place the same-run build tool helper beside the installed runtime
-        run: |
-          set -euo pipefail
-          rm -rf "$RUNNER_TEMP/tools"
-          mkdir -p "$RUNNER_TEMP/tools"
-          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name tools-linux-x64 --dir "$RUNNER_TEMP/tools"
-          test -s "$RUNNER_TEMP/tools/mystral-tools"
-          chmod +x "$RUNNER_TEMP/tools/mystral-tools"
-        env:
-          GH_TOKEN: ${{ github.token }}
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
-          # The runtime dispatches desktop packaging to `mystral-tools` beside it
-          # (`src/cli/tool_dispatch.cpp:52`), and no release publishes that helper, so this step
-          # failed with `build tool helper is missing` / `Runtime packager exited with code 127`.
-          # It comes from this run's own build, like every other artifact here, and the gap in the
-          # published set is recorded for PRD-262 rather than papered over.
-          install -m 0755 "$RUNNER_TEMP/tools/mystral-tools" \
-            "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           # Provenance the PRD-262 consumer gate asserts: the installed runtime must
           # record a successful prebuilt install, never a source-checkout build.
           test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"
+          # `src/cli/tool_dispatch.cpp:52` dispatches desktop packaging to this helper. It arrives
+          # from the release the install just read, not from this run's artifacts: no step here
+          # places it, so a regression in what the release publishes fails the consumer build.
+          test -x "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           pnpm --dir "$CONSUMER_TARGET" build --target desktop
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
