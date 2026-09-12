@@ -56,7 +56,7 @@ flowchart LR
 - [x] Observed red recorded, then restored green — dropping `linux-x64-tools` from a scoped manifest throws `/linux-x64-tools/`; rewriting the lock is green, in the same test.
 - [x] User verification performed on the named platform — Linux x64: a staged scoped lock served over loopback installed `threenative-runtime-linux-x64` (127,772,024 B) and `mystral-tools` (127,764,248 B); `install-status.json` records `ok:true` with both SHA-256s.
 - [x] Evidence record written: the boxes above carry it (command, exit code, key).
-- [ ] Independent reviewer returned PASS — not run; CI review pending.
+- [x] Independent reviewer returned PASS — a fresh-context subagent review returned VERDICT: PASS on commits `3fb449e36`/`f63623f67`; its first round found the CI npm-lane blocker below, which is fixed.
 
 **Files (maximum five):**
 
@@ -79,7 +79,7 @@ flowchart LR
 - [x] Observed red recorded, then restored green — deleting `build/tn-linux/mystral-tools` makes `stageLocalPayload` throw `TN_RELEASE_NATIVE_SOURCE_MISSING` naming the path and write no lock; the fixture tree in the prior case is green.
 - [x] User verification performed on the named platform — Linux x64 real build: staged `release-native/` with exactly `threenative-runtime-linux-x64` (127,772,024 B) and `threenative-tools-linux-x64` (127,764,248 B), each non-empty, hashes recorded in the scoped lock.
 - [x] Evidence record written: the boxes above carry it.
-- [ ] Independent reviewer returned PASS — not run; CI review pending.
+- [x] Independent reviewer returned PASS — same fresh-context review; VERDICT: PASS on commits `3fb449e36`/`f63623f67`.
 
 **Files (maximum five):**
 
@@ -99,12 +99,12 @@ flowchart LR
 
 **Progress:**
 
-- [x] Callers wired and building: `scripts/release.ts --yes` invokes the native release after the npm publish (staging before it, upload after); `pnpm release:native --yes` runs it alone; `pnpm release:native --dry-run` staged the host payload and uploaded nothing (exit 0).
+- [x] Callers wired and building: `scripts/release.ts --yes` invokes the native release after the npm publish (staging before it, upload after); `pnpm release:native --yes` runs it alone; `pnpm release:native --dry-run` staged the host payload and uploaded nothing (exit 0). The staging block is gated on `GITHUB_ACTIONS !== "true"` and `skipIfReleased`, so the CI `npm-release.yml` lane (`release.ts --yes --skip-gates`, no GitHub token, no native build) never stages and never clobbers the native lane's full-cohort lock.
 - [x] Required test green: `scripts/__tests__/release-native.spec.ts` — refusal when a declared key has no staged asset, `gh release view` → `create` → uploads → lock-last ordering, idempotent re-run, scoped-lock acceptance, and `release.ts` staging-before-publish/upload-after; `pnpm exec vitest run scripts/__tests__/release-native.spec.ts` exit 0.
 - [x] Observed red recorded, then restored green — `uploadNativeRelease` with `linux-x64-tools` declared but not staged throws `TN_RELEASE_NATIVE_ASSET_MISSING` and performs zero `gh` calls; the fully staged directory uploads.
 - [ ] User verification performed on the named platform — NOT run: publishing `runtime-native-v0.3.1` is irreversible and needs release credentials, so `pnpm release:native --yes` was not invoked; only the dry run above executed locally.
 - [ ] Evidence record written: blocked on the step above — no release URL, downloaded lock or sandbox build exit exists yet.
-- [ ] Independent reviewer returned PASS — not run; CI review pending.
+- [x] Independent reviewer returned PASS — same fresh-context review (two rounds): round 1 found that the CI npm lane would throw `TN_RELEASE_NATIVE_SOURCE_MISSING` and could clobber the official lock, fixed in `3fb449e36`/`f63623f67`; round 2 returned VERDICT: PASS with the focused tests and `tsc` green.
 
 **Files (maximum five):**
 
@@ -132,7 +132,8 @@ Execution record:
 - Worktree `.worktrees/prd377-local-release`; branch `prd377/execute-local-release`.
 - Draft PR https://github.com/ThreeNativeHQ/threenative/pull/212 (base `develop`), fetched into this checkout as
   `refs/remotes/origin/pr/212` by `git fetch origin refs/pull/212/head:refs/remotes/origin/pr/212`.
-- `pnpm prd:progress` = `prd:50%`.
+- Independent review: round 1 found the CI npm-lane blocker, fixed; round 2 VERDICT: PASS.
+- `pnpm prd:progress` = `prd:75%`.
 
 ## Acceptance criteria
 
