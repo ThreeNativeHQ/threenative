@@ -372,6 +372,21 @@ test('clean consumers retain failure logs and use the measured device timeout', 
   expect(releaseWorkflow).toContain('cat "$RUNNER_TEMP/ios-wrong-value.log"');
 });
 
+test('clean Android consumer provisions the debug keystore the aligner re-signs with', () => {
+  // `package-android.mjs` re-signs the APK after `zipalign` rewrites it, and fails closed when
+  // `$HOME/.android/debug.keystore` is absent. The packed-consumer lane builds through the
+  // packager, not a Gradle debug install, so the store Gradle auto-creates is not guaranteed;
+  // the workflow must create the standard Android debug key before that build.
+  const provision = releaseWorkflow.indexOf('keytool -genkeypair');
+  const androidBuild = releaseWorkflow.indexOf(
+    'pnpm --dir "$CONSUMER_TARGET" build --target android',
+  );
+  expect(provision).toBeGreaterThan(-1);
+  expect(androidBuild).toBeGreaterThan(-1);
+  expect(provision).toBeLessThan(androidBuild);
+  expect(releaseWorkflow).toContain('$HOME/.android/debug.keystore');
+});
+
 test('clean desktop consumer provisions software Vulkan and prints its log on failure', () => {
   const cleanConsumer = releaseWorkflow.match(
     / {2}clean-consumer:\n([\s\S]*?)\n {2}clean-consumer-ios:/u,
