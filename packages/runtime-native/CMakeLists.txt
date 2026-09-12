@@ -1486,8 +1486,16 @@ endif()
 
 if(TN_ENABLE_UI_OVERLAY)
     if(NOT THREENATIVE_UI_OVERLAY_LIBRARY)
+        # MSVC names a static library `.lib`; every other desktop toolchain we build with names it
+        # `lib*.a`. Guessing `.a` on Windows is the check that never matches the artifact the
+        # build script just produced.
+        if(WIN32)
+            set(_tn_ui_overlay_name "threenative_ui_overlay.lib")
+        else()
+            set(_tn_ui_overlay_name "libthreenative_ui_overlay.a")
+        endif()
         set(THREENATIVE_UI_OVERLAY_LIBRARY
-            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/libthreenative_ui_overlay.a"
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/${_tn_ui_overlay_name}"
         )
     endif()
     if(NOT EXISTS "${THREENATIVE_UI_OVERLAY_LIBRARY}")
@@ -1606,7 +1614,36 @@ include(cmake/PipelineCacheIdentity.cmake)
 
 if(TN_ENABLE_UI_OVERLAY)
     target_link_libraries(mystral-runtime PRIVATE threenative-ui-overlay)
-    if(UNIX AND NOT APPLE)
+    if(APPLE)
+        # The Rust staticlib reaches the system WebKit and AppKit, which the C++ link has to name
+        # because the Rust build leaves framework symbols unresolved.
+        target_link_libraries(mystral-runtime PRIVATE
+            "-framework WebKit"
+            "-framework AppKit"
+            "-framework Foundation"
+            "-framework CoreFoundation"
+        )
+    elseif(WIN32)
+        # WebView2 is reached through `WebView2Loader`, whose import library `webview2-com-sys`
+        # copies into its OUT_DIR rather than publishing. Find it in the crate's build output and
+        # name it, plus the Win32 libraries a wry/WebView2 staticlib leaves unresolved.
+        file(GLOB TN_WEBVIEW2LOADER_DIRS
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/build/webview2-com-sys-*/out/x64"
+        )
+        find_path(TN_WEBVIEW2LOADER_DIR NAMES WebView2LoaderStatic.lib
+            PATHS ${TN_WEBVIEW2LOADER_DIRS})
+        if(NOT TN_WEBVIEW2LOADER_DIR)
+            message(FATAL_ERROR
+                "WebView2LoaderStatic.lib was not found under native/ui-overlay/target. "
+                "Build the overlay with scripts/build-native-ui-overlay.mjs before configuring."
+            )
+        endif()
+        target_link_directories(mystral-runtime PRIVATE "${TN_WEBVIEW2LOADER_DIR}")
+        target_link_libraries(mystral-runtime PRIVATE
+            WebView2LoaderStatic
+            user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll
+        )
+    else()
         # webkit2gtk and its GTK stack come from the system, the same way the game's SDL does.
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(TN_WEBKITGTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)

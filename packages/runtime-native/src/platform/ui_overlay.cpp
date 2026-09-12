@@ -92,10 +92,17 @@ namespace {
 /** The reason an attach failed, in the words a reader can act on. */
 const char* attachFailure(int code) {
     switch (code) {
+        case -5: return "invalid argument";
+#if defined(__linux__) && !defined(__ANDROID__)
         case -1: return "no display, or GTK could not start";
         case -2: return "no compositing manager is running, so nothing would blend the overlay";
         case -3: return "the transparent container could not be created";
         case -4: return "the web view could not be built";
+#else
+        case -1: return "the overlay is not attached";
+        case -2: return "the web view could not be built";
+        case -3: return "the game window's native view could not be reached";
+#endif
         default: return "invalid argument";
     }
 }
@@ -106,13 +113,26 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
     auto* window = mystral::platform::getSDLWindow();
     if (window == nullptr) return false;
     const auto properties = SDL_GetWindowProperties(window);
-    // X11 only, and deliberately so: this is the surface `wry` accepts on Linux, and a Wayland
-    // session reaches it through XWayland. Say which rather than failing as "unsupported".
+    // Each desktop hands `wry` the window it already owns, in that window system's own type: an
+    // HWND on Windows, an NSWindow on macOS. Linux cannot attach to its X11 client the same way —
+    // a child window occludes rather than blends — so there the overlay is an input-shaped
+    // top-level, and a session without an X11 window says exactly that rather than "unsupported".
+#if defined(_WIN32)
+    const auto parent = reinterpret_cast<unsigned long>(
+        SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    const char* missing = "the game window is not a Win32 window";
+#elif defined(__APPLE__)
+    const auto parent = reinterpret_cast<unsigned long>(
+        SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr));
+    const char* missing = "the game window is not a Cocoa window";
+#else
     const auto parent = static_cast<unsigned long>(
         SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    const char* missing =
+        "the game window is not an X11 window; run SDL under X11 (SDL_VIDEODRIVER=x11)";
+#endif
     if (parent == 0) {
-        std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"the game window is not an X11 "
-                     "window; run SDL under X11 (SDL_VIDEODRIVER=x11)\"}"
+        std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"" << missing << "\"}"
                   << std::endl;
         return false;
     }
@@ -134,9 +154,10 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
 
 void pumpUiOverlay() {
     if (!uiOverlayAttached()) return;
-    // The overlay follows the game window from the X server's own events — move, resize, restack,
-    // map, unmap — so nothing here pushes SDL's rectangle at it. A game window that has gone away
-    // reports back once, and the overlay comes down with it rather than outliving its game.
+    // The overlay follows the game window through whatever the platform gives it — the X server's
+    // own events on Linux, the child window or view hierarchy on Windows and macOS — so nothing
+    // here pushes SDL's rectangle at it. A game window that has gone away reports back once, and
+    // the overlay comes down with it rather than outliving its game.
     if (tn_ui_overlay_pump() != 0) {
         std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"the game window went away\"}"
                   << std::endl;

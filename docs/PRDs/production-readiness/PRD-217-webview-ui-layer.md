@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-217 — The default React HUD works on every supported desktop
 
-**Status:** PARTIAL — Linux/Android bridge work retained; Windows/macOS and Linux session closure open. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — cross-platform backends written and cross-compile-checked; hosted Windows/macOS build+run and Linux session closure open. Revised 2026-09-12; implementation in flight.
 **Complexity:** 10 → HIGH (+3 files, +2 platform modules, +2 event/input state, +2 multi-package, +1 OS WebView integration).
 **Problem:** The default starter chooses web UI, but desktop WebView builds are currently refused on Windows/macOS and can fail in Linux Wayland/Xwayland sessions.
 
@@ -69,6 +69,7 @@ Before invoking that route, configure the selected existing CMake preset with `T
 **Progress:**
 
 - [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+      Left: the Windows backend is written (`native/ui-overlay/src/desktop.rs`, a wry child over the game HWND with a GDI region for the hit islands) and `cargo check --target x86_64-pc-windows-msvc` is green 2026-09-12, but the MSVC CMake link and a hosted Windows run are unrun from this Linux host. `pnpm native:build` on the Windows runner is the next gate.
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
@@ -106,6 +107,7 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 **Progress:**
 
 - [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+      Left: the macOS backend is written (`native/ui-overlay/src/desktop.rs`, a wry child under a custom `NSView` whose `hitTest:` owns the islands) and `cargo check --target aarch64-apple-darwin` is green 2026-09-12 via a stubbed Apple toolchain, but the real Xcode/WebKit link and a hosted macOS run are unrun. `pnpm native:build` on the macOS runner is the next gate.
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
@@ -143,8 +145,9 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 **Progress:**
 
 - [ ] Callers wired and building: `packages/runtime-native/scripts/native-build.mjs`, `packages/runtime-native/scripts/build-native-ui-overlay.mjs`, `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+      Left: `native-build.mjs` now builds the overlay on every desktop host (no Linux-only branch) and `build-native-ui-overlay.mjs` derives the host artifact name (`threenative_ui_overlay.lib` on MSVC, `libthreenative_ui_overlay.a` elsewhere); Linux CMake configure + `ui_overlay.cpp` compile are green 2026-09-12. The Windows/macOS hosted `pnpm native:build` runs are unrun.
 - [ ] Required test green: `tests/native-build-ui-overlay.test.mjs`
-      Left: the test is Linux-only — `the Linux native build links the desktop UI overlay into the runtime`, 1/1 green 2026-09-11. The phase demands each supported platform; Windows and macOS are unrun.
+      Left: the per-host filename mapping test and the Linux plan test are green 2026-09-12 (`the Linux native build links the desktop UI overlay into the runtime`, 2/2). The phase demands each supported platform; Windows and macOS are unrun.
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
 - [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-<date>.md`
@@ -256,7 +259,12 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+Cross-platform backends landed 2026-09-12: `cargo check --release --lib` is green for
+`x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` (native) and `aarch64-apple-darwin`
+(via a stubbed Apple `cc`/`ar`, Rust type-check only); Linux `cmake --preset tn-linux
+-DTN_ENABLE_UI_OVERLAY=ON` configures and `ui_overlay.cpp` compiles; `tests/native-build-ui-overlay.test.mjs`
+is 2/2 green. **Every hosted Windows/macOS build, run and human verification is NOT RUN**, and no
+phase box is ticked. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
 
 ## Acceptance criteria
 

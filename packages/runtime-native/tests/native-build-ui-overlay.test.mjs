@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, test } from 'vitest';
 
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import { uiOverlayLibraryName } from '../scripts/build-native-ui-overlay.mjs';
 
 const roots = [];
 afterEach(() => {
@@ -23,6 +24,14 @@ function executable(path, source) {
   chmodSync(path, 0o755);
 }
 
+// The host toolchain names its static library; the C++ build must ask for the right one rather
+// than guessing `.a` on MSVC. This is the one part of the mapping testable without the hosts.
+test('the overlay library is named for the host toolchain', () => {
+  assert.equal(uiOverlayLibraryName('linux'), 'libthreenative_ui_overlay.a');
+  assert.equal(uiOverlayLibraryName('darwin'), 'libthreenative_ui_overlay.a');
+  assert.equal(uiOverlayLibraryName('win32'), 'threenative_ui_overlay.lib');
+});
+
 test.runIf(process.platform === 'linux')(
   'the Linux native build links the desktop UI overlay into the runtime',
   () => {
@@ -33,16 +42,22 @@ test.runIf(process.platform === 'linux')(
     const log = join(root, 'commands.log');
     mkdirSync(scripts, { recursive: true });
     mkdirSync(bin, { recursive: true });
-    copyFileSync(
-      new URL('../scripts/native-build.mjs', import.meta.url),
-      join(scripts, 'native-build.mjs'),
-    );
-    for (const name of ['build-native-physics.mjs', 'build-native-ui-overlay.mjs']) {
-      writeFileSync(
+    // The real plan and the real overlay build, so the library path asserted below is the one the
+    // script derives rather than one the test wrote.
+    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs']) {
+      copyFileSync(
+        new URL(`../scripts/${name}`, import.meta.url),
         join(scripts, name),
-        `import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.TN_TEST_LOG, ${JSON.stringify(name)} + '\\n');\n`,
       );
     }
+    writeFileSync(
+      join(scripts, 'build-native-physics.mjs'),
+      'import { appendFileSync } from "node:fs";\nappendFileSync(process.env.TN_TEST_LOG, "build-native-physics.mjs\\n");\n',
+    );
+    executable(
+      join(bin, 'cargo'),
+      '#!/bin/sh\nprintf "cargo %s\\n" "$*" >> "$TN_TEST_LOG"\nexit 0\n',
+    );
     executable(
       join(bin, 'cmake'),
       '#!/bin/sh\nprintf "cmake %s\\n" "$*" >> "$TN_TEST_LOG"\n',
@@ -64,7 +79,7 @@ test.runIf(process.platform === 'linux')(
     });
     assert.equal(result.status, 0, result.stderr);
     const commands = readFileSync(log, 'utf8');
-    assert.match(commands, /build-native-ui-overlay\.mjs/u);
+    assert.match(commands, /cargo build --release --manifest-path .*native\/ui-overlay\/Cargo\.toml --lib/u);
     assert.match(commands, /cmake --preset tn-linux .*?-DTN_ENABLE_UI_OVERLAY=ON/u);
     assert.match(
       commands,

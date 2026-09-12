@@ -13,7 +13,9 @@ name = "threenative_ui_overlay"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-wry = "0.48"
+# `transparent` is what makes macOS clear the WKWebView's own background
+# (`drawsBackground = false`); without it the overlay paints an opaque plate over the game.
+wry = { version = "0.48", features = ["transparent"] }
 raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -22,6 +24,34 @@ gdkx11 = "0.18"
 glib = "0.18"
 x11-dl = "2"
 libloading = "0.8"
+
+# Windows shapes the wry container HWND itself, which needs the WebView2 controller and the
+# GDI region calls. Versions match wry 0.48's own so the `ICoreWebView2Controller` type is the
+# same one `WebViewExtWindows::controller` returns.
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.34"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# macOS shapes the hit test by owning the NSView the web view is a child of. Versions match
+# wry 0.48's own objc2 graph so `WryWebView` derefs to the same `NSView`.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"
+objc2-app-kit = { version = "0.2", features = [
+    "NSApplication",
+    "NSEvent",
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+] }
+objc2-foundation = { version = "0.2", features = [
+    "NSGeometry",
+    "NSObject",
+    "NSThread",
+] }
 
 # The spike: attach to a window SDL already owns and report what happened. A binary rather than a
 # test because the thing under measurement is a real compositor over a real GPU surface.
