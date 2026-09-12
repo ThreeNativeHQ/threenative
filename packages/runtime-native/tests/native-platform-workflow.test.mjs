@@ -143,6 +143,16 @@ test('native platform failures fail the required verdict, not the workspace join
   expect(required).toContain('native-platforms');
 });
 
+test('the desktop parity job keeps the name the release gate requires', () => {
+  // The release gate matches CI job names exactly. When this job lost its `name:` the run
+  // reported `native-platforms / desktop-parity`, so PRD-078's main route could never resolve
+  // its `native-platforms / Desktop web/native parity` row.
+  const job = workflow.match(
+    /\n\x20{2}desktop-parity:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(job).toContain('name: Desktop web/native parity');
+});
+
 test('Android V8 source is produced once and consumed as a verified artifact', () => {
   expect(androidV8Action).toContain('actions/cache/restore@v4');
   expect(androidV8Action).toContain('actions/cache/save@v4');
