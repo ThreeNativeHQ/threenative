@@ -1,10 +1,10 @@
 # PRD-262 phase 2 — installed consumer builds without engine compilers
 
 **Date:** 2026-09-10 (America/Vancouver).
-**Status:** Local mechanics verified; **phase readiness BLOCKED**, independent review **PENDING**. This is not a public-release or native-platform acceptance record.
+**Status:** Local mechanics verified; independent review re-run **PASS** on 2026-09-12 (it confirmed the source-opt-in and provenance guards and mutation-tested them; it also corrected stale test counts and line refs in the PRD). Superseded 2026-09-12: the public consumer half is now executed — a consumer installed the published `linux-x64` runtime and helper and built desktop — see the PRD's *Public consumer verification — 2026-09-12*.
 **Base:** `f947bae99` (PR #169, Phase 1). Package version `0.3.1`.
 
-PRD: [matching public native runtime artifacts](../PRDs/production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md).
+PRD: [matching public native runtime artifacts](../PRDs/done/PRD-262-the-runtime-native-prebuilt-release-exists.md).
 
 ## Scope and wiring
 

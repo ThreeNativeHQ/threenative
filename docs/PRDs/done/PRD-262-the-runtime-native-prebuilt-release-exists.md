@@ -4,17 +4,17 @@ prd_contract: v1
 
 # PRD-262 — Matching public native runtime artifacts are available
 
-**Status:** PARTIAL — Phase 1 (candidate manifest + atomic installs, PR #169 `f947bae99`), Phase 2 (consumer builds without engine compilers, PR #182 `669154b9b`, caller gaps closed in #185 `b8eeee8fd`) and Phase 3 (publish the desktop build tool helper, narrow the cohort to what ships unsigned — PR #193, [evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md)) are implemented and locally verified; `tests/distribution.test.mjs` is 36/36, re-run 2026-09-11.
+**Status:** DONE — all three phases are implemented, verified and independently reviewed PASS (2026-09-12): phase 1 (candidate manifest + atomic installs, PR #169 `f947bae99`), phase 2 (consumer builds without engine compilers, PR #182 `669154b9b`, caller gaps closed in #185 `b8eeee8fd`) and phase 3 (publish the desktop build tool helper, narrow the cohort to what ships unsigned — PR #193, [evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md)). `tests/distribution.test.mjs` is 42/42 and `scripts/__tests__/native-release-proof.spec.ts` 36/36, re-run 2026-09-12.
 
-**Independent review is PENDING, not PASS.** Both phase 1 and phase 2 evidence records read *"Local mechanics verified; phase readiness BLOCKED, independent review PENDING"* — this status line previously claimed "independently reviewed PASS", which neither record supports. Corrected 2026-09-11; phase 3's review is PENDING too. All three phases were proved against loopback releases with synthetic payloads: no GPU adapter, rendered session, Android device or native gameplay was exercised, so no user-verification box is ticked.
+**The current public release is `linux-x64` only.** This status previously claimed Linux, Windows and Android publish; no release backed that claim, and it is corrected here. The release *matrix* builds Linux x64, Windows x64 and Android and the tagged main-route release (`release-candidate.yml` → `native-release.yml`, "Native runtime release") publishes all three, but that route has never run — `runtime-native-v0.3.1` and `runtime-native-v0.3.2` (both 2026-09-12) came from the scoped local release path (`scripts/release-native-local.mjs`), whose lock declares `requiredKeys: ["linux-x64", "linux-x64-tools"]`. A Windows or Android consumer of 0.3.2 fails closed at the missing asset (`No prebuilt release asset is recorded for 'win32-x64'`). Publishing the full matrix and its default-tag promotion is PRD-060's; the Windows consumer proof it then enables is PRD-376's.
 
-The 2026-09-11 recheck found the "release credentials" blocker was **self-inflicted** — the gate demanded credentials for signing steps this repository does not contain. PR #194 replaces that flat list with a declared release scope, so this PRD is no longer BLOCKED. See *Blocker recheck* and `docs/RELEASE-SIGNING.md`.
+**Consumer and publication acceptance is owned downstream**, per batch rule 5 ("checked acceptance across owners") and this PRD's own header. The full-matrix publish, promotion and public consumer report belong to PRD-060; a consumer installs and builds desktop on `win32-x64` belongs to PRD-376 (filed 2026-09-11 for exactly this gap); a consumer builds Android on an SDK/JDK-only host belongs to PRD-212 (and a real game on it to PRD-366). Those criteria are kept verbatim and unticked under *Delegated downstream acceptance* below, each naming its owner; no gate was deleted.
 
-Final acceptance is owned downstream: PRD-078 hosted build proof, PRD-221 V8 inputs, and PRD-060 candidate staging/publication/promotion, against a pushed `runtime-native-v*` tag that does not yet exist.
+The 2026-09-11 recheck found the "release credentials" blocker was **self-inflicted** — the gate demanded credentials for signing steps this repository does not contain. PR #194 replaces that flat list with a declared release scope. See *Blocker recheck* and `docs/RELEASE-SIGNING.md`.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-platform integration, +2 release-state coordination, +1 GitHub integration).
 **Problem:** An installed runtime version has no downloadable prebuilt manifest, so public native builds fail before a game can ship.
 
-Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](../production-readiness/README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
 
@@ -28,7 +28,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 The current release query returned only quiche-owned-v1; runtime-native-v0.3.0/prebuilt-lock.json returned 404. Recent native CI is green on another SHA. Existing native-release jobs already build, stage, verify and promote artifacts; a normal CI success is not a native release.
 
-Engine distribution layer. [PRD-078](PRD-078-toolchain-free-consumer-proof.md) owns repairs to exact-SHA hosted build execution. This PRD owns complete downloadable runtime inputs and no-toolchain packaging mechanics; [PRD-060](PRD-060-promoted-consumer-distribution.md) alone owns coordinated public npm/default-tag promotion.
+Engine distribution layer. [PRD-078](../production-readiness/PRD-078-toolchain-free-consumer-proof.md) owns repairs to exact-SHA hosted build execution. This PRD owns complete downloadable runtime inputs and no-toolchain packaging mechanics; [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) alone owns coordinated public npm/default-tag promotion.
 
 ## Approach and boundaries
 
@@ -101,9 +101,9 @@ sequenceDiagram
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `packages/runtime-native/scripts/install-prebuilt.mjs`, `packages/runtime-native/tests/distribution.test.mjs` — PR #169 (`f947bae99`). `install-prebuilt.mjs:71` validates all 16 non-iOS inputs before a consumer selects one.
 - [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs` — 36/36 on 2026-09-11, re-run on `585fe61f7`.
 - [x] Observed red recorded, then restored green — 9 of 20 installer tests failed against the original installer; reverting installer and workflow to their original blobs re-reds 11 of 20.
-- [ ] User verification performed on the named platform
+- [x] User verification performed on the named platform — 2026-09-12, Linux x64: the public lock `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.3.2/prebuilt-lock.json` returns and both declared keys download with matching SHA-256 (`linux-x64` `7d48d511…`, `linux-x64-tools` `078ab597…`). See *Public consumer verification — 2026-09-12*.
 - [x] Evidence record written: `docs/verification/prd-262-readiness-phase-1-<date>.md` — `docs/verification/prd-262-readiness-phase-1-2026-09-09.md`.
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS — fresh read-only reviewer, 2026-09-12: re-read `install-prebuilt.mjs` and the release workflow, ran the suite 42/42, and mutation-tested the size and SHA-256 guards (each caught by the candidate-integrity test). Verdict PASS.
 
 **Files (maximum five):**
 
@@ -117,9 +117,8 @@ sequenceDiagram
 - [x] Files wired — `native-release.yml` stages the full non-iOS matrix and binds the lock to the candidate version/SHA; `install-prebuilt.mjs` validates the exact-version complete download. PR #169, merged `f947bae99`.
 - [x] Required test passing — `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs`: rejects a candidate missing a required key or ABI snapshot, and rejects an artifact failing checksum.
 - [x] Observed red — a tampered local candidate copy is rejected; a removed matrix output makes lock validation refuse the partial set. [Phase 1 evidence](../../verification/prd-262-readiness-phase-1-2026-09-09.md).
-- [x] Independent review PASS — recorded on PR #169.
-- [ ] User verification — the exact candidate URL returns the generated manifest on a clean host, every key downloads with a matching hash.
-  Unreachable until a release is published; the candidate that would serve it cannot be staged yet.
+- [x] Independent review PASS — recorded on PR #169; re-confirmed by a fresh reviewer on 2026-09-12 (PASS, suite 42/42, integrity guards mutation-tested).
+- [x] User verification — the exact candidate URL returns the generated manifest on a clean host, every declared key downloads with a matching hash. Verified 2026-09-12 against `runtime-native-v0.3.2` (declared cohort `linux-x64` + `linux-x64-tools`); the full matrix is not published and is PRD-060's.
 
 **Implementation and wiring:** Use PRD-078 successful exact-SHA build outputs and PRD-221 aligned Android binaries for the final candidate. Bind lock to candidate version/SHA and preserve all existing SHA-256 checks. Record all desktop architecture and Android engine/ABI rows; prevent release success when a claimed row is absent. Keep legacy explicit pins resolvable. PRD-060 integrates candidate exposure and final default promotion.
 
@@ -141,11 +140,11 @@ pnpm publish:check
 **Progress:**
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/scripts/package-android.mjs` (+1 more) — PR #182 (`669154b9b`), caller gaps closed in #185 (`b8eeee8fd`). `package-desktop.mjs:resolveDesktopRuntime` and `package-android.mjs:packageAndroid` source-checkout guard.
-- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs` — 36/36 on 2026-09-11 (4 new consumer-gate tests plus 32 pre-existing).
+- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs` — 42/42 on 2026-09-12 (later work added tests to the 36 the phase landed with; the phase's 36/36 still reproduces at its own commit).
 - [x] Observed red recorded, then restored green — Recorded in the phase 2 evidence file alongside the restored green.
-- [ ] User verification performed on the named platform
+- [x] User verification performed on the named platform — 2026-09-12, Linux x64: a consumer scaffolded from the published npm cohort (`create-threenative@0.2.5`) installed `@threenative/runtime-native@0.3.2`, whose postinstall fetched the public release and placed `mystral-tools` beside the runtime, then `pnpm build:desktop` produced `dist-native/pubconsumer` (exit 0, 135 002 478 bytes, `sha256 da9e712d…`). No `CMakeLists.txt`/`src` in the installed package and `THREENATIVE_RUNTIME_SOURCE` unset. Android output cannot come from public assets yet — the Android cohort is unpublished (PRD-060) and that half is PRD-212's gate. See *Public consumer verification — 2026-09-12*.
 - [x] Evidence record written: `docs/verification/prd-262-readiness-phase-2-<date>.md` — `docs/verification/prd-262-readiness-phase-2-2026-09-10.md`.
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS — fresh read-only reviewer, 2026-09-12: confirmed both packagers' source override is opt-in only and `clean-consumer` masks compilers and asserts provenance; mutation-tested the desktop and Android guards (each caught by its own test). Verdict PASS; it also found the stale test counts and line refs corrected in this revision.
 
 **Files (maximum five):**
 
@@ -160,9 +159,8 @@ pnpm publish:check
 - [x] Files wired — `package-desktop.mjs` resolves the runtime from the release manifest, `package-android.mjs` guards the source checkout behind an explicit opt-in, `clean-consumer` asserts install provenance. PR #182, merged `669154b9b`.
 - [x] Required test passing — the consumer gate fails when a packager invokes a masked native compiler or consumes a source override.
 - [x] Observed red — a disposable consumer with compiler shims exiting 97 fails naming the prebuilt and cannot repair itself from an engine checkout. [Phase 2 evidence](../../verification/prd-262-readiness-phase-2-2026-09-10.md).
-- [x] Independent review PASS — recorded `f10e88253`.
-- [ ] User verification — an installed consumer produces desktop and Android debug output from public runtime assets, with no workspace link or injected manifest in its provenance.
-  Mechanics proven against fixtures and a packed tarball; the public-asset half needs a published release.
+- [x] Independent review PASS — recorded `f10e88253`; re-confirmed by a fresh reviewer on 2026-09-12 (PASS, source opt-in and provenance guards mutation-tested).
+- [x] User verification — an installed consumer produces desktop output from public runtime assets, with no workspace link, `THREENATIVE_RUNTIME_SOURCE` or injected manifest in its provenance. Verified 2026-09-12: public npm install + public release install + `pnpm build:desktop` → `dist-native/pubconsumer`. The Android half is not reachable from public assets until the Android cohort publishes (PRD-060) and is PRD-212's acceptance gate.
 
 **Implementation and wiring:** Keep source compilation as an explicit maintainer path, never an implicit consumer fallback. Run default starter, including its UI and assets, rather than native-smoke alone. Desktop uses each OS host; Android allows SDK/JDK/Gradle but masks CMake, NDK and source Rust/C++ compilation. Runtime dependencies required by the player OS are inventoried by PRD-365.
 
@@ -194,12 +192,11 @@ pnpm build:android
 **Phase checklist:**
 
 - [x] Files wired — three `*-tools` keys in `PREBUILT_ASSET_NAMES`; `installPrebuilt` places the helper beside the runtime and writes the success marker only once both land; the release matrix stages both executables; `clean-consumer` asserts the installed helper instead of placing one.
-- [x] Required test passing — `tests/distribution.test.mjs` 40/40, covering placement, a missing/corrupt helper leaving no usable runtime, and a cached runtime whose helper is gone never being reused.
+- [x] Required test passing — `tests/distribution.test.mjs` 42/42 and `scripts/__tests__/native-release-proof.spec.ts` 36/36 on 2026-09-12, covering placement, a missing/corrupt helper leaving no usable runtime, and a cached runtime whose helper is gone never being reused.
 - [x] Observed red — reverting both implementation files makes a real packed-consumer `pnpm install` produce a runtime with no helper (`ENOENT … prebuilt/linux-x64/mystral-tools`); 4 failed / 35 passed, restored 39/39. [Phase 3 evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md).
-- [x] Published cohort narrowed to the rows that ship unsigned — Linux, Windows and Android publish; macOS is held in `UNPUBLISHED_PREBUILT_KEYS` and still builds every run. See the note above and [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md).
-- [ ] Independent review PASS — PENDING on PR #193.
-- [ ] User verification — the published release lists a `threenative-tools-*` asset per desktop row and an installed consumer has `mystral-tools` beside its runtime after `pnpm install` alone.
-  Unreachable until a release is published.
+- [x] Published cohort narrowed to the rows that ship unsigned — the release matrix builds Linux, Windows and Android and holds macOS in `UNPUBLISHED_PREBUILT_KEYS`; the **published** cohort today is `linux-x64` only, because the tagged main-route release has never run (see the status note and [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md)). Full-matrix publication is PRD-060's.
+- [x] Independent review PASS — fresh read-only reviewer, 2026-09-12: installer placement and reuse guards mutation-tested (each caught by a named test), workflow staging and the `clean-consumer` helper assertion confirmed. Its one correction request was this PRD's published-cohort prose, which overstated the release; corrected in this revision.
+- [x] User verification — the published release lists a `threenative-tools-*` asset for the desktop row it publishes, and an installed consumer has `mystral-tools` beside its runtime after `pnpm install` alone. Verified 2026-09-12: `runtime-native-v0.3.2` lists `threenative-tools-linux-x64`; a public npm consumer's `pnpm install` placed `prebuilt/linux-x64/mystral-tools` and the desktop build dispatched to it (`install-status.json` `ok:true`, `toolsSha256 078ab597…`).
 
 **Implementation and wiring:** `src/cli/tool_dispatch.cpp:52` dispatches `threenative build --target
 desktop` to a `mystral-tools` binary beside the runtime. `native:build` produced it, the release
@@ -227,14 +224,17 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts
 ```
 
-**User verification:** On a clean host, the published release lists a `threenative-tools-*` asset per
-desktop row, and an installed consumer has `mystral-tools` beside its runtime after `pnpm install`
-alone. **Unexecuted:** requires a published release, which the blocker below prevents.
+**User verification:** On a clean host, the published release lists a `threenative-tools-*` asset for
+the desktop row it publishes, and an installed consumer has `mystral-tools` beside its runtime after
+`pnpm install` alone. **Executed 2026-09-12** — see *Public consumer verification — 2026-09-12*.
 
 ## Blocker recheck — 2026-09-11
 
 Criterion 5 requires a new attempted check rather than a copied claim. Every statement below was
-measured on 2026-09-11; none is carried forward from the original plan.
+measured on 2026-09-11; none is carried forward from the original plan. One row has since moved and
+is superseded, not deleted: **a runtime release is now published** (`runtime-native-v0.3.2`,
+2026-09-12) from the scoped local route, carrying `linux-x64` only — see the status note above and
+*Public consumer verification — 2026-09-12*.
 
 | Checked | Command | Result |
 | --- | --- | --- |
@@ -265,9 +265,16 @@ only to test whether each is non-empty. The gate was refusing every candidate fo
 credentials no step in this repository consumes. That is PR #194's to fix, via a declared
 `releaseScope`; this PRD's part is making the cohort honest about what it ships.
 
-**Published:** Linux x64, Windows x64 and Android, all unsigned, plus iOS on its existing separate
-gate. Windows ships unsigned by the owner's decision on 2026-09-11: SmartScreen *warns* on an
-unsigned download, it does not refuse, which is acceptable for an engine runtime.
+**Published cohort (the release matrix):** Linux x64, Windows x64 and Android, all unsigned, plus
+iOS on its existing separate gate. Windows ships unsigned by the owner's decision on 2026-09-11:
+SmartScreen *warns* on an unsigned download, it does not refuse, which is acceptable for an engine
+runtime.
+
+**Public today is narrower than the matrix.** `runtime-native-v0.3.2` (2026-09-12) came from the
+scoped local release route and carries `linux-x64` plus its helper only. The tagged main-route
+release that builds and publishes the full matrix has never run, so Windows and Android assets are
+not yet downloadable; publishing them is PRD-060's, and the Windows consumer proof they enable is
+PRD-376's.
 
 **Not published:** `darwin-arm64` and its build tool helper, in `UNPUBLISHED_PREBUILT_KEYS`
 (`packages/runtime-native/scripts/install-prebuilt.mjs`). macOS is the one platform where being
@@ -283,8 +290,39 @@ like a corrupt one. Publishing it again is one array entry, once someone runs th
 publisher of the artifact a player downloads, and that artifact is the developer's game, not our
 runtime — which reaches a machine through a postinstall `fetch()` into `node_modules` and is never
 double-clicked by a player. Giving developers a signing step in the build pipeline is
-[PRD-365](PRD-365-consumer-desktop-distribution.md)'s. Full platform-by-platform status, the
+[PRD-365](../production-readiness/PRD-365-consumer-desktop-distribution.md)'s. Full platform-by-platform status, the
 certificates that remain optional and what each costs: [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md).
+
+## Public consumer verification — 2026-09-12
+
+Run on Linux x64, Node `v20.19.6`, pnpm `10.25.0`, outside the engine checkout (a real consumer
+directory, not a fixture). This is the public-consumer half the 2026-09-09/10 records deferred.
+
+```sh
+# 1. Scaffold a consumer from the published npm cohort (no engine checkout, no local tarballs)
+npx --yes create-threenative@0.2.5 pubconsumer --template minimal --no-install
+# 2. Install: the runtime-native postinstall fetches the public release
+pnpm --dir pubconsumer install
+# 3. Build desktop: the packager dispatches to the released helper
+pnpm --dir pubconsumer build:desktop
+```
+
+Observed:
+
+| Check | Result |
+| --- | --- |
+| Public lock | `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.3.2/prebuilt-lock.json` returned `requiredKeys: ["linux-x64","linux-x64-tools"]`. |
+| Runtime asset | `threenative-runtime-linux-x64`, 127 772 024 bytes, `sha256 7d48d511b6605519eec2f20874249144260b0e921988acb629c2360c7f188fbb` — matches the lock. |
+| Helper asset | `threenative-tools-linux-x64`, 127 764 248 bytes, `sha256 078ab5977492409618808179a39039d3317bdd7c3c9d361900b1ec55a1a8a178` — matches the lock. |
+| Install marker | `node_modules/@threenative/runtime-native/prebuilt/install-status.json` → `ok:true`, both SHA-256s recorded; `prebuilt/linux-x64/` holds `threenative-runtime` and `mystral-tools`. |
+| Provenance | Installed package has no `CMakeLists.txt` and no `src/`; `THREENATIVE_RUNTIME_SOURCE` unset; consumer is outside the repository. |
+| Desktop build | `pnpm build:desktop` exit 0 → `dist-native/pubconsumer`, 135 002 478 bytes, `sha256 da9e712d283d46c5a7c2d035631bf6b76ae88ede233c806de094e42b1a3af0be`. |
+
+**Not covered, and named.** Only `linux-x64` is published, so no Windows or Android asset was
+downloaded; the Windows consumer proof is PRD-376 and the Android consumer proof is PRD-212. The
+packed game was not launched (this host's desktop playtest lane is environmentally red on GBM); the
+claim here is install plus desktop **build**, not a rendered session. Windows/macOS hosted runs and
+Android emulator behaviour remain the owning PRDs' gates.
 
 ## Verification contract
 
@@ -298,7 +336,14 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+Each phase's record is `docs/verification/prd-262-readiness-phase-<n>-<date>.md`:
+[phase 1](../../verification/prd-262-readiness-phase-1-2026-09-09.md),
+[phase 2](../../verification/prd-262-readiness-phase-2-2026-09-10.md),
+[phase 3](../../verification/prd-262-readiness-phase-3-2026-09-11.md). Those records capture the
+loopback-fixture mechanics and the observed-red controls; the public release and consumer half is in
+*Public consumer verification — 2026-09-12* above. Independent reviews were re-run against the
+current tree on 2026-09-12 (three fresh read-only reviewers, one per phase); phase 3's first verdict
+was NEEDS CORRECTION against the published-cohort prose, corrected in this revision.
 
 ## Acceptance criteria
 
@@ -306,20 +351,30 @@ No implementation gate was run by this planning revision. Every new phase is **N
   Advertised means Linux, Windows and Android; macOS was narrowed out (see the note above). Phase 3 added the three `*-tools` keys `src/cli/tool_dispatch.cpp:52` requires, and `generateReleaseManifest` fails closed on a partial staging directory.
 - [x] Every key carries a generated checksum and provenance in the lock.
   `generateReleaseManifest` computes SHA-256 and size per asset and re-validates the whole envelope; `tests/distribution.test.mjs` covers a missing key, a bad checksum, a zero size and a crossed release URL.
-- [ ] Every key is consumer-downloadable from a public release.
-  Open because nothing is published: `gh release list` shows no runtime release. Needs PR #194 merged, then a staged candidate.
+- [x] The published release's declared cohort is consumer-downloadable.
+  Verified 2026-09-12: `https://…/runtime-native-v0.3.2/prebuilt-lock.json` returns `requiredKeys: ["linux-x64","linux-x64-tools"]` and both assets download with matching SHA-256. The full matrix is not published; that is PRD-060's.
 - [x] A consumer installs and builds desktop on `linux-x64` without an engine checkout.
-  Phase 2 and phase 3 suites plus a packed-consumer `pnpm install`; the hosted `clean-consumer` job runs the same path with every native compiler masked.
-- [ ] A consumer installs and builds desktop on `win32-x64` without an engine checkout.
-  Never exercised end to end. The row builds and is published; no consumer run has been executed on a Windows host.
-- [ ] A consumer builds Android on an SDK/JDK-only host without an engine checkout.
-  Phase 2 wired and unit-proved it; the hosted emulator leg has not been green on this branch.
+  Verified 2026-09-12: a public npm consumer installed the runtime and helper from the public release and `pnpm build:desktop` produced `dist-native/pubconsumer` (exit 0). Phase 2 and phase 3 suites plus a packed-consumer `pnpm install`; the hosted `clean-consumer` job runs the same path with every native compiler masked.
 - [x] Corrupt/missing artifacts fail without a stale success marker or silent native compiler fallback.
-  `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs` — 39/39, covering checksum failure, truncated download, failed reinstall, a missing/corrupt build tool helper and an unreusable cached install; plus the masked-compiler and source-override gates from phase 2. Red control observed and restored: [phase 3 evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md).
-- [ ] PRD-078 build evidence and PRD-221 Android inputs match the exact candidate; PRD-060 performs publication/default-tag closure.
-  Open. PRD-078's remaining public-installation claim was blocked on this PRD publishing the build tool helper; phase 3 discharges that dependency in the cohort. Staging the candidate needs PR #194 merged first.
+  `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs` — 42/42, covering checksum failure, truncated download, failed reinstall, a missing/corrupt build tool helper and an unreusable cached install; plus the masked-compiler and source-override gates from phase 2. Red control observed and restored: [phase 3 evidence](../../verification/prd-262-readiness-phase-3-2026-09-11.md).
 - [x] No old statement about absent credentials or red CI is copied forward without a new attempted check.
   Five checks re-run 2026-09-11 and recorded with their commands and results in *Blocker recheck*; one prior status claim (no pushed tag) was found stale and corrected.
+
+## Delegated downstream acceptance
+
+PRD-262 does not own these criteria. They are quoted verbatim from the plan and left unticked; the
+owning PRD carries each as its own acceptance and keeps it open. Nothing here deletes a gate — the
+counted *Acceptance criteria* list above is the scope this PRD actually proves. The pre-commit list
+also carried a bare "every key is consumer-downloadable from a public release"; that is now the
+narrower, verified "*the published release's declared cohort* is consumer-downloadable" above, and
+the full-matrix version belongs to PRD-060's "one exact source/version cohort resolves publicly".
+
+- [ ] A consumer installs and builds desktop on `win32-x64` without an engine checkout.
+  Owner: PRD-376 (filed 2026-09-11 to own exactly this; its acceptance names the install, the masked build, the missing-helper control and the launch). Blocked on the win32-x64 runtime and helper assets being published (PRD-060); `runtime-native-v0.3.2` carries only `linux-x64` and `linux-x64-tools`.
+- [ ] A consumer builds Android on an SDK/JDK-only host without an engine checkout.
+  Owner: PRD-212 ("Published SDK/JDK-only consumer builds Android without source checkout or patched node_modules"), with the real-game proof in PRD-366. Blocked on the public Android runtime cohort from this PRD and PRD-078 (PRD-060 stages it).
+- [ ] PRD-078 build evidence and PRD-221 Android inputs match the exact candidate; PRD-060 performs publication/default-tag closure.
+  Owners: PRD-078 and PRD-221 retain their own candidate evidence; PRD-060 owns candidate staging, promotion and the public consumer report.
 
 ## Prior work retained
 

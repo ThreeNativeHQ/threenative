@@ -1,9 +1,9 @@
 # PRD-262 phase 1 — candidate manifest and atomic install mechanics
 
 **Date:** 2026-09-09 (task date, America/Vancouver).
-**Status:** Local mechanics verified; **phase readiness BLOCKED**, independent review **PENDING**. Phase 2 has not started. This is not a public-release or native-platform acceptance record.
+**Status:** Local mechanics verified; independent review re-run **PASS** on 2026-09-12 (it re-read the installer and release workflow, ran the suite 42/42 and mutation-tested the size and SHA-256 guards, each caught by the candidate-integrity test). Superseded 2026-09-12: the public manifest/checksum half is now executed for the published `linux-x64` cohort — see the PRD's *Public consumer verification — 2026-09-12*. This is not a native-platform acceptance record.
 
-PRD: [matching public native runtime artifacts](../PRDs/production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md), requested at `7d730126fe38970fd5beda0a0e7ff1f6c72664e9`.
+PRD: [matching public native runtime artifacts](../PRDs/done/PRD-262-the-runtime-native-prebuilt-release-exists.md), requested at `7d730126fe38970fd5beda0a0e7ff1f6c72664e9`.
 Implementation base: `6972d87c1881a021afb041f44d4fcddcb469e971`.
 
 ## Scope and wiring

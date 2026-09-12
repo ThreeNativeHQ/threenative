@@ -1,10 +1,10 @@
 # PRD-262 phase 3 — the published release carries the desktop build tool helper
 
 **Date:** 2026-09-11 (America/Vancouver).
-**Status:** Local mechanics verified with an observed red control; **phase readiness BLOCKED on hosted execution**, independent review **PENDING**. This is not a public-release acceptance record — no release, tag, publication or registry state was mutated.
+**Status:** Local mechanics verified with an observed red control; independent review re-run **PASS** on 2026-09-12 (its sole correction request was the PRD's published-cohort prose, fixed then). Superseding facts, 2026-09-12: `runtime-native-v0.3.2` now publishes the `linux-x64` runtime and helper, a public consumer install verified both, and `pnpm build:desktop` dispatched to the installed helper — see the PRD's *Public consumer verification — 2026-09-12*. Windows and Android assets remain unpublished (PRD-060), so the sentence below about "no release" was true on 2026-09-11 and is superseded for Linux.
 **Base:** `7e6dffc1e7d67908d0ceb43388db45bb2d16964b` (`main`). Implementation commit `93ac0ce21073e2f7c6506f80c84a5e0338e3a1e1` on `fix/prd-262-publish-build-tool-helper`. Package version `0.3.1`. Node `v20.19.6`, pnpm `10.25.0`, Linux.
 
-PRD: [matching public native runtime artifacts](../PRDs/production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md).
+PRD: [matching public native runtime artifacts](../PRDs/done/PRD-262-the-runtime-native-prebuilt-release-exists.md).
 
 ## The gap this phase closes
 
