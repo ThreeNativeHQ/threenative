@@ -9,7 +9,7 @@ prd_contract: v1
 **Owner:** engine release tooling.
 **Problem:** Publishing is two unrelated mechanisms. `pnpm release --yes` already publishes every npm package in dependency order from a workstation, but it then **refuses** because `@threenative/runtime-native` demands a `runtime-native-v<version>/prebuilt-lock.json` that only the multi-runner CI release lane can produce. So a local release cannot make the runtime installable, and a consumer's first `threenative build` fails on an HTTP 404. The owner's ask is one local `pnpm` command that publishes everything, so people can install the cohort and build their games without waiting on CI.
 
-Batch contract and dependency order: [production-readiness](README.md). Baseline: `902ca95e2`. [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) owns the versioned release's contents; [PRD-221](PRD-221-android-v8-is-16kb-clean.md) owns the Android V8 payload those assets carry; [PRD-060](PRD-060-promoted-consumer-distribution.md) owns public promotion. iOS is out of scope; the CI lane keeps its iOS gate.
+Batch contract and dependency order: [production-readiness](README.md). Baseline: `902ca95e2`. [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) owns the versioned release's contents; [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) owns the Android V8 payload those assets carry; [PRD-060](PRD-060-promoted-consumer-distribution.md) owns public promotion. iOS is out of scope; the CI lane keeps its iOS gate.
 
 ## Integration ledger
 
