@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-212 — A published game builds signed Android release artifacts
 
-**Status:** DONE — 2026-09-12. All three phases and every acceptance criterion PRD-212 owns are verified, each phase independently reviewed PASS. The public-registry consumer install and the device/store proofs are not PRD-212's criteria: they are the acceptance of [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) and [PRD-366](../production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md), which own their published-cohort and hardware prerequisites, and are recorded under "Delegated downstream acceptance" below. Revised 2026-09-12.
+**Status:** DONE - 2026-09-12. PRD-212 is closed. All three phases and every acceptance criterion PRD-212 owns are verified, each phase independently reviewed PASS. The published-consumer and device/store proofs belong to PRD-060 and PRD-366, which own them; see Delegated downstream acceptance below.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 signing/release-state handling, +1 platform tools).
 **Problem:** The installed Android path depends on absent runtime assets and currently emits only a debug APK with target SDK 35.
 
