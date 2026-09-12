@@ -56,6 +56,34 @@ inside that checkout.
 If you have no engine checkout, the prebuilt path above is your path — `THREENATIVE_RUNTIME_SOURCE`
 is not a way around a failing download.
 
+## Release builds and signing
+
+`build --target android` produces a debug APK by default. Release output is an explicit request:
+
+```sh
+pnpm exec threenative build --target android --mode release --format apk   # signed APK
+pnpm exec threenative build --target android --mode release --format aab   # Play app bundle
+```
+
+A release is signed with **your** key. There is no debug-key fallback: when signing is not
+configured the packager refuses the release rather than shipping an unsigned or debug-signed
+artifact. Supply the key as the four Gradle project properties below, from the game's build
+environment. Paths are resolved relative to the project; nothing is written into the engine.
+
+| Environment variable | Meaning |
+| --- | --- |
+| `ORG_GRADLE_PROJECT_threenativeKeystore` | Path to the keystore (`.jks`/`.keystore`). |
+| `ORG_GRADLE_PROJECT_threenativeKeystoreAlias` | Key alias inside the keystore. |
+| `ORG_GRADLE_PROJECT_threenativeKeystorePassword` | Keystore password. |
+| `ORG_GRADLE_PROJECT_threenativeKeyPassword` | Key password. |
+
+Values are read only inside the signing subprocess and are never printed or serialized into
+packaging output. The final APK is verified with `apksigner`, and its packaged `targetSdkVersion`
+and non-debuggable state are read back with `aapt`; a release AAB is verified with `jarsigner`. A
+signature, target level or debuggable check that cannot be satisfied fails the build. Native symbols
+are stripped from the artifact by the Android Gradle plugin and are produced separately for symbol
+archives.
+
 ## Links
 
 - [Repository](https://github.com/ThreeNativeHQ/threenative)
