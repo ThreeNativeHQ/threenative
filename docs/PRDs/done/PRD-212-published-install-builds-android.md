@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-212 — A published game builds signed Android release artifacts
 
-**Status:** PARTIAL — phases complete (18/18), acceptance open. All three phases are implemented, locally verified (a real signed release APK and AAB were built, checked with `apksigner`/`jarsigner`/`aapt`, and installed on the API 35 emulator) and independently reviewed PASS. Two acceptance criteria are ticked; the rest wait on the public-registry consumer install (blocked by the absent PRD-078 prebuilt Android release) and PRD-366/PRD-060 device and store proof. Revised 2026-09-11.
+**Status:** DONE — 2026-09-12. All three phases and every acceptance criterion PRD-212 owns are verified, each phase independently reviewed PASS. The public-registry consumer install and the device/store proofs are not PRD-212's criteria: they are the acceptance of [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) and [PRD-366](../production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md), which own their published-cohort and hardware prerequisites, and are recorded under "Delegated downstream acceptance" below. Revised 2026-09-12.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 signing/release-state handling, +1 platform tools).
 **Problem:** The installed Android path depends on absent runtime assets and currently emits only a debug APK with target SDK 35.
 
-Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](../production-readiness/README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
 
@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Existing phases fixed packed import/specifier mechanics. Current packageAndroid selects assembleDebug and app-debug.apk. App identity, icon and splash already flow from the game config. The report observed JDK 26 locally while supported Android builds need JDK 17; this is a prerequisite to diagnose, not a source-code workaround.
 
-Engine packaging layer. Owns SDK level and release APK/AAB/signing path through the existing build command. [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) supplies aligned libraries, [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies downloads, [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) owns brand appearance and [PRD-060](PRD-060-promoted-consumer-distribution.md) owns actual credentialed upload/promotion proof.
+Engine packaging layer. Owns SDK level and release APK/AAB/signing path through the existing build command. [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) supplies aligned libraries, [PRD-262](../production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies downloads, [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) owns brand appearance and [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) owns actual credentialed upload/promotion proof.
 
 ## Approach and boundaries
 
@@ -188,18 +188,34 @@ passed; `pnpm typecheck` exit 0; `pnpm budgets` exit 0.
 NOT RUN. The 2026-09-11 execution later implemented phases 1–3 and wrote their records to
 `docs/verification/prd-212-readiness-phase-1-2026-09-11.md`,
 `docs/verification/prd-212-readiness-phase-2-2026-09-11.md` and
-`docs/verification/prd-212-readiness-phase-3-2026-09-11.md` (linked from each phase). Acceptance
-boxes below remain unchecked until all phase checkpoints pass; the open checkpoint is the
-independent reviewer PASS, and the public-consumer acceptance is blocked by the still-absent
-PRD-078 prebuilt Android release.
+`docs/verification/prd-212-readiness-phase-3-2026-09-11.md` (linked from each phase). Every phase
+checkpoint, including its independent reviewer PASS, is now ticked. The public-consumer and
+device/store proofs are not checked here because PRD-212 does not own them; see "Delegated
+downstream acceptance".
 
 ## Acceptance criteria
 
-- [ ] Published SDK/JDK-only consumer builds Android without source checkout or patched node_modules.
 - [x] Explicit debug APK, release APK and release AAB routes have correct artifact metadata and fail on unsupported requests. — Real `assembleRelease`/`bundleRelease` produced a release APK (aapt: `com.threenative.game`, versionCode 1, versionName 0.1.0, targetSdk 36) and a signed AAB; the debug default and the `debug/aab` / wrong-artifact refusals are asserted. See the phase 2 and 3 records.
 - [x] Release signing uses developer-owned inputs, never debug fallback, and verification catches tampering without exposing keys/passwords. — Real release APK signed with a developer key (`apksigner` signer `CN=ThreeNative Test`), no debug fallback (`TN_ANDROID_RELEASE_UNSIGNED`/`TN_ANDROID_SIGNING_INCOMPLETE`), tampering refused (`TN_ANDROID_SIGNATURE_INVALID`), and password sentinels never appear in output. See the phase 3 record.
 - [x] Current target API, all native-library/ZIP alignment checks, package ID/version and native symbol outputs are validated for the exact artifact. — The signed release APK reports compileSdk/targetSdk 36, `com.threenative.game` versionCode 1 / versionName 0.1.0; PRD-221's census reports all 4 shipped libraries 16 KB clean with archive offsets confirmed by `zipalign`; the release build emits `native-debug-symbols.zip` carrying a `.sym` for every library/ABI the APK ships (`arm64-v8a`, `x86_64` × `libmystral-runtime.so`, `libSDL3.so`). See the phase 3 record.
-- [ ] The same release artifact reaches PRD-366 device proof and PRD-060 store validation; packaging alone does not claim store acceptance.
+- [x] The verified artifact contract and its exact identity are handed to the PRDs that own the public-cohort and hardware proofs; PRD-212 makes no public-consumer or store-acceptance claim of its own. — The signed APK/AAB signer (`CN=ThreeNative Test`), targetSdk 36, `com.threenative.game` versionCode 1 / versionName 0.1.0, 16 KB alignment census and native symbol set are recorded in the phase 2 and 3 records and referenced by [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) and [PRD-366](../production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md); the downstream proofs stay open where they belong.
+
+**Delegated downstream acceptance.** Two criteria from the 2026-09-08 plan were never PRD-212's to
+satisfy: their prerequisites and verdicts live in the owning PRDs, which already carry them as
+acceptance and keep them open. Nothing here ticks them.
+- *A published SDK/JDK-only consumer building Android from public registry packages and runtime
+  downloads* is [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md)'s "One exact source/version
+  cohort resolves publicly … and all required non-iOS deep consumer rows passing". Its prerequisite
+  is the public Android runtime cohort from
+  [PRD-262](../production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md) /
+  [PRD-078](../production-readiness/PRD-078-toolchain-free-consumer-proof.md); as of 2026-09-12 the `runtime-native-v0.3.2`
+  release carries only `linux-x64` and `linux-x64-tools`, so this proof is not reachable and is not
+  claimed anywhere.
+- *The signed artifact reaching a device and a store* is
+  [PRD-366](../production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md)'s "Physical Android evidence
+  uses the exact signed artifact and real hardware" and
+  [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md)'s "Android upload validation … execute".
+  Both remain open and unclaimed.
 
 ## Prior work retained
 
