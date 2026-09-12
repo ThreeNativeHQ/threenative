@@ -298,7 +298,10 @@ async function main(argv: readonly string[]): Promise<void> {
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
   // A `--yes` release that did not ask to publish ahead of its prebuilt payload produces that
   // payload itself, so the preflight may acknowledge its absence and the run finishes the job.
-  const willCreateNativeRelease = publish && !allowMissingPrebuilt;
+  // Never in CI: the npm-release lane runs on a binary-less runner against the release the native
+  // lane already produced, and it holds no GitHub token here, so it must not try to stage one.
+  const willCreateNativeRelease =
+    publish && !allowMissingPrebuilt && process.env.GITHUB_ACTIONS !== "true";
   const prebuiltAcknowledged = allowMissingPrebuilt || willCreateNativeRelease;
 
   // Publish from a committed tree, always. The 0.2.x releases went out of a working tree and

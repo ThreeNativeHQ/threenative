@@ -158,7 +158,26 @@ describe("pnpm release:native publishing", () => {
     expect(upload).toBeGreaterThan(0);
     expect(stage).toBeLessThan(publishLoop);
     expect(upload).toBeGreaterThan(publishLoop);
-    // The publish-ahead escape hatch must not silently create a release.
-    expect(source).toContain("const willCreateNativeRelease = publish && !allowMissingPrebuilt;");
+    // The publish-ahead escape hatch must not silently create a release, and CI must never stage.
+    expect(source).toMatch(
+      /willCreateNativeRelease\s*=\s*publish && !allowMissingPrebuilt && process\.env\.GITHUB_ACTIONS !== "true"/u,
+    );
+    expect(source).toContain("skipIfReleased: true");
+  });
+
+  it("fails closed on an unanswerable release check and only treats a clean miss as absent", async () => {
+    const { nativeReleaseExists } = await import("../release-native-local.js");
+    const succeed = (() => "") as NativeExec;
+    expect(nativeReleaseExists(REPOSITORY, TAG, succeed)).toBe(true);
+    const missing = (() => {
+      throw new Error("release not found");
+    }) as unknown as NativeExec;
+    expect(nativeReleaseExists(REPOSITORY, TAG, missing)).toBe(false);
+    const unauthenticated = (() => {
+      throw new Error("To get started with GitHub CLI, please run: gh auth login");
+    }) as unknown as NativeExec;
+    expect(() => nativeReleaseExists(REPOSITORY, TAG, unauthenticated)).toThrow(
+      /TN_RELEASE_NATIVE_VIEW_FAILED/u,
+    );
   });
 });

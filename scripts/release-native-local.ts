@@ -56,7 +56,10 @@ export function nativeReleaseTag(repo = REPO): string {
   return `runtime-native-v${manifest.version}`;
 }
 
-/** Whether the tag already exists on GitHub. An unanswerable check is treated as absent. */
+/**
+ * Whether the tag already exists on GitHub. Only a clean "not found" is `false`; an unauthenticated
+ * or unreachable `gh` throws, so an unanswerable check can never be mistaken for "safe to clobber".
+ */
 export function nativeReleaseExists(
   repository: string,
   tag: string,
@@ -65,8 +68,14 @@ export function nativeReleaseExists(
   try {
     exec("gh", ["release", "view", tag, "--repo", repository], { stdio: "pipe" });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const text = `${(error as { stderr?: unknown }).stderr ?? ""}${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    if (/release not found|not found|HTTP 404/iu.test(text)) return false;
+    throw new Error(
+      `TN_RELEASE_NATIVE_VIEW_FAILED: could not determine whether ${tag} exists: ${text.trim()}`,
+    );
   }
 }
 
