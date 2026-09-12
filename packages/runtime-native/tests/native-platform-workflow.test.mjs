@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
+import {
+	ANDROID_16KB_PAGE_SIZE,
+	ANDROID_4KB_PAGE_SIZE,
+	assertObservedPageSize,
+} from '../scripts/check-android-page-size.mjs';
 
 const workflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-platforms.yml', import.meta.url)),
@@ -87,15 +92,16 @@ test('green native platform lane is required by primary CI', () => {
   );
 });
 
-test('native platform failures fail the exact protected build context', () => {
+test('the protected build context requires scope and workspace evidence, not the native matrix', () => {
   const buildJob = ciWorkflow.match(
     /\n\x20{2}build:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
   )?.[0] ?? '';
-  // `build` is now a fail-closed join of the artifact producer and the native matrix rather than
-  // a job that does the packing itself, so the producer can start as soon as scope is known. What
-  // this test protects is unchanged: a native platform failure must still fail the protected
-  // `build` context, and it is asserted against the real gate shell below.
-  expect(buildJob).toContain('needs: [scope, build-artifacts, native-platforms]');
+  // PR #206 made native-platform evidence a release-lane concern rather than a merge verdict, so
+  // a 120-minute native matrix cannot hold every merge; PRD-373 owns the policy and this test
+  // tracks it. What is protected here is unchanged in spirit: the protected `build` context still
+  // fails closed on every one of its remaining inputs.
+  expect(buildJob).toContain('needs: [scope, build-artifacts]');
+  expect(buildJob).not.toContain('native-platforms');
   expect(buildJob).toContain(
     "if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}",
   );
@@ -103,11 +109,8 @@ test('native platform failures fail the exact protected build context', () => {
   expect(buildJob).toContain(
     'WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}',
   );
-  expect(buildJob).toContain(
-    'NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}',
-  );
   const gate = buildJob.match(
-    /\n\x20{6}- name: Require workspace and native platform evidence\n\x20{8}env:\n(?:\x20{10}[A-Z_]+: [^\n]*\n)+\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- |\n\x20{2}[a-z0-9-]+:|$)/u,
+    /\n\x20{6}- name: Require workspace evidence\n\x20{8}env:\n(?:\x20{10}[A-Z_]+: [^\n]*\n)+\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- |\n\x20{2}[a-z0-9-]+:|$)/u,
   )?.[1];
   expect(gate).toBeDefined();
   const script = gate
@@ -127,21 +130,12 @@ test('native platform failures fail the exact protected build context', () => {
       },
       encoding: 'utf8',
     });
-  expect(run({ NATIVE_PLATFORM_RESULT: 'success' }).status).toBe(0);
+  expect(run({}).status).toBe(0);
   // Each input fails closed on its own, and on every non-success verdict rather than only on
-  // `failure` - a cancelled or skipped native matrix must never read as a passed merge gate.
+  // `failure` - a cancelled or skipped producer must never read as a passed merge gate.
   for (const result of ['failure', 'cancelled', 'skipped', '']) {
-    expect(run({ NATIVE_PLATFORM_RESULT: result }).status, `native ${result}`).not.toBe(0);
-  }
-  for (const result of ['failure', 'cancelled', 'skipped', '']) {
-    expect(
-      run({ NATIVE_PLATFORM_RESULT: 'success', WORKSPACE_BUILD_RESULT: result }).status,
-      `artifacts ${result}`,
-    ).not.toBe(0);
-    expect(
-      run({ NATIVE_PLATFORM_RESULT: 'success', CI_SCOPE_RESULT: result }).status,
-      `scope ${result}`,
-    ).not.toBe(0);
+    expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
+    expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
   }
 });
 
@@ -772,4 +766,51 @@ test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   expect(job).toContain('--web evidence/desktop/conformance/web/report.json');
   // `warn` is what let a green run ship with no reports; both uploads fail closed now.
   expect(job).not.toContain('if-no-files-found: warn');
+});
+
+// --- PRD-221 phase 3: an observed page size, or no 16 KB qualification -------------------------
+
+test('rejects a 16 KB qualification whose page size was never observed', () => {
+	// The whole point of the gate: a lane that never asked the device must not report a pass.
+	expect(() => assertObservedPageSize(undefined)).toThrow(/TN_ANDROID_PAGE_SIZE_MISSING/u);
+	expect(() => assertObservedPageSize('')).toThrow(/TN_ANDROID_PAGE_SIZE_EMPTY/u);
+	expect(() => assertObservedPageSize('   \r\n')).toThrow(/TN_ANDROID_PAGE_SIZE_EMPTY/u);
+});
+
+test('rejects a 16 KB qualification observed on an ordinary 4 KB image', () => {
+	expect(() => assertObservedPageSize('4096')).toThrow(/TN_ANDROID_PAGE_SIZE_MISMATCH/u);
+	// And it says which image would actually qualify, rather than only that the number is wrong.
+	expect(() => assertObservedPageSize('4096')).toThrow(/google_apis_ps16k/u);
+});
+
+test('accepts the 16 KB observation adb actually prints', () => {
+	// adb hands back CRLF from the device shell; an unstripped \r makes Number() NaN.
+	assert.equal(assertObservedPageSize('16384\r\n'), ANDROID_16KB_PAGE_SIZE);
+	assert.equal(assertObservedPageSize('16384'), ANDROID_16KB_PAGE_SIZE);
+});
+
+test('refuses anything that is not a page size, rather than coercing it', () => {
+	for (const junk of ['error: device offline', '16384 bytes', '0', '-1', '1.5e4']) {
+		expect(() => assertObservedPageSize(junk)).toThrow(/TN_ANDROID_PAGE_SIZE_MALFORMED|TN_ANDROID_PAGE_SIZE_MISMATCH/u);
+	}
+	expect(() => assertObservedPageSize(16384)).toThrow(/TN_ANDROID_PAGE_SIZE_MALFORMED/u);
+});
+
+test('the 4 KB lane asserts its own page size with the same function', () => {
+	assert.equal(assertObservedPageSize('4096', ANDROID_4KB_PAGE_SIZE), ANDROID_4KB_PAGE_SIZE);
+	expect(() => assertObservedPageSize('16384', ANDROID_4KB_PAGE_SIZE)).toThrow(
+		/TN_ANDROID_PAGE_SIZE_MISMATCH/u,
+	);
+	// A page size this repository does not qualify is a caller bug, not a device result.
+	expect(() => assertObservedPageSize('8192', 8192)).toThrow(/TN_ANDROID_PAGE_SIZE_EXPECTATION/u);
+});
+
+test('the emulator lane records the page size it ran on', () => {
+	// Without this the workflow can run a 16 KB image and never write down that it did, which is
+	// the same evidentiary hole as running a 4 KB one.
+	assert.match(workflow, /getconf PAGE_SIZE/u);
+	assert.match(workflow, /check-android-page-size\.mjs/u);
+	// The expected size is data on the job, not a literal buried in a script step, so pointing the
+	// lane at a 16 KB image is a value change rather than a code change.
+	assert.match(workflow, /TN_ANDROID_EXPECTED_PAGE_SIZE/u);
 });
