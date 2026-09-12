@@ -69,7 +69,7 @@ The nine bounded assignments below are reviewed separately. None is accepted mer
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `packages/runtime-native/tests/native-platform-workflow.test.mjs`, `scripts/__tests__/ci-structure.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs` — `tests/native-platform-workflow.test.mjs` green 2026-09-11 (53/53 across the three runtime-native files).
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - local revert control on the workflow spec, recorded in [`prd-078-readiness-phase-1-2026-09-09.md`](../../verification/prd-078-readiness-phase-1-2026-09-09.md) lines 99-111: RED `tests 10; pass 2; fail 8; exit 1` -> GREEN `pass 10; exit 0` -> REVERT RED (same 8 failures) -> RESTORED GREEN, 227 assertions.
 - [ ] User verification performed on the named platform
 - [x] Evidence record written: `docs/verification/prd-078-readiness-phase-1-2026-09-09.md` — `docs/verification/prd-078-readiness-phase-1-2026-09-09.md`.
 - [ ] Independent reviewer returned PASS
@@ -94,7 +94,7 @@ The nine bounded assignments below are reviewed separately. None is accepted mer
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts`, `docs/PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11; the phase itself is the hosted execution, not a unit gate.
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - three controls in [the phase-2 record](../../verification/prd-078-readiness-phase-2-2026-09-10.md): the prerequisite-wait red (lines 59-77), the KVM/35-minute cap red `2 failed` -> `28 passed` (lines 191-210), and the concurrency red (lines 235-250).
 - [ ] User verification performed on the named platform
 - [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`.
 - [ ] Independent reviewer returned PASS
@@ -131,9 +131,9 @@ gh workflow run native-release.yml --repo ThreeNativeHQ/threenative --ref main
 
 - [x] Callers wired and building: `packages/runtime-native/scripts/verify-desktop-core.mjs`, `packages/runtime-native/tests/desktop-core-gate.test.mjs` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `packages/runtime-native/tests/desktop-core-gate.test.mjs` — `tests/desktop-core-gate.test.mjs` green 2026-09-11 (53/53).
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - **hosted observed failure, not a local revert control** - run [34543393235](https://github.com/ThreeNativeHQ/threenative/actions/runs/34543393235) failed `ALSA: Couldn't open audio device`; the desktop rows are green on run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952). Fix on `main`: `packages/runtime-native/scripts/verify-desktop-core.mjs:327` defaults `SDL_AUDIODRIVER` to `dummy` inside the Linux branch. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 94-105.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
 - [ ] Independent reviewer returned PASS
 
 Reproduced in run [34543393235](https://github.com/ThreeNativeHQ/threenative/actions/runs/34543393235), the first Linux execution of `native:verify:desktop` this proof route created.
@@ -156,9 +156,9 @@ Reproduced in run [34543393235](https://github.com/ThreeNativeHQ/threenative/act
 
 - [x] Callers wired and building: `packages/runtime-native/tests/cli_network_fs_test.cpp`, `packages/runtime-native/CMakeLists.txt`, `packages/runtime-native/tests/webtransport-polyfill-prerequisites.test.mjs` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `packages/runtime-native/tests/webtransport-polyfill-prerequisites.test.mjs` — `tests/webtransport-polyfill-prerequisites.test.mjs` 6/6 green 2026-09-11 after restoring the guards deleted by `2035e1e25` (fix `585fe61f7`).
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - local compile control - `cli_network_fs_test.cpp:1049:30: error: 'runtime_scripts' has not been declared` EXIT 1 against the CI compile line, then `no diagnostics` EXIT 0 under `-fsyntax-only`. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 133-155.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
 - [ ] Independent reviewer returned PASS
 
 Reproduced in run [34546754768](https://github.com/ThreeNativeHQ/threenative/actions/runs/34546754768), where all three desktop rows failed inside `native:verify:desktop`.
@@ -182,9 +182,9 @@ Reproduced in run [34546754768](https://github.com/ThreeNativeHQ/threenative/act
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-android-staging.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `scripts/__tests__/native-release-android-staging.spec.ts` — `scripts/__tests__/native-release-android-staging.spec.ts` 1/1 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - **hosted observed failure** - run [34540703352](https://github.com/ThreeNativeHQ/threenative/actions/runs/34540703352) failed `ENOENT ... SDL3-3.2.8.aar`, green on run [34551637777](https://github.com/ThreeNativeHQ/threenative/actions/runs/34551637777). Fix on `main`: `.github/workflows/native-release.yml:483,497` derive the file name from `SDL3_ANDROID_VERSION`. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 111-132.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
 - [ ] Independent reviewer returned PASS
 
 Reproduced on this branch's PR run
@@ -208,9 +208,9 @@ Reproduced on this branch's PR run
 
 - [x] Callers wired and building: `packages/runtime-native/package.json`, `packages/runtime-native/tests/desktop-core-gate.test.mjs` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `packages/runtime-native/tests/desktop-core-gate.test.mjs` — `tests/desktop-core-gate.test.mjs` green 2026-09-11 (53/53).
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - local control - `env -u DISPLAY ...` gave `SDL_Init failed: x11 not available` EXIT 1, and the same command under `scripts/xvfb.sh` EXIT 0. Fix on `main`: `packages/runtime-native/package.json:74`. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 307-340.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
 - [ ] Independent reviewer returned PASS
 
 Reproduced on every Linux row of this proof route: runs
@@ -236,9 +236,9 @@ Reproduced on every Linux row of this proof route: runs
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - **hosted observed failure** - run [34557447467](https://github.com/ThreeNativeHQ/threenative/actions/runs/34557447467) failed `[UNRESOLVED_IMPORT] './networking-game.js' ... './worker-proof.js'`, green on run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952). [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 366-375.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
 - [ ] Independent reviewer returned PASS
 
 Reproduced on the first run that ever reached `clean-consumer`,
@@ -262,9 +262,9 @@ Reproduced on the first run that ever reached `clean-consumer`,
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - **hosted observed failure** - `libwebkit2gtk-4.1.so.0` missing and `Activity class {com.mystral.engine/...} does not exist`. Fix on `main`: `.github/workflows/native-release.yml:775` derives `CONSUMER_APP_ID`, `:909-920` pass it through. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 397-435.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
 - [ ] Independent reviewer returned PASS
 
 Reproduced on run [34559147906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34559147906) and on a local replica of the job.
@@ -287,9 +287,9 @@ Reproduced on run [34559147906](https://github.com/ThreeNativeHQ/threenative/act
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green - **hosted observed failure** - run [34564200217](https://github.com/ThreeNativeHQ/threenative/actions/runs/34564200217) failed `build tool helper is missing: ... /prebuilt/linux-x64/mystral-tools` / `Runtime packager exited with code 127`. The durable publish fix is PRD-262 phase 3 (PR #193); this proof carries the helper as a same-run artifact. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 447-462.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
 - [ ] Independent reviewer returned PASS
 
 Reproduced on run [34564200217](https://github.com/ThreeNativeHQ/threenative/actions/runs/34564200217).
