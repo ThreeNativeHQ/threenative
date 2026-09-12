@@ -4,9 +4,9 @@ prd_contract: v1
 
 # PRD-221 — The default Android V8 distribution is 16 KB compatible
 
-**Status:** PARTIAL — all three phases are implemented and locally verified; **only the three
-independent-reviewer boxes remain open**. Phase 1's implementation landed on `main` as PR #167
-(2026-09-11) and its red/green control and user verification are now recorded. Phase 2's packager
+**Status:** DONE — all three phases and every acceptance criterion are complete and verified, each
+with an independent reviewer PASS. Phase 1's implementation landed on `main` as PR #167
+(2026-09-11) and its red/green control and user verification are recorded. Phase 2's packager
 census rejects a real misaligned APK and passes the freshly rebuilt starter. Phase 3's
 `getconf PAGE_SIZE` **16384** is observed on the local `threenative_ps16k` AVD, the default starter
 boots V8 11.0.226.16 there and presents frames, and a background/resume cycle is observed. Prior
@@ -84,7 +84,9 @@ sequenceDiagram
       `Version: 11.0.226.16`, then presented frames. V8, not QuickJS.
 - [x] Evidence record written: `docs/verification/prd-221-readiness-phase-1-2026-09-11.md` — supersedes the
       INCOMPLETE `…-2026-09-10.md` record.
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS — round 1, 2026-09-11. It reproduced the required test (35), the
+      red/green on the real historical binaries, the recipe-6 patch and the receipt; it found one escaped
+      mutation (`ANDROID_V8_BUILD.loadAlignment`), now pinned by a test assertion.
 
 **Files (maximum five):**
 
@@ -131,7 +133,9 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 - [x] Evidence record written: `docs/verification/prd-221-readiness-phase-2-2026-09-11.md` — the real red
       (stale unaligned APK refused at `lib/arm64-v8a/libSDL3.so` offset `0x11d000`) and the fresh green
       (rebuilt starter, all 8 libraries 16 KB clean, `zipalign -c -P 16` corroboration).
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS — round 1 returned NEEDS CORRECTION (two sibling fixtures left red by
+      the align call); fixed in `d1d8c8b7c`, round 2 PASS 2026-09-11 reproduced 40/33/48 green and the
+      green/red artifacts.
 
 **Files (maximum five):**
 
@@ -184,7 +188,10 @@ pnpm build:android
       the point where the native input host routes a touch to the WebView. Details in the phase-3
       record.
 - [x] Evidence record written: `docs/verification/prd-221-readiness-phase-3-2026-09-11.md`
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS — round 1 returned NEEDS CORRECTION (inherited `ci.yml` gate drift
+      from PR #206 left the required test red, and the record overstated HUD verification); fixed in
+      `d1d8c8b7c`, round 2 PASS 2026-09-11 reproduced 41 green, re-pulled the installed APK (`6acd46af…`,
+      8 libraries 16 KB clean) and the 16384 page observation, and confirmed the HUD limitation is recorded.
 
 **Files (maximum five):**
 
