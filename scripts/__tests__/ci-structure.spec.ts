@@ -1233,9 +1233,10 @@ describe("CI pipeline structure", () => {
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
-    // Secret scanning remains on prose-only PRs: Markdown can contain credentials even when it
-    // does not alter executable behavior.
+    // Markdown-only PRs skip the scan entirely (owner call 2026-09-12): the nightly develop run
+    // and promotions still scan the full git history, so an inert prose PR spends no runner here.
     expect(supplyChain).toContain("needs: scope");
+    expect(supplyChain).toContain("if: needs.scope.outputs.selection != 'prose'");
     expect(supplyChain).not.toContain("needs.scope.outputs.selection == 'full'");
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
@@ -2750,8 +2751,8 @@ describe("PRD-373 selective feature verification", () => {
       const jobs = plan.jobs as Record<string, { required: boolean; reason: string }>;
       expect(jobs["native-platforms"]).toMatchObject({ required: false });
       expect(jobs["native-platforms"]?.reason.length).toBeGreaterThan(10);
-      expect(jobs["supply-chain"]?.required).toBe(true);
-      expect(jobs.lint?.required).toBe(true);
+      expect(jobs["supply-chain"]?.required).toBe(selection !== "prose");
+      expect(jobs.lint?.required).toBe(selection !== "prose");
       expect(jobs.website?.required).toBe(selection === "website");
       expect((plan.checks as Record<string, boolean>).instructions).toBe(
         selection === "instructions",
@@ -2773,7 +2774,6 @@ describe("PRD-373 selective feature verification", () => {
     "site/package.json",
     "tsconfig.base.json",
     ".github/workflows/ci.yml",
-    "some-new-folder/unknown.md",
     "packages/runtime-native/AGENTS.md",
     "templates/topdown/CLAUDE.md",
   ])("retains all consumers for %s without merging on native evidence", async (relative) => {
@@ -2795,6 +2795,22 @@ describe("PRD-373 selective feature verification", () => {
       await rm(fixture.root, { recursive: true, force: true });
     }
   });
+
+  it.each(["docs/PRDs/inert.md", "docs/strategy/plan.md", "some-new-folder/unknown.md"])(
+    "selects prose and requires no job for the inert Markdown %s",
+    async (relative) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, relative, "changed\n", "docs");
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan).toMatchObject({ selection: "prose" });
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(Object.values(jobs).some((job) => job.required)).toBe(false);
+      } finally {
+        await rm(fixture.root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("never narrows main promotions, unknown targets or manual full runs", async () => {
     const fixture = await scopeFixture();

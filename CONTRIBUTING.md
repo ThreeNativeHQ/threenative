@@ -40,7 +40,9 @@ pnpm ci:local --full                         # explicit full audit / rollback
 ```
 
 Both local and hosted checks use `scripts/ci-change-scope.mjs`. It examines the entire merge-base
-diff, not just the last commit. Unknown or uncommitted changes run the full board. The fast
+diff, not just the last commit. Unknown or uncommitted changes run the full board. A PR that changes
+only Markdown the executable fixtures do not consume runs **no CI job** — docs links, evidence
+budgets and secret scans are re-validated on the develop nightly run and at promotion. The fast
 pre-push hook reports this decision but remains a bounded drift check, not native qualification.
 
 The native platform matrix (desktop parity, Android emulator, iOS simulator, Windows/macOS) is
