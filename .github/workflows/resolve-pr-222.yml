@@ -1,0 +1,127 @@
+name: Resolve PR 222 conflicts
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - .github/workflows/resolve-pr-222.yml
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Merge main and resolve the two known conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main develop
+
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+
+          conflicts="$(git diff --name-only --diff-filter=U | sort)"
+          expected_conflicts=$'.github/workflows/native-platforms.yml\npackages/runtime-native/tests/native-platform-workflow.test.mjs'
+          if [ "$merge_status" -ne 0 ] && [ -z "$conflicts" ]; then
+            echo "merge failed without ordinary file conflicts" >&2
+            exit "$merge_status"
+          fi
+          if [ "$conflicts" != "$expected_conflicts" ]; then
+            echo "unexpected conflict set:" >&2
+            printf '%s\n' "$conflicts" >&2
+            exit 1
+          fi
+
+          git checkout --ours -- \
+            .github/workflows/native-platforms.yml \
+            packages/runtime-native/tests/native-platform-workflow.test.mjs
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/native-platforms.yml')
+          workflow = workflow_path.read_text()
+          workflow_needle = "  desktop-parity:\n    needs: [scope, web-reference]\n"
+          workflow_replacement = "  desktop-parity:\n    name: Desktop web/native parity\n    needs: [scope, web-reference]\n"
+          if workflow.count(workflow_needle) != 1:
+              raise SystemExit(f"expected exactly one desktop-parity insertion point, found {workflow.count(workflow_needle)}")
+          workflow = workflow.replace(workflow_needle, workflow_replacement, 1)
+          workflow_path.write_text(workflow)
+
+          test_path = Path('packages/runtime-native/tests/native-platform-workflow.test.mjs')
+          test_text = test_path.read_text()
+          old_loop = """  for (const result of ['failure', 'cancelled', 'skipped', '']) {
+            expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
+            expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
+          }
+          });
+          """
+          new_loop = """  for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', '']) {
+            expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
+            expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
+          }
+          // The native matrix is still required for the exact candidate, just not by this join: the
+          // release lane consumes the `native-platforms` rows, so a native failure cannot pass unnoticed.
+          const required = ciWorkflow.match(
+            /\\n\\x20{2}ci-required:\\n[\\s\\S]*?(?=\\n\\x20{2}[a-z0-9-]+:|\\s*$)/u,
+          )?.[0] ?? '';
+          expect(required).toContain('native-platforms');
+          });
+          """
+          if test_text.count(old_loop) != 1:
+              raise SystemExit(f"expected exactly one protected-build loop, found {test_text.count(old_loop)}")
+          test_text = test_text.replace(old_loop, new_loop, 1)
+
+          marker = "test('Android V8 source is produced once and consumed as a verified artifact', () => {"
+          desktop_guard = """test('the desktop parity job keeps the name the release gate requires', () => {
+            // The release gate matches CI job names exactly. When this job lost its `name:` the run
+            // reported `native-platforms / desktop-parity`, so PRD-078's main route could never resolve
+            // its `native-platforms / Desktop web/native parity` row.
+            const job = workflow.match(
+              /\\n\\x20{2}desktop-parity:\\n[\\s\\S]*?(?=\\n\\x20{2}[a-z0-9-]+:|\\s*$)/u,
+            )?.[0] ?? '';
+            expect(job).toContain('name: Desktop web/native parity');
+          });
+
+          """
+          if test_text.count(marker) != 1:
+              raise SystemExit(f"expected exactly one Android V8 test marker, found {test_text.count(marker)}")
+          if "test('the desktop parity job keeps the name the release gate requires'" in test_text:
+              raise SystemExit('desktop parity guard unexpectedly already present')
+          test_text = test_text.replace(marker, desktop_guard + marker, 1)
+          test_path.write_text(test_text)
+          PY
+
+          git add \
+            .github/workflows/native-platforms.yml \
+            packages/runtime-native/tests/native-platform-workflow.test.mjs
+
+          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+            echo "unresolved conflicts remain" >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+
+          # This resolver is intentionally one-shot; do not leave automation debris in develop/main.
+          git rm .github/workflows/resolve-pr-222.yml
+
+          git diff --cached --check
+          node --check packages/runtime-native/tests/native-platform-workflow.test.mjs
+          grep -Fq 'name: Desktop web/native parity' .github/workflows/native-platforms.yml
+          grep -Fq "expect(required).toContain('native-platforms');" packages/runtime-native/tests/native-platform-workflow.test.mjs
+          grep -Fq "'neutral', 'timed_out'" packages/runtime-native/tests/native-platform-workflow.test.mjs
+
+          git commit -m "merge: resolve main/develop conflicts for PR #222"
+          git push origin HEAD:develop
