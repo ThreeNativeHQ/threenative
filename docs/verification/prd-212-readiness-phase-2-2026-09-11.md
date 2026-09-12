@@ -41,13 +41,14 @@ pnpm exec tsc --noEmit -p packages/create-threenative/tsconfig.json   # exit 0
 
 ## Real artifact observation (2026-09-11)
 
-A real `assembleRelease` ran from the worktree's Android project through the packager
-(QuickJS/x86_64 to avoid the missing V8 build receipt): `BUILD SUCCESSFUL`,
-`ThreeNative Android APK: .../game-release.apk (signed)`. `aapt dump badging` reports package
+A real `assembleRelease` ran from the worktree's Android project through the packager (QuickJS, to
+avoid the missing V8 build receipt; re-run after merging `origin/develop`, so the PRD-221
+align/census runs on the release route): `BUILD SUCCESSFUL`, `4 native libraries 16 KB clean`,
+`ThreeNative Android APK: .../game-release.apk`. `aapt dump badging` reports package
 `com.threenative.game`, `versionCode='1'`, `versionName='0.1.0'`, `targetSdkVersion:'36'`,
-`native-code: 'x86_64'`. The same run with `format: aab` executed `bundleRelease`/`signReleaseBundle`
-and produced a signed `game-release.aab` (`jarsigner -verify` → `jar verified.`). Full hashes and
-signer details are in the phase 3 record.
+`native-code: 'arm64-v8a' 'x86_64'`. The same run with `format: aab` executed
+`bundleRelease`/`signReleaseBundle` and produced a signed `game-release.aab`
+(`jarsigner -verify` → `jar verified.`). Full hashes and signer details are in the phase 3 record.
 
 ## Not run
 

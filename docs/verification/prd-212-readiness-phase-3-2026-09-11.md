@@ -9,7 +9,7 @@ registry install (blocked by the absent PRD-078 prebuilt release) remains.
 
 An independent reviewer (fresh agent, read-only) re-ran the runtime-native packaging and
 manifest suites (24 passed), the create-threenative `build.spec`/`doctor.spec` suites (114 passed),
-verified the APK sha256 `beae53e2…058a` / AAB sha256 `b00fccee…f8af` and the `CN=ThreeNative Test`
+verified the APK sha256 `b094f3b8…3b99` / AAB sha256 `9a0461b3…093d` and the `CN=ThreeNative Test`
 signer, exercised the real `verifyAndroidReleaseArtifact` path against a tampered copy
 (`TN_ANDROID_SIGNATURE_INVALID`) and confirmed all seven negative controls. **Verdict: PASS.** It
 flagged the previous unreachable `/debuggable/` guard; that is now a real `aapt` read-back of the
@@ -60,36 +60,43 @@ pnpm exec tsc --noEmit -p packages/create-threenative/tsconfig.json   # exit 0
 
 The packager was driven for real through the worktree's runtime package and Android project with a
 throwaway keytool keystore (`/tmp/opencode/tn-test-release.jks`, alias `tnrelease`), a source build
-(QuickJS/x86_64, to avoid the missing V8 build receipt), `mode: release`, `format: apk`:
+(QuickJS, to avoid the missing V8 build receipt), `mode: release`, `format: apk`. Re-run after
+merging `origin/develop`, so the PRD-221 16 KB align/census path is active on the release route:
 
 ```text
-BUILD SUCCESSFUL in 1m 53s
-ThreeNative Android APK: /tmp/opencode/tn-build/out/game-release.apk (signed)
+BUILD SUCCESSFUL
+  16 KB ok: lib/arm64-v8a/libSDL3.so (stored, offset 0xdc000, LOAD 0x4000, 0x4000, 0x4000)
+  16 KB ok: lib/arm64-v8a/libmystral-runtime.so (stored, offset 0x2dc000, ...)
+  16 KB ok: lib/x86_64/libSDL3.so (stored, offset 0x1488000, ...)
+  16 KB ok: lib/x86_64/libmystral-runtime.so (stored, offset 0x16b4000, ...)
+ThreeNative Android APK: /tmp/opencode/tn-build/out/game-release.apk — 4 native libraries 16 KB clean, archive offsets confirmed by .../zipalign
 ```
 
-- Artifact `game-release.apk`, 23,544,301 bytes, sha256
-  `beae53e2aa6d3e240560adb802b7c2c3f1257d0c4604affc93187c51fac7058a`.
-- `apksigner verify --print-certs`:
+- Artifact `game-release.apk`, 44,191,135 bytes, sha256
+  `b094f3b863880c9cbc200df5a4ae93b446c113f897d2fe762c1ceb2ef4233b99`.
+- `apksigner verify --print-certs` after the aligner re-signed it:
   `Signer #1 certificate DN: CN=ThreeNative Test, OU=CI, O=ThreeNative, L=X, ST=X, C=US`,
-  `SHA-256 digest: 34cb3c1d65a37748e20af3131fbdefb85e6e5ed40eb3d417d12ba4e45c289a1d`.
+  `SHA-256 digest: 34cb3c1d65a37748e20af3131fbdefb85e6e5ed40eb3d417d12ba4e45c289a1d` — the consumer
+  key survived alignment; it was never replaced by the debug key.
 - `aapt dump badging`: `package: name='com.threenative.game' versionCode='1' versionName='0.1.0'
-  compileSdkVersion='36'`, `sdkVersion:'24'`, `targetSdkVersion:'36'`, `native-code: 'x86_64'`,
-  and no `debuggable` line.
+  compileSdkVersion='36'`, `sdkVersion:'24'`, `targetSdkVersion:'36'`,
+  `native-code: 'arm64-v8a' 'x86_64'`, and no `debuggable` line.
 - Installed on the running API 35 emulator (`adb install -r` → `Success`); `dumpsys package
-  com.threenative.game` reports `versionCode=1 minSdk=24 targetSdk=36`, `versionName=0.1.0`,
-  `primaryCpuAbi=x86_64`; `monkey -p com.threenative.game ... 1` launched it (pid observed).
-  Screenshot: `/tmp/opencode/tn-build/release-on-emulator.png`.
+  com.threenative.game` reports `versionCode=1 minSdk=24 targetSdk=36`; `monkey` launched it
+  (pid observed).
 
-This is the phase-3 user-verification observation (agent-run on the emulator). It does not supply
-the independent reviewer PASS, and it used the engine source checkout rather than a published
-install because PRD-078's prebuilt Android release is still absent.
+This is the phase-3 user-verification observation (agent-run on the emulator). It used the engine
+source checkout rather than a published install because PRD-078's Android prebuilt release is still
+absent.
 
 ## Real signed AAB (2026-09-11)
 
 The same real Gradle path with `format: aab` ran `bundleRelease` and `signReleaseBundle`:
-`BUILD SUCCESSFUL`, `ThreeNative Android AAB: .../game-release.aab (signed)`. Artifact 19,009,649
-bytes, sha256 `b00fcceec802d22960d6a6c9f2b073e0d23896eb36425962fe3902cee544f8af`; `jarsigner -verify`
-reports `jar verified.` and the bundle carries `base/manifest/AndroidManifest.xml`.
+`BUILD SUCCESSFUL`, `ThreeNative Android AAB: .../game-release.aab (signed)`. Artifact
+sha256 `9a0461b3aed4a1b7b607d59ef82e9e20b0fbbf53f5c910c1555d8363f750093d`; `jarsigner -verify`
+reports `jar verified.` and the bundle carries `base/manifest/AndroidManifest.xml`. Re-run after
+merging `origin/develop`; the AAB route skips the APK-only align/census and uses Gradle's bundle
+signing.
 
 ## Not run
 

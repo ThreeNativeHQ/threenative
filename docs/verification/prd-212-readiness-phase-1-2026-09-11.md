@@ -38,14 +38,16 @@ project passes. The revert control is asserted in the test file listed above.
 
 ## Real artifact observation (2026-09-11)
 
-A source build from the worktree's runtime-native package (QuickJS/x86_64 to avoid the missing V8
-build receipt) produced `game-release.apk` (23,544,301 bytes, sha256
-`beae53e2aa6d3e240560adb802b7c2c3f1257d0c4604affc93187c51fac7058a`). `aapt dump badging` reports:
+A source build from the worktree's runtime-native package (QuickJS, to avoid the missing V8 build
+receipt) produced `game-release.apk` (44,191,135 bytes, sha256
+`b094f3b863880c9cbc200df5a4ae93b446c113f897d2fe762c1ceb2ef4233b99`; re-run after merging
+`origin/develop`). `aapt dump badging` reports:
 
 ```text
 package: name='com.threenative.game' versionCode='1' versionName='0.1.0' compileSdkVersion='36'
 sdkVersion:'24'
 targetSdkVersion:'36'
+native-code: 'arm64-v8a' 'x86_64'
 ```
 
 So the packaged subject really carries the API 36 submission level, not just the source text.
