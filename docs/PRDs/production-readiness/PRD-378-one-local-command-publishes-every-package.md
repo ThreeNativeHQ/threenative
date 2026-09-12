@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-377 — One local command publishes every package and its native runtime
+# PRD-378 — One local command publishes every package and its native runtime
 
 **Status:** IN PROGRESS — all three phases implemented, verified and independently reviewed PASS; the cohort published as 0.3.2 with `runtime-native-v0.3.2` and a fresh consumer build verified. The version bump and the published evidence live on branch `prd377/execute-local-release` (PR [#212](https://github.com/ThreeNativeHQ/threenative/pull/212)), which needs a rebase before merge.
 **Complexity:** 7 → HIGH (+2 six-to-ten files, +2 new module, +2 crosses the npm/native release boundary, +1 GitHub release API).
