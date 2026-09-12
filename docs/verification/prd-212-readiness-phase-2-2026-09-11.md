@@ -39,8 +39,17 @@ pnpm exec tsc --noEmit -p packages/create-threenative/tsconfig.json   # exit 0
   rejects with `TN_ANDROID_ARTIFACT_MISSING` — it does not accept `app-debug.apk`.
 - `androidBuildRequest('debug', 'aab')` rejects with `TN_ANDROID_BUILD_UNSUPPORTED` before Gradle.
 
+## Real artifact observation (2026-09-11)
+
+A real `assembleRelease` ran from the worktree's Android project through the packager
+(QuickJS/x86_64 to avoid the missing V8 build receipt): `BUILD SUCCESSFUL`,
+`ThreeNative Android APK: .../game-release.apk (signed)`. `aapt dump badging` reports package
+`com.threenative.game`, `versionCode='1'`, `versionName='0.1.0'`, `targetSdkVersion:'36'`,
+`native-code: 'x86_64'`. Full hash and signer details are in the phase 3 record.
+
 ## Not run
 
-- Independent reviewer PASS and user verification on a device — not run this session.
-- A full Gradle `bundleRelease`/`assembleRelease` against the real SDK — the prebuilt Android
-  release artifacts the consumer path downloads are still absent (PRD-078).
+- Independent reviewer PASS — not requested this session.
+- A real `bundleRelease` AAB and a published-install consumer build — the prebuilt Android release
+  artifacts the consumer path downloads are still absent (PRD-078).
+

@@ -45,9 +45,36 @@ pnpm exec tsc --noEmit -p packages/create-threenative/tsconfig.json   # exit 0
 - The verifier rejects → `TN_ANDROID_SIGNATURE_INVALID`; no verifier is a blocker
   (`TN_ANDROID_SIGNATURE_TOOL_MISSING`), not a pass.
 
+## Real signed artifact (2026-09-11)
+
+The packager was driven for real through the worktree's runtime package and Android project with a
+throwaway keytool keystore (`/tmp/opencode/tn-test-release.jks`, alias `tnrelease`), a source build
+(QuickJS/x86_64, to avoid the missing V8 build receipt), `mode: release`, `format: apk`:
+
+```text
+BUILD SUCCESSFUL in 1m 53s
+ThreeNative Android APK: /tmp/opencode/tn-build/out/game-release.apk (signed)
+```
+
+- Artifact `game-release.apk`, 23,544,301 bytes, sha256
+  `beae53e2aa6d3e240560adb802b7c2c3f1257d0c4604affc93187c51fac7058a`.
+- `apksigner verify --print-certs`:
+  `Signer #1 certificate DN: CN=ThreeNative Test, OU=CI, O=ThreeNative, L=X, ST=X, C=US`,
+  `SHA-256 digest: 34cb3c1d65a37748e20af3131fbdefb85e6e5ed40eb3d417d12ba4e45c289a1d`.
+- `aapt dump badging`: `package: name='com.threenative.game' versionCode='1' versionName='0.1.0'
+  compileSdkVersion='36'`, `sdkVersion:'24'`, `targetSdkVersion:'36'`, `native-code: 'x86_64'`,
+  and no `debuggable` line.
+- Installed on the running API 35 emulator (`adb install -r` → `Success`); `dumpsys package
+  com.threenative.game` reports `versionCode=1 minSdk=24 targetSdk=36`, `versionName=0.1.0`,
+  `primaryCpuAbi=x86_64`; `monkey -p com.threenative.game ... 1` launched it (pid observed).
+  Screenshot: `/tmp/opencode/tn-build/release-on-emulator.png`.
+
+This is the phase-3 user-verification observation (agent-run on the emulator). It does not supply
+the independent reviewer PASS, and it used the engine source checkout rather than a published
+install because PRD-078's prebuilt Android release is still absent.
+
 ## Not run
 
-- A real `apksigner`/`jarsigner` run against a keytool-generated test keystore and a real Gradle
-  release build — the prebuilt Android release artifacts remain absent (PRD-078), so the consumer
-  build cannot complete; the verifier path is exercised through its injectable seam.
-- Independent reviewer PASS and user verification on emulator/device — not run this session.
+- Independent reviewer PASS — not requested this session.
+- The same proof from a published registry install with no engine checkout (blocked on PRD-078).
+

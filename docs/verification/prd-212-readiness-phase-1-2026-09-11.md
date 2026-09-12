@@ -36,10 +36,23 @@ pnpm exec biome check <changed files>   # no errors
 `targetSdk` forced back to 35; it throws `TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION`. The restored
 project passes. The revert control is asserted in the test file listed above.
 
+## Real artifact observation (2026-09-11)
+
+A source build from the worktree's runtime-native package (QuickJS/x86_64 to avoid the missing V8
+build receipt) produced `game-release.apk` (23,544,301 bytes, sha256
+`beae53e2aa6d3e240560adb802b7c2c3f1257d0c4604affc93187c51fac7058a`). `aapt dump badging` reports:
+
+```text
+package: name='com.threenative.game' versionCode='1' versionName='0.1.0' compileSdkVersion='36'
+sdkVersion:'24'
+targetSdkVersion:'36'
+```
+
+So the packaged subject really carries the API 36 submission level, not just the source text.
+
 ## Not run
 
 - Independent reviewer PASS — not requested in this session.
-- User verification on an emulator/device (install, launch, inspect application
-  id/version/targetSdk) — not run in this session; the API 35/36 emulator lane is available locally.
-- A full Gradle build of the bumped project — public release artifacts for the prebuilt Android
-  path are still absent (PRD-078), so the packager's consumer path cannot complete a download.
+- A published-install consumer build — the prebuilt Android release artifacts the consumer path
+  downloads are still absent (PRD-078); the artifact above came from the engine source checkout.
+

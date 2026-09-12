@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-212 — A published game builds signed Android release artifacts
 
-**Status:** PARTIAL — phases 1 (submission SDK 36), 2 (explicit release mode/format) and 3 (consumer signing and fail-closed artifact verification) implemented and locally verified; independent review and device verification remain open, and the consumer end-to-end build still needs the PRD-078 prebuilt Android release. Revised 2026-09-11. An API 35/36 emulator runs locally on KVM, so install, launch and manifest inspection of the built artifact are local checks, not hosted ones.
+**Status:** PARTIAL — phases 1 (submission SDK 36), 2 (explicit release mode/format) and 3 (consumer signing and fail-closed artifact verification) are implemented and locally verified, including a real signed release APK (targetSdk 36) installed and launched on the API 35 emulator on 2026-09-11. The only open per-phase box is the independent reviewer PASS; the public-consumer acceptance still needs the PRD-078 prebuilt Android release. Revised 2026-09-11.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 signing/release-state handling, +1 platform tools).
 **Problem:** The installed Android path depends on absent runtime assets and currently emits only a debug APK with target SDK 35.
 
@@ -66,7 +66,7 @@ sequenceDiagram
 - [x] Callers wired and building: `packages/runtime-native/android/app/build.gradle.kts`, `packages/create-threenative/src/doctor.ts`, `packages/runtime-native/tests/android-manifest-config-changes.test.mjs` — compileSdk/targetSdk 35→36; doctor reads the shipped Gradle requirement; packager refuses a below-floor rendered project.
 - [x] Required test green: `packages/runtime-native/tests/android-manifest-config-changes.test.mjs` — 3 passed (packaged subject declares API 36; revert to 35 throws `TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION`); `doctor.spec.ts` 95 passed; `pnpm typecheck` exit 0.
 - [x] Observed red recorded, then restored green — the revert control is asserted in the same test file.
-- [ ] User verification performed on the named platform — not run this session; emulator lane available.
+- [x] User verification performed on the named platform — agent-run on the API 35 emulator (agent-run, 2026-09-11): source-built release APK installed (`adb install` Success), `dumpsys package` reports `versionCode=1 minSdk=24 targetSdk=36`, and the activity launched. See the phase evidence record.
 - [x] Evidence record written: `docs/verification/prd-212-readiness-phase-1-2026-09-11.md`
 - [ ] Independent reviewer returned PASS — not requested this session.
 
@@ -101,7 +101,7 @@ pnpm exec threenative doctor --text
 - [x] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/android/app/build.gradle.kts` — `--mode/--format` validated in the CLI, mapped to `assembleDebug`/`assembleRelease`/`bundleRelease`, exact artifact selected, debug APK never accepted for a release.
 - [x] Required test green: `packages/create-threenative/__tests__/build.spec.ts` — 18 passed; artifact-level lanes in `tests/android-packaging.integration.test.mjs` (13 passed) build the AAB/APK through the fake Gradle lane.
 - [x] Observed red recorded, then restored green — debug-only wrapper makes a release request fail `TN_ANDROID_ARTIFACT_MISSING`; `debug/aab` fails `TN_ANDROID_BUILD_UNSUPPORTED`.
-- [ ] User verification performed on the named platform — not run this session; emulator lane available.
+- [x] User verification performed on the named platform — agent-run on the API 35 emulator (agent-run, 2026-09-11): source-built release APK installed (`adb install` Success), `dumpsys package` reports `versionCode=1 minSdk=24 targetSdk=36`, and the activity launched. See the phase evidence record.
 - [x] Evidence record written: `docs/verification/prd-212-readiness-phase-2-2026-09-11.md`
 - [ ] Independent reviewer returned PASS — not requested this session.
 
@@ -136,7 +136,7 @@ pnpm exec threenative build --target android --mode release --format aab
 - [x] Callers wired and building: `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/android/app/build.gradle.kts`, `packages/runtime-native/tests/android-packaging.integration.test.mjs`, `packages/create-threenative/src/build.ts`, `packages/runtime-native/README.md` — property-backed signing, consumer-relative keystore resolution, fail-closed artifact verification.
 - [x] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs` — signed release path plus incomplete/unsigned/tampered/missing-verifier controls (24 tests passed with the phase-1 test file); `build.spec.ts`+`doctor.spec.ts` 114 passed.
 - [x] Observed red recorded, then restored green — incomplete signing, unsigned output, verifier rejection and missing verifier each fail by name.
-- [ ] User verification performed on the named platform — not run this session; emulator lane available.
+- [x] User verification performed on the named platform — agent-run on the API 35 emulator (agent-run, 2026-09-11): source-built release APK installed (`adb install` Success), `dumpsys package` reports `versionCode=1 minSdk=24 targetSdk=36`, and the activity launched. See the phase evidence record.
 - [x] Evidence record written: `docs/verification/prd-212-readiness-phase-3-2026-09-11.md`
 - [ ] Independent reviewer returned PASS — not requested this session.
 
