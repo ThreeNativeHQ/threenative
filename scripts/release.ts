@@ -344,11 +344,15 @@ async function main(argv: readonly string[]): Promise<void> {
 
   // Assemble the native payload before any npm publish: a declared key with no staged binary must
   // refuse the whole release while nothing irreversible has happened, not after the cohort is up.
+  // When the tag already exists — the CI npm lane runs against the native lane's release — this is
+  // skipped, so a scoped host-only lock never clobbers the official full-cohort one.
   let native: INativeStaged | undefined;
   if (willCreateNativeRelease) {
-    native = await stageNativeRelease({ repo: REPO });
+    native = await stageNativeRelease({ repo: REPO, skipIfReleased: true });
     process.stdout.write(
-      `\nStaged ${native.keys.length} native asset(s) for ${native.tag} in ${native.directory}.\n`,
+      native === undefined
+        ? "\nA native release already exists for this version; leaving it untouched.\n"
+        : `\nStaged ${native.keys.length} native asset(s) for ${native.tag} in ${native.directory}.\n`,
     );
   }
 

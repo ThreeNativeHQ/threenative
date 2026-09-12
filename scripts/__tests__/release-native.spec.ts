@@ -123,7 +123,10 @@ describe("pnpm release:native publishing", () => {
   it("accepts a scoped lock that carries this host's key and refuses one that omits it", () => {
     const url = `https://github.com/${REPOSITORY}/releases/download/${TAG}/prebuilt-lock.json`;
     const hostKey = `${process.platform}-${process.arch}`;
+    if (!["darwin-arm64", "linux-x64", "win32-x64"].includes(hostKey)) return;
     expect(scopedPrebuiltLockFindings(scopedLock([hostKey]), url)).toEqual([]);
+    // A present-but-unreadable lock is not a pass: the question was not answered.
+    expect(scopedPrebuiltLockFindings(undefined, url)[0]?.severity).toBe("blocked");
     const omitted = scopedPrebuiltLockFindings(
       scopedLock([hostKey === "linux-x64" ? "win32-x64" : "linux-x64"]),
       url,
@@ -131,6 +134,18 @@ describe("pnpm release:native publishing", () => {
     expect(omitted).toHaveLength(1);
     expect(omitted[0]?.severity).toBe("fail");
     expect(omitted[0]?.detail).toContain(hostKey);
+  });
+
+  it("skips staging when the release already exists, so a scoped lock cannot clobber the official one", async () => {
+    const { stageNativeRelease } = await import("../release-native-local.js");
+    const calls: string[] = [];
+    const exec = ((_file: string, args: readonly string[]) => {
+      calls.push(args.join(" "));
+      return "";
+    }) as NativeExec;
+    const result = await stageNativeRelease({ exec, repo: process.cwd(), skipIfReleased: true });
+    expect(result).toBeUndefined();
+    expect(calls[0]).toContain("release view");
   });
 
   it("runs the native step after the npm publish, and staging before it", () => {

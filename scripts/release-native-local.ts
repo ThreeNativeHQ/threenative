@@ -56,33 +56,47 @@ export function nativeReleaseTag(repo = REPO): string {
   return `runtime-native-v${manifest.version}`;
 }
 
-/**
- * Stage the host payload for the current version, or only the named keys.
- *
- * The assembler is plain `.mjs` (it ships to disk untranspiled), so it is imported through a URL
- * rather than a static specifier.
- */
-export async function stageNativeRelease(
-  options: {
-    readonly directory?: string;
-    readonly keys?: readonly string[];
-    readonly repo?: string;
-    readonly sourceSha?: string;
-  } = {},
-): Promise<INativeStaged> {
-  const module = (await import(new URL("./release-native-local.mjs", import.meta.url).href)) as {
-    stageLocalPayload: (input: Readonly<Record<string, unknown>>) => INativeStaged;
-  };
-  return module.stageLocalPayload({ repo: options.repo ?? REPO, ...options });
-}
-
-function releaseExists(exec: NativeExec, repository: string, tag: string): boolean {
+/** Whether the tag already exists on GitHub. An unanswerable check is treated as absent. */
+export function nativeReleaseExists(
+  repository: string,
+  tag: string,
+  exec: NativeExec = execFileSync as unknown as NativeExec,
+): boolean {
   try {
     exec("gh", ["release", "view", tag, "--repo", repository], { stdio: "pipe" });
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Stage the host payload for the current version, or only the named keys.
+ *
+ * `skipIfReleased` returns `undefined` when the tag already exists, so a CI release lane that
+ * publishes npm against a native release it (or the native lane) already produced never re-stages:
+ * the official full-cohort lock must not be clobbered by a scoped host-only one. The assembler is
+ * plain `.mjs` (it ships to disk untranspiled), so it is imported through a URL.
+ */
+export async function stageNativeRelease(
+  options: {
+    readonly directory?: string;
+    readonly exec?: NativeExec;
+    readonly keys?: readonly string[];
+    readonly repo?: string;
+    readonly skipIfReleased?: boolean;
+    readonly sourceSha?: string;
+  } = {},
+): Promise<INativeStaged | undefined> {
+  const module = (await import(new URL("./release-native-local.mjs", import.meta.url).href)) as {
+    RELEASE_REPOSITORY: string;
+    stageLocalPayload: (input: Readonly<Record<string, unknown>>) => INativeStaged;
+  };
+  if (options.skipIfReleased === true) {
+    const tag = nativeReleaseTag(options.repo ?? REPO);
+    if (nativeReleaseExists(module.RELEASE_REPOSITORY, tag, options.exec)) return undefined;
+  }
+  return module.stageLocalPayload({ repo: options.repo ?? REPO, ...options });
 }
 
 /**
@@ -121,7 +135,7 @@ export function uploadNativeRelease(options: INativeUploadOptions): INativeUploa
       `TN_RELEASE_NATIVE_ASSET_MISSING: '${missing.join("', '")}' is declared in the lock but not staged. Nothing was published.`,
     );
   const assets = entries.filter((name) => name !== LOCK_NAME).sort();
-  const created = !releaseExists(exec, options.repository, options.tag);
+  const created = !nativeReleaseExists(options.repository, options.tag, exec);
   if (created)
     exec(
       "gh",
@@ -168,6 +182,10 @@ function parseArgs(argv: readonly string[]): { upload: boolean } {
 async function main(argv: readonly string[]): Promise<void> {
   const { upload } = parseArgs(argv);
   const staged = await stageNativeRelease({ repo: REPO });
+  if (staged === undefined) {
+    process.stdout.write("The native release already exists; nothing to stage.\n");
+    return;
+  }
   process.stdout.write(
     `Staged ${staged.keys.length} native asset(s) for ${staged.tag} in ${staged.directory}:\n` +
       `${staged.keys.map((key) => `  - ${key}`).join("\n")}\n`,

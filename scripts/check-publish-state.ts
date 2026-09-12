@@ -371,7 +371,6 @@ export type PrebuiltLockProvider = (url: string) => unknown;
  * would install was indistinguishable from a complete one. The key is present or it is not.
  */
 export function scopedPrebuiltLockFindings(lock: unknown, url: string): readonly IPublishFinding[] {
-  if (typeof lock !== "object" || lock === null) return [];
   let key: string;
   try {
     key = platformKey();
@@ -379,8 +378,19 @@ export function scopedPrebuiltLockFindings(lock: unknown, url: string): readonly
     // A host without a published runtime row cannot ask this question; the strict default still runs.
     return [];
   }
+  const blocked = { package: "@threenative/runtime-native", severity: "blocked" as const };
+  if (typeof lock !== "object" || lock === null || Array.isArray(lock))
+    return [
+      {
+        ...blocked,
+        detail: `The prebuilt lock at ${url} could not be read, so whether it advertises '${key}' is unknown.`,
+      },
+    ];
   const artifacts = (lock as { artifacts?: unknown }).artifacts;
-  if (typeof artifacts !== "object" || artifacts === null || Array.isArray(artifacts)) return [];
+  if (typeof artifacts !== "object" || artifacts === null || Array.isArray(artifacts))
+    return [
+      { ...blocked, detail: `The prebuilt lock at ${url} carries no readable artifacts object.` },
+    ];
   if (Object.hasOwn(artifacts, key)) return [];
   return [
     {

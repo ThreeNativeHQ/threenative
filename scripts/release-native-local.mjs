@@ -26,6 +26,9 @@ import {
   toolsKey,
 } from "../packages/runtime-native/scripts/install-prebuilt.mjs";
 
+/** Re-exported so the CLI checks one repository with the lock it publishes. */
+export { RELEASE_REPOSITORY };
+
 export const DEFAULT_REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const HOST_PRESETS = Object.freeze({ darwin: "tn-macos", linux: "tn-linux", win32: "tn-windows" });

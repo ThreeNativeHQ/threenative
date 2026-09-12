@@ -126,8 +126,9 @@ function isLoopbackFixture(url) {
  */
 function declaredRequiredKeys(manifest) {
   if (manifest.requiredKeys === undefined) return undefined;
-  if (!Array.isArray(manifest.requiredKeys) || manifest.requiredKeys.some((key) => typeof key !== 'string')) {
-    throw new Error('Prebuilt manifest requiredKeys must be an array of prebuilt release keys.');
+  if (!Array.isArray(manifest.requiredKeys) || manifest.requiredKeys.length === 0 ||
+      manifest.requiredKeys.some((key) => typeof key !== 'string')) {
+    throw new Error('Prebuilt manifest requiredKeys must be a non-empty array of prebuilt release keys.');
   }
   for (const key of manifest.requiredKeys) {
     if (!Object.hasOwn(PREBUILT_ASSET_NAMES, key)) {
