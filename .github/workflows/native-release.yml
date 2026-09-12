@@ -276,7 +276,6 @@ jobs:
             < scripts/__tests__/native-release-proof.spec.ts > "$target/native-release-proof.spec.ts"
           pnpm exec tsx scripts/generate-retention-index.ts
           cp docs/benchmark/SCREENSHOT-RETENTION.md "$target/SCREENSHOT-RETENTION.md"
-          git restore docs/benchmark/SCREENSHOT-RETENTION.md
       - name: Retain exact-candidate prerequisite diagnostics
         uses: actions/upload-artifact@v7
         if: always()

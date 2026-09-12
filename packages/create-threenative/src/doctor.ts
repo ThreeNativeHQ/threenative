@@ -20,6 +20,7 @@ import { pathToFileURL } from "node:url";
 // node builtins, so inlining it adds no runtime dependency to the published `create-threenative`.
 import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
 
+import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { loadConfig } from "./config.js";
 import {
   type IMcpPackage,
@@ -38,6 +39,42 @@ import {
  */
 
 export type DoctorStatus = "ok" | "warn" | "fail";
+
+/** The targets `threenative build --target` accepts; doctor scopes its diagnosis to the same set. */
+export type DoctorTarget = "android" | "desktop" | "ios" | "web";
+
+/** The build modes PRD-212 defines for `threenative build`; only release adds signing inputs. */
+export type DoctorMode = "debug" | "release";
+
+/**
+ * What the developer said they are about to build. Absent means the legacy unscoped report: every
+ * target is described, none of them decides the exit code.
+ */
+export interface IDoctorRequest {
+  readonly mode?: DoctorMode;
+  readonly target?: DoctorTarget;
+}
+
+/**
+ * The Gradle project properties an Android *release* needs, in their environment transport spelling.
+ * Release signing is owned by the game, never by the engine, so doctor only reports whether the
+ * developer supplied them — it never reads a value, and never prints one.
+ *
+ * `packages/runtime-native/scripts/package-android.mjs` (PRD-212 phase 3) is the consumer that
+ * must read the same four names; this constant is the single place they are spelled.
+ *
+ * **Nothing reads them yet.** On `main` the Android packager contains no `ORG_GRADLE_PROJECT_`
+ * string and only runs `assembleDebug`, so today these are a forecast of PRD-212's contract, not a
+ * description of a build that exists. When PRD-212 lands, either it reads exactly these four or
+ * this constant changes with it in the same PR — the two drifting apart is how doctor would start
+ * predicting a prerequisite no build has.
+ */
+export const ANDROID_RELEASE_SIGNING_ENV = [
+  "ORG_GRADLE_PROJECT_threenativeKeystore",
+  "ORG_GRADLE_PROJECT_threenativeKeystoreAlias",
+  "ORG_GRADLE_PROJECT_threenativeKeystorePassword",
+  "ORG_GRADLE_PROJECT_threenativeKeyPassword",
+] as const;
 
 export interface IDoctorCheck {
   readonly detail: string;
@@ -70,6 +107,8 @@ export interface IProjectSnapshot {
   readonly desktopOverlay?: IDesktopOverlayProbe;
   /** Optional seams used by the diagnostic checks and by deterministic unit fixtures. */
   readonly androidToolchain?: IAndroidToolchainProbe;
+  /** The build environment, read only for the presence of declared signing property names. */
+  readonly environment?: NodeJS.ProcessEnv;
   /** Blender discovery, injected so the check is testable on a machine either way. */
   readonly blender?: IBlenderProbe;
   readonly directoryWritable?: (relative: string) => boolean | undefined;
@@ -153,6 +192,83 @@ export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SE
 const ASSET_DOWNLOAD_DIRECTORIES = ["public/assets", "public/audio"] as const;
 /** The model sources `blenderImportPass` owns; kept equal to `BLENDER_SOURCE_EXTENSIONS`. */
 const BLENDER_SOURCE_SUFFIXES = [".fbx", ".blend", ".obj", ".dae"] as const;
+
+/** The configured name of the server that drives Blender, derived from the one table rather than
+ * spelled again: a renamed server must not leave the conversion check silently probing nothing. */
+const BLENDER_PACKAGE = ((): IMcpPackage => {
+  const declared = MCP_PACKAGES.blender;
+  if (declared === undefined) {
+    throw new Error("TN_DOCTOR_MCP_TABLE: MCP_PACKAGES declares no 'blender' package.");
+  }
+  return declared;
+})();
+
+/** The configured name of the server whose shim is `blender.mjs`, matched on the shim rather than
+ * on the package name: this server resolves to `@threenative/core`, like the engine one, so the
+ * package name identifies neither. Derived from the one table so a rename cannot leave the
+ * conversion check silently probing a server that is no longer there. */
+export const BLENDER_SERVER = ((): string => {
+  const entry = Object.entries(MCP_SERVERS).find(
+    ([, server]) => serverPackageKey(server) === "blender",
+  );
+  if (entry === undefined) {
+    throw new Error("TN_DOCTOR_MCP_TABLE: no configured MCP server launches blender.mjs.");
+  }
+  return entry[0];
+})();
+
+/** The part of one installer host entry doctor reads. */
+interface IMcpHost {
+  readonly file: string;
+  readonly format: string;
+  readonly id: string;
+  readonly label: string;
+}
+
+/**
+ * The project-scoped hosts `@threenative/core`'s postinstall writes, read from the installer's own
+ * table rather than retyped. Doctor used to inspect `.mcp.json` alone, so a game opened in VS
+ * Code, Zed or opencode was told capability search was ready on the strength of a file that host
+ * never reads.
+ */
+const MCP_HOST_TABLE: readonly IMcpHost[] = MCP_HOSTS as readonly IMcpHost[];
+
+/** Hosts that read only a machine-wide config, so no project install can wire them. The installer
+ * excludes them by rule; doctor names them so the gap is stated rather than silent. */
+const MANUAL_GLOBAL_MCP_HOSTS: readonly string[] = Object.freeze([
+  "Windsurf",
+  "Cline",
+  "Amp",
+  "the JetBrains assistants",
+]);
+
+/** This list is prose in the installer, not data, so it is the one thing here that is retyped.
+ * The guard is the compensation: the day core starts wiring one of these project-scoped, the
+ * sentence doctor prints becomes false, and this throws instead of printing it. */
+for (const host of MCP_HOSTS as readonly IMcpHost[]) {
+  const claimed = MANUAL_GLOBAL_MCP_HOSTS.find(
+    (name) => host.label.toLowerCase() === name.toLowerCase(),
+  );
+  if (claimed !== undefined) {
+    throw new Error(
+      `TN_DOCTOR_MCP_TABLE: '${claimed}' is wired project-scoped now, so doctor must stop calling it machine-wide only.`,
+    );
+  }
+}
+
+/**
+ * The hosts whose config doctor can validate by shape, not merely by name.
+ *
+ * `mcpServerMatches` knows one server shape — the `mcpServers` table Claude Code, Cursor and the
+ * Gemini CLI all read. VS Code, Zed, opencode and Codex each spell a server differently, and
+ * reproducing those four here would be a second copy of the installer's `SERVER_FORMATS`. So the
+ * per-server checks read the formats they can actually verify, and the ones they cannot are
+ * reported by name presence in `editor activation` instead. Both facts are stated; neither is
+ * inflated into the other.
+ */
+const SHAPE_VERIFIABLE_HOSTS: readonly IMcpHost[] = (MCP_HOSTS as readonly IMcpHost[]).filter(
+  ({ format }) => format === "mcpServers",
+);
 
 type CompositorProbe = (environment: NodeJS.ProcessEnv) => boolean | undefined;
 
@@ -324,41 +440,72 @@ function mcpServerMatches(spec: IMcpServerSpec, value: unknown): boolean {
   );
 }
 
-function mcpConfig(
+function readServerTable(
   snapshot: IProjectSnapshot,
-):
-  | { readonly kind: "missing" }
-  | { readonly kind: "malformed"; readonly detail: string }
-  | { readonly kind: "ready"; readonly servers: Record<string, unknown> } {
-  if (!snapshot.files.has(".mcp.json")) return { kind: "missing" };
-  const source = snapshot.readText(".mcp.json");
-  if (source === undefined) return { detail: ".mcp.json could not be read", kind: "malformed" };
+  host: IMcpHost,
+): { readonly detail: string } | { readonly servers: Record<string, unknown> } {
+  const source = snapshot.readText(host.file);
+  if (source === undefined) return { detail: `${host.file} could not be read` };
   let parsed: unknown;
   try {
     parsed = JSON.parse(source) as unknown;
   } catch (error) {
     return {
-      detail: `invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-      kind: "malformed",
+      detail: `${host.file} is invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-  const root = record(parsed);
-  const servers = record(root?.mcpServers);
+  const servers = record(record(parsed)?.mcpServers);
   return servers === undefined
-    ? { detail: "missing an object-valued mcpServers property", kind: "malformed" }
-    : { kind: "ready", servers };
+    ? { detail: `${host.file} is missing an object-valued mcpServers property` }
+    : { servers };
+}
+
+/**
+ * The server table to diagnose, from whichever supported host config carries one.
+ *
+ * Keyed to `.mcp.json` alone, this failed a correctly wired Cursor-only project: `capability
+ * search` reported "no .mcp.json" and exited 1 beside an `editor activation` line that had just
+ * found the servers in `.cursor/mcp.json`. Two checks contradicting each other about the same
+ * project. It now reads every host whose format this file can actually validate, in the
+ * installer's own order, and takes the one carrying the most ThreeNative servers — not merely the
+ * first that parses, which reported "0 of 4 servers resolve" on a project whose other six configs
+ * were correctly wired and whose `.mcp.json` held the user's own unrelated table.
+ */
+function mcpConfig(
+  snapshot: IProjectSnapshot,
+):
+  | { readonly kind: "missing" }
+  | { readonly kind: "malformed"; readonly detail: string }
+  | { readonly kind: "ready"; readonly host: IMcpHost; readonly servers: Record<string, unknown> } {
+  const present = SHAPE_VERIFIABLE_HOSTS.filter(({ file }) => snapshot.files.has(file));
+  if (present.length === 0) return { kind: "missing" };
+  const malformed: string[] = [];
+  const parsed: { host: IMcpHost; servers: Record<string, unknown> }[] = [];
+  for (const host of present) {
+    const result = readServerTable(snapshot, host);
+    if ("servers" in result) parsed.push({ host, servers: result.servers });
+    else malformed.push(result.detail);
+  }
+  if (parsed.length === 0) return { detail: malformed.join("; "), kind: "malformed" };
+  const wired = ({ servers }: { servers: Record<string, unknown> }): number =>
+    MCP_SERVER_SPECS.filter(({ configName }) => servers[configName] !== undefined).length;
+  // First by how many ThreeNative servers the table actually carries, then by the installer's own
+  // host order, which `present` preserves.
+  const best = parsed.reduce((left, right) => (wired(right) > wired(left) ? right : left));
+  return { host: best.host, kind: "ready", servers: best.servers };
 }
 
 function mcpServerCheck(
   snapshot: IProjectSnapshot,
   spec: IMcpServerSpec,
   value: unknown,
+  file: string,
 ): IDoctorCheck {
   const name = `capability search: ${spec.packageName}`;
   if (value === undefined) {
     return {
-      detail: `${spec.configName} is missing from .mcp.json; expected ${spec.packageName}@${spec.version}`,
-      fix: "Restore the server entry from the generated .mcp.json.",
+      detail: `${spec.configName} is missing from ${file}; expected ${spec.packageName}@${spec.version}`,
+      fix: `Restore the server entry in ${file}, which @threenative/core generates.`,
       name,
       status: "fail",
     };
@@ -366,7 +513,7 @@ function mcpServerCheck(
   if (!mcpServerMatches(spec, value)) {
     return {
       detail: `${spec.configName} is hand-edited or malformed; expected ${JSON.stringify(expectedMcpServer(spec))}`,
-      fix: "Restore the generated .mcp.json entry so the ThreeNative shim and asset directories remain wired.",
+      fix: `Restore the generated ${file} entry so the ThreeNative shim and asset directories remain wired.`,
       name,
       status: "fail",
     };
@@ -412,7 +559,7 @@ function mcpServerCheck(
   }
   if (installedVersion !== spec.version) {
     return {
-      detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}; the .mcp.json fallback is ${spec.packageName}@${spec.version}`,
+      detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}; the ${file} fallback is ${spec.packageName}@${spec.version}`,
       fix: `Install ${spec.packageName}@${spec.version} so the capability contract is version-matched.`,
       name,
       status: "warn",
@@ -490,15 +637,20 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
   return { detail: `transport initialized and advertised ${tools.length} tool(s)`, status: "ok" };
 }
 
-function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
+function mcpSummary(serverChecks: readonly IDoctorCheck[], host: IMcpHost): IDoctorCheck {
   const failed = serverChecks.filter(({ status }) => status === "fail").length;
   const warned = serverChecks.filter(({ status }) => status === "warn").length;
   const status: DoctorStatus = failed > 0 ? "fail" : warned > 0 ? "warn" : "ok";
   return {
+    // Transport, and only transport. A server that starts is a server that answers `tools/list`;
+    // whether the application one of its tools drives is installed is a separate fact, reported by
+    // `model conversion`. The old wording — "all three configured MCP servers resolve" — claimed a
+    // complete authoring toolchain, and had also been wrong about the count since the fourth
+    // server landed.
     detail:
       status === "ok"
-        ? "all three configured MCP servers resolve"
-        : `${serverChecks.length - failed - warned} server(s) resolve; ${warned} reachable by npx only; ${failed} malformed or missing`,
+        ? `all ${serverChecks.length} servers in ${host.file} resolve; transport only, external applications are reported separately`
+        : `${serverChecks.length - failed - warned} of ${serverChecks.length} server(s) in ${host.file} resolve; ${warned} reachable by npx only; ${failed} malformed or missing; transport only, external applications are reported separately`,
     fix: status === "ok" ? undefined : "Inspect the per-server capability search checks below.",
     name: "capability search",
     status,
@@ -507,31 +659,48 @@ function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
 
 function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorCheck[] {
   const config = mcpConfig(snapshot);
-  if (config.kind === "missing") {
+  const verifiable = SHAPE_VERIFIABLE_HOSTS.map(({ file }) => file).join(", ");
+  if (config.kind === "missing" || config.kind === "malformed") {
+    // A host doctor cannot validate by shape may still be wired; `editor activation` is the check
+    // that can see it, and saying so beats a bare "no .mcp.json" on a working Zed project. This
+    // rescue applies to an unreadable table as much as to an absent one — a single corrupt
+    // .mcp.json must not hard-fail a project whose other hosts carry the servers.
+    const elsewhere = MCP_HOST_TABLE.filter((host) => hostWiring(snapshot, host) === "wired").map(
+      ({ label }) => label,
+    );
+    const cause =
+      config.kind === "missing"
+        ? `no server table this check can validate (${verifiable})`
+        : `no readable server table: ${config.detail}`;
+    if (elsewhere.length > 0) {
+      return [
+        {
+          detail: `${cause}; ${elsewhere.join(", ")} carry the servers in a format only 'editor activation' reads`,
+          fix: `Reinstall @threenative/core if you also want ${verifiable} wired; an agent in ${elsewhere[0]} already has capability search.`,
+          name: "capability search",
+          status: "warn",
+        },
+      ];
+    }
     return [
       {
         detail:
-          "no .mcp.json, so an agent here cannot search engine capabilities and will hand-write what exists",
-        fix: "Restore the .mcp.json a scaffolded project ships, which wires the ThreeNative MCP servers.",
-        name: "capability search",
-        status: "fail",
-      },
-    ];
-  }
-  if (config.kind === "malformed") {
-    return [
-      {
-        detail: `.mcp.json is malformed: ${config.detail}`,
-        fix: "Restore a valid generated .mcp.json, preserving any unrelated servers.",
+          config.kind === "missing"
+            ? `no ${verifiable}, so an agent here cannot search engine capabilities and will hand-write what exists`
+            : cause,
+        fix:
+          config.kind === "missing"
+            ? "Restore the .mcp.json a scaffolded project ships, which wires the ThreeNative MCP servers."
+            : "Restore a valid generated config, preserving any unrelated servers.",
         name: "capability search",
         status: "fail",
       },
     ];
   }
   const serverChecks = MCP_SERVER_SPECS.map((spec) =>
-    mcpServerCheck(snapshot, spec, config.servers[spec.configName]),
+    mcpServerCheck(snapshot, spec, config.servers[spec.configName], config.host.file),
   );
-  return [mcpSummary(serverChecks), ...serverChecks];
+  return [mcpSummary(serverChecks, config.host), ...serverChecks];
 }
 
 function readJsonSync(file: string): unknown {
@@ -632,26 +801,47 @@ function assetPipelineCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   };
 }
 
-function androidToolchainStatus(probe: IAndroidToolchainProbe): IDoctorCheck {
+/**
+ * The toolchain report, with its met and unmet requirements kept apart.
+ *
+ * `details` is everything, for the standing `android toolchain` line. `blockers` is only what
+ * would stop a build, because a prediction that lists `Android SDK platform android-35 2 found`
+ * among the reasons a build cannot start is not a prediction anyone can act on.
+ */
+function androidToolchainFacts(probe: IAndroidToolchainProbe): {
+  readonly blockers: readonly string[];
+  readonly details: readonly string[];
+  readonly status: DoctorStatus;
+} {
   const details: string[] = [];
+  const blockers: string[] = [];
   let status: DoctorStatus = probe.status ?? "ok";
   if (probe.jdkVersion === undefined || probe.jdkMajor === undefined) {
-    details.push(`JDK not found; Android builds require JDK ${ANDROID_JDK_MAJOR}`);
+    const blocker = `JDK not found; Android builds require JDK ${ANDROID_JDK_MAJOR}`;
+    details.push(blocker);
+    blockers.push(blocker);
     status = "warn";
   } else if (probe.jdkMajor !== ANDROID_JDK_MAJOR) {
-    details.push(
-      `JDK ${probe.jdkVersion} found; Android builds support JDK ${ANDROID_JDK_MAJOR} only`,
-    );
+    const blocker = `JDK ${probe.jdkVersion} found; Android builds support JDK ${ANDROID_JDK_MAJOR} only`;
+    details.push(blocker);
+    blockers.push(blocker);
     status = "warn";
   } else {
     details.push(`JDK ${probe.jdkVersion} found (supported JDK ${ANDROID_JDK_MAJOR})`);
   }
   if (probe.sdkVersion === undefined) {
-    details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} not found`);
+    const blocker = `Android SDK platform android-${ANDROID_COMPILE_SDK} not found`;
+    details.push(blocker);
+    blockers.push(blocker);
     status = "warn";
   } else {
     details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} ${probe.sdkVersion} found`);
   }
+  return { blockers, details, status };
+}
+
+function androidToolchainStatus(probe: IAndroidToolchainProbe): IDoctorCheck {
+  const { details, status } = androidToolchainFacts(probe);
   return {
     detail: details.join("; "),
     fix:
@@ -1200,16 +1390,166 @@ function iosTargetCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   };
 }
 
+/**
+ * Why a requested build cannot start, in the order the build itself would hit it.
+ *
+ * The defect this closes: every target check answered "is the packager installed?", so a project
+ * whose runtime download 404'd and whose only JDK was unsupported still read `available` with a
+ * warning beside it. A warning is not a prediction. When the developer names the build they are
+ * about to run, a missing prerequisite for *that* build is a failure.
+ */
+function requestedBuildBlockers(
+  snapshot: IProjectSnapshot,
+  request: Required<Pick<IDoctorRequest, "target">> & IDoctorRequest,
+  nativeRuntime: IDoctorCheck,
+): readonly string[] {
+  const blockers: string[] = [];
+  if (request.target === "web") {
+    if (!snapshot.files.has("src/main.ts")) blockers.push("src/main.ts is missing");
+    return blockers;
+  }
+  // Every native target ships the downloaded runtime; its install status is the download's receipt.
+  if (nativeRuntime.status !== "ok")
+    blockers.push(nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
+  // The thing the native host actually starts. Left out, a project with no portable entry read
+  // `buildable — android` on a supported JDK while the build it predicted cannot start at all.
+  const nativeEntry = nativeEntryCheck(snapshot);
+  if (nativeEntry.status === "fail") blockers.push(nativeEntry.detail);
+  if (request.target === "desktop") {
+    // The phase names overlay capability among the prerequisites that must prevent a buildable
+    // result. A desktop game whose overlay cannot start is not a desktop build that works.
+    const overlay = snapshot.desktopOverlay;
+    if (overlay?.status === "fail") blockers.push(overlay.detail);
+    return blockers;
+  }
+  if (request.target === "ios") {
+    if (process.platform !== "darwin" || process.arch !== "arm64")
+      blockers.push(
+        `iOS packaging requires darwin-arm64; this host is ${process.platform}-${process.arch}`,
+      );
+    else if (!runtimeFileAvailable(snapshot, "scripts/package-ios.mjs"))
+      blockers.push(`${RUNTIME_PACKAGE} has no iOS packager`);
+    return blockers;
+  }
+  if (!runtimeFileAvailable(snapshot, "scripts/package-android.mjs"))
+    blockers.push(`${RUNTIME_PACKAGE} has no Android packager`);
+  const androidToolchain =
+    snapshot.androidToolchain ??
+    (snapshot.projectRoot === undefined ? undefined : probeAndroidToolchain());
+  if (androidToolchain === undefined) blockers.push("the Android toolchain was not probed");
+  else blockers.push(...androidToolchainFacts(androidToolchain).blockers);
+  if (request.mode === "release") {
+    // Presence only: doctor never reads a signing value, so a wrong password is the build's red,
+    // not a diagnosis this command can honestly make.
+    const environment = snapshot.environment ?? {};
+    const missing = ANDROID_RELEASE_SIGNING_ENV.filter(
+      (name) => (environment[name] ?? "").trim().length === 0,
+    );
+    if (missing.length > 0)
+      blockers.push(`release signing inputs are not set: ${missing.join(", ")}`);
+  }
+  return blockers;
+}
+
+function requestedBuildCheck(
+  snapshot: IProjectSnapshot,
+  request: IDoctorRequest,
+  nativeRuntime: IDoctorCheck,
+): IDoctorCheck | undefined {
+  const { target } = request;
+  if (target === undefined) return undefined;
+  const scope = `${target}${request.mode === undefined ? "" : ` ${request.mode}`}`;
+  const blockers = requestedBuildBlockers(snapshot, { ...request, target }, nativeRuntime);
+  if (blockers.length === 0)
+    return { detail: `buildable — ${scope}`, name: "requested build", status: "ok" };
+  return {
+    detail: `not buildable — ${scope}: ${blockers.join("; ")}`,
+    fix:
+      target === "android"
+        ? `Install JDK ${ANDROID_JDK_MAJOR} and Android SDK platform android-${ANDROID_COMPILE_SDK}, reinstall ${RUNTIME_PACKAGE} so its prebuilt downloads${request.mode === "release" ? `, and export ${ANDROID_RELEASE_SIGNING_ENV.join(", ")} from the game's build environment` : ""}.`
+        : `Resolve the cause above, then run 'threenative doctor --target ${target}' again.`,
+    name: "requested build",
+    status: "fail",
+  };
+}
+
+/**
+ * A named target's own prerequisites never veto a build of a different target: an Android request
+ * must not demand iOS evidence, and a broken desktop runtime must not fail a web build. Unrequested
+ * targets stay in the report — they are still useful — but they stop voting on the exit code.
+ */
+
+/**
+ * Which build each standing prerequisite check belongs to, for the same reason `unrequestedTarget`
+ * exists: a request narrows what decides the exit code. `native runtime` is a prerequisite of
+ * every native target and of none of the web one; `desktop overlay` is desktop's alone. A check
+ * absent from this table belongs to the project rather than to a target, and always votes.
+ */
+const TARGET_PREREQUISITE_OWNERS: Readonly<Record<string, readonly DoctorTarget[]>> = Object.freeze(
+  {
+    "desktop overlay": Object.freeze(["desktop"] as const),
+    // Its own words are "so a native build has nothing to start"; a web build starts src/main.ts.
+    "native entry": Object.freeze(["android", "desktop", "ios"] as const),
+    "native runtime": Object.freeze(["android", "desktop", "ios"] as const),
+  },
+);
+
+function unrequestedTarget(check: IDoctorCheck): IDoctorCheck {
+  return check.status === "fail" ? { ...check, status: "warn" } : check;
+}
+
+/**
+ * The requested target may not describe itself as `available` while the build of it cannot start.
+ *
+ * A target line says "is the packager installed?", which is a true and much weaker fact than "can
+ * this build run?". Beside an explicit `--target android` that answer still *appears* ready, which
+ * is the exact wording the acceptance criteria forbid, so the requested target borrows the
+ * verdict's word. Unrequested targets keep the weaker fact: nobody asked them to predict anything.
+ */
+function requestedTarget(
+  check: IDoctorCheck,
+  requestedBuild: IDoctorCheck | undefined,
+): IDoctorCheck {
+  if (requestedBuild?.status !== "fail") return check;
+  // Two shapes say "available": `available — <facts>` for web, Android and iOS, and
+  // `available (linux-x64)` for desktop, which borrows the native runtime's own line. Matching
+  // only the first left `✓ target desktop: available (linux-x64)` standing beside
+  // `✗ requested build: not buildable — desktop: no compositor is running` — the exact
+  // contradiction this function exists to remove, on the one target whose prerequisite (the
+  // overlay) fails most often.
+  // `available (linux-x64)` keeps its parentheses through a naive capture, so the desktop line read
+  // `probed: (linux-x64)` — a truncation rather than a fact. Unwrap that shape.
+  const probed = /^available(?: — (?<facts>.+)| \((?<key>[^)]+)\))$/su.exec(check.detail)?.groups;
+  const facts = probed?.facts ?? probed?.key;
+  if (facts === undefined) return check;
+  // The blockers lead. This line's own facts are what was *probed*, met and unmet alike, so
+  // "not buildable — JDK 17.0.19 found; android-35 found" reads as a prediction nobody can act
+  // on: every reason it names is satisfied. They stay, behind the word `probed`, because the
+  // standing report of what was seen is still useful. `requestedBuild.detail` is
+  // `not buildable — <scope>: <blockers>`.
+  const blockers =
+    /^not buildable — [^:]*: (?<why>.+)$/su.exec(requestedBuild.detail)?.groups?.why ??
+    requestedBuild.detail;
+  return {
+    ...check,
+    detail: `not buildable — ${blockers}; probed: ${facts}`,
+    fix: requestedBuild.fix ?? check.fix,
+    status: "fail",
+  };
+}
+
 function targetChecks(
   snapshot: IProjectSnapshot,
   nativeRuntime: IDoctorCheck,
+  request: IDoctorRequest,
+  requestedBuild?: IDoctorCheck,
 ): readonly IDoctorCheck[] {
   const webAvailable = snapshot.files.has("src/main.ts");
   const desktopDetail =
     nativeRuntime.status === "ok"
       ? nativeRuntime.detail
       : `unavailable — ${nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, "")}`;
-  return [
+  const checks: readonly IDoctorCheck[] = [
     webAvailable
       ? { detail: "available — src/main.ts", name: "target web", status: "ok" }
       : {
@@ -1225,6 +1565,12 @@ function targetChecks(
     androidTargetCheck(snapshot),
     iosTargetCheck(snapshot),
   ];
+  if (request.target === undefined) return checks;
+  return checks.map((check) =>
+    check.name === `target ${request.target}`
+      ? requestedTarget(check, requestedBuild)
+      : unrequestedTarget(check),
+  );
 }
 
 function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
@@ -1236,45 +1582,164 @@ function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
   };
 }
 
+/** One project-scoped host config, as doctor found it on disk. */
+type HostWiring = "absent" | "incomplete" | "unreadable" | "wired";
+
+/** The manifest the asset pipeline writes beside its outputs; its entries record what was
+ * converted rather than authored, which is the only honest proof a conversion ever ran. */
+const ASSET_MANIFEST = "public/assets.manifest.json";
+
+function hostWiring(snapshot: IProjectSnapshot, host: IMcpHost): HostWiring {
+  if (!snapshot.files.has(host.file)) return "absent";
+  const source = snapshot.readText(host.file);
+  if (source === undefined) return "unreadable";
+  if (host.file.endsWith(".json")) {
+    try {
+      const parsed: unknown = JSON.parse(source);
+      if (record(parsed) === undefined) return "unreadable";
+    } catch {
+      return "unreadable";
+    }
+  }
+  // Every host format writes each server under its own name, so the names are what is looked for.
+  // Reproducing five config shapes here would be a second copy of `SERVER_FORMATS` to keep in step.
+  const missing = MCP_SERVER_SPECS.filter(({ configName }) => !source.includes(configName));
+  return missing.length === 0 ? "wired" : "incomplete";
+}
+
 /**
- * Blender, for the four model formats the asset pipeline converts.
+ * Which agent hosts this project is wired for — a different fact from whether a server starts.
  *
- * **`warn`, never `fail`.** A game with no `.fbx`, `.blend`, `.obj` or `.dae` in it needs no
- * Blender and must stay green — a doctor that failed on a 350 MB dependency the project does not
- * use would be a doctor people stop running. A game that *does* carry one of those sources gets a
- * hard failure where it belongs: in the build, from `blenderImportPass`, naming the same command.
+ * `@threenative/core`'s postinstall writes seven project-scoped configs; doctor used to read
+ * `.mcp.json` alone, so a game opened in VS Code, Zed or opencode was told capability search was
+ * ready on the strength of a file that host never reads. Activation itself is not observable from
+ * here — no probe can tell whether an editor loaded a config it found — so this check reports the
+ * configuration it can see and says plainly that it stops there.
  */
-function blenderCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
+function editorActivationCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  const wirings = MCP_HOST_TABLE.map((host) => ({ host, wiring: hostWiring(snapshot, host) }));
+  const broken = wirings.filter(({ wiring }) => wiring === "incomplete" || wiring === "unreadable");
+  const wired = wirings.filter(({ wiring }) => wiring === "wired");
+  const manual = `${MANUAL_GLOBAL_MCP_HOSTS.join(", ")} read a machine-wide config only and are wired by hand`;
+  const named = broken
+    .map(
+      ({ host, wiring }) =>
+        `${host.file} is ${wiring === "unreadable" ? "unreadable" : "missing ThreeNative servers"}`,
+    )
+    .join("; ");
+  // Nothing wired is the hard failure, and it is tested first. Ordered the other way, corrupting a
+  // config *downgraded* the report: a project where no host worked said `warn`, because its broken
+  // files were counted before its zero working ones.
+  if (wired.length === 0) {
+    return {
+      detail: `no project-scoped host config carries the ThreeNative servers (looked for ${MCP_HOST_TABLE.map(({ file }) => file).join(", ")})${named === "" ? "" : `; ${named}`}. ${manual}`,
+      fix: "Reinstall @threenative/core in this project; its postinstall writes every project-scoped host config.",
+      name: "editor activation",
+      status: "fail",
+    };
+  }
+  if (broken.length > 0) {
+    return {
+      // The file is the user's: doctor names it and never rewrites it.
+      detail: `${named} — ${wired.length} of ${MCP_HOST_TABLE.length} host configs are complete. ${manual}`,
+      fix: "Reinstall @threenative/core to rewrite the host configs it owns, or restore the listed file by hand; doctor never edits it.",
+      name: "editor activation",
+      status: "warn",
+    };
+  }
+  // One wired host is enough for the agent working in it, so this is `ok` below seven — said out
+  // loud, because a green tick at 1 of 7 that does not explain itself reads like a miscount.
+  return {
+    detail: `${wired.length} of ${MCP_HOST_TABLE.length} host configs carry the servers (${wired
+      .map(({ host }) => host.label)
+      .join(
+        ", ",
+      )}); one is enough for the host you work in. Whether an editor loaded it is not observable from here. ${manual}`,
+    name: "editor activation",
+    status: "ok",
+  };
+}
+
+/** Whether the asset pipeline has actually converted a model here, read from its own manifest. */
+function conversionsExecuted(snapshot: IProjectSnapshot): number | undefined {
+  const source = snapshot.readText(ASSET_MANIFEST);
+  if (source === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return undefined;
+  }
+  const entries = record(parsed)?.entries;
+  if (!Array.isArray(entries)) return undefined;
+  return entries.filter((entry) => typeof record(entry)?.importedFrom === "string").length;
+}
+
+/**
+ * Model conversion: four facts, never folded into one.
+ *
+ * The Blender MCP server starting is not the same fact as Blender being installed, which is not
+ * the same fact as a conversion having run. A server that advertises `blender_convert` over a
+ * healthy transport on a machine with no Blender will fail the first time a tool is called, and
+ * before this check the report said "transport initialized and advertised 3 tool(s)" and nothing
+ * else — a complete authoring toolchain claimed on the strength of a process that started.
+ *
+ * **`warn`, never `fail` for a missing application.** A game with no `.fbx`, `.blend`, `.obj` or
+ * `.dae` in it needs no Blender and must stay green — a doctor that failed on a 350 MB dependency
+ * the project does not use would be a doctor people stop running. A game that *does* carry one of
+ * those sources gets a hard failure where it belongs: in the build, from `blenderImportPass`,
+ * naming the same command. A broken transport is a different matter and does fail: that is the
+ * package this project installed, not an application it chose not to have.
+ */
+function modelConversionCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
   const probe = snapshot.blender;
   if (probe === undefined) return undefined;
+  const name = "model conversion";
   const sources = [...snapshot.files].filter((file) =>
     BLENDER_SOURCE_SUFFIXES.some((suffix) => file.toLowerCase().endsWith(suffix)),
   );
-  if (probe.available) {
+  const executed = conversionsExecuted(snapshot);
+  const ran =
+    executed === undefined
+      ? "no bake manifest here, so no conversion is proven"
+      : executed === 0
+        ? "the bake manifest records no converted model"
+        : `the bake manifest records ${executed} converted model(s)`;
+  const transport = snapshot.mcpServerHealth?.get(BLENDER_SERVER);
+  if (transport?.status === "fail") {
     return {
-      detail:
-        probe.version === undefined
-          ? probe.detail
-          : `Blender ${probe.version} converts .fbx, .blend, .obj and .dae on this machine`,
-      name: "blender",
-      status: "ok",
+      detail: `${BLENDER_SERVER} is configured, but ${transport.detail}; no conversion tool is reachable — ${ran}`,
+      fix: `Reinstall @threenative/core and ${BLENDER_PACKAGE.name}, then rerun doctor.`,
+      name,
+      status: "fail",
     };
   }
-  const carried =
-    sources.length === 0
-      ? "no .fbx, .blend, .obj or .dae in this project, so nothing needs it yet"
-      : `${sources.length} source(s) in this project need it: ${sources.slice(0, 3).join(", ")}`;
+  const reachable =
+    transport === undefined
+      ? `${BLENDER_SERVER} was not probed`
+      : `${BLENDER_SERVER} transport is up`;
+  if (!probe.available) {
+    const carried =
+      sources.length === 0
+        ? "no .fbx, .blend, .obj or .dae in this project, so nothing needs it yet"
+        : `${sources.length} source(s) in this project need it: ${sources.slice(0, 3).join(", ")}`;
+    return {
+      detail: `${reachable}, but conversion is unavailable: ${probe.detail} — ${carried}; ${ran}`,
+      fix: `Install Blender when you want to convert those formats: ${probe.installCommand}`,
+      name,
+      status: "warn",
+    };
+  }
   return {
-    detail: `${probe.detail} — ${carried}`,
-    fix: `Install Blender when you want to convert those formats: ${probe.installCommand}`,
-    name: "blender",
-    status: "warn",
+    detail: `${reachable} and Blender ${probe.version ?? "(version unreported)"} converts .fbx, .blend, .obj and .dae on this machine; ${ran}`,
+    name,
+    status: "ok",
   };
 }
 
 export function diagnoseProject(
   snapshot: IProjectSnapshot,
-  options: { readonly capturePath?: string } = {},
+  options: IDoctorRequest & { readonly capturePath?: string } = {},
 ): IDoctorReport {
   if (record(snapshot.packageJson) === undefined) {
     return {
@@ -1290,10 +1755,11 @@ export function diagnoseProject(
     };
   }
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
-  const blender = blenderCheck(snapshot);
+  const blender = modelConversionCheck(snapshot);
   const nativeRuntime = nativeRuntimeCheck(snapshot);
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
+  const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime);
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
@@ -1304,7 +1770,8 @@ export function diagnoseProject(
     ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
       ? []
       : [desktopOverlayCheck(snapshot.desktopOverlay)]),
-    ...targetChecks(snapshot, nativeRuntime),
+    ...targetChecks(snapshot, nativeRuntime, options, requestedBuild),
+    ...(requestedBuild === undefined ? [] : [requestedBuild]),
     snapshot.files.has("src/main.ts")
       ? { detail: "src/main.ts is the web entry", name: "web entry", status: "ok" }
       : {
@@ -1323,9 +1790,24 @@ export function diagnoseProject(
           status: "warn",
         },
     ...capabilitySearchChecks(snapshot),
+    editorActivationCheck(snapshot),
     ...(blender === undefined ? [] : [blender]),
   ];
-  return { checks, pass: checks.every(({ status }) => status !== "fail") };
+  // A target line is not the only thing that votes. `native runtime` and `desktop overlay` carry
+  // the same facts one level down, and demoting only the `target *` checks left `--target web`
+  // exiting 1 on a 404 desktop prebuilt and on a missing compositor — both prerequisites of a
+  // build nobody asked for, and neither one something a web build can fail on. The help text
+  // promises the exit code follows the request, so the prerequisites have to follow it too.
+  const scoped =
+    options.target === undefined
+      ? checks
+      : checks.map((check) => {
+          const owners = TARGET_PREREQUISITE_OWNERS[check.name];
+          return owners === undefined || owners.includes(options.target as DoctorTarget)
+            ? check
+            : unrequestedTarget(check);
+        });
+  return { checks: scoped, pass: scoped.every(({ status }) => status !== "fail") };
 }
 
 async function collectFiles(root: string, relative = "", depth = 0): Promise<string[]> {
@@ -1399,7 +1881,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
   const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
   const mcpServerHealth = new Map<string, IMcpServerHealth>();
-  if (files.has(".mcp.json")) {
+  if (SHAPE_VERIFIABLE_HOSTS.some(({ file }) => files.has(file))) {
     for (const spec of MCP_SERVER_SPECS) {
       if (existsSync(path.resolve(projectRoot, spec.expectedArgs))) {
         mcpServerHealth.set(spec.configName, probeMcpServer(projectRoot, spec));
@@ -1432,6 +1914,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       };
     })(),
     ...(usesDesktopOverlay(config) ? { desktopOverlay: probeDesktopOverlay() } : {}),
+    environment: process.env,
     ...(playtestRunnerPath === undefined
       ? {}
       : {

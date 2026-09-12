@@ -10,7 +10,6 @@ import {
   ensureHostMcpConfigs,
   ensureMcpConfig,
   installTarget,
-  // @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 } from "../mcp/install.mjs";
 import { MCP_PACKAGES, MCP_SERVERS, mergeMcpServers } from "../mcp/servers.mjs";
 
@@ -362,7 +361,7 @@ describe("ensureHostMcpConfigs", () => {
       ["claude-code", "codex", "cursor", "gemini-cli", "opencode", "vscode", "zed"].sort(),
     );
     for (const [host, outcome] of outcomes) expect(outcome, host).toBe("created");
-    for (const host of MCP_HOSTS as { file: string; id: string }[]) {
+    for (const host of MCP_HOSTS) {
       expect(existsSync(path.join(directory, host.file)), host.id).toBe(true);
     }
     expect(ensureHostMcpConfigs(directory).get("cursor")).toBe("unchanged");

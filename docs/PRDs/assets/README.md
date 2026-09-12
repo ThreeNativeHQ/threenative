@@ -233,10 +233,10 @@ failures are not automatically current defects.
   Evidence is kept by *citation*, not age; there are byte, file-count and **1,000-line-per-file**
   caps in `scripts/check-evidence-budget.ts`; and deleting tracked evidence needs the owner's
   checkpoint. Write the record, keep it under the line cap, and it looks after itself.
-- **The retention index restales on every doc edit.** `docs/benchmark/SCREENSHOT-RETENTION.md` is
-  generated, and `pnpm budgets` fails when it drifts — which means **pre-push fails**. Run
-  `npx tsx scripts/generate-retention-index.ts` as the last step before committing, every time.
-  This will bite you more often than anything else on this page.
+- **The retention index is generated on demand, not tracked.** `docs/benchmark/SCREENSHOT-RETENTION.md`
+  derives from every evidence file and citing PRD, so it used to restale on nearly every doc edit and
+  conflict on concurrent branches. It is gitignored now; run `npx tsx scripts/generate-retention-index.ts`
+  when you want to read it. Nothing in `pnpm budgets` compares it.
 - **`pnpm budgets` needs a built workspace.** `CAPABILITY_BUILT_IMPORT_MISSING` means "no `dist`",
   not a bad capability. Run `pnpm build` first.
 - **`pnpm test` aborts in `packages/runtime-native`** before the ~4,000 root tests run, whenever the

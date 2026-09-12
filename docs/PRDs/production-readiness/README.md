@@ -12,7 +12,7 @@
 | [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | Current exact-candidate hosted runtime build proof | Moved from BLOCKED/; PARTIAL | Current candidate CI; do not reuse old failure diagnosis |
 | [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | Aligned default V8 and real 16 KB Android execution | Moved from BLOCKED/; PROPOSED | Recheck upstream/toolchain access |
 | [PRD-217](PRD-217-webview-ui-layer.md) | Default React HUD on Windows/macOS/Linux sessions | Moved from done/ (already PARTIAL); PARTIAL | None for platform implementation |
-| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | Target-scoped build prerequisite prediction; Blender/editor separation | NOT STARTED | Extends done [PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md); consumes contracts from 196/212/217/365 |
+| [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | Target-scoped build prerequisite prediction; Blender/editor separation | NOT STARTED | Extends done [PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md); consumes contracts from 196/212/217/365 |
 | [PRD-212](PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | Moved from mobile/; PARTIAL | 221 inputs; 262 downloaded artifacts |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | Complete desktop containers and signing/notarization | NEW; PROPOSED | 217 overlays; 212 mode parsing; 262 binaries |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | Android release artifact and distributed desktop app carry the brand | NOT STARTED | 212/365 final artifacts; 217 UI |
@@ -20,6 +20,7 @@
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | Actual consumer game and physical Android qualification | NEW; PROPOSED | 196/212/217/221/262/365; 153 captures |
 | [PRD-376](PRD-376-windows-consumer-builds-and-runs.md) | A Windows consumer installs the published runtime, builds and runs | NEW; PROPOSED | 262 publishes the win32-x64 cohort; prerequisite for 365 and 366 |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | Public candidate verification, recovery, promotion, stores and outside users | Moved from BLOCKED/; PROPOSED | All applicable owner results; external credentials/people only at their checkpoint |
+| [PRD-377](PRD-377-one-local-command-publishes-every-package.md) | One local `pnpm` command publishes the npm cohort and the host native runtime | NEW; NOT STARTED | 262 release contents; 221 Android V8 payload; CI lane still owns win32/iOS |
 
 Dependencies in the table are acceptance dependencies, not a prohibition on preparing tests/configuration earlier. Candidate production is deliberately split from final public proof: PRD-060 phase 1 stages, PRD-262 supplies downloads, PRD-366 qualifies, then PRD-060 phases 2–3 verify public consumers and obtain credentialed/external-user evidence before phase 4 promotes. Do not create an all-phases dependency cycle by requiring final promotion before candidate testing.
 

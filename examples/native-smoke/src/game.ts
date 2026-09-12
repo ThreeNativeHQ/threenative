@@ -99,6 +99,7 @@ const LOADING_PROOF_OVERLAY_COLOR = 0x000000;
 const PROOF_BACKDROP_COLOR = 0x101820;
 const PROOF_ACCENT_COLORS = [0x00ffff, 0xffff00, 0x00ff00, 0xff8800, 0x4488ff, 0xffffff, 0x8800ff];
 const LOADING_PROOF_COMPILE_TIMEOUT_MS = 3_000;
+const LOADING_PROOF_COMPILE_FRAME_TIMEOUT_MS = 10_000;
 
 export const status: ISmokeStatus = { frames: 0, ready: false };
 
@@ -585,9 +586,31 @@ const loadingProofRenderer = __TN_LOADING_PROOF__
           // promise is held here only to make the multi-second startup window deterministic: the
           // native conformance run can sample the same process before and after the gate without
           // depending on whether this machine's driver resolves compileAsync in milliseconds.
-          await new Promise<void>((resolve) =>
-            setTimeout(resolve, LOADING_PROOF_COMPILE_TIMEOUT_MS),
-          );
+          // A 3s timer alone allowed Windows to finish after only 57 presents, before the
+          // verifier's first 60-frame tick. Hold through 61 frame opportunities as well: RAF
+          // runs before presentation, so the extra callback lets the 60th frame complete.
+          // The verifier still independently requires a real native present tick, not RAFs.
+          await new Promise<void>((resolve, reject) => {
+            let frames = 0;
+            let frame = 0;
+            const timeout = setTimeout(() => {
+              cancelAnimationFrame(frame);
+              reject(new Error(`TN_LOADING_PROOF_FRAME_TIMEOUT:${frames}`));
+            }, LOADING_PROOF_COMPILE_FRAME_TIMEOUT_MS);
+            const observe = () => {
+              frames += 1;
+              if (
+                frames >= 61 &&
+                performance.now() - startedAt >= LOADING_PROOF_COMPILE_TIMEOUT_MS
+              ) {
+                clearTimeout(timeout);
+                resolve();
+              } else {
+                frame = requestAnimationFrame(observe);
+              }
+            };
+            frame = requestAnimationFrame(observe);
+          });
           console.info(
             `TN_LOADING_PROOF_COMPILE_END:${JSON.stringify({
               elapsedMs: Math.round(performance.now() - startedAt),
