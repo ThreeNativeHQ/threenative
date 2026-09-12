@@ -1733,6 +1733,13 @@ describe("threenative doctor --target/--mode", () => {
     expect(check(debug, "requested build").status).toBe("ok");
     expect(check(debug, "requested build").detail).toContain("buildable");
     expect(debug.pass).toBe(true);
+
+    // Round 7: `--mode` is half this phase's CLI surface and the scope label is the only place it
+    // becomes visible, yet dropping the mode from that label left all 92 tests green — the two
+    // predictions then read identically. The acceptance criteria quote the `android release`
+    // spelling as their evidence, so it is asserted here rather than assumed.
+    expect(check(release, "requested build").detail).toContain("android release");
+    expect(check(debug, "requested build").detail).toContain("android debug");
   });
 
   it("should not demand iOS evidence for an Android request", () => {
@@ -1809,10 +1816,19 @@ describe("threenative doctor --target/--mode", () => {
       config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
       desktopOverlay: overlay,
     };
+    // Round 7: this asked only about web, so `desktop overlay`'s owner list was one target short
+    // of the invariant it names. Adding "android" to that list left all 92 tests green while
+    // `doctor --target android` exited 1 because a *desktop* overlay failed — review 4's defect
+    // returning through the one door left open. Every non-owner is asked now.
+    for (const target of ["web", "android", "ios"] as const) {
+      const scoped = diagnoseProject(snapshot(overlayProject), { target });
+      expect(check(scoped, "desktop overlay").status).toBe("warn");
+      // And the overlay is never a reason the requested build cannot go ahead. (Android and iOS
+      // may still fail this fixture on their own missing toolchains; that is their business.)
+      expect(check(scoped, "requested build").detail).not.toContain("overlay");
+    }
     const scoped = diagnoseProject(snapshot(overlayProject), { target: "web" });
-    expect(check(scoped, "desktop overlay").status).toBe("warn");
     expect(check(scoped, "requested build").status).toBe("ok");
-    expect(scoped.pass).toBe(true);
     // Ask for desktop and the same overlay decides the exit code again.
     const desktop = diagnoseProject(snapshot(overlayProject), { target: "desktop" });
     expect(check(desktop, "desktop overlay").status).toBe("fail");
