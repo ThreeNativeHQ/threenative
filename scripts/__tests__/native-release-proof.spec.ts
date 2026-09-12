@@ -151,6 +151,21 @@ test("offers non-publishing PR and manual proof entry points in the existing wor
   assert.doesNotMatch(triggers, /pull_request_target/u);
 });
 
+test("main evidence arrives via CI completion, never via a push-to-main trigger", () => {
+  const triggers = workflow.split("\npermissions:")[0] ?? "";
+  assert.match(triggers, /\n\x20{2}workflow_run:/u);
+  assert.match(triggers, /workflows: \[CI\]/u);
+  assert.match(triggers, /types: \[completed\]/u);
+  const pushBlock = triggers.split("\n  push:")[1]?.split("\n  pull_request:")[0] ?? "";
+  assert.ok(pushBlock.length > 0, "the workflow declares no push trigger block");
+  assert.doesNotMatch(
+    pushBlock,
+    /branches:/u,
+    "a push-to-main trigger still feeds the evidence path",
+  );
+  assert.match(pushBlock, /runtime-native-v\*/u);
+});
+
 for (const name of ["validate-tag", "publish", "finalize", "cleanup-failed-release"]) {
   test(`${name} cannot mutate releases from a pull request or manual invocation`, () => {
     assert.equal(allowed(name, "pull_request", "branch"), false);
@@ -213,6 +228,98 @@ for (const control of ["wrong-sha", "missing-job", "skipped-job"] as const) {
         : control === "missing-job"
           ? /Android emulator visual parity: 0 result/u
           : /typecheck: 1 result\(s\), completed\/skipped/u,
+    );
+  });
+}
+
+// The evidence-path verdict reads the triggering CI completion from the `workflow_run`
+// event payload instead of searching for it with `gh run list`: the candidate SHA is the
+// event's head SHA (GITHUB_SHA is the default-branch head here and must be ignored), and
+// the only `gh` call reads the run's jobs once. A red or mismatched completion refuses.
+function runWorkflowRunGate(
+  change: "none" | "failed-conclusion" | "wrong-branch" | "missing-job" | "skipped-job",
+) {
+  const directory = makeTempDirSync("threenative-release-workflow-run-gate-");
+  const jobs = names.map((name, index) => ({
+    id: index + 1,
+    name,
+    run_id: 456,
+    head_sha: sha,
+    status: "completed",
+    conclusion: "success",
+  }));
+  if (change === "missing-job") jobs.pop();
+  if (change === "skipped-job") {
+    assert.ok(jobs[0]);
+    jobs[0].conclusion = "skipped";
+  }
+  writeFileSync(join(directory, "jobs.json"), JSON.stringify([{ total_count: jobs.length, jobs }]));
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, "gh"),
+    '#!/bin/sh\ncase "$1 $2" in\n"api --paginate") cat "$FIXTURES/jobs.json";;\n*) exit 91;;\nesac\n',
+  );
+  chmodSync(join(bin, "gh"), 0o755);
+  const result = spawnSync(
+    "bash",
+    ["-e", "-o", "pipefail", "-c", script("Require the triggering CI completion")],
+    {
+      cwd: directory,
+      encoding: "utf8",
+      timeout: 10000,
+      env: {
+        ...process.env,
+        FORCE_COLOR: "0",
+        FIXTURES: directory,
+        PATH: `${bin}:${process.env.PATH}`,
+        RUNNER_TEMP: directory,
+        // Deliberately not the candidate: the verdict must source the SHA from the event.
+        GITHUB_SHA: "d".repeat(40),
+        GITHUB_REPOSITORY: "ThreeNativeHQ/threenative",
+        GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
+        WORKFLOW_RUN_CONCLUSION: change === "failed-conclusion" ? "failure" : "success",
+        WORKFLOW_RUN_STATUS: "completed",
+        WORKFLOW_RUN_EVENT: "push",
+        WORKFLOW_RUN_HEAD_BRANCH: change === "wrong-branch" ? "develop" : "main",
+        WORKFLOW_RUN_HEAD_SHA: sha,
+        WORKFLOW_RUN_ID: "456",
+        WORKFLOW_RUN_NAME: "CI",
+      },
+    },
+  );
+  assert.ifError(result.error);
+  return { ...result, directory, evidence: join(directory, "native-release-prerequisites") };
+}
+
+test("the event-payload verdict accepts complete exact-candidate evidence", () => {
+  const result = runWorkflowRunGate("none");
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(readFileSync(join(result.evidence, "validation.json"), "utf8"));
+  assert.equal(report.candidateSha, sha);
+  assert.equal(report.requiredJobs.length, 11);
+  assert.deepEqual(report.failures, []);
+});
+
+for (const control of [
+  "failed-conclusion",
+  "wrong-branch",
+  "missing-job",
+  "skipped-job",
+] as const) {
+  test(`the event-payload verdict refuses ${control} with retained exit evidence`, () => {
+    const result = runWorkflowRunGate(control);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(readFileSync(join(result.evidence, "status.txt"), "utf8"), /exit_code=1/u);
+    assert.match(
+      result.stderr,
+      control === "failed-conclusion"
+        ? /non-success main-push CI completion/u
+        : control === "wrong-branch"
+          ? /non-success main-push CI completion/u
+          : control === "missing-job"
+            ? /Android emulator visual parity: 0 result/u
+            : /typecheck: 1 result\(s\), completed\/skipped/u,
     );
   });
 }
@@ -401,24 +508,24 @@ for (const change of [
   });
 }
 
-test("the main prerequisite wait outlasts a full-board main CI run", () => {
-  const wait = script("Wait for the exact main CI run to finish");
-  const attempts = Number(wait.match(/for attempt in \$\(seq 1 (\d+)\); do/u)?.[1]);
-  const interval = Number(wait.match(/\n\s*sleep (\d+)\n/u)?.[1]);
-  assert.ok(Number.isSafeInteger(attempts) && attempts > 0, "missing bounded attempt count");
-  assert.ok(Number.isSafeInteger(interval) && interval > 0, "missing poll interval");
-  // Observed successful ci.yml push runs on main (2026-09-10): 61.2, 62.5, 63.0, 64.8, 70.7,
-  // 73.7, 88.5 and 115.4 minutes on the full board. A shorter budget refuses the candidate for
-  // elapsed time instead of for its evidence, which is a false refusal.
-  const budget = (attempts * interval) / 60;
-  assert.ok(
-    budget >= 120,
-    `the prerequisite wait budget is ${budget} minutes, under the 115.4 minute worst observed main CI run`,
+test("the main prerequisite verdict reads the event instead of holding a runner", () => {
+  const gatesJob = job("gates");
+  // The evidence path used to `sleep 60`-poll for the CI run on a 150-minute budget while
+  // holding a runner; at this repo's push cadence arrivals outran the org's concurrency.
+  // The verdict now reads the triggering CI completion from the event payload once.
+  assert.doesNotMatch(
+    gatesJob,
+    /Wait for the exact main CI run to finish/u,
+    "a polling wait still holds a runner",
   );
-  const timeout = Number(job("gates").match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
+  assert.doesNotMatch(gatesJob, /sleep 60/u, "a polling interval still holds a runner");
+  assert.match(gatesJob, /Require the triggering CI completion/u);
+  assert.match(gatesJob, /github\.event\.workflow_run\.conclusion/u);
+  assert.match(gatesJob, /github\.event\.workflow_run\.head_sha/u);
+  const timeout = Number(gatesJob.match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
   assert.ok(
-    Number.isSafeInteger(timeout) && timeout > budget,
-    `gates timeout-minutes ${timeout} cannot outlast its own ${budget} minute wait`,
+    Number.isSafeInteger(timeout) && timeout <= 9,
+    `gates timeout-minutes ${timeout} is a wait budget, not a verdict budget`,
   );
 });
 
@@ -502,6 +609,28 @@ test("a proof run is not cancelled by the next push to its own branch", () => {
   assert.match(concurrency, /cancel-in-progress:\s*false/u);
   // A manual proof on main and an automatic one must not evict each other.
   assert.match(concurrency, /group:[^\n]*github\.event_name/u);
+  // Every `workflow_run` run shares `github.ref` (the default branch), so without the
+  // triggering CI head SHA in the group they all serialize behind each other while the
+  // Actions queue drains. A new completion for a newer main SHA gets its own group.
+  assert.match(concurrency, /group:[^\n]*github\.event\.workflow_run\.head_sha/u);
+  assert.match(concurrency, /group:[^\n]*github\.ref/u);
+});
+
+test("workflow_run evidence runs proof without a release candidate", () => {
+  for (const name of ["gates", "build", "build-android", "clean-consumer"]) {
+    assert.equal(
+      allowed(name, "workflow_run", "branch", { "validate-tag": "skipped", publish: "skipped" }),
+      true,
+      `${name} does not run on the workflow_run evidence path`,
+    );
+  }
+  for (const name of ["validate-tag", "publish", "finalize", "cleanup-failed-release"]) {
+    assert.equal(
+      allowed(name, "workflow_run", "branch"),
+      false,
+      `${name} must stay tag-only on the workflow_run evidence path`,
+    );
+  }
 });
 
 test("the scaffolded consumer receives every module its entry imports", () => {
