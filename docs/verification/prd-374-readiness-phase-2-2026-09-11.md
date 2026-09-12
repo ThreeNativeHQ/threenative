@@ -224,3 +224,57 @@ table the per-server line reads `threenative-assets is missing from .cursor/mcp.
 
 Gates after the fixes: `pnpm typecheck` 0, `pnpm lint` 0, `pnpm quality` 0,
 `pnpm exec vitest run packages/create-threenative/__tests__` **665 passed across 38 files** at that commit, **668** at the branch tip.
+
+## Correction, fifth independent review — two defects, both real
+
+Verdict NEEDS CORRECTION at `9b2fa3930`. The reviewer re-ran every gate itself rather than reading
+this record, and confirmed each number it quotes: `typecheck` 0, `lint` 0, `check:docs` 0 (2039 links
+across 1067 files), `budgets` 0, the package 668 across 38 files with `doctor.spec.ts` 87 and
+`cli.spec.ts` 5. It drove the real built CLI against four project shapes and six of its seven
+mutations were caught.
+
+**1. The `malformed` branch never got the rescue the `missing` branch has.**
+`capabilitySearchChecks` downgrades to `warn` and names the working host when no shape-verifiable
+config is present but another host carries the servers. The `malformed` branch short-circuited to
+`fail` without ever consulting `hostWiring`. A project whose `.mcp.json`, `.cursor/mcp.json` and
+`.gemini/settings.json` are unreadable, but whose Codex, VS Code, opencode and Zed configs are fully
+wired, got exit 1 from a check that could see, one line below, that the servers were there — two
+checks contradicting each other about the same project.
+
+This is the same defect class review 2 blocked on, surviving one branch over. Both branches now
+share one `elsewhere` computation.
+
+Observed on the real built CLI, in a copy of `../sandbox/caravel` outside this repository with those
+three files replaced by `{ not json`, the two arms built from `git show HEAD:…/doctor.ts` and from
+the fix so that the arms provably differ:
+
+```
+before  ✗ capability search: no readable server table: .mcp.json is invalid JSON: Expected property
+        name or '}' in JSON at position 2; .cursor/mcp.json is invalid JSON: …;
+        .gemini/settings.json is invalid JSON: …
+after   ! capability search: <same three causes>; Codex, VS Code, opencode, Zed carry the servers
+        in a format only 'editor activation' reads
+        fix: Reinstall @threenative/core if you also want .mcp.json, .cursor/mcp.json,
+        .gemini/settings.json wired; an agent in Codex already has capability search.
+```
+
+The three corrupted files are byte-identical after the run (`md5sum` unchanged). The report still
+exits 1, on `versions`, `native runtime`, `desktop overlay` and `target desktop` — pre-existing
+failures of that sandbox, none of them `capability search`. The incumbent
+`should fail, not warn, when every host config is broken` is unchanged and green.
+
+Unit control: `1 failed | 87 passed` on the new test before the fix, `88 passed` after.
+
+**2. Nothing pinned `was not probed` against `transport is up`.**
+Mutating the unprobed branch of `model conversion` so doctor asserts a transport it never opened
+left **87 passed, 0 failed**; the string existed only in `src/doctor.ts` and in no test. That is not
+cosmetic: acceptance criterion 3 and this phase's user-verification box both cite *"no `was not
+probed` line appears"* as the evidence that transport is separately observed rather than inferred.
+With the mutation in place doctor prints the wording of the real, healthy `caravel` run with no
+probe behind it.
+
+A test now pins both directions, confirmed red against that exact mutation
+(`1 failed | 88 passed`) and green restored (`89 passed`).
+
+**Measured after both fixes:** `doctor.spec.ts` **89 passed**, whole package **670 passed across 38
+files**, `pnpm typecheck` 0, `pnpm lint` 0, `pnpm budgets` 0, `pnpm check:docs` 0.

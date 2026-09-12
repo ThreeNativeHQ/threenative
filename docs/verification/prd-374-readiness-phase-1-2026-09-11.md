@@ -8,7 +8,7 @@ The gates below were first run against commit `c9dd6288a` on `main` at `97d0f5c5
 re-applied on `main` under different SHAs, so the branch was rebuilt as the same net diff on current
 `main`: `c9dd6288a` → `9d50cb878`, `9e61a62a6` → `4568451c9`, content unchanged
 (`backup/prd374-preRebase` keeps the old tip). The suites were re-run on the rebuilt commits and
-report the same results: `pnpm typecheck` exit 0, `pnpm lint` exit 0, `doctor.spec.ts` 68 passed at the time of writing and
+report the same results: `pnpm typecheck` exit 0, `pnpm lint` exit 0, `doctor.spec.ts` 68 passed at the time of writing (89 now) and
 `cli.spec.ts` 5 passed.
 
 ## What changed
@@ -28,7 +28,7 @@ is the consumer that must read the same four; that handoff is **not yet made** �
 
 | Command | Result |
 | --- | --- |
-| `pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts` | 68 passed (7 new), exit 0. **84 passed** after the two independent reviews' fixes; this record describes `9d50cb878`, and the later fixes are `c037860f2` and the second review's blocker fix. |
+| `pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts` | 68 passed (7 new), exit 0 **at `9d50cb878`, which is the commit this record describes**. Measured now: **89 passed**. The growth is the five review rounds' regression tests, added in `c037860f2`, `6d3b1b4e8`, `7cc0b1890`, `6fc5e50db`, `3b33d026c`, `3513ee8ad` and `6f4b344f4`. |
 | `pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts` | 5 passed, exit 0 |
 | `pnpm typecheck` | clean, exit 0 |
 | `pnpm lint` | exit 0 (696 pre-existing warnings; one biome format error on the new test was autofixed before commit) |
@@ -75,13 +75,22 @@ node packages/create-threenative/dist/threenative.js doctor --target web --text
 ! target desktop: unavailable — no install status recorded     (already warn here — see below)
 ```
 
-That project still exits 1 on three failures of its own (`capability search`, `playtest`,
-`native entry`) which predate this change and are unrelated to targets.
+That project still exits 1 on three failures of its own — `capability search`, `playtest` and
+`editor activation` — which predate this change and are unrelated to targets. (Corrected by the
+fifth review: this line used to name `native entry`, which is `!` and not `✗` under a web request,
+because `6fc5e50db`/`3513ee8ad` demote it; and it omitted `editor activation`, which does fail.)
 
 ## Not run
 
-- **Independent reviewer: NOT RUN.** No reviewer subagent has seen this diff. The phase's reviewer
-  box stays open.
+- **Independent reviewer: five rounds have run, every one returning FAIL.** This bullet used to
+  read "NOT RUN", which the file itself contradicted two sections below; the fifth review caught it.
+  Round 1 found `pnpm budgets` red on the branch (stale retention index) and a dead commit SHA.
+  Round 2 found the requested target line naming only satisfied facts. Round 3 confirmed that fix
+  and found three phase-2 defects. Round 4 found the same "available beside not buildable" bug
+  surviving on `--target desktop`, and an annotation claiming a demotion that never happened — see
+  "Correction, third independent review" and "Correction, fourth independent review" below. Round 5
+  found the six documentation defects corrected in this revision and no code defect: *"the
+  implementation passes every check I could devise"*. The box stays open until a round returns PASS.
 - `pnpm test` aborts in `packages/runtime-native`: 18 failures, all of the form
   `<path>/build/tn-linux/<target> is not built` plus the `pump-silence` suite, because this fresh
   worktree has no compiled C++ host. Environmental, not caused by a TypeScript change confined to
