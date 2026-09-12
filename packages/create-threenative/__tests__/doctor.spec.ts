@@ -1719,6 +1719,56 @@ describe("threenative doctor --target/--mode", () => {
     expect(report.pass).toBe(false);
   });
 
+  it("should block a native build on a runtime that only warns, not just one that fails", () => {
+    // Round 7, final hunt: `if (nativeRuntime.status !== "ok")` was pinned by nothing. Every
+    // request-path fixture was either ok or a hard fail, so the boundary the code actually draws
+    // went untested and `=== "fail"` passed all 92. "no install status recorded" is a *warn*: under
+    // that mutation `examples/abyss-framework` prints `buildable — desktop` with no runtime
+    // downloaded at all, which is the missing-download class of acceptance criterion 1 and the very
+    // state this phase's observed-red control runs in.
+    const report = diagnoseProject(
+      // No install record and nothing resolved: `nativeRuntimeCheck` calls that `warn`, the same
+      // shape as `examples/abyss-framework` on this machine.
+      snapshot({
+        runtimeRoot: undefined,
+        readRuntimeText: undefined,
+        installedVersions: new Map(),
+      }),
+      { target: "desktop" },
+    );
+    const runtime = check(report, "native runtime");
+    expect(runtime.status).not.toBe("ok");
+    expect(runtime.status).not.toBe("fail");
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain(runtime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
+  });
+
+  it("should name the missing Android packager, and read the Android file to decide it", () => {
+    // Round 7, final hunt: nothing asserted this blocker at all - pointing the probe at
+    // `scripts/package-ios.mjs` instead left all 92 green. The spec mentioned
+    // `package-android.mjs` only in the fixture that makes it exist.
+    const base = snapshot({
+      androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
+      environment: {},
+    });
+    const report = diagnoseProject(
+      {
+        ...base,
+        // Only the Android packager is gone; the iOS one stays, so a probe reading the wrong file
+        // sees nothing wrong.
+        runtimeFileExists: (relative) =>
+          relative === "scripts/package-android.mjs"
+            ? false
+            : (base.runtimeFileExists?.(relative) ?? false),
+      },
+      { mode: "debug", target: "android" },
+    );
+    const requested = check(report, "requested build");
+    expect(requested.status).toBe("fail");
+    expect(requested.detail).toContain("no Android packager");
+  });
+
   it("should fail a requested Android release with no signing inputs and pass the same debug build", () => {
     const buildable = snapshot({
       androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
@@ -1823,6 +1873,7 @@ describe("threenative doctor --target/--mode", () => {
     for (const target of ["web", "android", "ios"] as const) {
       const scoped = diagnoseProject(snapshot(overlayProject), { target });
       expect(check(scoped, "desktop overlay").status).toBe("warn");
+
       // And the overlay is never a reason the requested build cannot go ahead. (Android and iOS
       // may still fail this fixture on their own missing toolchains; that is their business.)
       expect(check(scoped, "requested build").detail).not.toContain("overlay");
@@ -1837,6 +1888,25 @@ describe("threenative doctor --target/--mode", () => {
     const unscoped = diagnoseProject(snapshot(overlayProject));
     expect(check(unscoped, "desktop overlay").status).toBe("fail");
     expect(unscoped.pass).toBe(false);
+  });
+
+  it("should let every native target own the native runtime, and only web demote it", () => {
+    // The sibling of the `desktop overlay` owners bug, and only visible on a runtime that actually
+    // fails: dropping "ios" from TARGET_PREREQUISITE_OWNERS["native runtime"] is severity drift -
+    // the requested build still fails and the exit code is still 1 - but it is the same shape, and
+    // it survived the suite. A resolved package with no runtime root is the failing case.
+    const broken = snapshot({
+      runtimeRoot: undefined,
+      readRuntimeText: undefined,
+      installedVersions: new Map([["@threenative/runtime-native", "0.4.0"]]),
+    });
+    expect(check(diagnoseProject(broken), "native runtime").status).toBe("fail");
+    // Web does not start it, so it is demoted and cannot decide a web request's exit code.
+    expect(check(diagnoseProject(broken, { target: "web" }), "native runtime").status).toBe("warn");
+    // Every native target does start it, so none of them demote it.
+    for (const target of ["android", "desktop", "ios"] as const) {
+      expect(check(diagnoseProject(broken, { target }), "native runtime").status).toBe("fail");
+    }
   });
 
   it("should fail a requested web build with no web entry", () => {
