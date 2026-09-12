@@ -43,6 +43,12 @@ Both local and hosted checks use `scripts/ci-change-scope.mjs`. It examines the 
 diff, not just the last commit. Unknown or uncommitted changes run the full board. The fast
 pre-push hook reports this decision but remains a bounded drift check, not native qualification.
 
+The native platform matrix (desktop parity, Android emulator, iOS simulator, Windows/macOS) is
+produced on full selections but is deliberately **not part of the merge verdict**: the required
+`build` context asserts only the scope and the workspace artifacts. The release lane validates the
+native rows for the exact candidate SHA, so a native red does not block a merge but does block a
+release. This keeps ordinary merges off the 120-minute native build.
+
 The develop flow activates only after PRD-373's enabling changes pass the existing protected-main
 flow and the owner protects develop with `ci-required`. Until then, target main. After activation,
 start feature branches from develop and explicitly open their PRs against develop; merge features

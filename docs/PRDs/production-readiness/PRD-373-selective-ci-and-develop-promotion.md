@@ -398,3 +398,19 @@ The retention index is regenerated and checked, not hand-edited. The acceptance 
 now matches the progress parser, which counts all five acceptance criteria. Full CI and
 the actual Windows loading replay still need verification on the final committed
 candidate; these targeted tests do not substitute for platform qualification.
+
+### 2026-09-12 — native evidence leaves the merge verdict
+
+The required `build` context now asserts only `scope` and `build-artifacts`.
+`native-platforms` still runs on full selections, but the classifier marks it
+`required: false` with a reason, so a slow or red native matrix no longer fails
+`ci-required` or holds a merge. The Android V8 source payload lane was hitting its
+120-minute build timeout and the iOS simulator worker proof was red; both kept
+`build`/`ci-required` red on main and blocked a qualified main for the develop
+cutover. Release provenance is unchanged and still native-gated: `native-release.yml`
+validates the native rows (`desktop`, `Windows desktop core`, `macOS desktop core`,
+`Android emulator visual parity`, `Scaffolded starter desktop artifact`) for the exact
+candidate SHA, and `npm-release.yml` refuses to publish without the matching native
+tag on the same commit. So a native red does not block a merge but does block a
+release. Fixing the Android V8 build time and the iOS worker proof remains open, and
+is tracked against PRD-221 (16 KB V8) and the native platform lanes.

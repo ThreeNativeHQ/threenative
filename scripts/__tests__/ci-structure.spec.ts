@@ -2776,19 +2776,21 @@ describe("PRD-373 selective feature verification", () => {
     "some-new-folder/unknown.md",
     "packages/runtime-native/AGENTS.md",
     "templates/topdown/CLAUDE.md",
-  ])("retains all consumers and native checks for %s", async (relative) => {
+  ])("retains all consumers for %s without merging on native evidence", async (relative) => {
     const fixture = await scopeFixture();
     try {
       const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
       const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
       expect(plan.selection).toBe("full");
       expect(plan.jobs).toMatchObject({
-        "native-platforms": { required: true },
+        "native-platforms": { required: false },
         "test-native": { required: true },
         "golden-path-template": { required: true },
         "template-nonvisual": { required: true },
         website: { required: true },
       });
+      const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
+      expect(native?.reason.length).toBeGreaterThan(10);
     } finally {
       await rm(fixture.root, { recursive: true, force: true });
     }

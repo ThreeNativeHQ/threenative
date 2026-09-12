@@ -870,30 +870,29 @@ jobs:
   # AGENTS.md says in as many words: every gate here is blind to how the game looks.
 
   # Keep the exact protected `build` context, but make it a verdict join rather than the
-  # artifact producer. Native evidence still blocks merging; it no longer blocks independent
-  # web/template evidence from running. !cancelled() overrides implicit success(), so a failed
-  # or skipped upstream reaches these assertions instead of silently skipping a required check.
+  # artifact producer. It now asserts only the scope and the independently produced workspace
+  # artifacts: native platform evidence runs on full selections but is validated by the release
+  # lane for the exact candidate, not by this merge verdict, so a 120-minute native matrix cannot
+  # hold every merge. !cancelled() overrides implicit success(), so a failed or skipped upstream
+  # reaches these assertions instead of silently skipping a required check.
   build:
-    needs: [scope, build-artifacts, native-platforms]
+    needs: [scope, build-artifacts]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
-      - name: Require workspace and native platform evidence
+      - name: Require workspace evidence
         env:
           CI_SCOPE_RESULT: ${{ needs.scope.result }}
           WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}
-          NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
         run: |
           set -euo pipefail
           echo "scope: $CI_SCOPE_RESULT"
           echo "build-artifacts: $WORKSPACE_BUILD_RESULT"
-          echo "native-platforms: $NATIVE_PLATFORM_RESULT"
           test "$CI_SCOPE_RESULT" = "success"
           test "$WORKSPACE_BUILD_RESULT" = "success"
-          test "$NATIVE_PLATFORM_RESULT" = "success"
 
   # Produce this commit's bundles and freshly packed templates as soon as scope is known.
   # Consumers need these bytes, not the native matrix's verdict. No verification is omitted:
