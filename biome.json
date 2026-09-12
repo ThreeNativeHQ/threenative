@@ -9,6 +9,7 @@
       "**/mcp/blender-server.mjs",
       "artifacts/**",
       "build/**",
+      "release-native/**",
       ".linchpin/**",
       ".worktrees/**",
       ".claude/worktrees/**",
