@@ -13,7 +13,7 @@
 | [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) | Aligned default V8 and real 16 KB Android execution | DONE — all phases and acceptance verified, reviewer PASS | — |
 | [PRD-217](PRD-217-webview-ui-layer.md) | Default React HUD on Windows/macOS/Linux sessions | Moved from done/ (already PARTIAL); PARTIAL | None for platform implementation |
 | [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | Target-scoped build prerequisite prediction; Blender/editor separation | NOT STARTED | Extends done [PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md); consumes contracts from 196/212/217/365 |
-| [PRD-212](PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | Moved from mobile/; PARTIAL | 221 inputs; 262 downloaded artifacts |
+| [PRD-212](../done/PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | DONE — phases and the criteria it owns verified; public-cohort and device proofs delegated to 060/366 | — |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | Complete desktop containers and signing/notarization | NEW; PROPOSED | 217 overlays; 212 mode parsing; 262 binaries |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | Android release artifact and distributed desktop app carry the brand | NOT STARTED | 212/365 final artifacts; 217 UI |
 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | Complete version-matched downloadable runtime assets | Moved from mobile/; PARTIAL, phases 1-3 landed | 078 hosted proof; 196 package contents; 221/217 final inputs |

@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 The assessment built web output and reproduced a desktop prebuilt failure; it did not run new browser gameplay or native player/device flows. Existing golden-path, registry-install, template playtest and physical qualification harnesses provide the mechanism; no new test runner is needed.
 
-Consumer verification, not new gameplay systems. [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) owns installation/MCP fixes; [PRD-217](PRD-217-webview-ui-layer.md) HUD; [PRD-212](PRD-212-published-install-builds-android.md)/[PRD-365](PRD-365-consumer-desktop-distribution.md) artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand. Existing PRD-054 owns conformance, PRD-056 owns physical collector schema, PRD-058 owns performance/reliability mechanisms, PRD-080 owns stranger-test protocol. Consume their non-iOS evidence without declaring their iOS scope done.
+Consumer verification, not new gameplay systems. [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) owns installation/MCP fixes; [PRD-217](PRD-217-webview-ui-layer.md) HUD; [PRD-212](../done/PRD-212-published-install-builds-android.md)/[PRD-365](PRD-365-consumer-desktop-distribution.md) artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand. Existing PRD-054 owns conformance, PRD-056 owns physical collector schema, PRD-058 owns performance/reliability mechanisms, PRD-080 owns stranger-test protocol. Consume their non-iOS evidence without declaring their iOS scope done.
 
 ## Approach and boundaries
 
