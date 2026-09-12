@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { test } from 'vitest';
+import { SDL3_ANDROID_VERSION } from '../scripts/package-android.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -1068,7 +1069,7 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
     'Android must not regress to the wgpu-native release whose naga rejects the Three.js gradientMap textureLoad');
 });
 
-const sdlActivityPath = 'third_party/sdl3/SDL3-3.2.8/android-project/app/src/main/java/org/libsdl/app/SDLActivity.java';
+const sdlActivityPath = `third_party/sdl3/SDL3-${SDL3_ANDROID_VERSION}/android-project/app/src/main/java/org/libsdl/app/SDLActivity.java`;
 test.skipIf(!existsSync(join(root, sdlActivityPath)))('Android SDL thread stack evidence [requires downloaded third_party SDL3]', () => {
   const sdlActivity = read(sdlActivityPath);
   assert.match(sdlActivity, /new Thread\(null, new SDLMain\(\), "SDLThread", 8 \* 1024 \* 1024\)/,
