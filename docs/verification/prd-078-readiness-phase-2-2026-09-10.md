@@ -6,7 +6,7 @@
 
 CI/native-host layer, based on main `0d91643402ca87d5154bef363e3be4a1e08c5380`. This includes the separately merged MCP probe repair from PR #176 instead of reimplementing that fix. The source gate, native workflow tests, CI structure guard, companion coverage digest and historical evidence from PR #168 (`5aac0abeb8527ff45d0f7a61d593d8d532948c86`) are retained together.
 
-The [PRD](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md) assigns phase 2 five files: the existing workflow, its new proof regression test, the PRD, this record and the generated retention index. Phase 1's retained source work has its own five-file assignment and [evidence record](prd-078-readiness-phase-1-2026-09-09.md). Neither phase has a self-awarded acceptance PASS.
+The [PRD](../PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md) assigns phase 2 five files: the existing workflow, its new proof regression test, the PRD, this record and the generated retention index. Phase 1's retained source work has its own five-file assignment and [evidence record](prd-078-readiness-phase-1-2026-09-09.md). Neither phase has a self-awarded acceptance PASS.
 
 ## Implementation
 

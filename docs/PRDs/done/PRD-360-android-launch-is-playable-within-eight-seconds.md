@@ -87,7 +87,7 @@ baseline stays untouched; use a separate candidate application ID.
 
 Distinguish an engineering build from consumer-distribution proof. A host built from identified
 workspace source can diagnose startup, but cannot close the consumer release lane owned by
-[PRD-078](PRD-078-toolchain-free-consumer-proof.md). Do not claim published
+[PRD-078](../production-readiness/PRD-078-toolchain-free-consumer-proof.md). Do not claim published
 consumer acceptance from locally supplied native binaries. Persistent GPU pipeline serialization,
 new mobile decoders and release publication are outside this bounded retry.
 

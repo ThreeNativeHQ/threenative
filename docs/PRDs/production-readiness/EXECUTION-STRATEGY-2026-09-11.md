@@ -10,7 +10,7 @@ folder get closed, in what order, on how many lanes; it changes no scope and tic
 | --- | --- | --- | --- | --- | --- |
 | [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | **10/12** | **5/5** | `prd:75%` | **0 → 10** | PR #198 |
 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | **20/28** | **5/9** | `prd:50%` | 8 → 20 | PR #193 |
-| [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md) | 20/54 | 4/4 | `prd:25%` | — | main |
+| [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | 20/54 | 4/4 | `prd:25%` | — | main |
 | [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | **10/18** | 0/5 | `prd:50%` | **0 → 10** | PR #197 |
 | [PRD-373](PRD-373-selective-ci-and-develop-promotion.md) | **4/20** | n/a | `prd:25%` | **0 → 4** | PR #199 |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | 0/24 | 0/5 | `prd:0%` | — | blocked: credentials, a person |
@@ -35,7 +35,7 @@ a regression `main`'s own test rejects), **#193 rebuilt on `main` and pushed**. 
 | PRD | Phases | Boxes | Acceptance | Label |
 | --- | --- | --- | --- | --- |
 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | 0/2 | 8/12 | 0/5 | `prd:50%` |
-| [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md) | 0/9 | 20/54 | 4/4 | `prd:25%` |
+| [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | 0/9 | 20/54 | 4/4 | `prd:25%` |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | 0/4 | 0/24 | 0/5 | `prd:0%` |
 | [PRD-212](PRD-212-published-install-builds-android.md) | 0/3 | 0/18 | 0/5 | `prd:0%` |
 | [PRD-217](PRD-217-webview-ui-layer.md) | 0/5 | 0/30 | 0/5 | `prd:0%` |

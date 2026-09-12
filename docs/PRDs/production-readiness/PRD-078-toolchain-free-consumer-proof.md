@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-078 — Hosted runtime release jobs prove the exact candidate
 
-**Status:** **DONE** — all nine phases carry their boxes with evidence, all four acceptance criteria are verified on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984` ([run 34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952)), and every phase has a fresh independent reviewer PASS. Public installation remains PRD-262's, and the main-route prerequisite validation is out of this proof route. Revised 2026-09-11.
+**Status:** PARTIAL — the non-publishing hosted proof executed end to end on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984` ([run 34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952)), all six packed Android controls are verified, and every phase has a fresh independent reviewer PASS. **The main-route prerequisite validation has not executed on any route**, and public installation remains PRD-262's. Revised 2026-09-11.
 **Complexity:** 6 → MEDIUM (+2 files, +2 multi-platform integration, +1 external CI API, +1 artifact contract).
 **Problem:** Historical hosted release failures must be retried on the current candidate instead of being treated as permanent blockers.
 
-Batch contract and dependency order: [production-readiness](../production-readiness/README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
 
@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](../production-readin
 
 Prior phase evidence proves the Vulkan ICD and runtime-version-stamp fixes. Its later Linux physics, Windows dependency and simulator failures were recorded in August. Green CI on a different commit is not current-candidate native-release evidence.
 
-CI/native-host layer. Owns only actual hosted build/gate defects and their exact-candidate proof. [PRD-262](../production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md) owns generated runtime artifacts and installation; [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) owns npm/consumer promotion. No separate publisher or second clean-consumer gate is introduced.
+CI/native-host layer. Owns only actual hosted build/gate defects and their exact-candidate proof. [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) owns generated runtime artifacts and installation; [PRD-060](PRD-060-promoted-consumer-distribution.md) owns npm/consumer promotion. No separate publisher or second clean-consumer gate is introduced.
 
 ## Approach and boundaries
 
@@ -92,10 +92,11 @@ The nine bounded assignments below are reviewed separately. None is accepted mer
 
 **Progress:**
 
-- [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts`, `docs/PRDs/done/PRD-078-toolchain-free-consumer-proof.md` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
+- [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts`, `docs/PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green — `scripts/__tests__/native-release-proof.spec.ts` 36/36 green 2026-09-11 (35 before PR #193 added one); the phase itself is the hosted execution, not a unit gate.
 - [x] Observed red recorded, then restored green - three controls in [the phase-2 record](../../verification/prd-078-readiness-phase-2-2026-09-10.md): the prerequisite-wait red (lines 59-77), the KVM/35-minute cap red `2 failed` -> `28 passed` (lines 191-210), and the concurrency red (lines 235-250).
 - [x] User verification performed on the named platform — run page and `release-prerequisites-…`/`clean-consumer-linux-x64` artifacts inspected: `proof-consumer-evidence.json` six controls verified (exits 0/1/1/0/1/1, assertions 16/2/4/4/16/16, `failures: []`), 300-frame non-blank `threenative-consumer.png`, `scope: same-run-artifacts-not-public-installation`.
+- [ ] Main-route prerequisite validation executed — a relevant `main` push or a manual `native-release.yml` dispatch that requires the completed exact-SHA `ci.yml` run and all eleven named prerequisite jobs. NOT RUN as of 2026-09-11: `main` CI was still queued and no runtime-native release exists, so the proof route has only executed on `pull_request`. Owned with PRD-262's publish chain.
 - [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`.
 - [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11 after the raytracing-record correction (round 2).
 
@@ -103,7 +104,7 @@ The nine bounded assignments below are reviewed separately. None is accepted mer
 
 - EDIT `.github/workflows/native-release.yml` — proof routing, hosted refusal execution, same-run artifact transport and control evidence.
 - NEW `scripts/__tests__/native-release-proof.spec.ts` — execute the actual gate and evidence collector; verify event/dependency boundaries.
-- EDIT `docs/PRDs/done/PRD-078-toolchain-free-consumer-proof.md` — make invocation and phase boundaries explicit.
+- EDIT `docs/PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md` — make invocation and phase boundaries explicit.
 - NEW `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — commands, candidate/run identities, outcomes and review state.
 - GENERATE `docs/benchmark/SCREENSHOT-RETENTION.md` — regenerate the evidence index, never hand-edit it.
 
@@ -327,7 +328,7 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 - [x] Wrong-SHA/absent-result controls fail in the existing release entry point. They execute inside the hosted `gates` job, which extracts the workflow's own inline shell and runs it against wrong-SHA, missing-job, skipped-job and malformed-evidence responses; `gates` is success on this candidate and on four earlier runs.
 - [x] All four packed Android physics negative controls and their positive control execute on the selected candidate. All six ran on run 34593258952 with `failures: 0`, at observed assertion counts 16, 2, 4, 4, 16, 16 — every row non-zero — each carrying its required marker, across three distinct APK variants (`01edd619…`, `44296795…`, `68af418e…`). Repairs were split into bounded Phases 3-9. The build tool helper's durable publish route is PRD-262 phase 3 (#193); this PRD establishes the packed-consumer path, not public installation.
 
-**Deliberately not established:** public installation. The runtime payloads in the proof came from that run's own artifacts, and no runtime-native release exists yet, so the durable published-helper route (#193) has not executed on a tag. The main-route prerequisite validation — the eleven exact-SHA CI rows — has not been exercised; it belongs to PRD-262's publish chain, which receives this proof's run identity.
+**Deliberately not established:** public installation. The runtime payloads in the proof came from that run's own artifacts, and no runtime-native release exists yet, so the durable published-helper route (#193) has not executed on a tag. The independent review is PASS on every phase, but the **main-route prerequisite validation — the eleven exact-SHA CI rows — is tracked open under Phase 2 and has not been exercised**; it belongs to PRD-262's publish chain, which receives this proof's run identity.
 
 ## Prior work retained
 
