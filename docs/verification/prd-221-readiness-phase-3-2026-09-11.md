@@ -127,6 +127,34 @@ Control that isolates it to the page size: the same game's native Linux build
 presented frames with `[V8] V8 initialized successfully` (13.1.201.22). The game is fine; the 16 KB
 Android environment is not.
 
+## The fix, and it runs on 16 KB
+
+V8 11's `src/base/build_config.h` puts Android in the `else` branch of `kMinimumOSPageSize` (4 KB).
+That constant aligns `v8_flags` and other static data, and `OS::SetDataReadOnly` then asks the kernel
+to `mprotect` a 4 KB-aligned region on a 16 KB device: EINVAL, `V8_Fatal`. Upstream later added
+Android to the 16 KB condition. `scripts/build-android-v8.mjs` now applies the same clause and bumps
+the recipe to 6 so a stale cache rebuilds. Red-green on `android-16kb-alignment.test.mjs`: 33 passed
+-> 2 failed -> 35 passed.
+
+Then the V8 payload was rebuilt (`download-deps.mjs --android` -> recipe 6,
+`build-receipt.json`: `recipe 6`, `loadAlignment 16384`), `../sandbox/fps-framework`
+(`com.threenative.bayview`, APK sha256 `4764619f3ce1c518…`) was rebuilt against it, installed on
+`threenative_ps16k` (16384-byte pages) and launched:
+
+```
+MystralStdio: [V8] Initializing V8 JavaScript engine...
+MystralStdio: [V8] Using external startup snapshot (45421 bytes)
+MystralStdio: [V8] V8 initialized successfully
+MystralStdio: [V8] Version: 11.0.226.16
+MystralColdStart: TN_COLD_START:{"segment":"first_playable","atMs":28671.006}
+MystralRuntime: TN_SURFACE_FRAME:{"view":true,"present":28}
+```
+
+A screenshot at that point is 2400x1080 with 1857 distinct colours — a rendered frame, not a blank
+one. V8 initializes and the game presents frames on a 16 KB environment; the crash is gone. HUD
+interaction and a background/resume cycle were not separately exercised, and the in-repo Android
+playtest target was not run here; the process stayed alive past first playable.
+
 ## Independent review
 
 NOT RUN.

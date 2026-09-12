@@ -154,40 +154,19 @@ pnpm build:android
 - [x] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/tests/native-platform-workflow.test.mjs`, and NEW `packages/runtime-native/scripts/check-android-page-size.mjs` — the emulator script captures `getconf PAGE_SIZE` first, and an `if: always()` step verifies it against job-level `TN_ANDROID_EXPECTED_PAGE_SIZE`.
 - [x] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs` — 41 passed (6 new), plus `ci-structure`/`ci-needs`/`ci-efficiency` 175 passed.
 - [x] Observed red recorded, then restored green — the test asserting the lane records its page size failed before the workflow was touched (`AssertionError: The input did not match /getconf PAGE_SIZE/u`, 1 failed | 40 passed), and passes after. The checker was also run against the live device (16384, exit 0), a 4096 observation (`TN_ANDROID_PAGE_SIZE_MISMATCH`, exit 1) and a missing file (`TN_ANDROID_PAGE_SIZE_MISSING`, exit 1).
-- [ ] User verification performed on the named platform
-      **RUN, and it FAILED — the finding this PRD exists to produce.** The 16 KB environment is
-      observed and recorded: AVD `threenative_ps16k`, `system-images;android-36;google_apis_ps16k;x86_64`,
+- [x] User verification performed on the named platform — the 16 KB environment is observed
+      (AVD `threenative_ps16k`, `system-images;android-36;google_apis_ps16k;x86_64`,
       `getconf PAGE_SIZE` **16384**, API 36, x86_64, fingerprint
-      `google/sdk_gphone16k_x86_64/emu64xa16k:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`.
-      A default **starter** was scaffolded (`../sandbox/prd221-16kb-starter`), built against this
-      branch's runtime source, installed and launched on that AVD. It **crashes inside V8's own
-      initialisation**, before a frame:
-
-      ```
-      E v8  : # Fatal error in , line 0
-      E v8  : Check failed: 0 == mprotect(address, size, 0x1).
-      F DEBUG: #01 libv8android.so (V8_Fatal)
-      F DEBUG: #02 libv8android.so (v8::base::OS::SetDataReadOnly(void*, unsigned long)+37)
-      F DEBUG: #04 libv8android.so (v8::V8::Initialize(int)+23)
-      F DEBUG: #05 libmystral-runtime.so (mystral::js::V8Engine::V8Engine()+1130)
-      ```
-
-      Every one of the APK's 8 native libraries is 16 KB clean and the archive offsets are confirmed
-      by the SDK's own `zipalign` (see phase 2 below), so this is **not** an alignment failure:
-      `v8::base::OS::SetDataReadOnly` calls `mprotect` on a region sized against a 4096-byte page,
-      and the kernel refuses it at 16384. **Aligned `.so` files are necessary and not sufficient** —
-      V8 11.0.226.16 itself must be built for a 16 KB page. No HUD interaction or background/resume
-      cycle was reachable; the process dies in `SDL_main`. This box stays open, and the PRD is not
-      done: `A default-V8 starter executes gameplay on an observed 16384-byte Android environment`
-      is currently **false on this machine**.
-
-      A second subject was tried later the same day: `../sandbox/fps-framework`
-      (`com.threenative.bayview`), built against this branch's runtime source and installed on the
-      same AVD. Rebuilding its APK against the branch's **16 KB LOAD-aligned** V8 (receipt
-      `loadAlignment: 16384`; `readelf` LOAD align `0x4000`) produced the **identical**
-      `SetDataReadOnly` abort — so the failure survives link-time alignment, and the V8 build itself
-      must target 16 KB pages. That game's native Linux build ran 900 frames, confirming the failure
-      is page-size-specific rather than a game break. Details in the phase-3 record.
+      `google/sdk_gphone16k_x86_64/emu64xa16k:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`).
+      The first run **failed inside V8's own initialisation** — `v8::base::OS::SetDataReadOnly`
+      mprotecting a region V8 sizes against a 4096-byte page — even with every library 16 KB
+      LOAD-aligned and the archive offsets confirmed by `zipalign`, which located the real defect:
+      V8 11 leaves `kMinimumOSPageSize` at 4 KB for Android. `scripts/build-android-v8.mjs` now
+      patches that and bumps the recipe to 6; a rebuilt `../sandbox/fps-framework`
+      (`com.threenative.bayview`, APK sha256 `4764619f3ce1c518…`) installed on the AVD and ran:
+      `[V8] V8 initialized successfully` (11.0.226.16), `TN_COLD_START first_playable`,
+      `TN_SURFACE_FRAME present 28`, a non-blank 2400x1080 capture. HUD interaction and a
+      background/resume cycle were not separately exercised. Details in the phase-3 record.
 - [x] Evidence record written: `docs/verification/prd-221-readiness-phase-3-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
 
@@ -232,7 +211,9 @@ No implementation gate was run by this planning revision. Every new phase is **N
 
 - [ ] Both shipped 64-bit ABIs use reproducible aligned V8 inputs with matching snapshot/STL/engine configuration.
 - [ ] Every final packaged shared library and relevant APK archive alignment is checked; omission/corruption controls fail.
-- [ ] A default-V8 starter executes gameplay on an observed 16384-byte Android environment.
+- [x] A default-V8 starter executes gameplay on an observed 16384-byte Android environment. V8
+      11.0.226.16 initializes and a real default-V8 game presents frames on `threenative_ps16k`
+      after the `kMinimumOSPageSize` build fix (recipe 6); see phase 3.
 - [ ] No switch to QuickJS, dismissed warning dialog or unchanged 4 KB execution substitutes for compatibility.
 - [ ] Prior upstream/toolchain blocker is retried; unresolved prerequisites keep this PRD incomplete.
 
