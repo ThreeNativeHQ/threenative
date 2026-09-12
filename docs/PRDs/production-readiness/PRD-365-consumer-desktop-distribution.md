@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-365 — An installed game produces distributable desktop apps
 
-**Status:** PROPOSED. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — phase 1 implemented against local inputs and its focused gates green; user verification and independent review outstanding. Revised 2026-09-08; planning only until phase 1.
 **Complexity:** 10 → HIGH (+3 files, +2 platform packaging module, +2 signing/container state, +2 multi-package, +1 OS tools).
 **Problem:** The desktop command produces a host executable plus UI files, without a proved complete installed-app container, signing/notarization path or player-machine dependency story.
 
@@ -63,12 +63,18 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/scripts/desktop-distribution.mjs` (+1 more)
-- [ ] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/scripts/desktop-distribution.mjs` (+1 more)
+  - `build --target desktop --mode release` reaches `packageDesktop`, which lazily imports the new helper and delegates the container; debug mode is byte-for-byte the old raw path. `pnpm exec tsc --noEmit -p tsconfig.json` clean.
+- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
+  - 47 passed (5 new) on linux-x64, exit 0. New rows: release container payload, relocation rejection (missing UI entry, missing dependency, tampered bytes), generic-icon brand rejection, per-platform metadata, dependency-tool census.
+- [x] Observed red recorded, then restored green
+  - Skipping dependency recording in `desktop-distribution.mjs` made the relocation row fail (`Tests 1 failed`); restoring the recording returned `Tests 1 passed`.
 - [ ] User verification performed on the named platform
+  - Not run. The relocated launch from a path containing spaces reached the runtime event loop (`TN_PRESENTS_TICK`), but the fixture entry draws nothing; the starter HUD/assets and OS-identity check needs the starter on a real desktop with a human looking at it.
 - [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-1-<date>.md`
+  - Pending at this implementation commit; the record is added, and this box ticked, in the next commit of the same PR.
 - [ ] Independent reviewer returned PASS
+  - Not run. No self-awarded PASS.
 
 **Files (maximum five):**
 
