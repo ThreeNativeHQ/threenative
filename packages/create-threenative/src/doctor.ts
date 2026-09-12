@@ -660,16 +660,22 @@ function mcpSummary(serverChecks: readonly IDoctorCheck[], host: IMcpHost): IDoc
 function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorCheck[] {
   const config = mcpConfig(snapshot);
   const verifiable = SHAPE_VERIFIABLE_HOSTS.map(({ file }) => file).join(", ");
-  if (config.kind === "missing") {
+  if (config.kind === "missing" || config.kind === "malformed") {
     // A host doctor cannot validate by shape may still be wired; `editor activation` is the check
-    // that can see it, and saying so beats a bare "no .mcp.json" on a working Zed project.
+    // that can see it, and saying so beats a bare "no .mcp.json" on a working Zed project. This
+    // rescue applies to an unreadable table as much as to an absent one — a single corrupt
+    // .mcp.json must not hard-fail a project whose other hosts carry the servers.
     const elsewhere = MCP_HOST_TABLE.filter((host) => hostWiring(snapshot, host) === "wired").map(
       ({ label }) => label,
     );
+    const cause =
+      config.kind === "missing"
+        ? `no server table this check can validate (${verifiable})`
+        : `no readable server table: ${config.detail}`;
     if (elsewhere.length > 0) {
       return [
         {
-          detail: `no server table this check can validate (${verifiable}); ${elsewhere.join(", ")} carry the servers in a format only 'editor activation' reads`,
+          detail: `${cause}; ${elsewhere.join(", ")} carry the servers in a format only 'editor activation' reads`,
           fix: `Reinstall @threenative/core if you also want ${verifiable} wired; an agent in ${elsewhere[0]} already has capability search.`,
           name: "capability search",
           status: "warn",
@@ -678,18 +684,14 @@ function capabilitySearchChecks(snapshot: IProjectSnapshot): readonly IDoctorChe
     }
     return [
       {
-        detail: `no ${verifiable}, so an agent here cannot search engine capabilities and will hand-write what exists`,
-        fix: "Restore the .mcp.json a scaffolded project ships, which wires the ThreeNative MCP servers.",
-        name: "capability search",
-        status: "fail",
-      },
-    ];
-  }
-  if (config.kind === "malformed") {
-    return [
-      {
-        detail: `no readable server table: ${config.detail}`,
-        fix: "Restore a valid generated config, preserving any unrelated servers.",
+        detail:
+          config.kind === "missing"
+            ? `no ${verifiable}, so an agent here cannot search engine capabilities and will hand-write what exists`
+            : cause,
+        fix:
+          config.kind === "missing"
+            ? "Restore the .mcp.json a scaffolded project ships, which wires the ThreeNative MCP servers."
+            : "Restore a valid generated config, preserving any unrelated servers.",
         name: "capability search",
         status: "fail",
       },

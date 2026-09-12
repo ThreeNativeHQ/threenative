@@ -1244,6 +1244,28 @@ describe("threenative doctor and model conversion", () => {
     expect(report.pass).toBe(true);
   });
 
+  it("should say the transport was not probed rather than claiming it is up", () => {
+    // Mutation-proofing: nothing pinned the unprobed branch, so reporting "transport is up" for a
+    // server that was never probed passed the whole suite. The separation this phase exists for is
+    // between a transport observed to work and one nobody looked at.
+    const unprobed = diagnoseProject(snapshot({ blender: ABSENT }));
+    expect(check(unprobed, "model conversion").detail).toContain("was not probed");
+    expect(check(unprobed, "model conversion").detail).not.toContain("transport is up");
+    const probed = diagnoseProject(
+      snapshot({
+        blender: ABSENT,
+        mcpServerHealth: new Map([
+          [
+            BLENDER_SERVER,
+            { detail: "transport initialized and advertised 3 tool(s)", status: "ok" as const },
+          ],
+        ]),
+      }),
+    );
+    expect(check(probed, "model conversion").detail).toContain("transport is up");
+    expect(check(probed, "model conversion").detail).not.toContain("was not probed");
+  });
+
   it("should report conversion unavailable when the Blender MCP starts but Blender is missing", () => {
     const report = diagnoseProject(
       snapshot({
@@ -1473,6 +1495,27 @@ describe("threenative doctor and editor activation", () => {
     const search = check(report, "capability search");
     expect(search.status).toBe("warn");
     expect(search.detail).toContain("Zed");
+  });
+
+  it("should rescue a malformed verifiable config when another host carries the servers", () => {
+    // The same defect review 2 found on the `missing` branch, surviving on its sibling: the
+    // `malformed` branch never got the "some other host carries them" rescue, so one unreadable
+    // .mcp.json hard-failed a project whose Zed config was wired correctly.
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set([...base.files, ".zed/settings.json"]),
+      readText: (relative) =>
+        relative === ".mcp.json"
+          ? "{ not json"
+          : relative === ".zed/settings.json"
+            ? MCP_CONFIG
+            : base.readText(relative),
+    });
+    const search = check(report, "capability search");
+    expect(search.status).toBe("warn");
+    expect(search.detail).toContain("Zed");
+    expect(search.detail).toContain(".mcp.json");
   });
 
   it("should fail, not warn, when every host config is broken", () => {
