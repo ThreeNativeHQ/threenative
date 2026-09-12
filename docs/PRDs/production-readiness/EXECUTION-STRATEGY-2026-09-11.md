@@ -3,7 +3,34 @@
 Working document for one day of execution. Not a PRD. It plans *how* the eleven PRDs in this
 folder get closed, in what order, on how many lanes; it changes no scope and ticks no box.
 
-Measured start state (`pnpm prd:progress`, this commit `0022cd9af`):
+**Live progress — measured, each PRD on the branch that carries its work.** Re-run
+`pnpm prd:progress <file>` in that branch's worktree; nothing here is hand-counted.
+
+| PRD | Phase boxes | Acceptance | Label | Δ today | Where the work is |
+| --- | --- | --- | --- | --- | --- |
+| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | **10/12** | **5/5** | `prd:75%` | **0 → 10** | PR #198 |
+| [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | **20/28** | **5/9** | `prd:50%` | 8 → 20 | PR #193 |
+| [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | 20/54 | 4/4 | `prd:25%` | — | main |
+| [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | **10/18** | 0/5 | `prd:50%` | **0 → 10** | PR #197 |
+| [PRD-373](PRD-373-selective-ci-and-develop-promotion.md) | **4/20** | n/a | `prd:25%` | **0 → 4** | PR #199 |
+| [PRD-060](PRD-060-promoted-consumer-distribution.md) | 0/24 | 0/5 | `prd:0%` | — | blocked: credentials, a person |
+| [PRD-212](PRD-212-published-install-builds-android.md) | 0/18 | 0/5 | `prd:0%` | — | not started (checked: genuinely 0) |
+| [PRD-217](PRD-217-webview-ui-layer.md) | 0/30 | 0/5 | `prd:0%` | — | blocked: no Windows/macOS host |
+| [PRD-365](PRD-365-consumer-desktop-distribution.md) | 0/18 | 0/5 | `prd:0%` | — | blocked: hosts, signing |
+| [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | 0/18 | 0/5 | `prd:0%` | — | blocked: everything above |
+| [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | 0/12 | 0/5 | `prd:0%` | — | not started |
+
+**61 of 232 phase boxes, plus 9 acceptance boxes — 26%, from 28 boxes (12%) at the start of the
+day.** Four PRDs moved off zero. None has reached `done/`: every one of the four is held by an
+independent review, a device lane or an external blocker, and no box was ticked to make the table
+look better.
+
+Merge queue: **#194 and #195 merged**, **#196 closed as superseded** (its one remaining change was
+a regression `main`'s own test rejects), **#193 rebuilt on `main` and pushed**. The original
+`Measured start state` table this document opened with is preserved below for comparison.
+
+<details>
+<summary>Start of day, 2026-09-11 (commit <code>0022cd9af</code>)</summary>
 
 | PRD | Phases | Boxes | Acceptance | Label |
 | --- | --- | --- | --- | --- |
@@ -19,7 +46,10 @@ Measured start state (`pnpm prd:progress`, this commit `0022cd9af`):
 | [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | 0/2 | 0/12 | 0/5 | `prd:0%` |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | 0/2 | 0/12 | 0/5 | `prd:0%` |
 
+
 Total: 11 PRDs, 41 phases, 236 boxes, 28 of them ticked (12%).
+
+</details>
 
 ## Starting a session from this document
 
@@ -583,3 +613,194 @@ would be a second copy of the installer's `SERVER_FORMATS`.
 - **`packages/runtime-native/tests/` reports 18 failures in a worktree with no compiled host**, all
   `build/tn-linux/<target> is not built`, across `crash-handler-policy`, `pump-silence`,
   `rg11b10-renderable`, `runtime-next-contract` and `timestamp-query`. 994 pass. Environmental.
+
+---
+
+# Session log — 2026-09-11, third execution session
+
+## PR #198's two CI reds were one suppression
+
+`budgets` and `test-unit (2/3)` both failed for the same reason, and neither log said so in its
+own words: `scripts/__tests__/quality-json.spec.ts` asserts the quality gate exits 0, and phase 2's
+`@ts-expect-error` import of `packages/core/mcp/install.mjs` was **one** new suppression-class
+finding. `budgets` runs `pnpm quality` too, so one directive reddened two required checks.
+
+Fixed at the root rather than waived at the site: `packages/core/mcp/install.d.mts` now types the
+installer the way `servers.d.mts` already types `servers.mjs`, and the directive is gone from all
+five of its TypeScript consumers along with two hand-written casts. Commit `199aebed8`.
+Local: `typecheck` 0, `lint` 0, `quality` 0, `budgets` 0, the four affected specs 136 passed.
+
+**The lesson worth carrying:** a `budgets` red that names nothing in its own diff is usually
+`pnpm quality`, which `budgets` runs. Read the tail of the budgets log, not the changed files.
+
+## Both phases reviewed again; both FAIL again; three real defects
+
+Two fresh reviewers, one per phase, each mutation-testing and driving the real built CLI.
+
+| # | Defect | Phase |
+| --- | --- | --- |
+| 1 | The requested target line named only **satisfied** facts: `not buildable — runtime packager installed; JDK 17.0.19 found; android-35 found`, with the real blocker on another line. Every reason it gave was met. | 1 |
+| 2 | Every per-server `capability search` message hardcoded `.mcp.json` while the summary named the host actually read, so a Cursor-only project was told to restore an entry in a file it does not have. | 2 |
+| 3 | `mcpConfig` took the first host config that **parses**, not the one carrying the servers: seven correctly wired hosts plus a user-owned `.mcp.json` reported `0 of 4 server(s) resolve` and exit 1 beside `editor activation: 7 of 7`. | 2 |
+
+All three fixed in `6d3b1b4e8`, each with its own regression test, all three observed red first
+(`3 failed | 81 passed` before, `84 passed` after) and confirmed on the real built CLI.
+
+Defect 1's fix keeps the probed facts rather than deleting them — they move behind `; probed: `,
+because the standing report of what doctor actually saw is still useful; it is the *implication*
+that they are the reasons that was wrong.
+
+## Phase 2's user-verification box is closed, in a real game
+
+The review's stated reason for leaving it open — `mcpServerHealth` is populated only when a shim
+resolves, so every real run printed `threenative-blender was not probed` — no longer holds. Run in
+`../sandbox/caravel`, a real game with `@threenative/core` installed, outside this repository, with
+Blender removed from **both** `PATH` and `HOME`:
+
+```
+! model conversion: threenative-blender transport is up, but conversion is unavailable: No Blender
+  4.2 or newer was found … no bake manifest here, so no conversion is proven
+✓ editor activation: 7 of 7 host configs carry the servers … whether an editor loaded it is not
+  observable from here
+✓ capability search: threenative-sculpt … transport initialized and advertised 5 tool(s)
+```
+
+No `was not probed` line. The same project with Blender present names `Blender 5.2.0`. PRD-374 is
+now **10 of 12 phase boxes**, `prd:75%`; the two open boxes are both "independent reviewer returned
+PASS", and a third round of reviews is running against `6d3b1b4e8`.
+
+**`PATH` alone never removed Blender here** — `resolveBlender` falls back to
+`$HOME/.local/bin/blender` (`packages/blender-mcp/src/detect.ts:104`), which is exactly where it
+lives on this machine. The earlier control recorded as `PATH=/usr/bin:/bin` did not produce the
+output quoted beside it; both records now say `HOME` must be scrubbed too.
+
+## Evidence drift both reviewers found, corrected in the same commit
+
+- The phase-1 record said `pnpm budgets` **NOT RUN** while the PRD box beside it claimed exit 0.
+- Both records carried spec counts that no longer reproduce (68/75 recorded, 84 measured).
+- Both the PRD and the phase-2 record said `install.d.mts` "was written and reverted" — false as of
+  `199aebed8`, and it made the phase's five-file budget wrong. It is now accounted for, including
+  the three one-line directive deletions it enables.
+
+A record written before the fixes it is supposed to evidence is not evidence. Where a record
+describes an earlier commit, it now says which one.
+
+## Merge lane
+
+#196 is closed. #193 is the only non-draft PR left and is still churning its full 45-job board with
+nothing red; #198's re-run started on `199aebed8`. Nothing merged this session.
+
+---
+
+# Session log — 2026-09-11, fourth execution session
+
+Goal for this session, stated plainly: **move a PRD into `done/`.** Below is exactly how close that
+came and what stands in the way, with nothing ticked that was not run.
+
+## PRD-374 is one review away from `done/`
+
+| | |
+| --- | --- |
+| Phase boxes | **10 of 12** |
+| Acceptance | **5 of 5** — every one verified on the real built CLI, in a project outside this repository with no engine checkout |
+| Open | the two `Independent reviewer returned PASS` boxes |
+| PR | [#198](https://github.com/ThreeNativeHQ/threenative/pull/198), `prd:75%`, HEAD `8712b619a` |
+
+**Phase 2's review came back PASS** — the first green verdict this batch has produced. The reviewer
+re-ran everything itself rather than reading the record: 665 tests across 38 files, five gates at 0,
+the rebuilt CLI against five project shapes, `md5sum -c` proving a malformed `.vscode/mcp.json` is
+byte-identical after a run, and an independent `env -i` re-run of the `../sandbox/caravel`
+verification. Three mutations, three distinct tests.
+
+**Phase 1's third review came back FAIL**, and its fourth is running against `7cc0b1890`. Every
+round has found something real, so the rounds are earning their cost rather than being ceremony.
+
+## Four rounds of review, seven real defects — what they were worth
+
+Not one was a style point. Two were bugs a user would hit on their first run.
+
+| Round | Defect | Where |
+| --- | --- | --- |
+| 1 | `pnpm budgets` red on the branch (stale retention index), and a dead commit SHA cited twice | evidence |
+| 2 | severity inverted: corrupting a config *downgraded* `editor activation` from `fail` to `warn` | phase 2 |
+| 2 | a correctly wired Cursor-only project exited 1 | phase 2 |
+| 3 | the requested target line named only **satisfied** facts — `not buildable — JDK 17.0.19 found; android-35 found` — with the real blocker on another line | phase 1 |
+| 3 | every per-server message hardcoded `.mcp.json` while the summary named the host actually read | phase 2 |
+| 3 | `mcpConfig` took the first host that *parses*, so seven wired hosts plus a user-owned `.mcp.json` reported `0 of 4 resolve` beside `7 of 7` | phase 2 |
+| 4 | the same "available beside not buildable" defect **survived on `--target desktop`**, whose line reads `available (linux-x64)` rather than `available — …` | phase 1 |
+
+Round 4 also caught a box ticked on an observation that never happened: phase 1 claimed
+`examples/engine-load-test --target web` demoted a broken desktop target, but that project's desktop
+target is *already* `warn`, so both forms print the identical line. The demotion is now recorded
+against a project that can actually show it.
+
+**The generalisable lesson:** a fix verified only on the target it was reported against is not
+verified. Two of the seven defects are the same bug surviving on a sibling — a second host config,
+a second target string shape.
+
+## `main` was red, and PR #193 was being blamed for it
+
+#193's `test-unit (3/3)` failed on an assertion its own diff cannot cause. Reproduced on
+`origin/main` untouched: `1 failed | 52 passed`. PR #195 added the `release-reports` job to
+`native-platforms.yml` with a bare `actions/checkout@v7`, and `ci-efficiency.spec.ts` requires every
+worker checkout to pin `ref: ${{ needs.scope.outputs.candidate_sha }}`.
+
+That rule bites hardest in exactly that job: it downloads three artifacts and runs
+`generate-release-reports.mjs`, so an unpinned checkout emits **release evidence describing the
+branch head rather than the candidate**. [PR #200](https://github.com/ThreeNativeHQ/threenative/pull/200)
+is the one-line pin; after it, 175 tests pass across ci-efficiency, ci-structure and ci-needs.
+**Merge #200 before #193.**
+
+## PRD-221: the Android lane ran, and it answered the question
+
+`prd:25%` → **`prd:50%`, 10 of 18 boxes**, commit `b76ba4e08` on PR #197. A pristine starter was
+scaffolded, built and launched on the 16 KB AVD for the first time. Two findings:
+
+**1. No APK this repository has ever produced was 16 KB aligned.** AGP 8.2.2 stores shared
+libraries uncompressed and aligns them to **4 KB**. The phase-2 census refused the first real build
+at `lib/arm64-v8a/libSDL3.so: uncompressed library stored at archive offset 0x11d000`. Alignment is
+an archive property, not a compiler one, so no amount of correctly built `.so` files ever fixed it.
+The packager now runs `zipalign -P 16` and re-signs with `apksigner` before the census, failing
+closed on a missing tool. The same build then reports all **8 libraries 16 KB clean across both
+ABIs**, offsets confirmed by the SDK's own zipalign.
+
+**2. V8 still cannot start on a 16 KB page**, which is the finding this PRD exists to produce:
+
+```
+E v8 : Check failed: 0 == mprotect(address, size, 0x1).
+#02 libv8android.so (v8::base::OS::SetDataReadOnly(void*, unsigned long)+37)
+#04 libv8android.so (v8::V8::Initialize(int)+23)
+#05 libmystral-runtime.so (mystral::js::V8Engine::V8Engine()+1130)
+```
+
+`SetDataReadOnly` mprotects a region sized against a 4096-byte page; the kernel refuses it at 16384.
+**Aligned libraries are necessary and not sufficient — V8 11.0.226.16 itself must be built for a
+16 KB page.** The acceptance criterion "a default-V8 starter executes gameplay on an observed
+16384-byte Android environment" is **false on this machine today**, and the box says so rather than
+being ticked. That is the next real piece of work in PRD-221, and it is a V8 build, not a packaging
+change.
+
+## Machine facts this session adds
+
+- **`npm pack` leaves `catalog:` unresolved; `pnpm pack` substitutes it.** A sandbox scaffold
+  installed from `npm pack` tarballs dies with "An external package outside of the pnpm workspace
+  declared a dependency using the catalog protocol".
+- **A lane worktree's `third_party/` is its own.** `prd221-16kb` had a fully receipted 16 KB V8 but
+  no `third_party/sdl3`, which surfaces as a Java compile error about `org.libsdl.app`, naming
+  nothing about the missing directory. Copy it in; never symlink.
+- **A fresh worktree fails the pre-push `drift` check** with `Failed to resolve entry for package
+  "@threenative/assets"`. That is an unbuilt workspace, not the diff. `pnpm build` first.
+- **A `budgets` red that names nothing in its own diff is usually `pnpm quality`,** which `budgets`
+  runs. One `@ts-expect-error` reddened two required checks on PR #198.
+
+## The board
+
+| PR | PRD | Label | State |
+| --- | --- | --- | --- |
+| [#200](https://github.com/ThreeNativeHQ/threenative/pull/200) | 373 | — | **new, merge first** — unbreaks `main` |
+| [#193](https://github.com/ThreeNativeHQ/threenative/pull/193) | 262 | `prd:0%` | its one red is #200's bug, not its own |
+| [#198](https://github.com/ThreeNativeHQ/threenative/pull/198) | 374 | `prd:75%` | phase 2 PASS; phase 1 round 4 running |
+| [#197](https://github.com/ThreeNativeHQ/threenative/pull/197) | 221 | `prd:50%` | V8 16 KB finding recorded; next step is a V8 build |
+
+**Nothing has reached `done/`.** PRD-374 is the only candidate and needs one PASS. No box was
+ticked to make that table look better, which is the whole point of the exercise.
