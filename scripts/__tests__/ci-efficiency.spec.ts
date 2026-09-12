@@ -36,7 +36,6 @@ function runGate(overrides: Record<string, string> = {}) {
     env: {
       PATH: process.env.PATH,
       CI_SCOPE_RESULT: "success",
-      NATIVE_PLATFORM_RESULT: "success",
       WORKSPACE_BUILD_RESULT: "success",
       ...overrides,
     },
@@ -76,24 +75,26 @@ describe("CI efficiency without lost evidence", () => {
 
   it("keeps the protected build context as a fail-closed join, not a second build", () => {
     const gate = job("build");
-    expect(declaredNeeds(gate)).toEqual(["scope", "build-artifacts", "native-platforms"]);
+    expect(declaredNeeds(gate)).toEqual(["scope", "build-artifacts"]);
     expect(gate).toContain("!cancelled() && needs.scope.outputs.selection == 'full'");
     expect(gate).toContain("CI_SCOPE_RESULT: ${{ needs.scope.result }}");
     expect(gate).toContain("WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}");
-    expect(gate).toContain("NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}");
+    // Native evidence is produced but never part of the merge verdict: a 120-minute matrix must
+    // not be able to hold every merge, and the release lane validates the native rows instead.
+    expect(gate).not.toContain("native-platforms");
     expect(gate).not.toMatch(/^ {4}name:/mu);
     expect(gate).not.toContain("continue-on-error");
     expect(gate).not.toContain("pnpm install");
     expect(gate).not.toContain("uses:");
   });
 
-  it("accepts only a successful scope, workspace build, and native lane", () => {
+  it("accepts only a successful scope and workspace build", () => {
     const result = runGate();
     expect(result.error).toBeUndefined();
     expect(result.status, result.stdout + result.stderr).toBe(0);
   });
 
-  for (const variable of ["CI_SCOPE_RESULT", "WORKSPACE_BUILD_RESULT", "NATIVE_PLATFORM_RESULT"]) {
+  for (const variable of ["CI_SCOPE_RESULT", "WORKSPACE_BUILD_RESULT"]) {
     it.each(["failure", "cancelled", "skipped", "neutral", "timed_out", ""])(
       `rejects ${variable}=%s instead of letting a skipped required check pass`,
       (result) => {

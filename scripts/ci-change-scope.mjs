@@ -68,6 +68,14 @@ export function selectionPlan(selection, reason, files = [], candidateSha = "") 
       ? "Website build, types, unit and browser tests (including its consumed contracts)"
       : "Exempt: no website or shared dependency change",
   };
+  // Native platform evidence is produced asynchronously (selection full) but never blocks a
+  // merge. The release lane validates the native rows for the exact candidate separately, so a
+  // slow or red native matrix cannot hold the merge verdict hostage. See PRD-373.
+  jobs["native-platforms"] = {
+    required: false,
+    reason:
+      "Native platform evidence is produced on full selections and validated by the release lane, not the merge verdict",
+  };
   return { version: 1, files, reason, scope: selection, selection, candidateSha, checks, jobs };
 }
 

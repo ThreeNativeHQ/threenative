@@ -79,8 +79,7 @@ explicit inert prose, root/playtest instruction contracts and isolated website c
 native work; shared/package/template/dependency/CI changes remain full. Main PRs, main pushes,
 nightly and manual qualification are full. `ci-required` rejects missing or unsuccessful selected
 checks; full coverage retains `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, unit/browser/
-playtest gates, `golden-path`, `template-nonvisual`, and the required `native-platforms.yml` matrix including
-`desktop-parity`. Never cache test verdicts.
+playtest gates, `golden-path`, `template-nonvisual`. The `native-platforms.yml` matrix including `desktop-parity` still runs on full selections, but it is **not part of the merge verdict** — the release lane validates the native rows for the exact candidate SHA, so a slow or red native matrix cannot hold every merge. Never cache test verdicts.
 
 **PRD-373 cutover is staged.** Until a qualified main has created a protected develop requiring
 `ci-required`, keep feature PRs based on main. After the owner enables `TN_DEVELOP_CI_ENABLED`,
