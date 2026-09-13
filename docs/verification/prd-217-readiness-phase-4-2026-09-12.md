@@ -117,6 +117,39 @@ three ways:
 
 `doctor.spec.ts` 95/95. This is a real measurement, not a warn: a compositor-less X11 still fails.
 
+## The default starter HUD attaches on a composited Linux session
+
+The real starter was scaffolded (`verify-one-template-desktop.ts starter` with
+`THREENATIVE_RUNTIME_BINARY` set to this branch's built `mystral`), built with `build:desktop`
+(web UI allowed on Linux) and packaged to `dist-native/starter` with `dist-native/ui/` beside it.
+`verify-starter-desktop.mjs` ran it under its own Xvfb with **no compositor**, so the overlay
+refused exactly as designed and only the 3D gate passed:
+
+```
+TN_UI_OVERLAY:{"attached":false,"reason":"no compositing manager is running, so nothing would blend the overlay"}
+starter desktop gate passed: 300 frames, 21607 colors, 322 asset pixels
+```
+
+Re-running the same packaged artifact on `Xvfb :4` with `xcompmin` owning `_NET_WM_CM_S0`, SDL on
+X11 and `GDK_BACKEND=x11`, the starter's own React/Tailwind HUD attached and the app rendered with
+it live:
+
+```sh
+DISPLAY=:4 SDL_VIDEODRIVER=x11 GDK_BACKEND=x11 ./dist-native/starter \
+  --screenshot starter-hud.png --frames 120
+```
+
+```
+TN_COLD_START:{"segment":"ui_overlay_attached","atMs":1600.673}
+TN_UI_OVERLAY:{"attached":true}
+[info] TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb
+Rendered 120 frames in 4261ms
+```
+
+The capture is `/tmp/opencode/starter-hud.png` (358 KB, non-blank). This proves the default
+starter's own WebView HUD, not `native-smoke`, comes up on a composited X11/Xvfb session. Input on
+the starter HUD and every non-X11 session remain unrun and are not claimed.
+
 ## Not run, and not claimed
 
 - Live HUD input/teardown under Xwayland: the probe's `XGetImage` sampling aborts before the
