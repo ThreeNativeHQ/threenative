@@ -1,7 +1,7 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync,  } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,  } from 'node:fs';
 
 import { dirname, join } from 'node:path';
 import { afterEach, test } from 'vitest';
@@ -610,6 +610,102 @@ test('real Android packaging emits configured and no-config artifacts through th
   assert.match(defaultManifest, /TN_FULLSCREEN" android:value="true"/u);
   assert.match(defaultManifest, /TN_MAX_FPS" android:value="60"/u);
   assert.match(defaultStrings, /<string name="app_name">ThreeNative<\/string>/u);
+});
+
+/**
+ * PRD-375 phase 1 — the brand on the artifact a player installs.
+ *
+ * The configured test above proves the debug path. A signed consumer release is the artifact a
+ * player receives, and it is the one the whole phase is about: if the game's icon or splash only
+ * survives `assembleDebug`, the release a store hands out still wears the engine's face.
+ */
+test('a signed consumer release preserves the configured icon, splash and identity resources', async () => {
+  const root = makeTempDirSync('threenative-android-release-brand-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  const foreground = join(root, 'foreground.png');
+  const monochrome = join(root, 'monochrome.png');
+  const splash = join(root, 'launch.png');
+  const output = join(root, 'dist', 'fox.apk');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  writeFileSync(foreground, VALID_PNG);
+  writeFileSync(monochrome, VALID_PNG);
+  writeFileSync(splash, VALID_PNG);
+
+  const config = {
+    app: {
+      id: 'com.studio.foxgame',
+      name: 'Fox',
+      version: '1.2.3',
+      build: 7,
+      icons: { android: { foreground, monochrome, background: '#111827' } },
+    },
+    bootSplash: { backgroundColor: '#0d1b2a', image: splash },
+  };
+
+  await packageAndroid(bundle, output, undefined, undefined, config, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    mode: 'release',
+    format: 'apk',
+    ...releaseOptions('/consumer/fox'),
+  });
+
+  const manifest = artifactEntry(output, 'AndroidManifest.xml').toString('utf8');
+  assert.match(manifest, /android:icon="@mipmap\/ic_launcher"/u);
+  assert.match(manifest, /android:roundIcon="@mipmap\/ic_launcher"/u);
+  assert.match(
+    artifactEntry(output, 'values/strings.xml').toString('utf8'),
+    /<string name="app_name">Fox<\/string>/u,
+  );
+  assert.match(
+    artifactEntry(output, 'build.gradle.kts').toString('utf8'),
+    /applicationId = "com\.studio\.foxgame"/u,
+  );
+  assert.deepEqual(artifactEntry(output, 'mipmap-xxxhdpi/ic_launcher.png'), VALID_PNG);
+  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/ic_launcher_foreground.png'), VALID_PNG);
+  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/ic_launcher_monochrome.png'), VALID_PNG);
+  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/tn_boot_splash.png'), VALID_PNG);
+  assert.match(
+    artifactEntry(output, 'mipmap-anydpi-v26/ic_launcher.xml').toString('utf8'),
+    /android:drawable="@drawable\/ic_launcher_foreground"/u,
+  );
+});
+
+test('a declared Android icon variant whose file is missing is refused before Gradle runs', async () => {
+  const root = makeTempDirSync('threenative-android-release-brand-missing-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  const foreground = join(root, 'foreground.png');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  writeFileSync(foreground, VALID_PNG);
+
+  // A consumer bypassing config validation (a stale resolved config, a hand-written call) must not
+  // get a release that silently drops the monochrome variant back to the engine default.
+  const config = {
+    app: {
+      id: 'com.studio.foxgame',
+      name: 'Fox',
+      icons: { android: { foreground, monochrome: join(root, 'missing-monochrome.png') } },
+    },
+  };
+
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, config, {
+      runtimeRoot: runtime,
+      ensureGradleWrapper: async () => undefined,
+      prepareAndroidPrebuilts: async () => undefined,
+      mode: 'release',
+      format: 'apk',
+      ...releaseOptions('/consumer/fox'),
+    }),
+    /TN_CONFIG_BRAND_ANDROID_MONOCHROME_MISSING/u,
+  );
+  // The refusal is before Gradle, so no ten-minute build produced the wrong icon.
+  assert.equal(existsSync(join(runtime, 'android', 'app', 'build', 'last-task.txt')), false);
 });
 
 /**
