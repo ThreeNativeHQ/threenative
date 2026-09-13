@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { uiOverlayLibraryPath } from './build-native-ui-overlay.mjs';
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tools = join(root, '.runtime', 'tools-venv');
 const windows = process.platform === 'win32';
@@ -55,16 +57,12 @@ configureArgs.push(
   '-DTN_ENABLE_NATIVE_PHYSICS=ON',
   `-DTHREENATIVE_PHYSICS_LIBRARY=${physicsLibrary}`,
 );
-if (process.platform === 'linux') {
+// The UI overlay is the desktop host's own, and every desktop host now has a backend: X11 on
+// Linux, WebView2 on Windows, WebKit on macOS. Build it wherever a desktop host is being built
+// and hand CMake the path the host toolchain actually wrote.
+if (process.platform === 'linux' || process.platform === 'darwin' || process.platform === 'win32') {
   run(process.execPath, [join(root, 'scripts', 'build-native-ui-overlay.mjs')]);
-  const uiOverlayLibrary = join(
-    root,
-    'native',
-    'ui-overlay',
-    'target',
-    'release',
-    'libthreenative_ui_overlay.a',
-  );
+  const uiOverlayLibrary = uiOverlayLibraryPath(root);
   configureArgs.push(
     '-DTN_ENABLE_UI_OVERLAY=ON',
     `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,

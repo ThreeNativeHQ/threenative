@@ -149,6 +149,11 @@ const BUG_REPORT_SKILL_PATHS = [
 // all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
+// Recomputed 2026-09-12 for PRD-217's desktop HUD input proof: the starter's `src/ui/Menu.tsx`
+// now leads its button row with the two interactive buttons and puts the instruction text after
+// them, so the HUD's touch targets sit at a position anchored to the panel instead of to whatever
+// width the text renders at on a given platform. That is a starter source change, so only the
+// `starter` tree moves; the other nine are byte-identical.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -321,7 +326,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "811fa1f6dcaf7ff6d96fa8f0e00f245e87d63a8f9235243de8d009947a925096",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "f9cefb3e49b4aa71b93163ff8cca82f3bcbf453bef5e18f21820349528e3322f",
+  starter: "4a7a1c0ed73d6d28ae9833c3a01fe9366d565fe382cd059dbd73ba3f02fa2070",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.

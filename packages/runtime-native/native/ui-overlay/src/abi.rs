@@ -47,6 +47,7 @@ pub extern "C" fn tn_ui_overlay_attach(
         return -5;
     };
     let ui_root = std::path::PathBuf::from(ui_root);
+    crate::HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
     if gtk::init().is_err() {
         return -1;
     }
@@ -255,6 +256,7 @@ pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32)
     } else {
         unsafe { std::slice::from_raw_parts(regions, count as usize * 4) }
     };
+    crate::HIT_REGIONS.with(|store| *store.borrow_mut() = published.to_vec());
     OVERLAY.with(|slot| {
         let borrowed = slot.borrow();
         let Some(overlay) = borrowed.as_ref() else {
@@ -264,9 +266,52 @@ pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32)
     })
 }
 
+/// Whether a normalized point is inside a published interactive rectangle.
+///
+/// The playtest input bridge asks this before dispatching a synthetic pointer, so the same list
+/// applied as the X11 input shape also decides which side a synthetic press lands on.
+#[no_mangle]
+pub extern "C" fn tn_ui_overlay_hit_test(nx: f32, ny: f32) -> c_int {
+    if crate::hit_test(nx, ny) {
+        1
+    } else {
+        0
+    }
+}
+
+/// Dispatch one synthetic DOM pointer event into the page. See `pointer_injection_script`.
+#[no_mangle]
+pub extern "C" fn tn_ui_overlay_inject_pointer(
+    kind: *const c_char,
+    nx: f32,
+    ny: f32,
+    buttons: i32,
+    pointer_id: i32,
+) -> c_int {
+    if kind.is_null() {
+        return -5;
+    }
+    let Ok(kind) = (unsafe { CStr::from_ptr(kind) }).to_str() else {
+        return -5;
+    };
+    OVERLAY.with(|slot| {
+        let borrowed = slot.borrow();
+        let Some(overlay) = borrowed.as_ref() else {
+            return -1;
+        };
+        let script = crate::pointer_injection_script(kind, nx, ny, buttons, pointer_id);
+        if overlay.webview.evaluate_script(&script).is_ok() {
+            0
+        } else {
+            -4
+        }
+    })
+}
+
 /// Detach and destroy the overlay. Safe to call when nothing is attached.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_detach() {
+    crate::HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
     OVERLAY.with(|slot| {
         slot.borrow_mut().take();
     });
