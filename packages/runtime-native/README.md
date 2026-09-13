@@ -100,7 +100,28 @@ node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs
 1. Build: `pnpm exec threenative build --target desktop --mode release`.
 2. Verify on a player image with no Node and no engine checkout:
    `verify-starter-desktop.mjs --container <unpacked-directory>`.
-3. Hand the archive to your installer or store depot, signing it first where the store requires it.
+3. Sign where the store requires it (below), then hand the archive to your installer or store depot.
+
+### Signing and store/depot handoff
+
+A release container is complete but unsigned. `THREENATIVE_DESKTOP_SIGN=1` requests signing; the
+non-secret inputs come from the build environment, while the private key and the notarytool password
+stay in the OS keychain and are never written into the container.
+
+| Variable | Meaning |
+| --- | --- |
+| `THREENATIVE_DESKTOP_SIGN` | `1`/`true` requests a signed release; missing inputs then fail as PENDING. |
+| `THREENATIVE_DESKTOP_CODESIGN_IDENTITY` | macOS `codesign` Developer ID identity. |
+| `THREENATIVE_DESKTOP_NOTARY_PROFILE` | macOS `notarytool` keychain profile; enables notarization and stapling. |
+| `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` | Windows code-signing certificate (`.pfx`). |
+| `THREENATIVE_DESKTOP_TIMESTAMP_URL` | Windows Authenticode timestamp server. |
+
+Windows `signtool` signs then verifies the executable. macOS `codesign` signs and verifies the
+bundle, `notarytool` notarizes the archive and `stapler` staples the ticket; notarization evidence
+that does not name the produced artifact is refused. Linux has no Authenticode or notarization, so
+its archive carries integrity metadata only and is handed to the package/depot step as-is. A
+signing failure refuses the release and leaves no archive, and the manifest records `signed` so an
+unsigned preparation is never mistaken for a signed one.
 
 ## Release builds and signing
 

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-365 — An installed game produces distributable desktop apps
 
-**Status:** PARTIAL — historical phase-1 evidence retained; phase 1R fixes review-discovered integrity/identity/archive defects and now has green focused Vitest (74/0), green repository workspace gates in CI, a linux-x64 native-smoke container launch, and an independent reviewer PASS. What phase 1R still lacks is HUD-overlay and macOS/Windows native execution, and its ZIP layouts remain fixture-tested. Phase 2 has landed the container-aware verifier, player-prerequisite detection and its focused tests, but its clean-player user verification and independent review are open; phase 3 NOT RUN. Revised 2026-09-13.
+**Status:** PARTIAL — historical phase-1 evidence retained; phase 1R fixes review-discovered integrity/identity/archive defects and now has green focused Vitest (74/0), green repository workspace gates in CI, a linux-x64 native-smoke container launch, and an independent reviewer PASS. What phase 1R still lacks is HUD-overlay and macOS/Windows native execution, and its ZIP layouts remain fixture-tested. Phase 2 has landed the container-aware verifier, player-prerequisite detection and its focused tests, but its clean-player user verification and independent review are open. Phase 3 has landed the signing/notarization adapter and its fixture failure contracts, with the real credentialed Windows/macOS signing PENDING on external hosts and delegated to PRD-060. Revised 2026-09-13.
 **Complexity:** 10 → HIGH (+3 files, +2 platform packaging module, +2 signing/container state, +2 multi-package, +1 OS tools).
 **Problem:** The desktop command produces a host executable plus UI files, without a proved complete installed-app container, signing/notarization path or player-machine dependency story.
 
@@ -163,12 +163,18 @@ pnpm publish:check
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/tests/distribution.test.mjs` (+1 more)
-- [ ] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/tests/distribution.test.mjs` (+1 more)
+  - `signDesktopArtifact`/`notarizeArchive` own codesign/signtool/notarytool/stapler with injectable transport; `packageDesktopContainer` signs before the integrity records and records `signed`/`signingScheme`; `desktopSigningFromEnvironment` reads non-secret inputs and the release log names signed vs unsigned. `README.md` documents the variables and the store/depot handoff. `node --check` and `biome check` clean.
+- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
+  - **56 passed / 0 failed** in that file (5 new); **101 passed** across the three desktop suites. New rows: signing failure refuses the release and leaves no archive; notarization evidence for a different artifact is refused; a notarytool `Invalid` result refuses the release; missing credentials stay PENDING while unsigned preparation records `signed: false`.
+- [x] Observed red recorded, then restored green
+  - Disabling the artifact-hash check in `assertNotaryEvidence` failed the mismatch row: `Tests 1 failed | 51 skipped`; restoring returned green.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-3-<date>.md`
+  - NOT RUN: no Windows/macOS host and no signing credentials exist here, so no Authenticode or notarized artifact was produced or assessed. The tools are exercised through injected transport; real credentialed subjects remain delegated to PRD-060.
+- [x] Evidence record written: `docs/verification/prd-365-readiness-phase-3-2026-09-13.md`
+  - Partial record: adapter, fixture contracts, commands, observed red, and the unrun real-signing gate.
 - [ ] Independent reviewer returned PASS
+  - NOT RUN for this phase.
 
 **Files (maximum five):**
 

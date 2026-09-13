@@ -518,7 +518,92 @@ export function assertContainerIdentity(manifest, config, { icon } = {}) {
 }
 
 /**
- * Build one complete, unsigned desktop container.
+ * Signing is OS tooling run outside the game runtime. Non-secret identity/options come from
+ * validated build inputs; secrets stay in the OS keychain. Linux has no Authenticode or
+ * notarization, so a Linux container is never described as signed.
+ */
+
+/** Notarization evidence must name the artifact it notarized and report Apple's acceptance. */
+export function assertNotaryEvidence({ artifactSha256, evidence }) {
+  if (!evidence || typeof evidence.artifactSha256 !== 'string') {
+    throw new Error('TN_DESKTOP_NOTARY_MISSING: notarization evidence carries no artifact sha256.');
+  }
+  if (evidence.artifactSha256 !== artifactSha256) {
+    throw new Error(
+      `TN_DESKTOP_NOTARY_MISMATCH: the notarization evidence is for ${evidence.artifactSha256}, not the produced artifact ${artifactSha256}.`,
+    );
+  }
+  if (evidence.status !== 'Accepted') {
+    throw new Error(`TN_DESKTOP_NOTARY_FAILED: notarization returned '${evidence.status}'.`);
+  }
+  return evidence;
+}
+
+function signingTool(run, name, args, code) {
+  const result = run(name, args, {});
+  if (result.error) {
+    throw new Error(`${code}_TOOL_MISSING: '${name}' is required to sign the desktop artifact (${result.error.message}).`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`${code}_FAILED: '${name}' exited ${result.status ?? 'unknown'}.\n${result.stderr ?? ''}`);
+  }
+  return result;
+}
+
+/**
+ * Sign the staged artifact with the platform's own tool. Throws instead of returning when signing
+ * fails, so no archive is written for a release that only claims to be signed.
+ */
+export function signDesktopArtifact({ platform = process.platform, target, signing, run = exec } = {}) {
+  if (platform === 'linux') {
+    return { scheme: 'none', signed: false, reason: 'Linux has no Authenticode/notarization; the archive carries integrity metadata.' };
+  }
+  if (!target || !existsSync(target)) throw new Error(missing(target ?? '(not provided)', 'artifact to sign'));
+  if (platform === 'darwin') {
+    if (!signing?.identity) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: macOS signing needs a Developer ID identity; unsigned preparation can proceed without signing.');
+    }
+    signingTool(run, 'codesign', ['--force', '--deep', '--options', 'runtime', '--sign', signing.identity, target], 'TN_DESKTOP_CODESIGN');
+    signingTool(run, 'codesign', ['--verify', '--strict', '--deep', target], 'TN_DESKTOP_CODESIGN_VERIFY');
+    return { artifactSha256: sha256File(target), scheme: 'codesign', signed: true };
+  }
+  if (platform === 'win32') {
+    if (!signing?.certificate) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: Windows signing needs a code-signing certificate; unsigned preparation can proceed without signing.');
+    }
+    const timestamp = signing.timestampUrl ? ['/tr', signing.timestampUrl, '/td', 'sha256'] : [];
+    signingTool(run, 'signtool', ['sign', '/fd', 'sha256', ...timestamp, '/f', signing.certificate, target], 'TN_DESKTOP_SIGNTOOL');
+    signingTool(run, 'signtool', ['verify', '/pa', target], 'TN_DESKTOP_SIGNTOOL_VERIFY');
+    return { artifactSha256: sha256File(target), scheme: 'signtool', signed: true };
+  }
+  throw new Error(`TN_DESKTOP_CONTAINER_UNSUPPORTED: no signing tool for '${platform}'.`);
+}
+
+/** Submit the archive to Apple and return evidence bound to that exact archive's bytes. */
+export function notarizeArchive({ archive, signing, run = exec } = {}) {
+  if (!signing?.keychainProfile) {
+    throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: macOS notarization needs a notarytool keychain profile.');
+  }
+  const result = signingTool(
+    run,
+    'xcrun',
+    ['notarytool', 'submit', archive, '--keychain-profile', signing.keychainProfile, '--wait', '--output-format', 'json'],
+    'TN_DESKTOP_NOTARYTOOL',
+  );
+  let payload;
+  try {
+    payload = JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`TN_DESKTOP_NOTARY_FAILED: notarytool returned unreadable JSON: ${result.stdout}`);
+  }
+  return assertNotaryEvidence({
+    artifactSha256: sha256File(archive),
+    evidence: { artifactSha256: sha256File(archive), id: payload.id, status: payload.status },
+  });
+}
+
+/**
+ * Build one complete desktop container, unsigned unless signing inputs are supplied.
  *
  * The caller supplies the executable the runtime compiler produced, the UI bundle when the game
  * uses the web renderer, and the dependencies discovered from that executable. Everything is
@@ -537,6 +622,7 @@ export function packageDesktopContainer({
   icon,
   output,
   run = exec,
+  signing,
 } = {}) {
   const key = desktopTargetKey(platform, arch);
   const format = desktopContainerFormat(platform);
@@ -629,7 +715,18 @@ export function packageDesktopContainer({
       record(destination);
     }
 
-    // Resource editing can change the executable; hash its final bytes on every platform.
+    // Signing changes the executable's bytes, so it runs before the final integrity records. A
+    // signing failure throws here, before any archive exists.
+    const signedArtifact = signing === undefined || signing === null
+      ? { scheme: 'none', signed: false }
+      : signDesktopArtifact({
+          platform,
+          run,
+          signing,
+          target: platform === 'darwin' ? join(staging, rootFolder) : stage(paths.executable),
+        });
+
+    // Resource editing or signing can change the executable; hash its final bytes on every platform.
     record(paths.executable);
     const manifest = {
       app: {
@@ -646,14 +743,30 @@ export function packageDesktopContainer({
       prerequisites,
       resources,
       schemaVersion: CONTAINER_SCHEMA_VERSION,
+      signed: signedArtifact.signed,
+      ...(signedArtifact.scheme === 'none' ? {} : { signingScheme: signedArtifact.scheme }),
       ui,
     };
     mkdirSync(dirname(stage(paths.manifest)), { recursive: true });
     writeFileSync(stage(paths.manifest), `${JSON.stringify(manifest, null, 2)}\n`);
 
     mkdirSync(dirname(archive), { recursive: true });
-    archiveContainer({ output: archive, platform, rootFolder, run, staging });
-    return { archive, manifest, rootFolder };
+    const previousArchive = existsSync(archive);
+    try {
+      archiveContainer({ output: archive, platform, rootFolder, run, staging });
+      // macOS notarizes the archive, staples the ticket to the application, then re-archives the
+      // stapled bundle. A failure is caught below: the release is refused and the archive this call
+      // just wrote is removed, unless one already existed.
+      if (platform === 'darwin' && signing?.notarize) {
+        notarizeArchive({ archive, run, signing });
+        signingTool(run, 'xcrun', ['stapler', 'staple', join(staging, rootFolder)], 'TN_DESKTOP_NOTARY_STAPLE');
+        archiveContainer({ output: archive, platform, rootFolder, run, staging });
+      }
+    } catch (error) {
+      if (!previousArchive) rmSync(archive, { force: true });
+      throw error;
+    }
+    return { archive, manifest, rootFolder, signed: signedArtifact.signed };
   } finally {
     rmSync(staging, { force: true, recursive: true });
   }

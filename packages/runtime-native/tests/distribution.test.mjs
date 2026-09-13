@@ -34,12 +34,17 @@ import {
 } from '../scripts/package-android.mjs';
 import {
   assertContainerIdentity,
+  assertNotaryEvidence,
   containerMetadata,
   desktopContainerFormat,
   extractContainer,
+  notarizeArchive,
+  packageDesktopContainer,
   parseLinkedLibraries,
   resolveContainer,
+  signDesktopArtifact,
 } from '../scripts/desktop-distribution.mjs';
+import { desktopSigningFromEnvironment } from '../scripts/package-desktop.mjs';
 
 /** Serves a set of named payloads over loopback and hands back a fixture `prebuilt-lock.json`. */
 async function serveFixtureRelease(root, contents) {
@@ -1564,3 +1569,119 @@ test('the dependency census reads each host tool and never silently drops an unr
     ['KERNEL32.dll', 'v8.dll'],
   );
 });
+
+// PRD-365 phase 3: signing is OS tooling with injectable transport, and a release that only claims
+// to be signed must be refused. Real credentialed signing is verified by PRD-060, not here.
+test('a signed desktop release is refused when the signing tool fails', () => {
+  const directory = makeTempDirSync('threenative-sign-failure-');
+  const executable = join(directory, 'input');
+  const output = join(directory, 'game');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push(command);
+    if (command === 'codesign') return { error: undefined, status: 1, stdout: '', stderr: 'no identity found' };
+    throw new Error(`unexpected tool ${command}`);
+  };
+  assert.throws(
+    () =>
+      packageDesktopContainer({
+        arch: 'x64',
+        config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
+        executable,
+        output,
+        platform: 'darwin',
+        run,
+        signing: { identity: 'Developer ID Application: Example (TEAM)' },
+      }),
+    /TN_DESKTOP_CODESIGN_FAILED/u,
+  );
+  assert.ok(calls.includes('codesign'));
+  assert.equal(existsSync(`${output}.zip`), false, 'a failed signature must not leave an archive');
+});
+
+test('notarization evidence for a different artifact is refused', () => {
+  const artifact = 'a'.repeat(64);
+  assert.throws(
+    () =>
+      assertNotaryEvidence({
+        artifactSha256: artifact,
+        evidence: { artifactSha256: 'b'.repeat(64), id: 'stale-run', status: 'Accepted' },
+      }),
+    /TN_DESKTOP_NOTARY_MISMATCH/u,
+  );
+  assert.throws(
+    () => assertNotaryEvidence({ artifactSha256: artifact, evidence: { artifactSha256: artifact, status: 'Invalid' } }),
+    /TN_DESKTOP_NOTARY_FAILED/u,
+  );
+  assert.deepEqual(
+    assertNotaryEvidence({
+      artifactSha256: artifact,
+      evidence: { artifactSha256: artifact, id: 'ok', status: 'Accepted' },
+    }),
+    { artifactSha256: artifact, id: 'ok', status: 'Accepted' },
+  );
+});
+
+test('a notarization rejection from notarytool refuses the release', () => {
+  const directory = makeTempDirSync('threenative-notary-reject-');
+  const archive = join(directory, 'game.zip');
+  writeFileSync(archive, 'archive bytes');
+  assert.throws(
+    () =>
+      notarizeArchive({
+        archive,
+        run: (command, args) => {
+          assert.equal(command, 'xcrun');
+          assert.deepEqual(args.slice(0, 2), ['notarytool', 'submit']);
+          return { error: undefined, status: 0, stdout: JSON.stringify({ id: 'run-1', status: 'Invalid' }), stderr: '' };
+        },
+        signing: { keychainProfile: 'tn-notary' },
+      }),
+    /TN_DESKTOP_NOTARY_FAILED/u,
+  );
+});
+
+test('unsigned preparation proceeds and is named unsigned when no signing inputs are given', () => {
+  const directory = makeTempDirSync('threenative-unsigned-');
+  const executable = join(directory, 'input');
+  writeFileSync(executable, 'executable');
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.unsigned', name: 'Unsigned Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'linux',
+    run: (command, args) => {
+      assert.equal(command, 'tar');
+      writeFileSync(args[1], 'archive bytes');
+      return { error: undefined, status: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.equal(result.signed, false);
+  assert.equal(result.manifest.signed, false);
+});
+
+test('missing signing credentials stay PENDING while unsigned preparation proceeds', () => {
+  // No request and no inputs: unsigned release, no signing object.
+  assert.equal(desktopSigningFromEnvironment({}), undefined);
+  // A request without credentials is PENDING for signing; the artifact is never mislabelled signed.
+  assert.deepEqual(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN: '1' }), { requested: true });
+  const directory = makeTempDirSync('threenative-signing-pending-');
+  const target = join(directory, 'game');
+  writeFileSync(target, 'executable');
+  assert.throws(
+    () => signDesktopArtifact({ platform: 'darwin', signing: { requested: true }, target }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_MISSING/u,
+  );
+  assert.throws(
+    () => signDesktopArtifact({ platform: 'win32', signing: { requested: true }, target }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_MISSING/u,
+  );
+  // A Windows certificate configured on a non-Windows host still leaves Linux unsigned.
+  assert.equal(
+    desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_CERTIFICATE: '/keys/game.pfx' }).certificate,
+    '/keys/game.pfx',
+  );
+});
+

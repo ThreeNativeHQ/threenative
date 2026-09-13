@@ -51,6 +51,32 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
   return installPrebuilt({ ...options.install, reuse: true });
 }
 
+/**
+ * Non-secret signing inputs, from the build environment the way Android signing already works.
+ *
+ * `THREENATIVE_DESKTOP_SIGN=1` requests signing; the identity/certificate/profile/timestamp values
+ * name the developer's credentials but never carry the secret itself — the private key and the
+ * notarytool password stay in the OS keychain. No inputs and no request means unsigned preparation,
+ * which is recorded as `signed: false`.
+ */
+export function desktopSigningFromEnvironment(env = process.env) {
+  const requested = env.THREENATIVE_DESKTOP_SIGN === '1' || env.THREENATIVE_DESKTOP_SIGN === 'true';
+  const identity = env.THREENATIVE_DESKTOP_CODESIGN_IDENTITY;
+  const certificate = env.THREENATIVE_DESKTOP_SIGN_CERTIFICATE;
+  const keychainProfile = env.THREENATIVE_DESKTOP_NOTARY_PROFILE;
+  const timestampUrl = env.THREENATIVE_DESKTOP_TIMESTAMP_URL;
+  if (!requested && identity === undefined && certificate === undefined && keychainProfile === undefined) {
+    return undefined;
+  }
+  return {
+    ...(requested ? { requested: true } : {}),
+    ...(identity === undefined ? {} : { identity }),
+    ...(certificate === undefined ? {} : { certificate }),
+    ...(timestampUrl === undefined ? {} : { timestampUrl }),
+    ...(keychainProfile === undefined ? {} : { keychainProfile, notarize: true }),
+  };
+}
+
 export const DEFAULT_DESKTOP_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
@@ -128,6 +154,9 @@ async function packageDesktopRelease(options, runtime) {
   const staging = mkdtempSync(join(tmpdir(), 'threenative-desktop-release-'));
   try {
     const config = options.config === undefined ? DEFAULT_DESKTOP_CONFIG : readConfig(options.config);
+    // Signing inputs are non-secret identity/options from the build environment; secrets stay in
+    // the OS keychain. Without them, release stays an unsigned-but-complete container.
+    const signing = desktopSigningFromEnvironment();
     const rawOutput = join(staging, containerSlug(basename(options.output)));
     const executable = compileDesktopArtifact({ ...options, output: rawOutput }, runtime);
     const uiRenderer = config.ui?.renderer === 'web' ? 'web' : 'native';
@@ -148,10 +177,11 @@ async function packageDesktopRelease(options, runtime) {
       platform: process.platform,
       prerequisites: discovered.prerequisites,
       run: options.run,
+      signing,
       uiDirectory,
       uiRenderer,
     });
-    console.log(`ThreeNative desktop container: ${result.archive}`);
+    console.log(`ThreeNative desktop container${result.signed ? ' (signed)' : ' (unsigned)'}: ${result.archive}`);
     return result.archive;
   } finally {
     rmSync(staging, { force: true, recursive: true });
