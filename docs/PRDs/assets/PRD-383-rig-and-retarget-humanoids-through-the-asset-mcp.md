@@ -4,7 +4,7 @@
 **Complexity:** 9 → HIGH; risk override: none.
 **Owner:** Asset tooling / engine integration
 **Depends on:** Published asset-MCP version plus a pinned GitHub animation-asset release for final engine adoption.
-**Progress:** 3/5 implementation phases verified. Phase 1 is PARTIAL (AC-1 and AC-3 verified end-to-end through a packed consumer and the `animation-assets-v0.8.0` release; AC-2 open for output-path clauses). Phase 2 DONE — E2 verified on the real unrigged AETHER retopo with multi-angle contact sheets. Phase 3 DONE — E3 verified: all 84 UAL motions retarget onto AETHER, materials/UVs/tangents/extensions preserved, six-clip animation budget 93,440 B. Phase 4 DONE — E4 verified: `threenative-asset-mcp@0.9.0` published and pinned, clean npm/pnpm consumers launch the rig tools through the core shim, and the captured surface is 44 tools.
+**Progress:** 3/5 implementation phases verified. Phase 1 PARTIAL (AC-1/AC-3 verified; AC-2 open for output-path clauses). Phase 2 DONE — E2 verified. Phase 3 DONE — E3 verified (all 84 UAL motions, six-clip budget 93,440 B). Phase 4 DONE — E4 verified (`threenative-asset-mcp@0.9.0` published/pinned, clean consumers launch the rig tools). Phase 5 PARTIAL — browser WebGPU runtime proof passes (AC-14, nvidia/turing adapter); native desktop and Android lanes remain.
 
 Complexity: 11+ implementation files (+3), new preparation module (+2), cancellation and output
 publication (+2), separate asset-MCP and engine release boundaries (+2). Coordinate with
@@ -477,7 +477,7 @@ the public artifacts. Both releases were published under the implementation requ
 
 ### Phase 5: The cooked character animates and holds a weapon on real runtimes
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — the browser WebGPU lane passes (AC-14); native desktop and Android remain.
 **Files:** existing game source in a fresh sandbox consumer, NEW consumer
 `playtests/rigged-character.playtest.json`; extend the nearest existing E consumer fixture only if
 needed to retain regression coverage. No change to the frozen `examples/abyss-vanilla/` control.
@@ -492,7 +492,15 @@ Use the same cooked asset digests on browser and native. Play newly namespaced c
 preexisting motion cannot silently satisfy the test. Inspect action/contact images as well.
 **Estimate:** 2–3 days. **Checkpoint:** pending independent review.
 
-- [ ] AC-14 [local; actor: agent]: Browser WebGPU scenario passes animation and attachment assertions with named adapter and a visible frame — E5 pending.
+- [x] Fresh sandbox consumer `../sandbox/rigged-run` (minimal kit, local tarball install): the
+  six-clip `aether-six-min.glb` is the configured asset source, a `Rig` scene loads it through
+  `ctx.assets.model`, instances `SkeletalMesh3D`, plays `ual1/Walk_Loop` then
+  `ual2/Sword_Regular_Combo`, and attaches a `rigged-weapon` mesh with `attachToBone`.
+- [x] `playtests/rigged-character.playtest.json` asserts 18 bones, `poseDelta` (visible
+  deformation), `boneLengthDrift ≤ 1e-4`, `attachmentDrift ≤ 1e-4`, `attachmentBone`, weapon scale,
+  namespaced vs legacy clip counts, track count, clip transitions and a nonblank frame.
+- [x] AC-14 [local; actor: agent]: Browser WebGPU scenario passes animation and attachment assertions with named adapter and a visible frame — E5 done.
+  - `--browser-recipe webgpu` run exit 0: `rendererKind: webgpu`, adapter `nvidia / turing`, `captureMethod: page.screenshot`. Observed `boneCount 18`, `poseDelta 7.19`, `boneLengthDrift 3.29e-6`, `attachmentDrift 4.0e-15`, `attachmentBone handR`, `weaponScale 1.73`, `namespacedClips 6`, `legacyClips 0`, `trackCount 18`, `clipsPlayed 2`, `characterHeight 14.00`. The screenshot shows the walking robot holding the weapon. Finding: three sanitises glTF `.` node names, so the reported `hand.R` resolves to the runtime bone `handR`; the game maps the reported name once.
 - [ ] AC-15 [local; actor: agent]: Native desktop runs the same scenario and asset successfully — E5 pending.
 - [ ] AC-16 [local; actor: agent]: Android emulator runs the same scenario and asset successfully — E5 pending; start/provision the emulator before treating this lane as unavailable.
 - [ ] AC-17 [local; actor: agent]: Browser/native build inventories contain only selected prepared assets; no full library, sample source cache, old mannequin or sailor; playback succeeds with GitHub blocked and performs no source download — E5 pending.
