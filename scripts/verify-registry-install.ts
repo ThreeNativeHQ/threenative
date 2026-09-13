@@ -355,6 +355,113 @@ export function realMcpRunner(
   });
 }
 
+/**
+ * PRD-366 phase 1. A consumer proof is only real if the installed game is edited and then *played*,
+ * with observable state transitions. These three helpers are the parts of that claim a clean-room
+ * job can check mechanically; the playtest run itself is the fourth.
+ */
+export const GAMEPLAY_SCENARIO = "playtests/production-readiness.playtest.json";
+
+/** A marker appended to the game's portable entry, so a game-only edit is provably the consumer's. */
+export const GAME_ONLY_EDIT_MARKER = "TN_REGISTRY_GAME_ONLY_EDIT";
+
+/**
+ * Append the marker to the scaffolded game's portable entry.
+ *
+ * Idempotent, and deliberately game-owned: `src/game.ts` is the consumer's file, not package code,
+ * so a build that carries the marker proves the installed consumer's own edit reached its artifact.
+ */
+export function applyGameOnlyEdit(project: string): string {
+  const entry = path.join(project, "src", "game.ts");
+  if (!fs.existsSync(entry))
+    throw new Error(
+      `TN_REGISTRY_INSTALL_GAMEPLAY_ENTRY_MISSING: ${entry} does not exist, so a game-only edit cannot be made.`,
+    );
+  const source = fs.readFileSync(entry, "utf8");
+  if (!source.includes(GAME_ONLY_EDIT_MARKER))
+    // A side-effecting assignment, not a comment: Vite's minifier strips non-legal comments from the
+    // built bundle, so a `// marker` would never be observable in `dist/` and this gate would fail
+    // for the wrong reason.
+    fs.writeFileSync(
+      entry,
+      `${source}\n(globalThis as Record<string, unknown>).__tnRegistryGameOnlyEdit = "${GAME_ONLY_EDIT_MARKER}";\n`,
+    );
+  return entry;
+}
+
+/**
+ * Require the production-readiness scenario to exist with at least one non-empty assertion family.
+ *
+ * A scenario that asserts nothing, or a project that shipped without it, is the vacuous green this
+ * phase exists to prevent — an installed runner that exits 0 having proven nothing.
+ */
+export function assertGameplayScenario(project: string): string {
+  const file = path.join(project, GAMEPLAY_SCENARIO);
+  if (!fs.existsSync(file))
+    throw new Error(
+      `TN_REGISTRY_INSTALL_GAMEPLAY_SCENARIO_MISSING: ${file} is absent, so the installed starter cannot be proven playable.`,
+    );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(
+      `TN_REGISTRY_INSTALL_GAMEPLAY_SCENARIO_INVALID: ${file}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const assertion = objectRecord((parsed as { assert?: unknown } | undefined)?.assert);
+  const families = (assertion === undefined ? [] : Object.keys(assertion)).filter((key) => {
+    const value = assertion?.[key];
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "object" && value !== null) return Object.keys(value).length > 0;
+    return value === true;
+  });
+  if (families.length === 0)
+    throw new Error(
+      `TN_REGISTRY_INSTALL_GAMEPLAY_NO_ASSERTIONS: ${file} declares no non-empty assertion family, so a passing run would prove nothing.`,
+    );
+  return families.join(", ");
+}
+
+/** Require the applied game-only edit to appear in the built output, not only in the source. */
+export function assertEditedGameplayInBuild(
+  project: string,
+  marker = GAME_ONLY_EDIT_MARKER,
+): string {
+  const dist = path.join(project, "dist");
+  const found = treeContains(dist, marker);
+  if (found === undefined)
+    throw new Error(
+      `TN_REGISTRY_INSTALL_GAMEPLAY_EDIT_NOT_BUILT: the game-only edit '${marker}' is absent from ${dist}, so the consumer's edit did not reach the build.`,
+    );
+  return found;
+}
+
+function treeContains(root: string, needle: string): string | undefined {
+  const stack = [root];
+  while (stack.length > 0) {
+    const directory = stack.pop() as string;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) stack.push(file);
+      else if (entry.isFile()) {
+        try {
+          if (fs.readFileSync(file, "utf8").includes(needle)) return file;
+        } catch {
+          // A binary asset is not the portable entry; keep looking.
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 export interface IVerifyRegistryInstallOptions {
   /** Where the clean room is created. Must have no workspace above it. */
   readonly parent?: string;
@@ -656,14 +763,33 @@ export function verifyRegistryInstall(
       const scaffold = step(prefix("scaffold"), () => run(command, scaffoldArgs, caseRoot));
       steps.push(scaffold);
       if (!scaffold.ok) {
-        for (const name of ["install", "lockfile", "build", "test", "doctor", "native", "mcp"])
+        for (const name of [
+          "install",
+          "lockfile",
+          "edit",
+          "build",
+          "test",
+          "gameplay",
+          "doctor",
+          "native",
+          "mcp",
+        ])
           notRun(name, "the scaffold step never produced a project.");
         continue;
       }
       const installed = step(prefix("install"), () => run(command, installArgs, project));
       steps.push(installed);
       if (!installed.ok) {
-        for (const name of ["lockfile", "build", "test", "doctor", "native", "mcp"])
+        for (const name of [
+          "lockfile",
+          "edit",
+          "build",
+          "test",
+          "gameplay",
+          "doctor",
+          "native",
+          "mcp",
+        ])
           notRun(
             name,
             "the install step failed to produce an installed project; no script-policy bypass was used.",
@@ -673,8 +799,47 @@ export function verifyRegistryInstall(
       steps.push(
         step(prefix("lockfile"), () => `Checked ${checkLockfile(project)}; no file: or link:.`),
       );
+      steps.push(
+        step(prefix("edit"), () => `Applied the game-only edit to ${applyGameOnlyEdit(project)}.`),
+      );
       steps.push(step(prefix("build"), () => run(command, script("build"), project)));
       steps.push(step(prefix("test"), () => run(command, testCommand, project)));
+      steps.push(
+        step(prefix("gameplay"), () => {
+          const families = assertGameplayScenario(project);
+          const built = assertEditedGameplayInBuild(project);
+          // The runner defaults to an already-running `http://127.0.0.1:5173`; nothing here starts
+          // one, so the scenario must bring its own dev server the way the template's own test
+          // script does. `--browser-recipe webgpu` is required so a SwiftShader run is not mistaken
+          // for evidence.
+          const serverCommand =
+            manager === "npm"
+              ? "npm run dev -- --host 127.0.0.1 --port $PORT --strictPort"
+              : "pnpm dev --host 127.0.0.1 --port $PORT --strictPort";
+          const playtestArgs = [
+            "--scenario",
+            GAMEPLAY_SCENARIO,
+            "--browser-recipe",
+            "webgpu",
+            // A GPU-less clean room still has to let Chromium reach a driver: `--headed` under the
+            // runner's private Xvfb, exactly how golden-path drives the same non-visual list, and
+            // `--allow-software` acknowledges a CPU rasteriser rather than letting a hidden
+            // SwiftShader run pass as hardware evidence.
+            "--headed",
+            "--no-screenshots",
+            "--allow-software",
+            "--server-command",
+            serverCommand,
+          ];
+          // `npx --no-install` for npm, matching the doctor step: `npm exec --no-install` warns on
+          // npm 11 and is slated to stop working.
+          const output =
+            manager === "npm"
+              ? run("npx", ["--no-install", "threenative-playtest", ...playtestArgs], project)
+              : run(command, ["exec", "threenative-playtest", ...playtestArgs], project);
+          return `Ran ${GAMEPLAY_SCENARIO} (assertions: ${families}); edit present in ${built}. ${output}`;
+        }),
+      );
       steps.push(
         step(prefix("doctor"), () =>
           assertDoctorTargetCensus(
