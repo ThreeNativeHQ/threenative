@@ -150,6 +150,31 @@ The capture is `/tmp/opencode/starter-hud.png` (358 KB, non-blank). This proves 
 starter's own WebView HUD, not `native-smoke`, comes up on a composited X11/Xvfb session. Input on
 the starter HUD and every non-X11 session remain unrun and are not claimed.
 
+### On the real Wayland session (Xwayland)
+
+The same packaged starter was then run on the live KWin Wayland session itself — `DISPLAY=:0`,
+`WAYLAND_DISPLAY=wayland-0`, `XDG_SESSION_TYPE=wayland` — with the engine's backend selection, for
+60 frames and a screenshot. No pointer was injected, so nothing outside the game's own window was
+touched:
+
+```sh
+DISPLAY=:0 XDG_SESSION_TYPE=wayland WAYLAND_DISPLAY=wayland-0 \
+  SDL_VIDEODRIVER=x11 GDK_BACKEND=x11 TN_UI_OVERLAY_TRACE=1 \
+  ./dist-native/starter --screenshot starter-wayland.png --frames 60
+```
+
+```
+TN_COLD_START:{"segment":"ui_overlay_attached","atMs":1182.344}
+TN_UI_OVERLAY:{"attached":true}
+Rendered 60 frames in 2316ms
+```
+
+The capture is `/tmp/opencode/starter-wayland.png` (628 KB, non-blank). This is the phase's
+"real Wayland session hosting the supported Xwayland path" for HUD attach: without the engine's
+`GDK_BACKEND=x11` the overlay's GDK context resolves to Wayland and `argb::create` refuses, which is
+the red recorded above. A benign `Gdk-CRITICAL _gdk_frame_clock_freeze` warning is printed on this
+session; attach and rendering succeed. Live pointer input on the Wayland session is still unrun.
+
 ## Not run, and not claimed
 
 - Live HUD input/teardown under Xwayland: the probe's `XGetImage` sampling aborts before the
