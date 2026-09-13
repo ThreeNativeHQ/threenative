@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-366 — One installed consumer game proves the supported platform contract
 
-**Status:** PROPOSED. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — phase 1's scenario, consumer harness step and unit contract landed; the browser run is blocked by a WebGPU `createBuffer` startup failure in this environment and a public-cohort install waits on PRD-196. Revised 2026-09-08; phase 1 worked 2026-09-12.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 lifecycle/proof state, +1 hosted/device integration).
 **Problem:** Isolated engine feature tests and core smoke screenshots do not establish that a developer can build, customize and distribute a playable game using installed packages only.
 
@@ -63,11 +63,15 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `scripts/verify-registry-install.ts`, `scripts/__tests__/verify-registry-install.spec.ts`, `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` (+1 more)
-- [ ] Required test green: `scripts/__tests__/verify-registry-install.spec.ts`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `scripts/verify-registry-install.ts`, `scripts/__tests__/verify-registry-install.spec.ts`, `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` (+1 more)
+      The clean-room gate now applies a game-only edit, requires the scenario with non-empty assertions, requires the edit in the build, and runs the scenario; `STARTER_PATHS` and the frozen starter scaffold hash moved with the new template file.
+- [x] Required test green: `scripts/__tests__/verify-registry-install.spec.ts`
+      24/24 passed 2026-09-12; with `packages/create-threenative/__tests__/scaffold.spec.ts` the pair is 85/85.
+- [x] Observed red recorded, then restored green
+      Four new spec cases fail closed: no assertions, removed scenario, false assertions (playtest throws), edit absent from the build.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-366-readiness-phase-1-<date>.md`
+      BLOCKED in this environment: the scenario boots against a fresh local-tarball scaffold but the engine fails at startup under WebGPU (`createBuffer size 360 … mappedAtCreation`, in `SoftBody3D.process`), on both the private Xvfb and the session's real NVIDIA adapter (`TN_PLAYTEST_HOST_DISPLAY=1`). A public-registry cohort install also waits on PRD-196. Unverified here.
+- [x] Evidence record written: `docs/verification/prd-366-readiness-phase-1-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
