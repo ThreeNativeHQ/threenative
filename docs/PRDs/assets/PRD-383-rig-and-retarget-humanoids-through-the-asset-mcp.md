@@ -4,7 +4,7 @@
 **Complexity:** 9 → HIGH; risk override: none.
 **Owner:** Asset tooling / engine integration
 **Depends on:** Published asset-MCP version plus a pinned GitHub animation-asset release for final engine adoption.
-**Progress:** 2/5 implementation phases verified. Phase 1 is PARTIAL (AC-1 and AC-3 verified end-to-end through a packed consumer and the `animation-assets-v0.8.0` release; AC-2 open for output-path clauses). Phase 2 is DONE — E2 verified on the real unrigged AETHER retopo with multi-angle contact sheets. Phase 3 is DONE — E3 verified: all 84 UAL motions retarget onto AETHER, materials/UVs/tangents/extensions preserved, six-clip animation budget measured at 93,440 B.
+**Progress:** 3/5 implementation phases verified. Phase 1 is PARTIAL (AC-1 and AC-3 verified end-to-end through a packed consumer and the `animation-assets-v0.8.0` release; AC-2 open for output-path clauses). Phase 2 DONE — E2 verified on the real unrigged AETHER retopo with multi-angle contact sheets. Phase 3 DONE — E3 verified: all 84 UAL motions retarget onto AETHER, materials/UVs/tangents/extensions preserved, six-clip animation budget 93,440 B. Phase 4 DONE — E4 verified: `threenative-asset-mcp@0.9.0` published and pinned, clean npm/pnpm consumers launch the rig tools through the core shim, and the captured surface is 44 tools.
 
 Complexity: 11+ implementation files (+3), new preparation module (+2), cancellation and output
 publication (+2), separate asset-MCP and engine release boundaries (+2). Coordinate with
@@ -436,7 +436,7 @@ of target height. Sample between keys as well as endpoints. Inspect real AETHER 
 
 ### Phase 4: A fresh engine consumer discovers the workflow
 
-**Status:** NOT STARTED
+**Status:** DONE — E4 verified through clean npm and pnpm consumers and the published 0.9.0 registry artifact.
 **Files:** E `packages/core/package.json`, `packages/core/mcp/servers.mjs`, `pnpm-lock.yaml`,
 `packages/create-threenative/asset-mcp-tools.json`, `agent-docs/references/finding-assets.md`, NEW
 `agent-docs/references/rigging-characters.md`, existing Codex/Claude `threenative-assets/SKILL.md`
@@ -448,16 +448,32 @@ AETHER source selection lives in the sample recipe. No raw UAL/AETHER binaries i
 the core shim, and inspect tarball contents. Test the eventual registry artifact again after release.
 **Estimate:** 1–2 days plus release availability. **Checkpoint:** pending independent review.
 
-- [ ] AC-10 [local; actor: agent]: Fresh packed consumers discover and invoke the new tools through the existing server without hoisting assumptions or hidden setup — E4 pending.
-- [ ] AC-11 [local; actor: agent]: Plain scaffold/install and catalog browsing transfer zero model/library binaries; selecting one uncached clip downloads exactly its donor, repeated use works offline, and exported guidance uses AETHER with selected clips — E4 pending.
-- [ ] AC-12 [shared; actor: asset-MCP release maintainer, then agent]: Published package contains verified handlers; E's final dependency/fallback pins resolve to it and the packed-consumer flow passes — release/version evidence pending.
-- [ ] AC-13 [shared; actor: asset-MCP release maintainer, then agent]: Pinned GitHub release serves the locally verified donor digests; first-use download/retarget through the public URLs passes — data-release evidence pending.
+- [x] A package advanced to `0.9.0` (feature addition: the four rig tools) and published to npm;
+  A PR jonit-dev/threenative-asset-mcp#2 squash-merged to `main` (`cffb9b6`).
+- [x] E pins advanced together: `packages/core/package.json` `0.9.0`, `packages/core/mcp/servers.mjs`
+  fallback `0.9.0`, `pnpm-lock.yaml` resolved to `threenative-asset-mcp@0.9.0`.
+- [x] `packages/create-threenative/asset-mcp-tools.json` regenerated from the *published* 0.9.0 by a
+  new `scripts/capture-asset-mcp-tools.ts` (registry install into a clean `.threenative` directory):
+  44 tools, including the four rig tools; `recommended` now teaches the rig loop.
+- [x] Generated guidance updated: new `agent-docs/references/rigging-characters.md`, the
+  `finding-assets.md` count and rig pointer, both `threenative-assets/SKILL.md` adapters, and every
+  template `AGENTS.md`/`CLAUDE.md` recipe list. `pnpm typecheck`, `pnpm lint`, `pnpm budgets` and
+  the docs lane (164 tests) pass; scaffold + scaffold-mcp specs (85 tests) pass with recomputed
+  PRD-201 scaffold hashes.
+- [x] AC-10 [local; actor: agent]: Fresh packed consumers discover and invoke the new tools through the existing server without hoisting assumptions or hidden setup — E4 done.
+  - Clean npm and pnpm consumers installed `@threenative/core` 0.3.2 + `threenative-asset-mcp@0.9.0`; the core shim `mcp/assets.mjs` launched the pinned server (41 tools without `.threenative`) exposing `asset_inspect_rig`, `asset_auto_rig`, `asset_retarget_animations`, `asset_preview_animation`; a `tools/call` of `asset_inspect_rig` on AETHER returned 18 joints / 11 clips / 4 sources.
+- [x] AC-11 [local; actor: agent]: Plain scaffold/install and catalog browsing transfer zero model/library binaries; selecting one uncached clip downloads exactly its donor, repeated use works offline, and exported guidance uses AETHER with selected clips — E4 done.
+  - The published 0.9.0 tarball (280 files) carries no `.glb`/`.fbx`/AETHER/UAL/mannequin/sailor payload — only the PRD-372 `vendor/anycreature-1.3.1.zip` compiler; catalogue browsing downloads nothing; `acquireDonor` fetches exactly the selected clip's donor, digest-verified, and the offline cache-hit path is covered by test; `rigging-characters.md` documents the AETHER sample loop.
+- [x] AC-12 [shared; actor: asset-MCP release maintainer, then agent]: Published package contains verified handlers; E's final dependency/fallback pins resolve to it and the packed-consumer flow passes — done.
+  - `npm view threenative-asset-mcp@0.9.0` resolves; the registry-install snapshot serves 44 tools with `.threenative`, and the clean consumers above launched that exact version.
+- [x] AC-13 [shared; actor: asset-MCP release maintainer, then agent]: Pinned GitHub release serves the locally verified donor digests; first-use download/retarget through the public URLs passes — done.
+  - Release `animation-assets-v0.8.0` serves all 172 donors; `ual1__in_place__Pistol_Aim_Down.glb` downloaded to its catalog digest `e97c245e…`, and `asset_retarget_animations` fetched donors through the public release URLs (all 84 motions, 0 failures) with repeated use offline.
+
 
 AC-12 and AC-13 are separate artifact checks for the coordinated code/data delivery dependency. Local
-tarballs and local donor files prove processing first; they do not prove registry or GitHub-release
-availability. Test actual public URLs and digests before the final pin. Publishing either requires
-its normal authorization and
-workflow when implementation is requested. No publication is requested during planning.
+tarballs and donor files prove processing first; the registry and GitHub-release checks above prove
+the public artifacts. Both releases were published under the implementation request (npm
+`threenative-asset-mcp@0.9.0` and GitHub `animation-assets-v0.8.0`).
 
 ### Phase 5: The cooked character animates and holds a weapon on real runtimes
 
