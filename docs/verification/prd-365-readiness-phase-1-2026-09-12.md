@@ -101,11 +101,46 @@ default guarded by earlier validation, `@rpath` dependencies failing closed) are
 do not change the verdict; the manifest containment note is the one addressed in a later phase if
 the payload ever becomes externally supplied.
 
+## User verification (executed autonomously on the user's instruction)
+
+The real `examples/native-smoke` game and its overlay were built with the native bundler, packaged
+by the release path into a container, and launched from a relocated path containing spaces, outside
+any project directory. This is the actual product artifact, not the earlier no-op fixture.
+
+```
+# bundle the real game and its overlay, then package --mode release
+node packages/runtime-native/scripts/bundle.mjs --project examples/native-smoke \
+  --entry examples/native-smoke/src/game.ts --target desktop --output <work>/game.js
+node packages/runtime-native/scripts/package-desktop.mjs --mode release --bundle <work>/game.js \
+  --ui <work>/ui --config <work>/config.json \
+  --runtime packages/runtime-native/build/tn-linux/mystral --output <work>/dist/native-smoke
+# unpack to "/tmp/opencode/prd365 user relocated" and launch on an Xvfb + compositor session
+DISPLAY=:9 SDL_VIDEODRIVER=x11 GDK_BACKEND=x11 <relocated>/Native-Smoke/Native-Smoke --frames 300
+```
+
+Observed:
+
+- container sha256 `5d2982435ab33847a817d63fb67dbd4fee800ccb4ef09ccaaf2ad8236544b134`.
+- **Assets**: `TN_NATIVE_SMOKE_READY:webgpu`, 4 textures / 52 MB resident, `Rendered 300 frames in
+  14095ms`, `TN_PRESENTS:301`. The runtime capture `shot-hud.png` (sha256 `0907f36c…`) is
+  non-blank and carries the scene.
+- **HUD**: `TN_UI_OVERLAY:{"attached":true}` with a compositing manager present. A root-window
+  capture `root.png` (1920x1080, sha256 `13f61206…`, 427 distinct colours) contains 41 653
+  plate-like pixels and 412 pixels matching the overlay's `#e8eef7` text colour, so the web UI
+  rendered over the game.
+- **OS identity**: the window title is `Native Smoke`; the container's
+  `share/applications/com.threenative.native-smoke.desktop` names `Native Smoke` with
+  `Exec`/`TryExec` = `Native-Smoke` and `Icon` = `com.threenative.native-smoke`; the
+  `threenative-container.json` app block records `{id: com.threenative.native-smoke, name: "Native
+  Smoke", version: 1.4.2, build: 9}` and the configured icon's SHA-256.
+
+The one environment caveat, recorded rather than hidden: the overlay attaches only when a
+compositing manager is running; without one the host logs
+`TN_UI_OVERLAY:{"attached":false,"reason":"no compositing manager is running"}` and the game still
+renders. That is PRD-217's Linux compositor prerequisite, not a container defect.
+
 ## Not run
 
-- **User verification** (starter HUD/assets and OS identity on a real desktop, human inspection):
-  needs the starter on a machine with a compositor and a person looking at it. The fixture launch
-  above only proves the relocated binary starts.
 - **macOS and Windows container execution**: the phases and metadata are unit-tested, but no
   macOS or Windows host ran here, so no mac/Windows launch claim is made. Windows identity also
   needs `rcedit`, macOS `.icns` needs `sips`/`iconutil`; both fail closed with a named code when

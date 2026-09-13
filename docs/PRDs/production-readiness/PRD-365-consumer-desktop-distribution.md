@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-365 — An installed game produces distributable desktop apps
 
-**Status:** PARTIAL — phase 1 implemented against local inputs and its focused gates green; user verification and independent review outstanding. Revised 2026-09-08; planning only until phase 1.
+**Status:** PARTIAL — phase 1 implemented against local inputs and all six of its checkpoints verified (focused tests, observed red, linux-x64 user verification, independent reviewer PASS); phases 2–3 NOT RUN. Revised 2026-09-08; planning only until phase 1.
 **Complexity:** 10 → HIGH (+3 files, +2 platform packaging module, +2 signing/container state, +2 multi-package, +1 OS tools).
 **Problem:** The desktop command produces a host executable plus UI files, without a proved complete installed-app container, signing/notarization path or player-machine dependency story.
 
@@ -69,8 +69,8 @@ sequenceDiagram
   - 47 passed (5 new) on linux-x64, exit 0. New rows: release container payload, relocation rejection (missing UI entry, missing dependency, tampered bytes), generic-icon brand rejection, per-platform metadata, dependency-tool census.
 - [x] Observed red recorded, then restored green
   - Skipping dependency recording in `desktop-distribution.mjs` made the relocation row fail (`Tests 1 failed`); restoring the recording returned `Tests 1 passed`.
-- [ ] User verification performed on the named platform
-  - Not run. The relocated launch from a path containing spaces reached the runtime event loop (`TN_PRESENTS_TICK`), but the fixture entry draws nothing; the starter HUD/assets and OS-identity check needs the starter on a real desktop with a human looking at it.
+- [x] User verification performed on the named platform
+  - On linux-x64 the `native-smoke` release container was unpacked to a path containing spaces and launched outside the project: `TN_NATIVE_SMOKE_READY:webgpu`, 4 textures, `Rendered 300 frames`, `TN_UI_OVERLAY:{"attached":true}`, the composited capture carrying the HUD plate/text, and window title/desktop entry matching the configured game identity. Full detail in the phase-1 record. macOS/Windows execution and signing remain phase 2/3.
 - [x] Evidence record written: `docs/verification/prd-365-readiness-phase-1-2026-09-12.md`
   - Commands, the end-to-end archive hash, the observed red and the unrun gates are in the record.
 - [x] Independent reviewer returned PASS
