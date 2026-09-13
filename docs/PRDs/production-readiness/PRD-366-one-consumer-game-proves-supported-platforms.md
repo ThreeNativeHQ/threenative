@@ -72,7 +72,8 @@ sequenceDiagram
 - [x] User verification performed on the named platform
       Real browser WebGPU run of the new scenario against a fresh local-tarball scaffold on a fresh generated starter (NVIDIA Turing, rule `sustained-frames`): exit 0, pass true, 943 frames, movement 5.49; `forward`/`restart` siblings pass on the same scaffold. A public-registry cohort install still waits on PRD-196 (PARTIAL).
 - [x] Evidence record written: `docs/verification/prd-366-readiness-phase-1-2026-09-12.md`
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS
+      Three fresh-eyes reviews. The first found two blocking defects (a comment marker Vite strips; a serverless playtest) and three doc issues, all fixed. The second verified those and found the missing `--headed`, fixed and confirmed by a real hardware run. The third verified the invocation, scenario and hash as sound and required only the test-count/status corrections applied here.
 
 **Files (maximum five):**
 
