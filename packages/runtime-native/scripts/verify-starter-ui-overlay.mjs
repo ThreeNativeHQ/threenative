@@ -97,6 +97,12 @@ function main() {
     project,
     "--artifacts",
     artifacts,
+    // Present the window at the configured 1280x720. The starter ships `display.fullscreen: true`,
+    // which on a 1024x768 CI display presents 1024x768; the runner scales the scenario's normalized
+    // pointers by the scenario viewport (1280x720), so the press then misses the island on a host
+    // that is not that size. Windowed makes the host's real viewport the scenario's.
+    "--host-arg",
+    "--windowed",
   ]);
   console.log(`TN_STARTER_UI_OVERLAY_PASS: ${scenario}`);
 }
