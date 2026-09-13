@@ -35,9 +35,10 @@ bundled dependency with a SHA-256, and every system library recorded as a player
 resource that is absent or whose bytes changed is refused. Debug mode (`--mode` omitted or
 `debug`) keeps the original raw executable with `ui/` beside it, byte-for-byte.
 
-The helper is imported lazily by the release path only, so a published install that never asks for
-a release container does not depend on the helper joining `package.json` `files` — that handoff is
-phase 2. No signing or notarization is claimed; that is phase 3.
+The helper is imported lazily by the release path only, so a debug build never loads it. It ships in
+`package.json` `files` (follow-up commit `adcedf82e`), so a published `--mode release` consumer
+resolves it; the publish-state guard scans every shipped module's imports and requires it. No signing
+or notarization is claimed; that is phase 3.
 
 ## Commands and results
 
@@ -95,7 +96,8 @@ An independent reviewer (a read-only reviewer pinned to a different model, given
 diff at `264153102`, the test file and this record) returned **PASS**. It confirmed that
 `build --target desktop --mode release` reaches the helper while debug mode falls through to the
 unchanged `compileDesktopArtifact`; that the negative controls are real observations rather than
-tautologies; that the lazy import is justified by the phase-2 tarball deferral; and that no unrun
+tautologies; that the lazy import is justified (and it found the helper was not yet in the tarball, which
+the follow-up commit `adcedf82e` then fixed); and that no unrun
 gate is overclaimed. Its non-blocking notes (a manifest-path containment hardening, a `layout()`
 default guarded by earlier validation, `@rpath` dependencies failing closed) are recorded here but
 do not change the verdict; the manifest containment note is the one addressed in a later phase if
