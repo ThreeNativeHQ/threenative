@@ -28,7 +28,7 @@ Batch contract and dependency order: [production-readiness](../production-readin
 
 The current release query returned only quiche-owned-v1; runtime-native-v0.3.0/prebuilt-lock.json returned 404. Recent native CI is green on another SHA. Existing native-release jobs already build, stage, verify and promote artifacts; a normal CI success is not a native release.
 
-Engine distribution layer. [PRD-078](../production-readiness/PRD-078-toolchain-free-consumer-proof.md) owns repairs to exact-SHA hosted build execution. This PRD owns complete downloadable runtime inputs and no-toolchain packaging mechanics; [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) alone owns coordinated public npm/default-tag promotion.
+Engine distribution layer. [PRD-078](PRD-078-toolchain-free-consumer-proof.md) owns repairs to exact-SHA hosted build execution. This PRD owns complete downloadable runtime inputs and no-toolchain packaging mechanics; [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) alone owns coordinated public npm/default-tag promotion.
 
 ## Approach and boundaries
 
