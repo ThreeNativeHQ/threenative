@@ -1486,10 +1486,11 @@ jobs:
         run: |
           # Phase 1 observed-red (a): a real `cl` invocation must be shadowed by the `.cmd` shim,
           # recorded in TN_TOOLCHAIN_LOG, and refused with exit 97 rather than reaching MSVC. The
-          # control runs first and the positive path is restored after, so the same hosted run both
-          # falsifies the mask's absence and re-proves the green build.
+          # marker is resolved the way a Windows build tool resolves it -- through `cmd.exe`, which
+          # honours PATHEXT -- because Git Bash does not execute a `.cmd` from a bare name and would
+          # otherwise report 127, proving nothing about the mask.
           set +e
-          cl /? > "$RUNNER_TEMP/masked-cl.log" 2>&1
+          cmd.exe //c "cl /?" > "$RUNNER_TEMP/masked-cl.log" 2>&1
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/masked-cl.exit"
@@ -1515,6 +1516,10 @@ jobs:
           grep -F 'prebuilt/win32-x64/mystral-tools.exe' "$RUNNER_TEMP/missing-helper.log"
           cp "$backup" "$helper"
           test -s "$helper"
+          # The failed build may have removed the artifact; rebuild with the helper restored so the
+          # launch step runs against a genuine build of the same tree.
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          test -s "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.exe"
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
         run: |
@@ -1588,6 +1593,13 @@ jobs:
             ${{ runner.temp }}/threenative-consumer.png
             ${{ runner.temp }}/windows-adapter.txt
             ${{ runner.temp }}/toolchain-invocations.log
+            ${{ runner.temp }}/masked-cl.log
+            ${{ runner.temp }}/masked-cl.exit
+            ${{ runner.temp }}/missing-helper.log
+            ${{ runner.temp }}/missing-helper.exit
+            ${{ runner.temp }}/renderer-disabled.log
+            ${{ runner.temp }}/renderer-disabled.exit
+            ${{ runner.temp }}/renderer-disabled.marker-exit
             ${{ runner.temp }}/proof-*.json
             ${{ runner.temp }}/proof-assets-server.log
             ${{ runner.temp }}/packages/*.tgz

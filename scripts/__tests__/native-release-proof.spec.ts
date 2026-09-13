@@ -864,10 +864,11 @@ test("the Windows consumer launches the packed executable and reports its first 
 
 test("the Windows consumer proves the mask shadows MSVC before it restores the positive path", () => {
   // Phase 1 observed-red (a): the `.cmd` shim must actually shadow the real `cl.exe` on this image,
-  // and the control must assert exit 97 with the invocation recorded. Doing it inline keeps the
-  // green build in the same hosted run rather than a second one.
+  // and the control must assert exit 97 with the invocation recorded. The invocation goes through
+  // `cmd.exe`, because Git Bash does not resolve a `.cmd` from a bare name and would report 127,
+  // proving nothing about the mask (run 34743159341 failed exactly that way).
   const control = windowStep("Prove the mask shadows MSVC, then restore the positive path");
-  assert.match(control, /\bcl\b/u);
+  assert.match(control, /cmd\.exe \/\/c "cl \/\?"/u);
   assert.match(control, /-eq 97/u);
   assert.match(control, /TN_TOOLCHAIN_LOG/u);
   assert.match(control, /masked-cl\.exit/u);
@@ -882,6 +883,8 @@ test("the Windows consumer proves a removed helper fails the build naming it", (
   assert.match(control, /-ne 0/u);
   assert.match(control, /missing-helper\.log/u);
   assert.match(control, /cp "\$backup" "\$helper"/u);
+  // The failed build may leave no artifact, so the launch step needs a rebuilt one.
+  assert.match(control, /build --target desktop/u);
 });
 
 test("the Windows consumer proves a renderer that never presents fails the marker assertion", () => {
