@@ -1498,29 +1498,6 @@ jobs:
           test -s "$TN_TOOLCHAIN_LOG"
           grep -E '(^|[\\/])cl(\.cmd)? ' "$TN_TOOLCHAIN_LOG"
           rm -f "$TN_TOOLCHAIN_LOG"
-      - name: Prove a removed helper fails the build naming it, then restore it
-        run: |
-          # Phase 1 observed-red (b): with the published helper deleted there is no silent
-          # source-build fallback — the build must fail naming the helper path. Restored afterwards
-          # so the launch step still runs against the genuine install.
-          helper="$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
-          backup="$RUNNER_TEMP/mystral-tools.exe.bak"
-          cp "$helper" "$backup"
-          rm -f "$helper"
-          set +e
-          pnpm --dir "$CONSUMER_TARGET" build --target desktop > "$RUNNER_TEMP/missing-helper.log" 2>&1
-          status=$?
-          set -e
-          printf '%s\n' "$status" > "$RUNNER_TEMP/missing-helper.exit"
-          test "$status" -ne 0
-          grep -F 'prebuilt/win32-x64/mystral-tools.exe' "$RUNNER_TEMP/missing-helper.log"
-          cp "$backup" "$helper"
-          test -s "$helper"
-          # The failed build may have removed the artifact; rebuild with the helper restored so the
-          # launch step runs against a genuine build of the same tree.
-          pnpm --dir "$CONSUMER_TARGET" build --target desktop
-          test -s "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.exe"
-          test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
         run: |
           log="$RUNNER_TEMP/threenative-consumer.log"
@@ -1578,6 +1555,24 @@ jobs:
           test "$marker" -ne 0
           cp "$backup" "$entry"
           pnpm --dir "$CONSUMER_TARGET" build --target desktop
+      - name: Prove a removed helper is re-fetched, never source-built, then restore it
+        run: |
+          # Phase 1 observed-red (b), corrected by measurement: deleting the installed helper does
+          # NOT fail the build. Run 34745227091 showed the build instead re-installing it
+          # ("Installed verified ThreeNative runtime and build tool helper for 'win32-x64'.") with an
+          # empty toolchain log, so the honest claim is that a removed helper is re-fetched from the
+          # served release rather than satisfied by a silent source build. The control asserts that
+          # measured behaviour and leaves the helper present.
+          helper="$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
+          backup="$RUNNER_TEMP/mystral-tools.exe.bak"
+          cp "$helper" "$backup"
+          rm -f "$helper"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop > "$RUNNER_TEMP/missing-helper.log" 2>&1
+          # The build re-provisions the helper from the release: it is present again afterwards, no
+          # compiler ran, and the bytes match the published artifact the install originally placed.
+          test -s "$helper"
+          cmp -s "$backup" "$helper"
+          test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Stop the proof asset server
         if: ${{ always() && github.ref_type != 'tag' }}
         run: |

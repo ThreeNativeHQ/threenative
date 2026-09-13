@@ -874,17 +874,23 @@ test("the Windows consumer proves the mask shadows MSVC before it restores the p
   assert.match(control, /masked-cl\.exit/u);
 });
 
-test("the Windows consumer proves a removed helper fails the build naming it", () => {
-  // Phase 1 observed-red (b): deleting the published helper must fail the build naming the helper
-  // path, with no silent source-build fallback. The helper is restored so the launch step still runs
-  // against the genuine install.
-  const control = windowStep("Prove a removed helper fails the build naming it, then restore it");
+test("the Windows consumer proves a removed helper is re-fetched, never source-built", () => {
+  // Phase 1 observed-red (b), corrected by run 34745227091: deleting the installed helper did not
+  // fail the build — the build re-installed it ("Installed verified ThreeNative runtime and build
+  // tool helper for 'win32-x64'.") with an empty toolchain log. The honest claim is that the helper
+  // is re-fetched from the served release, never satisfied by a silent source build.
+  const control = windowStep(
+    "Prove a removed helper is re-fetched, never source-built, then restore it",
+  );
   assert.match(control, /prebuilt\/win32-x64\/mystral-tools\.exe/u);
-  assert.match(control, /-ne 0/u);
-  assert.match(control, /missing-helper\.log/u);
-  assert.match(control, /cp "\$backup" "\$helper"/u);
-  // The failed build may leave no artifact, so the launch step needs a rebuilt one.
-  assert.match(control, /build --target desktop/u);
+  assert.match(control, /rm -f "\$helper"/u);
+  assert.match(control, /test -s "\$helper"/u);
+  assert.match(control, /test ! -e "\$TN_TOOLCHAIN_LOG"/u, "no compiler may have run");
+  assert.match(
+    control,
+    /cmp -s "\$backup" "\$helper"/u,
+    "the re-fetched helper must match the published one",
+  );
 });
 
 test("the Windows consumer proves a renderer that never presents fails the marker assertion", () => {
