@@ -4,7 +4,7 @@
 **Complexity:** 9 → HIGH; risk override: none.
 **Owner:** Asset tooling / engine integration
 **Depends on:** Published asset-MCP version plus a pinned GitHub animation-asset release for final engine adoption.
-**Progress:** 0/5 implementation phases verified. Phase 1 is PARTIAL: AC-1 and AC-3 are verified end-to-end through a packed consumer and the `animation-assets-v0.8.0` release; AC-2 stays open for the output-path clauses that arrive with phases 2–3.
+**Progress:** 0/5 implementation phases verified. Phase 1 is PARTIAL (AC-1 and AC-3 verified end-to-end through a packed consumer and the `animation-assets-v0.8.0` release; AC-2 open for output-path clauses). Phase 2 is PARTIAL: geometry fit, smooth/rigid weighting and `asset_auto_rig` are verified on the real unrigged AETHER retopo; multi-angle preview and the E2 contact sheets remain.
 
 Complexity: 11+ implementation files (+3), new preparation module (+2), cancellation and output
 publication (+2), separate asset-MCP and engine release boundaries (+2). Coordinate with
@@ -349,7 +349,7 @@ libraries. Inventory the old sample's reachable references without removing unre
 
 ### Phase 2: An agent fits and inspects an unrigged humanoid
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — fit, smooth/rigid weighting, auto-rig handler and output publication landed and verified on the real unrigged AETHER retopo; multi-angle preview and the inspected contact sheets (E2) are not done.
 **Files:** A NEW `src/rig/fit.ts`, NEW `src/rig/weights.ts`, NEW `src/rig/preview.ts`, rig handlers/tests.
 **Implementation:** preserve existing rigs; add measured geometry fitting with explicit landmarks,
 smooth/rigid weighting and multi-angle preview. Use AETHER's CC0 unrigged retopology from the pinned
@@ -361,9 +361,30 @@ cover smooth weighting and failure cases but cannot substitute for this real ass
 weight diagnostics and inspected contact sheets. A valid skin container alone is insufficient.
 **Estimate:** 3–5 days. **Checkpoint:** pending independent review of deformation images.
 
+- [x] Geometry fit landed (`src/rig/fit.ts`): detects the up/arm/facing axes from measured extents,
+  fits an 18-joint template from slice centroids, reports `ambiguous` landmarks, and returns a named
+  correction request instead of a rig when arms/legs are not separated. Unit tests cover standard and
+  rotated orientations and the limbless-blob ambiguity.
+- [x] Smooth/rigid weighting landed (`src/rig/weights.ts`): inverse segment distance with up to four
+  normalized influences, or one bone per connected mechanical component; `diagnoseWeights` reports
+  finite/nonnegative/normalized/valid-joint status. Six unit tests pass.
+- [x] Auto-rig handler `asset_auto_rig` landed (`src/rig/rig.ts`, `src/tools/rig.ts`, `src/server.ts`)
+  with `preserve-existing-rig-by-default`, `replaceRig`, landmark overrides, `weightMode` and atomic
+  output publication (`src/rig/publish.ts`) that keeps prior bytes and rejects conflicting writers.
+- [x] Real unrigged AETHER subject verified: the pinned retopo (`sha256 3fefedfc…`, atlas-09 revision
+  `1b8fb9d5…`, now a catalog descriptor) auto-rigs to 18 joints over 25,918 vertices, max four
+  influences, normalization error `4.4e-16`, clean diagnostics; reloaded output carries the 18-joint
+  skin and inverse-bind matrices, and every vertex weighted to `hand.L`/`hand.R` has zero influence on
+  the opposite leg's bones. `npm run typecheck` pass; `npm test` 310 pass.
+- [ ] Multi-angle preview (`src/rig/preview.ts`) and inspected contact sheets — E2 not complete; the
+  pinned Playwright + minimal Three.js preview is not implemented.
 - [ ] AC-4 [local; actor: agent]: The unrigged AETHER source receives a usable skeleton through geometry fitting plus explicit reported corrections; moving one arm does not move the opposite leg — E2 pending.
+  - Auto-rig call and independent reload done on the real retopo with limb isolation measured; the box stays open because E2's inspected contact-sheet step has not run.
 - [ ] AC-5 [local; actor: agent]: Reloaded weights are finite/nonnegative, sum to 1 within 1e-5 and reference valid joints; rigid mode keeps triangle edge lengths within 1e-4 relative error — E2 pending.
+  - Reloaded weights on the real retopo are finite, nonnegative, reference valid joints and sum to 1 within `4.4e-16`; rigid mode assigns one weight-1 bone per connected component, so every rigid region deforms without intra-region stretch. Kept open for the same E2 contact-sheet step.
 - [ ] AC-6 [local; actor: agent]: A landmark revision changes the resulting rig and affected deformation; ambiguous anatomy returns a correction request, and unavailable preview cannot report visual success — E2 pending.
+  - Landmark revision changes the output digest and reports `inferred:false`; the limbless blob returns `needs-landmarks` with the named ambiguity. The preview-unavailable clause needs `asset_preview_animation`.
+
 
 ### Phase 3: An agent exports selected UAL motion without damaging AETHER
 
