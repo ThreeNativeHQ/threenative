@@ -603,10 +603,11 @@ async function setDevicePointers(
   pointers: NonNullable<IPlaytestScenario["steps"][number]["pointers"]>,
   viewport: IPlaytestScenario["viewport"],
 ): Promise<void> {
-  if (target.name === "ios") {
-    // iOS simulator and device transports already carry playtest requests into the native host.
-    // The host's touch PointerEvent seam preserves the complete held set without depending on an
-    // external HID injector that is unavailable on the supported Xcode transport.
+  if (target.name === "ios" || target.name === "desktop") {
+    // iOS and desktop transports carry playtest requests into the native host, whose own hit
+    // routing is the mechanism these scenarios test: the host dispatches each pointer to the UI
+    // page or to the game exactly where the OS would. The held set is preserved without an
+    // external HID injector, which the hosted macOS runner cannot use at all.
     await transport.call("input.pointers", {
       pointers: pointers.map((pointer) => ({
         ...(pointer.buttons === undefined ? {} : { buttons: pointer.buttons }),
