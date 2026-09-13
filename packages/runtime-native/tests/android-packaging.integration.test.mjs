@@ -615,11 +615,15 @@ test('real Android packaging emits configured and no-config artifacts through th
 /**
  * PRD-375 phase 1 — the brand on the artifact a player installs.
  *
- * The configured test above proves the debug path. A signed consumer release is the artifact a
- * player receives, and it is the one the whole phase is about: if the game's icon or splash only
- * survives `assembleDebug`, the release a store hands out still wears the engine's face.
+ * The configured test above proves the debug path. `release` is the mode the artifact a store
+ * hands out is built in, and it is the one the whole phase is about: if the game's icon or splash
+ * only survives `assembleDebug`, the release still wears the engine's face. Branding staging is
+ * mode-independent (`installAndroidFiles` runs before the Gradle invocation), so this exercises the
+ * release task, the release artifact and the release-only verification the packager runs on it.
+ * Signature and 16 KB alignment have their own real tests below; here the signature verifier is the
+ * injected seam and alignment is off, because the fixture archive is assembled by hand.
  */
-test('a signed consumer release preserves the configured icon, splash and identity resources', async () => {
+test('a release-mode artifact preserves the configured icon, splash and identity resources', async () => {
   const root = makeTempDirSync('threenative-android-release-brand-');
   roots.push(root);
   const runtime = createFakeAndroidRuntime();
@@ -628,10 +632,12 @@ test('a signed consumer release preserves the configured icon, splash and identi
   const monochrome = join(root, 'monochrome.png');
   const splash = join(root, 'launch.png');
   const output = join(root, 'dist', 'fox.apk');
+  // Distinct bytes per variant: if the packager copied one asset into another's slot, comparing
+  // each packaged entry against its own declared source is what catches it.
   writeFileSync(bundle, 'export default { start() {} };\n');
-  writeFileSync(foreground, VALID_PNG);
-  writeFileSync(monochrome, VALID_PNG);
-  writeFileSync(splash, VALID_PNG);
+  writeFileSync(foreground, Buffer.concat([VALID_PNG, Buffer.from('foreground')]));
+  writeFileSync(monochrome, Buffer.concat([VALID_PNG, Buffer.from('monochrome')]));
+  writeFileSync(splash, Buffer.concat([VALID_PNG, Buffer.from('splash')]));
 
   const config = {
     app: {
@@ -660,18 +666,69 @@ test('a signed consumer release preserves the configured icon, splash and identi
     artifactEntry(output, 'values/strings.xml').toString('utf8'),
     /<string name="app_name">Fox<\/string>/u,
   );
-  assert.match(
-    artifactEntry(output, 'build.gradle.kts').toString('utf8'),
-    /applicationId = "com\.studio\.foxgame"/u,
+  const gradle = artifactEntry(output, 'build.gradle.kts').toString('utf8');
+  assert.match(gradle, /applicationId = "com\.studio\.foxgame"/u);
+  assert.match(gradle, /versionCode = 7/u);
+  assert.match(gradle, /versionName = "1\.2\.3"/u);
+  const branding = artifactEntry(output, 'values/branding.xml').toString('utf8');
+  assert.match(branding, /tn_icon_background.*#111827/u);
+  assert.match(branding, /tn_boot_splash_background.*#0d1b2a/u);
+  assert.deepEqual(artifactEntry(output, 'mipmap-xxxhdpi/ic_launcher.png'), readFileSync(foreground));
+  assert.deepEqual(
+    artifactEntry(output, 'drawable-nodpi/ic_launcher_foreground.png'),
+    readFileSync(foreground),
   );
-  assert.deepEqual(artifactEntry(output, 'mipmap-xxxhdpi/ic_launcher.png'), VALID_PNG);
-  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/ic_launcher_foreground.png'), VALID_PNG);
-  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/ic_launcher_monochrome.png'), VALID_PNG);
-  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/tn_boot_splash.png'), VALID_PNG);
+  assert.deepEqual(
+    artifactEntry(output, 'drawable-nodpi/ic_launcher_monochrome.png'),
+    readFileSync(monochrome),
+  );
+  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/tn_boot_splash.png'), readFileSync(splash));
   assert.match(
     artifactEntry(output, 'mipmap-anydpi-v26/ic_launcher.xml').toString('utf8'),
     /android:drawable="@drawable\/ic_launcher_foreground"/u,
   );
+});
+
+test('an Android App Bundle release carries the same configured brand resources', async () => {
+  const root = makeTempDirSync('threenative-android-release-brand-aab-');
+  roots.push(root);
+  const runtime = createFakeAndroidRuntime();
+  const bundle = join(root, 'game.js');
+  const foreground = join(root, 'foreground.png');
+  const monochrome = join(root, 'monochrome.png');
+  const splash = join(root, 'launch.png');
+  const output = join(root, 'dist', 'fox.aab');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  writeFileSync(foreground, Buffer.concat([VALID_PNG, Buffer.from('foreground')]));
+  writeFileSync(monochrome, Buffer.concat([VALID_PNG, Buffer.from('monochrome')]));
+  writeFileSync(splash, Buffer.concat([VALID_PNG, Buffer.from('splash')]));
+  const config = {
+    app: {
+      id: 'com.studio.foxgame',
+      name: 'Fox',
+      icons: { android: { foreground, monochrome } },
+    },
+    bootSplash: { image: splash },
+  };
+
+  await packageAndroid(bundle, output, undefined, undefined, config, {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    mode: 'release',
+    format: 'aab',
+    ...releaseOptions('/consumer/fox'),
+  });
+
+  assert.match(
+    artifactEntry(output, 'AndroidManifest.xml').toString('utf8'),
+    /android:icon="@mipmap\/ic_launcher"/u,
+  );
+  assert.deepEqual(
+    artifactEntry(output, 'drawable-nodpi/ic_launcher_monochrome.png'),
+    readFileSync(monochrome),
+  );
+  assert.deepEqual(artifactEntry(output, 'drawable-nodpi/tn_boot_splash.png'), readFileSync(splash));
 });
 
 test('a declared Android icon variant whose file is missing is refused before Gradle runs', async () => {

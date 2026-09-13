@@ -74,21 +74,21 @@ sequenceDiagram
 **Progress:**
 
 - [x] Callers wired and building: `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs`, `packages/create-threenative/__tests__/config.spec.ts`
-      The branding render/install and config-validation callers already existed (PRD-153); this phase's change is the missing signed-release coverage in the integration test. Real `threenative build --target android --allow-source-build` completed, `BUILD SUCCESSFUL in 1m 48s`.
+      The branding render/install and config-validation callers already existed (PRD-153) and needed no production change; this phase's change is the missing release/AAB coverage in the integration test. Real `threenative build --target android --allow-source-build` completed, `BUILD SUCCESSFUL in 1m 48s`.
 - [x] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs`
-      35/35 passed 2026-09-12, including the new signed-release brand and missing-variant tests.
+      36/36 passed 2026-09-12, including the release-APK brand, AAB brand and missing-variant tests.
 - [x] Observed red recorded, then restored green
-      Disconnected splash staging made the release test fail (`drawable-nodpi/tn_boot_splash.png` not matched); restored. Separately, a non-alpha foreground was refused by config validation (`TN_CONFIG_BRAND_ANDROID_FOREGROUND_ALPHA_INVALID`) before Gradle.
+      Disconnected splash staging and a foreground/monochrome slot swap each made their test fail; restored. Separately, a non-alpha foreground was refused by config validation (`TN_CONFIG_BRAND_ANDROID_FOREGROUND_ALPHA_INVALID`) before Gradle.
 - [x] User verification performed on the named platform
-      API 36 16 KB AVD (`sdk_gphone16k_x86_64`): OS splash (navy bg + authored red foreground + green branding image), App info launcher icon + label `PRD375 Brand`, playable starter frame, `TN_SURFACE_FRAME` present. Physical OEM appearance remains a named observation.
+      API 36 16 KB AVD (`sdk_gphone16k_x86_64`): OS splash (navy bg + authored red foreground + green branding image), live loading transition, App info launcher icon + label `PRD375 Brand`, playable starter frame, `TN_SURFACE_FRAME` present. Unobserved and named: physical OEM icon-mask appearance and the themed (monochrome) launcher icon.
 - [x] Evidence record written: `docs/verification/prd-375-readiness-phase-1-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
-- EDIT `packages/runtime-native/scripts/package-android.mjs` — repair demonstrated resource/handoff plumbing.
-- EDIT `packages/runtime-native/tests/android-packaging.integration.test.mjs` — inspect final signed icon/splash/identity resources.
-- EDIT `packages/create-threenative/__tests__/config.spec.ts` — invalid artwork is rejected before packaging.
+- EDIT `packages/runtime-native/scripts/package-android.mjs` — verified, no change required; the resource/handoff plumbing already carried the brand.
+- EDIT `packages/runtime-native/tests/android-packaging.integration.test.mjs` — inspect final signed icon/splash/identity resources on the release APK and AAB.
+- EDIT `packages/create-threenative/__tests__/config.spec.ts` — already covers invalid artwork refusal (config.spec.ts:424); unchanged.
 - NEW `docs/verification/prd-375-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Consume PRD-212 release artifacts and PRD-221 aligned inputs. Inspect adaptive icon foreground/background/monochrome, label, application ID, version and boot splash from the final APK/AAB-derived installed app. Run actual launcher → OS splash → live loading → play on Android. Artwork/layout remains game input; invalid declared variants fail rather than silently reverting to defaults.

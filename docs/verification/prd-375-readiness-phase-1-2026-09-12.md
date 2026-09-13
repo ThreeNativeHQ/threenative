@@ -20,34 +20,45 @@ observation the earlier work never made.
 
 ```sh
 cd packages/runtime-native
-../../node_modules/.bin/vitest run tests/android-packaging.integration.test.mjs
+../../node_modules/.bin/vitest run --config vitest.config.ts tests/android-packaging.integration.test.mjs
 # Test Files  1 passed (1)
-# Tests      35 passed (35)
+# Tests      36 passed (36)
 ```
 
-Two tests were added (the other 33 pre-existed):
+Three tests were added (the other 33 pre-existed):
 
-- `a signed consumer release preserves the configured icon, splash and identity resources` —
+- `a release-mode artifact preserves the configured icon, splash and identity resources` —
   packages with `--mode release`, then reads the APK and asserts the manifest `icon`/`roundIcon`,
-  the label and application id, and byte-identical `mipmap-xxxhdpi/ic_launcher.png`,
+  the label, application id, `versionCode`/`versionName`, the `values/branding.xml` background
+  colours, and byte-identical `mipmap-xxxhdpi/ic_launcher.png`,
   `drawable-nodpi/ic_launcher_foreground.png`, `ic_launcher_monochrome.png` and
-  `tn_boot_splash.png`, plus the adaptive-icon XML's foreground reference.
+  `tn_boot_splash.png`. Each variant is written with distinct bytes and compared against its own
+  declared source, so copying one asset into another's slot fails. The signature verifier is the
+  injected seam and alignment is off (the fixture archive is hand-assembled); the real signature and
+  16 KB paths have their own tests in the same file.
+- `an Android App Bundle release carries the same configured brand resources` — the `bundleRelease`
+  AAB is inspected for the manifest icon, the monochrome drawable and the boot splash.
 - `a declared Android icon variant whose file is missing is refused before Gradle runs` — a config
   whose `icons.android.monochrome` file does not exist is refused with
   `TN_CONFIG_BRAND_ANDROID_MONOCHROME_MISSING`, and `last-task.txt` is absent, so no Gradle build
-  ran.
+  ran. The refusal happens in `installAndroidFiles` (package-android.mjs:628-632), before the
+  `spawnSync` Gradle invocation (package-android.mjs:1043), which is why the absent task file is
+  sound evidence.
 
 ## Observed red, then restored green
 
 1. **Disconnected splash staging.** Made `installAndroidFiles` skip the `tn_boot_splash` copy
-   (`if (false && branding.splash !== undefined)`), reran the new release test:
+   (`if (false && branding.splash !== undefined)`), reran the release test:
    `FAIL … Command failed: unzip -p …/fox.apk drawable-nodpi/tn_boot_splash.png` →
-   `filename not matched`. Source restored; 35/35 green again.
-2. **Config layer, real build (not manufactured).** A foreground PNG with no alpha channel was
+   `filename not matched`. Source restored; green again.
+2. **Variant cross-copy.** Made the monochrome slot receive the foreground bytes
+   (`copyFileSync(branding.foreground, androidMonochrome)`); the AAB test failed on the monochrome
+   entry not matching its declared source. Source restored; green again.
+3. **Config layer, real build (not manufactured).** A foreground PNG with no alpha channel was
    declared for the real starter project; `threenative build --target android --allow-source-build`
    refused before any Gradle work:
-   `TN_CONFIG_BRAND_ANDROID_FOREGROUND_ALPHA_INVALID: … app.icons.android.foreground must include an
-   alpha channel: brand/foreground.png`.
+   `TN_CONFIG_BRAND_ANDROID_FOREGROUND_ALPHA_INVALID: … app.icons.android.foreground must include
+   an alpha channel: brand/foreground.png`.
 
 ## Real artifact (source/consumer build)
 
@@ -77,18 +88,23 @@ Device: `sdk_gphone16k_x86_64` (16 KB-page AVD), API 36. Installed with `adb ins
 - **OS splash** (`s2.png`): navy `bootSplash.backgroundColor` `#0d1b2a`, the red authored foreground
   icon, and the green authored branding image at the foot — i.e. the adaptive icon foreground
   (`windowSplashScreenAnimatedIcon`) and `tn_boot_splash` (`windowSplashScreenBrandingImage`).
+- **Live loading transition** (`s3.png`): the navy loading surface with the progress indicator,
+  between the OS splash and the first game frame.
 - **Launcher/app metadata** (`appinfo2.png`): the system App info header shows the red adaptive
   launcher icon and the label `PRD375 Brand`.
 - **Playable frame** (`game.png`): the default starter scene (blue icosahedron, orange box, magenta
   marker); logcat `TN_SURFACE_FRAME … present 19…28` shows the engine presenting frames.
 
 Montage: [prd-375-phase-1-android-brand-emulator.png](prd-375-phase-1-android-brand-emulator.png)
-(splash, play, App info). Raw captures: `/tmp/opencode/prd375-captures/`.
+(OS splash, live loading, playable frame, App info). Raw captures: `/tmp/opencode/prd375-captures/`.
 
 ## Honest limits / not claimed
 
-- This is the **emulator**, not a physical OEM launcher. Physical OEM icon-mask/themed-icon
-  appearance remains unverified and is a separately named observation.
+- This is the **emulator**, not a physical OEM launcher. Physical OEM icon-mask appearance remains
+  unverified and is a separately named observation.
+- The **themed (monochrome) launcher icon** was not observed: the emulator's launcher was not driven
+  into its themed-icon mode, so the monochrome variant is proven only in the artifact (byte-identical
+  in the packaged drawable) and not on a launcher surface.
 - The APK above came from a maintainer **source** build (`--allow-source-build`), not from a
   published-cohort install. Public-cohort artifact acceptance is PRD-060's; this phase proves the
   packager writes and preserves the brand, which is the same code path.
@@ -100,9 +116,11 @@ Montage: [prd-375-phase-1-android-brand-emulator.png](prd-375-phase-1-android-br
 
 ## Files changed
 
-- `packages/runtime-native/tests/android-packaging.integration.test.mjs` — the two tests above
+- `packages/runtime-native/tests/android-packaging.integration.test.mjs` — the three tests above
   (+`existsSync` import). No production source change was required: the plumbing already carried the
-  brand; it had never been proven on a release artifact.
+  brand; it had never been proven on a release artifact. `packages/runtime-native/scripts/package-android.mjs`
+  and `packages/create-threenative/__tests__/config.spec.ts` were inspected and are unchanged (the
+  latter already covers the missing-declared-variant refusal at config.spec.ts:424).
 
 ## Next
 
