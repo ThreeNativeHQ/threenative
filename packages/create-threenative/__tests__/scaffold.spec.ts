@@ -304,8 +304,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-12 when release preparation repinned every generated package manifest
   // to the 0.3.2 npm cohort (PRD-377), which changes the package metadata embedded in every
   // scaffold; the documented recompute-after-release case above. All ten trees move together.
-  "action-rpg": "25fb943dbd6acc90da30564d938ac942bc44a4ce6477ea631ac5103dacc3660f",
-  defense: "2f7a7130df2ccece3ccf0ca74f75f4ff066193d7d40584b037fbaf17a851653f",
+  // Recomputed 2026-09-13 for the screenshot gitignore default: every scaffold's `.gitignore`
+  // gains `screenshots/*` and its `!screenshots/.gitkeep` exception, so all ten trees move.
+  "action-rpg": "ad76288aa7e72e83b38b684a3b77379632db413325eef885c2bf76c231eae3b7",
+  defense: "5eb0497b9d1d0f8412714cf8292e02839a29e83cf489d46ed1261663e8d8ae0f",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -313,17 +315,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "4ea30c1aa708181f839e55b8e2ba2b29c4a9e18b365373df9242ddbaeab1e0e3",
-  platformer: "43293e317024e4f0808e4b544b35e8eceb6dea61f6e07f4c5b04844dd418c719",
-  runner: "7a66aa69693c75307ae91fdffa84f46948b83495a110689fa78742dd6b3e6d19",
-  puzzle: "9899b8ce5b5833c5bea5eff9b01a16f5a1233b3cd3a7c6942e997370fa522a93",
-  racing: "b3de2fdda3daff9584ef86daa2fdbf7a4119539bb9b89186b54cd2d4608357d7",
-  shooter: "811fa1f6dcaf7ff6d96fa8f0e00f245e87d63a8f9235243de8d009947a925096",
+  minimal: "1e9cbc2a6c30fd6dcf2a8ab263c8baace7f42cb1fe2802f71fc9cc635c0e8d06",
+  platformer: "9af48d2f3ce45f9656921cb357f0547b2053d38886e1a9fbbc51257fa01f859a",
+  runner: "11b0c7b2ec964f1d91980298841f7cce893d0118f62f26a60d24ad39d9737781",
+  puzzle: "fbe1a4037f656057eb3d8a8f59df2a80d56106279727dbddf490195e09ca0c3b",
+  racing: "91b00cf35a02c71a415fd083cffdf4b7ddb9f552e2c1ead5d4e10f9cbef39607",
+  shooter: "604e0a9e688a91a506012b63f9572dc91ac8e66849da0dc22fc64c2cdc61d44d",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "5d7096e54eec7a47e8942e736fcebfaa214fe7e55527ce7c43569f0198c67ba6",
+  starter: "c3b40fc1ce9a92783f10fbec6742ae587859dfb92bff216d90f746b2e61d1669",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -349,7 +351,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "3ab3e79d1641df9f099d8e4139fa3e850bc2389f9fc92ef39103c7f062838bb9",
+  sailing: "0d238ae1b90594a43de4a5d58c36d794beee1f9a02b9405aff4db57c17a7cc66",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -759,7 +761,15 @@ describe("create-threenative", () => {
       await expect(stat(path.join(result.target, "scripts/reference.mjs"))).resolves.toBeTruthy();
       await expect(stat(path.join(result.target, "scripts/visual-loop.mjs"))).resolves.toBeTruthy();
       const gitignore = await readFile(path.join(result.target, ".gitignore"), "utf8");
-      for (const rule of [".dream-loop/", "node_modules/", ".env", ".env.*", "!.env.example"])
+      for (const rule of [
+        ".dream-loop/",
+        "node_modules/",
+        ".env",
+        ".env.*",
+        "!.env.example",
+        "screenshots/*",
+        "!screenshots/.gitkeep",
+      ])
         expect(gitignore).toContain(rule);
     } finally {
       await rm(root, { force: true, recursive: true });

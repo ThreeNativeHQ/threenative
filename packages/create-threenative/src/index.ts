@@ -371,6 +371,9 @@ const AUTHORING_GITIGNORE_RULES = [
   ".env",
   ".env.*",
   "!.env.example",
+  "# Captured frames are local debugging evidence, not shipped source. Keep the folder itself.",
+  "screenshots/*",
+  "!screenshots/.gitkeep",
 ] as const;
 /** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
 const REFERENCE_TOKEN_PATTERN =
