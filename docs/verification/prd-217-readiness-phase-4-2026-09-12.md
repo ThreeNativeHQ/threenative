@@ -70,6 +70,35 @@ pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts   # 95
 pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/native-build-ui-overlay.test.mjs  # 2/2 pass
 ```
 
+## Linux overlay input regression (this branch's runtime)
+
+The branch's runtime was built with the overlay and driven through the existing desktop overlay
+input proof on `Xvfb :3` with the `tools/xcompmin.c` compositor fixture and the `native-smoke`
+bundles:
+
+```sh
+pnpm --filter @threenative/runtime-native native:build          # build/tn-linux/mystral, overlay ON
+node packages/runtime-native/scripts/bundle.mjs --project examples/native-smoke \
+  --entry src/game.ts --target desktop --output /tmp/opencode/proof-work/desktop-game.js
+pnpm --dir examples/native-smoke exec esbuild ui/main.ts --bundle --format=esm \
+  --outfile=/tmp/opencode/proof-work/desktop-ui/main.js
+TN_PROOF_WORK=/tmp/opencode/proof-work bash packages/runtime-native/scripts/desktop-ui-overlay-proof.sh
+```
+
+Result — 8/8, `failures: 0`, across the starting size, a shrink to 800x500, a grow to 1600x900 and
+fullscreen 1920x1080:
+
+```
+  PASS  press inside an island reaches the page (ui)
+  PASS  press outside every island reaches the game (game)
+```
+
+The shape published for each geometry is live (`TN_UI_SHAPE` names the two islands at the current
+window size), so a stale hit region would fail the "inside an island" row rather than pass by
+silence. This is Xvfb (a bare X server), not a Wayland session hosting Xwayland, so it does not
+satisfy the phase's Wayland row and it does not attach the starter's React HUD — `native-smoke` is
+the subject here.
+
 ## Not run, and not claimed
 
 - Live HUD input/teardown under Xwayland: the probe's `XGetImage` sampling aborts before the
