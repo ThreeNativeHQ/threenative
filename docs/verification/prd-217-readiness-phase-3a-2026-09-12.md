@@ -25,14 +25,34 @@ Observed red for the linkage, real and on the host: an earlier Windows run faile
 link directories do not reach `mystral.exe`; fixed in `291211df3` by linking the full WebView2
 loader path `PUBLIC`. `291211df3` then built and ran green on `windows-2025`.
 
+Observed red / restored green, contract level (the PRD's "force the Unix `.a` name on Windows"
+control, runnable without a Windows host):
+
+```sh
+# red: force `.a` on every platform in uiOverlayLibraryName
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/native-build-ui-overlay.test.mjs -t "named for the host toolchain"
+# Expected: "threenative_ui_overlay.lib"  Received: "libthreenative_ui_overlay.a"  (1 failed)
+# restore the measured mapping
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/native-build-ui-overlay.test.mjs
+# 4 passed (4)
+```
+
+The plan test is now host-derived: it runs on `linux` **and** `darwin`, derives the CMake preset
+and the host library name from `process.platform`, and asserts `cargo build ... ui-overlay`,
+`-DTN_ENABLE_UI_OVERLAY=ON` and the host-named `-DTHREENATIVE_UI_OVERLAY_LIBRARY`. Windows keeps
+the name-mapping test plus the hosted `native:build` job; this Linux host cannot execute the MSVC
+stub.
+
 ## What did not run
 
-- **The phase required test on each supported platform.** `tests/native-build-ui-overlay.test.mjs`
-  still only runs its build-plan assertion on Linux (`test.runIf(process.platform === 'linux')`);
-  there is no Windows or macOS branch asserting normal-build overlay linkage, and the real
-  default-starter scenario on the normal-build runtime has not run.
-- **The PRD's observed-red control** (restore the Linux-only branch or force the Unix `.a` name on
-  Windows) has not been executed; the LNK1181 red is adjacent but not that control.
+- **The real default-starter scenario on the normal-build runtime** has not run on any platform.
+  The test asserts the build plan; it does not scaffold the starter, bundle it, produce an
+  executable, or drive the playtest CLI.
+- **A Windows-host observed-red** — restore the Linux-only branch and run `native:build` on
+  `windows-2025` until it fails — has not been executed; the LNK1181 red and the contract-level
+  mapping red above are the recorded controls.
 - **User verification** — a maintainer running the normal host build and getting a runtime that
   renders and handles the unchanged starter HUD through the internal proof route — has not been
   performed.

@@ -32,9 +32,14 @@ test('the overlay library is named for the host toolchain', () => {
   assert.equal(uiOverlayLibraryName('win32'), 'threenative_ui_overlay.lib');
 });
 
-test.runIf(process.platform === 'linux')(
-  'the Linux native build links the desktop UI overlay into the runtime',
+// Runs on every desktop host that can execute the plan with shell stubs. The Windows host's
+// library name is covered by the mapping test above and by the hosted `native:build` job; the
+// shape asserted here (overlay built, `TN_ENABLE_UI_OVERLAY=ON`, host-named library) is the same
+// on all three, which is what phase 3A requires the normal build to do per host.
+test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
+  `the ${process.platform} native build links the desktop UI overlay into the runtime`,
   () => {
+    const preset = process.platform === 'darwin' ? 'tn-macos' : 'tn-linux';
     const root = makeTempDirSync('threenative-native-build-plan-#% ');
     roots.push(root);
     const scripts = join(root, 'scripts');
@@ -80,7 +85,7 @@ test.runIf(process.platform === 'linux')(
     assert.equal(result.status, 0, result.stderr);
     const commands = readFileSync(log, 'utf8');
     assert.match(commands, /cargo build --release --manifest-path .*native\/ui-overlay\/Cargo\.toml --lib/u);
-    assert.match(commands, /cmake --preset tn-linux .*?-DTN_ENABLE_UI_OVERLAY=ON/u);
+    assert.match(commands, new RegExp(`cmake --preset ${preset} .*?-DTN_ENABLE_UI_OVERLAY=ON`, 'u'));
     assert.match(
       commands,
       /-DTHREENATIVE_UI_OVERLAY_LIBRARY=.*libthreenative_ui_overlay\.a/u,
