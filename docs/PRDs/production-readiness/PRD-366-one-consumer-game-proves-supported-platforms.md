@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-366 — One installed consumer game proves the supported platform contract
 
-**Status:** PROPOSED. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — phase 1's scenario, consumer harness step, unit contract and a real browser run are green; a public-registry cohort install still waits on PRD-196. Revised 2026-09-08; phase 1 worked 2026-09-12.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 lifecycle/proof state, +1 hosted/device integration).
 **Problem:** Isolated engine feature tests and core smoke screenshots do not establish that a developer can build, customize and distribute a playable game using installed packages only.
 
@@ -63,19 +63,24 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `scripts/verify-registry-install.ts`, `scripts/__tests__/verify-registry-install.spec.ts`, `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` (+1 more)
-- [ ] Required test green: `scripts/__tests__/verify-registry-install.spec.ts`
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-366-readiness-phase-1-<date>.md`
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `scripts/verify-registry-install.ts`, `scripts/__tests__/verify-registry-install.spec.ts`, `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` (+1 more)
+      The clean-room gate now applies a game-only edit, requires the scenario with non-empty assertions, requires the edit in the build, and runs the scenario; `STARTER_PATHS` and the frozen starter scaffold hash moved with the new template file.
+- [x] Required test green: `scripts/__tests__/verify-registry-install.spec.ts`
+      25/25 passed 2026-09-12; with `packages/create-threenative/__tests__/scaffold.spec.ts` the pair is 86/86.
+- [x] Observed red recorded, then restored green
+      Four new spec cases fail closed: no assertions, removed scenario, false assertions (playtest throws), edit absent from the build.
+- [x] User verification performed on the named platform
+      Real browser WebGPU run of the new scenario against a fresh local-tarball scaffold on a fresh generated starter (NVIDIA Turing, rule `sustained-frames`): exit 0, pass true, 943 frames, movement 5.49; `forward`/`restart` siblings pass on the same scaffold. A public-registry cohort install still waits on PRD-196 (PARTIAL).
+- [x] Evidence record written: `docs/verification/prd-366-readiness-phase-1-2026-09-12.md`
+- [x] Independent reviewer returned PASS
+      Three fresh-eyes reviews. The first found two blocking defects (a comment marker Vite strips; a serverless playtest) and three doc issues, all fixed. The second verified those and found the missing `--headed`, fixed and confirmed by a real hardware run. The third verified the invocation, scenario and hash as sound and required only the test-count/status corrections applied here.
 
 **Files (maximum five):**
 
 - EDIT `scripts/verify-registry-install.ts` — run candidate template gameplay after game-only edit.
 - EDIT `scripts/__tests__/verify-registry-install.spec.ts` — non-vacuous external consumer assertions.
 - NEW `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` — observable real starter sequence.
-- EDIT `scripts/verify-template-playtests.ts` — include new scenario through existing discovery.
+- EDIT `scripts/verify-template-playtests.ts` — verified, no change required: `scenarioFiles` already discovers every `*.playtest.json`, so the new scenario is included without an edit.
 - NEW `docs/verification/prd-366-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Scaffold from the exact candidate, install without workspace protocols, edit a game-owned movement/UI value, build and run actual browser gameplay against the built output. Verify input changes position, HUD action changes state, asset/physics/audio observation exists and scene can restart. Register using the existing playtest glob. Add one export/asset compatibility audit from existing capability/conformance inventory; do not infer that arbitrary Three.js/browser plugins work natively.
