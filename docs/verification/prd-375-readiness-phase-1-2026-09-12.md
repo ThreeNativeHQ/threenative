@@ -60,40 +60,58 @@ Three tests were added (the other 33 pre-existed):
    `TN_CONFIG_BRAND_ANDROID_FOREGROUND_ALPHA_INVALID: … app.icons.android.foreground must include
    an alpha channel: brand/foreground.png`.
 
-## Real artifact (source/consumer build)
+## Real artifact — release build
+
+The consumer CLI (through the project's installed `@threenative/runtime-native@0.3.2`) silently
+produced a debug APK because that published package predates PRD-212's `--mode`; the release
+artifact was therefore produced by calling the engine's own packager from the checkout:
 
 ```sh
 THREENATIVE_RUNTIME_SOURCE=<engine>/packages/runtime-native \
 THREENATIVE_GRADLE_ARGS="-PthreenativeJsEngine=quickjs" \
-node packages/create-threenative/dist/threenative.js build --target android --allow-source-build
-# BUILD SUCCESSFUL in 1m 48s
-# ThreeNative Android APK: /tmp/opencode/prd375-game/dist-native/prd377-consumer2.apk
+node packages/runtime-native/scripts/package-android.mjs \
+  --allow-source-build --mode release --format apk \
+  --project-root /tmp/opencode/prd375-game \
+  --bundle /tmp/opencode/prd375-game/.threenative/build/game.js \
+  --assets /tmp/opencode/prd375-game/public --orientation landscape \
+  --config /tmp/opencode/prd375-game/.threenative/build/config.json \
+  --output /tmp/opencode/prd375-game/dist-native/prd375-brand-release.apk
+# BUILD SUCCESSFUL in 1m 36s
+# ThreeNative Android APK: …/prd375-brand-release.apk — 4 native libraries 16 KB clean,
+#   archive offsets confirmed by …/build-tools/36.0.0/zipalign
 ```
 
-Artifact inspection (`aapt` from build-tools 36.0.0, `unzip`, ImageMagick pixel compare):
+Release signing used the local debug keystore (a real release identity is PRD-060's);
+`apksigner verify` reports `Signer #1 certificate DN: C=US, O=Android, CN=Android Debug`. The
+release variant runs resource obfuscation (`optimizeReleaseResources`), so entries are renamed
+(`res/o-.png`, `res/XW.png`, `res/gE.png`, `res/Wn.png`); the pixels were compared by
+`magick compare -metric AE`:
 
 | Fact | Observed |
 | --- | --- |
-| package | `com.threenative.prd375brand`, versionCode 1, versionName 1.0.0 |
+| package | `com.threenative.prd375brand`, versionCode 1, versionName 1.0.0, compileSdk 36 |
 | application label | `PRD375 Brand` |
-| application icon | `@mipmap/ic_launcher` (adaptive) and `roundIcon` same |
-| adaptive-icon layers | background + foreground + monochrome present in packaged `mipmap-anydpi-v26/ic_launcher.xml` |
-| authored → packaged | `ic_launcher_foreground.png`, `ic_launcher_monochrome.png`, `tn_boot_splash.png`, `mipmap-xxxhdpi/ic_launcher.png` all `magick compare -metric AE` = **0** vs the authored files |
+| application icon | adaptive icon (obfuscated name `res/BW.xml`) |
+| authored → packaged | foreground (`o-.png`), monochrome (`XW.png`), splash (`gE.png`), legacy icon (`Wn.png`) all `magick compare -metric AE` = **0** vs the authored files |
+
+The debug APK (built earlier the same session) was also inspected and matched every entry by name.
 
 ## On-device observation (named platform)
 
-Device: `sdk_gphone16k_x86_64` (16 KB-page AVD), API 36. Installed with `adb install -r`, launched
+Device: `sdk_gphone16k_x86_64` (16 KB-page AVD), API 36. The **release** APK was installed
+(`adb install -r`) and launched as
 `com.threenative.prd375brand/com.threenative.runtime.MystralActivity`.
 
-- **OS splash** (`s2.png`): navy `bootSplash.backgroundColor` `#0d1b2a`, the red authored foreground
-  icon, and the green authored branding image at the foot — i.e. the adaptive icon foreground
-  (`windowSplashScreenAnimatedIcon`) and `tn_boot_splash` (`windowSplashScreenBrandingImage`).
-- **Live loading transition** (`s3.png`): the navy loading surface with the progress indicator,
+- **OS splash** (`rel2.png`): navy `bootSplash.backgroundColor` `#0d1b2a`, the red authored
+  foreground icon, and the green authored branding image at the foot — i.e. the adaptive icon
+  foreground (`windowSplashScreenAnimatedIcon`) and `tn_boot_splash`
+  (`windowSplashScreenBrandingImage`).
+- **Live loading transition** (`rel3.png`): the navy loading surface with the progress indicator,
   between the OS splash and the first game frame.
-- **Launcher/app metadata** (`appinfo2.png`): the system App info header shows the red adaptive
+- **Launcher/app metadata** (`rel-appinfo.png`): the system App info header shows the red adaptive
   launcher icon and the label `PRD375 Brand`.
-- **Playable frame** (`game.png`): the default starter scene (blue icosahedron, orange box, magenta
-  marker); logcat `TN_SURFACE_FRAME … present 19…28` shows the engine presenting frames.
+- **Playable frame** (`rel-game.png`): the default starter scene (blue icosahedron, orange box,
+  magenta marker); logcat `TN_SURFACE_FRAME … present 19…28` shows the engine presenting frames.
 
 Montage: [prd-375-phase-1-android-brand-emulator.png](prd-375-phase-1-android-brand-emulator.png)
 (OS splash, live loading, playable frame, App info). Raw captures: `/tmp/opencode/prd375-captures/`.
@@ -103,14 +121,11 @@ Montage: [prd-375-phase-1-android-brand-emulator.png](prd-375-phase-1-android-br
 - This is the **emulator**, not a physical OEM launcher. Physical OEM icon-mask appearance remains
   unverified and is a separately named observation.
 - The **themed (monochrome) launcher icon** was not observed: the emulator's launcher was not driven
-  into its themed-icon mode, so the monochrome variant is proven only in the artifact (byte-identical
+  into its themed-icon mode, so the monochrome variant is proven only in the artifact (pixel-identical
   in the packaged drawable) and not on a launcher surface.
-- The APK above came from a maintainer **source** build (`--allow-source-build`), not from a
-  published-cohort install. Public-cohort artifact acceptance is PRD-060's; this phase proves the
-  packager writes and preserves the brand, which is the same code path.
-- The 16 KB AVD reported the **debug** APK as not 16 KB aligned (page-size compatibility mode). That
-  is the debug path's alignment, owned by PRD-221; it is not a branding defect and this phase makes
-  no 16 KB claim.
+- The artifact came from a maintainer **source** build (`--allow-source-build`) signed with the debug
+  keystore, not from a published-cohort install or a real release identity. Public-cohort artifact
+  acceptance is PRD-060's; this phase proves the packager writes and preserves the brand.
 - The configured-artwork load-bearing value was proven by the config-layer refusal above; the
   positive path uses a distinct authored red/green artwork pixel-identical in the packaged artifact.
 
