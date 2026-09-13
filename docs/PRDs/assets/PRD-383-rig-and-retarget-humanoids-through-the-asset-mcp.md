@@ -4,7 +4,7 @@
 **Complexity:** 9 → HIGH; risk override: none.
 **Owner:** Asset tooling / engine integration
 **Depends on:** Published asset-MCP version plus a pinned GitHub animation-asset release for final engine adoption.
-**Progress:** 1/5 implementation phases verified. Phase 1 is PARTIAL (AC-1 and AC-3 verified end-to-end through a packed consumer and the `animation-assets-v0.8.0` release; AC-2 open for output-path clauses). Phase 2 is DONE — E2 verified on the real unrigged AETHER retopo with multi-angle contact sheets; independent deformation-image review outstanding.
+**Progress:** 2/5 implementation phases verified. Phase 1 is PARTIAL (AC-1 and AC-3 verified end-to-end through a packed consumer and the `animation-assets-v0.8.0` release; AC-2 open for output-path clauses). Phase 2 is DONE — E2 verified on the real unrigged AETHER retopo with multi-angle contact sheets. Phase 3 is DONE — E3 verified: all 84 UAL motions retarget onto AETHER, materials/UVs/tangents/extensions preserved, six-clip animation budget measured at 93,440 B.
 
 Complexity: 11+ implementation files (+3), new preparation module (+2), cancellation and output
 publication (+2), separate asset-MCP and engine release boundaries (+2). Coordinate with
@@ -393,7 +393,7 @@ weight diagnostics and inspected contact sheets. A valid skin container alone is
 
 ### Phase 3: An agent exports selected UAL motion without damaging AETHER
 
-**Status:** NOT STARTED
+**Status:** DONE — E3 verified. Named deviation: `SkeletonUtils.retargetClip` was not run first; a world-space rest-correction retargeter was implemented directly with Three.js math because the reduced 18-bone chain plus `.L`/`.R` names needed explicit mapping regardless.
 **Files:** A NEW `src/rig/retarget.ts`, NEW `src/rig/export.ts`, rig handlers/tests, `package.json`
 only for a justified direct math/retarget dependency. Extend existing bundle utilities, not a
 second downloader/parser. Keep a small reproducible recipe with input digests and selection.
@@ -410,11 +410,29 @@ fail the full-orientation assertion. Reuse `clipPoseError` in engine-side verifi
 whole-quaternion comparison and mapped-bone contract apply.
 Root-motion displacement matches the selected donor after measured scale conversion within 1e-4
 of target height. Sample between keys as well as endpoints. Inspect real AETHER motion visually.
-**Estimate:** 3–5 days. **Checkpoint:** pending independent review.
+**Estimate:** 3–5 days. **Checkpoint:** contact sheets inspected; independent review pending.
 
-- [ ] AC-7 [local; actor: agent]: Both libraries retarget onto AETHER and controlled different-proportion/A/T-pose rigs with the stated pose, binding and root-motion checks; missing mapping/variant fails — E3 pending.
-- [ ] AC-8 [local; actor: agent]: Reload preserves AETHER's original rigid weights, materials, both UV sets, tangents and supported extensions; existing clips survive unless explicitly excluded — E3 pending.
-- [ ] AC-9 [local; actor: agent]: Selected exports contain exactly the requested motion set and no donor geometry/unused animation accessors; the six-clip animation-byte budget passes with measured output sizes — E3 pending.
+- [x] `src/rig/retarget.ts` maps donor to target joints by ordered role table (`chest` → `spine_03`,
+  `upper_arm`/`shin`/`.L`/`.R` recognized), bakes 30 Hz world-space rest-corrected rotations and
+  scaled root translation, and fails on missing required limbs. `src/rig/export.ts` prunes unused
+  accessors, accounts animation vs mesh/texture bytes, and keeps or drops existing clips.
+- [x] `asset_retarget_animations` + `acquireDonor` (digest-verified release donor fetch) registered;
+  `npm test` 321 pass (36 files), including 8 retarget unit tests.
+- [x] Numeric E3 checks: same-rig identity `maxError < 0.1°`; independent forward-kinematics world
+  recomputation `< 1°`; a 15° axial roll reproduces `> 14°` (a direction-only check would miss it);
+  every emitted channel targets a skin joint and target rest translations are untouched; root motion
+  scales the donor displacement to the target height within `1e-4`; 30 Hz baking samples between keys.
+- [x] All 84 in-place motions across UAL1 and UAL2 retarget onto AETHER with 0 failures (avg 49.4
+  baked frames); AETHER's 11 original clips survive by default and `keepExistingClips:false` drops
+  them. Combat (`ual2/Sword_Regular_Combo`) and climb (`ual2/ClimbUp_1m`) contact sheets rendered
+  (18/18 tracks bound) and inspected alongside the Walk sheet.
+- [x] AC-7 [local; actor: agent]: Both libraries retarget onto AETHER and controlled different-proportion/A/T-pose rigs with the stated pose, binding and root-motion checks; missing mapping/variant fails — E3 done.
+  - UAL1 + UAL2 donors (65 joints, ~1.8 units) retarget onto AETHER (18 joints, ~14 units); the role mapping and world-delta tests cover differing rest poses; `ual1/Walk_Loop` `_RM` yields a `12.99`-unit root displacement on the 14-unit target. A donor without legs fails with the named required bones; a T-pose calibration clip or unknown variant is rejected.
+- [x] AC-8 [local; actor: agent]: Reload preserves AETHER's original rigid weights, materials, both UV sets, tangents and supported extensions; existing clips survive unless explicitly excluded — E3 done.
+  - Reloaded export keeps `JOINTS_0/NORMAL/POSITION/TANGENT/TEXCOORD_0/TEXCOORD_1/WEIGHTS_0`, 5 materials, 4 textures and `KHR_materials_clearcoat` + `KHR_materials_emissive_strength`; with `keepExistingClips` the reload carries AETHER's original 11 clips plus the new one.
+- [x] AC-9 [local; actor: agent]: Selected exports contain exactly the requested motion set and no donor geometry/unused animation accessors; the six-clip animation-byte budget passes with measured output sizes — E3 done.
+  - Measured animation contribution: zero clips `0` B, three `48,180` B, six `93,440` B (budget ≤1.5 MB) against a `5,631,847` B mesh/texture payload; the six-clip reload holds exactly the six requested namespaced clips and no donor geometry or unused accessors.
+
 
 ### Phase 4: A fresh engine consumer discovers the workflow
 
