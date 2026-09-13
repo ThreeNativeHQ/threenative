@@ -17,17 +17,15 @@ try {
       "CI_REQUIRED_CANDIDATE_MISMATCH: verdict must execute the classified candidate",
     );
   if (process.env.TN_CI_EVENT === "pull_request") {
-    const { TN_CI_BASE_SHA: base, TN_CI_HEAD_SHA: head, TN_CI_HEAD_REF: headRef } = process.env;
-    if (process.env.TN_CI_CUTOVER === "true" && process.env.TN_CI_BASE_REF === "main") {
-      if (
-        plan.selection !== "full" ||
-        (headRef !== `promotion/${head}` && !/^hotfix\/.+/u.test(headRef ?? ""))
-      ) {
-        throw new Error(
-          "CI_REQUIRED_PROMOTION_REF: main requires a frozen promotion/<full-head-sha> or a fully checked hotfix/ branch after cutover",
-        );
-      }
-    }
+    const { TN_CI_BASE_SHA: base, TN_CI_HEAD_SHA: head } = process.env;
+    // The candidate is frozen by the exact base/head parent assertion below, not by the head
+    // branch's name. A `promotion/<head-sha>` ref restated a SHA that check already verifies.
+    if (
+      process.env.TN_CI_CUTOVER === "true" &&
+      process.env.TN_CI_BASE_REF === "main" &&
+      plan.selection !== "full"
+    )
+      throw new Error("CI_REQUIRED_MAIN_FULL: main requires complete verification");
     const commit = spawnSync("git", ["cat-file", "-p", "HEAD"], { encoding: "utf8" });
     const headers = commit.stdout?.split("\n\n", 1)[0] ?? "";
     const parents = [...headers.matchAll(/^parent ([0-9a-f]{40})$/gmu)].map((match) => match[1]);

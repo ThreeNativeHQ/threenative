@@ -102,7 +102,7 @@ Feature branches start from `develop`; squash their focused PRs into `develop`. 
 workflows, must execute that same candidate. A scheduled workflow must explicitly check out
 `develop`, because its workflow definition is loaded from the default branch.
 
-Open a promotion PR from a fixed candidate branch into `main`. Run the full suite against the
+Open a promotion PR from `develop` into `main`. Run the full suite against the
 proposed combined result before merging. A candidate or base change invalidates the relevant
 proof. Use merge commits for promotions to preserve ancestry between the long-lived branches.
 Main accepts fully verified promotions; emergency fixes must receive full checks and flow back
@@ -225,8 +225,9 @@ acceptance cases below have actually passed.
   develop. Ordinary PR runs supersede older runs; complete qualification is not cancelled when
   newer commits arrive. The large nonvisual matrix starts at max-parallel 4; tune it only from
   measured queue/execution behavior, without removing scenarios.
-- After activation, main only accepts frozen `promotion/<full-head-sha>` or explicit `hotfix/`
-  candidates through the new verdict. Release-candidate/native/npm authorization is unchanged:
+- After activation, main only accepts `full` candidates through the new verdict. The head branch's
+  name is not part of it: the frozen-branch rule was retired on 2026-09-12 as redundant (see
+  "Frozen promotion and emergency flow" below). Release-candidate/native/npm authorization is unchanged:
   scheduled or PR success, an older main run, or a mismatched candidate/artifact is not release
   evidence. The final main-push full suite remains until an exact-source, exact-artifact handoff is
   implemented and verified; there is deliberately no speculative duplicate-run suppression.
@@ -273,7 +274,7 @@ workload measurements and protected-develop timings remain acceptance work, not 
    develop` per migrated checkout and `gh pr create --base develop` for new features.
 4. Only after protection and matching instructions/tool defaults are verified, set repository
    variable `TN_DEVELOP_CI_ENABLED=true`. This activates fixed-develop daily qualification and the
-   main promotion/hotfix source rule together. Migrate remaining PRs individually with their
+   main full-selection rule together. Migrate remaining PRs individually with their
    owners; refresh their merge-base decisions and checks. Do not rewrite active worktrees.
 5. Exercise real protected-develop prose, instruction, website and shared/native canary PRs. Inspect
    plan reasons, actual job execution and required-context behavior, including deliberate missing
@@ -281,26 +282,31 @@ workload measurements and protected-develop timings remain acceptance work, not 
    checking off acceptance. Run the same full workload cold and warm, including a template-only
    edit after a warm bundle cache, and compare archive payloads and full test verdicts.
 
-### Frozen promotion and emergency flow
+### Promotion and emergency flow
 
-After a successful daily full run, use its **recorded candidate SHA**, not whatever develop points
-at later. Verify that candidate still contains current main; merge main back to develop and
-requalify when it does not. Create a new branch named `promotion/<that-full-40-character-SHA>` at
-that exact SHA and open it against main. Do not push later develop commits onto that branch.
-The PR full suite checks the combined merge result against the proposed main base. A changed
-candidate gets a new frozen branch; a changed base requires new full evidence and strict protection
-prevents the old result from satisfying an up-to-date merge. Merge with a merge commit and a
-head-SHA match, never squash or rebase a promotion:
+**Retired 2026-09-12: the `promotion/<full-head-sha>` branch.** It restated a SHA that
+`CI_REQUIRED_PR_CANDIDATE_MISMATCH` already verifies on the same run, and that GitHub already keys
+its required checks to. The two mechanisms that actually freeze a candidate are unchanged, so the
+branch name carried no evidence of its own — while it cost a manual branch-creation step, rejected
+the obvious `develop -> main` PR with `CI_REQUIRED_PROMOTION_REF`, and drew conflict-resolution work
+onto PR #222, a sync PR that could never merge. `ci-required` now checks only that a main PR's
+selection is `full`.
+
+Promote by opening an ordinary `develop -> main` PR and merging it with a merge commit, never
+squash or rebase. The PR full suite checks the combined merge result against the proposed main base;
+a changed head or base requires fresh full evidence, and strict protection prevents an old result
+from satisfying an up-to-date merge.
 
 ```sh
-# QUALIFIED_SHA is copied from the successful daily run's candidate record, not origin/develop.
 git fetch origin main develop
-git merge-base --is-ancestor origin/main "$QUALIFIED_SHA"
-git push origin "$QUALIFIED_SHA:refs/heads/promotion/$QUALIFIED_SHA"
-gh pr create --base main --head "promotion/$QUALIFIED_SHA" --title "Promote $QUALIFIED_SHA" --body "Full combined-result qualification required; preserve merge ancestry."
+gh pr create --base main --head develop --title "Promote develop" --body "Full combined-result qualification required; preserve merge ancestry."
 # After this PR's exact combined result passes the protected full suite:
-gh pr merge <PR_NUMBER> --merge --match-head-commit "$QUALIFIED_SHA"
+gh pr merge <PR_NUMBER> --merge --match-head-commit "$(git rev-parse origin/develop)"
 ```
+
+The cost this trades for: develop can move while the ~70-minute matrix runs, which re-runs the
+checks rather than admitting unverified code. `--match-head-commit` still refuses a merge whose head
+moved after the evidence was produced.
 
 An emergency `hotfix/` branch starts from main, gets the same complete qualification and review,
 and flows back into develop with a merge commit before the next promotion. Never reuse the

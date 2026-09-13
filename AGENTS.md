@@ -87,9 +87,11 @@ candidate SHA, so a slow or red native matrix cannot hold every merge. Never cac
 **The integration flow is active (PRD-373).** `develop` is protected and requires `ci-required`;
 start feature branches from `develop`, open their PRs against `develop`, and squash-merge there.
 Set each checkout's `git config threenative.integrationBranch develop`. Main accepts only
-full-checked frozen `promotion/<full-head-sha>` PRs (merge commits, never squash/rebase) or
-full-checked `hotfix/` PRs merged back to develop; `TN_DEVELOP_CI_ENABLED=true` makes `ci-required`
-reject a main PR whose head is not a `promotion/` or `hotfix/` ref. Native platform evidence is
+full-checked PRs merged with a merge commit, never squash or rebase; open the ordinary
+`develop -> main` PR rather than a branch whose name restates a SHA. `TN_DEVELOP_CI_ENABLED=true`
+makes `ci-required` reject a main PR whose selection is not `full`, and the head branch's name is
+not part of the verdict: the candidate is frozen by the exact base/head parent assertion, so a new
+commit on the head re-runs the checks before the merge button returns. Native platform evidence is
 produced on full selections but is not part of the merge verdict — the release lane validates it
 for the exact candidate. Inventory `gh pr list` and `pnpm worktree:status` before retargeting,
 retarget in-flight PRs individually, and never rewrite another worktree. Keep the existing release

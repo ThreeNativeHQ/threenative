@@ -53,9 +53,9 @@ release. This keeps ordinary merges off the 120-minute native build.
 
 The integration flow is active: `develop` is protected and requires `ci-required`. Start feature
 branches from develop and explicitly open their PRs against develop; merge features there with
-squash. Qualify a fixed `promotion/<full-head-sha>` against current main and merge that PR with a
-merge commit, preserving ancestry. A changed head/base requires fresh checks. Emergency `hotfix/`
-PRs use full main checks and must be merged back to develop. The repository default may remain main
+squash. Promote by opening a plain `develop -> main` PR and merging it with a merge commit,
+preserving ancestry; the head branch needs no special name. A changed head/base requires fresh
+checks. Emergency `hotfix/` PRs use full main checks and must be merged back to develop. The repository default may remain main
 for qualified workflow definitions; set `git config threenative.integrationBranch develop` in each
 checkout. Do not retarget another person's PR or rewrite their worktree.
 
