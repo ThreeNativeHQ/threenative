@@ -27,7 +27,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export const CONTAINER_MANIFEST = 'threenative-container.json';
 export const CONTAINER_SCHEMA_VERSION = 1;
@@ -431,18 +431,24 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
   const candidates = platform === 'darwin'
     ? [join('Contents', 'Resources', CONTAINER_MANIFEST), CONTAINER_MANIFEST]
     : [CONTAINER_MANIFEST, join('Contents', 'Resources', CONTAINER_MANIFEST)];
-  const relative = candidates.find((candidate) => existsSync(join(resolvedRoot, candidate)));
-  if (!relative) {
+  const manifestRelative = candidates.find((candidate) => existsSync(join(resolvedRoot, candidate)));
+  if (!manifestRelative) {
     throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_MISSING: no ${CONTAINER_MANIFEST} under ${resolvedRoot}`);
   }
   let manifest;
   try {
-    manifest = JSON.parse(readFileSync(join(resolvedRoot, relative), 'utf8'));
+    manifest = JSON.parse(readFileSync(join(resolvedRoot, manifestRelative), 'utf8'));
   } catch (error) {
     throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: ${error instanceof Error ? error.message : String(error)}`);
   }
   for (const [relativePath, expected] of Object.entries(manifest.resources ?? {})) {
-    const absolute = join(resolvedRoot, relativePath);
+    const absolute = resolve(resolvedRoot, relativePath);
+    const within = relative(resolvedRoot, absolute);
+    if (within.startsWith('..') || isAbsolute(within)) {
+      throw new Error(
+        `TN_DESKTOP_CONTAINER_MANIFEST_INVALID: ${relativePath} escapes the container root.`,
+      );
+    }
     if (!existsSync(absolute) || !statSync(absolute).isFile()) {
       throw new Error(
         `TN_DESKTOP_CONTAINER_INCOMPLETE: ${relativePath} is named by the container manifest but is not in the payload.`,

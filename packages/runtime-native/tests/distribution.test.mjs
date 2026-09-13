@@ -1469,6 +1469,24 @@ test('a relocated container missing its UI entry or a native dependency is rejec
   assert.doesNotThrow(() => resolveContainer(containerRoot, { platform: 'linux' }));
 }, 60_000);
 
+test('a container manifest cannot name a resource outside the container root', async () => {
+  const root = makeTempDirSync('threenative-desktop-escape-');
+  roots.push(root);
+  const { archive } = await packageSampleRelease(root);
+  const extractedRoot = makeTempDirSync('threenative-desktop-escape-out-');
+  roots.push(extractedRoot);
+  const containerRoot = extractContainer(archive, join(extractedRoot, 'out'), { platform: 'linux' });
+  const manifestPath = join(containerRoot, 'threenative-container.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  // Data inside the artifact, so a `../` resource must not walk the verifier out of the container.
+  manifest.resources['../../escape.txt'] = { sha256: sha256(Buffer.from('outside')) };
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  assert.throws(
+    () => resolveContainer(containerRoot, { platform: 'linux' }),
+    /TN_DESKTOP_CONTAINER_MANIFEST_INVALID.*escapes the container root/u,
+  );
+}, 60_000);
+
 test('a container that kept the generic icon instead of the configured one fails the brand check', () => {
   const root = makeTempDirSync('threenative-desktop-brand-');
   roots.push(root);
