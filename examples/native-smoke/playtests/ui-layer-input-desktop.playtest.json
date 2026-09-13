@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "name": "native-smoke-ui-layer-input-desktop",
+  "target": "desktop",
+  "subject": "multitouch-player",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 2,
+  "steps": [
+    {
+      "label": "ui-ready",
+      "waitTicks": 180
+    },
+    {
+      "pointers": [
+        {
+          "id": 1,
+          "x": 0.85,
+          "y": 0.5
+        }
+      ],
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "label": "island",
+      "waitTicks": 30
+    },
+    {
+      "pointers": [
+        {
+          "id": 2,
+          "x": 0.5,
+          "y": 0.12
+        }
+      ],
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "label": "outside",
+      "waitTicks": 30
+    }
+  ],
+  "artifacts": {
+    "screenshots": true
+  },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "native-smoke's deliberate `decodeAudioData(new ArrayBuffer(0))` negative control logs one expected rejection on desktop. It is the fixture's audio proof, not the overlay path this scenario measures; the island/outside input assertions are the result."
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "uiReady",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "uiRegions",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "uiIntents",
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "island",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "pointerDowns",
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "outside",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

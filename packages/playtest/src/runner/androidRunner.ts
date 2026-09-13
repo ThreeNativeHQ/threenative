@@ -727,14 +727,10 @@ function unsupportedAssertion(
       target,
     );
   }
-  const hasMultiPointerInput = scenario.steps.some((step) => step.pointers !== undefined);
-  if (hasMultiPointerInput && target === "desktop") {
-    return unsupportedDiagnostic(
-      "complete held-pointer input",
-      "Run this scenario on --target browser or --target android; the desktop mailbox host exposes one pointer.",
-      target,
-    );
-  }
+  // Desktop now carries the complete held-pointer set through its mailbox host (see
+  // `setDevicePointers`), which routes each pointer through the overlay's published hit regions,
+  // so held-pointer steps are no longer unsupported there. Android still needs its emulator
+  // driver, checked above.
   if (scenario.assert?.deviceMetrics !== undefined && target !== "android") {
     return unsupportedDiagnostic(
       "device thermal and power assertions",
