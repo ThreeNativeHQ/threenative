@@ -46,6 +46,7 @@
     "scripts/bundle.mjs",
     "scripts/check-android-16kb-alignment.mjs",
     "scripts/check-source-list.mjs",
+    "scripts/desktop-distribution.mjs",
     "scripts/device-preflight.mjs",
     "scripts/install-prebuilt.mjs",
     "scripts/package-android.mjs",
