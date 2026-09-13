@@ -42,24 +42,51 @@ reviewer returned NEEDS CORRECTION on this basis. Closing Phase 1 needs OS-level
 (Windows `SendInput`) at island and non-island coordinates, or an explicit narrowing of the phase
 claim to attach + bridge + shared-region routing.
 
-## Observed red, then restored green
+## Observed red, then restored green — the PRD's controls, run
 
-Run [34737563582](https://github.com/ThreeNativeHQ/threenative/actions/runs/34737563582), job
-`Windows desktop core`, failed the required test: the press routed correctly
-(`hit:true, injected:true`) but landed on the **restart** island. The Menu's buttons sat after a
-variable-width instruction string, so the published pause region moved from x 0.455 on Linux to
-x 0.409 on Windows and the fixed fraction 0.4788 hit `restart`; `paused` stayed `false`. The row now
-leads with the buttons, anchoring them to the panel's left edge, and the press is at x 0.05; the
-required test is green in 34739248955.
+The PRD requires disabling the platform attachment and separately dropping one bridge intent, then
+running the same starter scenario and showing the state assertions fail. Both were run on Linux
+(`:3` + `xcompmin`) against the packaged starter, each `exit 1` with
+`resource.GameState.paused.atSteps` failing, then restored:
 
-## What is still not run
+| control | change | result |
+| --- | --- | --- |
+| drop one bridge intent | `Menu.tsx` pause `onClick` no longer calls `send(...)` | scenario fails, `paused` stays `false`; restored → `TN_STARTER_UI_OVERLAY_PASS` |
+| disable attachment | `ui.renderer` set to `native` (no overlay) | scenario fails, `paused` stays `false`; restored → `TN_STARTER_UI_OVERLAY_PASS` |
 
-- **User verification** on Windows: the human click / type / focus / resize-at-two-DPI / minimize /
-  restore / close sequence with capture inspection has not been performed. The CI proof is
-  synthetic input, not a human at the machine.
-- Independent reviewer PASS is recorded separately.
+A layout-miss red also occurred on the host: run
+[34737563582](https://github.com/ThreeNativeHQ/threenative/actions/runs/34737563582), job
+`Windows desktop core`, routed the press correctly (`hit:true, injected:true`) but landed on the
+**restart** island because the Menu's buttons sat after a variable-width instruction string
+(published pause x 0.455 on Linux vs 0.409 on Windows), so `paused` stayed `false`. The buttons now
+lead the row and the press is at x 0.05.
+
+## Narrowed claim (independent-review fix)
+
+The reviewer returned NEEDS CORRECTION because the synthetic route reads the in-process published
+list and synthesises a DOM event; it does not cross the Windows `SetWindowRgn` cut. The claim for
+this phase is narrowed to what is proved:
+
+- **Proved on Windows (hosted):** the overlay attaches to the real HWND (the wry container), the
+  host publishes hit rectangles, a pointer routed through those rectangles reaches the page and
+  produces a HUD intent and game-state change, and movement through empty UI space reaches the game.
+- **Proved on Linux (local, real OS input):** `desktop-ui-overlay-proof.sh` drives real `xdotool`
+  clicks through the actual X11 input shape, 8/8 across window sizes — the OS-cut analog of the
+  Windows region.
+- **Not independently probed:** the Windows `SetWindowRgn` cut itself (wrong container, pixel
+  rounding, resize re-cut). A bug there would not fail the hosted proof. Closing that needs
+  OS-level `SendInput` at island and non-island coordinates.
+
+## User verification — owner-delegated
+
+The owner cannot run a Windows/macOS machine and explicitly delegated the human review to an agent
+(2026-09-12). The agent inspected the hosted captures and the packaged proof's screenshots, drove
+the controls above, and confirmed the HUD attaches, the pause island produces a game-state change,
+and empty space passes through to the game. **No human was at a Windows machine**; the owner waived
+the human-at-the-machine check. The click/type/resize/minimize/restore sequence itself was not
+performed by a person.
 
 ## Verdict
 
-Phase 1's required test is green on the hosted Windows runner. The remaining open box is the human
-interaction check.
+Phase 1's required test is green on the hosted Windows runner under the narrowed claim (attach +
+bridge + region routing), with the OS cut not independently probed. Closed by owner delegation.

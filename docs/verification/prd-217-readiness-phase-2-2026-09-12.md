@@ -34,21 +34,43 @@ top-left normalized rectangles) is not measured. The independent reviewer return
 on this basis. Closing Phase 2 needs OS-level pointer injection (`CGEvent`) or an explicit narrowing
 of the claim to attach + bridge + shared-region routing.
 
-## Observed red, then restored green
+## Observed red, then restored green — the PRD's controls, run
 
-Run [34734548984](https://github.com/ThreeNativeHQ/threenative/actions/runs/34734548984), job
-`macOS desktop core`, failed the required test: the overlay attached but the press did not toggle
-`paused` — the Menu's buttons sat after a variable-width instruction string, so the fixed press
-fraction missed the pause island. Anchoring the buttons to the panel's left edge (previous commit)
-and pressing at x 0.05 made the row green in 34739248955.
+The PRD requires detaching the overlay (or suppressing one resize/intent callback in isolation) and
+running the same scenario. The detach ("disable attachment") and drop-intent controls were run on
+Linux against the packaged starter — each `exit 1` with `resource.GameState.paused.atSteps`
+failing, then restored green (see the phase 1 record for the exact table).
 
-## What is still not run
+A layout-miss red also occurred on the host: run
+[34734548984](https://github.com/ThreeNativeHQ/threenative/actions/runs/34734548984), job
+`macOS desktop core`, attached the overlay but the fixed press fraction missed the pause island
+because the Menu's buttons sat after a variable-width instruction string. Anchoring the buttons and
+pressing at x 0.05 made the row green in 34739248955.
 
-- **User verification** on macOS: the human click / type / focus / Retina-scaling / app-activation
-  sequence with capture inspection has not been performed.
-- Independent reviewer PASS is recorded separately.
+## Narrowed claim (independent-review fix)
+
+The reviewer returned NEEDS CORRECTION because the synthetic route never calls AppKit's `hitTest:`
+with a real event. The claim is narrowed to what is proved:
+
+- **Proved on macOS (hosted):** the WKWebView HUD attaches to the real `NSWindow`, the host
+  publishes rectangles, a routed pointer produces a HUD intent and game-state change, and movement
+  reaches the game.
+- **Proved on Linux (local, real OS input):** the xdotool proof drives real pointer events through
+  the actual input shape, 8/8 — the OS-cut analog of `hitTest:`.
+- **Not independently probed:** `-[TnUiOverlayView hitTest:]` itself, including the y-orientation
+  between AppKit's bottom-left origin and the page's top-left normalized rectangles. Closing that
+  needs OS-level `CGEvent` (or a direct `hitTest:` probe).
+
+## User verification — owner-delegated
+
+The owner cannot run a Windows/macOS machine and explicitly delegated the human review to an agent
+(2026-09-12). The agent inspected the hosted macOS captures and confirmed the WKWebView HUD
+attaches, the routed press produces a game-state change, and movement reaches the game. **No human
+was at a macOS machine**; the owner waived the human-at-the-machine check. The click/type/
+Retina-scale/app-activation sequence itself was not performed by a person.
 
 ## Verdict
 
-Phase 2's required test is green on the hosted macOS runner. The remaining open box is the human
-interaction check.
+Phase 2's required test is green on the hosted macOS runner under the narrowed claim (attach +
+bridge + region routing), with AppKit `hitTest:` not independently probed. Closed by owner
+delegation.

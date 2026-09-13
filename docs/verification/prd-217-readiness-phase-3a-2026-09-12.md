@@ -45,10 +45,17 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 ## What is still not run
 
-- The Windows/MSVC and macOS/clang builds are proved by the hosted jobs; only the human
-  interaction check remains open across phases 1/2.
+- The Windows/MSVC and macOS/clang builds are proved by the hosted jobs.
+- The PRD's alternative control (restore the Linux-only branch and fail `native:build` on a host)
+  was not run as written; the mapping control and the real `LNK1181` link red are the recorded reds.
+- The starter HUD input proof's OS-cut limitation is inherited from phases 1/2 (see those records).
+- **User verification** was owner-delegated to an agent inspection 2026-09-12 (the owner cannot run
+  Windows/macOS); no human was at a Windows/macOS machine, and the owner waived the human-at-machine
+  check.
 
 ## Verdict
 
-Phase 3A's required work is green: the normal build includes the overlay on all three desktop
-hosts and the starter HUD input proof runs on the normal-build runtimes.
+Phase 3A's build/integration work is green: the normal build includes the overlay on all three
+desktop hosts and the starter HUD input proof runs on the normal-build runtimes. The narrowed claim
+is attach + bridge + shared-region routing; the Windows/macOS OS cut itself is not independently
+probed.
