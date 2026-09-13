@@ -4,7 +4,7 @@
 **Complexity:** 9 → HIGH; risk override: none.
 **Owner:** Asset tooling / engine integration
 **Depends on:** Published asset-MCP version plus a pinned GitHub animation-asset release for final engine adoption.
-**Progress:** 0/5 implementation phases verified. Planning complete; implementation in progress.
+**Progress:** 0/5 implementation phases verified. Phase 1 is PARTIAL: `asset_inspect_rig` landed in A and was validated against both real UAL archives and pinned AETHER; donor release, packed stdio E1 and sample acquisition remain open.
 
 Complexity: 11+ implementation files (+3), new preparation module (+2), cancellation and output
 publication (+2), separate asset-MCP and engine release boundaries (+2). Coordinate with
@@ -308,7 +308,7 @@ repository. Never create a PR per phase. No PR, code change or release is part o
 
 ### Phase 1: An agent inspects licensed inputs through the installed MCP
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — inspection half landed in A; donor release and pinned-URL catalog pending.
 **Files:** A `src/server.ts`, NEW `src/tools/rig.ts`, NEW `src/rig/inspect.ts`, existing bundle/download
 modules as needed, `tests/mcp-smoke.test.ts`, NEW `tests/rig.integration.test.ts`.
 **Implementation:** reconcile A's published baseline; wire real inspection, local archives,
@@ -320,9 +320,22 @@ libraries. Inventory the old sample's reachable references without removing unre
 **Verification:** E1 — installed stdio `tools/list` and `tools/call`, then inspect returned bytes.
 **Estimate:** 1–2 days. **Checkpoint:** pending independent review.
 
+- [x] Baseline reconciled: A's `origin/main` is `7f8c1b8` and `package.json` reads `0.8.0`, which is
+  the published `latest` on npm — E's `0.8.0` pin is not a downgrade. No source/build binary shipped.
+- [x] `asset_inspect_rig` landed in A (`src/rig/inspect.ts`, `src/rig/catalog.ts`, `src/tools/rig.ts`,
+  `src/server.ts`) with bounded local GLB/ZIP input, hashes, extension/attribute reporting, measured
+  bounds, bone-role suggestions and leaf-joint attachment candidates. `npm run typecheck` pass;
+  `tests/rig-inspect.integration.test.ts` + `tests/mcp-smoke.test.ts` 18 pass. Companion A PR:
+  jonit-dev/threenative-asset-mcp#2.
+- [ ] Release-asset preparation script and per-clip donors (168 files) with pinned GitHub URLs/digests.
+- [ ] Installed stdio E1 `tools/list`/`tools/call` against the packed server and returned bytes.
 - [ ] AC-1 [local; actor: agent]: A packed server identifies both supplied libraries' 42 motions and variants and AETHER's actual 18-joint rig; its pinned catalog lists individually downloadable variants and local input works without network — E1 pending.
+  - Direct local evidence so far: UAL1 and UAL2 archives each report 43 distinct motions (42 + `A_TPose`) in `in_place` + `_RM` variants (86 clips / 2 entries; UAL2's third entry is unanimated); pinned AETHER (`sha256 ed91ecdd…`, `5,992,836` bytes) reports 18 joints, 11 clips, 5 materials, 4 images, `TEXCOORD_0`/`TEXCOORD_1`/`TANGENT`, `KHR_materials_clearcoat` + `KHR_materials_emissive_strength`, ~14 m height, `hand.R` attachment. Catalogue donor URLs are still null, so the box stays open.
 - [ ] AC-2 [local; actor: agent]: Malformed/unsupported inputs, path escape, resource limits, cancellation and conflicting writes fail through the handler while preserving the prior output — E1 pending.
+  - Covered so far: non-GLB target, oversize input and ZIP entry traversal return named errors; cancellation and conflicting-write preservation still belong to the write paths added in phases 2–3.
 - [ ] AC-3 [local; actor: agent]: Sample acquisition selects pinned AETHER; old mannequin/sailor names and binary digests are absent from new default paths, tool tarballs and sample outputs — E1 pending.
+  - Pinned descriptor is in place and the digest was verified against the real download; the in-tool acquisition call and the old-sample inventory are not done.
+
 
 ### Phase 2: An agent fits and inspects an unrigged humanoid
 
