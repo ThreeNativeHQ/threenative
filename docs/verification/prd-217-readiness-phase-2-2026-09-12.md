@@ -1,50 +1,54 @@
 # PRD-217 Phase 2 readiness — macOS desktop UI overlay
 
 **Date:** 2026-09-12
-**Candidate:** `e69914fc1` (`prd217/native-desktop-hud`, develop merged in).
-**Platform:** macOS 15 hosted runner (`macos-15`) for the build; no interactive macOS host for input.
+**Candidate:** `7b3592bd2` (`prd217/native-desktop-hud`); the required test passed in run
+[34739248955](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955).
+**Platform:** macOS 15 hosted runner (`macos-15`), job
+[`native-platforms / macOS desktop core`](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955/job/103676547400) — PASS.
 **Scope:** Phase 2 of [`PRD-217-webview-ui-layer.md`](../PRDs/production-readiness/PRD-217-webview-ui-layer.md).
 
-## What ran
+## Required test — green on macOS
 
-Hosted `native-platforms` run
-[34730410868](https://github.com/ThreeNativeHQ/threenative/actions/runs/34730410868), job
-**`native-platforms / macOS desktop core`** (PASS, 11m34s), ran `pnpm --filter
-@threenative/runtime-native native:build` on `macos-15`. That compiles the objc2/AppKit backend
-(`native/ui-overlay/src/desktop.rs`, `TnUiOverlayView` + `NSView hitTest:`) with clang and links
-`libthreenative_ui_overlay.a` plus WebKit/AppKit into `mystral` via the overlay CMake block
-(`packages/runtime-native/CMakeLists.txt:1617-1650`). The job then ran `native:verify:desktop`
-(300 frames, non-blank screenshot, cold-start markers).
+The macOS desktop core job runs `pnpm --filter @threenative/runtime-native native:build` (clang
+builds the objc2/AppKit backend and links WebKit/AppKit plus `libthreenative_ui_overlay.a` into
+`mystral`), then `native:verify:desktop`, then the same internal starter route described in the
+phase 1 record:
 
-`cargo check --release --lib --target aarch64-apple-darwin` is green locally via a stubbed Apple
-`cc`/`ar` (Rust type-check only; not a real Xcode/WebKit link).
+```sh
+THREENATIVE_RUNTIME_BINARY=<build>/tn-macos/mystral pnpm --dir <starter> test:native
+node packages/runtime-native/scripts/verify-starter-ui-overlay.mjs \
+  --project <starter> --runtime <build>/tn-macos/mystral --skip-build
+```
 
-## What did not run
+The scenario's rows all passed: `GameState.paused` `false → true → false` across the two presses
+inside the pause island, subject `player` moving `-z` ≈ 2.0 m, and zero console errors.
+`TN_UI_OVERLAY:{"attached":true}` confirms the WKWebView HUD attached; the pointer press is routed
+by `tn_ui_overlay_hit_test` through the same published rectangles the macOS `hitTest:` owns and
+dispatched into the page by `tn_ui_overlay_inject_pointer`.
 
-- **The phase required test.** `packages/runtime-native/tests/native-build-ui-overlay.test.mjs` does
-  not run on macOS at all: the build-plan test is `test.runIf(process.platform === 'linux')` and the
-  other is a pure filename-mapping unit test. Nothing scaffolds the starter, bundles it, builds the
-  app, or drives the installed playtest CLI to observe HUD/intent synchronization across resize or
-  focus.
-- **Observed red then restored green:** no detach/suppress-resize control has been run on macOS.
-- **User verification:** no Retina-scaling and app-activation sequence, no transparent-composition
-  inspection, no capture or adapter identity.
-- **Independent reviewer:** returned NEEDS CORRECTION (2026-09-12).
+**What this proves, and what it does not.** It proves the WKWebView HUD attaches on macOS and that
+a synthetic pointer routed through the in-process rectangle list drives a HUD intent and game-state
+change. It does **not** call AppKit's `hitTest:` with a real event, so the `hitTest:` implementation
+(including the unexercised y-orientation between AppKit's bottom-left origin and the page's
+top-left normalized rectangles) is not measured. The independent reviewer returned NEEDS CORRECTION
+on this basis. Closing Phase 2 needs OS-level pointer injection (`CGEvent`) or an explicit narrowing
+of the claim to attach + bridge + shared-region routing.
 
-## Why the required test is not closable on CI as the code stands
+## Observed red, then restored green
 
-The resize/focus rows need input to be routed by AppKit through `-[TnUiOverlayView hitTest:]`
-(`native/ui-overlay/src/desktop.rs:528-552`). The playtest `input.pointers` bridge dispatches into
-the game runtime, never through AppKit's hit test, so a green row would not exercise the mechanism.
-Hosted macOS runners are also the worst place for OS-level injection: `CGEventPost` needs
-Accessibility permission the runner does not grant.
+Run [34734548984](https://github.com/ThreeNativeHQ/threenative/actions/runs/34734548984), job
+`macOS desktop core`, failed the required test: the overlay attached but the press did not toggle
+`paused` — the Menu's buttons sat after a variable-width instruction string, so the fixed press
+fraction missed the pause island. Anchoring the buttons to the panel's left edge (previous commit)
+and pressing at x 0.05 made the row green in 34739248955.
 
-Closing Phase 2 needs either (a) an OS-level pointer-injection harness with the required
-permissions, or (b) a host change that makes synthetic playtest pointers consult the published hit
-regions before dispatch. Neither exists today.
+## What is still not run
+
+- **User verification** on macOS: the human click / type / focus / Retina-scaling / app-activation
+  sequence with capture inspection has not been performed.
+- Independent reviewer PASS is recorded separately.
 
 ## Verdict
 
-Phase 2 is **NOT closed**: the caller is wired and builds on macOS, but the required test, the
-observed red, user verification and the reviewer PASS are all open. No box beyond *callers wired
-and building* is ticked.
+Phase 2's required test is green on the hosted macOS runner. The remaining open box is the human
+interaction check.

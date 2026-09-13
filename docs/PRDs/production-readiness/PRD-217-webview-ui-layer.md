@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-217 — The default React HUD works on every supported desktop
 
-**Status:** PARTIAL — cross-platform backends written and cross-compile-checked; the Wayland/Xwayland doctor false failure is fixed and evidenced (2026-09-12); hosted Windows/macOS build+run, live HUD input and human verification open. Revised 2026-09-12; implementation in flight.
+**Status:** PARTIAL — phases 1/2/3A attach + bridge + shared-region routing is green on the hosted Windows/macOS desktop jobs (run 34739248955), and phase 4's Linux attach + input is evidenced; what remains open is the OS hit-routing path (the wry region cut / AppKit `hitTest:`), the PRD's named observed-red controls, and human verification. The independent reviewer returned NEEDS CORRECTION on phases 1/2/3A (2026-09-12). Revised 2026-09-12; implementation in flight.
 **Complexity:** 10 → HIGH (+3 files, +2 platform modules, +2 event/input state, +2 multi-package, +1 OS WebView integration).
 **Problem:** The default starter chooses web UI, but desktop WebView builds are currently refused on Windows/macOS and can fail in Linux Wayland/Xwayland sessions.
 
@@ -70,10 +70,10 @@ Before invoking that route, configure the selected existing CMake preset with `T
 
 - [x] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
       Hosted `native-platforms` run 34730410868 (windows-2025, commit `79a78df0f`): `pnpm native:build` compiles `threenative_ui_overlay.lib` and links it into `mystral.exe` (the WebView2 loader link fix `291211df3`), then `native:verify:desktop` runs 300 frames. This lane does not attach the starter HUD; that is the required-test box below.
-- [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [ ] Required test green: the default starter's HUD input runs green in the hosted `windows-2025` desktop-core job (run 34739248955) as attach + bridge + shared-region routing through `scripts/verify-starter-ui-overlay.mjs` and `scenarios/starter-ui-overlay-desktop.playtest.json`. The independent reviewer holds this open: routing reads the in-process published list and synthesises a DOM `PointerEvent`, so it never crosses the Windows `SetWindowRgn` cut. OS-level pointer injection (or an explicit narrowing of the claim) is required to close it.
+- [ ] Observed red recorded, then restored green: the PRD's control (disable platform attachment, then separately drop one bridge intent, and run the same starter scenario) is NOT RUN. The recorded red (run 34737563582) is an accidental layout miss, not that control.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-1-2026-09-12.md`
+- [x] Evidence record written: `docs/verification/prd-217-readiness-phase-1-2026-09-12.md` (states the OS-routing limitation).
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -108,10 +108,10 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 - [x] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
       Hosted `native-platforms` run 34730410868 (macos-15, commit `79a78df0f`): `pnpm native:build` compiles the objc2 `desktop.rs` backend and links the WebKit/AppKit frameworks into `mystral`, then `native:verify:desktop` runs 300 frames. This lane does not attach the starter HUD; that is the required-test box below.
-- [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [ ] Required test green: the default starter's HUD input runs green in the hosted `macos-15` desktop-core job (run 34739248955) as attach + bridge + shared-region routing through `scripts/verify-starter-ui-overlay.mjs` and `scenarios/starter-ui-overlay-desktop.playtest.json`. The independent reviewer holds this open: it never crosses AppKit's `hitTest:` (and the macOS y-orientation of `hitTest:` is unexercised). OS-level pointer injection (or an explicit narrowing) is required to close it.
+- [ ] Observed red recorded, then restored green: the PRD's control (detach the overlay, or suppress one resize/intent callback in isolation) is NOT RUN. The recorded red (run 34734548984) is an accidental layout miss.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-2-2026-09-12.md`
+- [x] Evidence record written: `docs/verification/prd-217-readiness-phase-2-2026-09-12.md` (states the OS-routing limitation).
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -146,11 +146,10 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 - [x] Callers wired and building: `packages/runtime-native/scripts/native-build.mjs`, `packages/runtime-native/scripts/build-native-ui-overlay.mjs`, `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
       `native-build.mjs` builds the overlay on every desktop host (no Linux-only branch) and hands CMake the path the host toolchain wrote. Hosted `native-platforms` run 34730410868 shows the normal `pnpm native:build` compiling and linking the overlay on windows-2025 and macos-15; the Linux plan and link are green locally 2026-09-12.
-- [ ] Required test green: `tests/native-build-ui-overlay.test.mjs`
-      Left: the per-host filename mapping test and the Linux plan test are green 2026-09-12 (`the Linux native build links the desktop UI overlay into the runtime`, 2/2). The phase demands each supported platform; Windows and macOS are unrun.
-- [ ] Observed red recorded, then restored green
+- [ ] Required test green: `tests/native-build-ui-overlay.test.mjs` 4/4 locally (mapping + linux/darwin plan) and the normal build includes the overlay on `linux`/`darwin`/`win32` with the starter HUD input proof on the hosted normal-build runtimes (run 34739248955). The reviewer holds this open because the "run the real default-starter scenario on the normal-build runtime" clause inherits the OS-routing gap above, and Windows linkage is only host-job-proved, not asserted by this test.
+- [ ] Observed red recorded, then restored green: forcing the `.a` name fails the mapping test (red/green recorded), but the PRD's control (restore the Linux-only branch, or fail a normal-build/attachment proof on a host) is NOT RUN as written.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-2026-09-12.md`
+- [x] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-2026-09-12.md` (states the limitation).
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**

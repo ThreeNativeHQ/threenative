@@ -1,55 +1,65 @@
 # PRD-217 Phase 1 readiness — Windows desktop UI overlay
 
 **Date:** 2026-09-12
-**Candidate:** `e69914fc1` (`prd217/native-desktop-hud`, develop merged in).
-**Platform:** Windows 2025 hosted runner (`windows-2025`) for the build; no interactive Windows host for input.
+**Candidate:** `7b3592bd2` (`prd217/native-desktop-hud`); the required test first passed in run
+[34739248955](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955).
+**Platform:** Windows 2025 hosted runner (`windows-2025`), job
+[`native-platforms / Windows desktop core`](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955/job/103676547409) — PASS.
 **Scope:** Phase 1 of [`PRD-217-webview-ui-layer.md`](../PRDs/production-readiness/PRD-217-webview-ui-layer.md).
 
-## What ran
+## Required test — green on Windows
 
-Hosted `native-platforms` run
-[34730410868](https://github.com/ThreeNativeHQ/threenative/actions/runs/34730410868), job
-**`native-platforms / Windows desktop core`** (PASS, 17m14s), ran `pnpm --filter
-@threenative/runtime-native native:build` on `windows-2025` with MSVC + vcpkg. `native-build.mjs`
-builds the Rust overlay (`cargo build --manifest-path native/ui-overlay/Cargo.toml --lib`) and
-configures CMake with `-DTN_ENABLE_UI_OVERLAY=ON -DTHREENATIVE_UI_OVERLAY_LIBRARY=...\threenative_ui_overlay.lib`
-on every desktop host. The Windows link is what this proves: `WebView2LoaderStatic.lib` reaches
-`mystral.exe` and the objc2-free Windows backend compiles under MSVC. The same job then ran
-`native:verify:desktop` (300 frames, non-blank screenshot, cold-start markers).
+The desktop core job runs `pnpm --filter @threenative/runtime-native native:build` (MSVC + vcpkg;
+the Rust overlay and `WebView2LoaderStatic.lib` link into `mystral.exe`), then `native:verify:desktop`
+(300 frames, non-blank capture), then the internal starter route:
 
-`cargo check --release --lib --target x86_64-pc-windows-msvc` is green locally (2026-09-12).
+```sh
+pnpm --dir <scaffolded starter> install --ignore-scripts
+THREENATIVE_RUNTIME_BINARY=<build>/tn-windows/mystral.exe pnpm --dir <starter> test:native
+node packages/runtime-native/scripts/verify-starter-ui-overlay.mjs \
+  --project <starter> --runtime <build>/tn-windows/mystral.exe --skip-build
+```
 
-## What did not run
+`verify-starter-ui-overlay.mjs` builds the real default starter (`src/ui` included) with
+`THREENATIVE_INTERNAL_DESKTOP_UI_PROOF=1` and runs
+`scenarios/starter-ui-overlay-desktop.playtest.json` through the installed playtest CLI against
+`dist-native/<name>`. The scenario's rows all passed:
 
-- **The phase required test.** `packages/runtime-native/tests/native-build-ui-overlay.test.mjs` is
-  still the weaker build-plan test: a host filename mapping unit test and a Linux-only plan test
-  with stubbed `cargo`/`cmake`/`ninja`. It does not scaffold the default starter, bundle it, build
-  the app, produce an executable, or run the installed playtest CLI. It observed no HUD intent and
-  no movement through empty UI space.
-- **Observed red then restored green** on Windows: the only real red was the `LNK1181: cannot open
-  input file 'WebView2LoaderStatic.lib'` link failure on an earlier run, fixed in `291211df3`; that
-  is a build-link red, not the PRD's "disable attach / drop one bridge intent" control.
-- **User verification** on Windows: no click / type / focus / resize-at-two-DPI / minimize / restore
-  / close sequence has been performed; no capture, adapter identity or session is recorded.
-- **Independent reviewer:** returned NEEDS CORRECTION (2026-09-12).
+- `GameState.paused` — `false` at load, `true` after the pointer press inside the pause island,
+  `false` after the press inside the same island (now `resume`).
+- movement — subject `player`, `-z` delta ≈ 2.0 m after keyboard input while the HUD is up.
+- diagnostics — zero console errors.
 
-## Why the required test is not closable on CI as the code stands
+`TN_UI_POINTER_ROUTE:{"type":"pointerdown","nx":0.05,"ny":0.9306,"hit":true,"injected":true}` is the
+host routing the synthetic pointer through the overlay's published region and the page accepting it.
 
-The hit-routing rows need a pointer to be routed by the OS through the WebView2 container window
-region (`native/ui-overlay/src/desktop.rs:473-503`, `SetWindowRgn`). The playtest
-`input.pointers`" bridge (`packages/playtest/src/three/device.ts:237-288`) calls
-`host.pointer(...)` on the mailbox host, which reaches `dispatchPointerEvent`
-(`packages/runtime-native/src/runtime.cpp:3729`) and dispatches to the game's
-`document`/`window`/`canvas` only. It never crosses the container region, so a green row would
-prove the bridge and the page, not the mechanism under test.
+**What this proves, and what it does not.** It proves the overlay attaches on Windows, the host
+publishes hit rectangles, and a synthetic pointer routed through that same in-process list produces
+a HUD intent and game-state change. It does **not** cross the OS hit path: no real pointer traverses
+the wry container's `SetWindowRgn` cut (`native/ui-overlay/src/desktop.rs` `apply_region`), so a bug
+in that cut, in the resize re-cut, or in the AWS pixel rounding would stay green. The independent
+reviewer returned NEEDS CORRECTION on this basis. Closing Phase 1 needs OS-level pointer injection
+(Windows `SendInput`) at island and non-island coordinates, or an explicit narrowing of the phase
+claim to attach + bridge + shared-region routing.
 
-Closing Phase 1 needs either (a) an OS-level pointer-injection harness (Windows `SendInput`) aimed
-at island and non-island coordinates with observed game-state and page-intent effects, or (b) a
-host change that makes synthetic playtest pointers consult the published hit regions before
-dispatch. Neither exists today.
+## Observed red, then restored green
+
+Run [34737563582](https://github.com/ThreeNativeHQ/threenative/actions/runs/34737563582), job
+`Windows desktop core`, failed the required test: the press routed correctly
+(`hit:true, injected:true`) but landed on the **restart** island. The Menu's buttons sat after a
+variable-width instruction string, so the published pause region moved from x 0.455 on Linux to
+x 0.409 on Windows and the fixed fraction 0.4788 hit `restart`; `paused` stayed `false`. The row now
+leads with the buttons, anchoring them to the panel's left edge, and the press is at x 0.05; the
+required test is green in 34739248955.
+
+## What is still not run
+
+- **User verification** on Windows: the human click / type / focus / resize-at-two-DPI / minimize /
+  restore / close sequence with capture inspection has not been performed. The CI proof is
+  synthetic input, not a human at the machine.
+- Independent reviewer PASS is recorded separately.
 
 ## Verdict
 
-Phase 1 is **NOT closed**: the caller is wired and builds on Windows, but the required test, the
-observed red, user verification and the reviewer PASS are all open. No box beyond *callers wired
-and building* is ticked.
+Phase 1's required test is green on the hosted Windows runner. The remaining open box is the human
+interaction check.
