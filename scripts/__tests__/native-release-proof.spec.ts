@@ -60,6 +60,7 @@ function allowed(
       "publish",
       "clean-consumer",
       "clean-consumer-ios",
+      "clean-consumer-windows",
     ].map((key) => [key, { result: results[key] ?? "success", outputs: { candidate_sha: sha } }]),
   );
   const validation = needs["validate-tag"];
@@ -174,7 +175,13 @@ for (const name of ["validate-tag", "publish", "finalize", "cleanup-failed-relea
   });
 }
 
-for (const name of ["gates", "build", "build-android", "clean-consumer"]) {
+for (const name of [
+  "gates",
+  "build",
+  "build-android",
+  "clean-consumer",
+  "clean-consumer-windows",
+]) {
   test(`${name} runs proof despite intentionally skipped publishing dependencies`, () => {
     assert.equal(
       allowed(name, "pull_request", "branch", { "validate-tag": "skipped", publish: "skipped" }),
@@ -206,6 +213,15 @@ test("native builds and consumers refuse failed dependencies rather than treatin
     false,
   );
   assert.equal(allowed("clean-consumer", "push", "tag", { publish: "failure" }), false);
+  assert.equal(
+    allowed("clean-consumer-windows", "pull_request", "branch", {
+      "validate-tag": "skipped",
+      publish: "skipped",
+      build: "failure",
+    }),
+    false,
+  );
+  assert.equal(allowed("clean-consumer-windows", "push", "tag", { publish: "failure" }), false);
 });
 
 test("the actual prerequisite shell accepts complete exact-candidate evidence", () => {
@@ -774,6 +790,144 @@ test("the same-run proof serves the published cohort, not every non-iOS key", ()
     consumer,
     /Object\.entries\(PREBUILT_ASSET_NAMES\)\.filter\(\(\[key\]\) => !key\.startsWith\("ios-"\)\)/u,
     "the proof cohort must be derived from the published keys, not from every non-iOS key",
+  );
+});
+
+test("the Windows consumer serves only the Windows row it installs", () => {
+  // Run 34725179598: `build-android`'s V8 source build hit its 2h cap and uploaded nothing, so the
+  // Windows lane died demanding Android assets it never needed and never depended on. It now serves
+  // the win32 runtime and helper the consumer installs, derived from the published keys.
+  const consumer = job("clean-consumer-windows");
+  assert.match(consumer, /pattern: runtime-win32-x64/u);
+  assert.match(consumer, /key\.startsWith\("win32-"\)/u);
+  assert.doesNotMatch(consumer, /!key\.startsWith\("ios-"\)/u);
+});
+
+test("the Windows consumer copies the fixture its vite config reads before it builds", () => {
+  // Run 34730868090: the prepare step copied `vite.config.ts` alone, so the config's sibling read of
+  // `physics-parity.scenario.json` fell through to `../../packages/physics/...` and the consumer build
+  // died on `ENOENT ... D:\a\packages\physics\__tests__\fixtures\physics-parity.scenario.json`. The
+  // sibling copy is the only one that survives a build outside this checkout, so it is pinned.
+  const prepare = windowStep("Prepare the scaffolded consumer proof");
+  assert.match(prepare, /native-smoke\/vite\.config\.ts/u);
+  assert.match(prepare, /packages\/physics\/__tests__\/fixtures\/physics-parity\.scenario\.json/u);
+});
+
+function windowStep(name: string): string {
+  const block = job("clean-consumer-windows").split(`- name: ${name}\n`)[1];
+  assert.ok(block, `missing the Windows consumer step ${name}`);
+  return block.split("\n      - ")[0] ?? "";
+}
+
+test("the Windows consumer runs on a Windows runner with every native compiler masked", () => {
+  // The Linux lane's mask is `printf` plus `chmod +x`, neither of which exists on Windows, so the
+  // same claim needs its own lane rather than a flag: PATHEXT resolves a `.cmd` ahead of the real
+  // `.exe`, and MSVC is installed on this image, so the shadowing has to be proved, not assumed.
+  assert.match(job("clean-consumer-windows"), /runs-on: windows-2025/u);
+  const mask = windowStep("Mask every native toolchain entry point");
+  // Derive the set from the workflow's own array so adding or dropping a shim changes this list:
+  // the step is the source of truth for which compilers are masked.
+  const declared = mask.match(/const commands = \[([^\]]+)\]/u)?.[1];
+  assert.ok(declared, "the mask step must declare its command list");
+  const commands = [...declared.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+  assert.deepEqual(
+    commands,
+    ["cargo", "cl", "clang", "clang++", "cmake", "c++", "g++", "gcc", "link", "ninja", "rustc"],
+    "every native compiler entry point must be masked",
+  );
+  assert.match(mask, /\.cmd/u);
+  assert.match(mask, /exit \/b 97/u);
+  assert.match(mask, /TN_TOOLCHAIN_LOG/u);
+  assert.match(mask, /cygpath -w/u);
+});
+
+test("the Windows consumer asserts the installed helper before the desktop build and never places one", () => {
+  const consumer = job("clean-consumer-windows");
+  // Nothing may place the helper for the consumer: the whole claim is that the install does.
+  assert.doesNotMatch(consumer, /--name tools-/u);
+  assert.doesNotMatch(consumer, /install -m 0755/u);
+  const build = windowStep("Install and build without a native toolchain");
+  assert.match(build, /install-status\.json/u);
+  assert.match(build, /prebuilt\/win32-x64\/threenative-runtime\.exe/u);
+  assert.match(build, /prebuilt\/win32-x64\/mystral-tools\.exe/u);
+  assert.match(build, /build --target desktop/u);
+  const statusAt = build.indexOf("install-status.json");
+  const runtimeAt = build.indexOf("prebuilt/win32-x64/threenative-runtime.exe");
+  const helperAt = build.indexOf("prebuilt/win32-x64/mystral-tools.exe");
+  const buildAt = build.indexOf("build --target desktop");
+  assert.ok(statusAt > 0 && statusAt < buildAt, "the install-status check must precede the build");
+  assert.ok(
+    runtimeAt > 0 && runtimeAt < buildAt && helperAt > 0 && helperAt < buildAt,
+    "both installed binaries must be asserted before the consumer build",
+  );
+});
+
+test("the Windows consumer launches the packed executable and reports its first frame", () => {
+  const launch = windowStep("Launch the packed desktop game for 300 frames");
+  assert.match(launch, /--screenshot/u);
+  assert.match(launch, /--frames 300/u);
+  assert.match(launch, /TN_NATIVE_SMOKE_READY:webgpu/u);
+  assert.match(launch, /TN_NATIVE_SMOKE_FIRST_FRAME/u);
+  assert.match(launch, /TN_NATIVE_SMOKE_300_FRAMES:300/u);
+  assert.match(launch, /Rendered 300 frames in \[0-9\]\+ms/u);
+  // A run that does not name its adapter may be a software rasteriser; the lane records it.
+  // The shell ERE escapes the brackets, so assert the adapter alternation rather than the escaping.
+  assert.match(launch, /WebGPU/u);
+  assert.match(launch, /Adapter\|Vendor\|Backend/u);
+  assert.match(launch, /windows-adapter\.txt/u);
+});
+
+test("the Windows consumer proves the mask shadows MSVC before it restores the positive path", () => {
+  // Phase 1 observed-red (a): the `.cmd` shim must actually shadow the real `cl.exe` on this image,
+  // and the control must assert exit 97 with the invocation recorded. The invocation goes through
+  // `cmd.exe`, because Git Bash does not resolve a `.cmd` from a bare name and would report 127,
+  // proving nothing about the mask (run 34743159341 failed exactly that way).
+  const control = windowStep("Prove the mask shadows MSVC, then restore the positive path");
+  assert.match(control, /cmd\.exe \/\/c "cl \/\?"/u);
+  assert.match(control, /-eq 97/u);
+  assert.match(control, /TN_TOOLCHAIN_LOG/u);
+  assert.match(control, /masked-cl\.exit/u);
+});
+
+test("the Windows consumer proves a removed helper is re-fetched, never source-built", () => {
+  // Phase 1 observed-red (b), corrected by run 34745227091: deleting the installed helper did not
+  // fail the build — the build re-installed it ("Installed verified ThreeNative runtime and build
+  // tool helper for 'win32-x64'.") with an empty toolchain log. The honest claim is that the helper
+  // is re-fetched from the served release, never satisfied by a silent source build.
+  const control = windowStep(
+    "Prove a removed helper is re-fetched, never source-built, then restore it",
+  );
+  assert.match(control, /prebuilt\/win32-x64\/mystral-tools\.exe/u);
+  assert.match(control, /rm -f "\$helper"/u);
+  assert.match(control, /test -s "\$helper"/u);
+  assert.match(control, /test ! -e "\$TN_TOOLCHAIN_LOG"/u, "no compiler may have run");
+  assert.match(
+    control,
+    /cmp -s "\$backup" "\$helper"/u,
+    "the re-fetched helper must match the published one",
+  );
+});
+
+test("the Windows consumer proves a renderer that never presents fails the launch assertions", () => {
+  // Phase 2 observed-red, measured by run 34746542857: a build that never presents exits non-zero
+  // ("Error: Failed to save screenshot!"), writes no capture, and prints no first-frame marker, so
+  // the launch step's own assertions fail rather than passing on a silent process.
+  const control = windowStep("Prove a renderer that never presents fails the launch assertions");
+  assert.match(control, /-ne 0/u, "a non-presenting build must exit non-zero");
+  assert.match(control, /test ! -e "\$RUNNER_TEMP\/renderer-disabled\.png"/u);
+  assert.match(control, /TN_NATIVE_SMOKE_FIRST_FRAME/u);
+  assert.match(control, /renderer-disabled\.marker-exit/u);
+  assert.match(control, /cp "\$backup" "\$entry"/u, "the genuine entry must be restored");
+});
+
+test("the Windows consumer is a mandatory release prerequisite, not advisory", () => {
+  assert.match(
+    job("finalize"),
+    /needs: \[validate-tag, clean-consumer, clean-consumer-ios, clean-consumer-windows\]/u,
+  );
+  assert.match(
+    job("cleanup-failed-release"),
+    /needs: \[validate-tag, publish, clean-consumer, clean-consumer-ios, clean-consumer-windows\]/u,
   );
 });
 

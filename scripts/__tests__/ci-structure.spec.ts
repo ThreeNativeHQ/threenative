@@ -2243,7 +2243,9 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(6);
+    // Six before PRD-376; the seventh is `clean-consumer-windows`, which scaffolds the same
+    // consumer from local tarballs on a Windows runner.
+    expect(callers).toBe(7);
   });
 
   it("keeps the native contracts and primary CI documentation honest", async () => {
