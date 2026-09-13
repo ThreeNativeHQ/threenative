@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** NOT STARTED — the two open phases are release-artifact appearance, which is new scope. Launcher icon, themed icon and OS splash are observable on the local API 35 emulator as of 2026-09-11; physical OEM appearance stays a separately named observation on a real device.
-Renumbered 2026-09-11.
+**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) is parked on PRD-365 containers, which are not on `develop` yet.
+Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
 PRD-153's own web branding and is already delivered — `web-brand.spec.ts` green, `branding.playtest.json`
@@ -73,19 +73,24 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs`, `packages/create-threenative/__tests__/config.spec.ts`
-- [ ] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs`
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-375-readiness-phase-2-<date>.md`
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `packages/runtime-native/scripts/package-android.mjs`, `packages/runtime-native/tests/android-packaging.integration.test.mjs`, `packages/create-threenative/__tests__/config.spec.ts`
+      The branding render/install and config-validation callers already existed (PRD-153) and needed no production change; this phase's change is the missing release/AAB coverage in the integration test. Real builds: `threenative build --target android --allow-source-build` (debug, `BUILD SUCCESSFUL in 1m 48s`) and a release APK via the engine packager (`--mode release`, `BUILD SUCCESSFUL in 1m 36s`, 4 native libs 16 KB clean).
+- [x] Required test green: `packages/runtime-native/tests/android-packaging.integration.test.mjs`
+      36/36 passed 2026-09-12, including the release-APK brand, AAB brand and missing-variant tests.
+- [x] Observed red recorded, then restored green
+      Disconnected splash staging and a foreground/monochrome slot swap each made their test fail; restored. Separately, a non-alpha foreground was refused by config validation (`TN_CONFIG_BRAND_ANDROID_FOREGROUND_ALPHA_INVALID`) before Gradle.
+- [x] User verification performed on the named platform
+      API 36 16 KB AVD (`sdk_gphone16k_x86_64`), **release** APK (signed with the debug keystore, source build): OS splash (navy bg + authored red foreground + green branding image), live loading transition, App info launcher icon + label `PRD375 Brand`, playable starter frame, `TN_SURFACE_FRAME` present. Unobserved and named: physical OEM icon-mask appearance and the themed (monochrome) launcher icon.
+- [x] Evidence record written: `docs/verification/prd-375-readiness-phase-1-2026-09-12.md`
+- [x] Independent reviewer returned PASS
+      Two fresh-eyes reviews (2026-09-12); the first returned NEEDS CORRECTION with seven findings, all fixed (distinct-variant assertions, AAB coverage, version/background assertions, honest evidence framing), and the second returned PASS.
 
 **Files (maximum five):**
 
-- EDIT `packages/runtime-native/scripts/package-android.mjs` — repair demonstrated resource/handoff plumbing.
-- EDIT `packages/runtime-native/tests/android-packaging.integration.test.mjs` — inspect final signed icon/splash/identity resources.
-- EDIT `packages/create-threenative/__tests__/config.spec.ts` — invalid artwork is rejected before packaging.
-- NEW `docs/verification/prd-375-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
+- EDIT `packages/runtime-native/scripts/package-android.mjs` — verified, no change required; the resource/handoff plumbing already carried the brand.
+- EDIT `packages/runtime-native/tests/android-packaging.integration.test.mjs` — inspect final signed icon/splash/identity resources on the release APK and AAB.
+- EDIT `packages/create-threenative/__tests__/config.spec.ts` — already covers invalid artwork refusal (config.spec.ts:424); unchanged.
+- NEW `docs/verification/prd-375-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Consume PRD-212 release artifacts and PRD-221 aligned inputs. Inspect adaptive icon foreground/background/monochrome, label, application ID, version and boot splash from the final APK/AAB-derived installed app. Run actual launcher → OS splash → live loading → play on Android. Artwork/layout remains game input; invalid declared variants fail rather than silently reverting to defaults.
 
@@ -104,13 +109,18 @@ pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts
 
 ### Phase 2 — Distributed desktop apps display the developer brand
 
+**Parked:** this phase consumes PRD-365's complete desktop containers and native icon resources
+(`scripts/desktop-distribution.mjs`). PRD-365 phase 1 is still draft PR #224 and none of it is on
+`develop`, so there is no container to inspect yet. Not started rather than narrowed to SDL
+window-icon evidence, which the acceptance criteria explicitly forbid.
+
 **Progress:**
 
 - [ ] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
 - [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-375-readiness-phase-3-<date>.md`
+- [ ] Evidence record written: `docs/verification/prd-375-readiness-phase-2-<date>.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -118,7 +128,7 @@ pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts
 - EDIT `packages/runtime-native/scripts/verify-starter-desktop.mjs` — launch packaged app and inspect configured brand evidence.
 - EDIT `packages/runtime-native/tests/starter-desktop.test.mjs` — wrong-resource and missing-brand controls.
 - EDIT `packages/create-threenative/README.md` — point users to game-owned branding surfaces.
-- NEW `docs/verification/prd-375-readiness-phase-3-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-375-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Consume PRD-365 containers and their native icon resources; do not build another .app or Windows resource writer. Launch the installed Windows distribution, macOS .app and Linux launcher with distinctly branded artwork. Verify file-manager/launcher identity separately from runtime SDL title/icon. No claim of a nonexistent desktop OS splash: specify the platform-native launch surface and require the game loading sequence once rendering begins.
 
