@@ -22,12 +22,14 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export const CONTAINER_MANIFEST = 'threenative-container.json';
 export const CONTAINER_SCHEMA_VERSION = 1;
@@ -159,7 +161,7 @@ export function parseLinkedLibraries(output, platform) {
   const libraries = [];
   if (platform === 'linux') {
     for (const line of output.split('\n')) {
-      const resolved = /^\s*(\S+)\s+=>\s+(\S+)\s+\(0x[0-9a-f]+\)\s*$/u.exec(line);
+      const resolved = /^\s*(\S+)\s+=>\s+(.+?)\s+\(0x[0-9a-f]+\)\s*$/u.exec(line);
       if (resolved) {
         libraries.push({ name: resolved[1], path: resolved[2] });
         continue;
@@ -173,7 +175,7 @@ export function parseLinkedLibraries(output, platform) {
   }
   if (platform === 'darwin') {
     for (const line of output.split('\n').slice(1)) {
-      const resolved = /^\s*(\S+)\s+\(compatibility version/u.exec(line);
+      const resolved = /^\s*(.+?)\s+\(compatibility version/u.exec(line);
       if (resolved) libraries.push({ name: basename(resolved[1]), path: resolved[1] });
     }
     return libraries;
@@ -256,6 +258,7 @@ export function containerMetadata({ platform = process.platform, config }) {
   const version = app.version ?? '0.1.0';
   const build = String(app.build ?? 1);
   const slug = containerSlug(name);
+  const xml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   if (platform === 'linux') {
     return {
       [`share/applications/${id}.desktop`]: [
@@ -280,15 +283,15 @@ export function containerMetadata({ platform = process.platform, config }) {
         '<plist version="1.0">',
         '<dict>',
         '  <key>CFBundleDevelopmentRegion</key><string>en</string>',
-        `  <key>CFBundleExecutable</key><string>${slug}</string>`,
-        `  <key>CFBundleIdentifier</key><string>${id}</string>`,
+        `  <key>CFBundleExecutable</key><string>${xml(slug)}</string>`,
+        `  <key>CFBundleIdentifier</key><string>${xml(id)}</string>`,
         '  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>',
-        `  <key>CFBundleName</key><string>${name}</string>`,
-        `  <key>CFBundleDisplayName</key><string>${name}</string>`,
+        `  <key>CFBundleName</key><string>${xml(name)}</string>`,
+        `  <key>CFBundleDisplayName</key><string>${xml(name)}</string>`,
         '  <key>CFBundlePackageType</key><string>APPL</string>',
-        `  <key>CFBundleShortVersionString</key><string>${version}</string>`,
-        `  <key>CFBundleVersion</key><string>${build}</string>`,
-        `  <key>CFBundleIconFile</key><string>${slug}</string>`,
+        `  <key>CFBundleShortVersionString</key><string>${xml(version)}</string>`,
+        `  <key>CFBundleVersion</key><string>${xml(build)}</string>`,
+        `  <key>CFBundleIconFile</key><string>${xml(slug)}</string>`,
         '  <key>LSMinimumSystemVersion</key><string>11.0</string>',
         '  <key>NSHighResolutionCapable</key><true/>',
         '</dict>',
@@ -318,7 +321,7 @@ function layout(platform, { appName, executableName, iconName }) {
   if (platform === 'darwin') {
     return {
       executable: `Contents/MacOS/${slug}`,
-      icon: `Contents/Resources/${iconName}.icns`,
+      icon: `Contents/Resources/${slug}.icns`,
       manifest: `Contents/Resources/${CONTAINER_MANIFEST}`,
       ui: 'Contents/MacOS/ui',
     };
@@ -335,11 +338,6 @@ function dependencyRelativePath(platform, name) {
   if (platform === 'darwin') return `Contents/Frameworks/${name}`;
   if (platform === 'linux') return `lib/${name}`;
   return name;
-}
-
-function metadataRelativePath(platform, relativePath) {
-  if (platform === 'darwin') return `Contents/Resources/${relativePath}`;
-  return relativePath;
 }
 
 function buildIcon(icon, destination, { platform, run }) {
@@ -372,19 +370,28 @@ function buildIcon(icon, destination, { platform, run }) {
 }
 
 function archiveContainer({ platform, staging, rootFolder, output, run }) {
-  const command = platform === 'linux'
-    ? { args: ['-czf', output, '-C', staging, rootFolder], name: 'tar' }
-    : { args: ['-r', '-q', output, rootFolder], name: 'zip', options: { cwd: staging } };
-  const result = run(command.name, command.args, command.options ?? {});
-  if (result.error) {
-    throw new Error(
-      `TN_DESKTOP_ARCHIVE_TOOL_MISSING: '${command.name}' is required to write ${output} (${result.error.message}).`,
-    );
-  }
-  if (result.status !== 0) {
-    throw new Error(
-      `TN_DESKTOP_ARCHIVE_FAILED: '${command.name}' exited ${result.status ?? 'unknown'} for ${output}.\n${result.stderr}`,
-    );
+  // zip updates existing archives in place, retaining removed files. Build a fresh candidate on
+  // the output filesystem and replace the old artifact only after the archiver succeeds.
+  const archiveDirectory = mkdtempSync(join(dirname(output), '.threenative-archive-'));
+  const candidate = join(archiveDirectory, basename(output));
+  try {
+    const command = platform === 'linux'
+      ? { args: ['-czf', candidate, '-C', staging, rootFolder], name: 'tar' }
+      : { args: ['-r', '-q', candidate, rootFolder], name: 'zip', options: { cwd: staging } };
+    const result = run(command.name, command.args, command.options ?? {});
+    if (result.error) {
+      throw new Error(
+        `TN_DESKTOP_ARCHIVE_TOOL_MISSING: '${command.name}' is required to write ${output} (${result.error.message}).`,
+      );
+    }
+    if (result.status !== 0) {
+      throw new Error(
+        `TN_DESKTOP_ARCHIVE_FAILED: '${command.name}' exited ${result.status ?? 'unknown'} for ${output}.\n${result.stderr}`,
+      );
+    }
+    renameSync(candidate, output);
+  } finally {
+    rmSync(archiveDirectory, { force: true, recursive: true });
   }
 }
 
@@ -441,10 +448,32 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
   } catch (error) {
     throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: ${error instanceof Error ? error.message : String(error)}`);
   }
-  for (const [relativePath, expected] of Object.entries(manifest.resources ?? {})) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest) ||
+    manifest.schemaVersion !== CONTAINER_SCHEMA_VERSION ||
+    !manifest.resources || typeof manifest.resources !== 'object' || Array.isArray(manifest.resources) ||
+    !Array.isArray(manifest.dependencies) ||
+    (manifest.ui !== null && (!manifest.ui || typeof manifest.ui !== 'object' || Array.isArray(manifest.ui)))) {
+    throw new Error('TN_DESKTOP_CONTAINER_MANIFEST_INVALID: unsupported schema or missing payload inventory.');
+  }
+  const required = [
+    manifest.executable,
+    ...manifest.dependencies.map((dependency) => dependency?.path),
+    ...(manifest.ui === null ? [] : [manifest.ui.entry]),
+    ...(manifest.app?.icon === undefined ? [] : [manifest.app.icon]),
+  ];
+  for (const path of required) {
+    if (typeof path !== 'string' || !path || !Object.hasOwn(manifest.resources, path)) {
+      throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: required resource '${path}' has no integrity record.`);
+    }
+  }
+  const physicalRoot = realpathSync(resolvedRoot);
+  for (const [relativePath, expected] of Object.entries(manifest.resources)) {
+    if (!relativePath || !expected || typeof expected.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(expected.sha256)) {
+      throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: invalid integrity record for '${relativePath}'.`);
+    }
     const absolute = resolve(resolvedRoot, relativePath);
     const within = relative(resolvedRoot, absolute);
-    if (within.startsWith('..') || isAbsolute(within)) {
+    if (isAbsolute(relativePath) || within === '..' || within.startsWith(`..${sep}`) || isAbsolute(within)) {
       throw new Error(
         `TN_DESKTOP_CONTAINER_MANIFEST_INVALID: ${relativePath} escapes the container root.`,
       );
@@ -453,6 +482,10 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
       throw new Error(
         `TN_DESKTOP_CONTAINER_INCOMPLETE: ${relativePath} is named by the container manifest but is not in the payload.`,
       );
+    }
+    const physicalPath = relative(physicalRoot, realpathSync(absolute));
+    if (physicalPath === '..' || physicalPath.startsWith(`..${sep}`) || isAbsolute(physicalPath)) {
+      throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: ${relativePath} resolves outside the container root.`);
     }
     const actual = sha256File(absolute);
     if (actual !== expected.sha256) {
@@ -578,7 +611,6 @@ export function packageDesktopContainer({
           throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'rcedit' is required to embed the executable icon and version (${rcedit.error.message}).`);
         }
         if (rcedit.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: rcedit exited ${rcedit.status ?? 'unknown'}.`);
-        record(paths.executable);
         copyFileSync(icon, stage(paths.icon));
         iconRecord = { path: paths.icon, sha256: sha256File(icon) };
         record(paths.icon);
@@ -586,17 +618,19 @@ export function packageDesktopContainer({
         mkdirSync(dirname(stage(paths.icon)), { recursive: true });
         buildIcon(icon, stage(paths.icon), { platform, run });
         record(paths.icon);
-        iconRecord = { path: paths.icon, sha256: resources[paths.icon].sha256 };
+        iconRecord = { path: paths.icon, sha256: sha256File(icon) };
       }
     }
 
     for (const [relativePath, content] of Object.entries(containerMetadata({ config, platform }))) {
-      const destination = metadataRelativePath(platform, relativePath);
+      const destination = relativePath;
       mkdirSync(dirname(stage(destination)), { recursive: true });
       writeFileSync(stage(destination), content);
       record(destination);
     }
 
+    // Resource editing can change the executable; hash its final bytes on every platform.
+    record(paths.executable);
     const manifest = {
       app: {
         id: app.id ?? 'com.threenative.game',
