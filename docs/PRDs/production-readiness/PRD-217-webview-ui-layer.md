@@ -68,8 +68,8 @@ Before invoking that route, configure the selected existing CMake preset with `T
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
-      Left: the Windows backend is written (`native/ui-overlay/src/desktop.rs`, a wry child over the game HWND with a GDI region for the hit islands) and `cargo check --target x86_64-pc-windows-msvc` is green 2026-09-12, but the MSVC CMake link and a hosted Windows run are unrun from this Linux host. `pnpm native:build` on the Windows runner is the next gate.
+- [x] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+      Hosted `native-platforms` run 34730410868 (windows-2025, commit `79a78df0f`): `pnpm native:build` compiles `threenative_ui_overlay.lib` and links it into `mystral.exe` (the WebView2 loader link fix `291211df3`), then `native:verify:desktop` runs 300 frames. This lane does not attach the starter HUD; that is the required-test box below.
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
@@ -106,8 +106,8 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
-      Left: the macOS backend is written (`native/ui-overlay/src/desktop.rs`, a wry child under a custom `NSView` whose `hitTest:` owns the islands) and `cargo check --target aarch64-apple-darwin` is green 2026-09-12 via a stubbed Apple toolchain, but the real Xcode/WebKit link and a hosted macOS run are unrun. `pnpm native:build` on the macOS runner is the next gate.
+- [x] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+      Hosted `native-platforms` run 34730410868 (macos-15, commit `79a78df0f`): `pnpm native:build` compiles the objc2 `desktop.rs` backend and links the WebKit/AppKit frameworks into `mystral`, then `native:verify:desktop` runs 300 frames. This lane does not attach the starter HUD; that is the required-test box below.
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
@@ -144,8 +144,8 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/native-build.mjs`, `packages/runtime-native/scripts/build-native-ui-overlay.mjs`, `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
-      Left: `native-build.mjs` now builds the overlay on every desktop host (no Linux-only branch) and `build-native-ui-overlay.mjs` derives the host artifact name (`threenative_ui_overlay.lib` on MSVC, `libthreenative_ui_overlay.a` elsewhere); Linux CMake configure + `ui_overlay.cpp` compile are green 2026-09-12. The Windows/macOS hosted `pnpm native:build` runs are unrun.
+- [x] Callers wired and building: `packages/runtime-native/scripts/native-build.mjs`, `packages/runtime-native/scripts/build-native-ui-overlay.mjs`, `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+      `native-build.mjs` builds the overlay on every desktop host (no Linux-only branch) and hands CMake the path the host toolchain wrote. Hosted `native-platforms` run 34730410868 shows the normal `pnpm native:build` compiling and linking the overlay on windows-2025 and macos-15; the Linux plan and link are green locally 2026-09-12.
 - [ ] Required test green: `tests/native-build-ui-overlay.test.mjs`
       Left: the per-host filename mapping test and the Linux plan test are green 2026-09-12 (`the Linux native build links the desktop UI overlay into the runtime`, 2/2). The phase demands each supported platform; Windows and macOS are unrun.
 - [ ] Observed red recorded, then restored green
