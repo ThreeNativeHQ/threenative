@@ -39,7 +39,7 @@ Reduce unnecessary execution and queue pressure; increasing PR size is not the s
 - [x] Observed red recorded, then restored green
       Re-executed 2026-09-11: malformed classifier plans exit 2; restored plans exit 0. Real Git controls cover both rename endpoints, deletions, symlinks, unknown/native/shared inputs, dirty trees and full overrides.
 - [ ] Verified on a real PR, not only locally
-      PARTIAL, and honestly not enough. Run 34622294627 (a real `pull_request` on `work/prd-373-selective-ci`) shows the `Change scope` job emitting a validated plan with a per-job reason, and `ci-required` succeeding. But it classified `selection=full` under the "target main requires complete verification" policy, so a *narrowed* selection has not been observed on a real PR. That needs a feature PR targeting `develop`, which does not exist until the phase 5 cutover.
+      PARTIAL — a real develop-targeting PR now exists. PR #230 (PRD-375, a `packages/runtime-native` change) ran the shared classifier on GitHub, selected `full`, and every selected job passed, including the whole native matrix; run 34743918375, Change scope 9s. That is the *full* policy on a real develop PR. The narrowed observation needs an inert prose/website PR; the docs-only PR carrying this update is that canary (see the 2026-09-13 observations).
 
 
 Extend `scripts/ci-change-scope.mjs`; keep one classifier used by CI and local verification.
@@ -432,3 +432,31 @@ are no longer caught on the PR — the develop nightly run and every promotion s
 history and re-run the docs lane, so the regression is caught before it reaches main. `AGENTS.md`
 and `CLAUDE.md` remain instruction consumers (the instruction lane still runs), and ledger Markdown
 consumed by a fixture remains full.
+
+### 2026-09-13 — real develop-PR observations and the protection gap
+
+Two facts measured against `develop` this session.
+
+**A real develop PR runs the classifier and the verdict.** PR #230 (PRD-375, a
+`packages/runtime-native` change) selected `full` and passed every selected job — `Change scope`,
+`ci-required`, unit/browser/playtest, `golden-path`, `template-nonvisual` and the whole
+`native-platforms` matrix. Run `34743918375`. This is the real-PR confirmation the earlier note
+lacked for the *full* policy; a *narrowed* selection still needs an inert prose/website PR.
+
+**`develop` is not protected, so `ci-required` is not an enforced merge gate.** On 2026-09-13:
+
+```sh
+gh api repos/ThreeNativeHQ/threenative/branches/develop/protection
+# {"message":"Branch not protected", ... "status":"404"}
+```
+
+The root `AGENTS.md` and this PRD's activation notes describe `develop` as already protected and
+requiring `ci-required`; the API says otherwise. Phase 5's enabling step — create/protect `develop`
+and require `ci-required` with strict up-to-date checks — is therefore still **not done**, and it
+needs repository administration access this lane does not have. Until an admin applies it, a green
+`ci-required` run is advisory, not a gate. This is the concrete blocker for phases 1, 2 and 3's
+"can merge into protected develop" clauses; it is not a code change.
+
+The remaining phase 1/2/4 evidence (narrowed canary, a red verdict on a selected failing job, and
+equivalent cold/warm cache measurements) all run on hosted GitHub runners and are not reachable
+from a local lane that must not merge or administer the repository.
