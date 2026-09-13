@@ -9,7 +9,7 @@
 | PRD | Outcome owned here | Origin / current status | Prerequisites for final acceptance |
 | --- | --- | --- | --- |
 | [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) | Complete public package/cohort installation and automatic MCP toolchain | Moved from done/; PARTIAL | None for repairs; 060 for final public cohort |
-| [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | Current exact-candidate hosted runtime build proof | Moved from BLOCKED/; PARTIAL | Current candidate CI; do not reuse old failure diagnosis |
+| [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md) | Current exact-candidate hosted runtime build proof | DONE — phases and acceptance verified, main-route prerequisite validation passed, reviewer PASS; moved to done/ | — |
 | [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) | Aligned default V8 and real 16 KB Android execution | DONE — all phases and acceptance verified, reviewer PASS | — |
 | [PRD-217](PRD-217-webview-ui-layer.md) | Default React HUD on Windows/macOS/Linux sessions | Moved from done/ (already PARTIAL); PARTIAL | None for platform implementation |
 | [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | Target-scoped build prerequisite prediction; Blender/editor separation | NOT STARTED | Extends done [PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md); consumes contracts from 196/212/217/365 |

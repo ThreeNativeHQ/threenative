@@ -6,7 +6,7 @@
 
 CI/native-host layer, based on main `0d91643402ca87d5154bef363e3be4a1e08c5380`. This includes the separately merged MCP probe repair from PR #176 instead of reimplementing that fix. The source gate, native workflow tests, CI structure guard, companion coverage digest and historical evidence from PR #168 (`5aac0abeb8527ff45d0f7a61d593d8d532948c86`) are retained together.
 
-The [PRD](../PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md) assigns phase 2 five files: the existing workflow, its new proof regression test, the PRD, this record and the generated retention index. Phase 1's retained source work has its own five-file assignment and [evidence record](prd-078-readiness-phase-1-2026-09-09.md). Neither phase has a self-awarded acceptance PASS.
+The [PRD](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md) assigns phase 2 five files: the existing workflow, its new proof regression test, the PRD, this record and the generated retention index. Phase 1's retained source work has its own five-file assignment and [evidence record](prd-078-readiness-phase-1-2026-09-09.md). Neither phase has a self-awarded acceptance PASS.
 
 ## Implementation
 
@@ -560,4 +560,4 @@ At this source-record commit, the new hosted proof has not yet produced native o
 
 The evidence JSON records actual checkout SHA, workflow run ID and attempt at execution time. Assertion counts and hashes come from those outputs, never a proposed command or expected result. The generated maintenance output is restored after capture and is not substituted for the checked-out sources during validation.
 
-Windows, macOS, Linux native, Android emulator and main exact-candidate acceptance remain unverified by this local record. iOS and physical Android are not claimed. Independent reviewer decision remains **PENDING**, not PASS. Keep PRD-078 PARTIAL and in production-readiness until actual candidate evidence and that review close its acceptance criteria.
+Windows, macOS, Linux native, Android emulator and main exact-candidate acceptance remain unverified by this local record. iOS and physical Android are not claimed. Independent reviewer decision remains **PENDING**, not PASS. Keep PRD-078 PARTIAL and in production-readiness until actual candidate evidence and that review close its acceptance criteria. (Closed 2026-09-12: the reviewer PASS and the main-route prerequisite validation are recorded in the archived [PRD-078](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md).)

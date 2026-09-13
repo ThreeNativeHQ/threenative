@@ -8,7 +8,7 @@ review remain **NOT RUN**. This record is not a release approval or platform qua
 
 CI/native-host layer, against main commit
 `6972d87c1881a021afb041f44d4fcddcb469e971`. The supplied specification is
-[PRD-078](../PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md).
+[PRD-078](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md).
 Only the existing native-release workflow, its existing workflow tests, the CI structure
 consumer test, and this record change. No new publisher, consumer lane, runtime implementation, tag, release, or package
 publication was created. PRD-262 still owns artifact/installation proof; PRD-060 owns promotion.
