@@ -5,12 +5,11 @@
  *
  * PRD-217 phases 1 and 2 require the *default starter* to build and run its own React HUD on
  * Windows and macOS, with a press inside a HUD island producing a game-state change and input
- * outside the islands reaching the game. The public CLI refuses a `web` UI on those hosts until
- * phase 3B, so this route sets `THREENATIVE_INTERNAL_DESKTOP_UI_PROOF=1` (the maintainer bypass in
- * `create-threenative/src/build.ts`) together with a prebuilt runtime, then runs
- * `scenarios/starter-ui-overlay-desktop.playtest.json` against the packaged app through the
- * installed playtest CLI. The scenario asserts the observations; this script only drives the
- * documented route and fails closed when any piece is missing.
+ * outside the islands reaching the game. Phase 3B opened the public build guard for those hosts, so
+ * this route builds and runs `scenarios/starter-ui-overlay-desktop.playtest.json` against the
+ * packaged app through the installed playtest CLI with a prebuilt runtime. The scenario asserts the
+ * observations; this script only drives the documented route and fails closed when any piece is
+ * missing.
  *
  * Usage (the scaffolded starter must already be installed):
  *   node verify-starter-ui-overlay.mjs --project <starter> --runtime <built mystral> [--scenario <file>] [--artifacts <dir>]
@@ -80,7 +79,6 @@ function main() {
     run(pnpm, ["--dir", project, "build:desktop"], {
       env: {
         ...process.env,
-        THREENATIVE_INTERNAL_DESKTOP_UI_PROOF: "1",
         THREENATIVE_RUNTIME_BINARY: runtime,
       },
     });

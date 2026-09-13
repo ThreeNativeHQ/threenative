@@ -376,25 +376,14 @@ describe("threenative build", () => {
   it("accepts web UI bundles for every native host that stages them", () => {
     expect(() => assertNativeUiRendererCompatible("android", "web")).not.toThrow();
     expect(() => assertNativeUiRendererCompatible("desktop", "web", "linux")).not.toThrow();
+    // The Windows and macOS desktop overlays are proved by the hosted starter lanes, so the public
+    // guard now admits them (PRD-217 phase 3B). A desktop window system with no overlay still
+    // refuses rather than packaging a bundle nothing renders.
+    expect(() => assertNativeUiRendererCompatible("desktop", "web", "darwin")).not.toThrow();
+    expect(() => assertNativeUiRendererCompatible("desktop", "web", "win32")).not.toThrow();
     expect(() => assertNativeUiRendererCompatible("ios", "web")).not.toThrow();
-    expect(() => assertNativeUiRendererCompatible("desktop", "web", "darwin")).toThrow(
-      /TN_UI_RENDERER_UNSUPPORTED.*desktop.*macOS/u,
-    );
-    expect(() => assertNativeUiRendererCompatible("desktop", "web", "win32")).toThrow(
-      /TN_UI_RENDERER_UNSUPPORTED.*desktop.*Windows/u,
-    );
-  });
-
-  it("admits the desktop web UI only under the internal proof route", () => {
-    process.env.THREENATIVE_INTERNAL_DESKTOP_UI_PROOF = "1";
-    try {
-      expect(() => assertNativeUiRendererCompatible("desktop", "web", "darwin")).not.toThrow();
-      expect(() => assertNativeUiRendererCompatible("desktop", "web", "win32")).not.toThrow();
-    } finally {
-      Reflect.deleteProperty(process.env, "THREENATIVE_INTERNAL_DESKTOP_UI_PROOF");
-    }
-    expect(() => assertNativeUiRendererCompatible("desktop", "web", "darwin")).toThrow(
-      /TN_UI_RENDERER_UNSUPPORTED/u,
+    expect(() => assertNativeUiRendererCompatible("desktop", "web", "freebsd")).toThrow(
+      /TN_UI_RENDERER_UNSUPPORTED.*desktop.*freebsd/u,
     );
   });
 

@@ -1102,8 +1102,6 @@ jobs:
           template: starter
       - name: Build and verify the starter's WebView HUD
         shell: bash
-        env:
-          THREENATIVE_INTERNAL_DESKTOP_UI_PROOF: "1"
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-starter-native"
