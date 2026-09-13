@@ -18,7 +18,7 @@
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | Android release artifact and distributed desktop app carry the brand | NOT STARTED | 212/365 final artifacts; 217 UI |
 | [PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) | Complete version-matched downloadable runtime assets | DONE — phases 1-3 and acceptance verified, reviewer PASS; moved to done/ | — (consumer/publication gates now owned by 376/212/366/060) |
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | Actual consumer game and physical Android qualification | NEW; PROPOSED | 196/212/217/221/262/365; 153 captures |
-| [PRD-376](PRD-376-windows-consumer-builds-and-runs.md) | A Windows consumer installs the published runtime, builds and runs | NEW; PROPOSED | 262 publishes the win32-x64 cohort; prerequisite for 365 and 366 |
+| [PRD-376](../done/PRD-376-windows-consumer-builds-and-runs.md) | A Windows consumer installs the published runtime, builds and runs | DONE — phases and acceptance verified, reviewer PASS; moved to done/ | — |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | Public candidate verification, recovery, promotion, stores and outside users | Moved from BLOCKED/; PROPOSED | All applicable owner results; external credentials/people only at their checkpoint |
 | [PRD-378](../done/PRD-378-one-local-command-publishes-every-package.md) | One local `pnpm` command publishes the npm cohort and the host native runtime | DONE — all phases and acceptance verified, reviewer PASS | — |
 
