@@ -22,6 +22,9 @@ char* tn_ui_overlay_take();
 void tn_ui_overlay_free(char* frame);
 int tn_ui_overlay_set_bounds(int32_t x, int32_t y, uint32_t width, uint32_t height);
 int tn_ui_overlay_set_hit_regions(const float* regions, uint32_t count);
+int tn_ui_overlay_hit_test(float nx, float ny);
+int tn_ui_overlay_inject_pointer(const char* type, float nx, float ny, int buttons,
+                                 int pointer_id);
 void tn_ui_overlay_detach();
 }
 #include "mystral/platform/window.h"
@@ -183,6 +186,16 @@ void detachDesktopUiOverlay() {
     tn_ui_overlay_detach();
     setUiOverlayAttached(false);
 }
+
+bool uiOverlayHitTest(float nx, float ny) {
+    if (!uiOverlayAttached()) return false;
+    return tn_ui_overlay_hit_test(nx, ny) == 1;
+}
+
+bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, int pointerId) {
+    if (!uiOverlayAttached()) return false;
+    return tn_ui_overlay_inject_pointer(type, nx, ny, buttons, pointerId) == 0;
+}
 #else
 bool attachDesktopUiOverlay(const std::string& uiRoot) {
     (void)uiRoot;
@@ -191,6 +204,19 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
 void pumpUiOverlay() {}
 void setUiHitRegions(const std::vector<float>& regions) { (void)regions; }
 void detachDesktopUiOverlay() {}
+bool uiOverlayHitTest(float nx, float ny) {
+    (void)nx;
+    (void)ny;
+    return false;
+}
+bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, int pointerId) {
+    (void)type;
+    (void)nx;
+    (void)ny;
+    (void)buttons;
+    (void)pointerId;
+    return false;
+}
 #endif
 
 bool postUiMessage(const std::string& frame) {

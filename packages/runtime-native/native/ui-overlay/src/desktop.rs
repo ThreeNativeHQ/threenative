@@ -56,9 +56,6 @@ const BUILD_REFUSED: c_int = -2;
 const NOT_ATTACHED: c_int = -1;
 
 thread_local! {
-    /// The interactive rectangles the page last published, normalized to the viewport. Read by the
-    /// macOS hit test on every pointer move, so it is kept here rather than behind the ABI lock.
-    static HIT_REGIONS: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
     static OVERLAY: RefCell<Option<Overlay>> = const { RefCell::new(None) };
 }
 
@@ -218,7 +215,7 @@ pub extern "C" fn tn_ui_overlay_attach(
         return BAD_ARGUMENT;
     };
     let ui_root = PathBuf::from(ui_root);
-    HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
+    crate::HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
 
     let inbound = Arc::new(Mutex::new(Vec::<String>::new()));
 
@@ -322,7 +319,7 @@ pub extern "C" fn tn_ui_overlay_pump() -> c_int {
                 );
                 if size != overlay.region_size.get() {
                     overlay.region_size.set(size);
-                    let regions = HIT_REGIONS.with(|regions| regions.borrow().clone());
+                    let regions = crate::HIT_REGIONS.with(|regions| regions.borrow().clone());
                     apply_region(overlay.container, &regions, size);
                 }
             }
@@ -426,7 +423,7 @@ pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32)
     } else {
         unsafe { std::slice::from_raw_parts(regions, count as usize * 4) }.to_vec()
     };
-    HIT_REGIONS.with(|store| *store.borrow_mut() = published.clone());
+    crate::HIT_REGIONS.with(|store| *store.borrow_mut() = published.clone());
 
     #[cfg(windows)]
     {
@@ -449,10 +446,58 @@ pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32)
     }
 }
 
+/// Whether a normalized point is inside a published interactive rectangle.
+///
+/// The playtest input bridge asks this before dispatching a synthetic pointer, so the same list
+/// that cuts the Windows region and answers the macOS `hitTest:` also decides which side a
+/// synthetic press lands on.
+#[no_mangle]
+pub extern "C" fn tn_ui_overlay_hit_test(nx: f32, ny: f32) -> c_int {
+    if crate::hit_test(nx, ny) {
+        1
+    } else {
+        0
+    }
+}
+
+/// Dispatch one synthetic DOM pointer event into the page.
+///
+/// `kind` is a DOM pointer event type (`pointerdown`, `pointermove`, `pointerup`) and `nx`/`ny`
+/// are normalized to the viewport. The page scales the point to its own pixel viewport, so the
+/// event lands inside the same rectangle the OS region was cut from. Playtest input only: an
+/// OS-routed press needs no help, and this never runs outside the bridge.
+#[no_mangle]
+pub extern "C" fn tn_ui_overlay_inject_pointer(
+    kind: *const c_char,
+    nx: f32,
+    ny: f32,
+    buttons: i32,
+    pointer_id: i32,
+) -> c_int {
+    if kind.is_null() {
+        return BAD_ARGUMENT;
+    }
+    let Ok(kind) = (unsafe { CStr::from_ptr(kind) }).to_str() else {
+        return BAD_ARGUMENT;
+    };
+    OVERLAY.with(|slot| {
+        let borrowed = slot.borrow();
+        let Some(overlay) = borrowed.as_ref() else {
+            return NOT_ATTACHED;
+        };
+        let script = crate::pointer_injection_script(kind, nx, ny, buttons, pointer_id);
+        if overlay.webview.evaluate_script(&script).is_ok() {
+            0
+        } else {
+            BUILD_REFUSED
+        }
+    })
+}
+
 /// Detach and destroy the overlay. Safe to call when nothing is attached.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_detach() {
-    HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
+    crate::HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
     OVERLAY.with(|slot| {
         let taken = slot.borrow_mut().take();
         #[cfg(target_os = "macos")]
@@ -528,7 +573,7 @@ declare_class!(
     unsafe impl TnUiOverlayView {
         #[method(hitTest:)]
         fn hit_test(&self, point: CGPoint) -> *mut NSView {
-            let regions = HIT_REGIONS.with(|regions| regions.borrow().clone());
+            let regions = crate::HIT_REGIONS.with(|regions| regions.borrow().clone());
             if regions.len() < 4 {
                 return std::ptr::null_mut();
             }
