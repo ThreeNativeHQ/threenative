@@ -35,7 +35,7 @@ test('the overlay library is named for the host toolchain', () => {
 test.runIf(process.platform === 'linux')(
   'the Linux native build links the desktop UI overlay into the runtime',
   () => {
-    const root = makeTempDirSync('threenative-native-build-plan-');
+    const root = makeTempDirSync('threenative-native-build-plan-#% ');
     roots.push(root);
     const scripts = join(root, 'scripts');
     const bin = join(root, 'bin');
@@ -87,3 +87,24 @@ test.runIf(process.platform === 'linux')(
     );
   },
 );
+
+for (const present of [false, true]) {
+  test(`overlay --check ${present ? 'reports the library' : 'fails closed'} in a path with URL-reserved characters`, () => {
+    const root = makeTempDirSync('threenative-overlay-check-#% ');
+    roots.push(root);
+    const scripts = join(root, 'scripts');
+    mkdirSync(scripts, { recursive: true });
+    const script = join(scripts, 'build-native-ui-overlay.mjs');
+    copyFileSync(new URL('../scripts/build-native-ui-overlay.mjs', import.meta.url), script);
+    const release = join(root, 'native', 'ui-overlay', 'target', 'release');
+    if (present) {
+      mkdirSync(release, { recursive: true });
+      writeFileSync(join(release, uiOverlayLibraryName()), 'static library fixture');
+    }
+    const result = spawnSync(process.execPath, [script, '--check'], { encoding: 'utf8' });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, present ? 0 : 1, result.stderr);
+    if (present) assert.match(result.stdout, /ThreeNative UI overlay:/u);
+    else assert.match(result.stderr, /TN_UI_OVERLAY_MISSING:/u);
+  });
+}

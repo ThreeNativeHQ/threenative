@@ -14,7 +14,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = join(runtimeRoot, 'native', 'ui-overlay', 'Cargo.toml');
@@ -29,7 +29,7 @@ export function uiOverlayLibraryPath(root = runtimeRoot, platform = process.plat
   return join(root, 'native', 'ui-overlay', 'target', 'release', uiOverlayLibraryName(platform));
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (checkOnly) {
     const library = uiOverlayLibraryPath();
     if (!existsSync(library)) {
