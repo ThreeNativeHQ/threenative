@@ -93,6 +93,13 @@ a space.
   overlaid by `/dev/null` made the verifier refuse before launch with
   `TN_NATIVE_STARTER_PREREQUISITE_MISSING` naming `libwebkit2gtk-4.1.so.0` and the
   apt/dnf/pacman install commands (exit 1).
+- **the installed verifier end to end**: `verify-starter-desktop.mjs --container <real container>`
+  in the same sandbox resolved the container's integrity records, passed the prerequisite check and
+  launched it through its own `xvfb.sh`: `starter desktop gate passed: 300 frames, 21684 colors,
+  338 asset pixels`, report `pass: true` with a 1280x720 capture (sha256
+  `acfc77ec4eb29895c366d4231a51b2ad7f968431b9bb6063bca43182f9fd14d7`, 21 684 colours, 523 magenta
+  and 338 cyan proof pixels). `overlayAttached` was false there because the verifier's own Xvfb has
+  no compositor; the direct run above attached the HUD on the compositor-present display.
 
 Scope: this is an isolated sandbox on the same linux-x64 host, **not** a second physical machine or
 OS user and **not** a registry-package consumer. It proves the artifact is relocatable, needs no
