@@ -15,7 +15,7 @@ folder get closed, in what order, on how many lanes; it changes no scope and tic
 | [PRD-373](PRD-373-selective-ci-and-develop-promotion.md) | **4/20** | n/a | `prd:25%` | **0 → 4** | PR #199 |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | 0/24 | 0/5 | `prd:0%` | — | blocked: credentials, a person |
 | [PRD-212](../done/PRD-212-published-install-builds-android.md) | 0/18 | 0/5 | `prd:0%` | — | not started (checked: genuinely 0) |
-| [PRD-217](PRD-217-webview-ui-layer.md) | 0/30 | 0/5 | `prd:0%` | — | blocked: no Windows/macOS host |
+| [PRD-217](../done/PRD-217-webview-ui-layer.md) | 0/30 | 0/5 | `prd:0%` | — | blocked: no Windows/macOS host |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | 0/18 | 0/5 | `prd:0%` | — | blocked: hosts, signing |
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | 0/18 | 0/5 | `prd:0%` | — | blocked: everything above |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | 0/12 | 0/5 | `prd:0%` | — | not started |
@@ -38,7 +38,7 @@ a regression `main`'s own test rejects), **#193 rebuilt on `main` and pushed**. 
 | [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md) | 0/9 | 20/54 | 4/4 | `prd:25%` |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | 0/4 | 0/24 | 0/5 | `prd:0%` |
 | [PRD-212](../done/PRD-212-published-install-builds-android.md) | 0/3 | 0/18 | 0/5 | `prd:0%` |
-| [PRD-217](PRD-217-webview-ui-layer.md) | 0/5 | 0/30 | 0/5 | `prd:0%` |
+| [PRD-217](../done/PRD-217-webview-ui-layer.md) | 0/5 | 0/30 | 0/5 | `prd:0%` |
 | [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) | 0/3 | 0/18 | 0/5 | `prd:0%` |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | 0/3 | 0/18 | 0/5 | `prd:0%` |
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | 0/3 | 0/18 | 0/5 | `prd:0%` |
