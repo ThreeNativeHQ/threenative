@@ -171,6 +171,51 @@ describe("PRD-373 fail-closed required verdict", () => {
     return JSON.parse(result.stdout) as Record<string, unknown>;
   }
 
+  /**
+   * A genuine narrowed plan, classified from a scratch prose-only history but carrying this
+   * repository's candidate SHA, so the verdict reaches the selection gate instead of stopping at
+   * the candidate assertion. The empty diff is deliberately classified `full`, so it cannot serve.
+   */
+  function prosePlan(): Record<string, unknown> {
+    const root = makeTempDirSync("threenative-ci-required-prose-");
+    const git = (...args: string[]) =>
+      spawnSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "CI scope fixture",
+          GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+          GIT_COMMITTER_NAME: "CI scope fixture",
+          GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+        },
+      });
+    git("init", "--quiet", "--initial-branch", "develop");
+    writeFileSync(path.join(root, "README.md"), "base\n");
+    git("add", "-A");
+    git("commit", "--quiet", "-m", "base");
+    const base = git("rev-parse", "HEAD").stdout.trim();
+    writeFileSync(path.join(root, "NOTES.md"), "prose\n");
+    git("add", "-A");
+    git("commit", "--quiet", "-m", "prose");
+    const head = git("rev-parse", "HEAD").stdout.trim();
+    const candidate = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" });
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(repo, "scripts/ci-change-scope.mjs"),
+        ...["--root", root, "--base", base, "--head", head],
+        ...["--target", "develop", "--event", "pull_request"],
+        ...["--candidate-sha", candidate.stdout.trim(), "--format", "json"],
+      ],
+      { cwd: repo, encoding: "utf8" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    const plan = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(plan.selection).toBe("prose");
+    return plan;
+  }
+
   function verify(
     plan: Record<string, unknown>,
     overrides: Record<string, unknown> = {},
@@ -235,27 +280,20 @@ describe("PRD-373 fail-closed required verdict", () => {
     expect(result.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
   });
 
-  it("requires frozen promotion refs or explicit hotfix refs after cutover", () => {
+  it("requires complete verification on main whatever the head branch is named", () => {
     const environment = {
       TN_CI_EVENT: "pull_request",
       TN_CI_CUTOVER: "true",
       TN_CI_BASE_REF: "main",
       TN_CI_HEAD_SHA: "a".repeat(40),
     };
-    const feature = verify(
-      fullPlan(),
-      {},
-      { ...environment, TN_CI_HEAD_REF: "feature/direct-main" },
-    );
-    expect(feature.status).toBe(1);
-    expect(feature.stderr).toContain("CI_REQUIRED_PROMOTION_REF");
-    const changedCandidate = verify(
-      fullPlan(),
-      {},
-      { ...environment, TN_CI_HEAD_REF: `promotion/${"b".repeat(40)}` },
-    );
-    expect(changedCandidate.status).toBe(1);
-    expect(changedCandidate.stderr).toContain("CI_REQUIRED_PROMOTION_REF");
+    // The head ref is no longer part of the verdict: the exact base/head parent assertion freezes
+    // the candidate, so any narrowed plan reaching main fails on its selection alone.
+    for (const headRef of ["develop", "feature/direct-main", `promotion/${"b".repeat(40)}`]) {
+      const narrowed = verify(prosePlan(), {}, { ...environment, TN_CI_HEAD_REF: headRef });
+      expect(narrowed.status, narrowed.stdout + narrowed.stderr).toBe(1);
+      expect(narrowed.stderr).toContain("CI_REQUIRED_MAIN_FULL");
+    }
   });
 
   it("maps every coverage job to the required verdict and rejects unregistered additions", () => {
@@ -340,7 +378,7 @@ describe("PRD-373 fixed full candidates and current package products", () => {
     expect(scope).toContain('grep -Fx "candidate_sha=$candidate"');
   });
 
-  it("accepts a real frozen promotion merge and rejects a changed base", () => {
+  it("accepts a real develop-to-main merge and rejects a changed base", () => {
     const root = makeTempDirSync("ci-promotion-");
     const git = (...args: string[]) => {
       const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -391,7 +429,7 @@ describe("PRD-373 fixed full candidates and current package products", () => {
             TN_CI_EVENT: "pull_request",
             TN_CI_CUTOVER: "true",
             TN_CI_BASE_REF: "main",
-            TN_CI_HEAD_REF: `promotion/${head}`,
+            TN_CI_HEAD_REF: "develop",
             TN_CI_HEAD_SHA: head,
             TN_CI_BASE_SHA: baseSha,
           },
