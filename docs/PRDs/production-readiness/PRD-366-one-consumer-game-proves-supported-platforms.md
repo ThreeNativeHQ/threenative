@@ -79,7 +79,7 @@ sequenceDiagram
 - EDIT `scripts/verify-registry-install.ts` — run candidate template gameplay after game-only edit.
 - EDIT `scripts/__tests__/verify-registry-install.spec.ts` — non-vacuous external consumer assertions.
 - NEW `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` — observable real starter sequence.
-- EDIT `scripts/verify-template-playtests.ts` — include new scenario through existing discovery.
+- EDIT `scripts/verify-template-playtests.ts` — verified, no change required: `scenarioFiles` already discovers every `*.playtest.json`, so the new scenario is included without an edit.
 - NEW `docs/verification/prd-366-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Scaffold from the exact candidate, install without workspace protocols, edit a game-owned movement/UI value, build and run actual browser gameplay against the built output. Verify input changes position, HUD action changes state, asset/physics/audio observation exists and scene can restart. Register using the existing playtest glob. Add one export/asset compatibility audit from existing capability/conformance inventory; do not infer that arbitrary Three.js/browser plugins work natively.

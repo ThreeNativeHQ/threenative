@@ -379,7 +379,13 @@ export function applyGameOnlyEdit(project: string): string {
     );
   const source = fs.readFileSync(entry, "utf8");
   if (!source.includes(GAME_ONLY_EDIT_MARKER))
-    fs.writeFileSync(entry, `${source}\n// ${GAME_ONLY_EDIT_MARKER}\n`);
+    // A side-effecting assignment, not a comment: Vite's minifier strips non-legal comments from the
+    // built bundle, so a `// marker` would never be observable in `dist/` and this gate would fail
+    // for the wrong reason.
+    fs.writeFileSync(
+      entry,
+      `${source}\n(globalThis as Record<string, unknown>).__tnRegistryGameOnlyEdit = "${GAME_ONLY_EDIT_MARKER}";\n`,
+    );
   return entry;
 }
 
@@ -406,7 +412,9 @@ export function assertGameplayScenario(project: string): string {
   const assertion = objectRecord((parsed as { assert?: unknown } | undefined)?.assert);
   const families = (assertion === undefined ? [] : Object.keys(assertion)).filter((key) => {
     const value = assertion?.[key];
-    return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "object" && value !== null) return Object.keys(value).length > 0;
+    return value === true;
   });
   if (families.length === 0)
     throw new Error(
@@ -800,10 +808,35 @@ export function verifyRegistryInstall(
         step(prefix("gameplay"), () => {
           const families = assertGameplayScenario(project);
           const built = assertEditedGameplayInBuild(project);
+          // The runner defaults to an already-running `http://127.0.0.1:5173`; nothing here starts
+          // one, so the scenario must bring its own dev server the way the template's own test
+          // script does. `--browser-recipe webgpu` is required so a SwiftShader run is not mistaken
+          // for evidence.
+          const serverCommand =
+            manager === "npm"
+              ? "npm run dev -- --host 127.0.0.1 --port $PORT --strictPort"
+              : "pnpm dev --host 127.0.0.1 --port $PORT --strictPort";
           const playtestArgs =
             manager === "npm"
-              ? ["exec", "--no-install", "threenative-playtest", GAMEPLAY_SCENARIO]
-              : ["exec", "threenative-playtest", GAMEPLAY_SCENARIO];
+              ? [
+                  "exec",
+                  "--no-install",
+                  "threenative-playtest",
+                  GAMEPLAY_SCENARIO,
+                  "--browser-recipe",
+                  "webgpu",
+                  "--server-command",
+                  serverCommand,
+                ]
+              : [
+                  "exec",
+                  "threenative-playtest",
+                  GAMEPLAY_SCENARIO,
+                  "--browser-recipe",
+                  "webgpu",
+                  "--server-command",
+                  serverCommand,
+                ];
           const output = run(command, playtestArgs, project);
           return `Ran ${GAMEPLAY_SCENARIO} (assertions: ${families}); edit present in ${built}. ${output}`;
         }),

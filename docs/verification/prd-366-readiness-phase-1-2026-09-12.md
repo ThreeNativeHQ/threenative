@@ -58,8 +58,9 @@ This reproduces with the runner's private Xvfb and, with `TN_PLAYTEST_HOST_DISPL
 session's real NVIDIA adapter (`captureDisplay {display: ":0", strategy: "existing"}`), and with the
 default recipe (`TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING`). It is a real WebGPU/`SoftBody3D` startup
 failure in this Chromium/Dawn/NVIDIA environment, not a defect in the scenario or the harness
-change, and it is **not** claimed as a pass. The browser lane therefore remains unverified here;
-the golden-path CI lane boots the starter on its own GPU-equipped runner.
+change, and it is **not** claimed as a pass. The browser lane therefore remains unverified here.
+The scenario is classified non-visual (`scripts/non-visual-scenarios.mjs`), so the golden-path
+lane runs it on a GPU-less runner; that hosted result is not observed in this worktree either.
 
 The scenario ships *with* the template, so it is only ever executed against a scaffold generated
 from the same template version — the `entityCount`/`score` field names are that version's.
