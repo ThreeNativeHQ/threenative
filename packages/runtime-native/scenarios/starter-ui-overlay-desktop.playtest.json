@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "name": "starter-ui-overlay-desktop",
+  "target": "desktop",
+  "subject": "player",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "steps": [
+    {
+      "label": "play-scene-loads",
+      "waitTicks": 240
+    },
+    {
+      "pointers": [
+        {
+          "id": 1,
+          "x": 0.4788,
+          "y": 0.9306
+        }
+      ],
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "label": "paused",
+      "waitTicks": 30
+    },
+    {
+      "pointers": [
+        {
+          "id": 2,
+          "x": 0.4788,
+          "y": 0.9306
+        }
+      ],
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "label": "resumed",
+      "waitTicks": 30
+    },
+    {
+      "pointers": [
+        {
+          "id": 3,
+          "x": 0.5,
+          "y": 0.5
+        }
+      ],
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "moved",
+      "waitTicks": 30
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "paused",
+        "atSteps": [
+          {
+            "label": "play-scene-loads",
+            "equals": false
+          },
+          {
+            "label": "paused",
+            "equals": true
+          },
+          {
+            "label": "resumed",
+            "equals": false
+          }
+        ]
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": {
+        "axis": "-z",
+        "min": 0.5
+      }
+    }
+  }
+}

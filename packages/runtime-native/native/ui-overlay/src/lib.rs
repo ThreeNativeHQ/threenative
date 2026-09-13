@@ -68,7 +68,10 @@ pub(crate) fn pointer_injection_script(
          if(!t)return false;\
          t.dispatchEvent(new PointerEvent({kind:?},{{bubbles:true,cancelable:true,composed:true,\
          clientX:x,clientY:y,buttons:{buttons},pointerId:{pointer_id},pointerType:'touch',\
-         isPrimary:true,width:1,height:1,pressure:{pressure}}}));return true;}})()",
+         isPrimary:true,width:1,height:1,pressure:{pressure}}}));\
+         if({kind:?}==='pointerup'){{t.dispatchEvent(new MouseEvent('click',{{bubbles:true,\
+         cancelable:true,composed:true,clientX:x,clientY:y,button:0,buttons:0}}));}}\
+         return true;}})()",
         nx = nx,
         ny = ny,
         kind = kind,
