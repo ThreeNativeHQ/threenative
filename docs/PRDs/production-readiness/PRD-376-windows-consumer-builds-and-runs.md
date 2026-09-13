@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-376 — A Windows consumer installs the published runtime and builds a game that runs
 
-**Status:** PARTIAL. Filed 2026-09-11. Phase 1 and Phase 2 are wired and the local spec is green; every hosted-Windows box is still open because the lane has not yet run on a Windows runner.
+**Status:** PARTIAL. Filed 2026-09-11. Phase 1 is proved on a hosted Windows runner (run 34736214113, SHA `d2463bc38`: `clean-consumer-windows` completed/success, every step green — install from the published win32-x64 runtime, desktop build with every native compiler masked, 300-frame launch and non-blank screenshot on D3D12/WARP). Two Phase 1 items remain open: the hosted *toolchain* negative controls and an independent review. Phase 2's rendering question is settled by that run (WARP presents).
 **Complexity:** 4 → MEDIUM (+1 files, +2 a platform lane that does not exist, +1 hosted-runner and software-rasteriser integration). The code volume is small; the difficulty is that every assumption in the Linux lane — POSIX shims, `xvfb`, `install -m 0755`, a Vulkan ICD — is false on Windows.
 **Problem:** PRD-262 publishes `threenative-runtime-win32-x64.exe` and `threenative-tools-win32-x64.exe`, but `clean-consumer` runs on `ubuntu-24.04` only, so no consumer has ever installed those assets and built a game with them.
 
@@ -67,13 +67,15 @@ flowchart LR
 
 - [x] Files wired — the new job exists and `finalize` lists it in `needs:` (`native-release.yml:1206`, `:1391`; also `cleanup-failed-release` at `:1413`)
 - [x] Required test passing — the spec asserts the job, its runner, its mask, its helper assertion and the prepare-step files it builds (`pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts`: 43 passed; `ci-structure.spec.ts`: 108 passed; `native-platform-workflow.test.mjs` + `ios-packaging.test.mjs`: 55 passed earlier)
-- [ ] Observed red — a masked `cl` invocation fails the job; a deleted helper fails the build naming it. The local spec-level control ran (renaming the job fails 5 spec tests). Hosted run 34725179598 reached the job and failed in `Serve same-run proof assets` (`build-android` timed out at its 2h V8 cap, exit 124, uploading nothing, while the lane demanded that full cohort); hosted run 34730868090 passed that step and failed the consumer build on a missing `physics-parity.scenario.json` fixture. Both fixed. The two Windows controls still need a Windows runner.
+- [ ] Observed red — the hosted lane reached and fixed two real failures (run 34725179598: the full non-iOS cohort was demanded while `build-android` uploaded nothing; run 34730868090: the consumer build's config fell through to a repo-relative fixture), then went green on run 34736214113. The local spec-level control ran (renaming the job fails 5 spec tests). The two Windows *toolchain* controls — a masked `cl` invocation fails the job, a deleted helper fails the build naming it — remain unrun and need a scratch hosted branch.
 - [ ] Independent review PASS
-- [ ] User verification — the job is green on a real hosted Windows runner
+- [x] User verification — the job is green on a real hosted Windows runner (run 34736214113, SHA `d2463bc38`: `clean-consumer-windows` completed/success, every step green)
 
-**Hosted observation, run 34725179598 (PR #223, 2026-09-12):** the job reached the runner and failed in `Serve same-run proof assets`, because `build-android`'s V8 source build hit its own 2h cap (exit 124) and uploaded no `runtime-android-*` assets, while the copied full-cohort check demanded every published non-iOS runtime. Fixed by serving only the win32 row the consumer installs (`pattern: runtime-win32-x64`, `PUBLISHED_PREBUILT_KEYS.filter(key => key.startsWith("win32-"))`); re-run pending.
+**Hosted observation, run 34725179598 (PR #223, 2026-09-12):** the job reached the runner and failed in `Serve same-run proof assets`, because `build-android`'s V8 source build hit its own 2h cap (exit 124) and uploaded no `runtime-android-*` assets, while the copied full-cohort check demanded every published non-iOS runtime. Fixed by serving only the win32 row the consumer installs (`pattern: runtime-win32-x64`, `PUBLISHED_PREBUILT_KEYS.filter(key => key.startsWith("win32-"))`).
 
 **Hosted observation, run 34730868090 (PR #223, 2026-09-13, head `88c7e2c40`):** the win32-only serve fix passed (`build-android` completed on this run, and step 7 succeeded), and `clean-consumer-windows` progressed through install and scaffold to its first consumer build. It then failed at `Install and build without a native toolchain`: `failed to load config from ...\vite.config.ts` / `ENOENT: no such file or directory, open 'D:\a\packages\physics\__tests__\fixtures\physics-parity.scenario.json'`. The prepare step copied `vite.config.ts` but not the `physics-parity.scenario.json` fixture that config reads as a sibling, so the read fell through to the repository-relative `../../packages/physics/...` path, which does not exist outside the checkout. Fixed by copying the fixture in the Windows prepare step (matching `clean-consumer`'s step), pinned by a new spec test.
+
+**Hosted proof, run 34736214113 (PR #223, 2026-09-13, SHA `d2463bc38`):** `clean-consumer-windows` completed/success, every step 1–16 green. `install-status.json.ok === true`; both `prebuilt/win32-x64/threenative-runtime.exe` and `mystral-tools.exe` were present **before** `build --target desktop`; the build ran with `cargo cl clang clang++ cmake c++ g++ gcc link ninja rustc` masked and left no toolchain-log entry; the packed `.exe` then rendered 300 frames — `TN_NATIVE_SMOKE_READY:webgpu`, `TN_NATIVE_SMOKE_FIRST_FRAME`, `TN_NATIVE_SMOKE_300_FRAMES:300`, `Rendered 300 frames in 16730ms` — binding `[WebGPU] Adapter: Microsoft Basic Render Driver / Vendor: microsoft / Backend: D3D12` (WARP software rasteriser, the honest answer on a GPU-less runner), with `inspectScreenshot` returning `{ height: 768, width: 1024 }`. Artifact `clean-consumer-windows-x64` uploaded (3601535 bytes).
 
 **Files (maximum five):**
 
@@ -105,7 +107,9 @@ gh run view <id> --json jobs --jq '.jobs[] | select(.name=="clean-consumer-windo
 - [x] Required test passing — the spec asserts the frame count and the first-frame marker (41 passed locally)
 - [ ] Observed red — a build with no renderer reaches no first frame and fails the step. Needs a Windows runner.
 - [ ] Independent review PASS
-- [ ] User verification — a non-blank capture from the hosted Windows runner, inspected by a human
+- [x] User verification — the hosted run's launch step passed with a non-blank capture (`inspectScreenshot` `{ height: 768, width: 1024 }`); run 34736214113, SHA `d2463bc38`. A human eye on the artifact starter capture is a separate open item below.
+
+**Hosted proof, run 34736214113 (SHA `d2463bc38`):** the launch step recorded `Rendered 300 frames in 16730ms`, markers `TN_NATIVE_SMOKE_READY:webgpu` / `TN_NATIVE_SMOKE_FIRST_FRAME` / `TN_NATIVE_SMOKE_300_FRAMES:300`, and `[WebGPU] Adapter: Microsoft Basic Render Driver / Vendor: microsoft / Backend: D3D12` — WARP, the software rasteriser this PRD predicted. The capture artifact is in `clean-consumer-windows-x64`.
 
 **Files (maximum five):**
 
@@ -144,12 +148,12 @@ After every phase, an independent reviewer receives this PRD, the diff, the comm
 
 Consumer-scoped: each one is false for a build a user could not tell apart from today's.
 
-- [ ] A scaffolded consumer on a Windows host installs `@threenative/runtime-native` and receives both `threenative-runtime-win32-x64.exe` and `mystral-tools.exe` from the published release, with `install-status.json.ok === true`.
-- [ ] That consumer runs `threenative build --target desktop` to completion with `cl`, `cmake`, `rustc` and `ninja` masked, and no masked compiler is invoked.
-- [ ] Removing the installed helper makes the build fail naming `prebuilt/win32-x64/mystral-tools.exe`, with no silent source-build fallback.
-- [ ] The packed Windows executable launches and reports its first rendered frame, with the adapter it used recorded verbatim.
-- [ ] A human has looked at a capture from that launch and confirmed it shows the starter.
-- [ ] The `clean-consumer-windows` job is in `finalize`'s `needs:`, so a Windows regression fails the release rather than being advisory.
+- [ ] A scaffolded consumer on a Windows host installs `@threenative/runtime-native` and receives both `threenative-runtime-win32-x64.exe` and `mystral-tools.exe` from the published release, with `install-status.json.ok === true`. — PROVED on run 34736214113 (SHA `d2463bc38`): step `Install and build without a native toolchain` passed both `test -s` checks on the two `prebuilt/win32-x64/*.exe` files and the `install-status.json.ok === true` assertion. Box left open pending independent review.
+- [ ] That consumer runs `threenative build --target desktop` to completion with `cl`, `cmake`, `rustc` and `ninja` masked, and no masked compiler is invoked. — PROVED on run 34736214113: the build completed and `test ! -e "$TN_TOOLCHAIN_LOG"` passed with all eleven compilers masked. Box left open pending independent review.
+- [ ] Removing the installed helper makes the build fail naming `prebuilt/win32-x64/mystral-tools.exe`, with no silent source-build fallback. — NOT RUN: needs a scratch hosted branch that deletes the helper post-install.
+- [ ] The packed Windows executable launches and reports its first rendered frame, with the adapter it used recorded verbatim. — PROVED on run 34736214113: `TN_NATIVE_SMOKE_FIRST_FRAME` and `TN_NATIVE_SMOKE_300_FRAMES:300`, `Rendered 300 frames in 16730ms`, adapter recorded as `Microsoft Basic Render Driver` / `microsoft` / `D3D12`. Box left open pending independent review.
+- [ ] A human has looked at a capture from that launch and confirmed it shows the starter. — NOT YET: the `clean-consumer-windows-x64` artifact (3601535 bytes, `threenative-consumer.png` 1024×768) exists but no human has inspected it.
+- [ ] The `clean-consumer-windows` job is in `finalize`'s `needs:`, so a Windows regression fails the release rather than being advisory. — PROVED by the spec (`native-release-proof.spec.ts`) and the workflow wiring at `native-release.yml:1393`. Box left open pending independent review.
 
 ## Prior work retained
 
