@@ -174,11 +174,11 @@ export function analyzeStarterLog(log, frames = 300) {
  * verifier names the concrete library and its OS install command rather than leaking the dynamic
  * loader's bare `not found`, which reads like a broken artifact.
  */
-export function playerPrerequisiteHint(name, platform = process.platform) {
-  if (/libwebkit2gtk-/u.test(name)) {
+export function playerPrerequisiteHint(name, platform = process.platform, recorded = true) {
+  if (recorded && /libwebkit2gtk-/u.test(name)) {
     return 'install the WebKitGTK 4.1 runtime (Debian/Ubuntu: sudo apt-get install -y libwebkit2gtk-4.1-0; Fedora: sudo dnf install webkit2gtk4.1; Arch: sudo pacman -S webkit2gtk-4.1).';
   }
-  if (/webview2/iu.test(name) || /^WebView2Loader\.dll$/iu.test(name)) {
+  if (recorded && (/webview2/iu.test(name) || /^WebView2Loader\.dll$/iu.test(name))) {
     return 'install the Microsoft Edge WebView2 Evergreen Runtime (https://developer.microsoft.com/microsoft-edge/webview2/).';
   }
   return `install ${name} with this OS's package manager; the container records system libraries as player prerequisites and does not ship them.`;
@@ -217,7 +217,10 @@ export function missingPlayerLibraries(executable, { platform = process.platform
 export function assertPlayerPrerequisites(manifest, executable, { platform = process.platform, run = defaultExec } = {}) {
   const missing = missingPlayerLibraries(executable, { platform, run });
   if (missing.length === 0) return [];
-  const details = missing.map((name) => `  - ${name}: ${playerPrerequisiteHint(name, platform)}`).join('\n');
+  const recorded = new Set((manifest?.prerequisites ?? []).map((prerequisite) => prerequisite?.name));
+  const details = missing
+    .map((name) => `  - ${name}: ${playerPrerequisiteHint(name, platform, recorded.has(name))}`)
+    .join('\n');
   throw new Error(
     `TN_NATIVE_STARTER_PREREQUISITE_MISSING: ${executable} needs ${missing.length} system prerequisite(s) this player machine does not provide:\n${details}`,
   );
@@ -334,7 +337,7 @@ function parseCliFlags(argv) {
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
-    if (flag === '--container' && value) options.container = resolve(value);
+    if (flag === '--container' && value) options.root = resolve(value);
     else if (flag === '--frames' && value) options.frames = Number(value);
     else if (flag === '--project' && value) options.project = resolve(value);
   }
@@ -344,7 +347,7 @@ function parseCliFlags(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     const options = parseCliFlags(process.argv.slice(2));
-    const report = options.container ? verifyStarterContainer(options) : verifyStarterDesktop(options);
+    const report = options.root ? verifyStarterContainer(options) : verifyStarterDesktop(options);
     console.log(`starter desktop gate passed: ${report.frames} frames, ${report.image.colors} colors, ${report.image.cyanAssetPixels} asset pixels`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

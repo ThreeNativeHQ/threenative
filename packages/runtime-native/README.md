@@ -88,8 +88,11 @@ The container does not ship the platform's WebView or windowing stack. The playe
 | Windows | Microsoft Edge WebView2 Evergreen Runtime | <https://developer.microsoft.com/microsoft-edge/webview2/> |
 | macOS | System WebKit | included with macOS |
 
-The verifier inspects an unpacked container, refuses to launch when a player prerequisite is
-absent, and names the missing library with its install step rather than a bare loader error:
+The verifier inspects an unpacked container and resolves its integrity records first. On Linux it
+also resolves every shared library the executable loads and refuses to launch when a recorded
+prerequisite is missing, naming the library with its install step rather than a bare loader error.
+On Windows and macOS the prerequisites above are documented and provided by the OS; the verifier
+does not machine-check them here.
 
 ```sh
 node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --container <unpacked-directory>
@@ -104,24 +107,28 @@ node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs
 
 ### Signing and store/depot handoff
 
-A release container is complete but unsigned. `THREENATIVE_DESKTOP_SIGN=1` requests signing; the
-non-secret inputs come from the build environment, while the private key and the notarytool password
-stay in the OS keychain and are never written into the container.
+A release container is complete but unsigned. Non-secret inputs come from the build environment,
+while the private key and the notarytool password stay in the OS keychain and are never written into
+the container. Setting `THREENATIVE_DESKTOP_SIGN=1` or providing an identity/certificate/profile
+requests signing; without either, release stays unsigned.
 
 | Variable | Meaning |
 | --- | --- |
-| `THREENATIVE_DESKTOP_SIGN` | `1`/`true` requests a signed release; missing inputs then fail as PENDING. |
+| `THREENATIVE_DESKTOP_SIGN` | `1`/`true` requests a signed release; macOS/Windows without the matching inputs fail as PENDING. |
 | `THREENATIVE_DESKTOP_CODESIGN_IDENTITY` | macOS `codesign` Developer ID identity. |
 | `THREENATIVE_DESKTOP_NOTARY_PROFILE` | macOS `notarytool` keychain profile; enables notarization and stapling. |
 | `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` | Windows code-signing certificate (`.pfx`). |
 | `THREENATIVE_DESKTOP_TIMESTAMP_URL` | Windows Authenticode timestamp server. |
 
 Windows `signtool` signs then verifies the executable. macOS `codesign` signs and verifies the
-bundle, `notarytool` notarizes the archive and `stapler` staples the ticket; notarization evidence
-that does not name the produced artifact is refused. Linux has no Authenticode or notarization, so
-its archive carries integrity metadata only and is handed to the package/depot step as-is. A
-signing failure refuses the release and leaves no archive, and the manifest records `signed` so an
-unsigned preparation is never mistaken for a signed one.
+bundle, `notarytool` notarizes the archive and `stapler` staples the ticket; a notarization Apple did
+not accept is refused, and an evidence record whose artifact hash is not the produced artifact is
+rejected. Linux has no Authenticode or notarization, so it proceeds unsigned with integrity metadata
+only and is handed to the package/depot step as-is. A signing failure refuses the release and leaves
+no archive, and the manifest records `signed` so an unsigned preparation is never mistaken for a
+signed one. These toolchains run only on their own OS: the repository's Linux tests exercise them
+through fixture transport, so a real signed or notarized artifact must be produced and verified on a
+Windows or macOS host.
 
 ## Release builds and signing
 

@@ -1685,3 +1685,71 @@ test('missing signing credentials stay PENDING while unsigned preparation procee
   );
 });
 
+// A successful credentialed path: codesign/verify must run and the manifest must name the scheme.
+// This is a fixture transport, not a real signature; it exists to catch a success path that throws
+// after signing (the `.app` directory has no file hash).
+test('a successful macOS signature records the signing scheme', () => {
+  const directory = makeTempDirSync('threenative-sign-success-');
+  const executable = join(directory, 'input');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push(`${command} ${args[0] ?? ''}`);
+    if (command === 'codesign') return { status: 0, stdout: '', stderr: '' };
+    if (command === 'zip') {
+      writeFileSync(args[2], 'archive bytes');
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected tool ${command}`);
+  };
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'darwin',
+    run,
+    signing: { identity: 'Developer ID Application: Example (TEAM)' },
+  });
+  assert.equal(result.signed, true);
+  assert.equal(result.manifest.signed, true);
+  assert.equal(result.manifest.signingScheme, 'codesign');
+  assert.ok(calls.some((call) => call === 'codesign --force'));
+  assert.ok(calls.some((call) => call === 'codesign --verify'));
+});
+
+test('macOS notarization staples and re-archives the signed bundle', () => {
+  const directory = makeTempDirSync('threenative-notary-success-');
+  const executable = join(directory, 'input');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  let archiveWrites = 0;
+  const run = (command, args) => {
+    calls.push(`${command} ${args[0] ?? ''}`);
+    if (command === 'codesign') return { status: 0, stdout: '', stderr: '' };
+    if (command === 'zip') {
+      writeFileSync(args[2], 'archive bytes');
+      archiveWrites += 1;
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'xcrun' && args[0] === 'notarytool') {
+      return { status: 0, stdout: JSON.stringify({ id: 'notary-1', status: 'Accepted' }), stderr: '' };
+    }
+    if (command === 'xcrun' && args[0] === 'stapler') return { status: 0, stdout: '', stderr: '' };
+    throw new Error(`unexpected tool ${command} ${args.join(' ')}`);
+  };
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.notary', name: 'Notary Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'darwin',
+    run,
+    signing: { identity: 'Developer ID Application: Example (TEAM)', keychainProfile: 'tn-notary', notarize: true },
+  });
+  assert.equal(result.signed, true);
+  assert.ok(calls.includes('xcrun notarytool'));
+  assert.ok(calls.includes('xcrun stapler'));
+  assert.equal(archiveWrites, 2, 'the stapled bundle is archived again');
+});
+

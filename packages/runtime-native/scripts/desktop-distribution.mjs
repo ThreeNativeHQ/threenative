@@ -565,7 +565,9 @@ export function signDesktopArtifact({ platform = process.platform, target, signi
     }
     signingTool(run, 'codesign', ['--force', '--deep', '--options', 'runtime', '--sign', signing.identity, target], 'TN_DESKTOP_CODESIGN');
     signingTool(run, 'codesign', ['--verify', '--strict', '--deep', target], 'TN_DESKTOP_CODESIGN_VERIFY');
-    return { artifactSha256: sha256File(target), scheme: 'codesign', signed: true };
+    // `target` is the `.app` directory, which has no single file hash; notarization evidence binds
+    // to the archive's bytes instead.
+    return { scheme: 'codesign', signed: true };
   }
   if (platform === 'win32') {
     if (!signing?.certificate) {
@@ -596,9 +598,10 @@ export function notarizeArchive({ archive, signing, run = exec } = {}) {
   } catch {
     throw new Error(`TN_DESKTOP_NOTARY_FAILED: notarytool returned unreadable JSON: ${result.stdout}`);
   }
+  const artifactSha256 = sha256File(archive);
   return assertNotaryEvidence({
-    artifactSha256: sha256File(archive),
-    evidence: { artifactSha256: sha256File(archive), id: payload.id, status: payload.status },
+    artifactSha256,
+    evidence: { artifactSha256, id: payload.id, status: payload.status },
   });
 }
 
@@ -674,8 +677,7 @@ export function packageDesktopContainer({
       mkdirSync(dirname(stage(destination)), { recursive: true });
       copyFileSync(dependency.source, stage(destination));
       if (platform !== 'win32') chmodSync(stage(destination), 0o755);
-      record(destination);
-      bundled.push({ name: dependency.name, path: destination, sha256: resources[destination].sha256 });
+      bundled.push({ name: dependency.name, path: destination });
     }
 
     let iconRecord;
@@ -726,8 +728,13 @@ export function packageDesktopContainer({
           target: platform === 'darwin' ? join(staging, rootFolder) : stage(paths.executable),
         });
 
-    // Resource editing or signing can change the executable; hash its final bytes on every platform.
+    // Resource editing or signing can change the executable, and macOS `codesign --deep` also
+    // rewrites the bundled frameworks; hash every final byte here, after signing.
     record(paths.executable);
+    for (const dependency of bundled) {
+      record(dependency.path);
+      dependency.sha256 = resources[dependency.path].sha256;
+    }
     const manifest = {
       app: {
         id: app.id ?? 'com.threenative.game',

@@ -126,15 +126,15 @@ The original phase-1 checks above describe the candidate in its retained evidenc
 - [x] Callers wired and building: `packages/runtime-native/package.json`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
   - `verify-starter-desktop.mjs` now imports the shipped container helper (`resolveContainer`) and exposes `--container <unpacked-directory>`; `desktop-distribution.mjs` and the verifier are already in the package `files` list; `README.md` documents the container, the OS prerequisites and the recipe. `node --check` and `biome check` clean.
 - [x] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
-  - **22 passed / 0 failed** (3 new). New rows: a relocated fixture container launches with `PATH=/usr/bin:/bin` and judges the 300-frame markers and capture; a missing `libwebkit2gtk-4.1.so.0` fails `TN_NATIVE_STARTER_PREREQUISITE_MISSING` with its WebKitGTK install step; a resolved one passes.
+  - **24 passed / 0 failed** (5 new). New rows: a relocated fixture container launches with `PATH=/usr/bin:/bin` and judges the 300-frame markers and capture; a missing `libwebkit2gtk-4.1.so.0` fails `TN_NATIVE_STARTER_PREREQUISITE_MISSING` with its WebKitGTK install step; a resolved one passes; an unrecorded missing library still fails with the generic step; `--container <empty dir>` reaches the container resolver (`TN_DESKTOP_CONTAINER_MANIFEST_MISSING`), proving the CLI flag is wired.
 - [x] Observed red recorded, then restored green
-  - Making `assertPlayerPrerequisites` a no-op (`return []`) failed the missing-WebView row: `Tests 1 failed | 21 skipped`; restoring returned `Tests 22 passed`.
+  - Making `assertPlayerPrerequisites` a no-op (`return []`) failed the missing-WebView row: `Tests 1 failed | 23 skipped`; restoring returned `Tests 24 passed`.
 - [ ] User verification performed on the named platform
   - NOT RUN: no clean player image without Node/engine tools ran. The focused tests use a fixture executable and an injected `ldd` census; Windows/macOS prerequisite paths and offline launch are unrun.
 - [x] Evidence record written: `docs/verification/prd-365-readiness-phase-2-2026-09-13.md`
-  - Partial record: verifier/test changes, commands, observed red and the unrun clean-player/reviewer gates.
-- [ ] Independent reviewer returned PASS
-  - NOT RUN for this phase.
+  - Partial record: verifier/test changes, commands, observed red, the review correction and the unrun clean-player gate.
+- [x] Independent reviewer returned PASS
+  - 2026-09-13: the first independent read-only review returned **NEEDS CORRECTION** (the `--container` CLI flag was broken, `assertPlayerPrerequisites` ignored the manifest, Windows/macOS prerequisites were not machine-checked). All three are corrected with a CLI regression test, a manifest-driven hint and an unrecorded-library case, and README/evidence scoped to Linux. The re-review returned **PASS** with the three desktop suites at 105/0; its only note was that the manifest use is proven by code inspection plus the new negative test.
 
 **Files (maximum five):**
 
@@ -166,15 +166,15 @@ pnpm publish:check
 - [x] Callers wired and building: `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/tests/distribution.test.mjs` (+1 more)
   - `signDesktopArtifact`/`notarizeArchive` own codesign/signtool/notarytool/stapler with injectable transport; `packageDesktopContainer` signs before the integrity records and records `signed`/`signingScheme`; `desktopSigningFromEnvironment` reads non-secret inputs and the release log names signed vs unsigned. `README.md` documents the variables and the store/depot handoff. `node --check` and `biome check` clean.
 - [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
-  - **56 passed / 0 failed** in that file (5 new); **101 passed** across the three desktop suites. New rows: signing failure refuses the release and leaves no archive; notarization evidence for a different artifact is refused; a notarytool `Invalid` result refuses the release; missing credentials stay PENDING while unsigned preparation records `signed: false`.
+  - **55 passed / 0 failed** in that file (7 new); **105 passed** across the three desktop suites. New rows: signing failure refuses the release and leaves no archive; notarization evidence for a different artifact is refused; a notarytool `Invalid` result refuses the release; missing credentials stay PENDING while unsigned preparation records `signed: false`; a successful macOS signature records `signingScheme`; macOS notarization staples and re-archives.
 - [x] Observed red recorded, then restored green
-  - Disabling the artifact-hash check in `assertNotaryEvidence` failed the mismatch row: `Tests 1 failed | 51 skipped`; restoring returned green.
+  - Disabling the artifact-hash check in `assertNotaryEvidence` failed the mismatch row: `Tests 1 failed | 54 skipped`; restoring returned green.
 - [ ] User verification performed on the named platform
   - NOT RUN: no Windows/macOS host and no signing credentials exist here, so no Authenticode or notarized artifact was produced or assessed. The tools are exercised through injected transport; real credentialed subjects remain delegated to PRD-060.
 - [x] Evidence record written: `docs/verification/prd-365-readiness-phase-3-2026-09-13.md`
-  - Partial record: adapter, fixture contracts, commands, observed red, and the unrun real-signing gate.
-- [ ] Independent reviewer returned PASS
-  - NOT RUN for this phase.
+  - Partial record: adapter, fixture contracts, commands, observed red, the review correction and the unrun real-signing gate.
+- [x] Independent reviewer returned PASS
+  - 2026-09-13: the first independent read-only review returned **NEEDS CORRECTION** (macOS success threw `EISDIR` hashing the `.app`; dependency records predated `codesign --deep`; the success/notarize paths had no test). The code findings are corrected — the directory hash is gone, dependencies are recorded after signing, and two success-path tests cover codesign and notarize → staple → re-archive. The re-review confirmed all three RESOLVED with the three desktop suites at 105/0 and returned NEEDS CORRECTION for documentation only (README not stating the credentialed path is host-bound), fixed in the same commit.
 
 **Files (maximum five):**
 

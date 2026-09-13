@@ -38,7 +38,7 @@ open and are delegated to PRD-060's credentialed operations.
 
 | Command | Result |
 | --- | --- |
-| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs tests/desktop-container.test.mjs tests/starter-desktop.test.mjs` | **101 passed**, exit 0 (5 new). |
+| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs tests/desktop-container.test.mjs tests/starter-desktop.test.mjs` | **105 passed**, exit 0 (7 new). |
 | `pnpm exec biome check <4 changed files>` | exit 0 (warnings only, pre-existing). |
 | `scripts/__tests__/primary-docs.spec.ts` + `check-publish-state.spec.ts` | **52 passed**, exit 0. |
 
@@ -54,6 +54,22 @@ open and are delegated to PRD-060's credentialed operations.
   `desktopSigningFromEnvironment({})` is `undefined`; `THREENATIVE_DESKTOP_SIGN=1` without
   credentials throws `TN_DESKTOP_SIGNING_CREDENTIALS_MISSING`; `packageDesktopContainer` without
   signing records `signed: false`.
+- `a successful macOS signature records the signing scheme`: codesign/verify succeed and the manifest
+  records `signed: true` / `signingScheme: 'codesign'`.
+- `macOS notarization staples and re-archives the signed bundle`: the injected notarytool returns
+  `Accepted`, `stapler` runs, and the archive is written twice.
+
+## Review correction
+
+An independent read-only reviewer returned **NEEDS CORRECTION** and found the macOS success path
+threw `EISDIR` because `signDesktopArtifact` hashed the `.app` directory, that dependency integrity
+records were written before `codesign --deep` rewrote the bundled frameworks, and that the success
+and notarize→staple→re-archive paths had no test. Fixed: the darwin branch no longer hashes a
+directory; dependency records are written after signing; and the two success-path tests above were
+added. The reviewer's notary-binding note is addressed by wording — the integrated path binds the
+evidence to the archive it submits, and `assertNotaryEvidence` rejects externally supplied evidence
+for a different artifact. Distribution's count is **55 passed** (not the 53 in the reviewer note,
+which predated the two success tests).
 
 ## Observed red, then restored green
 
@@ -61,9 +77,9 @@ Disabling the artifact-hash check in `assertNotaryEvidence` made the mismatch ro
 
 ```
 pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs -t 'notarization evidence for a different artifact'
-=> Tests  1 failed | 51 skipped (52)
+=> Tests  1 failed | 54 skipped (55)
 # restored
-=> Tests  101 passed (101) over the three desktop suites
+=> Tests  105 passed (105) over the three desktop suites
 ```
 
 ## Not run
@@ -71,6 +87,10 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 - **Real signed release**: no Windows/macOS host and no signing credentials ran here, so no
   Authenticode or notarized artifact was produced or assessed. `codesign`, `signtool` and
   `notarytool` are exercised through injected transport only.
-- **Notarized/stapled re-archive**: the macOS notarize → staple → re-archive sequence is unit-tested
-  through seams, not executed against Apple's service.
-- **Independent reviewer**: not yet requested for this phase.
+- **Notarized/stapled re-archive against Apple**: the sequence is covered through injected transport,
+  not executed against Apple's service.
+- **Independent reviewer**: the re-review confirmed all three code findings RESOLVED (macOS success
+  path no longer throws `EISDIR`; dependency records match post-signing bytes; the notarize →
+  staple → re-archive sequence is tested with two archive writes) and returned NEEDS CORRECTION for
+  documentation only — the README did not state that the credentialed path is host-bound. That note
+  is fixed in the same commit.

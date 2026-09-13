@@ -33,8 +33,8 @@ Windows/macOS host executed the prerequisite paths.
 
 | Command | Result |
 | --- | --- |
-| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-desktop.test.mjs` | **22 passed**, exit 0 (3 new). |
-| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs tests/desktop-container.test.mjs` | **74 passed**, exit 0. |
+| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-desktop.test.mjs` | **24 passed**, exit 0 (5 new). |
+| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs tests/desktop-container.test.mjs` | **74 passed**, exit 0 at `da48d7aaa` (the file later gained phase-3 cases). |
 | `pnpm exec biome check packages/runtime-native/scripts/verify-starter-desktop.mjs packages/runtime-native/tests/starter-desktop.test.mjs` | exit 0. |
 
 ### Required tests (phase 2)
@@ -48,6 +48,9 @@ Windows/macOS host executed the prerequisite paths.
   names the WebKitGTK 4.1 install command.
 - `a resolvable player-side WebView runtime passes the prerequisite check`: a resolved
   `libwebkit2gtk-4.1.so.0` returns no missing libraries.
+- `the container flag routes the verifier to the unpacked container`: `--container <empty dir>`
+  reaches the container resolver and reports `TN_DESKTOP_CONTAINER_MANIFEST_MISSING`, proving the
+  flag populates the resolver root rather than the raw-artifact guard.
 
 ## Observed red, then restored green
 
@@ -56,18 +59,29 @@ row:
 
 ```
 pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-desktop.test.mjs -t 'missing player-side WebView'
-=> Tests  1 failed | 21 skipped (22)
+=> Tests  1 failed | 23 skipped (24)
 # restored
-=> Tests  22 passed (22)
+=> Tests  24 passed (24)
 ```
+
+## Review correction
+
+An independent read-only reviewer returned **NEEDS CORRECTION** and found the `--container` CLI
+route was broken (`parseCliFlags` stored `options.container` while `verifyStarterContainer`
+destructured `root`), that `assertPlayerPrerequisites` ignored the manifest, and that the
+Windows/macOS prerequisite paths were not tested. The first is fixed with the new CLI test above;
+`assertPlayerPrerequisites` now uses the recorded prerequisites to choose the install hint; the
+README and this record now scope Linux as the machine-checked prerequisite host. After the fixes the
+three desktop suites run **105 passed / 0 failed**.
 
 ## Not run
 
 - **Clean-player image user verification**: no image without Node/engine checkouts/SDKs ran here.
   The required test uses a fixture executable and an injected dependency census, which proves the
   verifier's mechanics, not a real player machine.
-- **Windows/macOS execution**: the WebView2 and system-WebKit prerequisite paths are unit-tested
-  only; `ldd` is the Linux dependency tool, and no Windows or macOS host ran.
+- **Windows/macOS execution**: the WebView2 and system-WebKit prerequisite paths are documented, not
+  machine-checked — `missingPlayerLibraries` enforces prerequisites on Linux only, and no Windows or
+  macOS host ran.
 - **Offline launch after prerequisites**: unrun.
-- **Independent reviewer**: not yet requested for this phase.
+- **Independent reviewer**: PASS on re-review (2026-09-13); it confirmed the `--container` CLI route reaches the container resolver, the manifest-driven hint, and the Linux-scoped wording. Its only note was a missing negative case for the manifest use, now added as `an unrecorded missing library still fails with the generic install step`.
 - `pnpm publish:check` and the full workspace gates for this change: not run here; CI runs them.

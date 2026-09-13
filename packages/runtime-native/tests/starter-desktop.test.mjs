@@ -421,6 +421,19 @@ test('a missing player-side WebView runtime is named with its install step', () 
   );
 });
 
+test('an unrecorded missing library still fails with the generic install step', () => {
+  // The manifest decides which libraries get the specific WebView/WebKit hint; a library the
+  // container did not record is still a failure, just without that tailored install command.
+  const run = () => ({ status: 0, stderr: '', stdout: '\tlibmystery.so.1 => not found\n' });
+  assert.throws(
+    () => assertPlayerPrerequisites({ prerequisites: [] }, '/opt/game/starter', { platform: 'linux', run }),
+    (error) =>
+      /TN_NATIVE_STARTER_PREREQUISITE_MISSING/u.test(error.message) &&
+      /libmystery\.so\.1/u.test(error.message) &&
+      !/WebKitGTK/u.test(error.message),
+  );
+});
+
 test('a resolvable player-side WebView runtime passes the prerequisite check', () => {
   const run = () => ({
     status: 0,
@@ -498,3 +511,23 @@ test.runIf(process.platform === 'linux')(
     assert.equal(report.frames, 300);
   },
 );
+
+test('the container flag routes the verifier to the unpacked container', () => {
+  // `--container` must populate the resolver's root, or the CLI route silently throws the
+  // raw-artifact guard. An empty directory reaches the container resolver, which names the missing
+  // manifest — proving the flag is wired.
+  const directory = makeTempDirSync('starter-container-cli-');
+  const entrypoint = join(directory, 'verify-starter-desktop.mjs');
+  symlinkSync(
+    fileURLToPath(new URL('../scripts/verify-starter-desktop.mjs', import.meta.url)),
+    entrypoint,
+  );
+  writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'starter' }));
+  const result = spawnSync(process.execPath, [entrypoint, '--container', directory], {
+    cwd: directory,
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 1);
+  assert.doesNotMatch(result.stderr, /TN_NATIVE_STARTER_CONTAINER_MISSING/u);
+  assert.match(result.stderr, /TN_DESKTOP_CONTAINER_MANIFEST_MISSING/u);
+});
