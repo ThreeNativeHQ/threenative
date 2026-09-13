@@ -74,14 +74,37 @@ Windows/macOS prerequisite paths were not tested. The first is fixed with the ne
 README and this record now scope Linux as the machine-checked prerequisite host. After the fixes the
 three desktop suites run **105 passed / 0 failed**.
 
+## Clean-player verification (linux-x64, 2026-09-13)
+
+The starter was scaffolded with the local workspace packages (`packageLocalFramework` +
+`createProject({ template: "starter", install: true })`), its release container built with the
+checkout host binary (`THREENATIVE_RUNTIME_BINARY`, unsigned), and unpacked under a path containing
+a space.
+
+- container `starter.tar.gz` sha256 `f91f48538be8fd44f5eea53700f5e1b8092edb19468a0f9f9cad1a5cd6465c8e`
+- executable launched from an **isolated unprivileged bubblewrap sandbox**: fresh `HOME`,
+  `PATH=/nonexistent` (no Node/pnpm/compiler on PATH), `/home` unbound so no engine checkout exists,
+  `--unshare-net` (networking disabled), GPU `/dev` and the Xvfb `:11` socket bound.
+- observed: `TN_NATIVE_SMOKE_READY:webgpu`, `TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb`,
+  `TN_UI_OVERLAY:{"attached":true}`, `TN_STARTUP_CAPTURE_READY:1`, `Rendered 300 frames in 12796ms`,
+  `TN_PRESENTS:257`, and a non-blank 1280x686 capture (sha256
+  `234883a673af49ec3a7696e8863f94aa2629d63368648b149f53fea5c2ff85b5`, 20 891 distinct colours).
+- **missing-WebView control on the real host**: the same sandbox with the WebKitGTK shared object
+  overlaid by `/dev/null` made the verifier refuse before launch with
+  `TN_NATIVE_STARTER_PREREQUISITE_MISSING` naming `libwebkit2gtk-4.1.so.0` and the
+  apt/dnf/pacman install commands (exit 1).
+
+Scope: this is an isolated sandbox on the same linux-x64 host, **not** a second physical machine or
+OS user and **not** a registry-package consumer. It proves the artifact is relocatable, needs no
+Node/engine/build tools, runs offline, and enforces the documented WebView prerequisite; the literal
+second-machine/public-consumer run remains delegated to PRD-060/366.
+
 ## Not run
 
-- **Clean-player image user verification**: no image without Node/engine checkouts/SDKs ran here.
-  The required test uses a fixture executable and an injected dependency census, which proves the
-  verifier's mechanics, not a real player machine.
+- **Second physical machine / separate OS user**: the clean-player run above is an isolated sandbox
+  on this host, not a distinct machine or account.
 - **Windows/macOS execution**: the WebView2 and system-WebKit prerequisite paths are documented, not
   machine-checked — `missingPlayerLibraries` enforces prerequisites on Linux only, and no Windows or
   macOS host ran.
-- **Offline launch after prerequisites**: unrun.
 - **Independent reviewer**: PASS on re-review (2026-09-13); it confirmed the `--container` CLI route reaches the container resolver, the manifest-driven hint, and the Linux-scoped wording. Its only note was a missing negative case for the manifest use, now added as `an unrecorded missing library still fails with the generic install step`.
 - `pnpm publish:check` and the full workspace gates for this change: not run here; CI runs them.
