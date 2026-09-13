@@ -100,8 +100,8 @@ tautologies; that the lazy import is justified (and it found the helper was not 
 the follow-up commit `adcedf82e` then fixed); and that no unrun
 gate is overclaimed. Its non-blocking notes (a manifest-path containment hardening, a `layout()`
 default guarded by earlier validation, `@rpath` dependencies failing closed) are recorded here but
-do not change the verdict; the manifest containment note is the one addressed in a later phase if
-the payload ever becomes externally supplied.
+do not change the verdict. Its manifest-containment note was addressed in `62b7c82ac`:
+`resolveContainer` now refuses any manifest resource that escapes the container root, with a test.
 
 ## User verification (executed autonomously on the user's instruction)
 
