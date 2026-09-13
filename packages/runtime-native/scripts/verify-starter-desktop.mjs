@@ -201,6 +201,15 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   if (result.status !== 0) throw new Error(`TN_NATIVE_STARTER_EXIT_${result.status}:\n${log}`);
   const failures = analyzeStarterLog(log, frames);
   if (failures.length > 0) throw new Error(`TN_NATIVE_STARTER_LOG_FAILED:\n${failures.join('\n')}`);
+  // Windows (DWM) and macOS (Quartz) always composite, so the default starter's WebView HUD must
+  // attach there. Linux CI runs a bare Xvfb with no compositor and the overlay correctly refuses,
+  // so this is asserted only where the desktop compositor is part of the OS.
+  const overlayAttached = log.includes('"attached":true');
+  if ((process.platform === 'win32' || process.platform === 'darwin') && !overlayAttached) {
+    throw new Error(
+      'TN_NATIVE_STARTER_UI_OVERLAY_MISSING: the starter WebView HUD did not attach on this always-composited desktop host.',
+    );
+  }
   const image = inspectStarterScreenshot(screenshot);
   const report = {
     artifact,
@@ -208,6 +217,7 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
     frames,
     image,
     log: logPath,
+    overlayAttached,
     pass: true,
     screenshot,
     screenshotSha256: createHash('sha256').update(readFileSync(screenshot)).digest('hex'),
