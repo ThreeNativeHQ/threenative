@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-217 — The default React HUD works on every supported desktop
 
-**Status:** PARTIAL — Linux/Android bridge work retained; Windows/macOS and Linux session closure open. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — cross-platform backends written and cross-compile-checked; the Wayland/Xwayland doctor false failure is fixed and evidenced (2026-09-12); hosted Windows/macOS build+run, live HUD input and human verification open. Revised 2026-09-12; implementation in flight.
 **Complexity:** 10 → HIGH (+3 files, +2 platform modules, +2 event/input state, +2 multi-package, +1 OS WebView integration).
 **Problem:** The default starter chooses web UI, but desktop WebView builds are currently refused on Windows/macOS and can fail in Linux Wayland/Xwayland sessions.
 
@@ -68,11 +68,12 @@ Before invoking that route, configure the selected existing CMake preset with `T
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+- [x] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+      Hosted `native-platforms` run 34730410868 (windows-2025, commit `79a78df0f`): `pnpm native:build` compiles `threenative_ui_overlay.lib` and links it into `mystral.exe` (the WebView2 loader link fix `291211df3`), then `native:verify:desktop` runs 300 frames. This lane does not attach the starter HUD; that is the required-test box below.
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-1-<date>.md`
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-1-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -105,11 +106,12 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+- [x] Callers wired and building: `packages/runtime-native/src/platform/ui_overlay.cpp`, `packages/runtime-native/native/ui-overlay/src/lib.rs`, `packages/runtime-native/CMakeLists.txt` (+1 more)
+      Hosted `native-platforms` run 34730410868 (macos-15, commit `79a78df0f`): `pnpm native:build` compiles the objc2 `desktop.rs` backend and links the WebKit/AppKit frameworks into `mystral`, then `native:verify:desktop` runs 300 frames. This lane does not attach the starter HUD; that is the required-test box below.
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-2-<date>.md`
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-2-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -142,12 +144,13 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/native-build.mjs`, `packages/runtime-native/scripts/build-native-ui-overlay.mjs`, `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+- [x] Callers wired and building: `packages/runtime-native/scripts/native-build.mjs`, `packages/runtime-native/scripts/build-native-ui-overlay.mjs`, `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
+      `native-build.mjs` builds the overlay on every desktop host (no Linux-only branch) and hands CMake the path the host toolchain wrote. Hosted `native-platforms` run 34730410868 shows the normal `pnpm native:build` compiling and linking the overlay on windows-2025 and macos-15; the Linux plan and link are green locally 2026-09-12.
 - [ ] Required test green: `tests/native-build-ui-overlay.test.mjs`
-      Left: the test is Linux-only — `the Linux native build links the desktop UI overlay into the runtime`, 1/1 green 2026-09-11. The phase demands each supported platform; Windows and macOS are unrun.
+      Left: the per-host filename mapping test and the Linux plan test are green 2026-09-12 (`the Linux native build links the desktop UI overlay into the runtime`, 2/2). The phase demands each supported platform; Windows and macOS are unrun.
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-<date>.md`
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -210,12 +213,14 @@ pnpm test:native
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/src/platform/window.cpp`, `packages/runtime-native/native/ui-overlay/src/argb.rs`, `packages/create-threenative/src/doctor.ts` (+1 more)
+- [x] Callers wired and building: `packages/runtime-native/src/platform/window.cpp`, `packages/runtime-native/native/ui-overlay/src/argb.rs`, `packages/create-threenative/src/doctor.ts` (+1 more)
+      `window.cpp`/`main.cpp` choose SDL's X11 driver and `GDK_BACKEND=x11` before window creation; `argb.rs` measures the compositor selection (`XGetSelectionOwner`) and creates the ARGB container; `doctor.ts` now reports the same measurement. Its `detectX11Compositor` was reading the `_NET_WM_CM_S0` root *property* (always "not found") instead of the selection the runtime checks; it now queries the selection owner and returns `true` on this KWin Wayland/Xwayland session and on Xvfb + `xcompmin`, `false` on a bare Xvfb, `unknown` (warn) when it cannot measure. `doctor.spec.ts` 95/95.
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
-      Left: same Linux-only overlay test. The 2026-09-08 assessment also recorded a Wayland/Xwayland overlay failure on the published Linux consumer, which this phase must resolve or name as a prerequisite.
-- [ ] Observed red recorded, then restored green
+      Left: same Linux-only overlay test, and the live HUD input/teardown rows are unrun. The 2026-09-08 assessment's Wayland/Xwayland failure was reproduced and named on 2026-09-12: the overlay's GDK context defaulted to Wayland while the game window is Xwayland, so `argb::create` had no X11 container. The engine already selects the supported backend (`main.cpp` sets `SDL` x11 + `GDK_BACKEND=x11`); the doctor's false "transparent container could not be created" on every Wayland session is fixed. This branch's built runtime passes the desktop overlay input proof 8/8 on `Xvfb :3` (evidence below) — X11 input is green, but that is a bare X server and the `native-smoke` subject. The real scaffolded starter's React HUD also attaches on a composited Xvfb :4 + `xcompmin` session (`TN_UI_OVERLAY:{"attached":true}`, 120 frames) and on the live KWin Wayland/Xwayland session (`attached:true`, 60 frames). Live pointer input on that Wayland session is unrun because KWin does not route XTEST clicks to the Xwayland client (both island and empty-space presses read `nobody`); a compositor-level pointer source is needed. This box stays open.
+- [x] Observed red recorded, then restored green
+      Doctor red on this live Wayland/Xwayland session: `{"detail":"the transparent container could not be created on this Wayland/Xwayland session","status":"fail"}`. Green after the fix: `{"detail":"the runtime selects Xwayland (SDL x11, GDK_BACKEND=x11) and the Wayland compositor blends the overlay's alpha","status":"ok"}`; `doctor.spec.ts` 95/95, `native-build-ui-overlay.test.mjs` 2/2.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-4-<date>.md`
+- [x] Evidence record written: `docs/verification/prd-217-readiness-phase-4-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -256,7 +261,29 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+Cross-platform backends landed 2026-09-12: `cargo check --release --lib` is green for
+`x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` (native) and `aarch64-apple-darwin`
+(via a stubbed Apple `cc`/`ar`, Rust type-check only); Linux `cmake --preset tn-linux
+-DTN_ENABLE_UI_OVERLAY=ON` configures and `ui_overlay.cpp` compiles; `tests/native-build-ui-overlay.test.mjs`
+is 2/2 green. Hosted `native-platforms` run 34730410868 then built and linked the overlay on
+`windows-2025` (`threenative_ui_overlay.lib` into `mystral.exe`) and `macos-15` (objc2 backend +
+WebKit/AppKit) and ran 300 core frames, so the phases 1/2/3A *callers wired and building* boxes are
+ticked. The Linux overlay input proof (`scripts/desktop-ui-overlay-proof.sh`, Xvfb + `xcompmin`,
+native-smoke subject) is 8/8 and recorded in `prd-217-readiness-phase-4-2026-09-12.md`.
+
+An independent reviewer (2026-09-12) returned **NEEDS CORRECTION** for phases 1, 2 and 3A. The
+required tests are still the weaker build-plan unit test, not the PRD's internal starter route that
+runs the installed playtest CLI and observes HUD intent/state plus movement; observed-red and
+per-phase evidence files are absent; and the Windows/macOS hit-routing proof cannot be delegated to
+hosted CI as the code stands — the playtest `input.pointers` bridge dispatches into the game
+runtime and never crosses the OS/compositor hit path (WebView2 container region, `NSView hitTest:`),
+so it would prove the bridge, not the mechanism. Closing phases 1/2 needs an OS-level pointer
+injection harness (SendInput / CGEvent) targeting island and non-island coordinates, or the claimed
+proof must be narrowed. Every hosted Windows/macOS build, live HUD input and human verification
+remains NOT RUN; no phase can close with placeholders. Write each phase to
+`docs/verification/prd-<id>-readiness-phase-<n>-<date>.md`; fill actual results and non-test
+`file:line` callers at implementation time. Acceptance boxes below remain unchecked until all phase
+checkpoints pass.
 
 ## Acceptance criteria
 

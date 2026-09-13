@@ -67,6 +67,24 @@ void pumpUiOverlay();
 /** Publish the interactive rectangles, normalized to the viewport, as x, y, width, height. */
 void setUiHitRegions(const std::vector<float>& regions);
 
+/**
+ * Whether a normalized point is inside a published interactive rectangle.
+ *
+ * The playtest input bridge asks this before dispatching a synthetic pointer, so the same list
+ * the OS routes real input with — the Windows window region, the macOS `hitTest:`, the X11 input
+ * shape — is also what decides where a synthetic press lands. False when nothing is attached.
+ */
+bool uiOverlayHitTest(float nx, float ny);
+
+/**
+ * Dispatch one synthetic pointer event into the page, at a point normalized to the viewport.
+ *
+ * `type` is a DOM pointer event type (`pointerdown`, `pointermove`, `pointerup`). Playtest input
+ * only: an OS-routed press arrives at the page by itself. Returns false when nothing is attached
+ * or the page refused the script.
+ */
+bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, int pointerId);
+
 /** Tear the desktop overlay down. Safe when nothing is attached. */
 void detachDesktopUiOverlay();
 

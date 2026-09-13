@@ -93,7 +93,13 @@ export async function assertNativeBundleCompatible(
 
 /**
  * Refuse a web UI target before native packaging can silently discard its bundle. Android and
- * iOS own platform overlays; the desktop overlay currently exists on Linux only.
+ * iOS own platform overlays; the Windows and macOS desktop overlays exist behind the same ABI but
+ * are proved by the internal starter route before the public guard opens (PRD-217 phase 3B).
+ *
+ * `THREENATIVE_INTERNAL_DESKTOP_UI_PROOF=1` is that maintainer route: it admits the web UI on a
+ * desktop host whose overlay has not been publicly enabled yet, so the hosted starter lane can
+ * build and run the real HUD on Windows and macOS. It is never set for a user build, and the
+ * public refusal stays until those lanes are green.
  */
 export function assertNativeUiRendererCompatible(
   target: NativeBuildTarget,
@@ -102,6 +108,7 @@ export function assertNativeUiRendererCompatible(
 ): void {
   if (renderer === "native" || target === "android" || target === "ios") return;
   if (target === "desktop" && platform === "linux") return;
+  if (target === "desktop" && process.env.THREENATIVE_INTERNAL_DESKTOP_UI_PROOF === "1") return;
   const platformName =
     platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform;
   throw new Error(

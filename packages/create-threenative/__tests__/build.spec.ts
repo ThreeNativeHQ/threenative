@@ -385,6 +385,19 @@ describe("threenative build", () => {
     );
   });
 
+  it("admits the desktop web UI only under the internal proof route", () => {
+    process.env.THREENATIVE_INTERNAL_DESKTOP_UI_PROOF = "1";
+    try {
+      expect(() => assertNativeUiRendererCompatible("desktop", "web", "darwin")).not.toThrow();
+      expect(() => assertNativeUiRendererCompatible("desktop", "web", "win32")).not.toThrow();
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_INTERNAL_DESKTOP_UI_PROOF");
+    }
+    expect(() => assertNativeUiRendererCompatible("desktop", "web", "darwin")).toThrow(
+      /TN_UI_RENDERER_UNSUPPORTED/u,
+    );
+  });
+
   it("accepts the decoder-free Android manifest produced by the asset compiler", async () => {
     const root = await makeTempDir("threenative-mobile-assets-");
     roots.push(root);

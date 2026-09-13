@@ -179,7 +179,10 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   const logPath = join(artifactDirectory, 'starter-desktop.log');
   const reportPath = join(artifactDirectory, 'starter-desktop-report.json');
   mkdirSync(artifactDirectory, { recursive: true });
-  const runtimeArgs = ['--screenshot', screenshot, '--frames', String(frames)];
+  // Windowed at the configured size, not the starter's `display.fullscreen: true` default: a
+  // headless Windows runner has no interactive desktop for a fullscreen swap and the process was
+  // seen to hang in it, and a fixed window keeps the capture size the render gates already assert.
+  const runtimeArgs = ['--windowed', '--screenshot', screenshot, '--frames', String(frames)];
   // See verify-desktop-core.mjs: `xvfb-run` hands back its own failing cleanup kill's status.
   const displayHelper = join(dirname(fileURLToPath(import.meta.url)), 'xvfb.sh');
   if (process.platform === 'linux' && !existsSync(displayHelper)) {
@@ -189,18 +192,36 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   const args = process.platform === 'linux'
     ? [displayHelper, artifact, ...runtimeArgs]
     : runtimeArgs;
+  // A hosted Windows runner renders 300 frames on a software adapter with the WebView2 overlay
+  // compositing alongside, which is slower than the Linux and macOS lanes; the override keeps a
+  // genuinely hung run bounded at the caller's number instead of ours.
+  const timeoutMs = Number(process.env.TN_STARTER_TIMEOUT_MS ?? 300_000);
   const result = spawnSync(command, args, {
     cwd: projectRoot,
     encoding: 'utf8',
     env: process.platform === 'linux' ? { ...process.env, SDL_VIDEODRIVER: 'x11' } : process.env,
-    timeout: 120_000,
+    timeout: timeoutMs,
   });
-  if (result.error) throw result.error;
+  // Write the captured output before judging it. On a timeout `spawnSync` sets `error` and the old
+  // code threw before the log existed, so a Windows run that hung reported only ETIMEDOUT and no
+  // clue where it stopped; the log is the diagnosis.
   const log = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
   writeFileSync(logPath, log);
+  if (result.error) {
+    throw new Error(`TN_NATIVE_STARTER_SPAWN_FAILED: ${result.error.message}\n${log}`);
+  }
   if (result.status !== 0) throw new Error(`TN_NATIVE_STARTER_EXIT_${result.status}:\n${log}`);
   const failures = analyzeStarterLog(log, frames);
   if (failures.length > 0) throw new Error(`TN_NATIVE_STARTER_LOG_FAILED:\n${failures.join('\n')}`);
+  // Windows (DWM) and macOS (Quartz) always composite, so the default starter's WebView HUD must
+  // attach there. Linux CI runs a bare Xvfb with no compositor and the overlay correctly refuses,
+  // so this is asserted only where the desktop compositor is part of the OS.
+  const overlayAttached = log.includes('"attached":true');
+  if ((process.platform === 'win32' || process.platform === 'darwin') && !overlayAttached) {
+    throw new Error(
+      'TN_NATIVE_STARTER_UI_OVERLAY_MISSING: the starter WebView HUD did not attach on this always-composited desktop host.',
+    );
+  }
   const image = inspectStarterScreenshot(screenshot);
   const report = {
     artifact,
@@ -208,6 +229,7 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
     frames,
     image,
     log: logPath,
+    overlayAttached,
     pass: true,
     screenshot,
     screenshotSha256: createHash('sha256').update(readFileSync(screenshot)).digest('hex'),
