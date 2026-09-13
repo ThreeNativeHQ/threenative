@@ -6,9 +6,9 @@ is observed: #232 selects the inert-prose lane (every non-scope job skipping, `c
 and #230 selects `full` and passes on a real develop PR. **The cutover is applied**: `develop`
 carries the active `develop integration` ruleset (no force-push/deletion, squash-only PRs,
 required `ci-required` with strict up-to-date checks) and `TN_DEVELOP_CI_ENABLED=true`, so the
-daily scheduled run checks out `develop`. Daily qualification and cache safeguards are staged code,
-not merely repository settings. Still outstanding: a red `ci-required` observed on a selected
-failing job on a real PR, promotion/cutover proof, and equivalent cold/warm measurements.
+daily scheduled run checks out `develop`. Both verdict halves are now observed on real PRs: green
+(#230 full, #232 prose) and red (#233 canary — a failing `website` job made `ci-required` fail).
+Still outstanding: promotion/cutover proof and equivalent cold/warm measurements.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -72,8 +72,8 @@ fail visibly. Preserve an explicit manual full-run option. Do not use an LLM to 
 - [x] Required test green — the same 188 tests above cover the workflow shape and the needs graph (`ci-structure.spec.ts`, `ci-needs.spec.ts`).
 - [x] Observed red recorded, then restored green
       Re-executed 2026-09-11: selected failed/cancelled/skipped/missing jobs each make the actual verdict exit 1; restored success exits 0. Stale base/candidate, failed scope, forged exemptions and unmapped jobs fail closed.
-- [ ] Verified on a real PR, not only locally
-      PARTIAL — `ci-required` reported `success` on runs 34622294627, 34743918375 (#230) and 34745621262 (#232, narrowed prose). It has still not been observed going red on a selected job that failed on a real PR, which is the half of the contract that matters; that needs a deliberately failing selected job or the protection-gated red path, neither reachable without repository administration.
+- [x] Verified on a real PR, not only locally
+      Both halves observed on real develop PRs. Green: `ci-required` success on runs 34622294627, 34743918375 (#230, `full`) and 34745621262 (#232, narrowed prose). Red: a deliberate canary PR (#233) whose only change was a failing `site/__tests__` spec selected `website` alone (native and every other family `skipping`), the `website` job failed (52s), and `ci-required` then failed (10s) — run 34746139967. The canary was closed and its branch deleted immediately, never merged.
 
 
 Update `.github/workflows/ci.yml` and `.github/workflows/native-platforms.yml` to consume the
@@ -474,5 +474,11 @@ So `develop` **is** protected and `ci-required` **is** enforced with strict up-t
 `main` requires the full context list; and `ci.yml`'s scheduled run (`cron: 17 3 * * *`) checks out
 `develop` when `TN_DEVELOP_CI_ENABLED` is true (`.github/workflows/ci.yml:13,41`).
 
-Remaining, all hosted and/or owner-gated: a red `ci-required` observed on a selected failing job on
-a real PR; a real promotion/cutover proof; and equivalent cold/warm cache measurements.
+**The red half of the verdict is observed too.** A deliberate canary PR (#233) added one failing
+`site/__tests__` spec. The classifier selected `website` alone — native and every other family
+`skipping` — the `website` job failed (52s), and `ci-required` failed (10s) on run `34746139967`.
+That is the contract the local controls only approximated: a selected failed job blocks the merge
+verdict on a real PR. The canary was closed and its branch deleted without merging.
+
+Remaining, all hosted and/or owner-gated: a real promotion/cutover proof and equivalent cold/warm
+cache measurements.
