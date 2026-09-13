@@ -1594,7 +1594,6 @@ jobs:
             ${{ runner.temp }}/masked-cl.log
             ${{ runner.temp }}/masked-cl.exit
             ${{ runner.temp }}/missing-helper.log
-            ${{ runner.temp }}/missing-helper.exit
             ${{ runner.temp }}/renderer-disabled.log
             ${{ runner.temp }}/renderer-disabled.exit
             ${{ runner.temp }}/renderer-disabled.marker-exit

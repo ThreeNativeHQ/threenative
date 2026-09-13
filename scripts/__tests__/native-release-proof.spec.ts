@@ -825,9 +825,16 @@ test("the Windows consumer runs on a Windows runner with every native compiler m
   // `.exe`, and MSVC is installed on this image, so the shadowing has to be proved, not assumed.
   assert.match(job("clean-consumer-windows"), /runs-on: windows-2025/u);
   const mask = windowStep("Mask every native toolchain entry point");
-  for (const command of ["cl", "cmake", "rustc", "ninja", "cargo", "clang", "link"]) {
-    assert.match(mask, new RegExp(`"${command}"`, "u"), `${command} must be masked`);
-  }
+  // Derive the set from the workflow's own array so adding or dropping a shim changes this list:
+  // the step is the source of truth for which compilers are masked.
+  const declared = mask.match(/const commands = \[([^\]]+)\]/u)?.[1];
+  assert.ok(declared, "the mask step must declare its command list");
+  const commands = [...declared.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+  assert.deepEqual(
+    commands,
+    ["cargo", "cl", "clang", "clang++", "cmake", "c++", "g++", "gcc", "link", "ninja", "rustc"],
+    "every native compiler entry point must be masked",
+  );
   assert.match(mask, /\.cmd/u);
   assert.match(mask, /exit \/b 97/u);
   assert.match(mask, /TN_TOOLCHAIN_LOG/u);
@@ -841,11 +848,18 @@ test("the Windows consumer asserts the installed helper before the desktop build
   assert.doesNotMatch(consumer, /install -m 0755/u);
   const build = windowStep("Install and build without a native toolchain");
   assert.match(build, /install-status\.json/u);
+  assert.match(build, /prebuilt\/win32-x64\/threenative-runtime\.exe/u);
   assert.match(build, /prebuilt\/win32-x64\/mystral-tools\.exe/u);
   assert.match(build, /build --target desktop/u);
+  const statusAt = build.indexOf("install-status.json");
+  const runtimeAt = build.indexOf("prebuilt/win32-x64/threenative-runtime.exe");
   const helperAt = build.indexOf("prebuilt/win32-x64/mystral-tools.exe");
   const buildAt = build.indexOf("build --target desktop");
-  assert.ok(helperAt > 0 && helperAt < buildAt, "the helper check must precede the consumer build");
+  assert.ok(statusAt > 0 && statusAt < buildAt, "the install-status check must precede the build");
+  assert.ok(
+    runtimeAt > 0 && runtimeAt < buildAt && helperAt > 0 && helperAt < buildAt,
+    "both installed binaries must be asserted before the consumer build",
+  );
 });
 
 test("the Windows consumer launches the packed executable and reports its first frame", () => {
@@ -855,6 +869,7 @@ test("the Windows consumer launches the packed executable and reports its first 
   assert.match(launch, /TN_NATIVE_SMOKE_READY:webgpu/u);
   assert.match(launch, /TN_NATIVE_SMOKE_FIRST_FRAME/u);
   assert.match(launch, /TN_NATIVE_SMOKE_300_FRAMES:300/u);
+  assert.match(launch, /Rendered 300 frames in \[0-9\]\+ms/u);
   // A run that does not name its adapter may be a software rasteriser; the lane records it.
   // The shell ERE escapes the brackets, so assert the adapter alternation rather than the escaping.
   assert.match(launch, /WebGPU/u);
