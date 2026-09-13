@@ -397,7 +397,10 @@ test('release lane locks and launches the packed simulator host with physics con
   assert.match(workflow, /^permissions:\n {2}contents: read$/mu);
   assert.match(workflow, /publish:[\s\S]*permissions:\n {6}contents: write/u);
   assert.match(workflow, /gh release create[\s\S]*--prerelease[\s\S]*--latest=false/u);
-  assert.match(workflow, /finalize:[\s\S]*needs: \[validate-tag, clean-consumer, clean-consumer-ios\]/u);
+  assert.match(
+    workflow,
+    /finalize:[\s\S]*needs: \[validate-tag, clean-consumer, clean-consumer-ios, clean-consumer-windows\]/u,
+  );
   assert.match(workflow, /cleanup-failed-release:[\s\S]*gh release delete/u);
 });
 
