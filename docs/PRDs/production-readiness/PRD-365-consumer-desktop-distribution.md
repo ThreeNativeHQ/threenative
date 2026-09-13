@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 packageDesktop runs the matching host runtime compile command and stages ui/ beside its output. It does not cross-compile arbitrary desktop OSes, embed all OS launcher metadata or validate a signed installed application. PRD-060 previously owned a broad desktop phase; that phase is sliced here, with promotion remaining in PRD-060.
 
-Engine distribution mechanism; game identity/icon remains authored config. [PRD-217](PRD-217-webview-ui-layer.md) supplies functional overlays; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) validates appearance; [PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies prebuilt host inputs. A native package exists only in runtime-native; do not add a second desktop framework/package.
+Engine distribution mechanism; game identity/icon remains authored config. [PRD-217](../done/PRD-217-webview-ui-layer.md) supplies functional overlays; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) validates appearance; [PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) supplies prebuilt host inputs. A native package exists only in runtime-native; do not add a second desktop framework/package.
 
 ## Approach and boundaries
 
