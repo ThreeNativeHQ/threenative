@@ -893,17 +893,14 @@ test("the Windows consumer proves a removed helper is re-fetched, never source-b
   );
 });
 
-test("the Windows consumer proves a renderer that never presents fails the marker assertion", () => {
-  // Phase 2 observed-red: a process that exits 0 without rendering must still fail the step's own
-  // `TN_NATIVE_SMOKE_FIRST_FRAME` assertion, so the guard is the marker and not the exit status.
-  const control = windowStep("Prove a renderer that never presents fails the marker assertion");
-  assert.match(
-    control,
-    /-eq 0/u,
-    "the stub must exit 0 so the control proves the marker, not the exit",
-  );
+test("the Windows consumer proves a renderer that never presents fails the launch assertions", () => {
+  // Phase 2 observed-red, measured by run 34746542857: a build that never presents exits non-zero
+  // ("Error: Failed to save screenshot!"), writes no capture, and prints no first-frame marker, so
+  // the launch step's own assertions fail rather than passing on a silent process.
+  const control = windowStep("Prove a renderer that never presents fails the launch assertions");
+  assert.match(control, /-ne 0/u, "a non-presenting build must exit non-zero");
+  assert.match(control, /test ! -e "\$RUNNER_TEMP\/renderer-disabled\.png"/u);
   assert.match(control, /TN_NATIVE_SMOKE_FIRST_FRAME/u);
-  assert.match(control, /-ne 0/u, "the marker grep must be asserted to fail");
   assert.match(control, /renderer-disabled\.marker-exit/u);
   assert.match(control, /cp "\$backup" "\$entry"/u, "the genuine entry must be restored");
 });

@@ -1518,12 +1518,13 @@ jobs:
           console.log(inspectScreenshot(process.env.SCREENSHOT));
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
-      - name: Prove a renderer that never presents fails the marker assertion
+      - name: Prove a renderer that never presents fails the launch assertions
         run: |
-          # Phase 2 observed-red: with the entry replaced by one that starts cleanly and never
-          # renders a frame, the launcher exits 0 but the launch step's own `TN_NATIVE_SMOKE_FIRST_FRAME`
-          # assertion must fail — the guard is the marker, not the exit status. The genuine entry is
-          # restored and re-launched afterwards so the finished job still carries the positive proof.
+          # Phase 2 observed-red, measured by run 34746542857: with the entry replaced by one that
+          # starts cleanly and never renders a frame, the launcher exits non-zero with "Error: Failed
+          # to save screenshot!" and prints no `TN_NATIVE_SMOKE_FIRST_FRAME`, so the launch step's own
+          # assertions fail. The genuine entry is restored afterwards so the finished job keeps the
+          # positive proof.
           entry="$CONSUMER_TARGET/src/game.ts"
           backup="$RUNNER_TEMP/game.ts.bak"
           cp "$entry" "$backup"
@@ -1531,8 +1532,8 @@ jobs:
           export const status = { frames: 0, ready: false };
           export default {
             async start(): Promise<void> {
-              // Starts cleanly and never enters a render loop, so the process exits 0 while no
-              // `TN_NATIVE_SMOKE_FIRST_FRAME` line is ever produced.
+              // Starts cleanly and never enters a render loop, so no frame is ever presented and no
+              // `TN_NATIVE_SMOKE_FIRST_FRAME` line is produced.
             },
           };
           TS
@@ -1544,8 +1545,10 @@ jobs:
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/renderer-disabled.exit"
-          # Exit 0 is the point: a process that did nothing must still fail the marker grep below.
-          test "$status" -eq 0
+          # A build that never presents cannot pass the launch step: it exits non-zero, the first-
+          # frame marker is absent, and no capture was written.
+          test "$status" -ne 0
+          test ! -e "$RUNNER_TEMP/renderer-disabled.png"
           test ! -e "$TN_TOOLCHAIN_LOG"
           set +e
           grep -F 'TN_NATIVE_SMOKE_FIRST_FRAME' "$RUNNER_TEMP/renderer-disabled.log"

@@ -107,7 +107,7 @@ gh run view <id> --json jobs --jq '.jobs[] | select(.name=="clean-consumer-windo
 
 - [x] Files wired — the launch step runs in the same job and `finalize` depends on its result
 - [x] Required test passing — the spec asserts the frame count and the first-frame marker (41 passed locally)
-- [ ] Observed red — a build with no renderer reaches no first frame and fails the step. The control now runs inline in the job (`Prove a renderer that never presents fails the marker assertion`): the stub entry starts and exits 0, and the step's own `TN_NATIVE_SMOKE_FIRST_FRAME` grep is asserted to fail. The hosted result of that step on the next `clean-consumer-windows` run closes this box.
+- [ ] Observed red — a build with no renderer reaches no first frame and fails the step. Measured by run 34746542857: the non-presenting build exits non-zero with `Error: Failed to save screenshot!`, writes no capture, and prints no `TN_NATIVE_SMOKE_FIRST_FRAME`. The control (`Prove a renderer that never presents fails the launch assertions`) asserts exactly that; the hosted result on the next `clean-consumer-windows` run closes this box.
 - [ ] Independent review PASS
 - [x] User verification — the hosted run's launch step passed with a non-blank capture (`inspectScreenshot` `{ height: 768, width: 1024 }`); run 34736214113, SHA `d2463bc38`. A human eye on the artifact starter capture is a separate open item below.
 
