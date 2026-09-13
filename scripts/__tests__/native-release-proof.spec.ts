@@ -862,6 +862,43 @@ test("the Windows consumer launches the packed executable and reports its first 
   assert.match(launch, /windows-adapter\.txt/u);
 });
 
+test("the Windows consumer proves the mask shadows MSVC before it restores the positive path", () => {
+  // Phase 1 observed-red (a): the `.cmd` shim must actually shadow the real `cl.exe` on this image,
+  // and the control must assert exit 97 with the invocation recorded. Doing it inline keeps the
+  // green build in the same hosted run rather than a second one.
+  const control = windowStep("Prove the mask shadows MSVC, then restore the positive path");
+  assert.match(control, /\bcl\b/u);
+  assert.match(control, /-eq 97/u);
+  assert.match(control, /TN_TOOLCHAIN_LOG/u);
+  assert.match(control, /masked-cl\.exit/u);
+});
+
+test("the Windows consumer proves a removed helper fails the build naming it", () => {
+  // Phase 1 observed-red (b): deleting the published helper must fail the build naming the helper
+  // path, with no silent source-build fallback. The helper is restored so the launch step still runs
+  // against the genuine install.
+  const control = windowStep("Prove a removed helper fails the build naming it, then restore it");
+  assert.match(control, /prebuilt\/win32-x64\/mystral-tools\.exe/u);
+  assert.match(control, /-ne 0/u);
+  assert.match(control, /missing-helper\.log/u);
+  assert.match(control, /cp "\$backup" "\$helper"/u);
+});
+
+test("the Windows consumer proves a renderer that never presents fails the marker assertion", () => {
+  // Phase 2 observed-red: a process that exits 0 without rendering must still fail the step's own
+  // `TN_NATIVE_SMOKE_FIRST_FRAME` assertion, so the guard is the marker and not the exit status.
+  const control = windowStep("Prove a renderer that never presents fails the marker assertion");
+  assert.match(
+    control,
+    /-eq 0/u,
+    "the stub must exit 0 so the control proves the marker, not the exit",
+  );
+  assert.match(control, /TN_NATIVE_SMOKE_FIRST_FRAME/u);
+  assert.match(control, /-ne 0/u, "the marker grep must be asserted to fail");
+  assert.match(control, /renderer-disabled\.marker-exit/u);
+  assert.match(control, /cp "\$backup" "\$entry"/u, "the genuine entry must be restored");
+});
+
 test("the Windows consumer is a mandatory release prerequisite, not advisory", () => {
   assert.match(
     job("finalize"),

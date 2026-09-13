@@ -67,7 +67,7 @@ flowchart LR
 
 - [x] Files wired — the new job exists and `finalize` lists it in `needs:` (`native-release.yml:1206`, `:1391`; also `cleanup-failed-release` at `:1413`)
 - [x] Required test passing — the spec asserts the job, its runner, its mask, its helper assertion and the prepare-step files it builds (`pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts`: 43 passed; `ci-structure.spec.ts`: 108 passed; `native-platform-workflow.test.mjs` + `ios-packaging.test.mjs`: 55 passed earlier)
-- [ ] Observed red — the hosted lane reached and fixed two real failures (run 34725179598: the full non-iOS cohort was demanded while `build-android` uploaded nothing; run 34730868090: the consumer build's config fell through to a repo-relative fixture), then went green on run 34736214113. The local spec-level control ran (renaming the job fails 5 spec tests). The two Windows *toolchain* controls — a masked `cl` invocation fails the job, a deleted helper fails the build naming it — remain unrun and need a scratch hosted branch.
+- [ ] Observed red — the hosted lane reached and fixed two real failures (run 34725179598: the full non-iOS cohort was demanded while `build-android` uploaded nothing; run 34730868090: the consumer build's config fell through to a repo-relative fixture), then went green on run 34736214113. The local spec-level control ran (renaming the job fails 5 spec tests). The two Windows *toolchain* controls — a masked `cl` invocation fails the job, a deleted helper fails the build naming it — now run inline in the job (`Prove the mask shadows MSVC...`, `Prove a removed helper fails the build naming it...`) and are asserted by the spec; their hosted result on the next `clean-consumer-windows` run is what closes this box.
 - [ ] Independent review PASS
 - [x] User verification — the job is green on a real hosted Windows runner (run 34736214113, SHA `d2463bc38`: `clean-consumer-windows` completed/success, every step green)
 
@@ -105,7 +105,7 @@ gh run view <id> --json jobs --jq '.jobs[] | select(.name=="clean-consumer-windo
 
 - [x] Files wired — the launch step runs in the same job and `finalize` depends on its result
 - [x] Required test passing — the spec asserts the frame count and the first-frame marker (41 passed locally)
-- [ ] Observed red — a build with no renderer reaches no first frame and fails the step. Needs a Windows runner.
+- [ ] Observed red — a build with no renderer reaches no first frame and fails the step. The control now runs inline in the job (`Prove a renderer that never presents fails the marker assertion`): the stub entry starts and exits 0, and the step's own `TN_NATIVE_SMOKE_FIRST_FRAME` grep is asserted to fail. The hosted result of that step on the next `clean-consumer-windows` run closes this box.
 - [ ] Independent review PASS
 - [x] User verification — the hosted run's launch step passed with a non-blank capture (`inspectScreenshot` `{ height: 768, width: 1024 }`); run 34736214113, SHA `d2463bc38`. A human eye on the artifact starter capture is a separate open item below.
 

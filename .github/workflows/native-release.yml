@@ -1482,6 +1482,40 @@ jobs:
           test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
           pnpm --dir "$CONSUMER_TARGET" build --target desktop
           test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Prove the mask shadows MSVC, then restore the positive path
+        run: |
+          # Phase 1 observed-red (a): a real `cl` invocation must be shadowed by the `.cmd` shim,
+          # recorded in TN_TOOLCHAIN_LOG, and refused with exit 97 rather than reaching MSVC. The
+          # control runs first and the positive path is restored after, so the same hosted run both
+          # falsifies the mask's absence and re-proves the green build.
+          set +e
+          cl /? > "$RUNNER_TEMP/masked-cl.log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/masked-cl.exit"
+          test "$status" -eq 97
+          test -s "$TN_TOOLCHAIN_LOG"
+          grep -E '(^|[\\/])cl(\.cmd)? ' "$TN_TOOLCHAIN_LOG"
+          rm -f "$TN_TOOLCHAIN_LOG"
+      - name: Prove a removed helper fails the build naming it, then restore it
+        run: |
+          # Phase 1 observed-red (b): with the published helper deleted there is no silent
+          # source-build fallback — the build must fail naming the helper path. Restored afterwards
+          # so the launch step still runs against the genuine install.
+          helper="$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
+          backup="$RUNNER_TEMP/mystral-tools.exe.bak"
+          cp "$helper" "$backup"
+          rm -f "$helper"
+          set +e
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop > "$RUNNER_TEMP/missing-helper.log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/missing-helper.exit"
+          test "$status" -ne 0
+          grep -F 'prebuilt/win32-x64/mystral-tools.exe' "$RUNNER_TEMP/missing-helper.log"
+          cp "$backup" "$helper"
+          test -s "$helper"
+          test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
         run: |
           log="$RUNNER_TEMP/threenative-consumer.log"
@@ -1502,6 +1536,43 @@ jobs:
           console.log(inspectScreenshot(process.env.SCREENSHOT));
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Prove a renderer that never presents fails the marker assertion
+        run: |
+          # Phase 2 observed-red: with the entry replaced by one that starts cleanly and never
+          # renders a frame, the launcher exits 0 but the launch step's own `TN_NATIVE_SMOKE_FIRST_FRAME`
+          # assertion must fail — the guard is the marker, not the exit status. The genuine entry is
+          # restored and re-launched afterwards so the finished job still carries the positive proof.
+          entry="$CONSUMER_TARGET/src/game.ts"
+          backup="$RUNNER_TEMP/game.ts.bak"
+          cp "$entry" "$backup"
+          cat > "$entry" <<'TS'
+          export const status = { frames: 0, ready: false };
+          export default {
+            async start(): Promise<void> {
+              // Starts cleanly and never enters a render loop, so the process exits 0 while no
+              // `TN_NATIVE_SMOKE_FIRST_FRAME` line is ever produced.
+            },
+          };
+          TS
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          set +e
+          "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.exe" \
+            --screenshot "$RUNNER_TEMP/renderer-disabled.png" --frames 300 \
+            > "$RUNNER_TEMP/renderer-disabled.log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/renderer-disabled.exit"
+          # Exit 0 is the point: a process that did nothing must still fail the marker grep below.
+          test "$status" -eq 0
+          test ! -e "$TN_TOOLCHAIN_LOG"
+          set +e
+          grep -F 'TN_NATIVE_SMOKE_FIRST_FRAME' "$RUNNER_TEMP/renderer-disabled.log"
+          marker=$?
+          set -e
+          printf '%s\n' "$marker" > "$RUNNER_TEMP/renderer-disabled.marker-exit"
+          test "$marker" -ne 0
+          cp "$backup" "$entry"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
       - name: Stop the proof asset server
         if: ${{ always() && github.ref_type != 'tag' }}
         run: |
