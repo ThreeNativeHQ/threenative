@@ -32,7 +32,7 @@ Layer: engine (`packages/create-threenative/` template + `scripts/` consumer gat
 node_modules/.bin/vitest run scripts/__tests__/verify-registry-install.spec.ts \
   packages/create-threenative/__tests__/scaffold.spec.ts
 # Test Files  2 passed (2)
-# Tests      85 passed (85)   (24 registry + 61 scaffold)
+# Tests      86 passed (86)   (25 registry + 61 scaffold)
 ```
 
 The registry spec's new cases prove the step fails closed on each of: a scenario with no

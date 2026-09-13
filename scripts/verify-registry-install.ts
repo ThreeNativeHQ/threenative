@@ -817,9 +817,6 @@ export function verifyRegistryInstall(
               ? "npm run dev -- --host 127.0.0.1 --port $PORT --strictPort"
               : "pnpm dev --host 127.0.0.1 --port $PORT --strictPort";
           const playtestArgs = [
-            "exec",
-            ...(manager === "npm" ? ["--no-install"] : []),
-            "threenative-playtest",
             "--scenario",
             GAMEPLAY_SCENARIO,
             "--browser-recipe",
@@ -834,7 +831,12 @@ export function verifyRegistryInstall(
             "--server-command",
             serverCommand,
           ];
-          const output = run(command, playtestArgs, project);
+          // `npx --no-install` for npm, matching the doctor step: `npm exec --no-install` warns on
+          // npm 11 and is slated to stop working.
+          const output =
+            manager === "npm"
+              ? run("npx", ["--no-install", "threenative-playtest", ...playtestArgs], project)
+              : run(command, ["exec", "threenative-playtest", ...playtestArgs], project);
           return `Ran ${GAMEPLAY_SCENARIO} (assertions: ${families}); edit present in ${built}. ${output}`;
         }),
       );

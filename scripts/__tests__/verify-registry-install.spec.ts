@@ -92,11 +92,7 @@ function happyRunner(): CommandRunner {
       );
       return "built";
     }
-    if (
-      (command === "npm" || command === "pnpm") &&
-      args[0] === "exec" &&
-      args.includes("threenative-playtest")
-    ) {
+    if (args.includes("threenative-playtest")) {
       return "playtest passed: 5 assertions";
     }
     if (
@@ -568,11 +564,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
-        if (
-          (command === "npm" || command === "pnpm") &&
-          args[0] === "exec" &&
-          args.includes("threenative-playtest")
-        ) {
+        if (args.includes("threenative-playtest")) {
           throw new Error("TN_ASSERTION_FAILED: player displacement was 0");
         }
         return happyRunner()(command, args, cwd);
@@ -617,9 +609,12 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
       expect(args).toContain("playtests/production-readiness.playtest.json");
       expect(args).toContain("--server-command");
       expect(args).toContain("--browser-recipe");
+      expect(args[args.indexOf("--browser-recipe") + 1]).toBe("webgpu");
       expect(args).toContain("--headed");
       expect(args).toContain("--allow-software");
     }
+    // npm uses `npx --no-install`, not `npm exec --no-install`, which warns on npm 11.
+    expect(playtests.map(([command]) => command).sort()).toEqual(["npx", "pnpm"]);
   });
 });
 
