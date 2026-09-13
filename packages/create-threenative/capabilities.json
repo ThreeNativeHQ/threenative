@@ -309,6 +309,27 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function aerodynamicCoefficients( alpha: number, flaps = 0, gear = 0, brakes = 0, ): { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "aerodynamicCoefficients"
+    },
+    {
+      "aliases": [],
       "constraints": ["register from a scene context; callbacks are cleared when that scene exits"],
       "example": "afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));",
       "importPath": "@threenative/core",
@@ -323,6 +344,48 @@
       "summary": "Register work that reads a body or camera after physics has moved it and before this frame draws. The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.",
       "supersedes": [],
       "symbol": "afterPhysics"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function aircraftMass(state: IFlightState, airframe: IAircraftAirframe): number { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "aircraftMass"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function airDensity(y: number): number { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "airDensity"
     },
     {
       "aliases": [],
@@ -408,6 +471,27 @@
       "summary": "Attach a game-owned object to a named skeleton bone.",
       "supersedes": [],
       "symbol": "attachToBone"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function attitudeAxes(state: IFlightState): IFlightAxes { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "attitudeAxes"
     },
     {
       "aliases": [],
@@ -831,6 +915,27 @@
     {
       "aliases": [],
       "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class FlightModel<TState extends IFlightState = IFlightState> { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "FlightModel"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic",
         "`dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code",
         "the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold"
@@ -872,6 +977,27 @@
       "summary": "Read where the frame's milliseconds went, per presented frame, on any platform.",
       "supersedes": [],
       "symbol": "FrameBudget"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function gearClearance(state: IFlightState): number { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "gearClearance"
     },
     {
       "aliases": [],
@@ -1579,6 +1705,27 @@
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
       "symbol": "Scheduler"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function setAttitude( state: IFlightState, heading = 0, pitch = 0, roll = 0, ): IFlightQuaternion { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "setAttitude"
     },
     {
       "aliases": [],

@@ -270,7 +270,9 @@ geometry, placement, colour and material all come from the game); **`clipPoseErr
 `clipTrackBindings`, `clipBoneCoverage`, `boneContact`** (instruments that drive a clip, read the
 pose and report degrees, names and metres — they select no clip and move nothing); and
 **`Heightfield`** (one row-major buffer, interpolation, normals, and the ordering physics consumes;
-every height comes from the game's own sampler).
+every height comes from the game's own sampler); and **`FlightModel`** (lift, drag, thrust, stall,
+control moments and the carrier-deck run for a fixed-wing aircraft; every mass, wing area, power,
+inertia, wind and damage multiplier comes from the game, which the model moves but never dresses).
 
 **Optional portable message transport is also mechanism.** The proposed `core/net`
 (`@threenative/core/net`) subpath may own the browser/native transport seam: connection lifecycle,
