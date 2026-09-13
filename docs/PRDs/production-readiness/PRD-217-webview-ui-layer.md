@@ -73,7 +73,7 @@ Before invoking that route, configure the selected existing CMake preset with `T
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-1-<date>.md`
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-1-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -111,7 +111,7 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-2-<date>.md`
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-2-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
@@ -150,7 +150,7 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
       Left: the per-host filename mapping test and the Linux plan test are green 2026-09-12 (`the Linux native build links the desktop UI overlay into the runtime`, 2/2). The phase demands each supported platform; Windows and macOS are unrun.
 - [ ] Observed red recorded, then restored green
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-<date>.md`
+- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3a-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
