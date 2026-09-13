@@ -319,9 +319,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "9899b8ce5b5833c5bea5eff9b01a16f5a1233b3cd3a7c6942e997370fa522a93",
   racing: "b3de2fdda3daff9584ef86daa2fdbf7a4119539bb9b89186b54cd2d4608357d7",
   shooter: "811fa1f6dcaf7ff6d96fa8f0e00f245e87d63a8f9235243de8d009947a925096",
-  // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
-  // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "f9cefb3e49b4aa71b93163ff8cca82f3bcbf453bef5e18f21820349528e3322f",
+  // Recomputed 2026-09-12 for PRD-366: the starter ships a new
+  // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
+  // so only the starter tree moves.
+  starter: "62a5dceca0bfdf56a6b44f66aaea0225690679220a9b1047fbc61ea8048786b6",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -509,6 +510,7 @@ const STARTER_PATHS = [
   "playtests/gameover.playtest.json",
   "playtests/seed.playtest.json",
   "playtests/cloth.playtest.json",
+  "playtests/production-readiness.playtest.json",
   "assets/native-proof.glb",
   "assets/native-proof.png",
   "public/icon.png",

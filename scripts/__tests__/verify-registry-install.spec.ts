@@ -29,13 +29,19 @@ function happyRunner(): CommandRunner {
   return (command, args, cwd) => {
     if ((command === "npm" || command === "pnpm") && args.includes("create")) {
       const project = path.join(cwd, "my-game");
-      fs.mkdirSync(project, { recursive: true });
+      fs.mkdirSync(path.join(project, "src"), { recursive: true });
       fs.writeFileSync(
         path.join(project, "package.json"),
         JSON.stringify({
           name: "my-game",
           scripts: { "build:desktop": "threenative build --target desktop" },
         }),
+      );
+      fs.writeFileSync(path.join(project, "src", "game.ts"), "export default {};\n");
+      fs.mkdirSync(path.join(project, "playtests"), { recursive: true });
+      fs.writeFileSync(
+        path.join(project, "playtests", "production-readiness.playtest.json"),
+        JSON.stringify({ assert: { movement: { entity: "player" } }, name: "pr", steps: [] }),
       );
       fs.writeFileSync(
         path.join(project, ".mcp.json"),
@@ -77,7 +83,17 @@ function happyRunner(): CommandRunner {
       return "desktop built";
     }
     if ((command === "npm" || command === "pnpm") && args[0] === "run" && args[1] === "build") {
+      // The built bundle carries the source, so the game-only edit applied before the build is
+      // observable in the artifact the playtest then exercises.
+      fs.mkdirSync(path.join(cwd, "dist"), { recursive: true });
+      fs.writeFileSync(
+        path.join(cwd, "dist", "index.js"),
+        fs.readFileSync(path.join(cwd, "src", "game.ts"), "utf8"),
+      );
       return "built";
+    }
+    if (args.includes("threenative-playtest")) {
+      return "playtest passed: 5 assertions";
     }
     if (
       (command === "npm" || command === "pnpm") &&
@@ -219,9 +235,18 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(report.exitCode).toBe(0);
     expect(report.steps.map((step) => step.name)).toEqual(
       ["npm", "pnpm"].flatMap((manager) =>
-        ["scaffold", "install", "lockfile", "build", "test", "doctor", "native", "mcp"].map(
-          (step) => `${manager}:${step}`,
-        ),
+        [
+          "scaffold",
+          "install",
+          "lockfile",
+          "edit",
+          "build",
+          "test",
+          "gameplay",
+          "doctor",
+          "native",
+          "mcp",
+        ].map((step) => `${manager}:${step}`),
       ),
     );
   });
@@ -376,9 +401,18 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(report.exitCode).toBe(1);
     expect(report.steps.map((step) => step.name)).toEqual(
       ["npm", "pnpm"].flatMap((manager) =>
-        ["scaffold", "install", "lockfile", "build", "test", "doctor", "native", "mcp"].map(
-          (step) => `${manager}:${step}`,
-        ),
+        [
+          "scaffold",
+          "install",
+          "lockfile",
+          "edit",
+          "build",
+          "test",
+          "gameplay",
+          "doctor",
+          "native",
+          "mcp",
+        ].map((step) => `${manager}:${step}`),
       ),
     );
     expect(report.steps.slice(1).every((step) => step.ok === false)).toBe(true);
@@ -482,6 +516,105 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(() => verifyRegistryInstall({ packageManagers: [] })).toThrow(
       /TN_REGISTRY_INSTALL_NO_PACKAGE_MANAGERS/u,
     );
+  });
+
+  it("rejects a consumer whose gameplay scenario declares no assertions", async () => {
+    const report = verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        const output = happyRunner()(command, args, cwd);
+        if ((command === "npm" || command === "pnpm") && args.includes("create")) {
+          fs.writeFileSync(
+            path.join(cwd, "my-game", "playtests", "production-readiness.playtest.json"),
+            JSON.stringify({ assert: {}, name: "pr", steps: [] }),
+          );
+        }
+        return output;
+      },
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "npm:gameplay")?.detail).toMatch(
+      /TN_REGISTRY_INSTALL_GAMEPLAY_NO_ASSERTIONS/u,
+    );
+  });
+
+  it("rejects a consumer whose production-readiness scenario was removed", async () => {
+    const report = verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        const output = happyRunner()(command, args, cwd);
+        if ((command === "npm" || command === "pnpm") && args.includes("create")) {
+          fs.rmSync(path.join(cwd, "my-game", "playtests", "production-readiness.playtest.json"), {
+            force: true,
+          });
+        }
+        return output;
+      },
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "npm:gameplay")?.detail).toMatch(
+      /TN_REGISTRY_INSTALL_GAMEPLAY_SCENARIO_MISSING/u,
+    );
+  });
+
+  it("rejects a consumer whose real gameplay assertions are false", async () => {
+    const report = verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        if (args.includes("threenative-playtest")) {
+          throw new Error("TN_ASSERTION_FAILED: player displacement was 0");
+        }
+        return happyRunner()(command, args, cwd);
+      },
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "npm:gameplay")?.detail).toMatch(
+      /TN_ASSERTION_FAILED/u,
+    );
+  });
+
+  it("rejects when the game-only edit did not reach the build", async () => {
+    const report = verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        if ((command === "npm" || command === "pnpm") && args[0] === "run" && args[1] === "build") {
+          return "built without the edit";
+        }
+        return happyRunner()(command, args, cwd);
+      },
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "npm:gameplay")?.detail).toMatch(
+      /TN_REGISTRY_INSTALL_GAMEPLAY_EDIT_NOT_BUILT/u,
+    );
+  });
+
+  it("drives the gameplay scenario with a display, a server and an explicit adapter policy", async () => {
+    const playtests: string[][] = [];
+    const report = verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        if (args.includes("threenative-playtest")) playtests.push([command, ...args]);
+        return happyRunner()(command, args, cwd);
+      },
+    });
+    expect(report.exitCode).toBe(0);
+    expect(playtests).toHaveLength(2);
+    for (const args of playtests) {
+      expect(args).toContain("playtests/production-readiness.playtest.json");
+      expect(args).toContain("--server-command");
+      expect(args).toContain("--browser-recipe");
+      expect(args[args.indexOf("--browser-recipe") + 1]).toBe("webgpu");
+      expect(args).toContain("--headed");
+      expect(args).toContain("--allow-software");
+    }
+    // npm uses `npx --no-install`, not `npm exec --no-install`, which warns on npm 11.
+    expect(playtests.map(([command]) => command).sort()).toEqual(["npx", "pnpm"]);
   });
 });
 
