@@ -3,7 +3,7 @@
 **Date:** 2026-09-12
 **Candidate:** `3740b253d` (`prd217/native-desktop-hud`)
 **Platform:** Linux development host; hosted `windows-2025` and `macos-15` runners for the platform lanes.
-**Scope:** Phase 3B of [`PRD-217-webview-ui-layer.md`](../PRDs/production-readiness/PRD-217-webview-ui-layer.md).
+**Scope:** Phase 3B of [`PRD-217-webview-ui-layer.md`](../PRDs/done/PRD-217-webview-ui-layer.md).
 
 ## What changed
 

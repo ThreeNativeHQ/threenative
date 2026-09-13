@@ -3,7 +3,7 @@
 **Date:** 2026-09-12
 **Candidate:** `79a78df0f` (`prd217/native-desktop-hud`, develop merged in); the fix lands in this commit.
 **Platform:** Linux desktop, KWin Wayland session — `WAYLAND_DISPLAY=wayland-0`, `DISPLAY=:0` (Xwayland).
-**Scope:** Phase 4 of [`PRD-217-webview-ui-layer.md`](../PRDs/production-readiness/PRD-217-webview-ui-layer.md).
+**Scope:** Phase 4 of [`PRD-217-webview-ui-layer.md`](../PRDs/done/PRD-217-webview-ui-layer.md).
 
 ## What this records
 

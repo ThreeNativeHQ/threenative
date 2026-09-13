@@ -5,7 +5,7 @@
 [34739248955](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955).
 **Platform:** macOS 15 hosted runner (`macos-15`), job
 [`native-platforms / macOS desktop core`](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955/job/103676547400) — PASS.
-**Scope:** Phase 2 of [`PRD-217-webview-ui-layer.md`](../PRDs/production-readiness/PRD-217-webview-ui-layer.md).
+**Scope:** Phase 2 of [`PRD-217-webview-ui-layer.md`](../PRDs/done/PRD-217-webview-ui-layer.md).
 
 ## Required test — green on macOS
 

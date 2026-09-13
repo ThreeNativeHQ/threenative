@@ -5,7 +5,7 @@
 [34739248955](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955).
 **Platform:** Windows 2025 hosted runner (`windows-2025`), job
 [`native-platforms / Windows desktop core`](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955/job/103676547409) — PASS.
-**Scope:** Phase 1 of [`PRD-217-webview-ui-layer.md`](../PRDs/production-readiness/PRD-217-webview-ui-layer.md).
+**Scope:** Phase 1 of [`PRD-217-webview-ui-layer.md`](../PRDs/done/PRD-217-webview-ui-layer.md).
 
 ## Required test — green on Windows
 

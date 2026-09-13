@@ -5,7 +5,7 @@
 **Platform:** hosted `windows-2025` and `macos-15` (run
 [34739248955](https://github.com/ThreeNativeHQ/threenative/actions/runs/34739248955)); local Linux
 `tn-linux`.
-**Scope:** Phase 3A of [`PRD-217-webview-ui-layer.md`](../PRDs/production-readiness/PRD-217-webview-ui-layer.md).
+**Scope:** Phase 3A of [`PRD-217-webview-ui-layer.md`](../PRDs/done/PRD-217-webview-ui-layer.md).
 
 ## What ran
 
