@@ -1113,12 +1113,26 @@ jobs:
           fi
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$runtime" pnpm --dir "$target" test:native
+          # The required test itself: press the HUD's pause island (game state flips) and move
+          # through empty UI space, driven through the overlay's published hit regions.
+          node packages/runtime-native/scripts/verify-starter-ui-overlay.mjs \
+            --project "$target" \
+            --runtime "$runtime" \
+            --skip-build \
+            --artifacts packages/runtime-native/artifacts/starter-ui-${{ matrix.platform }}
       - name: Upload the starter HUD evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: native-starter-${{ matrix.platform }}
           path: ${{ runner.temp }}/threenative-starter-native/artifacts/native/
+          if-no-files-found: warn
+      - name: Upload the starter HUD input evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-starter-ui-${{ matrix.platform }}
+          path: packages/runtime-native/artifacts/starter-ui-${{ matrix.platform }}/
           if-no-files-found: warn
       - name: Collect bounded desktop performance evidence from the built runtime
         if: always()

@@ -26,11 +26,18 @@ const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 function flags(argv) {
   const parsed = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    if (!argv[index].startsWith("--") || argv[index + 1] === undefined) {
-      throw new Error(`TN_STARTER_UI_ARGUMENT_INVALID: ${argv[index] ?? "(missing)"}`);
+  for (let index = 0; index < argv.length; index += 1) {
+    const key = argv[index];
+    if (!key.startsWith("--")) {
+      throw new Error(`TN_STARTER_UI_ARGUMENT_INVALID: ${key}`);
     }
-    parsed.set(argv[index].slice(2), argv[index + 1]);
+    const next = argv[index + 1];
+    if (next === undefined || next.startsWith("--")) {
+      parsed.set(key.slice(2), true);
+    } else {
+      parsed.set(key.slice(2), next);
+      index += 1;
+    }
   }
   return parsed;
 }
@@ -69,13 +76,15 @@ function main() {
   if (!existsSync(cli)) throw new Error(`TN_STARTER_UI_PLAYTEST_MISSING: ${cli}`);
   mkdirSync(artifacts, { recursive: true });
 
-  run(pnpm, ["--dir", project, "build:desktop"], {
-    env: {
-      ...process.env,
-      THREENATIVE_INTERNAL_DESKTOP_UI_PROOF: "1",
-      THREENATIVE_RUNTIME_BINARY: runtime,
-    },
-  });
+  if (parsed.get("skip-build") !== true) {
+    run(pnpm, ["--dir", project, "build:desktop"], {
+      env: {
+        ...process.env,
+        THREENATIVE_INTERNAL_DESKTOP_UI_PROOF: "1",
+        THREENATIVE_RUNTIME_BINARY: runtime,
+      },
+    });
+  }
   const executable = packagedExecutable(project);
   run(process.execPath, [
     cli,
