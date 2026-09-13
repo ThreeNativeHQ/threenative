@@ -21,7 +21,7 @@ Clip conformance (`clipPoseError`, `clipTrackBindings`, `clipBoneCoverage`, `bon
 admitted the same way — see `CHARTER.md`'s "Pose conformance measurement is mechanism" and
 `docs/PRDs/done/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md`. It measures and
 reports; it moves nothing and decides no appearance.
-`FlightModel` is admitted as mechanism by PRD-380: it integrates lift, drag, thrust, stall,
+`FlightModel` is admitted as mechanism by PRD-382: it integrates lift, drag, thrust, stall,
 control moments and the carrier-deck run for a fixed-wing aircraft, and takes every airframe
 constant, wind value and damage multiplier from the game. It moves the aircraft the game gives it
 and ships no airframe, geometry, material or colour of its own. See `CHARTER.md`'s "Mechanism is
