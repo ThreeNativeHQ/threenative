@@ -149,7 +149,46 @@ const DEFAULT_NATIVE_ENTRY = "src/game.ts";
 const RUNTIME_PACKAGE = "@threenative/runtime-native";
 const PLAYTEST_BINARY = "threenative-playtest";
 const ANDROID_JDK_MAJOR = 17;
-const ANDROID_COMPILE_SDK = 35;
+/**
+ * The submission SDK doctor falls back to when the installed runtime package is unreadable.
+ *
+ * The requirement is not owned here: it lives in the runtime's own
+ * `android/app/build.gradle.kts`, and doctor reads it from the installed package so a bundler
+ * that ships a 36 and a doctor that still names 35 cannot both be true. Today it is API 36:
+ * Google Play rejects new apps and updates below target API 36 from 2026-08-31.
+ */
+const DEFAULT_ANDROID_COMPILE_SDK = 36;
+
+/** The SDK the shipped Gradle project declares, preferring the submission-required `targetSdk`. */
+export function androidGradleSdk(source: string | undefined): number | undefined {
+  if (source === undefined) return undefined;
+  const target = /targetSdk\s*=\s*(\d+)/u.exec(source);
+  const compile = /compileSdk\s*=\s*(\d+)/u.exec(source);
+  const value = target?.[1] ?? compile?.[1];
+  return value === undefined ? undefined : Number(value);
+}
+
+/** The submission SDK the installed runtime package asks for, or the documented fallback. */
+function requiredAndroidSdk(snapshot: IProjectSnapshot): number {
+  return (
+    androidGradleSdk(snapshot.readRuntimeText?.("android/app/build.gradle.kts")) ??
+    DEFAULT_ANDROID_COMPILE_SDK
+  );
+}
+
+/** The same requirement read from a runtime package directory, for the live snapshot builder. */
+function requiredAndroidSdkFromRoot(root: string | undefined): number {
+  if (root === undefined) return DEFAULT_ANDROID_COMPILE_SDK;
+  try {
+    return (
+      androidGradleSdk(
+        readFileSync(path.join(root, "android", "app", "build.gradle.kts"), "utf8"),
+      ) ?? DEFAULT_ANDROID_COMPILE_SDK
+    );
+  } catch {
+    return DEFAULT_ANDROID_COMPILE_SDK;
+  }
+}
 
 interface IMcpServerSpec {
   readonly configName: string;
@@ -164,7 +203,7 @@ interface IMcpServerSpec {
  * resolves, so it must name core — and core's own version, which `doctor.spec.ts` holds equal to
  * `packages/core/package.json`. */
 const CORE_PACKAGE_NAME = "@threenative/core";
-const CORE_PACKAGE_VERSION = "0.3.1";
+const CORE_PACKAGE_VERSION = "0.3.2";
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
   "threenative-blender",
@@ -579,7 +618,7 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
     method: "initialize",
     params: {
       capabilities: {},
-      clientInfo: { name: "threenative-doctor", version: "0.3.1" },
+      clientInfo: { name: "threenative-doctor", version: "0.3.2" },
       protocolVersion: "2025-06-18",
     },
   });
@@ -808,7 +847,10 @@ function assetPipelineCheck(snapshot: IProjectSnapshot): IDoctorCheck {
  * would stop a build, because a prediction that lists `Android SDK platform android-35 2 found`
  * among the reasons a build cannot start is not a prediction anyone can act on.
  */
-function androidToolchainFacts(probe: IAndroidToolchainProbe): {
+function androidToolchainFacts(
+  probe: IAndroidToolchainProbe,
+  requiredSdk: number = DEFAULT_ANDROID_COMPILE_SDK,
+): {
   readonly blockers: readonly string[];
   readonly details: readonly string[];
   readonly status: DoctorStatus;
@@ -830,24 +872,27 @@ function androidToolchainFacts(probe: IAndroidToolchainProbe): {
     details.push(`JDK ${probe.jdkVersion} found (supported JDK ${ANDROID_JDK_MAJOR})`);
   }
   if (probe.sdkVersion === undefined) {
-    const blocker = `Android SDK platform android-${ANDROID_COMPILE_SDK} not found`;
+    const blocker = `Android SDK platform android-${requiredSdk} not found`;
     details.push(blocker);
     blockers.push(blocker);
     status = "warn";
   } else {
-    details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} ${probe.sdkVersion} found`);
+    details.push(`Android SDK platform android-${requiredSdk} ${probe.sdkVersion} found`);
   }
   return { blockers, details, status };
 }
 
-function androidToolchainStatus(probe: IAndroidToolchainProbe): IDoctorCheck {
-  const { details, status } = androidToolchainFacts(probe);
+function androidToolchainStatus(
+  probe: IAndroidToolchainProbe,
+  requiredSdk: number = DEFAULT_ANDROID_COMPILE_SDK,
+): IDoctorCheck {
+  const { details, status } = androidToolchainFacts(probe, requiredSdk);
   return {
     detail: details.join("; "),
     fix:
       status === "ok"
         ? undefined
-        : `Install Android SDK platform android-${ANDROID_COMPILE_SDK} and JDK ${ANDROID_JDK_MAJOR}, or set ANDROID_HOME or ANDROID_SDK_ROOT and JAVA_HOME (or put JDK ${ANDROID_JDK_MAJOR} on PATH).`,
+        : `Install Android SDK platform android-${requiredSdk} and JDK ${ANDROID_JDK_MAJOR}, or set ANDROID_HOME or ANDROID_SDK_ROOT and JAVA_HOME (or put JDK ${ANDROID_JDK_MAJOR} on PATH).`,
     name: "android toolchain",
     status,
   };
@@ -1284,11 +1329,11 @@ function javaVersion(
   return Number.isSafeInteger(major) ? { major, version } : undefined;
 }
 
-function androidSdkVersion(root: string): string | undefined {
+function androidSdkVersion(root: string, requiredSdk: number): string | undefined {
   const sourceProperties = path.join(
     root,
     "platforms",
-    `android-${ANDROID_COMPILE_SDK}`,
+    `android-${requiredSdk}`,
     "source.properties",
   );
   try {
@@ -1302,6 +1347,7 @@ function androidSdkVersion(root: string): string | undefined {
 
 export function probeAndroidToolchain(
   environment: NodeJS.ProcessEnv = process.env,
+  requiredSdk: number = DEFAULT_ANDROID_COMPILE_SDK,
 ): IAndroidToolchainProbe {
   const javaHome = environment.JAVA_HOME?.trim() || undefined;
   const java =
@@ -1336,7 +1382,7 @@ export function probeAndroidToolchain(
   return {
     ...(jdkMajor === undefined ? {} : { jdkMajor }),
     ...(jdkVersion === undefined ? {} : { jdkVersion }),
-    ...(sdkRoot === undefined ? {} : { sdkVersion: androidSdkVersion(sdkRoot) }),
+    ...(sdkRoot === undefined ? {} : { sdkVersion: androidSdkVersion(sdkRoot, requiredSdk) }),
   };
 }
 
@@ -1355,11 +1401,16 @@ function androidTargetCheck(snapshot: IProjectSnapshot): IDoctorCheck {
       status: snapshot.runtimeRoot === undefined ? "warn" : "fail",
     };
   }
+  const requiredSdk = requiredAndroidSdk(snapshot);
   const androidToolchain =
     snapshot.androidToolchain ??
-    (snapshot.projectRoot === undefined ? undefined : probeAndroidToolchain());
+    (snapshot.projectRoot === undefined
+      ? undefined
+      : probeAndroidToolchain(process.env, requiredSdk));
   const toolchain =
-    androidToolchain === undefined ? undefined : androidToolchainStatus(androidToolchain);
+    androidToolchain === undefined
+      ? undefined
+      : androidToolchainStatus(androidToolchain, requiredSdk);
   return {
     detail:
       toolchain === undefined
@@ -1433,11 +1484,14 @@ function requestedBuildBlockers(
   }
   if (!runtimeFileAvailable(snapshot, "scripts/package-android.mjs"))
     blockers.push(`${RUNTIME_PACKAGE} has no Android packager`);
+  const requiredSdk = requiredAndroidSdk(snapshot);
   const androidToolchain =
     snapshot.androidToolchain ??
-    (snapshot.projectRoot === undefined ? undefined : probeAndroidToolchain());
+    (snapshot.projectRoot === undefined
+      ? undefined
+      : probeAndroidToolchain(process.env, requiredSdk));
   if (androidToolchain === undefined) blockers.push("the Android toolchain was not probed");
-  else blockers.push(...androidToolchainFacts(androidToolchain).blockers);
+  else blockers.push(...androidToolchainFacts(androidToolchain, requiredSdk).blockers);
   if (request.mode === "release") {
     // Presence only: doctor never reads a signing value, so a wrong password is the build's red,
     // not a diagnosis this command can honestly make.
@@ -1462,11 +1516,12 @@ function requestedBuildCheck(
   const blockers = requestedBuildBlockers(snapshot, { ...request, target }, nativeRuntime);
   if (blockers.length === 0)
     return { detail: `buildable — ${scope}`, name: "requested build", status: "ok" };
+  const requiredSdk = requiredAndroidSdk(snapshot);
   return {
     detail: `not buildable — ${scope}: ${blockers.join("; ")}`,
     fix:
       target === "android"
-        ? `Install JDK ${ANDROID_JDK_MAJOR} and Android SDK platform android-${ANDROID_COMPILE_SDK}, reinstall ${RUNTIME_PACKAGE} so its prebuilt downloads${request.mode === "release" ? `, and export ${ANDROID_RELEASE_SIGNING_ENV.join(", ")} from the game's build environment` : ""}.`
+        ? `Install JDK ${ANDROID_JDK_MAJOR} and Android SDK platform android-${requiredSdk}, reinstall ${RUNTIME_PACKAGE} so its prebuilt downloads${request.mode === "release" ? `, and export ${ANDROID_RELEASE_SIGNING_ENV.join(", ")} from the game's build environment` : ""}.`
         : `Resolve the cause above, then run 'threenative doctor --target ${target}' again.`,
     name: "requested build",
     status: "fail",
@@ -1903,7 +1958,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
         return undefined;
       }
     },
-    androidToolchain: probeAndroidToolchain(),
+    androidToolchain: probeAndroidToolchain(process.env, requiredAndroidSdkFromRoot(runtimeRoot)),
     blender: (() => {
       const status = resolveBlender();
       return {

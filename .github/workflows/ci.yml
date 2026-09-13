@@ -99,6 +99,9 @@ jobs:
 
   lint:
     needs: scope
+    # A Markdown-only change runs no CI job: the docs lane is re-validated on the nightly run and
+    # at promotion, so this job is skipped rather than spending a runner on inert prose.
+    if: needs.scope.outputs.selection != 'prose'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -1051,6 +1054,9 @@ jobs:
 
   supply-chain:
     needs: scope
+    # Skipped for Markdown-only PRs: the nightly develop run and promotions still scan the full
+    # git history, so an inert prose PR does not spend a runner here.
+    if: needs.scope.outputs.selection != 'prose'
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental

@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-078 — Hosted runtime release jobs prove the exact candidate
 
-**Status:** PARTIAL — the non-publishing hosted proof executes end to end on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984` ([run 34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952)), with all six packed Android controls verified. Main-route prerequisite validation and independent acceptance review remain open, and public installation stays blocked on PRD-262 publishing the build tool helper. Revised 2026-09-11.
+**Status:** DONE — every phase box and acceptance criterion is verified. The non-publishing hosted proof executed end to end on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984` ([run 34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952)), all six packed Android controls are verified, and the main-route prerequisite validation executed on candidate `5e7ecd1dd5246de40c76a866bc93548e05533260` ([run 34728310261](https://github.com/ThreeNativeHQ/threenative/actions/runs/34728310261), `gates` success). Every phase has a fresh independent reviewer PASS. Public installation remains PRD-262's. Closed 2026-09-12.
 **Complexity:** 6 → MEDIUM (+2 files, +2 multi-platform integration, +1 external CI API, +1 artifact contract).
 **Problem:** Historical hosted release failures must be retried on the current candidate instead of being treated as permanent blockers.
 
-Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](../production-readiness/README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
 
@@ -22,7 +22,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Prior phase evidence proves the Vulkan ICD and runtime-version-stamp fixes. Its later Linux physics, Windows dependency and simulator failures were recorded in August. Green CI on a different commit is not current-candidate native-release evidence.
 
-CI/native-host layer. Owns only actual hosted build/gate defects and their exact-candidate proof. [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) owns generated runtime artifacts and installation; [PRD-060](PRD-060-promoted-consumer-distribution.md) owns npm/consumer promotion. No separate publisher or second clean-consumer gate is introduced.
+CI/native-host layer. Owns only actual hosted build/gate defects and their exact-candidate proof. [PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) owns generated runtime artifacts and installation; [PRD-060](../production-readiness/PRD-060-promoted-consumer-distribution.md) owns npm/consumer promotion. No separate publisher or second clean-consumer gate is introduced.
 
 ## Approach and boundaries
 
@@ -69,10 +69,10 @@ The nine bounded assignments below are reviewed separately. None is accepted mer
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `packages/runtime-native/tests/native-platform-workflow.test.mjs`, `scripts/__tests__/ci-structure.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs` — `tests/native-platform-workflow.test.mjs` green 2026-09-11 (53/53 across the three runtime-native files).
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
+- [x] Observed red recorded, then restored green - local revert control on the workflow spec, recorded in [`prd-078-readiness-phase-1-2026-09-09.md`](../../verification/prd-078-readiness-phase-1-2026-09-09.md) lines 99-111: RED `tests 10; pass 2; fail 8; exit 1` -> GREEN `pass 10; exit 0` -> REVERT RED (same 8 failures) -> RESTORED GREEN, 227 assertions. The record notes the wrong-SHA refusal pre-existed and was preserved, not newly fixed; the control exercises the workflow gate's refusals, not that single assertion.
+- [x] User verification performed on the named platform — workflow page and `release-prerequisites-55b221a3…-1` artifact inspected on run 34593258952: `refusal-controls.log` 36 passed; `pr-scope.json` lists all 11 main-CI prerequisites `unavailable` with `eligibility: not-release-acceptance` (honest PR scope, no main-acceptance claim).
 - [x] Evidence record written: `docs/verification/prd-078-readiness-phase-1-2026-09-09.md` — `docs/verification/prd-078-readiness-phase-1-2026-09-09.md`.
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11 (its caveat on this phase's observed-red box is recorded there).
 
 **Files (maximum five):**
 
@@ -93,11 +93,12 @@ The nine bounded assignments below are reviewed separately. None is accepted mer
 **Progress:**
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts`, `docs/PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
-- [x] Required test green — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11; the phase itself is the hosted execution, not a unit gate.
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
+- [x] Required test green — `scripts/__tests__/native-release-proof.spec.ts` 36/36 green 2026-09-11 (35 before PR #193 added one); the phase itself is the hosted execution, not a unit gate.
+- [x] Observed red recorded, then restored green - three controls in [the phase-2 record](../../verification/prd-078-readiness-phase-2-2026-09-10.md): the prerequisite-wait red (lines 59-77), the KVM/35-minute cap red `2 failed` -> `28 passed` (lines 191-210), and the concurrency red (lines 235-250).
+- [x] User verification performed on the named platform — run page and `release-prerequisites-…`/`clean-consumer-linux-x64` artifacts inspected: `proof-consumer-evidence.json` six controls verified (exits 0/1/1/0/1/1, assertions 16/2/4/4/16/16, `failures: []`), 300-frame non-blank `threenative-consumer.png`, `scope: same-run-artifacts-not-public-installation`.
+- [x] Main-route prerequisite validation executed — a manual `native-release.yml` dispatch on `main` (run [34728310261](https://github.com/ThreeNativeHQ/threenative/actions/runs/34728310261), `gates` job [103646349284](https://github.com/ThreeNativeHQ/threenative/actions/runs/34728310261/job/103646349284) success) required the completed exact-SHA `ci.yml` push run on `main` [34679507300](https://github.com/ThreeNativeHQ/threenative/actions/runs/34679507300) attempt 3 for candidate `5e7ecd1dd5246de40c76a866bc93548e05533260` and validated all eleven named prerequisite jobs as `completed/success` with `failures: []` (`release-prerequisites-5e7ecd1dd…-1/validation.json`, `status.txt exit_code=0`). Unblocked by #214, which restored the `desktop-parity` job name the gate matches. Public installation remains PRD-262's. Verified 2026-09-12.
 - [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`.
-- [ ] Independent reviewer returned PASS
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11 after the raytracing-record correction (round 2).
 
 **Files (maximum five):**
 
@@ -130,13 +131,13 @@ gh workflow run native-release.yml --repo ThreeNativeHQ/threenative --ref main
 **Progress:**
 
 - [x] Callers wired and building: `packages/runtime-native/scripts/verify-desktop-core.mjs`, `packages/runtime-native/tests/desktop-core-gate.test.mjs` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
-- [x] Required test green: `packages/runtime-native/tests/desktop-core-gate.test.mjs` — `tests/desktop-core-gate.test.mjs` green 2026-09-11 (53/53).
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
-- [ ] Independent reviewer returned PASS
+- [x] Required test green: `packages/runtime-native/tests/desktop-core-gate.test.mjs` — `tests/desktop-core-gate.test.mjs` green 2026-09-11 (12/12; the `53/53` on line 71 totals the three runtime-native files).
+- [x] Observed red recorded, then restored green - **hosted observed failure, not a local revert control** - runs [34537627738](https://github.com/ThreeNativeHQ/threenative/actions/runs/34537627738) and [34535821394](https://github.com/ThreeNativeHQ/threenative/actions/runs/34535821394) failed `[Audio] Failed to open audio device: ALSA: Couldn't open audio device`; the desktop rows are green on run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952). (Run 34543393235, earlier mis-cited here, was the x11/Phase-6 red.) Fix on `main`: `packages/runtime-native/scripts/verify-desktop-core.mjs:327` defaults `SDL_AUDIODRIVER` to `dummy` inside the Linux branch. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 94-105.
+- [x] User verification performed on the named platform — Linux `build (linux-x64)` desktop row green on run 34593258952; `evidence-desktop-linux-x64/desktop-linux-report.json` `pass: true`, 300 frames, `overlayPixels: 4096`; red on runs 34537627738 and 34535821394.
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11.
 
-Reproduced in run [34543393235](https://github.com/ThreeNativeHQ/threenative/actions/runs/34543393235), the first Linux execution of `native:verify:desktop` this proof route created.
+Reproduced in runs [34537627738](https://github.com/ThreeNativeHQ/threenative/actions/runs/34537627738) and [34535821394](https://github.com/ThreeNativeHQ/threenative/actions/runs/34535821394), the first Linux executions of `native:verify:desktop` this proof route created.
 
 **Files (maximum five):**
 
@@ -156,10 +157,10 @@ Reproduced in run [34543393235](https://github.com/ThreeNativeHQ/threenative/act
 
 - [x] Callers wired and building: `packages/runtime-native/tests/cli_network_fs_test.cpp`, `packages/runtime-native/CMakeLists.txt`, `packages/runtime-native/tests/webtransport-polyfill-prerequisites.test.mjs` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `packages/runtime-native/tests/webtransport-polyfill-prerequisites.test.mjs` — `tests/webtransport-polyfill-prerequisites.test.mjs` 6/6 green 2026-09-11 after restoring the guards deleted by `2035e1e25` (fix `585fe61f7`).
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
-- [ ] Independent reviewer returned PASS
+- [x] Observed red recorded, then restored green - local compile control - `cli_network_fs_test.cpp:1049:30: error: 'runtime_scripts' has not been declared` EXIT 1 against the CI compile line, then `no diagnostics` EXIT 0 under `-fsyntax-only`. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 133-155.
+- [x] User verification performed on the named platform — hosted desktop rows green on run 34593258952 (native contract lane `43 of 43`, `threenative-cli-network-fs-test` pass); compile red on run 34546754768.
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11.
 
 Reproduced in run [34546754768](https://github.com/ThreeNativeHQ/threenative/actions/runs/34546754768), where all three desktop rows failed inside `native:verify:desktop`.
 
@@ -182,10 +183,10 @@ Reproduced in run [34546754768](https://github.com/ThreeNativeHQ/threenative/act
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-android-staging.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
 - [x] Required test green: `scripts/__tests__/native-release-android-staging.spec.ts` — `scripts/__tests__/native-release-android-staging.spec.ts` 1/1 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
-- [ ] Independent reviewer returned PASS
+- [x] Observed red recorded, then restored green - **hosted observed failure** - run [34540703352](https://github.com/ThreeNativeHQ/threenative/actions/runs/34540703352) failed `ENOENT ... SDL3-3.2.8.aar`; `build-android` is green on run [34551637777](https://github.com/ThreeNativeHQ/threenative/actions/runs/34551637777) (that run overall failed on Phase 6's x11, not this step) and on run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952). Fix on `main`: `.github/workflows/native-release.yml:496,510` derive the file name from `SDL3_ANDROID_VERSION`. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 111-132.
+- [x] User verification performed on the named platform — `build-android` step green on run 34551637777 (that run overall red on Phase 6's x11) and on run 34593258952; staging derives `SDL3_ANDROID_VERSION` at `native-release.yml:496,510`.
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11 (out-of-scope sibling drift in `runtime-next-contract.test.mjs:1071` recorded as follow-up).
 
 Reproduced on this branch's PR run
 [34540703352](https://github.com/ThreeNativeHQ/threenative/actions/runs/34540703352), where `build-android` failed at the step named `Stage Android runtime payloads` before the run was cancelled by the next push. The only tag run in this repository's history (33387137127) died at `gates` with `build-android` skipped, so it never reached the step and is not the reproduction.
@@ -207,11 +208,11 @@ Reproduced on this branch's PR run
 **Progress:**
 
 - [x] Callers wired and building: `packages/runtime-native/package.json`, `packages/runtime-native/tests/desktop-core-gate.test.mjs` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
-- [x] Required test green: `packages/runtime-native/tests/desktop-core-gate.test.mjs` — `tests/desktop-core-gate.test.mjs` green 2026-09-11 (53/53).
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
-- [ ] Independent reviewer returned PASS
+- [x] Required test green: `packages/runtime-native/tests/desktop-core-gate.test.mjs` — `tests/desktop-core-gate.test.mjs` green 2026-09-11 (12/12).
+- [x] Observed red recorded, then restored green - local control - `env -u DISPLAY ...` gave `SDL_Init failed: x11 not available` EXIT 1, and the same command under `scripts/xvfb.sh` EXIT 0. Fix on `main`: `packages/runtime-native/package.json:74`. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 307-340.
+- [x] User verification performed on the named platform — Linux contract lane green on run 34593258952; `SDL_Init failed: x11 not available` red recorded on runs 34551637777, 34553793360 and 34555922045.
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11.
 
 Reproduced on every Linux row of this proof route: runs
 [34551637777](https://github.com/ThreeNativeHQ/threenative/actions/runs/34551637777),
@@ -235,11 +236,11 @@ Reproduced on every Linux row of this proof route: runs
 **Progress:**
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
-- [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
-- [ ] Independent reviewer returned PASS
+- [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 36/36 green 2026-09-11.
+- [x] Observed red recorded, then restored green - **hosted observed failure** - run [34557447467](https://github.com/ThreeNativeHQ/threenative/actions/runs/34557447467) failed `[UNRESOLVED_IMPORT] './networking-game.js' ... './worker-proof.js'`, green on run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952). [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 366-375.
+- [x] User verification performed on the named platform — `clean-consumer` green on run 34593258952; the prepare step copies the entry's imports (`networking-game`, `worker-proof`); `[UNRESOLVED_IMPORT]` red on run 34557447467.
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11.
 
 Reproduced on the first run that ever reached `clean-consumer`,
 [34557447467](https://github.com/ThreeNativeHQ/threenative/actions/runs/34557447467).
@@ -261,11 +262,11 @@ Reproduced on the first run that ever reached `clean-consumer`,
 **Progress:**
 
 - [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
-- [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
-- [ ] Independent reviewer returned PASS
+- [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 36/36 green 2026-09-11.
+- [x] Observed red recorded, then restored green - **hosted observed failure for the library; local-emulator observation for the activity** - run [34559147906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34559147906) died `libwebkit2gtk-4.1.so.0` missing / `Runtime packager exited with code 127`; `Activity class {com.mystral.engine/...} does not exist` was observed on the local emulator with the real APK installed. Fix on `main`: `.github/workflows/native-release.yml:745` installs the runtime's shared libraries, `:792` derives `CONSUMER_APP_ID`, `:913-924` pass it through. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 397-435.
+- [x] User verification performed on the named platform — `clean-consumer` green on run 34593258952 with all six controls passing `--package "$CONSUMER_APP_ID" --activity com.threenative.runtime.MystralActivity`; webkit2gtk/shared-library red on run 34559147906.
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11.
 
 Reproduced on run [34559147906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34559147906) and on a local replica of the job.
 
@@ -285,26 +286,26 @@ Reproduced on run [34559147906](https://github.com/ThreeNativeHQ/threenative/act
 
 **Progress:**
 
-- [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts` — hosted run [34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952) on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, landed in #180 (`a3baa7efe`).
-- [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 35/35 green 2026-09-11.
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md`
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `.github/workflows/native-release.yml`, `scripts/__tests__/native-release-proof.spec.ts` — the same-run route landed in #180 (`a3baa7efe`); the durable publish route landed in #193 (`902ca95e2`, PRD-262 phase 3), verified on candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984` ([run 34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952)) for the historical mechanism.
+- [x] Required test green: `scripts/__tests__/native-release-proof.spec.ts` — `scripts/__tests__/native-release-proof.spec.ts` 36/36 green 2026-09-11.
+- [x] Observed red recorded, then restored green - **hosted observed failure** - run [34564200217](https://github.com/ThreeNativeHQ/threenative/actions/runs/34564200217) failed `build tool helper is missing: ... /prebuilt/linux-x64/mystral-tools` / `Runtime packager exited with code 127`, motivating the fix. The durable fix landed as PRD-262 phase 3 (#193): `.github/workflows/native-release.yml:303,310,317` stage a `tools_asset` per desktop row and the install places the helper beside the runtime, so the proof no longer carries it out of band. [Record](../../verification/prd-078-readiness-phase-2-2026-09-10.md) lines 447-472.
+- [x] User verification performed on the named platform — candidate `clean-consumer` green on run 34593258952 (same-run helper); durable #193 route locally verified — spec 36/36 and deleting the `tools_asset: threenative-tools-linux-x64` row gave `1 failed | 35 passed`, restored `36 passed`; a post-#193 hosted run is not yet observed.
+- [x] Evidence record written: `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` - the single record covers phases 2-9; this phase's section is cited on the observed-red line above.
+- [x] Independent reviewer returned PASS — fresh reviewer PASS 2026-09-11 after the durable-route correction.
 
 Reproduced on run [34564200217](https://github.com/ThreeNativeHQ/threenative/actions/runs/34564200217).
 
 **Files (maximum five):**
 
-- EDIT `.github/workflows/native-release.yml` — stage and upload the build tool helper, and place it beside the installed runtime before the consumer build.
-- EDIT `scripts/__tests__/native-release-proof.spec.ts` — bind the upload, the placement and its ordering.
+- EDIT `.github/workflows/native-release.yml` — publish the build tool helper per desktop row and assert the install placed it before the consumer build.
+- EDIT `scripts/__tests__/native-release-proof.spec.ts` — require the per-row `tools_asset`, the same uploaded artifact, and that nothing places the helper for the consumer.
 - EDIT `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — this phase's evidence record.
 
-**Implementation and wiring:** `src/cli/tool_dispatch.cpp:52` dispatches desktop packaging to a `mystral-tools` binary beside the runtime. `native:build` produces it, nothing published it, and `PREBUILT_ASSET_NAMES` declares no such asset, so a consumer installing from a release cannot run `threenative build --target desktop`. Publishing it is PRD-262's contract; this phase carries it as a same-run artifact so the consumer path is exercised, and records that public installation remains blocked until PRD-262 ships it.
+**Implementation and wiring:** `src/cli/tool_dispatch.cpp:52` dispatches desktop packaging to a `mystral-tools` binary beside the runtime. `native:build` produces it, and the release now publishes it per desktop row (PRD-262 phase 3, #193): `packages/runtime-native/scripts/install-prebuilt.mjs:28,31,33` declares the tools assets and only the held macOS row is excluded, so a consumer installing from a release gets the helper and can run `threenative build --target desktop`. The clean-consumer proof asserts the installed helper precedes the build and no longer stages it out of band. No runtime-native release has been published yet, so public installation remains unproven and belongs to PRD-262/PRD-060.
 
 **Required test:** `scripts/__tests__/native-release-proof.spec.ts`: the consumer gets the build tool helper the runtime dispatches to.
 
-**Observed-red / revert control:** Remove the placement step and the consumer build fails with `build tool helper is missing` and `Runtime packager exited with code 127`.
+**Observed-red / revert control:** The historical production red is run 34564200217 (`build tool helper is missing` / exit 127). Against the durable route, deleting the `tools_asset: threenative-tools-linux-x64` row made `native-release-proof.spec.ts` read `1 failed | 35 passed`; restoring it returned `36 passed`. Public installation stays unproven until a release lane actually publishes the cohort.
 
 ## Verification contract
 
@@ -318,16 +319,16 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-[Phase 1 source evidence](../../verification/prd-078-readiness-phase-1-2026-09-09.md) and [Phase 2 implementation and execution evidence](../../verification/prd-078-readiness-phase-2-2026-09-10.md) distinguish local shell/collector tests, hosted observations and pending independent review. Acceptance boxes remain unchecked until the selected candidate and all phase checkpoints pass. No placeholder or PR-only integration result closes main release acceptance.
+[Phase 1 source evidence](../../verification/prd-078-readiness-phase-1-2026-09-09.md) and [Phase 2 implementation and execution evidence](../../verification/prd-078-readiness-phase-2-2026-09-10.md) distinguish local shell/collector tests from hosted observations; the independent review verdict is recorded on each phase's box. No placeholder or PR-only integration result closes main release acceptance.
 
 ## Acceptance criteria
 
 - [x] Prior successful fixes remain intact and are not rewritten merely because old blocked prose exists. The Vulkan ICD and runtime-version-stamp repairs are untouched, and PR #168's gate, tests and evidence are retained rather than rewritten.
 - [x] The selected candidate has current hosted native build/gate evidence; each failed, skipped or unavailable row is named. Candidate `55b221a3b1e5418dfff022dbcdb2a5048fd0c984`, [run 34593258952](https://github.com/ThreeNativeHQ/threenative/actions/runs/34593258952), attempt 2: `gates`, all three desktop rows, `build-android` and `clean-consumer` success; `validate-tag`, `publish`, `finalize`, `cleanup-failed-release`, `clean-consumer-ios` and `build-ios-simulator` skipped, as the non-publishing route requires. [Run 34569827906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34569827906) on candidate `6ddf1bc1bc759dd059b2793ca9a2684d565c52b8` is the same green on an earlier head whose `build-android` predates the NDK 28.2 change, and is retained as prior evidence only. No iOS claim is made.
 - [x] Wrong-SHA/absent-result controls fail in the existing release entry point. They execute inside the hosted `gates` job, which extracts the workflow's own inline shell and runs it against wrong-SHA, missing-job, skipped-job and malformed-evidence responses; `gates` is success on this candidate and on four earlier runs.
-- [x] All four packed Android physics negative controls and their positive control execute on the selected candidate. All six ran on run 34593258952 with `failures: 0`, at observed assertion counts 16, 2, 4, 4, 16, 16 — every row non-zero — each carrying its required marker, across three distinct APK variants (`01edd619…`, `44296795…`, `68af418e…`). Repairs were split into bounded Phases 3-9. The unpublished build tool helper is handed to PRD-262; this PRD establishes the packed-consumer path, not public installation.
+- [x] All four packed Android physics negative controls and their positive control execute on the selected candidate. All six ran on run 34593258952 with `failures: 0`, at observed assertion counts 16, 2, 4, 4, 16, 16 — every row non-zero — each carrying its required marker, across three distinct APK variants (`01edd619…`, `44296795…`, `68af418e…`). Repairs were split into bounded Phases 3-9. The build tool helper's durable publish route is PRD-262 phase 3 (#193); this PRD establishes the packed-consumer path, not public installation.
 
-**Deliberately not established:** public installation. The runtime payloads and the build tool helper came from the proof's own run, and no release publishes the helper at all. The main-route prerequisite validation — the eleven exact-SHA CI rows — has not been exercised, and the independent acceptance review is **PENDING**.
+**Deliberately not established:** public installation. The runtime payloads in the proof came from that run's own artifacts, and no runtime-native release exists yet, so the durable published-helper route (#193) has not executed on a tag. The independent review is PASS on every phase, and the main-route prerequisite validation — the eleven exact-SHA CI rows — now executes and passes on candidate `5e7ecd1dd…` ([run 34728310261](https://github.com/ThreeNativeHQ/threenative/actions/runs/34728310261)); PRD-262's publish chain receives this proof's run identity.
 
 ## Prior work retained
 

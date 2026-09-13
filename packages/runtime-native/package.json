@@ -1,6 +1,6 @@
 {
   "name": "@threenative/runtime-native",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "ThreeNative-owned native host for desktop, Android, and iOS",
   "keywords": [
     "threenative",
@@ -44,6 +44,7 @@
     "android/settings.gradle.kts",
     "scripts/asset-preflight.mjs",
     "scripts/bundle.mjs",
+    "scripts/check-android-16kb-alignment.mjs",
     "scripts/check-source-list.mjs",
     "scripts/device-preflight.mjs",
     "scripts/install-prebuilt.mjs",

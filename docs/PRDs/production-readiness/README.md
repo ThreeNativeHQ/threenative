@@ -9,17 +9,18 @@
 | PRD | Outcome owned here | Origin / current status | Prerequisites for final acceptance |
 | --- | --- | --- | --- |
 | [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) | Complete public package/cohort installation and automatic MCP toolchain | Moved from done/; PARTIAL | None for repairs; 060 for final public cohort |
-| [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | Current exact-candidate hosted runtime build proof | Moved from BLOCKED/; PARTIAL | Current candidate CI; do not reuse old failure diagnosis |
-| [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | Aligned default V8 and real 16 KB Android execution | Moved from BLOCKED/; PROPOSED | Recheck upstream/toolchain access |
+| [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md) | Current exact-candidate hosted runtime build proof | DONE — phases and acceptance verified, main-route prerequisite validation passed, reviewer PASS; moved to done/ | — |
+| [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md) | Aligned default V8 and real 16 KB Android execution | DONE — all phases and acceptance verified, reviewer PASS | — |
 | [PRD-217](PRD-217-webview-ui-layer.md) | Default React HUD on Windows/macOS/Linux sessions | Moved from done/ (already PARTIAL); PARTIAL | None for platform implementation |
 | [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | Target-scoped build prerequisite prediction; Blender/editor separation | NOT STARTED | Extends done [PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md); consumes contracts from 196/212/217/365 |
-| [PRD-212](PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | Moved from mobile/; PARTIAL | 221 inputs; 262 downloaded artifacts |
+| [PRD-212](../done/PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | DONE — phases and the criteria it owns verified; public-cohort and device proofs delegated to 060/366 | — |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | Complete desktop containers and signing/notarization | NEW; PROPOSED | 217 overlays; 212 mode parsing; 262 binaries |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | Android release artifact and distributed desktop app carry the brand | NOT STARTED | 212/365 final artifacts; 217 UI |
-| [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | Complete version-matched downloadable runtime assets | Moved from mobile/; PARTIAL, phases 1-3 landed | 078 hosted proof; 196 package contents; 221/217 final inputs |
+| [PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) | Complete version-matched downloadable runtime assets | DONE — phases 1-3 and acceptance verified, reviewer PASS; moved to done/ | — (consumer/publication gates now owned by 376/212/366/060) |
 | [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | Actual consumer game and physical Android qualification | NEW; PROPOSED | 196/212/217/221/262/365; 153 captures |
 | [PRD-376](PRD-376-windows-consumer-builds-and-runs.md) | A Windows consumer installs the published runtime, builds and runs | NEW; PROPOSED | 262 publishes the win32-x64 cohort; prerequisite for 365 and 366 |
 | [PRD-060](PRD-060-promoted-consumer-distribution.md) | Public candidate verification, recovery, promotion, stores and outside users | Moved from BLOCKED/; PROPOSED | All applicable owner results; external credentials/people only at their checkpoint |
+| [PRD-378](../done/PRD-378-one-local-command-publishes-every-package.md) | One local `pnpm` command publishes the npm cohort and the host native runtime | DONE — all phases and acceptance verified, reviewer PASS | — |
 
 Dependencies in the table are acceptance dependencies, not a prohibition on preparing tests/configuration earlier. Candidate production is deliberately split from final public proof: PRD-060 phase 1 stages, PRD-262 supplies downloads, PRD-366 qualifies, then PRD-060 phases 2–3 verify public consumers and obtain credentialed/external-user evidence before phase 4 promotes. Do not create an all-phases dependency cycle by requiring final promotion before candidate testing.
 

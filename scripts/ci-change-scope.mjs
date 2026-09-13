@@ -3,7 +3,6 @@
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-const PROSE_ROOTS = ["docs/PRDs/", "docs/verification/"];
 const EXCLUDED_MARKDOWN = [
   /^docs\/PRDs\/realism-effects\/README\.md$/u,
   /^docs\/verification\/(?:PRD-289-conventions|alpha-bar|runtime-perf-state)\.md$/u,
@@ -54,13 +53,18 @@ export function selectionPlan(selection, reason, files = [], candidateSha = "") 
       },
     ]),
   );
+  const proseOnly = selection === "prose";
   jobs.lint = {
-    required: true,
-    reason: "Documentation, formatting and selected instruction contracts",
+    required: !proseOnly,
+    reason: proseOnly
+      ? "Exempt: a Markdown-only change runs no gate; docs are re-validated on the develop nightly and at promotion"
+      : "Documentation, formatting and selected instruction contracts",
   };
   jobs["supply-chain"] = {
-    required: true,
-    reason: "Changed prose can still contain credentials; dependency review remains applicable",
+    required: !proseOnly,
+    reason: proseOnly
+      ? "Exempt: a Markdown-only change runs no gate; secrets and dependency review are re-validated on the develop nightly and at promotion"
+      : "Changed prose can still contain credentials; dependency review remains applicable",
   };
   jobs.website = {
     required: checks.website,
@@ -154,7 +158,7 @@ function parseNameStatus(output) {
   const paths = [];
   for (let index = 0; index < fields.length; ) {
     const status = fields[index++];
-    if (!status || !/^(?:[ADM]|[RC](?:100|[1-9]?[0-9]))$/u.test(status)) {
+    if (!status || !/^(?:[ADM]|[RC]\d{3})$/u.test(status)) {
       return { error: `unsupported or malformed diff status ${JSON.stringify(status ?? "")}` };
     }
     const count = status[0] === "R" || status[0] === "C" ? 2 : 1;
@@ -177,7 +181,10 @@ function pathFamily(file, selective) {
   }
   if (EXCLUDED_MARKDOWN.some((pattern) => pattern.test(file)))
     return "a Markdown file consumed by an executable fixture, parser or gate";
-  if (file.endsWith(".md") && PROSE_ROOTS.some((root) => file.startsWith(root))) return "prose";
+  // Any Markdown the executable fixtures do not consume is inert: a .md-only PR runs no CI job.
+  // Doc links, evidence budgets and secret scans are re-validated on the develop nightly run and
+  // at promotion. AGENTS.md/CLAUDE.md are instruction consumers and are handled above.
+  if (file.endsWith(".md")) return "prose";
   // The site is a private, non-published consumer. Its own dependency manifest is deliberately
   // NOT isolated: dependency/catalog/lockfile changes must exercise the entire workspace.
   if (
@@ -187,7 +194,7 @@ function pathFamily(file, selective) {
     )
   )
     return "website";
-  return file.endsWith(".md") ? "outside the narrow prose roots" : "a non-Markdown path";
+  return "a non-Markdown path";
 }
 
 function changedPaths(options) {

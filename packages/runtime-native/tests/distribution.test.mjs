@@ -1,6 +1,6 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -346,12 +346,28 @@ test('a clean-room install builds for Android from a fixture manifest, with no e
       spawnSync: (command, args) => {
         gradleInvocations.push({ args, command });
         mkdirSync(join(installed, 'android/app/build/outputs/apk/debug'), { recursive: true });
-        writeFileSync(
+        // PRD-221: the packager censuses the finished APK for 16 KB compliance, so a stranger's
+        // artifact has to be a real archive carrying a library per ABI. The masked Gradle stands
+        // in for the build, not for the gate.
+        const staged = join(installed, 'android/app/build/clean-room-libs');
+        for (const abi of ['arm64-v8a', 'x86_64']) {
+          mkdirSync(join(staged, 'lib', abi), { recursive: true });
+          writeFileSync(join(staged, 'lib', abi, 'libmystral-runtime.so'), 'clean-room apk');
+        }
+        execFileSync('jar', [
+          '--create',
+          '--file',
           join(installed, 'android/app/build/outputs/apk/debug/app-debug.apk'),
-          'clean-room apk',
-        );
+          '-C', staged, 'lib/arm64-v8a/libmystral-runtime.so',
+          '-C', staged, 'lib/x86_64/libmystral-runtime.so',
+        ]);
         return { status: 0, stdout: '' };
       },
+      artifact16Kb: { runObjdump: () => 'LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**14', zipalign: false },
+      // The fixture Gradle above builds a real-but-unrelated archive; the aligner would run the
+      // real zipalign/apksigner against it. Alignment is exercised in
+      // android-packaging.integration.test.mjs, so opt out here.
+      alignArchive: false,
     });
 
     // Every prebuilt the fixture manifest named landed where the Gradle build expects it.
@@ -824,6 +840,81 @@ test('legacy explicit artifact-only pins remain readable', () => {
   const release = { url: 'https://example.com/pinned-runtime', sha256: sha256('legacy') };
   writeFileSync(manifestPath, JSON.stringify({ artifacts: { 'linux-x64': release } }));
   assert.deepEqual(readRelease(manifestPath, 'linux-x64'), release);
+});
+
+test('a scoped manifest installs exactly the keys it advertises and refuses an undeclared one', async () => {
+  const root = makeTempDirSync('threenative-scoped-manifest-');
+  roots.push(root);
+  const runtime = Buffer.from('scoped runtime');
+  const tools = Buffer.from('scoped tools');
+  const server = createServer((request, response) => {
+    if (request.url === '/runtime') { response.end(runtime); return; }
+    if (request.url === '/tools') { response.end(tools); return; }
+    response.statusCode = 404;
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const base = `http://127.0.0.1:${address.port}`;
+    const manifestPath = join(root, 'prebuilt-lock.json');
+    const lock = {
+      schemaVersion: 1,
+      version: candidateLock({}).version,
+      sourceSha: '1'.repeat(40),
+      requiredKeys: ['linux-x64', 'linux-x64-tools'],
+      artifacts: {
+        'linux-x64': { url: `${base}/runtime`, sha256: sha256(runtime), size: runtime.length },
+        'linux-x64-tools': { url: `${base}/tools`, sha256: sha256(tools), size: tools.length },
+      },
+    };
+    writeFileSync(manifestPath, JSON.stringify(lock));
+    // A scoped manifest is accepted even though it carries none of the other published keys.
+    assert.equal(readRelease(manifestPath, 'linux-x64').sha256, sha256(runtime));
+    // A key the manifest does not advertise fails closed, naming the key.
+    assert.throws(() => readRelease(manifestPath, 'win32-x64'), /win32-x64/u);
+    const output = join(root, 'runtime');
+    const statusPath = join(root, 'install-status.json');
+    await installPrebuilt({ arch: 'x64', manifestPath, output, platform: 'linux', statusPath });
+    assert.deepEqual(readFileSync(output), runtime);
+    assert.deepEqual(readFileSync(join(root, 'mystral-tools')), tools);
+    assert.equal(JSON.parse(readFileSync(statusPath, 'utf8')).ok, true);
+    // Observed red: a declared key that is not carried fails the install, naming that key.
+    const broken = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    Reflect.deleteProperty(broken.artifacts, 'linux-x64-tools');
+    writeFileSync(manifestPath, JSON.stringify(broken));
+    assert.throws(() => readRelease(manifestPath, 'linux-x64'), /linux-x64-tools/u);
+    // Restoring the declared key restores green, so the refusal was the key and nothing else.
+    writeFileSync(manifestPath, JSON.stringify(lock));
+    assert.equal(readRelease(manifestPath, 'linux-x64').sha256, sha256(runtime));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('generateReleaseManifest with keys scopes the lock and refuses a missing declared asset', async () => {
+  const { generateReleaseManifest } = await import('../scripts/install-prebuilt.mjs');
+  const root = makeTempDirSync('threenative-scoped-generate-');
+  roots.push(root);
+  writeFileSync(join(root, PREBUILT_ASSET_NAMES['linux-x64']), 'runtime');
+  writeFileSync(join(root, PREBUILT_ASSET_NAMES['linux-x64-tools']), 'tools');
+  const identity = {
+    repository: RELEASE_REPOSITORY,
+    sourceSha: '2'.repeat(40),
+    tag: `runtime-native-v${candidateLock({}).version}`,
+  };
+  const manifest = generateReleaseManifest(root, { ...identity, keys: ['linux-x64', 'linux-x64-tools'] });
+  assert.deepEqual(manifest.requiredKeys, ['linux-x64', 'linux-x64-tools']);
+  assert.deepEqual(Object.keys(manifest.artifacts).sort(), ['linux-x64', 'linux-x64-tools']);
+  assert.equal(manifest.artifacts['linux-x64'].size, 'runtime'.length);
+  // Observed red: a declared asset that was not staged refuses, naming the missing filename.
+  rmSync(join(root, PREBUILT_ASSET_NAMES['linux-x64-tools']));
+  assert.throws(
+    () => generateReleaseManifest(root, { ...identity, keys: ['linux-x64', 'linux-x64-tools'] }),
+    /threenative-tools-linux-x64/u,
+  );
 });
 
 test('a remote candidate missing an ABI snapshot fails before any artifact download', async () => {

@@ -31,6 +31,13 @@ import {
 
 const repo = path.resolve(import.meta.dirname, "../..");
 
+// A git command can return while a background auto-gc still writes
+// .git/objects/pack, so a plain recursive rm races it and throws ENOTEMPTY.
+// Node retries ENOTEMPTY when maxRetries/retryDelay are set.
+async function removeFixture(root: string): Promise<void> {
+  await rm(root, { force: true, recursive: true, maxRetries: 10, retryDelay: 100 });
+}
+
 it("coverage consumes retained production evidence and blocks status-only artifacts", async () => {
   const directory = await makeTempDir("performance-coverage-");
   await writeFile(
@@ -739,7 +746,31 @@ describe("CI pipeline structure", () => {
         selection: "full",
       });
     } finally {
-      await rm(fixture.root, { force: true, recursive: true });
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("classifies a modified rename from its zero-padded similarity score", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const lines = Array.from({ length: 12 }, (_, index) => `line ${index + 1}\n`).join("");
+      const proseHead = await commitScopeChange(
+        fixture,
+        "docs/PRDs/long.md",
+        lines,
+        "long planning prose",
+      );
+      fixture.git(["mv", "docs/PRDs/long.md", "docs/PRDs/moved.md"]);
+      await writeFile(path.join(fixture.root, "docs/PRDs/moved.md"), `${lines}changed\n`);
+      fixture.git(["add", "-A"]);
+      fixture.git(["commit", "--quiet", "-m", "rename and edit"]);
+      const renamedHead = fixture.git(["rev-parse", "HEAD"]);
+      expect(classifyScope(fixture.root, proseHead, renamedHead)).toMatchObject({
+        scope: "prose",
+        selection: "prose",
+      });
+    } finally {
+      await removeFixture(fixture.root);
     }
   });
 
@@ -760,7 +791,7 @@ describe("CI pipeline structure", () => {
         selection: "full",
       });
     } finally {
-      await rm(fixture.root, { force: true, recursive: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -884,7 +915,27 @@ describe("CI pipeline structure", () => {
     expect(ci).toMatch(/push:\n\s+branches:\n\s+- main/u);
     expect(ci).toMatch(/pull_request:\n\s+branches:\n\s+- main/u);
     expect(ci).toContain("group: ci-${{ github.event_name }}-${{ github.ref }}");
-    expect(native).toContain("group: native-release-${{ github.ref }}");
+    // Main evidence arrives via CI completion, never via the push itself: every
+    // `workflow_run` run shares `github.ref` (the default branch), so the group also
+    // keys on the triggering CI head SHA - a new completion for a newer main SHA gets
+    // its own group instead of queueing behind a superseded evidence run.
+    expect(native).toContain(
+      "group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}",
+    );
+    expect(native).toContain("cancel-in-progress: false");
+    const triggers = triggerSection(native);
+    expect(triggers).toContain("workflow_run:");
+    expect(triggers).toContain("workflows: [CI]");
+    expect(triggers).toContain("types: [completed]");
+    const pushBlock = triggers.slice(
+      triggers.indexOf("\n  push:"),
+      triggers.indexOf("\n  pull_request:"),
+    );
+    expect(pushBlock, "a push-to-main trigger still feeds the evidence path").not.toContain(
+      "branches:",
+    );
+    expect(pushBlock, "the tag publish path lost its trigger").toContain("runtime-native-v*");
+    // Tag publication and manual proof keep the single-shot lookup they always had.
     expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
     expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
   });
@@ -983,6 +1034,24 @@ describe("CI pipeline structure", () => {
     expect(gates).toContain("entry?.headSha === candidateSha");
     expect(gates).toContain("Number.isSafeInteger(entry?.databaseId)");
     expect(gates).toContain("entry.databaseId > 0");
+    // The evidence path reads the triggering CI completion from the event payload -
+    // conclusion plus head SHA - and refuses anything but exact-candidate success.
+    // No step polls or holds a runner: the verdict runs on a single-digit-minute budget.
+    expect(gates).toContain("Require the triggering CI completion");
+    expect(gates).toContain("github.event.workflow_run.conclusion");
+    expect(gates).toContain("github.event.workflow_run.head_sha");
+    expect(gates).toContain("github.event.workflow_run.head_branch");
+    expect(gates).not.toContain("Wait for the exact main CI run to finish");
+    expect(gates).not.toContain("sleep 60");
+    const timeout = Number(gates?.match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
+    expect(timeout, "the gates verdict must not hold a runner").toBeLessThanOrEqual(9);
+    // Both verdict steps enforce the same required-job table: the event-payload verdict
+    // for `workflow_run` evidence and the single-shot lookup for tag/manual proof.
+    const tables = [...(gates?.matchAll(/const requiredNames = \[([\s\S]*?)\];/gu) ?? [])].map(
+      (match) => match[1],
+    );
+    expect(tables.length).toBe(2);
+    expect(tables[0]).toBe(tables[1]);
   });
 
   it("desktop parity runs against a captured web reference and fails closed", async () => {
@@ -1233,9 +1302,10 @@ describe("CI pipeline structure", () => {
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
-    // Secret scanning remains on prose-only PRs: Markdown can contain credentials even when it
-    // does not alter executable behavior.
+    // Markdown-only PRs skip the scan entirely (owner call 2026-09-12): the nightly develop run
+    // and promotions still scan the full git history, so an inert prose PR spends no runner here.
     expect(supplyChain).toContain("needs: scope");
+    expect(supplyChain).toContain("if: needs.scope.outputs.selection != 'prose'");
     expect(supplyChain).not.toContain("needs.scope.outputs.selection == 'full'");
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
@@ -2750,14 +2820,14 @@ describe("PRD-373 selective feature verification", () => {
       const jobs = plan.jobs as Record<string, { required: boolean; reason: string }>;
       expect(jobs["native-platforms"]).toMatchObject({ required: false });
       expect(jobs["native-platforms"]?.reason.length).toBeGreaterThan(10);
-      expect(jobs["supply-chain"]?.required).toBe(true);
-      expect(jobs.lint?.required).toBe(true);
+      expect(jobs["supply-chain"]?.required).toBe(selection !== "prose");
+      expect(jobs.lint?.required).toBe(selection !== "prose");
       expect(jobs.website?.required).toBe(selection === "website");
       expect((plan.checks as Record<string, boolean>).instructions).toBe(
         selection === "instructions",
       );
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2773,7 +2843,6 @@ describe("PRD-373 selective feature verification", () => {
     "site/package.json",
     "tsconfig.base.json",
     ".github/workflows/ci.yml",
-    "some-new-folder/unknown.md",
     "packages/runtime-native/AGENTS.md",
     "templates/topdown/CLAUDE.md",
   ])("retains all consumers for %s without merging on native evidence", async (relative) => {
@@ -2792,9 +2861,25 @@ describe("PRD-373 selective feature verification", () => {
       const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
       expect(native?.reason.length).toBeGreaterThan(10);
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
+
+  it.each(["docs/PRDs/inert.md", "docs/strategy/plan.md", "some-new-folder/unknown.md"])(
+    "selects prose and requires no job for the inert Markdown %s",
+    async (relative) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, relative, "changed\n", "docs");
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan).toMatchObject({ selection: "prose" });
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(Object.values(jobs).some((job) => job.required)).toBe(false);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    },
+  );
 
   it("never narrows main promotions, unknown targets or manual full runs", async () => {
     const fixture = await scopeFixture();
@@ -2818,7 +2903,7 @@ describe("PRD-373 selective feature verification", () => {
         ).toBe("full");
       }
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2849,7 +2934,7 @@ describe("PRD-373 selective feature verification", () => {
         classifyScope(fixture.root, beforeDelete, "HEAD", ["--target", "develop"]).selection,
       ).toBe("full");
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 
@@ -2870,7 +2955,7 @@ describe("PRD-373 selective feature verification", () => {
           .selection,
       ).toBe("full");
     } finally {
-      await rm(fixture.root, { recursive: true, force: true });
+      await removeFixture(fixture.root);
     }
   });
 });

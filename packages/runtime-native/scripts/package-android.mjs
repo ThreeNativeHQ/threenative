@@ -8,14 +8,20 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { downloadReleaseArtifact, releaseManifestUrl, verifyChecksum } from './install-prebuilt.mjs';
 import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
+import {
+  assertAndroidArtifact16KbAlignment,
+  resolveZipalignCandidates,
+} from './check-android-16kb-alignment.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GRADLE_WRAPPER_URL =
@@ -25,6 +31,199 @@ export const GRADLE_WRAPPER_SHA256 =
 
 export const ANDROID_ABIS = ['arm64-v8a', 'x86_64'];
 export const ANDROID_ENGINES = ['quickjs', 'v8'];
+
+/**
+ * The Android submission API level Google Play requires of a new app or update.
+ *
+ * PRD-212 phase 1. It is the one literal the packaging layer owns; the shipped
+ * `android/app/build.gradle.kts` carries the same number, and `assertAndroidSubmissionTargetSdk`
+ * refuses a build whose rendered project is below it. Raise both together — Play raises the floor
+ * on its own schedule, and a build that silently drops below it ships an artifact that is
+ * rejected at upload.
+ */
+export const ANDROID_SUBMISSION_TARGET_SDK = 36;
+
+/** The `targetSdk` a Gradle Android project source declares, if it declares one. */
+export function androidGradleTargetSdk(source) {
+  const match = /targetSdk\s*=\s*(\d+)/u.exec(String(source ?? ''));
+  return match === null ? undefined : Number(match[1]);
+}
+
+/**
+ * Refuse a rendered Android project whose `targetSdk` is below the submission floor.
+ *
+ * Fail closed on a missing `targetSdk`: an unparsable project is a project whose submission level
+ * nobody can vouch for, which is exactly what this gate exists to catch.
+ */
+export function assertAndroidSubmissionTargetSdk(source, required = ANDROID_SUBMISSION_TARGET_SDK) {
+  const declared = androidGradleTargetSdk(source);
+  if (declared === undefined) {
+    throw new Error(
+      `TN_ANDROID_TARGET_SDK_MISSING: android/app/build.gradle.kts declares no targetSdk; submission requires API ${required}.`,
+    );
+  }
+  if (declared < required) {
+    throw new Error(
+      `TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION: targetSdk ${declared} is below the required API ${required}; update android/app/build.gradle.kts before packaging a release.`,
+    );
+  }
+  return declared;
+}
+
+/**
+ * The four Gradle project properties a consumer-owned release signs with.
+ *
+ * PRD-212 phase 3. The names are the contract between the game's build environment and
+ * `android/app/build.gradle.kts`; `packages/create-threenative/src/doctor.ts` predicts the same four
+ * in their `ORG_GRADLE_PROJECT_` transport spelling, and a test fails if the two lists drift.
+ * Values are read here only to hand them to the signing subprocess and are never logged or
+ * serialized into the packaging config.
+ */
+export const ANDROID_RELEASE_SIGNING_PROPERTIES = Object.freeze({
+  keystore: 'threenativeKeystore',
+  keyAlias: 'threenativeKeystoreAlias',
+  keystorePassword: 'threenativeKeystorePassword',
+  keyPassword: 'threenativeKeyPassword',
+});
+
+/**
+ * Resolve the signing inputs from the build environment, resolving the keystore against the
+ * consumer project rather than the engine's Android project directory.
+ *
+ * Returns the password values so they can be forwarded to Gradle; callers must not print them.
+ */
+export function androidReleaseSigning(environment = process.env, projectRoot = undefined) {
+  const read = (property) => (environment[`ORG_GRADLE_PROJECT_${property}`] ?? '').trim();
+  const keystore = read(ANDROID_RELEASE_SIGNING_PROPERTIES.keystore);
+  const resolvedKeystore =
+    keystore.length === 0 || projectRoot === undefined ? keystore : resolve(projectRoot, keystore);
+  const values = {
+    keystore: resolvedKeystore,
+    keyAlias: read(ANDROID_RELEASE_SIGNING_PROPERTIES.keyAlias),
+    keystorePassword: read(ANDROID_RELEASE_SIGNING_PROPERTIES.keystorePassword),
+    keyPassword: read(ANDROID_RELEASE_SIGNING_PROPERTIES.keyPassword),
+  };
+  const missing = Object.entries(values)
+    .filter(([, value]) => value.length === 0)
+    .map(([role]) => `ORG_GRADLE_PROJECT_${ANDROID_RELEASE_SIGNING_PROPERTIES[role]}`);
+  return {
+    ...values,
+    complete: missing.length === 0,
+    missing,
+  };
+}
+
+/** The environment Gradle sees, with the four signing properties rewritten to resolved values. */
+export function androidSigningGradleEnvironment(signing, environment = process.env) {
+  return {
+    ...environment,
+    ORG_GRADLE_PROJECT_threenativeKeystore: signing.keystore,
+    ORG_GRADLE_PROJECT_threenativeKeystoreAlias: signing.keyAlias,
+    ORG_GRADLE_PROJECT_threenativeKeystorePassword: signing.keystorePassword,
+    ORG_GRADLE_PROJECT_threenativeKeyPassword: signing.keyPassword,
+  };
+}
+
+/** Locate an Android build tool on `PATH`, then in the SDK's `build-tools/<version>/`. */
+export function findAndroidBuildTool(name, environment = process.env) {
+  const suffix = process.platform === 'win32' ? '.bat' : '';
+  const onPath = spawnSync(`${name}${suffix}`, ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 5_000,
+  });
+  if (onPath.error === undefined && onPath.status !== null) return `${name}${suffix}`;
+  const roots = [environment.ANDROID_HOME, environment.ANDROID_SDK_ROOT]
+    .filter((root) => typeof root === 'string' && root.length > 0)
+    .concat(join(homedir(), 'Android', 'Sdk'));
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const buildTools = join(root, 'build-tools');
+    if (!existsSync(buildTools)) continue;
+    const versions = readdirSync(buildTools).sort((left, right) =>
+      right.localeCompare(left, 'en', { numeric: true }),
+    );
+    for (const version of versions) {
+      const candidate = join(buildTools, version, `${name}${suffix}`);
+      if (existsSync(candidate)) return candidate;
+    }
+    const direct = join(root, 'tools', 'bin', `${name}${suffix}`);
+    if (existsSync(direct)) return direct;
+  }
+  return undefined;
+}
+
+/**
+ * Prove a release artifact is really signed, targets the submission SDK and is not debuggable.
+ *
+ * `verifyReleaseSignature` is the injectable seam the integration lane uses to stand in for the
+ * SDK tools; on a real build the signature is read with `apksigner` (APK) or `jarsigner` (AAB), and
+ * a missing verifier is a blocker rather than a silent pass. An APK is additionally read back with
+ * `aapt`, so the gate checks the artifact itself — its packaged `targetSdkVersion` and absence of
+ * `application-debuggable` — rather than trusting the Gradle source. Nothing here reads a signing
+ * value except the tool invocations Gradle already owns.
+ */
+export function verifyAndroidReleaseArtifact(artifact, request, options = {}) {
+  const environment = options.environment ?? process.env;
+  const run = options.spawnSync ?? spawnSync;
+  if (options.verifyReleaseSignature !== undefined) {
+    return options.verifyReleaseSignature(artifact, request);
+  }
+  const locate = (name) =>
+    options.findBuildTool !== undefined
+      ? options.findBuildTool(name)
+      : findAndroidBuildTool(name, environment);
+  const tool = request.format === 'aab' ? 'jarsigner' : 'apksigner';
+  const executable = locate(tool);
+  if (executable === undefined) {
+    throw new Error(
+      `TN_ANDROID_SIGNATURE_TOOL_MISSING: ${tool} is unavailable, so the ${request.format} signature cannot be verified. Install the Android build-tools, or set ANDROID_HOME.`,
+    );
+  }
+  const args = tool === 'apksigner' ? ['verify', '--print-certs', artifact] : ['-verify', artifact];
+  const result = run(executable, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  if (result.error) throw result.error;
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  if (result.status !== 0) {
+    throw new Error(
+      `TN_ANDROID_SIGNATURE_INVALID: ${tool} rejected ${artifact}: ${output.trim() || 'unknown reason'}`,
+    );
+  }
+  const facts = { output };
+  if (request.format === 'aab') return facts;
+  // The APK's own badging is the artifact-level half of the phase-1 gate: a project whose source
+  // says 36 but whose packaged manifest says 35 is what a source-only check misses.
+  const aapt = locate('aapt');
+  if (aapt === undefined) {
+    throw new Error(
+      `TN_ANDROID_BADGING_TOOL_MISSING: aapt is unavailable, so the release APK's targetSdk and debuggable state cannot be read. Install the Android build-tools, or set ANDROID_HOME.`,
+    );
+  }
+  const badging = run(aapt, ['dump', 'badging', artifact], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (badging.error) throw badging.error;
+  const badgingText = `${badging.stdout ?? ''}${badging.stderr ?? ''}`;
+  if (badging.status !== 0) {
+    throw new Error(`TN_ANDROID_BADGING_FAILED: aapt could not read ${artifact}.`);
+  }
+  const targetSdk = /targetSdkVersion:'(\d+)'/u.exec(badgingText)?.[1];
+  if (targetSdk === undefined) {
+    throw new Error(`TN_ANDROID_BADGING_INCOMPLETE: aapt reported no targetSdkVersion for ${artifact}.`);
+  }
+  if (Number(targetSdk) < ANDROID_SUBMISSION_TARGET_SDK) {
+    throw new Error(
+      `TN_ANDROID_TARGET_SDK_BELOW_SUBMISSION: packaged targetSdk ${targetSdk} is below the required API ${ANDROID_SUBMISSION_TARGET_SDK}.`,
+    );
+  }
+  if (/application-debuggable/u.test(badgingText)) {
+    throw new Error(`TN_ANDROID_ARTIFACT_DEBUGGABLE: ${artifact} is debuggable.`);
+  }
+  return { output, targetSdk: Number(targetSdk) };
+}
+
+
 
 /**
  * The QuickJS prebuilt set. Unchanged, and still the meaning of the unqualified release keys.
@@ -621,6 +820,125 @@ export function stageAndroidUi(ui, renderer, destination) {
   return files;
 }
 
+export const ANDROID_BUILD_MODES = ['debug', 'release'];
+export const ANDROID_BUILD_FORMATS = ['apk', 'aab'];
+
+/**
+ * Resolve a requested mode/format pair into the Gradle task and the artifact it must produce.
+ *
+ * PRD-212 phase 2. `debug/apk` stays the default; a release APK and a release AAB are the two
+ * explicit routes. An AAB is a Play submission shape, so `debug/aab` is refused before any work.
+ */
+export function androidBuildRequest(mode = 'debug', format = 'apk') {
+  const resolvedMode = String(mode).toLowerCase();
+  const resolvedFormat = String(format).toLowerCase();
+  if (!ANDROID_BUILD_MODES.includes(resolvedMode)) {
+    throw new Error(
+      `TN_ANDROID_BUILD_MODE_INVALID: unknown mode '${mode}'; expected debug or release.`,
+    );
+  }
+  if (!ANDROID_BUILD_FORMATS.includes(resolvedFormat)) {
+    throw new Error(
+      `TN_ANDROID_BUILD_FORMAT_INVALID: unknown format '${format}'; expected apk or aab.`,
+    );
+  }
+  if (resolvedFormat === 'aab' && resolvedMode !== 'release') {
+    throw new Error('TN_ANDROID_BUILD_UNSUPPORTED: --format aab requires --mode release.');
+  }
+  const task =
+    resolvedFormat === 'aab'
+      ? 'bundleRelease'
+      : resolvedMode === 'release'
+        ? 'assembleRelease'
+        : 'assembleDebug';
+  return { format: resolvedFormat, mode: resolvedMode, task };
+}
+
+/**
+ * The exact artifacts a resolved request may produce, in preference order.
+ *
+ * A release APK is signed, so only `app-release.apk` satisfies it; `app-release-unsigned.apk` is a
+ * failed release and is named separately so the refusal can say so. A debug request is the only
+ * route that accepts `app-debug.apk`, which is how a debug artifact stops being reported as a
+ * release.
+ */
+export function androidArtifactCandidates(packageRoot, request) {
+  const outputs = join(packageRoot, 'android', 'app', 'build', 'outputs');
+  if (request.format === 'aab') return [join(outputs, 'bundle', 'release', 'app-release.aab')];
+  if (request.mode === 'debug') return [join(outputs, 'apk', 'debug', 'app-debug.apk')];
+  return [join(outputs, 'apk', 'release', 'app-release.apk')];
+}
+
+/** The unsigned release APK AGP emits when no signing config is applied. */
+export function androidUnsignedReleaseApk(packageRoot) {
+  return join(packageRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release-unsigned.apk');
+}
+
+/**
+ * Align the finished APK's uncompressed libraries to 16 KB, then re-sign it.
+ *
+ * AGP 8.2.2 stores shared libraries uncompressed but aligns them to 4 KB, so a device with 16 KB
+ * pages cannot map them straight out of the archive — the census below caught exactly that on
+ * `lib/arm64-v8a/libSDL3.so`, at offset 0x11d000. Alignment is an archive property, not a
+ * compiler one, so no amount of correctly built `.so` files fixes it; the SDK's own `zipalign -P 16`
+ * does, and `apksigner` puts the signature back afterwards because zipalign rewrites the archive.
+ *
+ * Fails closed: no zipalign, no apksigner, or a non-zero exit is an error, never a skip. An APK
+ * that silently ships 4 KB-aligned libraries is the defect this whole path exists to prevent.
+ */
+function alignAndroidArchive(apkPath, options = {}) {
+  const spawn = options.spawnSync ?? spawnSync;
+  const zipalign =
+    options.zipalign ??
+    resolveZipalignCandidates().find(
+      (candidate) => candidate === 'zipalign' || existsSync(candidate),
+    );
+  if (zipalign === undefined)
+    throw new Error(
+      'No zipalign found. Install Android SDK build-tools, or set TN_ZIPALIGN, so the packaged ' +
+        'APK can be aligned to 16 KB.',
+    );
+  const aligned = `${apkPath}.aligned`;
+  rmSync(aligned, { force: true });
+  const alignResult = spawn(zipalign, ['-P', '16', '-f', '4', apkPath, aligned], {
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
+  if (alignResult.error) throw alignResult.error;
+  if (alignResult.status !== 0)
+    throw new Error(`${zipalign} exited with code ${alignResult.status ?? 'unknown'}.`);
+  const apksigner = zipalign === 'zipalign' ? 'apksigner' : join(dirname(zipalign), 'apksigner');
+  const keystore =
+    options.keystore ?? join(process.env.HOME ?? homedir(), '.android', 'debug.keystore');
+  if (!existsSync(keystore))
+    throw new Error(
+      `Cannot re-sign the aligned APK: no keystore at ${keystore}. Run a Gradle debug build once ` +
+        'to create the debug keystore, or pass an explicit keystore.',
+    );
+  const signResult = spawn(
+    apksigner,
+    [
+      'sign',
+      '--ks',
+      keystore,
+      '--ks-pass',
+      `pass:${options.keystorePassword ?? 'android'}`,
+      '--ks-key-alias',
+      options.keystoreAlias ?? 'androiddebugkey',
+      '--key-pass',
+      `pass:${options.keyPassword ?? 'android'}`,
+      aligned,
+    ],
+    { encoding: 'utf8', stdio: 'inherit' },
+  );
+  if (signResult.error) throw signResult.error;
+  if (signResult.status !== 0)
+    throw new Error(`${apksigner} exited with code ${signResult.status ?? 'unknown'}.`);
+  renameSync(aligned, apkPath);
+  rmSync(`${aligned}.idsig`, { force: true });
+  return zipalign;
+}
+
 export async function packageAndroid(
   bundle,
   requestedOutput,
@@ -635,6 +953,21 @@ export async function packageAndroid(
     options.runtimeRoot ?? process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
   );
   const { androidRoot } = androidPaths(packageRoot);
+  // Validate the request before any asset work or Gradle: an unsupported mode/format pair must
+  // fail with a named reason, not after a ten-minute build produces the wrong artifact.
+  const request = androidBuildRequest(options.mode, options.format);
+  const environment = options.environment ?? process.env;
+  const signing =
+    request.mode === 'release'
+      ? androidReleaseSigning(environment, options.projectRoot)
+      : undefined;
+  if (signing !== undefined && !signing.complete) {
+    // Never fall back to debug keys or an unsigned release. The names are safe to print; the
+    // values never are.
+    throw new Error(
+      `TN_ANDROID_SIGNING_INCOMPLETE: release signing inputs are not set: ${signing.missing.join(', ')}. Export them from the game's build environment (see packages/runtime-native/README.md).`,
+    );
+  }
   const sourceCheckout = existsSync(join(packageRoot, 'CMakeLists.txt'));
   if (sourceCheckout && options.allowSourceBuild !== true) {
     throw new Error(
@@ -694,6 +1027,9 @@ export async function packageAndroid(
   stageAndroidUi(options.ui, declared.ui.renderer === 'web' ? 'web' : 'native', join(generatedAssets, 'ui'));
   const restoreFiles = installAndroidFiles(declared, packageRoot);
   try {
+    // The subject of the build, after branding rewrote it: the submission floor is a property of
+    // the project Gradle is about to compile, not of a constant the packager hopes still matches it.
+    assertAndroidSubmissionTargetSdk(readFileSync(androidPaths(packageRoot).androidGradle, 'utf8'));
     const command = process.platform === 'win32' ? gradlew : 'sh';
     // Build variants the app already understands — `-PthreenativeJsEngine=v8`,
     // `-PthreenativeVsync=false` — are only reachable if something can pass them through. Without
@@ -701,34 +1037,76 @@ export async function packageAndroid(
     const extraGradleArgs = (process.env.THREENATIVE_GRADLE_ARGS ?? '')
       .split(' ')
       .filter((entry) => entry.length > 0);
-    const baseArgs = ['assembleDebug', '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
+    const baseArgs = [request.task, '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
     const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];
     const spawn = options.spawnSync ?? spawnSync;
     const result = spawn(command, args, {
       cwd: androidRoot,
       encoding: 'utf8',
+      // The signing values reach Gradle only as project properties from the game's environment; the
+      // keystore path was resolved against the consumer project above. Nothing here logs them.
+      ...(signing === undefined
+        ? {}
+        : { env: androidSigningGradleEnvironment(signing, environment) }),
       stdio: 'inherit',
     });
     if (result.error) throw result.error;
     if (result.status !== 0)
       throw new Error(`Gradle exited with code ${result.status ?? 'unknown'}.`);
-    const apk = join(
-      packageRoot,
-      'android',
-      'app',
-      'build',
-      'outputs',
-      'apk',
-      'debug',
-      'app-debug.apk',
-    );
-    if (!existsSync(apk)) throw new Error(`Gradle did not produce the expected APK: ${apk}`);
-    const output = requestedOutput ? resolve(requestedOutput) : apk;
-    if (output !== apk) {
-      mkdirSync(dirname(output), { recursive: true });
-      copyFileSync(apk, output);
+    const candidates = androidArtifactCandidates(packageRoot, request);
+    const artifact = candidates.find((candidate) => existsSync(candidate));
+    if (artifact === undefined) {
+      if (
+        request.mode === 'release' &&
+        request.format === 'apk' &&
+        existsSync(androidUnsignedReleaseApk(packageRoot))
+      ) {
+        throw new Error(
+          'TN_ANDROID_RELEASE_UNSIGNED: Gradle produced an unsigned release APK, so signing did not apply. Check the four signing property values; a release never falls back to debug keys.',
+        );
+      }
+      throw new Error(
+        `TN_ANDROID_ARTIFACT_MISSING: Gradle ${request.task} produced no ${request.format} at ${candidates.join(' or ')}.`,
+      );
     }
-    console.log(`ThreeNative Android APK: ${output}`);
+    const output = requestedOutput ? resolve(requestedOutput) : artifact;
+    if (output !== artifact) {
+      mkdirSync(dirname(output), { recursive: true });
+      copyFileSync(artifact, output);
+    }
+    // APKs are aligned to 16 KB and censused on the artifact that ships. A release APK is re-signed
+    // with the consumer's own key, never the debug keystore; an AAB is left to Gradle's signing.
+    if (request.format === 'apk') {
+      if (options.alignArchive !== false) {
+        alignAndroidArchive(output, {
+          ...(options.align ?? {}),
+          ...(request.mode === 'release'
+            ? {
+                keystore: signing.keystore,
+                keystoreAlias: signing.keyAlias,
+                keystorePassword: signing.keystorePassword,
+                keyPassword: signing.keyPassword,
+              }
+            : {}),
+        });
+      }
+      // The 16 KB census runs on the artifact that ships, not on the build directory it came from.
+      const census = assertAndroidArtifact16KbAlignment(output, options.artifact16Kb ?? {});
+      for (const library of census.libraries) {
+        console.log(
+          `  16 KB ok: ${library.entry} (${library.compression}, offset 0x${library.dataOffset.toString(16)}, ` +
+            `LOAD ${library.alignments.map((value) => `0x${value.toString(16)}`).join(', ')})`,
+        );
+      }
+      console.log(
+        `ThreeNative Android APK: ${output} — ${census.libraries.length} native libraries 16 KB clean` +
+          `${census.zipalign ? `, archive offsets confirmed by ${census.zipalign}` : ''}`,
+      );
+    }
+    if (request.mode === 'release') {
+      // Signature and non-debuggable proof come from the shipped artifact, after any alignment.
+      verifyAndroidReleaseArtifact(output, request, options);
+    }
     return output;
   } finally {
     restoreFiles();
@@ -742,6 +1120,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const orientationIndex = process.argv.indexOf('--orientation');
   const configIndex = process.argv.indexOf('--config');
   const uiIndex = process.argv.indexOf('--ui');
+  const projectRootIndex = process.argv.indexOf('--project-root');
+  const modeIndex = process.argv.indexOf('--mode');
+  const formatIndex = process.argv.indexOf('--format');
   const allowSourceBuild = process.argv.includes('--allow-source-build');
   if (
     bundleIndex === -1 ||
@@ -749,7 +1130,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.argv[bundleIndex + 1].startsWith('--')
   ) {
     console.error(
-      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE] [--allow-source-build]',
+      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE] [--mode debug|release] [--format apk|aab] [--project-root DIR] [--allow-source-build]',
     );
     process.exitCode = 1;
   } else if (
@@ -790,6 +1171,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         readAndroidConfig(configPath),
         {
           ...(uiIndex === -1 ? {} : { ui: resolve(process.argv[uiIndex + 1]) }),
+          ...(modeIndex === -1 ? {} : { mode: process.argv[modeIndex + 1] }),
+          ...(formatIndex === -1 ? {} : { format: process.argv[formatIndex + 1] }),
+          // The consumer project root: a relative keystore path in the environment must resolve
+          // against the game, not the engine's Android project the packager runs inside.
+          ...(projectRootIndex === -1
+            ? {}
+            : { projectRoot: resolve(process.argv[projectRootIndex + 1]) }),
           // Maintainer route for source-checkout builds: the guard requires an
           // explicit opt-in, and this flag is its CLI spelling.
           ...(allowSourceBuild ? { allowSourceBuild: true } : {}),

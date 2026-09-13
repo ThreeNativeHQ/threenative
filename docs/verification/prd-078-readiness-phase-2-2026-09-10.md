@@ -6,7 +6,7 @@
 
 CI/native-host layer, based on main `0d91643402ca87d5154bef363e3be4a1e08c5380`. This includes the separately merged MCP probe repair from PR #176 instead of reimplementing that fix. The source gate, native workflow tests, CI structure guard, companion coverage digest and historical evidence from PR #168 (`5aac0abeb8527ff45d0f7a61d593d8d532948c86`) are retained together.
 
-The [PRD](../PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md) assigns phase 2 five files: the existing workflow, its new proof regression test, the PRD, this record and the generated retention index. Phase 1's retained source work has its own five-file assignment and [evidence record](prd-078-readiness-phase-1-2026-09-09.md). Neither phase has a self-awarded acceptance PASS.
+The [PRD](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md) assigns phase 2 five files: the existing workflow, its new proof regression test, the PRD, this record and the generated retention index. Phase 1's retained source work has its own five-file assignment and [evidence record](prd-078-readiness-phase-1-2026-09-09.md). Neither phase has a self-awarded acceptance PASS.
 
 ## Implementation
 
@@ -81,7 +81,7 @@ EXIT_CODE=0
 
 pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/native-platform-workflow.test.mjs
 Test Files  1 passed (1)
-Tests  30 passed (30)
+Tests  30 passed (30)   # 35 at the 2026-09-11 revision
 EXIT_CODE=0
 
 pnpm typecheck  EXIT_CODE=0
@@ -94,8 +94,9 @@ shortens either one fails again rather than silently restoring the false refusal
 ## Correction: the headless desktop gate had no sound card
 
 `native-platforms.yml`'s desktop-core matrix is macOS and Windows only, so `verify-desktop-core.mjs`
-had never run on Linux until this proof route executed it on `ubuntu-24.04`. Run
-[34543393235](https://github.com/ThreeNativeHQ/threenative/actions/runs/34543393235) aborted before
+had never run on Linux until this proof route executed it on `ubuntu-24.04`. Runs
+[34537627738](https://github.com/ThreeNativeHQ/threenative/actions/runs/34537627738) and
+[34535821394](https://github.com/ThreeNativeHQ/threenative/actions/runs/34535821394) aborted before
 the first frame:
 
 ```text
@@ -281,28 +282,25 @@ and `pnpm budgets` is green.
 **Still not claimed:** the hosted Linux row. Its green is owned by the run on this head, not by this
 record.
 
-### Reverted on independent acceptance review (2026-09-11)
+### Correction: the raytracing guards were reinstated on `main`
 
-The three `isObject` guards were **removed again** before this PRD was archived.
-`packages/runtime-native/src/raytracing/bindings.cpp` is now byte-identical to its pre-PR-180 state.
+An earlier revision of this record said the three `isObject` guards in
+`packages/runtime-native/src/raytracing/bindings.cpp` had been removed again and the file was
+byte-identical to its pre-PR-180 state. That is no longer true: `main` commit `720603132`
+("fix(runtime-native): restore the raytracing handle guards deleted on main") reinstated all three
+at `bindings.cpp:115,125,135`. The earlier decision to revert them stands as history, but the file
+now carries the guards.
 
-Two rules required it, and neither is discharged by the measurement above. No phase of PRD-078 names
-this file, so it was edited outside every declared five-file assignment, which the verification
-contract forbids; and it is a runtime behaviour change carrying no automated regression — no test
-under `packages/runtime-native/tests/` references `getGeometryId`, `getBLASId` or `getTLASId`, and
-the hand-run binary comparison above is not a check anything re-runs. The correction immediately
-below already withdrew the diagnosis that motivated the edit: Phase 6's Xvfb wrapper repaired the
-Linux row, not these guards.
+The observation behind that edit also stands: the pre-repair source prints six `_id` TypeErrors and
+the guarded source prints zero. It was nevertheless **not** what failed the Linux row — Phase 6's
+Xvfb wrapper was, as the next section establishes.
 
-The observation itself stands and is not being disclaimed — the pre-repair source really does print
-six `_id` TypeErrors and the guarded source prints zero. Reinstating the guards is therefore
-reasonable future work, but it belongs to a phase that names the file and ships a regression test,
-not to this PRD.
+Those guards are now covered by `packages/runtime-native/tests/webtransport-polyfill-prerequisites.test.mjs:114-132`,
+which names all three helpers and asserts each rejects a non-object handle before property access, so
+the "no automated regression" objection the earlier revert cited is closed. They are still not
+counted toward PRD-078.
 
-Gates re-run against the reverted tree: `check-native-coverage.spec.ts`, `native-release-proof.spec.ts`
-(35 tests), `native-release-android-staging.spec.ts`, `ci-structure.spec.ts` — 124 passed; the native
-coverage digest gates `native-coverage.test.mjs` and `native-coverage-digest-scope.test.mjs` — 12
-passed; the strict prose lane — 54 passed.
+`native-release-proof.spec.ts` is 36 tests at this revision (35 before PR #193 added one).
 
 ## Correction: the contract lane ran without a display, and the `_id` line was not the cause
 
@@ -444,7 +442,7 @@ The emulator boot itself is now measured twice: 474s on a hosted runner
 (`native-platforms.yml:335-341`) and 212,330 ms locally under pure software emulation with no KVM.
 Both exceed this action's 600s default comfortably enough to justify the 900s budget recorded above.
 
-## Blocking product gap: no release publishes the build tool helper
+## Product gap: the build tool helper was unpublished (resolved by PRD-262 phase 3, #193)
 
 Run [34564200217](https://github.com/ThreeNativeHQ/threenative/actions/runs/34564200217) cleared the
 shared-library failure and reached the next one:
@@ -456,20 +454,17 @@ Runtime packager exited with code 127.
 ```
 
 This is not a CI defect. `src/cli/tool_dispatch.cpp:52` has the runtime dispatch desktop packaging
-to a `mystral-tools` binary sitting beside it. `native:build` produces that binary, but the build
-matrix staged only `release/<asset>`, and `PREBUILT_ASSET_NAMES` declares no tools asset at all, so
-nothing has ever published it.
+to a `mystral-tools` binary sitting beside it. `native:build` produced that binary, but the build
+matrix staged only `release/<asset>`, and `PREBUILT_ASSET_NAMES` declared no tools asset, so a
+consumer installing from a release could not run `threenative build --target desktop`.
 
-**Consequence, stated plainly: a consumer installing `@threenative/runtime-native` from a published
-release cannot run `threenative build --target desktop`.** It fails on the helper before it reaches
-any of its own code. Finding exactly this is what a toolchain-free consumer proof is for.
-
-Ownership: publishing a new runtime asset is PRD-262's contract, not this PRD's, so the durable fix
-is handed there rather than taken here. Meanwhile the proof carries the helper as a **same-run**
-artifact, which is the model this job already uses for every runtime payload it serves over
-loopback, and the placement is asserted before the consumer build rather than after it. The claim
-this supports is therefore "the packaged consumer path works when the helper is present", not "a
-public installation works" — the latter stays false until PRD-262 publishes it.
+Ownership: publishing a new runtime asset is PRD-262's contract, not this PRD's. That contract has
+since landed as PRD-262 phase 3 (#193, `902ca95e2`): `packages/runtime-native/scripts/install-prebuilt.mjs:28,31,33`
+declares `threenative-tools-<linux-x64|win32-x64>`, `.github/workflows/native-release.yml:303,310,317`
+stages a `tools_asset` per desktop row, and only the held macOS row is excluded. The clean-consumer
+proof asserts the install placed the helper before the desktop build and no longer carries it out of
+band. A release lane has still not run, so public installation remains unproven; the claim this
+record supports is "the packaged consumer path works", not "a public installation works".
 
 Scope note: only `--target desktop` needs the helper. The packed Android build completed locally
 without it, so the six Android controls are blocked by this only because the desktop build runs
@@ -485,7 +480,7 @@ two cycles to attribute.
 
 The duplicate is removed, and an indentation-aware guard now fails on any repeated key in any
 mapping in the file. Red control: reintroducing the exact duplicate reports
-`repeated keys: if-no-files-found (line 415)`; removing it passes 35/35. A parser that tolerates
+`repeated keys: if-no-files-found (line 415)`; removing it passes 36/36. A parser that tolerates
 what the consumer rejects is not a check, which is the same lesson as the earlier evidence in this
 record.
 
@@ -510,8 +505,8 @@ Every job row:
 | `validate-tag` · `publish` · `finalize` · `cleanup-failed-release` · `clean-consumer-ios` · `build-ios-simulator` | skipped, as the non-publishing route requires |
 
 Every `clean-consumer` step succeeded, including the four that had never executed anywhere: the
-same-run tool-helper placement, the toolchain-free build, the 300-frame desktop launch and the
-packed Android build.
+same-run tool-helper placement (since replaced by the durable install of the published helper in
+#193), the toolchain-free build, the 300-frame desktop launch and the packed Android build.
 
 ### The six packed Android controls
 
@@ -551,8 +546,9 @@ The consumer was scaffolded from eleven packed workspace archives (`create-three
 
 It establishes that the packed consumer path works end to end and that the four negative controls
 fail exactly as specified while both positives pass. It does **not** establish public installation:
-the runtime payloads and the build tool helper came from this run, and no release publishes the
-helper at all. That gap is recorded above and belongs to PRD-262.
+the runtime payloads and the build tool helper came from this run, and no runtime-native release
+exists yet, so even the durable published-helper route (#193) has not executed on a tag. That gap is
+recorded above and belongs to PRD-262.
 
 ## Hosted evidence and handoff
 
@@ -564,4 +560,4 @@ At this source-record commit, the new hosted proof has not yet produced native o
 
 The evidence JSON records actual checkout SHA, workflow run ID and attempt at execution time. Assertion counts and hashes come from those outputs, never a proposed command or expected result. The generated maintenance output is restored after capture and is not substituted for the checked-out sources during validation.
 
-Windows, macOS, Linux native, Android emulator and main exact-candidate acceptance remain unverified by this local record. iOS and physical Android are not claimed. Independent reviewer decision remains **PENDING**, not PASS. Keep PRD-078 PARTIAL and in production-readiness until actual candidate evidence and that review close its acceptance criteria.
+Windows, macOS, Linux native, Android emulator and main exact-candidate acceptance remain unverified by this local record. iOS and physical Android are not claimed. Independent reviewer decision remains **PENDING**, not PASS. Keep PRD-078 PARTIAL and in production-readiness until actual candidate evidence and that review close its acceptance criteria. (Closed 2026-09-12: the reviewer PASS and the main-route prerequisite validation are recorded in the archived [PRD-078](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md).)
