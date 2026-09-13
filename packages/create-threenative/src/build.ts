@@ -92,8 +92,11 @@ export async function assertNativeBundleCompatible(
 }
 
 /**
- * Refuse a web UI target before native packaging can silently discard its bundle. Android and
- * iOS own platform overlays; the desktop overlay currently exists on Linux only.
+ * Refuse a web UI target before native packaging can silently discard its bundle. Android and iOS
+ * own platform overlays, and the desktop overlay now ships its Windows (WebView2), macOS (WKWebView)
+ * and Linux (X11/Wayland) backends behind the one ABI — proved by the hosted `windows-2025`/
+ * `macos-15` starter lanes and the Linux session proofs. A host without one of those desktop window
+ * systems still refuses rather than shipping a bundle nothing can render.
  */
 export function assertNativeUiRendererCompatible(
   target: NativeBuildTarget,
@@ -101,7 +104,12 @@ export function assertNativeUiRendererCompatible(
   platform: NodeJS.Platform = process.platform,
 ): void {
   if (renderer === "native" || target === "android" || target === "ios") return;
-  if (target === "desktop" && platform === "linux") return;
+  if (
+    target === "desktop" &&
+    (platform === "linux" || platform === "darwin" || platform === "win32")
+  ) {
+    return;
+  }
   const platformName =
     platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform;
   throw new Error(

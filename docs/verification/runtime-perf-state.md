@@ -10,6 +10,35 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## PRD-217 desktop WebView overlay on/off — 2026-09-12
+
+**Uncapped throughput on a software-composited Xvfb lane: the overlay costs ~12–15% frame time here.
+This is not the presented frame-rate regression and not a real-display claim; the criterion's
+number is the vsync-capped real-display result below.**
+
+PRD-217 acceptance criterion 4 is recorded against the historical real-display measurement (overlay
+attached 59.99 fps / 16.44 ms vs none 59.95 fps / 16.43 ms, 0.07% apart, both vsync-capped —
+`prd-217-criteria-1-and-7-2026-08-24.md`), which bounds the overlay's *presented* cost on a 60 Hz
+display. The Xvfb lane below is the separate throughput question the skill warns not to label as
+presented FPS: with vsync removed, how much work does the overlay add?
+
+Platform: Linux, X11 on `Xvfb :3` + the `xcompmin` software compositor, NVIDIA RTX 2080 (Vulkan),
+branch runtime `build/tn-linux/mystral`. Both arms are the packaged default starter, windowed
+1280×720, `display.maxFps: 240`, `--no-vsync`; the only difference is the overlay. Method: the
+runtime's `TN_FRAME_BUDGET` steady windows (300 frames each, startup window discarded), read with
+`threenative-playtest perf`.
+
+| arm | steady windows | fps (marker) | frame p50 / p95 ms | host-gap present p50 ms |
+| --- | --- | --- | --- | --- |
+| overlay off (`ui.renderer: native`) | 7, 8, 9 | 21.45 / 21.77 / 21.96 | 8.6/11.7 · 8.8/11.4 · 8.3/11.3 | 34.7 |
+| overlay on (`ui.renderer: web`) | 5, 6, 7 | 19.75 / 18.58 / 19.04 | 9.2/14.7 · 10.1/15.6 · 9.7/14.4 | 40.1 |
+
+Median-of-windows frame p50: 8.6 ms off vs 9.7 ms on → +12.8%; marker fps 21.8 → 19.1 → −12.4%;
+present host gap 34.7 → 40.1 ms → +15.5%. The software compositor blends the overlay's ARGB window
+on the CPU, so this likely overstates a GPU-composited desktop. A GPU-composited real-display
+rerun of the uncapped arm, and a compositor-cost reduction if it holds there, are the follow-ups;
+the criterion's own vsync-capped number stands as recorded in the archived PRD.
+
 ## PRD-368 bounded cache API prototype — 2026-09-09
 
 **API feasibility only; implementation paused for the owner's follow-up handoff.** A four-file

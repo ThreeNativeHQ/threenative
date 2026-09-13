@@ -22,7 +22,10 @@ export function Menu() {
 
   return (
     <div className="pointer-events-none absolute bottom-6 left-6 flex items-center gap-3 border border-line bg-panel/75 px-4 py-3 text-[11px] uppercase tracking-[0.14em] text-dim">
-      <span>WASD / arrows to move · space to jump the gap · reach the flag</span>
+      {/* The buttons lead the row so their positions are anchored to the panel's left edge, not to
+          the width the instruction text happens to render at on a given platform. The round-9
+          native HUD input proof pressed a fraction computed from this layout, and that fraction
+          landed on `restart` on Windows and `pause` on macOS because the text width differed. */}
       <button
         aria-pressed={paused}
         className="pointer-events-auto border border-line px-2 py-1 text-text hover:border-lume"
@@ -40,6 +43,7 @@ export function Menu() {
       >
         restart
       </button>
+      <span>WASD / arrows to move · space to jump the gap · reach the flag</span>
     </div>
   );
 }

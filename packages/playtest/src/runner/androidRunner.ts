@@ -603,10 +603,11 @@ async function setDevicePointers(
   pointers: NonNullable<IPlaytestScenario["steps"][number]["pointers"]>,
   viewport: IPlaytestScenario["viewport"],
 ): Promise<void> {
-  if (target.name === "ios") {
-    // iOS simulator and device transports already carry playtest requests into the native host.
-    // The host's touch PointerEvent seam preserves the complete held set without depending on an
-    // external HID injector that is unavailable on the supported Xcode transport.
+  if (target.name === "ios" || target.name === "desktop") {
+    // iOS and desktop transports carry playtest requests into the native host, whose own hit
+    // routing is the mechanism these scenarios test: the host dispatches each pointer to the UI
+    // page or to the game exactly where the OS would. The held set is preserved without an
+    // external HID injector, which the hosted macOS runner cannot use at all.
     await transport.call("input.pointers", {
       pointers: pointers.map((pointer) => ({
         ...(pointer.buttons === undefined ? {} : { buttons: pointer.buttons }),
@@ -726,14 +727,10 @@ function unsupportedAssertion(
       target,
     );
   }
-  const hasMultiPointerInput = scenario.steps.some((step) => step.pointers !== undefined);
-  if (hasMultiPointerInput && target === "desktop") {
-    return unsupportedDiagnostic(
-      "complete held-pointer input",
-      "Run this scenario on --target browser or --target android; the desktop mailbox host exposes one pointer.",
-      target,
-    );
-  }
+  // Desktop now carries the complete held-pointer set through its mailbox host (see
+  // `setDevicePointers`), which routes each pointer through the overlay's published hit regions,
+  // so held-pointer steps are no longer unsupported there. Android still needs its emulator
+  // driver, checked above.
   if (scenario.assert?.deviceMetrics !== undefined && target !== "android") {
     return unsupportedDiagnostic(
       "device thermal and power assertions",
