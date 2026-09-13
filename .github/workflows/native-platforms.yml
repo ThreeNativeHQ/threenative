@@ -748,6 +748,7 @@ jobs:
           if-no-files-found: error
 
   desktop-parity:
+    name: Desktop web/native parity
     needs: [scope, web-reference]
     # Full selection means full native coverage, including promotion PRs. Previously a label
     # could suppress this leg independently of the caller's decision. Inert develop changes now

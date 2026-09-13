@@ -133,10 +133,26 @@ test('the protected build context requires scope and workspace evidence, not the
   expect(run({}).status).toBe(0);
   // Each input fails closed on its own, and on every non-success verdict rather than only on
   // `failure` - a cancelled or skipped producer must never read as a passed merge gate.
-  for (const result of ['failure', 'cancelled', 'skipped', '']) {
+  for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', '']) {
     expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
     expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
   }
+  // The native matrix is still required for the exact candidate, just not by this join: the
+  // release lane consumes the `native-platforms` rows, so a native failure cannot pass unnoticed.
+  const required = ciWorkflow.match(
+    /\n\x20{2}ci-required:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(required).toContain('native-platforms');
+});
+
+test('the desktop parity job keeps the name the release gate requires', () => {
+  // The release gate matches CI job names exactly. When this job lost its `name:` the run
+  // reported `native-platforms / desktop-parity`, so PRD-078's main route could never resolve
+  // its `native-platforms / Desktop web/native parity` row.
+  const job = workflow.match(
+    /\n\x20{2}desktop-parity:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(job).toContain('name: Desktop web/native parity');
 });
 
 test('Android V8 source is produced once and consumed as a verified artifact', () => {

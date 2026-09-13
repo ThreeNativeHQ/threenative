@@ -915,7 +915,27 @@ describe("CI pipeline structure", () => {
     expect(ci).toMatch(/push:\n\s+branches:\n\s+- main/u);
     expect(ci).toMatch(/pull_request:\n\s+branches:\n\s+- main/u);
     expect(ci).toContain("group: ci-${{ github.event_name }}-${{ github.ref }}");
-    expect(native).toContain("group: native-release-${{ github.ref }}");
+    // Main evidence arrives via CI completion, never via the push itself: every
+    // `workflow_run` run shares `github.ref` (the default branch), so the group also
+    // keys on the triggering CI head SHA - a new completion for a newer main SHA gets
+    // its own group instead of queueing behind a superseded evidence run.
+    expect(native).toContain(
+      "group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}",
+    );
+    expect(native).toContain("cancel-in-progress: false");
+    const triggers = triggerSection(native);
+    expect(triggers).toContain("workflow_run:");
+    expect(triggers).toContain("workflows: [CI]");
+    expect(triggers).toContain("types: [completed]");
+    const pushBlock = triggers.slice(
+      triggers.indexOf("\n  push:"),
+      triggers.indexOf("\n  pull_request:"),
+    );
+    expect(pushBlock, "a push-to-main trigger still feeds the evidence path").not.toContain(
+      "branches:",
+    );
+    expect(pushBlock, "the tag publish path lost its trigger").toContain("runtime-native-v*");
+    // Tag publication and manual proof keep the single-shot lookup they always had.
     expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
     expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
   });
@@ -1014,6 +1034,24 @@ describe("CI pipeline structure", () => {
     expect(gates).toContain("entry?.headSha === candidateSha");
     expect(gates).toContain("Number.isSafeInteger(entry?.databaseId)");
     expect(gates).toContain("entry.databaseId > 0");
+    // The evidence path reads the triggering CI completion from the event payload -
+    // conclusion plus head SHA - and refuses anything but exact-candidate success.
+    // No step polls or holds a runner: the verdict runs on a single-digit-minute budget.
+    expect(gates).toContain("Require the triggering CI completion");
+    expect(gates).toContain("github.event.workflow_run.conclusion");
+    expect(gates).toContain("github.event.workflow_run.head_sha");
+    expect(gates).toContain("github.event.workflow_run.head_branch");
+    expect(gates).not.toContain("Wait for the exact main CI run to finish");
+    expect(gates).not.toContain("sleep 60");
+    const timeout = Number(gates?.match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
+    expect(timeout, "the gates verdict must not hold a runner").toBeLessThanOrEqual(9);
+    // Both verdict steps enforce the same required-job table: the event-payload verdict
+    // for `workflow_run` evidence and the single-shot lookup for tag/manual proof.
+    const tables = [...(gates?.matchAll(/const requiredNames = \[([\s\S]*?)\];/gu) ?? [])].map(
+      (match) => match[1],
+    );
+    expect(tables.length).toBe(2);
+    expect(tables[0]).toBe(tables[1]);
   });
 
   it("desktop parity runs against a captured web reference and fails closed", async () => {
