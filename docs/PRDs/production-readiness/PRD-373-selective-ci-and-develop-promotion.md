@@ -1,10 +1,14 @@
 # PRD-373 — Selective CI and develop-to-main promotion
 
 Status: PARTIAL — classifier/verdict negative controls re-executed. PR #199 repairs
-release-report candidate binding and the native-loading proof fixture. Daily qualification
-and cache safeguards are staged code, not merely repository settings. Protected develop,
-real narrowed feature PRs, promotion/cutover proof and equivalent cold/warm measurements
-remain outstanding. No protection, default branch or cutover variable was changed.
+release-report candidate binding and the native-loading proof fixture. A real narrowed feature PR
+is observed: #232 selects the inert-prose lane (every non-scope job skipping, `ci-required` pass)
+and #230 selects `full` and passes on a real develop PR. **The cutover is applied**: `develop`
+carries the active `develop integration` ruleset (no force-push/deletion, squash-only PRs,
+required `ci-required` with strict up-to-date checks) and `TN_DEVELOP_CI_ENABLED=true`, so the
+daily scheduled run checks out `develop`. Both verdict halves are now observed on real PRs: green
+(#230 full, #232 prose) and red (#233 canary — a failing `website` job made `ci-required` fail).
+Still outstanding: promotion/cutover proof and equivalent cold/warm measurements.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -38,8 +42,8 @@ Reduce unnecessary execution and queue pressure; increasing PR size is not the s
 - [x] Required test green — `scripts/__tests__/ci-structure.spec.ts`, `ci-needs.spec.ts`, `ci-efficiency.spec.ts`, `ci-local.spec.ts`, `ci-fast.spec.ts`: 188 passed across 5 files, run locally 2026-09-11 against `main` at `30f749f12`.
 - [x] Observed red recorded, then restored green
       Re-executed 2026-09-11: malformed classifier plans exit 2; restored plans exit 0. Real Git controls cover both rename endpoints, deletions, symlinks, unknown/native/shared inputs, dirty trees and full overrides.
-- [ ] Verified on a real PR, not only locally
-      PARTIAL, and honestly not enough. Run 34622294627 (a real `pull_request` on `work/prd-373-selective-ci`) shows the `Change scope` job emitting a validated plan with a per-job reason, and `ci-required` succeeding. But it classified `selection=full` under the "target main requires complete verification" policy, so a *narrowed* selection has not been observed on a real PR. That needs a feature PR targeting `develop`, which does not exist until the phase 5 cutover.
+- [x] Verified on a real PR, not only locally
+      Two real develop PRs. PR #232 (this docs-only update) selected the inert-prose lane: `Change scope` pass (9s) and `ci-required` pass, with every other job — native, unit, browser, playtest, golden-path, template, website — `skipping`. That is a *narrowed* selection observed end-to-end on a real PR. PR #230 (a `packages/runtime-native` change) selected `full` and passed every selected job including the native matrix. Runs 34743918375 (#230) and 34745621262 (#232).
 
 
 Extend `scripts/ci-change-scope.mjs`; keep one classifier used by CI and local verification.
@@ -68,8 +72,8 @@ fail visibly. Preserve an explicit manual full-run option. Do not use an LLM to 
 - [x] Required test green — the same 188 tests above cover the workflow shape and the needs graph (`ci-structure.spec.ts`, `ci-needs.spec.ts`).
 - [x] Observed red recorded, then restored green
       Re-executed 2026-09-11: selected failed/cancelled/skipped/missing jobs each make the actual verdict exit 1; restored success exits 0. Stale base/candidate, failed scope, forged exemptions and unmapped jobs fail closed.
-- [ ] Verified on a real PR, not only locally
-      PARTIAL — `ci-required` reported `success` on run 34622294627, a real PR. It has not been observed going red on a selected job that failed, which is the half of the contract that matters.
+- [x] Verified on a real PR, not only locally
+      Both halves observed on real develop PRs. Green: `ci-required` success on runs 34622294627, 34743918375 (#230, `full`) and 34745621262 (#232, narrowed prose). Red: a deliberate canary PR (#233) whose only change was a failing `site/__tests__` spec selected `website` alone (native and every other family `skipping`), the `website` job failed (52s), and `ci-required` then failed (10s) — run 34746139967. The canary was closed and its branch deleted immediately, never merged.
 
 
 Update `.github/workflows/ci.yml` and `.github/workflows/native-platforms.yml` to consume the
@@ -91,10 +95,12 @@ shorter. Preserve diagnostics when one selected job fails.
 
 **Progress:**
 
-- [ ] Implemented and wired: daily qualification job and protected `develop` -> `main` promotion
+- [x] Implemented and wired: daily qualification job and protected `develop` -> `main` promotion
+      Verified 2026-09-13 via the GitHub API: the `develop integration` ruleset (id 23003414) is active on `refs/heads/develop` with no deletion/force-push, squash-only PRs and required `ci-required` (strict); the `main protection` ruleset requires the full context list plus `ci-required`; `TN_DEVELOP_CI_ENABLED=true`. `.github/workflows/ci.yml:13,41` schedules `17 3 * * *` and checks out `develop` when the variable is true.
 - [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
 - [x] Observed red recorded, then restored green — run 34651109589 failed the captured-checkout regression (187/188 passed); this run restores it. New shell tests reject a mismatched checkout while accepting a different event SHA.
 - [ ] Verified on a real PR, not only locally
+      PARTIAL — the develop ruleset enforces `ci-required`; a real promotion PR and a red verdict are not yet observed (see the 2026-09-13 observations).
 
 
 Feature branches start from `develop`; squash their focused PRs into `develop`. Capture a fixed
@@ -125,7 +131,7 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 
 - [x] Implemented and wired: caches keyed so no stale product or test verdict is reused — existing cache wiring audited below; CI efficiency contracts and actual repack tests pass. Equivalent cold/warm measurements remain open.
 - [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green — gating `.github/actions/workspace-dist/action.yml`'s "Pack current workspace files" step on `steps.dist.outputs.cache-hit != 'true'` (i.e. shipping a cached archive) made `scripts/__tests__/ci-efficiency.spec.ts` fail on "caches compiled bundles but always repacks and verifies shipped templates" (`expected … not to contain 'cache-hit'`, 2026-09-13); restored, the test passes. The equivalent-SHA warm timing comparison remains open below.
 - [ ] Verified on a real PR, not only locally
 
 
@@ -147,10 +153,12 @@ existing Actions summaries or the implementation PR. Compare equivalent candidat
 
 **Progress:**
 
-- [ ] Implemented and wired: instructions, local commands and repository settings updated together
-- [ ] Required test green
-- [ ] Observed red recorded, then restored green
-- [ ] Verified on a real PR, not only locally
+- [x] Implemented and wired: instructions, local commands and repository settings updated together
+      Root `AGENTS.md` describes develop-targeted feature PRs and the active integration flow; `ci:fast` and `ci:local --affected` exist (`package.json:25`, `scripts/ci-local.sh`); the repository settings (both rulesets, `TN_DEVELOP_CI_ENABLED=true`) are applied — verified via the API 2026-09-13.
+- [x] Required test green — run 34653691910: 262 passing tests across 10 files, including the local-runner and CI-efficiency suites.
+- [x] Observed red recorded, then restored green — appending a line to root `AGENTS.md` without regenerating made `pnpm sync:agents --check` exit 1 naming `CLAUDE.md` (2026-09-13); restored, the same check reports 19 mirrors in sync and exits 0. The classifier/verdict negative controls were re-executed earlier.
+- [x] Verified on a real PR, not only locally
+      #230 (`full`) and #232 (narrowed prose) both target `develop` and pass `ci-required` under the active ruleset (runs 34743918375, 34745621262).
 
 
 Edit root `AGENTS.md` and affected nested `AGENTS.md` files to describe feature branches from
@@ -432,3 +440,44 @@ are no longer caught on the PR — the develop nightly run and every promotion s
 history and re-run the docs lane, so the regression is caught before it reaches main. `AGENTS.md`
 and `CLAUDE.md` remain instruction consumers (the instruction lane still runs), and ledger Markdown
 consumed by a fixture remains full.
+
+### 2026-09-13 — real develop-PR observations and the applied cutover
+
+**A real develop PR runs the classifier and the verdict.** PR #230 (PRD-375, a
+`packages/runtime-native` change) selected `full` and passed every selected job — `Change scope`,
+`ci-required`, unit/browser/playtest, `golden-path`, `template-nonvisual` and the whole
+`native-platforms` matrix. Run `34743918375`. PR #232 (this docs-only update) selected the
+inert-prose lane: `Change scope` pass, `ci-required` pass, and every other job `skipping` (run
+`34745621262`). Both the full and the narrowed policy are now observed on real develop PRs.
+
+**The cutover is applied, verified through the API on 2026-09-13.** An earlier note in this PRD
+inferred "not protected" from `GET /branches/develop/protection` returning 404 — that endpoint
+reports *classic* branch protection, and this repository uses **rulesets**, so the inference was
+wrong. The correct facts:
+
+```sh
+gh api repos/ThreeNativeHQ/threenative/rulesets
+# develop integration (23003414) + main protection (21959171), both enforcement: active
+gh api repos/ThreeNativeHQ/threenative/rulesets/23003414
+# refs/heads/develop: deletion, non_fast_forward, pull_request (squash-only),
+#   required_status_checks: [{context: "ci-required", strict_required_status_checks_policy: true}]
+gh api repos/ThreeNativeHQ/threenative/rulesets/21959171
+# main: deletion, non_fast_forward, pull_request,
+#   required_status_checks: typecheck, lint, build, budgets, benchmark, golden-path, test,
+#   test-browser, test-playtest, ci-required
+gh api repos/ThreeNativeHQ/threenative/actions/variables
+# TN_DEVELOP_CI_ENABLED = true
+```
+
+So `develop` **is** protected and `ci-required` **is** enforced with strict up-to-date checks;
+`main` requires the full context list; and `ci.yml`'s scheduled run (`cron: 17 3 * * *`) checks out
+`develop` when `TN_DEVELOP_CI_ENABLED` is true (`.github/workflows/ci.yml:13,41`).
+
+**The red half of the verdict is observed too.** A deliberate canary PR (#233) added one failing
+`site/__tests__` spec. The classifier selected `website` alone — native and every other family
+`skipping` — the `website` job failed (52s), and `ci-required` failed (10s) on run `34746139967`.
+That is the contract the local controls only approximated: a selected failed job blocks the merge
+verdict on a real PR. The canary was closed and its branch deleted without merging.
+
+Remaining, all hosted and/or owner-gated: a real promotion/cutover proof and equivalent cold/warm
+cache measurements.
