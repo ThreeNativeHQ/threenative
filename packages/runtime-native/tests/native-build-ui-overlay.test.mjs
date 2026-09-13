@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, test } from 'vitest';
 
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import { uiOverlayLibraryName } from '../scripts/build-native-ui-overlay.mjs';
 
 const roots = [];
 afterEach(() => {
@@ -23,26 +24,45 @@ function executable(path, source) {
   chmodSync(path, 0o755);
 }
 
-test.runIf(process.platform === 'linux')(
-  'the Linux native build links the desktop UI overlay into the runtime',
+// The host toolchain names its static library; the C++ build must ask for the right one rather
+// than guessing `.a` on MSVC. This is the one part of the mapping testable without the hosts.
+test('the overlay library is named for the host toolchain', () => {
+  assert.equal(uiOverlayLibraryName('linux'), 'libthreenative_ui_overlay.a');
+  assert.equal(uiOverlayLibraryName('darwin'), 'libthreenative_ui_overlay.a');
+  assert.equal(uiOverlayLibraryName('win32'), 'threenative_ui_overlay.lib');
+});
+
+// Runs on every desktop host that can execute the plan with shell stubs. The Windows host's
+// library name is covered by the mapping test above and by the hosted `native:build` job; the
+// shape asserted here (overlay built, `TN_ENABLE_UI_OVERLAY=ON`, host-named library) is the same
+// on all three, which is what phase 3A requires the normal build to do per host.
+test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
+  `the ${process.platform} native build links the desktop UI overlay into the runtime`,
   () => {
-    const root = makeTempDirSync('threenative-native-build-plan-');
+    const preset = process.platform === 'darwin' ? 'tn-macos' : 'tn-linux';
+    const root = makeTempDirSync('threenative-native-build-plan-#% ');
     roots.push(root);
     const scripts = join(root, 'scripts');
     const bin = join(root, 'bin');
     const log = join(root, 'commands.log');
     mkdirSync(scripts, { recursive: true });
     mkdirSync(bin, { recursive: true });
-    copyFileSync(
-      new URL('../scripts/native-build.mjs', import.meta.url),
-      join(scripts, 'native-build.mjs'),
-    );
-    for (const name of ['build-native-physics.mjs', 'build-native-ui-overlay.mjs']) {
-      writeFileSync(
+    // The real plan and the real overlay build, so the library path asserted below is the one the
+    // script derives rather than one the test wrote.
+    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs']) {
+      copyFileSync(
+        new URL(`../scripts/${name}`, import.meta.url),
         join(scripts, name),
-        `import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.TN_TEST_LOG, ${JSON.stringify(name)} + '\\n');\n`,
       );
     }
+    writeFileSync(
+      join(scripts, 'build-native-physics.mjs'),
+      'import { appendFileSync } from "node:fs";\nappendFileSync(process.env.TN_TEST_LOG, "build-native-physics.mjs\\n");\n',
+    );
+    executable(
+      join(bin, 'cargo'),
+      '#!/bin/sh\nprintf "cargo %s\\n" "$*" >> "$TN_TEST_LOG"\nexit 0\n',
+    );
     executable(
       join(bin, 'cmake'),
       '#!/bin/sh\nprintf "cmake %s\\n" "$*" >> "$TN_TEST_LOG"\n',
@@ -64,11 +84,32 @@ test.runIf(process.platform === 'linux')(
     });
     assert.equal(result.status, 0, result.stderr);
     const commands = readFileSync(log, 'utf8');
-    assert.match(commands, /build-native-ui-overlay\.mjs/u);
-    assert.match(commands, /cmake --preset tn-linux .*?-DTN_ENABLE_UI_OVERLAY=ON/u);
+    assert.match(commands, /cargo build --release --manifest-path .*native\/ui-overlay\/Cargo\.toml --lib/u);
+    assert.match(commands, new RegExp(`cmake --preset ${preset} .*?-DTN_ENABLE_UI_OVERLAY=ON`, 'u'));
     assert.match(
       commands,
       /-DTHREENATIVE_UI_OVERLAY_LIBRARY=.*libthreenative_ui_overlay\.a/u,
     );
   },
 );
+
+for (const present of [false, true]) {
+  test(`overlay --check ${present ? 'reports the library' : 'fails closed'} in a path with URL-reserved characters`, () => {
+    const root = makeTempDirSync('threenative-overlay-check-#% ');
+    roots.push(root);
+    const scripts = join(root, 'scripts');
+    mkdirSync(scripts, { recursive: true });
+    const script = join(scripts, 'build-native-ui-overlay.mjs');
+    copyFileSync(new URL('../scripts/build-native-ui-overlay.mjs', import.meta.url), script);
+    const release = join(root, 'native', 'ui-overlay', 'target', 'release');
+    if (present) {
+      mkdirSync(release, { recursive: true });
+      writeFileSync(join(release, uiOverlayLibraryName()), 'static library fixture');
+    }
+    const result = spawnSync(process.execPath, [script, '--check'], { encoding: 'utf8' });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, present ? 0 : 1, result.stderr);
+    if (present) assert.match(result.stdout, /ThreeNative UI overlay:/u);
+    else assert.match(result.stderr, /TN_UI_OVERLAY_MISSING:/u);
+  });
+}
