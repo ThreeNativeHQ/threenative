@@ -26,6 +26,21 @@ the guard it existed to bypass is open, so a user build needs no flag.
 - `packages/create-threenative/templates/starter/threenative.config.ts` keeps `ui.renderer` at its
   default, so the lane proves the shipped default rather than a scenario-authored one.
 
+## Observed red, then restored green — the PRD's controls, run
+
+| control | change | result |
+| --- | --- | --- |
+| remove the UI package | delete the starter's `src/ui` and run `build:desktop` | fails closed, `TN_UI_ENTRY_MISSING: ui.renderer is "web" but src/ui/main.tsx does not exist`, exit 1; restored → builds green |
+| react-dom in the portable entry | `assertNativeBundleCompatible` (`create-threenative/__tests__/build.spec.ts`, "still refuses react-dom in the portable entry after the UI layer landed") | throws `TN_NATIVE_WEB_ONLY_UI`; the separate portable-graph guard is unchanged |
+
+## User verification — owner-delegated
+
+The owner cannot run Windows/macOS and delegated the human review to an agent (2026-09-12). The
+public route (no `THREENATIVE_INTERNAL_DESKTOP_UI_PROOF`, no renderer override, no source patch)
+builds the shipped starter and plays its unchanged `src/ui` in the hosted Windows/macOS lanes and
+locally on Linux; the agent inspected those runs and captures. No human was at a Windows/macOS
+machine; the owner waived that check.
+
 ## Not run, and not claimed
 
 - `ui.renderer: "native"` opt-out creating no WebView, and a registry-installed consumer, are not

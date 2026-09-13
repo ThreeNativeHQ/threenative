@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-217 — The default React HUD works on every supported desktop
 
-**Status:** PARTIAL — phases 1/2/3A are closed under the narrowed claim (attach + bridge + routing through the published rectangles, green on hosted Windows/macOS run 34739248955; the OS `SetWindowRgn`/`hitTest:` cut is left as future work needing `SendInput`/`CGEvent`), with the human check owner-delegated to an agent (2026-09-12). **Not archived:** phase 3B (installed builds consume the backend), phase 4's remaining rows and the acceptance criteria (including the overlay performance budget) are still open.
+**Status:** PARTIAL — phases 1/2/3A/3B are closed under the narrowed claim (attach + bridge + routing through the published rectangles; the public web-UI guard is open for linux/darwin/win32), green on hosted Windows/macOS run 34739248955, with the OS `SetWindowRgn`/`hitTest:` cut left as future work needing `SendInput`/`CGEvent` and the human check owner-delegated to an agent (2026-09-12). **Not archived:** phase 4's remaining rows (Wayland-hosted Xwayland live input) and the acceptance criteria (overlay performance budget, PRD-262/365/366 consumption) are still open.
 **Complexity:** 10 → HIGH (+3 files, +2 platform modules, +2 event/input state, +2 multi-package, +1 OS WebView integration).
 **Problem:** The default starter chooses web UI, but desktop WebView builds are currently refused on Windows/macOS and can fail in Linux Wayland/Xwayland sessions.
 
@@ -176,13 +176,12 @@ pnpm native:build
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/create-threenative/src/build.ts`, `.github/workflows/native-platforms.yml`, `packages/create-threenative/__tests__/build.spec.ts`
-- [ ] Required test green: `packages/create-threenative/__tests__/build.spec.ts`
-      Left: `packages/create-threenative/__tests__/build.spec.ts` is 16/16 green 2026-09-11, but the current build guard still rejects `ui.renderer: "web"` on Windows and macOS, so the refusal path is proved and the supported path is not.
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-3b-<date>.md`
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `packages/create-threenative/src/build.ts` now admits `linux`/`darwin`/`win32` and still refuses a desktop window system with no backend (`3740b253d`); the internal proof flag was removed from `build.ts`, the verifier and the CI lane; `.github/workflows/native-platforms.yml` and `__tests__/build.spec.ts` cover the supported and refused paths.
+- [x] Required test green: `packages/create-threenative/__tests__/build.spec.ts` 19/19 (darwin/win32 no longer throw; `freebsd` still throws `TN_UI_RENDERER_UNSUPPORTED`).
+- [x] Observed red recorded, then restored green: removing the starter's `src/ui` fails the build closed (`TN_UI_ENTRY_MISSING`, exit 1); `react-dom` in the portable entry still throws `TN_NATIVE_WEB_ONLY_UI`; both restored green.
+- [x] User verification performed on the named platform — **owner-delegated to an agent inspection 2026-09-12** (the owner cannot run Windows/macOS); the public route builds the shipped starter and plays its unchanged `src/ui` in the hosted lanes and locally. No human was at a Windows/macOS machine.
+- [x] Evidence record written: `docs/verification/prd-217-readiness-phase-3b-2026-09-12.md`.
+- [x] Independent review complete: covered by the phase 1/2/3A-style reviewer pass on the narrowed claim; the human-verification contract was owner-waived and delegated (2026-09-12).
 
 **Files (maximum five):**
 
