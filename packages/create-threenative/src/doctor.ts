@@ -333,11 +333,24 @@ export function probeDesktopOverlay(
 ): IDesktopOverlayProbe {
   const wayland =
     environment.WAYLAND_DISPLAY !== undefined || environment.XDG_SESSION_TYPE === "wayland";
+  // A Wayland session never runs the overlay natively: the host selects SDL's X11 driver and
+  // `GDK_BACKEND=x11`, so the web view is an Xwayland window and the Wayland compositor, which a
+  // Wayland session always has, blends its alpha. There is no separate compositor to find — only
+  // Xwayland, without which the game window itself could not be created.
   if (wayland) {
+    if (environment.DISPLAY === undefined) {
+      return {
+        detail:
+          "a Wayland session without an X11 display (Xwayland) cannot host the desktop overlay",
+        fix: "Enable Xwayland for this session or use the web UI target.",
+        status: "fail",
+      };
+    }
     return {
-      detail: "the transparent container could not be created on this Wayland/Xwayland session",
-      fix: "Run the desktop target under an X11 session (for example SDL_VIDEODRIVER=x11) or use the web UI target.",
-      status: "fail",
+      detail:
+        "the runtime selects Xwayland (SDL x11, GDK_BACKEND=x11) and the Wayland compositor blends the overlay's alpha",
+      fix: "",
+      status: "ok",
     };
   }
   if (environment.DISPLAY === undefined) {

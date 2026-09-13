@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-217 — The default React HUD works on every supported desktop
 
-**Status:** PARTIAL — cross-platform backends written and cross-compile-checked; hosted Windows/macOS build+run and Linux session closure open. Revised 2026-09-12; implementation in flight.
+**Status:** PARTIAL — cross-platform backends written and cross-compile-checked; the Wayland/Xwayland doctor false failure is fixed and evidenced (2026-09-12); hosted Windows/macOS build+run, live HUD input and human verification open. Revised 2026-09-12; implementation in flight.
 **Complexity:** 10 → HIGH (+3 files, +2 platform modules, +2 event/input state, +2 multi-package, +1 OS WebView integration).
 **Problem:** The default starter chooses web UI, but desktop WebView builds are currently refused on Windows/macOS and can fail in Linux Wayland/Xwayland sessions.
 
@@ -215,10 +215,11 @@ pnpm test:native
 
 - [ ] Callers wired and building: `packages/runtime-native/src/platform/window.cpp`, `packages/runtime-native/native/ui-overlay/src/argb.rs`, `packages/create-threenative/src/doctor.ts` (+1 more)
 - [ ] Required test green: `packages/runtime-native/tests/native-build-ui-overlay.test.mjs`
-      Left: same Linux-only overlay test. The 2026-09-08 assessment also recorded a Wayland/Xwayland overlay failure on the published Linux consumer, which this phase must resolve or name as a prerequisite.
-- [ ] Observed red recorded, then restored green
+      Left: same Linux-only overlay test, and the live HUD input/teardown rows are unrun. The 2026-09-08 assessment's Wayland/Xwayland failure was reproduced and named on 2026-09-12: the overlay's GDK context defaulted to Wayland while the game window is Xwayland, so `argb::create` had no X11 container. The engine already selects the supported backend (`main.cpp` sets `SDL` x11 + `GDK_BACKEND=x11`); the doctor's false "transparent container could not be created" on every Wayland session is fixed.
+- [x] Observed red recorded, then restored green
+      Doctor red on this live Wayland/Xwayland session: `{"detail":"the transparent container could not be created on this Wayland/Xwayland session","status":"fail"}`. Green after the fix: `{"detail":"the runtime selects Xwayland (SDL x11, GDK_BACKEND=x11) and the Wayland compositor blends the overlay's alpha","status":"ok"}`; `doctor.spec.ts` 95/95, `native-build-ui-overlay.test.mjs` 2/2.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-217-readiness-phase-4-<date>.md`
+- [x] Evidence record written: `docs/verification/prd-217-readiness-phase-4-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**

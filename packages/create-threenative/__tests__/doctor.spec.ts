@@ -164,26 +164,30 @@ describe("threenative doctor", () => {
     expect(formatDoctorReport(report)).toContain("Start a compositing manager");
   });
 
-  it("names the Wayland transparent-container blocker before a build", () => {
-    const probe = probeDesktopOverlay(
+  it("reports a Wayland/Xwayland session as supported and a Wayland one without Xwayland as blocked", () => {
+    const supported = probeDesktopOverlay(
       { DISPLAY: ":0", WAYLAND_DISPLAY: "wayland-0", XDG_SESSION_TYPE: "wayland" },
       () => true,
     );
     const report = diagnoseProject(
       snapshot({
         config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
-        desktopOverlay: probe,
+        desktopOverlay: supported,
       }),
     );
 
-    expect(probe).toMatchObject({
-      detail: expect.stringContaining("transparent container could not be created"),
-      status: "fail",
+    expect(supported).toMatchObject({
+      detail: expect.stringContaining("Xwayland"),
+      status: "ok",
     });
-    expect(check(report, "desktop overlay")).toMatchObject({
-      detail: expect.stringContaining("transparent container could not be created"),
-      status: "fail",
-    });
+    expect(check(report, "desktop overlay")).toMatchObject({ status: "ok" });
+
+    const blocked = probeDesktopOverlay(
+      { WAYLAND_DISPLAY: "wayland-0", XDG_SESSION_TYPE: "wayland" },
+      () => true,
+    );
+    expect(blocked).toMatchObject({ status: "fail" });
+    expect(blocked.detail).toContain("Xwayland");
   });
 
   it("does not report a desktop overlay blocker for native UI", () => {
@@ -962,6 +966,9 @@ describe("threenative doctor edge coverage", () => {
     expect(probeDesktopOverlay({ XDG_SESSION_TYPE: "wayland" }, () => true)).toMatchObject({
       status: "fail",
     });
+    expect(
+      probeDesktopOverlay({ DISPLAY: ":0", XDG_SESSION_TYPE: "wayland" }, () => false),
+    ).toMatchObject({ status: "ok" });
   });
 
   it("handles empty manifests and configured target arrays and strings", () => {
