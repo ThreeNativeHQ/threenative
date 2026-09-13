@@ -1311,6 +1311,10 @@ jobs:
           copyFileSync("examples/native-smoke/src/networking-game.ts", `${process.env.CONSUMER_TARGET}/src/networking-game.ts`);
           copyFileSync("examples/native-smoke/src/worker-proof.ts", `${process.env.CONSUMER_TARGET}/src/worker-proof.ts`);
           copyFileSync("examples/native-smoke/vite.config.ts", `${process.env.CONSUMER_TARGET}/vite.config.ts`);
+          // `vite.config.ts` reads `physics-parity.scenario.json` beside itself and otherwise falls
+          // back to the repo-relative path, which does not exist outside a checkout: the first hosted
+          // Windows run died on `ENOENT ... D:\a\packages\physics\__tests__\fixtures\...`.
+          copyFileSync("packages/physics/__tests__/fixtures/physics-parity.scenario.json", `${process.env.CONSUMER_TARGET}/physics-parity.scenario.json`);
           NODE
           echo "CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
       - name: Mask every native toolchain entry point

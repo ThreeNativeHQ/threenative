@@ -652,6 +652,16 @@ test("the Windows consumer serves only the Windows row it installs", () => {
   assert.doesNotMatch(consumer, /!key\.startsWith\("ios-"\)/u);
 });
 
+test("the Windows consumer copies the fixture its vite config reads before it builds", () => {
+  // Run 34730868090: the prepare step copied `vite.config.ts` alone, so the config's sibling read of
+  // `physics-parity.scenario.json` fell through to `../../packages/physics/...` and the consumer build
+  // died on `ENOENT ... D:\a\packages\physics\__tests__\fixtures\physics-parity.scenario.json`. The
+  // sibling copy is the only one that survives a build outside this checkout, so it is pinned.
+  const prepare = windowStep("Prepare the scaffolded consumer proof");
+  assert.match(prepare, /native-smoke\/vite\.config\.ts/u);
+  assert.match(prepare, /packages\/physics\/__tests__\/fixtures\/physics-parity\.scenario\.json/u);
+});
+
 function windowStep(name: string): string {
   const block = job("clean-consumer-windows").split(`- name: ${name}\n`)[1];
   assert.ok(block, `missing the Windows consumer step ${name}`);
