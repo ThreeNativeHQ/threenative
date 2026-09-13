@@ -1230,11 +1230,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      # Only the Windows runtime artifact is downloaded. The consumer installs only `win32-x64`, so
+      # the served lock advertises just those two assets and never waits on `build-android`'s output;
+      # the full published cohort is the Linux lane's claim.
       - name: Download this run's proof assets
         if: github.ref_type != 'tag'
         uses: actions/download-artifact@v8
         with:
-          pattern: runtime-*
+          pattern: runtime-win32-x64
           path: release
           merge-multiple: true
       - name: Serve same-run proof assets without publishing
@@ -1246,14 +1249,13 @@ jobs:
           import { createHash } from "node:crypto";
           import { readFileSync, readdirSync, writeFileSync } from "node:fs";
           import { PREBUILT_ASSET_NAMES, PUBLISHED_PREBUILT_KEYS } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
-          // The published cohort, not every non-iOS key: rows in UNPUBLISHED_PREBUILT_KEYS upload
-          // under a name the `pattern: runtime-*` download above does not collect, so demanding them
-          // here fails a run whose staging is exactly right.
-          const names = PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith("ios-"))
+          // The Windows row this lane installs, and nothing else: the full non-iOS cohort is the
+          // Linux lane's claim and depends on `build-android`, which this job deliberately drops.
+          const names = PUBLISHED_PREBUILT_KEYS.filter((key) => key.startsWith("win32-"))
             .map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
           const expected = names.map(([, name]) => name).sort();
           if (JSON.stringify(readdirSync("release").sort()) !== JSON.stringify(expected)) {
-            throw new Error("Proof assets must contain every published non-iOS runtime from this run, and no extras.");
+            throw new Error("Proof assets must contain the published Windows runtime and its helper, and no extras.");
           }
           const artifacts = Object.fromEntries(names.map(([key, name]) => {
             const bytes = readFileSync(`release/${name}`);

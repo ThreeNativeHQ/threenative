@@ -642,6 +642,16 @@ test("the same-run proof serves the published cohort, not every non-iOS key", ()
   );
 });
 
+test("the Windows consumer serves only the Windows row it installs", () => {
+  // Run 34725179598: `build-android`'s V8 source build hit its 2h cap and uploaded nothing, so the
+  // Windows lane died demanding Android assets it never needed and never depended on. It now serves
+  // the win32 runtime and helper the consumer installs, derived from the published keys.
+  const consumer = job("clean-consumer-windows");
+  assert.match(consumer, /pattern: runtime-win32-x64/u);
+  assert.match(consumer, /key\.startsWith\("win32-"\)/u);
+  assert.doesNotMatch(consumer, /!key\.startsWith\("ios-"\)/u);
+});
+
 function windowStep(name: string): string {
   const block = job("clean-consumer-windows").split(`- name: ${name}\n`)[1];
   assert.ok(block, `missing the Windows consumer step ${name}`);

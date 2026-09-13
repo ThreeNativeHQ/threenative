@@ -66,10 +66,12 @@ flowchart LR
 **Phase checklist:**
 
 - [x] Files wired — the new job exists and `finalize` lists it in `needs:` (`native-release.yml:1206`, `:1391`; also `cleanup-failed-release` at `:1413`)
-- [x] Required test passing — the spec asserts the job, its runner, its mask and its helper assertion (`pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts`: 41 passed; `native-platform-workflow.test.mjs` + `ios-packaging.test.mjs`: 55 passed; `ci-structure.spec.ts`: 108 passed)
-- [ ] Observed red — a masked `cl` invocation fails the job; a deleted helper fails the build naming it. Only the spec-level control ran locally (renaming the job fails 5 spec tests); the two Windows controls need a Windows runner.
+- [x] Required test passing — the spec asserts the job, its runner, its mask and its helper assertion (`pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts`: 42 passed; `native-platform-workflow.test.mjs` + `ios-packaging.test.mjs`: 55 passed; `ci-structure.spec.ts`: 108 passed)
+- [ ] Observed red — a masked `cl` invocation fails the job; a deleted helper fails the build naming it. The local spec-level control ran (renaming the job fails 5 spec tests). Hosted run 34725179598 reached the job and failed in `Serve same-run proof assets`: `build-android` timed out at its 2h V8 cap (exit 124) and uploaded nothing, and the lane still demanded that full cohort. Fixed by serving only `runtime-win32-x64`, the row this consumer installs; the two Windows controls still need a Windows runner.
 - [ ] Independent review PASS
 - [ ] User verification — the job is green on a real hosted Windows runner
+
+**Hosted observation, run 34725179598 (PR #223, 2026-09-12):** the job reached the runner and failed in `Serve same-run proof assets`, because `build-android`'s V8 source build hit its own 2h cap (exit 124) and uploaded no `runtime-android-*` assets, while the copied full-cohort check demanded every published non-iOS runtime. Fixed by serving only the win32 row the consumer installs (`pattern: runtime-win32-x64`, `PUBLISHED_PREBUILT_KEYS.filter(key => key.startsWith("win32-"))`); re-run pending.
 
 **Files (maximum five):**
 
