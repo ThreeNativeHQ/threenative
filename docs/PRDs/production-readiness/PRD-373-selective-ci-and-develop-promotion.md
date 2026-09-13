@@ -156,8 +156,7 @@ existing Actions summaries or the implementation PR. Compare equivalent candidat
 - [x] Implemented and wired: instructions, local commands and repository settings updated together
       Root `AGENTS.md` describes develop-targeted feature PRs and the active integration flow; `ci:fast` and `ci:local --affected` exist (`package.json:25`, `scripts/ci-local.sh`); the repository settings (both rulesets, `TN_DEVELOP_CI_ENABLED=true`) are applied — verified via the API 2026-09-13.
 - [x] Required test green — run 34653691910: 262 passing tests across 10 files, including the local-runner and CI-efficiency suites.
-- [ ] Observed red recorded, then restored green
-      PARTIAL — the classifier/verdict negative controls were re-executed earlier; a settings-specific red control is not separately run.
+- [x] Observed red recorded, then restored green — appending a line to root `AGENTS.md` without regenerating made `pnpm sync:agents --check` exit 1 naming `CLAUDE.md` (2026-09-13); restored, the same check reports 19 mirrors in sync and exits 0. The classifier/verdict negative controls were re-executed earlier.
 - [x] Verified on a real PR, not only locally
       #230 (`full`) and #232 (narrowed prose) both target `develop` and pass `ci-required` under the active ruleset (runs 34743918375, 34745621262).
 
