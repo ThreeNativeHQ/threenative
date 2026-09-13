@@ -49,8 +49,8 @@ constants are gone, replaced by one tested implementation.
 
 ### Phase 3 — Reuse it
 
-- [x] `sandbox/midway-open-pacific` scaffolded from the `sailing` template, WebGL2 backend
-      selected so the ported GLSL shaders compile.
+- [x] `sandbox/midway-open-pacific` scaffolded from the `sailing` template and run on the default
+      WebGPU backend; the ocean, sky and combat particles are TSL node materials.
 - [x] The game's `src/sim/flight.ts` imports `FlightModel` from `@threenative/core` and supplies
       only the SBD/TBD airframes.
 - [x] `pnpm typecheck` and `vite build` green.
@@ -65,5 +65,5 @@ constants are gone, replaced by one tested implementation.
 - [x] The sandbox game runs the standalone build's mission with the engine model and no console
       errors.
 - [x] Native (desktop/Android/iOS) build of the sandbox game is **out of scope and not
-      claimed**: the game selects the WebGL2 backend for its GLSL shaders and the port is
-      explicitly a web lane, stated in its `AGENTS.md`.
+      claimed**: no `--target` playtest has run. The game renders through TSL on the default
+      WebGPU backend, so the web and native rendering paths are the same source.

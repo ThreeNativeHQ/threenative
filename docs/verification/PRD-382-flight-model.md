@@ -51,30 +51,37 @@ import { FlightModel, airDensity, aircraftMass, attitudeAxes, gearClearance, set
 this.#model = new FlightModel({ airframe: airframeFor(airframeId), state, wind: this.wind });
 ```
 
-Commands (from `../sandbox/midway-open-pacific`):
+Command and result (from `../sandbox/midway-open-pacific`, WebGPU recipe):
 
 ```text
-$ pnpm typecheck
-exit 0
-
-$ pnpm exec vite build
-✓ built
-
 $ node node_modules/@threenative/playtest/dist/runner/cli.js \
-    --scenario playtests/launch.playtest.json --url http://127.0.0.1:5199
-"rendererKind": "webgl",
+    --scenario playtests/launch.playtest.json --url http://127.0.0.1:5199 \
+    --browser-recipe webgpu --headed
+"rendererKind": "webgpu",
+"adapter": { "architecture": "turing", "vendor": "nvidia" },
 "pass": true,
-"runtime": "web",
+"runtime": "web"
 ```
 
-Artifacts: `../sandbox/midway-open-pacific/artifacts/playtest/` (capture.json, console.json),
-`../sandbox/midway-open-pacific/screenshot-briefing.png`,
-`../sandbox/midway-open-pacific/screenshot-cockpit.png`.
+`playtests/flight.playtest.json` also passes on WebGPU and writes `takeoff.png` and `flight.png`.
 
-Pushed to `ThreeNativeHQ/examples` as commit `ffdb5d6` ("feat(sandbox): Midway — Open Pacific, a
-flight game reusing the engine FlightModel").
+Artifacts: `../sandbox/midway-open-pacific/artifacts/playtest/` (capture.json, console.json),
+`../sandbox/midway-open-pacific/screenshot-takeoff.png`,
+`../sandbox/midway-open-pacific/screenshot-flight.png`.
+
+Pushed to `ThreeNativeHQ/examples` as commit `c59aafc` ("feat(sandbox): run Midway on WebGPU with
+TSL ocean, sky and particles"), on top of `ffdb5d6`.
+
+## Rendering
+
+The ocean, sky and combat particles are TSL node materials, so the game runs on the default
+WebGPU backend: the sea is the engine's `SpectralOcean` under a `MeshStandardNodeMaterial`
+(`src/render/ocean.ts`), the sky and particles are node materials in `world.ts`/`particles.ts`, and
+the linear sky/sea constants are copied from the standalone build. Shadow maps are off because
+three r185's WebGPU shadow pass raised a `bindingBuffer ... used in submit while destroyed`
+validation error for this scene.
 
 ## Not claimed
 
-The sandbox game selects core's WebGL2 backend (`renderer.preferWebGPU: false`) so its GLSL
-ocean/sky/particle shaders compile; it does not claim desktop, Android or iOS.
+Desktop, Android and iOS builds of the sandbox game are not claimed; no `--target` playtest has
+run for it.
