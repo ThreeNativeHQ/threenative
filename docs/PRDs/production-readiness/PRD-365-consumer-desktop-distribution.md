@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-365 — An installed game produces distributable desktop apps
 
-**Status:** PROPOSED. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — historical phase-1 evidence retained; phase 1R fixes review-discovered integrity/identity/archive defects with local regression evidence, while full workspace/native revalidation and independent review remain open. Phases 2–3 NOT RUN. Revised 2026-09-12.
 **Complexity:** 10 → HIGH (+3 files, +2 platform packaging module, +2 signing/container state, +2 multi-package, +1 OS tools).
 **Problem:** The desktop command produces a host executable plus UI files, without a proved complete installed-app container, signing/notarization path or player-machine dependency story.
 
@@ -63,12 +63,18 @@ sequenceDiagram
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/scripts/desktop-distribution.mjs` (+1 more)
-- [ ] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-1-<date>.md`
-- [ ] Independent reviewer returned PASS
+- [x] Callers wired and building: `packages/create-threenative/src/build.ts`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/scripts/desktop-distribution.mjs` (+1 more)
+  - `build --target desktop --mode release` reaches `packageDesktop`, which lazily imports the new helper and delegates the container; debug mode is byte-for-byte the old raw path. `pnpm exec tsc --noEmit -p tsconfig.json` clean.
+- [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
+  - 47 passed (5 new) on linux-x64, exit 0. New rows: release container payload, relocation rejection (missing UI entry, missing dependency, tampered bytes), generic-icon brand rejection, per-platform metadata, dependency-tool census.
+- [x] Observed red recorded, then restored green
+  - Skipping dependency recording in `desktop-distribution.mjs` made the relocation row fail (`Tests 1 failed`); restoring the recording returned `Tests 1 passed`.
+- [x] User verification performed on the named platform
+  - On linux-x64 the `native-smoke` release container was unpacked to a path containing spaces and launched outside the project: `TN_NATIVE_SMOKE_READY:webgpu`, 4 textures, `Rendered 300 frames`, `TN_UI_OVERLAY:{"attached":true}`, the composited capture carrying the HUD plate/text, and window title/desktop entry matching the configured game identity. Full detail in the phase-1 record. macOS/Windows execution and signing remain phase 2/3.
+- [x] Evidence record written: `docs/verification/prd-365-readiness-phase-1-2026-09-12.md`
+  - Commands, the end-to-end archive hash, the observed red and the unrun gates are in the record.
+- [x] Independent reviewer returned PASS
+  - An independent read-only reviewer on a different model, given this phase, the diff at `264153102`, the test file and the evidence record, returned **PASS**; the findings and its non-blocking notes are in the phase-1 record. Full result: `docs/verification/prd-365-readiness-phase-1-2026-09-12.md`.
 
 **Files (maximum five):**
 
@@ -93,6 +99,25 @@ pnpm exec threenative build --target desktop --mode release
 ```
 
 **User verification:** Unpack/move the application to a path containing spaces and launch it outside the project directory. HUD/assets work and OS identity reflects the game. This phase alone does not claim signed distribution.
+
+### Phase 1R — Container integrity and OS identity review corrections
+
+The original phase-1 checks above describe the candidate in its retained evidence record, not a fresh native verification of these corrections. This follow-up is bounded to `packages/runtime-native/scripts/desktop-distribution.mjs`, the new `packages/runtime-native/tests/desktop-container.test.mjs`, and this PRD. The existing `packageDesktop` delegation remains the caller; no public API or debug packaging route changes.
+
+**Progress:**
+
+- [x] Existing container staging/resolution exercised with the corrections.
+  - Record the final executable on every platform, after Windows resource editing; require integrity records for declared executable/UI/dependencies/icon and reject malformed inventories or symlinks outside the root. Stage macOS `Contents/Info.plist` at the proper location, match its icon name, escape XML identity and distinguish authored-icon identity from converted-payload integrity. Preserve dependency paths with spaces. Build a fresh archive before replacing an existing output, avoiding stale ZIP members and preserving the prior artifact on failure.
+- [ ] Required repository Vitest and workspace gates green for the correction.
+  - NOT RUN here: pnpm/Vitest and the full workspace are unavailable. Run `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/desktop-container.test.mjs tests/distribution.test.mjs`, then the required workspace gates.
+- [x] Observed red recorded, then restored green for the changed behavior.
+  - Against parent `9234a5d70da07d2de66f6825e7ad70f190db19ce`, the initial 24-case set yielded 1 pass / 23 failures. The two archive cases then yielded 2 failures before the archive fix. Final result: 26 passed / 0 failed / 0 skipped.
+- [ ] Current-candidate native game/HUD and supported-platform user verification.
+  - Archive/layout checks below are not Windows/macOS execution, a ThreeNative game launch, signing or clean-player proof.
+- [x] Bounded verification evidence recorded here (2026-09-12).
+  - Linux Node 22.16.0 `node --test` adapter of the committed Vitest assertion bodies: only runner and temporary-directory imports changed; OS resource tools/archive transport are fixture boundaries in these unit tests. `node --check` and `git diff --check` pass. Separately, real Linux-host `tar`/`zip`/`unzip` create/rebuild/extract operations passed for all three platform layouts, with obsolete UI files absent after rebuilding and integrity checks green. A relocated `/bin/true` fixture launched from `/tmp`; this is not native-game evidence. Python `plistlib` parsed the generated macOS plist and recovered the authored `R&D <Orbit>` name.
+- [ ] Independent reviewer returned PASS for this correction.
+  - NOT RUN; the historical phase-1 reviewer did not review this follow-up.
 
 ### Phase 2 — Public packaging includes the new adapter and supports player dependencies
 
@@ -176,7 +201,9 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+**Current correction:** phase 1R above records the new local evidence and unrun gates. The following phase-1 account is historical and must not be used to claim fresh full-suite/native/reviewer coverage of phase 1R.
+
+The planning revision itself ran no implementation gate. **Phase 1 is implemented against local inputs and all six of its checkpoints are verified** — focused tests, observed red, linux-x64 user verification on a real release container, evidence record, and independent reviewer PASS. Commands, archive hashes, the observed red and the still-unrun gates (macOS/Windows execution, signing) are in `docs/verification/prd-365-readiness-phase-1-2026-09-12.md`. Phases 2 and 3 are **NOT RUN**. Write each remaining phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
 
 ## Acceptance criteria
 
