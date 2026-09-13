@@ -131,7 +131,7 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 
 - [x] Implemented and wired: caches keyed so no stale product or test verdict is reused — existing cache wiring audited below; CI efficiency contracts and actual repack tests pass. Equivalent cold/warm measurements remain open.
 - [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
-- [ ] Observed red recorded, then restored green
+- [x] Observed red recorded, then restored green — gating `.github/actions/workspace-dist/action.yml`'s "Pack current workspace files" step on `steps.dist.outputs.cache-hit != 'true'` (i.e. shipping a cached archive) made `scripts/__tests__/ci-efficiency.spec.ts` fail on "caches compiled bundles but always repacks and verifies shipped templates" (`expected … not to contain 'cache-hit'`, 2026-09-13); restored, the test passes. The equivalent-SHA warm timing comparison remains open below.
 - [ ] Verified on a real PR, not only locally
 
 
