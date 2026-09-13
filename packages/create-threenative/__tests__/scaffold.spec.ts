@@ -149,11 +149,6 @@ const BUG_REPORT_SKILL_PATHS = [
 // all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
-// Recomputed 2026-09-12 for PRD-217's desktop HUD input proof: the starter's `src/ui/Menu.tsx`
-// now leads its button row with the two interactive buttons and puts the instruction text after
-// them, so the HUD's touch targets sit at a position anchored to the panel instead of to whatever
-// width the text renders at on a given platform. That is a starter source change, so only the
-// `starter` tree moves; the other nine are byte-identical.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -324,9 +319,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "9899b8ce5b5833c5bea5eff9b01a16f5a1233b3cd3a7c6942e997370fa522a93",
   racing: "b3de2fdda3daff9584ef86daa2fdbf7a4119539bb9b89186b54cd2d4608357d7",
   shooter: "811fa1f6dcaf7ff6d96fa8f0e00f245e87d63a8f9235243de8d009947a925096",
-  // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
-  // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "4a7a1c0ed73d6d28ae9833c3a01fe9366d565fe382cd059dbd73ba3f02fa2070",
+  // Recomputed 2026-09-12 for PRD-366: the starter ships a new
+  // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
+  // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
+  // only the starter tree moves.
+  starter: "5d7096e54eec7a47e8942e736fcebfaa214fe7e55527ce7c43569f0198c67ba6",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -514,6 +511,7 @@ const STARTER_PATHS = [
   "playtests/gameover.playtest.json",
   "playtests/seed.playtest.json",
   "playtests/cloth.playtest.json",
+  "playtests/production-readiness.playtest.json",
   "assets/native-proof.glb",
   "assets/native-proof.png",
   "public/icon.png",
