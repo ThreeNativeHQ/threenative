@@ -772,7 +772,16 @@ export function verifyRegistryInstall(
       const installed = step(prefix("install"), () => run(command, installArgs, project));
       steps.push(installed);
       if (!installed.ok) {
-        for (const name of ["lockfile", "edit", "build", "test", "gameplay", "doctor", "native", "mcp"])
+        for (const name of [
+          "lockfile",
+          "edit",
+          "build",
+          "test",
+          "gameplay",
+          "doctor",
+          "native",
+          "mcp",
+        ])
           notRun(
             name,
             "the install step failed to produce an installed project; no script-policy bypass was used.",

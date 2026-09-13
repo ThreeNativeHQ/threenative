@@ -86,7 +86,10 @@ function happyRunner(): CommandRunner {
       // The built bundle carries the source, so the game-only edit applied before the build is
       // observable in the artifact the playtest then exercises.
       fs.mkdirSync(path.join(cwd, "dist"), { recursive: true });
-      fs.writeFileSync(path.join(cwd, "dist", "index.js"), fs.readFileSync(path.join(cwd, "src", "game.ts"), "utf8"));
+      fs.writeFileSync(
+        path.join(cwd, "dist", "index.js"),
+        fs.readFileSync(path.join(cwd, "src", "game.ts"), "utf8"),
+      );
       return "built";
     }
     if (
@@ -236,9 +239,18 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(report.exitCode).toBe(0);
     expect(report.steps.map((step) => step.name)).toEqual(
       ["npm", "pnpm"].flatMap((manager) =>
-        ["scaffold", "install", "lockfile", "edit", "build", "test", "gameplay", "doctor", "native", "mcp"].map(
-          (step) => `${manager}:${step}`,
-        ),
+        [
+          "scaffold",
+          "install",
+          "lockfile",
+          "edit",
+          "build",
+          "test",
+          "gameplay",
+          "doctor",
+          "native",
+          "mcp",
+        ].map((step) => `${manager}:${step}`),
       ),
     );
   });
@@ -393,9 +405,18 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(report.exitCode).toBe(1);
     expect(report.steps.map((step) => step.name)).toEqual(
       ["npm", "pnpm"].flatMap((manager) =>
-        ["scaffold", "install", "lockfile", "edit", "build", "test", "gameplay", "doctor", "native", "mcp"].map(
-          (step) => `${manager}:${step}`,
-        ),
+        [
+          "scaffold",
+          "install",
+          "lockfile",
+          "edit",
+          "build",
+          "test",
+          "gameplay",
+          "doctor",
+          "native",
+          "mcp",
+        ].map((step) => `${manager}:${step}`),
       ),
     );
     expect(report.steps.slice(1).every((step) => step.ok === false)).toBe(true);
@@ -529,10 +550,9 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
       run: (command, args, cwd) => {
         const output = happyRunner()(command, args, cwd);
         if ((command === "npm" || command === "pnpm") && args.includes("create")) {
-          fs.rmSync(
-            path.join(cwd, "my-game", "playtests", "production-readiness.playtest.json"),
-            { force: true },
-          );
+          fs.rmSync(path.join(cwd, "my-game", "playtests", "production-readiness.playtest.json"), {
+            force: true,
+          });
         }
         return output;
       },
