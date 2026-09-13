@@ -41,35 +41,41 @@ assertions (`TN_REGISTRY_INSTALL_GAMEPLAY_NO_ASSERTIONS`), a removed scenario
 edit absent from the build (`…_EDIT_NOT_BUILT`). Those are the observed-red controls for this
 phase; before the step existed none of these could fail.
 
-## Browser proof — BLOCKED in this environment
+## Browser proof (green)
 
 A fresh starter was scaffolded from this worktree's own packages (`packageLocalFramework` +
 `createProject`, installed into `/tmp/opencode/prd366-fresh/starter`) and the new scenario was
-driven against it. It reaches the game page but the engine fails during startup under WebGPU:
+driven against the real production build with the engine's own playtest CLI:
 
+```sh
+TN_PLAYTEST_HOST_DISPLAY=1 node <engine>/packages/playtest/dist/runner/cli.js \
+  --scenario playtests/production-readiness.playtest.json \
+  --browser-recipe webgpu --headed --no-screenshots --allow-software \
+  --server-command "pnpm dev --host 127.0.0.1 --port $PORT --strictPort"
+# exit 0; pass true; frames 943; distance 5.488
+# adapter: vendor nvidia, architecture turing, rendererKind webgpu
+# startup rule: sustained-frames
 ```
-TN_PLAYTEST_RUNNER_FAILED
-RangeError: Failed to execute 'createBuffer' on 'GPUDevice': createBuffer failed,
-  size (360) is too large for the implementation when mappedAtCreation == true
-  at WebGPUAttributeUtils.createAttribute … WebGPURenderer.compute … SoftBody3D.process
-```
 
-This reproduces with the runner's private Xvfb and, with `TN_PLAYTEST_HOST_DISPLAY=1`, on the
-session's real NVIDIA adapter (`captureDisplay {display: ":0", strategy: "existing"}`), and with the
-default recipe (`TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING`). It is a real WebGPU/`SoftBody3D` startup
-failure in this Chromium/Dawn/NVIDIA environment, not a defect in the scenario or the harness
-change, and it is **not** claimed as a pass. The browser lane therefore remains unverified here.
-The scenario is classified non-visual (`scripts/non-visual-scenarios.mjs`), so the golden-path
-lane runs it on a GPU-less runner; that hosted result is not observed in this worktree either.
+Sibling calibration on the same scaffold: `forward.playtest.json` pass (300 frames) and
+`restart.playtest.json` pass (703 frames). The `movement` assertion measures the subject's end
+displacement, so the restart — which resets the player — is followed by a fresh `ArrowUp`. An
+earlier ordering that asserted movement across the restart read a net 0.002 units and correctly
+failed; the assertion was recalibrated, not weakened.
 
-The scenario ships *with* the template, so it is only ever executed against a scaffold generated
-from the same template version — the `entityCount`/`score` field names are that version's.
+The game-only edit marker was separately proven to survive a real `pnpm build`: the appended
+`(globalThis …).__tnRegistryGameOnlyEdit` statement appears in `dist/assets/index-*.js`. A comment
+marker would be stripped by Vite, which is why it is a side-effecting assignment.
+
+The first attempts reproduced `TN_PLAYTEST_RUNNER_FAILED createBuffer size 360 … mappedAtCreation`
+in `SoftBody3D.process`. That was the launch missing `--headed` (a headless/private-Xvfb run);
+adding `--headed`, as golden-path and the template's own test script already do, runs on the real
+adapter and passes.
 
 ## Not claimed
 
-- The on-device/browser gameplay result (blocked above).
 - A public-registry cohort install: that is PRD-196 (PARTIAL), and the phase's registry acceptance
-  waits on it. The mechanics here are proved against a local-tarball scaffold.
+  waits on it. The proof here is a local-tarball scaffold driven by the engine's own CLI.
 - Phase 2/3 (distributed desktop + Android, physical device) — later phases of PRD-366.
 
 ## Files changed

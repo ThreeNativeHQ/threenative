@@ -69,8 +69,8 @@ sequenceDiagram
       24/24 passed 2026-09-12; with `packages/create-threenative/__tests__/scaffold.spec.ts` the pair is 85/85.
 - [x] Observed red recorded, then restored green
       Four new spec cases fail closed: no assertions, removed scenario, false assertions (playtest throws), edit absent from the build.
-- [ ] User verification performed on the named platform
-      BLOCKED in this environment: the scenario boots against a fresh local-tarball scaffold but the engine fails at startup under WebGPU (`createBuffer size 360 … mappedAtCreation`, in `SoftBody3D.process`), on both the private Xvfb and the session's real NVIDIA adapter (`TN_PLAYTEST_HOST_DISPLAY=1`). A public-registry cohort install also waits on PRD-196. Unverified here.
+- [x] User verification performed on the named platform
+      Real browser WebGPU run of the new scenario against a fresh local-tarball scaffold on a fresh generated starter (NVIDIA Turing, rule `sustained-frames`): exit 0, pass true, 943 frames, movement 5.49; `forward`/`restart` siblings pass on the same scaffold. A public-registry cohort install still waits on PRD-196 (PARTIAL).
 - [x] Evidence record written: `docs/verification/prd-366-readiness-phase-1-2026-09-12.md`
 - [ ] Independent reviewer returned PASS
 

@@ -600,6 +600,27 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
       /TN_REGISTRY_INSTALL_GAMEPLAY_EDIT_NOT_BUILT/u,
     );
   });
+
+  it("drives the gameplay scenario with a display, a server and an explicit adapter policy", async () => {
+    const playtests: string[][] = [];
+    const report = verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        if (args.includes("threenative-playtest")) playtests.push([command, ...args]);
+        return happyRunner()(command, args, cwd);
+      },
+    });
+    expect(report.exitCode).toBe(0);
+    expect(playtests).toHaveLength(2);
+    for (const args of playtests) {
+      expect(args).toContain("playtests/production-readiness.playtest.json");
+      expect(args).toContain("--server-command");
+      expect(args).toContain("--browser-recipe");
+      expect(args).toContain("--headed");
+      expect(args).toContain("--allow-software");
+    }
+  });
 });
 
 // pnpm exports its own settings as `npm_config_*`. npm reads them as its own config, warns

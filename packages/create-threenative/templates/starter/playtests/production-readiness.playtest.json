@@ -12,14 +12,7 @@
     {
       "kind": "wait",
       "label": "play-scene-loads",
-      "waitTicks": 240,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "moved-forward",
-      "press": "ArrowUp",
-      "holdTicks": 60,
+      "waitTicks": 600,
       "release": true
     },
     {
@@ -48,6 +41,19 @@
       "label": "restarted",
       "press": "Enter",
       "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "post-restart-ready",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "moved-after-restart",
+      "press": "ArrowUp",
+      "holdTicks": 120,
       "release": true
     }
   ],

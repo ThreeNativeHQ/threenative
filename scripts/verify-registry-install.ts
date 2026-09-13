@@ -816,27 +816,24 @@ export function verifyRegistryInstall(
             manager === "npm"
               ? "npm run dev -- --host 127.0.0.1 --port $PORT --strictPort"
               : "pnpm dev --host 127.0.0.1 --port $PORT --strictPort";
-          const playtestArgs =
-            manager === "npm"
-              ? [
-                  "exec",
-                  "--no-install",
-                  "threenative-playtest",
-                  GAMEPLAY_SCENARIO,
-                  "--browser-recipe",
-                  "webgpu",
-                  "--server-command",
-                  serverCommand,
-                ]
-              : [
-                  "exec",
-                  "threenative-playtest",
-                  GAMEPLAY_SCENARIO,
-                  "--browser-recipe",
-                  "webgpu",
-                  "--server-command",
-                  serverCommand,
-                ];
+          const playtestArgs = [
+            "exec",
+            ...(manager === "npm" ? ["--no-install"] : []),
+            "threenative-playtest",
+            "--scenario",
+            GAMEPLAY_SCENARIO,
+            "--browser-recipe",
+            "webgpu",
+            // A GPU-less clean room still has to let Chromium reach a driver: `--headed` under the
+            // runner's private Xvfb, exactly how golden-path drives the same non-visual list, and
+            // `--allow-software` acknowledges a CPU rasteriser rather than letting a hidden
+            // SwiftShader run pass as hardware evidence.
+            "--headed",
+            "--no-screenshots",
+            "--allow-software",
+            "--server-command",
+            serverCommand,
+          ];
           const output = run(command, playtestArgs, project);
           return `Ran ${GAMEPLAY_SCENARIO} (assertions: ${families}); edit present in ${built}. ${output}`;
         }),
