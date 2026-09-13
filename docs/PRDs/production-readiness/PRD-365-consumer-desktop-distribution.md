@@ -134,7 +134,7 @@ The original phase-1 checks above describe the candidate in its retained evidenc
 - [x] Evidence record written: `docs/verification/prd-365-readiness-phase-2-2026-09-13.md`
   - Record: verifier/test changes, commands, observed red, the review correction, the clean-player run and the missing-WebView control.
 - [x] Independent reviewer returned PASS
-  - 2026-09-13: the first independent read-only review returned **NEEDS CORRECTION** (the `--container` CLI flag was broken, `assertPlayerPrerequisites` ignored the manifest, Windows/macOS prerequisites were not machine-checked). All three are corrected with a CLI regression test, a manifest-driven hint and an unrecorded-library case, and README/evidence scoped to Linux. The re-review returned **PASS** with the three desktop suites at 105/0; its only note was that the manifest use is proven by code inspection plus the new negative test.
+  - 2026-09-13: the first independent read-only review returned **NEEDS CORRECTION** (the `--container` CLI flag was broken, `assertPlayerPrerequisites` ignored the manifest, Windows/macOS prerequisites were not machine-checked). All three are corrected with a CLI regression test, a manifest-driven hint and an unrecorded-library case, and README/evidence scoped to Linux. The re-review returned **PASS** with the three desktop suites at 106/0; its only note was that the manifest use is proven by code inspection plus the new negative test.
 
 **Files (maximum five):**
 
@@ -166,7 +166,7 @@ pnpm publish:check
 - [x] Callers wired and building: `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/runtime-native/scripts/package-desktop.mjs`, `packages/runtime-native/tests/distribution.test.mjs` (+1 more)
   - `signDesktopArtifact`/`notarizeArchive` own codesign/signtool/notarytool/stapler with injectable transport; `packageDesktopContainer` signs before the integrity records and records `signed`/`signingScheme`; `desktopSigningFromEnvironment` reads non-secret inputs and the release log names signed vs unsigned. `README.md` documents the variables and the store/depot handoff. `node --check` and `biome check` clean.
 - [x] Required test green: `packages/runtime-native/tests/distribution.test.mjs`
-  - **55 passed / 0 failed** in that file (7 new); **105 passed** across the three desktop suites. New rows: signing failure refuses the release and leaves no archive; notarization evidence for a different artifact is refused; a notarytool `Invalid` result refuses the release; missing credentials stay PENDING while unsigned preparation records `signed: false`; a successful macOS signature records `signingScheme`; macOS notarization staples and re-archives.
+  - **56 passed / 0 failed** in that file (8 new); **106 passed** across the three desktop suites. New rows: signing failure refuses the release and leaves no archive; notarization evidence for a different artifact is refused; a notarytool `Invalid` result refuses the release; missing credentials stay PENDING while unsigned preparation records `signed: false`; successful macOS and Windows signatures record their `signingScheme`; macOS notarization staples and re-archives.
 - [x] Observed red recorded, then restored green
   - Disabling the artifact-hash check in `assertNotaryEvidence` failed the mismatch row: `Tests 1 failed | 54 skipped`; restoring returned green.
 - [ ] User verification performed on the named platform
@@ -174,7 +174,7 @@ pnpm publish:check
 - [x] Evidence record written: `docs/verification/prd-365-readiness-phase-3-2026-09-13.md`
   - Partial record: adapter, fixture contracts, commands, observed red, the review correction and the unrun real-signing gate.
 - [x] Independent reviewer returned PASS
-  - 2026-09-13: the first independent read-only review returned **NEEDS CORRECTION** (macOS success threw `EISDIR` hashing the `.app`; dependency records predated `codesign --deep`; the success/notarize paths had no test). The code findings are corrected — the directory hash is gone, dependencies are recorded after signing, and two success-path tests cover codesign and notarize → staple → re-archive. The re-review confirmed all three RESOLVED with the three desktop suites at 105/0 and returned NEEDS CORRECTION for documentation only (README not stating the credentialed path is host-bound), fixed in the same commit.
+  - 2026-09-13: the first independent read-only review returned **NEEDS CORRECTION** (macOS success threw `EISDIR` hashing the `.app`; dependency records predated `codesign --deep`; the success/notarize paths had no test). The code findings are corrected — the directory hash is gone, dependencies are recorded after signing, and success-path tests cover macOS and Windows signing plus notarize → staple → re-archive. The re-review confirmed all three RESOLVED with the three desktop suites at 106/0 and returned NEEDS CORRECTION for documentation only (README not stating the credentialed path is host-bound), fixed in the same commit.
 
 **Files (maximum five):**
 

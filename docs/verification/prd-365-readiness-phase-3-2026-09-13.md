@@ -38,7 +38,7 @@ open and are delegated to PRD-060's credentialed operations.
 
 | Command | Result |
 | --- | --- |
-| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs tests/desktop-container.test.mjs tests/starter-desktop.test.mjs` | **105 passed**, exit 0 (7 new). |
+| `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs tests/desktop-container.test.mjs tests/starter-desktop.test.mjs` | **106 passed**, exit 0 (8 new). |
 | `pnpm exec biome check <4 changed files>` | exit 0 (warnings only, pre-existing). |
 | `scripts/__tests__/primary-docs.spec.ts` + `check-publish-state.spec.ts` | **52 passed**, exit 0. |
 
@@ -68,7 +68,7 @@ and notarize→staple→re-archive paths had no test. Fixed: the darwin branch n
 directory; dependency records are written after signing; and the two success-path tests above were
 added. The reviewer's notary-binding note is addressed by wording — the integrated path binds the
 evidence to the archive it submits, and `assertNotaryEvidence` rejects externally supplied evidence
-for a different artifact. Distribution's count is **55 passed** (not the 53 in the reviewer note,
+for a different artifact. Distribution's count is **56 passed** (not the 53 in the reviewer note,
 which predated the two success tests).
 
 ## Observed red, then restored green
@@ -79,7 +79,7 @@ Disabling the artifact-hash check in `assertNotaryEvidence` made the mismatch ro
 pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/distribution.test.mjs -t 'notarization evidence for a different artifact'
 => Tests  1 failed | 54 skipped (55)
 # restored
-=> Tests  105 passed (105) over the three desktop suites
+=> Tests  106 passed (106) over the three desktop suites
 ```
 
 ## Not run

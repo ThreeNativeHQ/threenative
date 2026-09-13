@@ -1718,6 +1718,36 @@ test('a successful macOS signature records the signing scheme', () => {
   assert.ok(calls.some((call) => call === 'codesign --verify'));
 });
 
+test('a successful Windows signature records the signing scheme', () => {
+  const directory = makeTempDirSync('threenative-sign-win-');
+  const executable = join(directory, 'input.exe');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push(`${command} ${args[0] ?? ''}`);
+    if (command === 'signtool') return { status: 0, stdout: '', stderr: '' };
+    if (command === 'zip') {
+      writeFileSync(args[2], 'archive bytes');
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected tool ${command}`);
+  };
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.win', name: 'Win Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'win32',
+    run,
+    signing: { certificate: '/keys/game.pfx', timestampUrl: 'http://timestamp.example' },
+  });
+  assert.equal(result.signed, true);
+  assert.equal(result.manifest.signed, true);
+  assert.equal(result.manifest.signingScheme, 'signtool');
+  assert.ok(calls.includes('signtool sign'));
+  assert.ok(calls.includes('signtool verify'));
+});
+
 test('macOS notarization staples and re-archives the signed bundle', () => {
   const directory = makeTempDirSync('threenative-notary-success-');
   const executable = join(directory, 'input');

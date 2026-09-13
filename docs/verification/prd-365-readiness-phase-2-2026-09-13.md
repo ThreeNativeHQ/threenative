@@ -72,7 +72,7 @@ destructured `root`), that `assertPlayerPrerequisites` ignored the manifest, and
 Windows/macOS prerequisite paths were not tested. The first is fixed with the new CLI test above;
 `assertPlayerPrerequisites` now uses the recorded prerequisites to choose the install hint; the
 README and this record now scope Linux as the machine-checked prerequisite host. After the fixes the
-three desktop suites run **105 passed / 0 failed**.
+three desktop suites run **106 passed / 0 failed**.
 
 ## Clean-player verification (linux-x64, 2026-09-13)
 
