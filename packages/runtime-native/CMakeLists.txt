@@ -1638,9 +1638,11 @@ if(TN_ENABLE_UI_OVERLAY)
                 "Build the overlay with scripts/build-native-ui-overlay.mjs before configuring."
             )
         endif()
-        target_link_directories(mystral-runtime PRIVATE "${TN_WEBVIEW2LOADER_DIR}")
-        target_link_libraries(mystral-runtime PRIVATE
-            WebView2LoaderStatic
+        # The full path, PUBLIC so it reaches the `mystral` executable: a PRIVATE link directory
+        # on a static library never propagates, and the exe is where the import library is
+        # actually consumed.
+        target_link_libraries(mystral-runtime PUBLIC
+            "${TN_WEBVIEW2LOADER_DIR}/WebView2LoaderStatic.lib"
             user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll
         )
     else()
