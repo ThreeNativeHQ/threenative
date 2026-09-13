@@ -63,6 +63,12 @@ displacement, so the restart — which resets the player — is followed by a fr
 earlier ordering that asserted movement across the restart read a net 0.002 units and correctly
 failed; the assertion was recalibrated, not weakened.
 
+The same scenario also passes on the clean-room path the registry gate actually uses — no host
+display, the runner's private Xvfb and a software adapter: `exit 0`, `pass true`, startup rule
+`compile-settled`. The scenario is classified non-visual
+(`scripts/non-visual-scenarios.mjs` keeps `playtests/production-readiness.playtest.json`, 14 kept),
+so the golden-path / template-nonvisual lanes execute it too.
+
 The game-only edit marker was separately proven to survive a real `pnpm build`: the appended
 `(globalThis …).__tnRegistryGameOnlyEdit` statement appears in `dist/assets/index-*.js`. A comment
 marker would be stripped by Vite, which is why it is a side-effecting assignment.
