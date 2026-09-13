@@ -190,12 +190,11 @@ const smooth = (a: number, b: number, x: number): number => {
   const t = clamp((x - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
 };
-const move = (a: number, b: number, maxStep: number): number =>
-  a + clamp(b - a, -maxStep, maxStep);
+const move = (a: number, b: number, maxStep: number): number => a + clamp(b - a, -maxStep, maxStep);
 
 /** ISA air density at altitude `y` metres, kg/m³. */
 export function airDensity(y: number): number {
-  return 1.225 * (Math.max(0.19, 1 - 2.25577e-5 * Math.max(0, y)) ** 4.25588);
+  return 1.225 * Math.max(0.19, 1 - 2.25577e-5 * Math.max(0, y)) ** 4.25588;
 }
 
 /** Current mass of the aircraft from its empty mass, fuel load and game-written payload. */
@@ -582,8 +581,7 @@ export function stepDeck(
   state.gforce = 1;
   const lifted = f.lift * Math.cos(state.pitch) > f.mass * gravity * 1.015 && state.deckSpeed > 18;
   const leftDeck =
-    state.deckOffset > deck.length / 2 - 1 ||
-    Math.abs(state.deckLateral) > deck.width / 2 - 1;
+    state.deckOffset > deck.length / 2 - 1 || Math.abs(state.deckLateral) > deck.width / 2 - 1;
   if (lifted || leftDeck) {
     state.rollRate = 0;
     state.pitchRate = 0;

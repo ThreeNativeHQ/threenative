@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  aerodynamicCoefficients,
   FlightModel,
   type IAircraftAirframe,
   type IFlightState,
+  aerodynamicCoefficients,
 } from "../src/index.js";
 
 const SBD: IAircraftAirframe = {
