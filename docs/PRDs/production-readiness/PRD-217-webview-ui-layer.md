@@ -265,8 +265,25 @@ Cross-platform backends landed 2026-09-12: `cargo check --release --lib` is gree
 `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` (native) and `aarch64-apple-darwin`
 (via a stubbed Apple `cc`/`ar`, Rust type-check only); Linux `cmake --preset tn-linux
 -DTN_ENABLE_UI_OVERLAY=ON` configures and `ui_overlay.cpp` compiles; `tests/native-build-ui-overlay.test.mjs`
-is 2/2 green. **Every hosted Windows/macOS build, run and human verification is NOT RUN**, and no
-phase box is ticked. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+is 2/2 green. Hosted `native-platforms` run 34730410868 then built and linked the overlay on
+`windows-2025` (`threenative_ui_overlay.lib` into `mystral.exe`) and `macos-15` (objc2 backend +
+WebKit/AppKit) and ran 300 core frames, so the phases 1/2/3A *callers wired and building* boxes are
+ticked. The Linux overlay input proof (`scripts/desktop-ui-overlay-proof.sh`, Xvfb + `xcompmin`,
+native-smoke subject) is 8/8 and recorded in `prd-217-readiness-phase-4-2026-09-12.md`.
+
+An independent reviewer (2026-09-12) returned **NEEDS CORRECTION** for phases 1, 2 and 3A. The
+required tests are still the weaker build-plan unit test, not the PRD's internal starter route that
+runs the installed playtest CLI and observes HUD intent/state plus movement; observed-red and
+per-phase evidence files are absent; and the Windows/macOS hit-routing proof cannot be delegated to
+hosted CI as the code stands — the playtest `input.pointers` bridge dispatches into the game
+runtime and never crosses the OS/compositor hit path (WebView2 container region, `NSView hitTest:`),
+so it would prove the bridge, not the mechanism. Closing phases 1/2 needs an OS-level pointer
+injection harness (SendInput / CGEvent) targeting island and non-island coordinates, or the claimed
+proof must be narrowed. Every hosted Windows/macOS build, live HUD input and human verification
+remains NOT RUN; no phase can close with placeholders. Write each phase to
+`docs/verification/prd-<id>-readiness-phase-<n>-<date>.md`; fill actual results and non-test
+`file:line` callers at implementation time. Acceptance boxes below remain unchecked until all phase
+checkpoints pass.
 
 ## Acceptance criteria
 
