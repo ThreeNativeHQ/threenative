@@ -1,10 +1,14 @@
 # PRD-373 — Selective CI and develop-to-main promotion
 
 Status: PARTIAL — classifier/verdict negative controls re-executed. PR #199 repairs
-release-report candidate binding and the native-loading proof fixture. Daily qualification
-and cache safeguards are staged code, not merely repository settings. Protected develop,
-real narrowed feature PRs, promotion/cutover proof and equivalent cold/warm measurements
-remain outstanding. No protection, default branch or cutover variable was changed.
+release-report candidate binding and the native-loading proof fixture. A real narrowed feature PR
+is now observed: #232 selects the inert-prose lane (every non-scope job skipping, `ci-required`
+pass) and #230 selects `full` and passes on a real develop PR. Daily qualification and cache
+safeguards are staged code, not merely repository settings. **`develop` is still unprotected**
+(`GET /branches/develop/protection` → 404, 2026-09-13), so `ci-required` is advisory, not an
+enforced merge gate; a red verdict on a selected failing job, promotion/cutover proof and
+equivalent cold/warm measurements remain outstanding. No protection, default branch or cutover
+variable was changed.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -38,8 +42,8 @@ Reduce unnecessary execution and queue pressure; increasing PR size is not the s
 - [x] Required test green — `scripts/__tests__/ci-structure.spec.ts`, `ci-needs.spec.ts`, `ci-efficiency.spec.ts`, `ci-local.spec.ts`, `ci-fast.spec.ts`: 188 passed across 5 files, run locally 2026-09-11 against `main` at `30f749f12`.
 - [x] Observed red recorded, then restored green
       Re-executed 2026-09-11: malformed classifier plans exit 2; restored plans exit 0. Real Git controls cover both rename endpoints, deletions, symlinks, unknown/native/shared inputs, dirty trees and full overrides.
-- [ ] Verified on a real PR, not only locally
-      PARTIAL — a real develop-targeting PR now exists. PR #230 (PRD-375, a `packages/runtime-native` change) ran the shared classifier on GitHub, selected `full`, and every selected job passed, including the whole native matrix; run 34743918375, Change scope 9s. That is the *full* policy on a real develop PR. The narrowed observation needs an inert prose/website PR; the docs-only PR carrying this update is that canary (see the 2026-09-13 observations).
+- [x] Verified on a real PR, not only locally
+      Two real develop PRs. PR #232 (this docs-only update) selected the inert-prose lane: `Change scope` pass (9s) and `ci-required` pass, with every other job — native, unit, browser, playtest, golden-path, template, website — `skipping`. That is a *narrowed* selection observed end-to-end on a real PR. PR #230 (a `packages/runtime-native` change) selected `full` and passed every selected job including the native matrix. Runs 34743918375 (#230) and 34745621262 (#232).
 
 
 Extend `scripts/ci-change-scope.mjs`; keep one classifier used by CI and local verification.
@@ -69,7 +73,7 @@ fail visibly. Preserve an explicit manual full-run option. Do not use an LLM to 
 - [x] Observed red recorded, then restored green
       Re-executed 2026-09-11: selected failed/cancelled/skipped/missing jobs each make the actual verdict exit 1; restored success exits 0. Stale base/candidate, failed scope, forged exemptions and unmapped jobs fail closed.
 - [ ] Verified on a real PR, not only locally
-      PARTIAL — `ci-required` reported `success` on run 34622294627, a real PR. It has not been observed going red on a selected job that failed, which is the half of the contract that matters.
+      PARTIAL — `ci-required` reported `success` on runs 34622294627, 34743918375 (#230) and 34745621262 (#232, narrowed prose). It has still not been observed going red on a selected job that failed on a real PR, which is the half of the contract that matters; that needs a deliberately failing selected job or the protection-gated red path, neither reachable without repository administration.
 
 
 Update `.github/workflows/ci.yml` and `.github/workflows/native-platforms.yml` to consume the
