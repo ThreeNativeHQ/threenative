@@ -935,7 +935,7 @@ jobs:
           - platform: Windows
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
@@ -1078,6 +1078,60 @@ jobs:
           pnpm --filter @threenative/runtime-native native:verify:desktop
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:verify:desktop
+      # PRD-217 phases 1/2: the default starter's WebView HUD, on the Windows and macOS hosts it
+      # is claimed for. The internal proof route admits the web UI before the public guard opens;
+      # `verify-starter-desktop.mjs` then asserts the overlay attached, because DWM and Quartz
+      # always composite. `test:native` builds the starter's real src/ui, not a fixture.
+      - name: Pack the workspace packages for the starter lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/threenative-packages"
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
+          while IFS=$'\t' read -r package_name _; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" --if-present run build
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
+          done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Scaffold the starter from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-starter-native
+          template: starter
+      - name: Build and verify the starter's WebView HUD
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-native"
+          runtime="$PWD/packages/runtime-native/build/tn-macos/mystral"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            runtime="$PWD/packages/runtime-native/build/tn-windows/mystral.exe"
+          fi
+          pnpm --dir "$target" install --ignore-scripts
+          THREENATIVE_RUNTIME_BINARY="$runtime" pnpm --dir "$target" test:native
+          # The required test itself: press the HUD's pause island (game state flips) and move
+          # through empty UI space, driven through the overlay's published hit regions.
+          node packages/runtime-native/scripts/verify-starter-ui-overlay.mjs \
+            --project "$target" \
+            --runtime "$runtime" \
+            --skip-build \
+            --artifacts packages/runtime-native/artifacts/starter-ui-${{ matrix.platform }}
+      - name: Upload the starter HUD evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-starter-${{ matrix.platform }}
+          path: ${{ runner.temp }}/threenative-starter-native/artifacts/native/
+          if-no-files-found: warn
+      - name: Upload the starter HUD input evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-starter-ui-${{ matrix.platform }}
+          path: packages/runtime-native/artifacts/starter-ui-${{ matrix.platform }}/
+          if-no-files-found: warn
       - name: Collect bounded desktop performance evidence from the built runtime
         if: always()
         shell: bash

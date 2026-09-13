@@ -2612,7 +2612,14 @@ private:
             cursor = next;
         }
         platform::setUiHitRegions(regions);
-        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << "}" << std::endl;
+        // The rectangles themselves, not just the count: a hit that lands in the wrong place is a
+        // layout or coordinate question, and only the published rectangles can answer it.
+        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << ",\"regions\":[";
+        for (size_t index = 0; index < regions.size(); ++index) {
+            if (index > 0) std::cout << ",";
+            std::cout << regions[index];
+        }
+        std::cout << "]}" << std::endl;
         return true;
     }
 
@@ -3520,6 +3527,31 @@ private:
                 event.width = 1;
                 event.height = 1;
                 event.pressure = event.buttons == 0 ? 0 : 0.5;
+                // A synthetic press is routed where the OS routes a real one: inside a published
+                // UI island the page gets it, outside it the game does. The regions are the ones
+                // the OS region and hit test are built from, so a playtest cannot disagree with a
+                // real click; without an overlay attached this is a plain game dispatch.
+                if (platform::uiOverlayAttached() && width_ > 0 && height_ > 0) {
+                    const float nx = std::clamp(
+                        static_cast<float>(event.clientX) / static_cast<float>(width_), 0.0f, 1.0f);
+                    const float ny = std::clamp(
+                        static_cast<float>(event.clientY) / static_cast<float>(height_), 0.0f, 1.0f);
+                    const bool hit = platform::uiOverlayHitTest(nx, ny);
+                    const bool injected = hit && platform::uiOverlayInjectPointer(
+                        event.type.c_str(), nx, ny, event.buttons, event.pointerId);
+                    // One bounded line per synthetic pointer: which side the host routed it to, and
+                    // whether the page accepted it. A synthesized-input failure on one host is
+                    // otherwise invisible — the press just does nothing.
+                    std::cout << "TN_UI_POINTER_ROUTE:{\"type\":\"" << event.type
+                              << "\",\"nx\":" << nx << ",\"ny\":" << ny
+                              << ",\"hit\":" << (hit ? "true" : "false")
+                              << ",\"injected\":" << (injected ? "true" : "false") << "}"
+                              << std::endl;
+                    if (hit) {
+                        // The page owns this gesture, exactly as it would for an OS-routed press.
+                        return jsEngine_->newUndefined();
+                    }
+                }
                 dispatchPointerEvent(event);
                 return jsEngine_->newUndefined();
             })

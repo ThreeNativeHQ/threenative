@@ -75,7 +75,9 @@ export const PLAYTEST_FLAGS = {
   "--executable": { default: "required for desktop", summary: "native desktop game executable", takesValue: true },
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
-  "--host-arg": { default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
+  // `allowDashValue` so a host flag can be passed as one: `--host-arg --ui` is the UI root the
+  // overlay serves, and the parser would otherwise read `--ui` as a playtest flag and reject it.
+  "--host-arg": { allowDashValue: true, default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
   "--mailbox-root": { default: "Android external files directory", summary: "native device mailbox directory", takesValue: true },
   "--ios-transport": { default: "simulator", summary: "iOS transport (simulator or device)", takesValue: true },
   "--project": { default: ".", summary: "project root used to resolve paths", takesValue: true },
