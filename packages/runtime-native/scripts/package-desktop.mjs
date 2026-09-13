@@ -21,9 +21,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
 import { installPrebuilt } from './install-prebuilt.mjs';
 
-// The container helper is imported lazily by the release path only. A published install ships the
-// scripts listed in package.json `files`; the helper joins that list in PRD-365 phase 2, so until
-// then a consumer that never asks for a release container must not fail on an unresolved import.
+// The container helper is imported lazily by the release path only, so a debug build never loads
+// it, and it ships in package.json `files` so a published `--mode release` run resolves it.
 const loadDistribution = () => import('./desktop-distribution.mjs');
 
 const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
