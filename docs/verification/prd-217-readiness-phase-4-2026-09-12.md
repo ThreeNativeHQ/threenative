@@ -99,14 +99,26 @@ silence. This is Xvfb (a bare X server), not a Wayland session hosting Xwayland,
 satisfy the phase's Wayland row and it does not attach the starter's React HUD — `native-smoke` is
 the subject here.
 
+## The X11 compositor probe read the wrong thing — fixed
+
+`detectX11Compositor` ran `xprop -root _NET_WM_CM_S0`, which reads a root *property*, while EWMH
+defines `_NET_WM_CM_S0` as the *selection* the compositing manager owns — the thing the runtime's
+own overlay guard reads with `XGetSelectionOwner`. On the `tools/xcompmin.c` fixture the selection
+is owned (`0x200001`) while `xprop -root _NET_WM_CM_S0` reports `not found`, so the probe would have
+vetoed X11 builds that actually work. It now queries the selection owner through a short
+`python3`/ctypes shim, and prints `unknown` rather than guessing when it cannot measure. Verified
+three ways:
+
+| display | compositor | `detectX11Compositor` |
+| --- | --- | --- |
+| `:0` (KWin Wayland/Xwayland) | KWin owns `_NET_WM_CM_S0` | `true` |
+| `:98` (Xvfb, no compositor) | none | `false` |
+| `:98` (Xvfb + `xcompmin`) | fixture owns the selection | `true` |
+
+`doctor.spec.ts` 95/95. This is a real measurement, not a warn: a compositor-less X11 still fails.
+
 ## Not run, and not claimed
 
 - Live HUD input/teardown under Xwayland: the probe's `XGetImage` sampling aborts before the
   input rows; the Phase 4 required-test rows are not satisfied.
 - Human click/type/resize/minimise verification on the session: still open.
-- The X11 compositor probe remains `xprop -root _NET_WM_CM_S0`, which reads a root *property*
-  while EWMH defines `_NET_WM_CM_S0` as a *selection*. On Xvfb + the `tools/xcompmin.c` fixture
-  the selection is owned (`XGetSelectionOwner` -> `0x200001`) yet `xprop -root _NET_WM_CM_S0`
-  reports `not found`, and on this session the selection is owned (`0x200003`) with the same
-  `xprop` result. A correct pure-X11 compositor probe still needs a selection-owner query and is
-  left open; the runtime's attach guard (`-2`) remains the fail-closed gate.

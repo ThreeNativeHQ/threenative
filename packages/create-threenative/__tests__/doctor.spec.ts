@@ -940,21 +940,24 @@ describe("threenative doctor command", () => {
 });
 
 describe("threenative doctor edge coverage", () => {
-  it("reports every compositor probe outcome, including a missing display and xprop", () => {
+  it("reports every compositor probe outcome, including a missing display and python3", () => {
     expect([undefined, false, true]).toContain(detectX11Compositor());
 
-    execFileSyncMock.mockReturnValueOnce("_NET_WM_CM_S0: window id # 0x123");
+    execFileSyncMock.mockReturnValueOnce("1\n");
     expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(true);
-    execFileSyncMock.mockReturnValueOnce("_NET_WM_CM_S0: absent");
+    execFileSyncMock.mockReturnValueOnce("0\n");
     expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(false);
+    // The shim prints `unknown` when it cannot measure; that is not a false "no compositor".
+    execFileSyncMock.mockReturnValueOnce("unknown\n");
+    expect(detectX11Compositor({ DISPLAY: ":99" })).toBeUndefined();
     execFileSyncMock.mockImplementationOnce(() => {
-      throw Object.assign(new Error("xprop missing"), { code: "ENOENT" });
+      throw Object.assign(new Error("python3 missing"), { code: "ENOENT" });
     });
     expect(detectX11Compositor({ DISPLAY: ":99" })).toBeUndefined();
     execFileSyncMock.mockImplementationOnce(() => {
-      throw Object.assign(new Error("xprop failed"), { code: "EPIPE" });
+      throw Object.assign(new Error("python3 failed"), { code: "EPIPE" });
     });
-    expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(false);
+    expect(detectX11Compositor({ DISPLAY: ":99" })).toBeUndefined();
   });
 
   it("distinguishes an unprobed, healthy, and unknown desktop overlay", () => {
