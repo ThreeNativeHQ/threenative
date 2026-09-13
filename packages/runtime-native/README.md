@@ -56,6 +56,52 @@ inside that checkout.
 If you have no engine checkout, the prebuilt path above is your path — `THREENATIVE_RUNTIME_SOURCE`
 is not a way around a failing download.
 
+## Desktop release containers and player prerequisites
+
+`build --target desktop` produces the raw host executable by default. `--mode release` wraps the
+compiled executable, the built `ui/` bundle and the shared libraries that executable actually loads
+into one relocatable container for the host OS:
+
+```sh
+pnpm exec threenative build --target desktop --mode release
+```
+
+- **Linux** — a `tar.gz` with the executable, `ui/`, non-system libraries under `lib/`, and a
+  `.desktop` entry plus icon under `share/`.
+- **macOS** — a `<Name>.app` inside a ZIP, with `Contents/MacOS/<exe>`, `Contents/Resources` and an
+  `Info.plist` carrying the game's id, name, version and build.
+- **Windows** — a ZIP with `<Name>.exe` (icon and version embedded), `ui/` and non-system DLLs.
+
+Each container carries `threenative-container.json`: the app identity, the executable, every
+bundled dependency with a SHA-256, and every system library recorded as a player prerequisite. All
+of it resolves relative to the container root, so a container can be unpacked and moved anywhere; a
+resource that is missing or whose bytes changed is refused. Release containers are **unsigned** —
+signing and notarization are a separate step.
+
+### Player prerequisites
+
+The container does not ship the platform's WebView or windowing stack. The player machine provides:
+
+| OS | Prerequisite | Install |
+| --- | --- | --- |
+| Linux | WebKitGTK 4.1 and GTK 3 | Debian/Ubuntu: `sudo apt-get install -y libwebkit2gtk-4.1-0 libgtk-3-0`; Fedora: `sudo dnf install webkit2gtk4.1 gtk3`; Arch: `sudo pacman -S webkit2gtk-4.1 gtk3` |
+| Windows | Microsoft Edge WebView2 Evergreen Runtime | <https://developer.microsoft.com/microsoft-edge/webview2/> |
+| macOS | System WebKit | included with macOS |
+
+The verifier inspects an unpacked container, refuses to launch when a player prerequisite is
+absent, and names the missing library with its install step rather than a bare loader error:
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --container <unpacked-directory>
+```
+
+### Standard distribution recipe
+
+1. Build: `pnpm exec threenative build --target desktop --mode release`.
+2. Verify on a player image with no Node and no engine checkout:
+   `verify-starter-desktop.mjs --container <unpacked-directory>`.
+3. Hand the archive to your installer or store depot, signing it first where the store requires it.
+
 ## Release builds and signing
 
 `build --target android` produces a debug APK by default. Release output is an explicit request:

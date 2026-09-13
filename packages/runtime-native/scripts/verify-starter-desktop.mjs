@@ -7,6 +7,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
+import { parseLinkedLibraries, resolveContainer } from './desktop-distribution.mjs';
+
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
 // Measured: a drawn starter frame has ~17,000 distinct colours, a lost capture had 5.
@@ -165,20 +167,63 @@ export function analyzeStarterLog(log, frames = 300) {
   return failures;
 }
 
-export function verifyStarterDesktop({ frames = 300, project = process.cwd() } = {}) {
-  const projectRoot = resolve(project);
-  const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
-  const projectName = basename(String(manifest.name ?? 'starter').replace(/^@[^/]+\//u, ''));
-  const executableName = process.platform === 'win32' ? `${projectName}.exe` : projectName;
-  const artifact = join(projectRoot, 'dist-native', executableName);
-  if (!existsSync(artifact)) {
-    throw new Error(`TN_NATIVE_STARTER_ARTIFACT_MISSING: run pnpm build:desktop first (${artifact}).`);
+/**
+ * The install step for a system library the container records as a player prerequisite.
+ *
+ * The container deliberately ships none of these, so a missing one is a player-machine gap. The
+ * verifier names the concrete library and its OS install command rather than leaking the dynamic
+ * loader's bare `not found`, which reads like a broken artifact.
+ */
+export function playerPrerequisiteHint(name, platform = process.platform) {
+  if (/libwebkit2gtk-/u.test(name)) {
+    return 'install the WebKitGTK 4.1 runtime (Debian/Ubuntu: sudo apt-get install -y libwebkit2gtk-4.1-0; Fedora: sudo dnf install webkit2gtk4.1; Arch: sudo pacman -S webkit2gtk-4.1).';
   }
-  const artifactDirectory = join(projectRoot, 'artifacts', 'native');
-  const screenshot = join(artifactDirectory, 'starter-desktop.png');
-  const logPath = join(artifactDirectory, 'starter-desktop.log');
-  const reportPath = join(artifactDirectory, 'starter-desktop-report.json');
-  mkdirSync(artifactDirectory, { recursive: true });
+  if (/webview2/iu.test(name) || /^WebView2Loader\.dll$/iu.test(name)) {
+    return 'install the Microsoft Edge WebView2 Evergreen Runtime (https://developer.microsoft.com/microsoft-edge/webview2/).';
+  }
+  return `install ${name} with this OS's package manager; the container records system libraries as player prerequisites and does not ship them.`;
+}
+
+function defaultExec(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8' });
+  return {
+    error: result.error,
+    status: result.status,
+    stderr: result.stderr ?? '',
+    stdout: result.stdout ?? '',
+  };
+}
+
+/** Shared libraries the player machine must provide that this host cannot resolve. */
+export function missingPlayerLibraries(executable, { platform = process.platform, run = defaultExec } = {}) {
+  if (platform !== 'linux') return [];
+  const result = run('ldd', [executable]);
+  if (result.error) {
+    throw new Error(
+      `TN_STARTER_PREREQUISITE_TOOL_MISSING: 'ldd' is required to resolve player prerequisites (${result.error.message}).`,
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `TN_STARTER_PREREQUISITE_RESOLUTION_FAILED: 'ldd' exited ${result.status ?? 'unknown'} for ${executable}.\n${result.stderr}`,
+    );
+  }
+  return parseLinkedLibraries(result.stdout, 'linux')
+    .filter((library) => library.missing)
+    .map((library) => library.name);
+}
+
+/** Fail with the concrete prerequisite and its install step, not a loader error. */
+export function assertPlayerPrerequisites(manifest, executable, { platform = process.platform, run = defaultExec } = {}) {
+  const missing = missingPlayerLibraries(executable, { platform, run });
+  if (missing.length === 0) return [];
+  const details = missing.map((name) => `  - ${name}: ${playerPrerequisiteHint(name, platform)}`).join('\n');
+  throw new Error(
+    `TN_NATIVE_STARTER_PREREQUISITE_MISSING: ${executable} needs ${missing.length} system prerequisite(s) this player machine does not provide:\n${details}`,
+  );
+}
+
+function launchStarterExecutable(executable, { env = process.env, frames, logPath, project, screenshot }) {
   // Windowed at the configured size, not the starter's `display.fullscreen: true` default: a
   // headless Windows runner has no interactive desktop for a fullscreen swap and the process was
   // seen to hang in it, and a fixed window keeps the capture size the render gates already assert.
@@ -188,18 +233,16 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   if (process.platform === 'linux' && !existsSync(displayHelper)) {
     throw new Error(`TN_NATIVE_STARTER_DISPLAY_SUPPORT_MISSING: ${displayHelper}`);
   }
-  const command = process.platform === 'linux' ? 'sh' : artifact;
-  const args = process.platform === 'linux'
-    ? [displayHelper, artifact, ...runtimeArgs]
-    : runtimeArgs;
+  const command = process.platform === 'linux' ? 'sh' : executable;
+  const args = process.platform === 'linux' ? [displayHelper, executable, ...runtimeArgs] : runtimeArgs;
   // A hosted Windows runner renders 300 frames on a software adapter with the WebView2 overlay
   // compositing alongside, which is slower than the Linux and macOS lanes; the override keeps a
   // genuinely hung run bounded at the caller's number instead of ours.
   const timeoutMs = Number(process.env.TN_STARTER_TIMEOUT_MS ?? 300_000);
   const result = spawnSync(command, args, {
-    cwd: projectRoot,
+    cwd: project,
     encoding: 'utf8',
-    env: process.platform === 'linux' ? { ...process.env, SDL_VIDEODRIVER: 'x11' } : process.env,
+    env: process.platform === 'linux' ? { ...env, SDL_VIDEODRIVER: 'x11' } : env,
     timeout: timeoutMs,
   });
   // Write the captured output before judging it. On a timeout `spawnSync` sets `error` and the old
@@ -211,6 +254,11 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
     throw new Error(`TN_NATIVE_STARTER_SPAWN_FAILED: ${result.error.message}\n${log}`);
   }
   if (result.status !== 0) throw new Error(`TN_NATIVE_STARTER_EXIT_${result.status}:\n${log}`);
+  return log;
+}
+
+// The raw debug artifact and the installed release container are judged by the same markers.
+function judgeStarterRun({ artifact, frames, log, logPath, reportPath, screenshot }) {
   const failures = analyzeStarterLog(log, frames);
   if (failures.length > 0) throw new Error(`TN_NATIVE_STARTER_LOG_FAILED:\n${failures.join('\n')}`);
   // Windows (DWM) and macOS (Quartz) always composite, so the default starter's WebView HUD must
@@ -238,9 +286,65 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   return report;
 }
 
+export function verifyStarterDesktop({ frames = 300, project = process.cwd() } = {}) {
+  const projectRoot = resolve(project);
+  const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
+  const projectName = basename(String(manifest.name ?? 'starter').replace(/^@[^/]+\//u, ''));
+  const executableName = process.platform === 'win32' ? `${projectName}.exe` : projectName;
+  const artifact = join(projectRoot, 'dist-native', executableName);
+  if (!existsSync(artifact)) {
+    throw new Error(`TN_NATIVE_STARTER_ARTIFACT_MISSING: run pnpm build:desktop first (${artifact}).`);
+  }
+  const artifactDirectory = join(projectRoot, 'artifacts', 'native');
+  const screenshot = join(artifactDirectory, 'starter-desktop.png');
+  const logPath = join(artifactDirectory, 'starter-desktop.log');
+  const reportPath = join(artifactDirectory, 'starter-desktop-report.json');
+  mkdirSync(artifactDirectory, { recursive: true });
+  const log = launchStarterExecutable(artifact, { frames, logPath, project: projectRoot, screenshot });
+  return judgeStarterRun({ artifact, frames, log, logPath, reportPath, screenshot });
+}
+
+/**
+ * Verify an installed release container from wherever the player unpacked it.
+ *
+ * The same markers and capture are judged, but a missing system prerequisite is caught before the
+ * launch and reported with its install step, and the container's own integrity records are
+ * resolved first, so a tampered or incomplete payload never reaches the launch.
+ */
+export function verifyStarterContainer({ root, frames = 300, project = process.cwd(), env, run } = {}) {
+  if (!root) {
+    throw new Error('TN_NATIVE_STARTER_CONTAINER_MISSING: pass --container <unpacked directory>.');
+  }
+  const projectRoot = resolve(project);
+  const containerRoot = resolve(root);
+  const manifest = resolveContainer(containerRoot);
+  const executable = join(containerRoot, manifest.executable);
+  assertPlayerPrerequisites(manifest, executable, { run });
+  const artifactDirectory = join(projectRoot, 'artifacts', 'native');
+  const screenshot = join(artifactDirectory, 'starter-container.png');
+  const logPath = join(artifactDirectory, 'starter-container.log');
+  const reportPath = join(artifactDirectory, 'starter-container-report.json');
+  mkdirSync(artifactDirectory, { recursive: true });
+  const log = launchStarterExecutable(executable, { env, frames, logPath, project: projectRoot, screenshot });
+  return judgeStarterRun({ artifact: executable, frames, log, logPath, reportPath, screenshot });
+}
+
+function parseCliFlags(argv) {
+  const options = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const flag = argv[index];
+    const value = argv[index + 1];
+    if (flag === '--container' && value) options.container = resolve(value);
+    else if (flag === '--frames' && value) options.frames = Number(value);
+    else if (flag === '--project' && value) options.project = resolve(value);
+  }
+  return options;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
-    const report = verifyStarterDesktop();
+    const options = parseCliFlags(process.argv.slice(2));
+    const report = options.container ? verifyStarterContainer(options) : verifyStarterDesktop(options);
     console.log(`starter desktop gate passed: ${report.frames} frames, ${report.image.colors} colors, ${report.image.cyanAssetPixels} asset pixels`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

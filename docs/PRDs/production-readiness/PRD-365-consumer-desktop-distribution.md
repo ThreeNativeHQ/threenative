@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-365 — An installed game produces distributable desktop apps
 
-**Status:** PARTIAL — historical phase-1 evidence retained; phase 1R fixes review-discovered integrity/identity/archive defects and now has green focused Vitest (74/0), green repository workspace gates in CI, a linux-x64 native-smoke container launch, and an independent reviewer PASS. What phase 1R still lacks is HUD-overlay and macOS/Windows native execution, and its ZIP layouts remain fixture-tested. Phases 2–3 NOT RUN. Revised 2026-09-13.
+**Status:** PARTIAL — historical phase-1 evidence retained; phase 1R fixes review-discovered integrity/identity/archive defects and now has green focused Vitest (74/0), green repository workspace gates in CI, a linux-x64 native-smoke container launch, and an independent reviewer PASS. What phase 1R still lacks is HUD-overlay and macOS/Windows native execution, and its ZIP layouts remain fixture-tested. Phase 2 has landed the container-aware verifier, player-prerequisite detection and its focused tests, but its clean-player user verification and independent review are open; phase 3 NOT RUN. Revised 2026-09-13.
 **Complexity:** 10 → HIGH (+3 files, +2 platform packaging module, +2 signing/container state, +2 multi-package, +1 OS tools).
 **Problem:** The desktop command produces a host executable plus UI files, without a proved complete installed-app container, signing/notarization path or player-machine dependency story.
 
@@ -123,12 +123,18 @@ The original phase-1 checks above describe the candidate in its retained evidenc
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/package.json`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
-- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `packages/runtime-native/package.json`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
+  - `verify-starter-desktop.mjs` now imports the shipped container helper (`resolveContainer`) and exposes `--container <unpacked-directory>`; `desktop-distribution.mjs` and the verifier are already in the package `files` list; `README.md` documents the container, the OS prerequisites and the recipe. `node --check` and `biome check` clean.
+- [x] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+  - **22 passed / 0 failed** (3 new). New rows: a relocated fixture container launches with `PATH=/usr/bin:/bin` and judges the 300-frame markers and capture; a missing `libwebkit2gtk-4.1.so.0` fails `TN_NATIVE_STARTER_PREREQUISITE_MISSING` with its WebKitGTK install step; a resolved one passes.
+- [x] Observed red recorded, then restored green
+  - Making `assertPlayerPrerequisites` a no-op (`return []`) failed the missing-WebView row: `Tests 1 failed | 21 skipped`; restoring returned `Tests 22 passed`.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-365-readiness-phase-2-<date>.md`
+  - NOT RUN: no clean player image without Node/engine tools ran. The focused tests use a fixture executable and an injected `ldd` census; Windows/macOS prerequisite paths and offline launch are unrun.
+- [x] Evidence record written: `docs/verification/prd-365-readiness-phase-2-2026-09-13.md`
+  - Partial record: verifier/test changes, commands, observed red and the unrun clean-player/reviewer gates.
 - [ ] Independent reviewer returned PASS
+  - NOT RUN for this phase.
 
 **Files (maximum five):**
 

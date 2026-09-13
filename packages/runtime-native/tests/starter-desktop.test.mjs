@@ -1,7 +1,8 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +11,9 @@ import { test } from 'vitest';
 
 import {
   analyzeStarterLog,
+  assertPlayerPrerequisites,
   inspectStarterScreenshot,
+  verifyStarterContainer,
 } from '../scripts/verify-starter-desktop.mjs';
 
 const PROOF_ASSET = new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url);
@@ -398,3 +401,100 @@ test('starter verifier executes through a pnpm-style symlink', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /TN_NATIVE_STARTER_ARTIFACT_MISSING/u);
 });
+
+// PRD-365 phase 2: a player machine provides the system WebView runtime; the container records it
+// as a prerequisite and ships none of it. The verifier must name the missing library and its
+// install step, not leak the dynamic loader's bare "not found".
+test('a missing player-side WebView runtime is named with its install step', () => {
+  const run = () => ({
+    status: 0,
+    stderr: '',
+    stdout: 'linux-vdso.so.1 (0x00007fff)\n\tlibwebkit2gtk-4.1.so.0 => not found\n',
+  });
+  const manifest = { prerequisites: [{ name: 'libwebkit2gtk-4.1.so.0' }] };
+  assert.throws(
+    () => assertPlayerPrerequisites(manifest, '/opt/game/starter', { platform: 'linux', run }),
+    (error) =>
+      /TN_NATIVE_STARTER_PREREQUISITE_MISSING/u.test(error.message) &&
+      /libwebkit2gtk-4\.1\.so\.0/u.test(error.message) &&
+      /WebKitGTK 4\.1 runtime/u.test(error.message),
+  );
+});
+
+test('a resolvable player-side WebView runtime passes the prerequisite check', () => {
+  const run = () => ({
+    status: 0,
+    stderr: '',
+    stdout: '\tlibwebkit2gtk-4.1.so.0 => /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 (0x00007f2a00000000)\n',
+  });
+  assert.deepEqual(
+    assertPlayerPrerequisites(
+      { prerequisites: [{ name: 'libwebkit2gtk-4.1.so.0' }] },
+      '/opt/game/starter',
+      { platform: 'linux', run },
+    ),
+    [],
+  );
+});
+
+// PRD-365 phase 2: the verifier inspects and launches the release container from wherever the
+// player unpacked it, without developer tools on PATH. The fake executable stands in for the
+// packaged game; the relocation and the container manifest are real.
+test.runIf(process.platform === 'linux')(
+  'a relocated release container launches without developer tools',
+  () => {
+    const root = makeTempDirSync('starter-container-test-');
+    const project = makeTempDirSync('starter-container-project-');
+    const expectedScreenshot = join(root, 'expected.png');
+    const proof = PNG.sync.read(readFileSync(PROOF_ASSET));
+    writeFileSync(expectedScreenshot, PNG.sync.write(proof));
+    const executable = join(root, 'starter');
+    writeFileSync(
+      executable,
+      [
+        '#!/bin/sh',
+        'set -eu',
+        'screenshot=',
+        'while [ "$#" -gt 0 ]; do',
+        '  case "$1" in',
+        '    --screenshot) screenshot="$2"; shift 2 ;;',
+        '    *) shift ;;',
+        '  esac',
+        'done',
+        'cp "$TN_TEST_SCREENSHOT" "$screenshot"',
+        "printf '%s\\n' 'TN_NATIVE_SMOKE_READY:webgpu' 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb' 'TN_NATIVE_SMOKE_300_FRAMES:300' 'Rendered 300 frames in 1ms'",
+        '',
+      ].join('\n'),
+    );
+    chmodSync(executable, 0o755);
+    const digest = createHash('sha256').update(readFileSync(executable)).digest('hex');
+    writeFileSync(
+      join(root, 'threenative-container.json'),
+      `${JSON.stringify(
+        {
+          app: { id: 'com.example.starter', name: 'Starter', version: '1.0.0', build: 1 },
+          dependencies: [],
+          executable: 'starter',
+          format: 'tar.gz',
+          platform: 'linux-x64',
+          prerequisites: [],
+          resources: { starter: { sha256: digest } },
+          schemaVersion: 1,
+          ui: null,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const report = verifyStarterContainer({
+      env: { PATH: '/usr/bin:/bin', TN_TEST_SCREENSHOT: expectedScreenshot },
+      project,
+      root,
+      // `ldd` on the shell-script stand-in is not a real ELF program; the seam returns a clean
+      // census, which is the host's job to provide for a real binary.
+      run: () => ({ status: 0, stderr: '', stdout: 'linux-vdso.so.1 (0x00007fff)\n' }),
+    });
+    assert.equal(report.pass, true);
+    assert.equal(report.frames, 300);
+  },
+);
