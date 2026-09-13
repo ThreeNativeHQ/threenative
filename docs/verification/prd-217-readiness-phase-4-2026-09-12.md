@@ -173,7 +173,23 @@ The capture is `/tmp/opencode/starter-wayland.png` (628 KB, non-blank). This is 
 "real Wayland session hosting the supported Xwayland path" for HUD attach: without the engine's
 `GDK_BACKEND=x11` the overlay's GDK context resolves to Wayland and `argb::create` refuses, which is
 the red recorded above. A benign `Gdk-CRITICAL _gdk_frame_clock_freeze` warning is printed on this
-session; attach and rendering succeed. Live pointer input on the Wayland session is still unrun.
+session; attach and rendering succeed.
+
+Pointer input on the same session does **not** work through XTEST. The native-smoke input proof was
+re-run on `:0` with the game window raised and activated:
+
+```
+TN_UI_OVERLAY:{"attached":true}
+TN_UI_SHAPE:{"window":48234499,"size":[1280,720],"rects":[(960, 288, 256, 144), (256, 468, 256, 144)]}
+inside-island=nobody outside-islands=nobody
+```
+
+Both `xdotool` clicks were inside the game's own window (island centre and empty space), yet neither
+the page's intent counter nor the game's pointer-down counter moved. KWin Wayland does not route
+XTEST-injected pointer events to the Xwayland client, so this is the same limitation the 2026-08-24
+record hit with nested `kwin_wayland`. A live Wayland input proof needs a compositor-level pointer
+source (or an X11/Xvfb session, already proven 8/8), not XTEST. Live pointer input on Wayland stays
+unrun and unclaimed.
 
 ## Not run, and not claimed
 
