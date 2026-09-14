@@ -59,6 +59,7 @@ jobs:
             packages/core/src/ripple-field.ts \
             --diagnostic-level=error --max-diagnostics=100
           pnpm lint
+          pnpm --filter @threenative/playtest... build
           pnpm --filter @threenative/core typecheck
           pnpm exec vitest run packages/core/__tests__/water-surface.spec.ts packages/core/__tests__/ripple-field.spec.ts
           git diff --check
