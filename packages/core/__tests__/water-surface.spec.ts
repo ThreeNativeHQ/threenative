@@ -53,7 +53,9 @@ describe("WaterSurface3D", () => {
     expect(plain.reflectionCameraFor(source)?.layers.mask).toBe(source.layers.mask);
 
     // A surface with no reflection has no pass and says so rather than inventing a camera.
-    expect(new WaterSurface3D({ level: 0, maxThickness: 3 }).reflectionCameraFor(camera)).toBeUndefined();
+    expect(
+      new WaterSurface3D({ level: 0, maxThickness: 3 }).reflectionCameraFor(camera),
+    ).toBeUndefined();
   });
 
   it("refuses a layer mask that is not a non-negative integer", () => {

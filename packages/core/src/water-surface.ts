@@ -183,7 +183,9 @@ export class WaterSurface3D {
    */
   reflectionCameraFor(camera: Camera): Camera | undefined {
     if (this.#reflector === undefined) return undefined;
-    return (this.#reflector as unknown as IReflectorWithPass)._reflectorBaseNode.getVirtualCamera(camera);
+    return (this.#reflector as unknown as IReflectorWithPass)._reflectorBaseNode.getVirtualCamera(
+      camera,
+    );
   }
 
   /** What the mirrored pass draws, as the mask the game supplied. Undefined means everything. */
