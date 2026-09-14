@@ -90,6 +90,10 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm sync:agents
 
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
+
       - name: Recompute scaffold stability hashes from the reconciled tree
         shell: bash
         run: |
