@@ -1,0 +1,31 @@
+name: PRD-383 lint diagnostics
+
+on:
+  push:
+    branches:
+      - prd383/rig-and-retarget
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: prd383/rig-and-retarget
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - run: pnpm install --frozen-lockfile
+      - name: Show only blocking Biome diagnostics
+        shell: bash
+        run: |
+          set +e
+          pnpm exec biome check . --diagnostic-level=error --max-diagnostics=100
+          rc=$?
+          echo "biome exit=$rc"
+          exit 0
