@@ -1217,7 +1217,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // Virtual geometry ships on by default, so the engine takes the cut rather than waiting
           // for a game to know it should. It runs here, before the render and after the reconcile,
           // because an empty cut has to skip its draw rather than submit a zero-count one — and a
-          // scene holding no clustered mesh pays one traversal that finds nothing.
+          // scene holding no clustered mesh pays no traversal at all, only the tracked set.
           updateClusteredMeshes(
             this.#projection?.root ?? threeScene,
             camera,

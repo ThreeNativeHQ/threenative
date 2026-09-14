@@ -588,14 +588,37 @@ export { GPUParticles3D } from "./particles.js";
 export { FluidField2D } from "./fluid-field.js";
 export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from "./fluid-field.js";
 /**
+ * Propagate a disturbance across a patch of water surface and let it fade.
+ * @situation make a splash or explosion ripple outward across water
+ * @situation show the sea reacting to a bomb, shell, or torpedo hitting it
+ * @situation leave a foam trail behind something moving through water
+ * @situation disturb a water surface the player can see respond
+ * @situation spread and drift foam on a water surface over time
+ * @constraint it draws nothing; the game supplies the mesh, the material and every colour
+ * @constraint add its height to an analytic swell, never in place of one
+ * @constraint the patch is finite and its rim absorbs; call recenter to keep it over the action
+ * @constraint there is no obstacle mask, because a mask is only correct for a body that never moves
+ * @override speed, damping, foamHalfLife, current, step and maxSteps tune the solve; the default
+ * step is 1/60s or the CFL stability limit for the given resolution and speed, whichever is smaller
+ * @example const ripples = new RippleField({ resolution: 128, size: 400 });
+ * ripples.impulse(hit.x, hit.z, 6, -40, 0.5);
+ * ripples.advance(dt);
+ * const lift = ripples.heightAt(boat.x, boat.z);
+ */
+export { RippleField } from "./ripple-field.js";
+export type { IRippleFieldFlow, IRippleFieldOptions } from "./ripple-field.js";
+/**
  * Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.
  * @situation float a boat on waves
  * @situation make water move
  * @situation find the water surface height at a point
  * @constraint supply every wave amplitude, wavelength, direction, speed and warp value
  * @constraint call setTime for the default graph clock when the game advances its own time
+ * @constraint sample allocates a result and a normal vector; ask heightAt when only the height is
+ * wanted, and the warp jacobian, every slope and both allocations are skipped
  * @example const field = new WaveField({ waves });
  * const { height, normal } = field.sample(x, z, elapsed);
+ * const lift = field.heightAt(x, z, elapsed);
  */
 export { WaveField } from "./wave-field.js";
 export type {
@@ -613,12 +636,15 @@ export type {
  * @situation see the bed through the water and have the shallows fade at the shore
  * @situation know how deep the water is under a pixel without a second render pass
  * @situation stop a water surface repeating in visible bands or stripes
+ * @situation keep a crowd of small actors out of the water's reflection so the frame can afford it
  * @constraint it draws nothing; the game supplies the mesh, the material and every colour
  * @constraint the material must be transparent so the frame beneath it is already drawn
  * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
- * @constraint one reflection is a second draw of the world, so resolutionScale is the whole cost
+ * @constraint one reflection is a second draw of the world; resolutionScale is its pixels only
+ * @constraint on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice
  * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
- * @example const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
+ * @example const REFLECTED = 1; // the layer the big silhouettes sit on
+ * const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });
  * material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
  */
 export { WaterSurface3D } from "./water-surface.js";

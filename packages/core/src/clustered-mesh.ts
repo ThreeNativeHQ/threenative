@@ -455,12 +455,111 @@ function isBatchRoot(object: object): object is IClusteredBatchRootLike {
   return typeof (candidate as { update?: unknown } | undefined)?.update === "function";
 }
 
+/** The event surface this module subscribes to. Structural, so traverse-only stand-ins keep working. */
+interface IGraphNode {
+  addEventListener(type: string, listener: (event: never) => void): void;
+  removeEventListener(type: string, listener: (event: never) => void): void;
+  traverse(callback: (object: object) => void): void;
+}
+
+interface IChildGraphEvent {
+  readonly child?: unknown;
+}
+
+interface ITrackedRoot {
+  /** Every clustered mesh and batch root currently under the root. */
+  readonly items: Set<object>;
+  /** Nodes already carrying this root's listeners. */
+  readonly hooked: WeakSet<object>;
+  readonly onAdded: (event: IChildGraphEvent) => void;
+  readonly onRemoved: (event: IChildGraphEvent) => void;
+}
+
+/**
+ * Per-root tracking, keyed weakly so a disposed scene drops out on its own: the map holds no
+ * strong reference to any root, and a tracking holds none back to its root either.
+ */
+const trackedRoots = new WeakMap<object, ITrackedRoot>();
+
+function isGraphNode(root: object): root is IGraphNode {
+  const candidate = root as Partial<IGraphNode>;
+  return (
+    typeof candidate.traverse === "function" &&
+    typeof candidate.addEventListener === "function" &&
+    typeof candidate.removeEventListener === "function"
+  );
+}
+
+/** Subscribes a subtree that just arrived under a tracked root, collecting what it holds. */
+function hookSubtree(tracking: ITrackedRoot, subtree: object): void {
+  (subtree as IGraphNode).traverse((node) => {
+    if (node instanceof ClusteredMesh || isBatchRoot(node)) tracking.items.add(node);
+    if (tracking.hooked.has(node)) return;
+    tracking.hooked.add(node);
+    const link = node as Partial<IGraphNode>;
+    // A traverse-only stand-in nested inside a real graph cannot carry listeners; it also cannot
+    // be a clustered mesh or a batch root, both of which extend `Object3D`.
+    if (typeof link.addEventListener !== "function") return;
+    link.addEventListener("childadded", tracking.onAdded);
+    (link as IGraphNode).addEventListener("childremoved", tracking.onRemoved);
+  });
+}
+
+/** Forgets a subtree that just left a tracked root, detaching its listeners as it goes. */
+function unhookSubtree(tracking: ITrackedRoot, subtree: object): void {
+  (subtree as IGraphNode).traverse((node) => {
+    tracking.items.delete(node);
+    if (!tracking.hooked.has(node)) return;
+    tracking.hooked.delete(node);
+    const link = node as Partial<IGraphNode>;
+    if (typeof link.removeEventListener !== "function") return;
+    link.removeEventListener("childadded", tracking.onAdded);
+    (link as IGraphNode).removeEventListener("childremoved", tracking.onRemoved);
+  });
+}
+
+function trackRoot(root: IGraphNode): ITrackedRoot {
+  const existing = trackedRoots.get(root);
+  if (existing !== undefined) return existing;
+  const tracking: ITrackedRoot = {
+    hooked: new WeakSet(),
+    items: new Set(),
+    onAdded: (event) => {
+      const child: unknown = event.child;
+      if (typeof child === "object" && child !== null && isGraphNode(child))
+        hookSubtree(tracking, child);
+    },
+    onRemoved: (event) => {
+      const child: unknown = event.child;
+      if (
+        typeof child === "object" &&
+        child !== null &&
+        typeof (child as Partial<IGraphNode>).traverse === "function"
+      )
+        unhookSubtree(tracking, child);
+    },
+  };
+  trackedRoots.set(root, tracking);
+  // One census per root, ever: every later arrival and departure reports itself through the
+  // `childadded` / `childremoved` events three fires on the direct parent, and `add` removes
+  // from the old parent first, so a reparent is a removal followed by an arrival.
+  hookSubtree(tracking, root);
+  return tracking;
+}
+
+function trianglesOf(object: object, camera: Camera, viewportHeight: number): number {
+  if (object instanceof ClusteredMesh) return object.update(camera, viewportHeight);
+  if (isBatchRoot(object)) return object.batch.update(camera, viewportHeight);
+  return 0;
+}
+
 /**
  * Takes every clustered mesh and every clustered batch under `root` through this frame's cut.
  *
  * The engine calls this itself, once a frame, before the render — virtual geometry ships on and a
- * game that has to remember to call something has not been given it. A scene holding neither costs
- * one traversal that finds nothing.
+ * game that has to remember to call something has not been given it. The first call censuses the
+ * root once and subscribes to its graph events; later calls walk only the clustered meshes and
+ * batch roots themselves, so a scene holding neither costs a map lookup.
  *
  * @returns triangles the clustered meshes and batches will submit.
  */
@@ -469,10 +568,16 @@ export function updateClusteredMeshes(
   camera: Camera,
   viewportHeight: number,
 ): number {
+  // A bare traverse-only stand-in has no event surface to subscribe to, so it keeps the old
+  // discovery walk. Everything three builds takes the tracked path.
+  if (!isGraphNode(root)) {
+    let triangles = 0;
+    root.traverse((object) => {
+      triangles += trianglesOf(object, camera, viewportHeight);
+    });
+    return triangles;
+  }
   let triangles = 0;
-  root.traverse((object) => {
-    if (object instanceof ClusteredMesh) triangles += object.update(camera, viewportHeight);
-    else if (isBatchRoot(object)) triangles += object.batch.update(camera, viewportHeight);
-  });
+  for (const item of trackRoot(root).items) triangles += trianglesOf(item, camera, viewportHeight);
   return triangles;
 }
