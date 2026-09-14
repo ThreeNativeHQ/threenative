@@ -74,6 +74,7 @@ jobs:
           corepack enable
           pnpm install --ignore-scripts --no-frozen-lockfile
           pnpm --filter @threenative/assets... build
+          pnpm --filter create-threenative... build
 
       - name: Regenerate scaffold tree hashes from the reconciled tree
         shell: bash
