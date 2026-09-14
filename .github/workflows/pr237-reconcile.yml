@@ -46,15 +46,10 @@ jobs:
             for file in "${conflicts[@]}"; do
               case "$file" in
                 docs/midway-session-mining-2026-09-14.md)
-                  # Both sides fix the same broken links. PRD-383 keeps the sandbox paths as
-                  # inline code instead of repo-relative links, preserving the develop docs fix
-                  # while retaining the more useful location text.
                   git checkout --ours -- "$file"
                   git add "$file"
                   ;;
                 packages/create-threenative/__tests__/scaffold.spec.ts)
-                  # Current develop owns the newest scaffold contract; PRD-383 contributes one
-                  # additional shipped reference and the hashes are recomputed from the merged tree.
                   git checkout --theirs -- "$file"
                   git add "$file"
                   ;;
@@ -72,8 +67,6 @@ jobs:
             exit 1
           fi
 
-          # The completed PRD lives under done/. Current develop briefly reintroduced the stale
-          # in-progress copy while PRD-384 was landing; do not carry both forward.
           git rm -f --ignore-unmatch docs/PRDs/assets/PRD-383-rig-and-retarget-humanoids-through-the-asset-mcp.md
 
           node <<'NODE'
@@ -128,17 +121,20 @@ jobs:
             return hash.digest("hex");
           }
 
-          const root = await mkdtemp(path.join(tmpdir(), "tn-scaffold-hashes-"));
-          const actual: Record<string, string> = {};
-          try {
-            for (const template of discoverTemplateNames(templateRoot)) {
-              const { target } = await createProject({ install: false, target: template, template }, root);
-              actual[template] = await treeHash(target);
+          async function main(): Promise<void> {
+            const root = await mkdtemp(path.join(tmpdir(), "tn-scaffold-hashes-"));
+            const actual: Record<string, string> = {};
+            try {
+              for (const template of discoverTemplateNames(templateRoot)) {
+                const { target } = await createProject({ install: false, target: template, template }, root);
+                actual[template] = await treeHash(target);
+              }
+            } finally {
+              await rm(root, { force: true, recursive: true });
             }
-          } finally {
-            await rm(root, { force: true, recursive: true });
+            process.stdout.write(JSON.stringify(actual));
           }
-          process.stdout.write(JSON.stringify(actual));
+          main().catch((error) => { console.error(error); process.exitCode = 1; });
           TS
           hashes=$(pnpm exec tsx "$RUNNER_TEMP/recompute-scaffold-hashes.ts")
           node - "$hashes" <<'NODE'
