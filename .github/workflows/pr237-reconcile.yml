@@ -45,6 +45,13 @@ jobs:
             printf 'Merge conflicts: %s\n' "${conflicts[*]}"
             for file in "${conflicts[@]}"; do
               case "$file" in
+                docs/midway-session-mining-2026-09-14.md)
+                  # Both sides fix the same broken links. PRD-383 keeps the sandbox paths as
+                  # inline code instead of repo-relative links, preserving the develop docs fix
+                  # while retaining the more useful location text.
+                  git checkout --ours -- "$file"
+                  git add "$file"
+                  ;;
                 pnpm-lock.yaml)
                   # Keep PRD-383's 0.9.0 asset-MCP pin as the starting point; pnpm below
                   # regenerates the lock against current develop's Three patch hash.
