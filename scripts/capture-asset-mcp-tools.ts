@@ -98,9 +98,10 @@ export async function request(
       return;
     }
     try {
-      child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`, (error) => {
-        if (error) fail(error);
-      });
+      // Let the stream error listener settle asynchronous write failures.
+      // A write callback runs before the error event; cleaning up there would
+      // remove the listener too early and turn EPIPE into an uncaught error.
+      child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
     } catch (error) {
       fail(error instanceof Error ? error : new Error(String(error)));
     }
