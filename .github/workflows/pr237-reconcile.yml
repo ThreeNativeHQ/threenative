@@ -166,6 +166,7 @@ jobs:
             scripts/__tests__/temp-dir-guard.spec.ts
           pnpm typecheck
           pnpm check:docs
+          pnpm lint
 
       - name: Commit reconciliation and fast-forward the PR branch
         shell: bash
@@ -175,5 +176,5 @@ jobs:
           git add -A
           git status --short
           git commit -m "chore: reconcile PRD-383 with current develop"
-          git push origin HEAD:prd383/rig-and-retarget
+          TN_SKIP_PREPUSH=1 git push origin HEAD:prd383/rig-and-retarget
           git push origin --delete automation/pr237-reconcile-20260914 || true
