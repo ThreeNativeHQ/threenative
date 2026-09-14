@@ -81,9 +81,12 @@ describe("MCP_SERVERS", () => {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
+    // Derived from MCP_PACKAGES, not retyped: the shim and the manifest name one pin, and a
+    // literal here is how they came apart — the PRD-383 bump to the asset server moved
+    // `package.json` and left this spec asserting the version before it.
     expect(manifest.dependencies).toMatchObject({
-      "threenative-asset-mcp": "0.8.0",
-      "threenative-sculpt-mcp": "0.1.1",
+      [MCP_PACKAGES.assets.name]: MCP_PACKAGES.assets.version,
+      [MCP_PACKAGES.sculpt.name]: MCP_PACKAGES.sculpt.version,
     });
     // The blender server rides inside core as a built copy, exactly as the engine server does, so
     // it is a devDependency and never a registry dependency. A published `@threenative/core` that
