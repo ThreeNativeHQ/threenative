@@ -52,12 +52,6 @@ jobs:
                   git checkout --ours -- "$file"
                   git add "$file"
                   ;;
-                pnpm-lock.yaml)
-                  # Keep PRD-383's 0.9.0 asset-MCP pin as the starting point; pnpm below
-                  # regenerates the lock against current develop's Three patch hash.
-                  git checkout --ours -- "$file"
-                  git add "$file"
-                  ;;
                 packages/create-threenative/__tests__/scaffold.spec.ts)
                   # Current develop owns the newest scaffold contract; PRD-383 contributes one
                   # additional shipped reference and the hashes are recomputed from the merged tree.
@@ -99,7 +93,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm install --lockfile-only --no-frozen-lockfile
+          pnpm install --no-frozen-lockfile
           pnpm install --frozen-lockfile
           pnpm sync:agents
 
