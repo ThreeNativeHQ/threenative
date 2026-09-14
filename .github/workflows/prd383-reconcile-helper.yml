@@ -40,7 +40,7 @@ jobs:
           conflicts="$(git diff --name-only --diff-filter=U || true)"
           printf 'merge exit=%s\nconflicts:\n%s\n' "$merge_rc" "$conflicts"
 
-          allowed='packages/create-threenative/__tests__/scaffold.spec.ts pnpm-lock.yaml'
+          allowed='docs/midway-session-mining-2026-09-14.md packages/create-threenative/__tests__/scaffold.spec.ts pnpm-lock.yaml'
           for path in $conflicts; do
             case " $allowed " in
               *" $path "*) ;;
@@ -48,7 +48,13 @@ jobs:
             esac
           done
 
+          if grep -Fxq 'docs/midway-session-mining-2026-09-14.md' <<<"$conflicts"; then
+            # Current develop fixed these links so repository docs validation can traverse them.
+            git checkout --theirs docs/midway-session-mining-2026-09-14.md
+            git add docs/midway-session-mining-2026-09-14.md
+          fi
           if grep -Fxq 'packages/create-threenative/__tests__/scaffold.spec.ts' <<<"$conflicts"; then
+            # Preserve PRD-383's explanatory history, then recompute every expected tree hash below.
             git checkout --ours packages/create-threenative/__tests__/scaffold.spec.ts
             git add packages/create-threenative/__tests__/scaffold.spec.ts
           fi
