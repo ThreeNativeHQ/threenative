@@ -1,0 +1,182 @@
+name: PRD-383 one-shot reconcile
+
+on:
+  push:
+    branches:
+      - automation/pr237-reconcile-20260914
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Merge current develop and resolve only known mechanical conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin develop prd383/rig-and-retarget
+          expected=45ca0cfbc76dc967b20b31c089da897c7d4aebd2
+          actual=$(git rev-parse origin/prd383/rig-and-retarget)
+          if [ "$actual" != "$expected" ]; then
+            echo "Target branch moved: expected $expected, got $actual" >&2
+            exit 1
+          fi
+
+          set +e
+          git merge --no-ff --no-commit origin/develop
+          merge_status=$?
+          set -e
+
+          if [ "$merge_status" -ne 0 ]; then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            printf 'Merge conflicts: %s\n' "${conflicts[*]}"
+            for file in "${conflicts[@]}"; do
+              case "$file" in
+                pnpm-lock.yaml)
+                  # Keep PRD-383's 0.9.0 asset-MCP pin as the starting point; pnpm below
+                  # regenerates the lock against current develop's Three patch hash.
+                  git checkout --ours -- "$file"
+                  git add "$file"
+                  ;;
+                packages/create-threenative/__tests__/scaffold.spec.ts)
+                  # Current develop owns the newest scaffold contract; PRD-383 contributes one
+                  # additional shipped reference and the hashes are recomputed from the merged tree.
+                  git checkout --theirs -- "$file"
+                  git add "$file"
+                  ;;
+                *)
+                  echo "Unexpected non-mechanical conflict: $file" >&2
+                  exit 1
+                  ;;
+              esac
+            done
+          fi
+
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "Unresolved conflicts remain" >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+
+          # The completed PRD lives under done/. Current develop briefly reintroduced the stale
+          # in-progress copy while PRD-384 was landing; do not carry both forward.
+          git rm -f --ignore-unmatch docs/PRDs/assets/PRD-383-rig-and-retarget-humanoids-through-the-asset-mcp.md
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const p = 'packages/create-threenative/__tests__/scaffold.spec.ts';
+          let s = fs.readFileSync(p, 'utf8');
+          if (!s.includes('"rigging-characters.md"')) {
+            const needle = '        "mobile-memory-budget.md",\n';
+            if (!s.includes(needle)) throw new Error('scaffold reference insertion anchor moved');
+            s = s.replace(needle, `${needle}        "rigging-characters.md",\n`);
+            fs.writeFileSync(p, s);
+          }
+          NODE
+          git add packages/create-threenative/__tests__/scaffold.spec.ts
+
+      - name: Regenerate lockfile and generated agent mirrors
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --lockfile-only --no-frozen-lockfile
+          pnpm install --frozen-lockfile
+          pnpm sync:agents
+
+      - name: Recompute scaffold stability hashes from the reconciled tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/recompute-scaffold-hashes.ts" <<'TS'
+          import { createHash } from "node:crypto";
+          import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+          import { tmpdir } from "node:os";
+          import path from "node:path";
+          import { createProject, discoverTemplateNames } from "${{ github.workspace }}/packages/create-threenative/src/index.ts";
+
+          const templateRoot = path.resolve("packages/create-threenative/templates");
+          const ignored = /^(?:node_modules(?:\/|$)|dist(?:\/|$)|\.vite(?:\/|$)|coverage(?:\/|$)|pnpm-lock\.yaml$|package-lock\.json$|yarn\.lock$)/u;
+          async function treeHash(directory: string): Promise<string> {
+            const files: Array<[string, Buffer]> = [];
+            async function walk(current: string): Promise<void> {
+              for (const entry of (await readdir(current, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+                const file = path.join(current, entry.name);
+                if (entry.isDirectory()) await walk(file);
+                else {
+                  const relative = path.relative(directory, file);
+                  if (!ignored.test(relative)) files.push([relative, await readFile(file)]);
+                }
+              }
+            }
+            await walk(directory);
+            const hash = createHash("sha256");
+            for (const [relative, contents] of files) hash.update(relative).update("\0").update(contents).update("\0");
+            return hash.digest("hex");
+          }
+
+          const root = await mkdtemp(path.join(tmpdir(), "tn-scaffold-hashes-"));
+          const actual: Record<string, string> = {};
+          try {
+            for (const template of discoverTemplateNames(templateRoot)) {
+              const { target } = await createProject({ install: false, target: template, template }, root);
+              actual[template] = await treeHash(target);
+            }
+          } finally {
+            await rm(root, { force: true, recursive: true });
+          }
+          process.stdout.write(JSON.stringify(actual));
+          TS
+          hashes=$(pnpm exec tsx "$RUNNER_TEMP/recompute-scaffold-hashes.ts")
+          node - "$hashes" <<'NODE'
+          const fs = require('node:fs');
+          const hashes = JSON.parse(process.argv[2]);
+          const p = 'packages/create-threenative/__tests__/scaffold.spec.ts';
+          let s = fs.readFileSync(p, 'utf8');
+          for (const [key, value] of Object.entries(hashes)) {
+            const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const quoted = new RegExp(`("${escaped}"\\s*:\\s*")[0-9a-f]{64}(")`, 'm');
+            const bare = new RegExp(`(^\\s*${escaped}\\s*:\\s*")[0-9a-f]{64}(")`, 'm');
+            if (quoted.test(s)) s = s.replace(quoted, `$1${value}$2`);
+            else if (bare.test(s)) s = s.replace(bare, `$1${value}$2`);
+            else throw new Error(`hash key not found: ${key}`);
+          }
+          fs.writeFileSync(p, s);
+          NODE
+
+      - name: Targeted reconciled-tree verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm sync:agents --check
+          pnpm capabilities:check
+          pnpm exec vitest run \
+            packages/core/__tests__/mcp-install.spec.ts \
+            packages/create-threenative/__tests__/scaffold.spec.ts \
+            scripts/__tests__/capture-asset-mcp-tools.spec.ts \
+            scripts/__tests__/temp-dir-guard.spec.ts
+          pnpm typecheck
+          pnpm check:docs
+
+      - name: Commit reconciliation and fast-forward the PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/pr237-reconcile.yml
+          git add -A
+          git status --short
+          git commit -m "chore: reconcile PRD-383 with current develop"
+          git push origin HEAD:prd383/rig-and-retarget
+          git push origin --delete automation/pr237-reconcile-20260914 || true
