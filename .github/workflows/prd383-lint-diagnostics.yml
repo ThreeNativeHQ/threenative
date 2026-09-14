@@ -15,7 +15,7 @@ concurrency:
 jobs:
   repair:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: 20
       - run: pnpm install --frozen-lockfile
-      - name: Apply behavior-preserving lint repairs inherited from develop
+      - name: Apply and verify behavior-preserving inherited lint repairs
         shell: bash
         run: |
           set -euo pipefail
@@ -63,13 +63,23 @@ jobs:
           pnpm --filter @threenative/core typecheck
           pnpm exec vitest run packages/core/__tests__/water-surface.spec.ts packages/core/__tests__/ripple-field.spec.ts
           git diff --check
-      - name: Commit repairs and remove one-shot workflow
+
+      - name: Regenerate, commit, and push the verified repair
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Remove this one-shot workflow from the resulting PR branch.
           git rm .github/workflows/prd383-lint-diagnostics.yml
-          git add packages/core/__tests__/water-surface.spec.ts packages/core/src/water-surface.ts packages/core/src/ripple-field.ts
+
+          # The repository pre-commit hook regenerates these surfaces. Generate them before the
+          # commit so the commit itself contains the current tree rather than leaving drift behind.
+          pnpm capabilities:sync
+          git add -A
+          git diff --cached --check
+
           git commit -m "fix(core): clear inherited Biome blockers"
+          # Normal pre-push runs ci:fast; keep it enabled as the final bounded drift gate.
           git push origin HEAD:prd383/rig-and-retarget
