@@ -1,0 +1,162 @@
+name: PRD-383 reconcile helper
+
+on:
+  push:
+    branches:
+      - prd383/rig-and-retarget
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prd383-reconcile-helper
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: prd383/rig-and-retarget
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Merge current develop and resolve mechanical conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin develop
+
+          set +e
+          git merge --no-ff --no-commit origin/develop
+          merge_rc=$?
+          set -e
+
+          conflicts="$(git diff --name-only --diff-filter=U || true)"
+          printf 'merge exit=%s\nconflicts:\n%s\n' "$merge_rc" "$conflicts"
+
+          allowed='packages/create-threenative/__tests__/scaffold.spec.ts pnpm-lock.yaml'
+          for path in $conflicts; do
+            case " $allowed " in
+              *" $path "*) ;;
+              *) echo "Unexpected conflict: $path" >&2; exit 2 ;;
+            esac
+          done
+
+          if grep -Fxq 'packages/create-threenative/__tests__/scaffold.spec.ts' <<<"$conflicts"; then
+            git checkout --ours packages/create-threenative/__tests__/scaffold.spec.ts
+            git add packages/create-threenative/__tests__/scaffold.spec.ts
+          fi
+          if grep -Fxq 'pnpm-lock.yaml' <<<"$conflicts"; then
+            git checkout --theirs pnpm-lock.yaml
+            git add pnpm-lock.yaml
+          fi
+
+          # develop briefly carried the original planning copy; PRD-383 is complete on this branch.
+          git rm -f --ignore-unmatch docs/PRDs/assets/PRD-383-rig-and-retarget-humanoids-through-the-asset-mcp.md
+
+          if test -n "$(git diff --name-only --diff-filter=U)"; then
+            git diff --name-only --diff-filter=U
+            exit 3
+          fi
+
+          corepack enable
+          pnpm install --ignore-scripts --no-frozen-lockfile
+
+      - name: Regenerate scaffold tree hashes from the reconciled tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --import tsx --input-type=module <<'NODE' > /tmp/scaffold-hashes.json
+          import { createHash } from 'node:crypto';
+          import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+          import os from 'node:os';
+          import path from 'node:path';
+          import { createProject, discoverTemplateNames } from './packages/create-threenative/src/index.ts';
+
+          const templateRoot = path.resolve('packages/create-threenative/templates');
+          const ignored = /^(?:node_modules(?:\/|$)|dist(?:\/|$)|\.vite(?:\/|$)|coverage(?:\/|$)|pnpm-lock\.yaml$|package-lock\.json$|yarn\.lock$)/u;
+
+          async function treeHash(directory) {
+            const files = [];
+            async function walk(current) {
+              for (const entry of (await readdir(current, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+                const file = path.join(current, entry.name);
+                if (entry.isDirectory()) await walk(file);
+                else {
+                  const relative = path.relative(directory, file);
+                  if (!ignored.test(relative)) files.push([relative, await readFile(file)]);
+                }
+              }
+            }
+            await walk(directory);
+            const hash = createHash('sha256');
+            for (const [relative, contents] of files) hash.update(relative).update('\0').update(contents).update('\0');
+            return hash.digest('hex');
+          }
+
+          const root = await mkdtemp(path.join(os.tmpdir(), 'prd383-scaffold-hashes-'));
+          const actual = {};
+          try {
+            for (const template of discoverTemplateNames(templateRoot)) {
+              const { target } = await createProject({ install: false, target: template, template }, root);
+              actual[template] = await treeHash(target);
+            }
+          } finally {
+            await rm(root, { recursive: true, force: true });
+          }
+          process.stdout.write(JSON.stringify(actual, null, 2) + '\n');
+          NODE
+
+          python3 <<'PY'
+          import json, re
+          from pathlib import Path
+
+          hashes = json.loads(Path('/tmp/scaffold-hashes.json').read_text())
+          spec = Path('packages/create-threenative/__tests__/scaffold.spec.ts')
+          text = spec.read_text()
+          start = text.index('const PRD_201_PARENT_SCAFFOLD_HASHES')
+          end = text.index('\n};', start)
+          block = text[start:end]
+          for key, value in hashes.items():
+              forms = [re.escape(key), re.escape(f'"{key}"')]
+              matched = False
+              for form in forms:
+                  pattern = rf'(?m)^(\s*{form}:\s*")[0-9a-f]{{64}}(",?\s*)$'
+                  block2, count = re.subn(pattern, rf'\g<1>{value}\g<2>', block, count=1)
+                  if count:
+                      block = block2
+                      matched = True
+                      break
+              if not matched:
+                  raise SystemExit(f'could not update scaffold hash for {key}')
+          text = text[:start] + block + text[end:]
+          spec.write_text(text)
+          PY
+          git add packages/create-threenative/__tests__/scaffold.spec.ts pnpm-lock.yaml
+
+      - name: Targeted reconciliation regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            packages/create-threenative/__tests__/scaffold.spec.ts \
+            packages/core/__tests__/mcp-install.spec.ts \
+            scripts/__tests__/capture-asset-mcp-tools.spec.ts
+          pnpm check:docs
+          git diff --check
+
+      - name: Commit reconciled tree and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/prd383-reconcile-helper.yml
+          git add -A
+          git status --short
+          git commit -m "chore: sync current develop into PRD-383"
+          git push origin HEAD:prd383/rig-and-retarget
