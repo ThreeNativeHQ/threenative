@@ -64,22 +64,26 @@ jobs:
           pnpm exec vitest run packages/core/__tests__/water-surface.spec.ts packages/core/__tests__/ripple-field.spec.ts
           git diff --check
 
+          # Run the exact pre-push drift suite here so any remaining stale generated expectation
+          # is visible in this job rather than hidden in a temporary hook log.
+          pnpm exec vitest run \
+            packages/create-threenative/__tests__/scaffold.spec.ts \
+            packages/create-threenative/__tests__/template.spec.ts \
+            packages/create-threenative/__tests__/playtest.spec.ts \
+            packages/create-threenative/__tests__/platformer.spec.ts \
+            scripts/__tests__/package-list-drift.spec.ts \
+            scripts/__tests__/xvfb.spec.ts \
+            scripts/__tests__/ci-structure.spec.ts
+
       - name: Regenerate, commit, and push the verified repair
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Remove this one-shot workflow from the resulting PR branch.
           git rm .github/workflows/prd383-lint-diagnostics.yml
-
-          # The repository pre-commit hook regenerates these surfaces. Generate them before the
-          # commit so the commit itself contains the current tree rather than leaving drift behind.
           pnpm capabilities:sync
           git add -A
           git diff --cached --check
-
           git commit -m "fix(core): clear inherited Biome blockers"
-          # Normal pre-push runs ci:fast; keep it enabled as the final bounded drift gate.
           git push origin HEAD:prd383/rig-and-retarget
