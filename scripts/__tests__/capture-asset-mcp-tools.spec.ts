@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
-import { PassThrough } from "node:stream";
+import { PassThrough, Writable } from "node:stream";
 import { describe, it } from "vitest";
 
 import { listTools, request } from "../capture-asset-mcp-tools.ts";
@@ -122,6 +122,19 @@ describe("published asset MCP capture", () => {
       } finally { f.close(); }
     });
   }
+
+  it("handles an asynchronous write failure without an uncaught stream error", async () => {
+    const stdin = new Writable({
+      write(_chunk, _encoding, callback) { callback(new Error("broken transport")); },
+    });
+    const stdout = new PassThrough();
+    const child = Object.assign(new EventEmitter(), { stdin, stdout, exitCode: null, signalCode: null }) as unknown as ChildProcessWithoutNullStreams;
+    const lines = createInterface({ input: stdout });
+    try {
+      await assert.rejects(request(child, lines, { value: 1 }, "initialize"), /broken transport/);
+      assert.equal(lines.listenerCount("line"), 0);
+    } finally { lines.close(); stdout.destroy(); stdin.destroy(); }
+  });
 
   it("drives a real child over newline-delimited stdio", async () => {
     const child = spawn(process.execPath, ["-e", `
