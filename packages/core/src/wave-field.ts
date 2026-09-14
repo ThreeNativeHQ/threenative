@@ -244,7 +244,35 @@ export class WaveField {
     this.time.value = requireSampleValue("time", value);
   }
 
+  /**
+   * Surface height and normal at a point. Allocates the result and its vector; a caller that wants
+   * only the number should call `heightAt`, which is the same evaluation without either.
+   */
   sample(x: number, z: number, time: number): IWaveFieldSample {
+    const normal = new Vector3();
+    const height = this.#evaluateCpu(x, z, time, normal);
+    return { height, normal };
+  }
+
+  /**
+   * Surface height at a point, as a number.
+   *
+   * The scalar half of `sample`, and the same arithmetic in the same order, so the two agree
+   * exactly. What it skips is everything only a normal needs: the domain warp's jacobian, the
+   * cosine and slope of every wave, the normalisation, the result object and the `Vector3`. A
+   * floating hull, a splash query or a whitewater height test asks this question thousands of times
+   * a frame and throws the normal away every time.
+   */
+  heightAt(x: number, z: number, time: number): number {
+    return this.#evaluateCpu(x, z, time, undefined);
+  }
+
+  /**
+   * The one CPU evaluator. With `normal` it fills that vector and pays for the gradient; without
+   * it, nothing derivative is computed at all. The warp and wave loops run in the same order
+   * either way, so the height a scalar caller gets is bit-identical to `sample`'s.
+   */
+  #evaluateCpu(x: number, z: number, time: number, normal: Vector3 | undefined): number {
     const sampleX = requireSampleValue("x", x);
     const sampleZ = requireSampleValue("z", z);
     const sampleTime = requireSampleValue("time", time);
@@ -267,9 +295,12 @@ export class WaveField {
         sampleTime * (this.parameters[offset + 4] as number) +
         (this.parameters[offset + 5] as number);
       const sine = Math.sin(phase);
-      const cosine = Math.cos(phase);
       warpedX += displacementX * sine;
       warpedZ += displacementZ * sine;
+      // The jacobian exists only to rotate a gradient back out of warped space. No gradient, no
+      // cosine and no four multiply-adds a warp.
+      if (normal === undefined) continue;
+      const cosine = Math.cos(phase);
       const derivativeX = cosine * kx;
       const derivativeZ = cosine * kz;
       const nextXX =
@@ -301,20 +332,23 @@ export class WaveField {
       const amplitude =
         (this.parameters[offset + 2] as number) +
         (this.parameters[offset + 6] as number) / waveNumber;
-      const sine = Math.sin(phase);
+      height += amplitude * Math.sin(phase);
+      if (normal === undefined) continue;
       const slope = amplitude * waveNumber * Math.cos(phase);
-      height += amplitude * sine;
       gradientX += slope * directionX;
       gradientZ += slope * directionZ;
     }
+    if (normal === undefined) return height;
     const worldGradientX = gradientX * warpedXX + gradientZ * warpedZX;
     const worldGradientZ = gradientX * warpedXZ + gradientZ * warpedZZ;
-    const normal = new Vector3(
-      worldGradientX === 0 ? 0 : -worldGradientX,
-      1,
-      worldGradientZ === 0 ? 0 : -worldGradientZ,
-    ).normalize();
-    return { height, normal };
+    normal
+      .set(
+        worldGradientX === 0 ? 0 : -worldGradientX,
+        1,
+        worldGradientZ === 0 ? 0 : -worldGradientZ,
+      )
+      .normalize();
+    return height;
   }
 
   /**

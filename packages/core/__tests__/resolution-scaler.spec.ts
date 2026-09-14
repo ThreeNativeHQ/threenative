@@ -143,7 +143,7 @@ describe("ResolutionScaler", () => {
     expect(scaler.scale).toBe(1.0);
   });
 
-  it("pins the lower rung after two down-up-down cycles across one boundary", () => {
+  it("temporarily holds the lower rung after oscillation, then reports and permits recovery", () => {
     const scaler = new ResolutionScaler({ targetFps: 60 });
     feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
     expect(scaler.scaleSource).toBe("auto");
@@ -168,11 +168,15 @@ describe("ResolutionScaler", () => {
     scaler.observe(budget(58));
     expect(scaler.scale).toBe(0.85);
     expect(scaler.scaleSource).toBe("auto-pinned");
-    // Pinned means pinned: nothing moves it again this session, in either direction.
-    feed(scaler, AT_TARGET, 20);
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.oscillationWindows - 1);
     expect(scaler.scale).toBe(0.85);
-    feed(scaler, UNDER_TARGET, 20);
-    expect(scaler.scale).toBe(0.85);
+    expect(scaler.scaleSource).toBe("auto-pinned");
+    expect(scaler.observe(budget(AT_TARGET))).toBe(0.85); // propagate source change to renderer
+    expect(scaler.scaleSource).toBe("auto");
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.upWindows);
+    expect(scaler.scale).toBe(1);
+    expect(scaler.observe(budget(UNDER_TARGET))).toBeUndefined(); // resize cooldown
+    expect(scaler.observe(budget(UNDER_TARGET))).toBeLessThan(1);
   });
 
   it("scales its triggers to the configured target rather than assuming 60", () => {

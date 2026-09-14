@@ -462,7 +462,8 @@ export function stepFlight(
   const trimAlpha =
     state.assist || controls.autopilot
       ? clamp(
-          (desiredLoad * f.mass * gravity) / Math.max(f.qs, 4000) - 0.22 - state.flapPos * 0.48,
+          ((desiredLoad * f.mass * gravity) / Math.max(f.qs, 4000) - 0.22 - state.flapPos * 0.48) /
+            4.8,
           -0.34,
           0.43,
         )
