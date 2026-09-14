@@ -1,4 +1,4 @@
-import { Quaternion, Vector3 } from "three";
+import { PerspectiveCamera, Quaternion, Vector3 } from "three";
 import { vec2 } from "three/tsl";
 import { describe, expect, it } from "vitest";
 import { WaterSurface3D } from "../src/water-surface.js";
@@ -25,6 +25,44 @@ describe("WaterSurface3D", () => {
     expect(
       () => new WaterSurface3D({ level: 0, maxThickness: 2, reflection: { resolutionScale: 1.5 } }),
     ).toThrow(/resolutionScale/u);
+  });
+
+  it("draws only the named layers in the mirrored pass, and everything when none are named", () => {
+    // A reflection is a second draw of the world. `resolutionScale` decides how many pixels that
+    // costs; this decides how much world, which on a crowded scene is the whole bill.
+    const mask = (1 << 0) | (1 << 3);
+    const surface = new WaterSurface3D({
+      level: 0,
+      maxThickness: 3,
+      reflection: { ...reflection, layers: mask },
+    });
+    expect(surface.reflectionLayers).toBe(mask);
+
+    const camera = new PerspectiveCamera();
+    camera.layers.enableAll();
+    expect(surface.reflectionCameraFor(camera)?.layers.mask).toBe(mask);
+    // The same scene camera asked for twice is the same masked pass camera, not a fresh unmasked one.
+    expect(surface.reflectionCameraFor(camera)?.layers.mask).toBe(mask);
+
+    // Omitted, the pass draws whatever the scene camera draws — the reflection a game means when it
+    // says nothing — because three's own virtual camera is a clone of the source.
+    const plain = new WaterSurface3D({ level: 0, maxThickness: 3, reflection });
+    const source = new PerspectiveCamera();
+    source.layers.set(5);
+    expect(plain.reflectionLayers).toBeUndefined();
+    expect(plain.reflectionCameraFor(source)?.layers.mask).toBe(source.layers.mask);
+
+    // A surface with no reflection has no pass and says so rather than inventing a camera.
+    expect(new WaterSurface3D({ level: 0, maxThickness: 3 }).reflectionCameraFor(camera)).toBeUndefined();
+  });
+
+  it("refuses a layer mask that is not a non-negative integer", () => {
+    for (const layers of [-1, 1.5, Number.NaN]) {
+      expect(
+        () =>
+          new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { ...reflection, layers } }),
+      ).toThrow(/layers/u);
+    }
   });
 
   it("puts the mirror plane at the water level facing up, and keeps it out of the scene graph", () => {

@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612583ce6ea 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..885bab4ebec95277444c520fff5ea94b775f7221 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18500,7 +18500,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -105,7 +105,25 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  		/**
  		 * An event listener which is defined by `RenderObjects`. It performs
  		 * clean up tasks when `dispose()` on this render object.
-@@ -30707,9 +30736,18 @@ class RenderObjects {
+@@ -30098,7 +30127,7 @@ class RenderObject {
+ 	 */
+ 	getChainArray() {
+ 
+-		return [ this.object, this.material, this.context, this.lightsNode ];
++		return [ this.object, this.material, this.context, this.lightsNode, this._sourceMaterial ?? this.material ];
+ 
+ 	}
+ 
+@@ -30680,6 +30709,8 @@ class RenderObjects {
+ 		_chainKeys$3[ 1 ] = material;
+ 		_chainKeys$3[ 2 ] = renderContext;
+ 		_chainKeys$3[ 3 ] = lightsNode;
++		// Material groups share the shadow override, but must retain separate GPU bindings.
++		_chainKeys$3[ 4 ] = this.renderer._currentSourceMaterial ?? material;
+ 
+ 		//
+ 
+@@ -30707,9 +30738,18 @@ class RenderObjects {
  
  			}
  
@@ -126,7 +144,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  
  					renderObject.dispose();
  
-@@ -30719,6 +30757,8 @@ class RenderObjects {
+@@ -30719,6 +30759,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -135,7 +153,15 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  				}
  
  			}
-@@ -39725,7 +39765,8 @@ class VelocityNode extends TempNode {
+@@ -30731,6 +30773,7 @@ class RenderObjects {
+ 		_chainKeys$3[ 1 ] = null;
+ 		_chainKeys$3[ 2 ] = null;
+ 		_chainKeys$3[ 3 ] = null;
++		_chainKeys$3[ 4 ] = null;
+ 
+ 		//
+ 
+@@ -39725,7 +39768,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -145,7 +171,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  
  		//
  
-@@ -53841,7 +53882,7 @@ class NodeBuilder {
+@@ -53841,7 +53885,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -154,7 +180,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  
  	}
  
-@@ -62731,6 +62772,7 @@ class Renderer {
+@@ -62731,6 +62775,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -162,7 +188,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +62798,7 @@ class Renderer {
+@@ -62756,6 +62801,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -170,7 +196,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +62806,15 @@ class Renderer {
+@@ -62763,7 +62809,15 @@ class Renderer {
  
  			}
  
@@ -187,7 +213,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +62876,7 @@ class Renderer {
+@@ -62825,6 +62879,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -195,7 +221,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  
  		}
  
-@@ -79586,7 +79638,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +79641,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -205,7 +231,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  
  			} else {
  
-@@ -83814,6 +83867,14 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +83870,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -220,7 +246,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +83987,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +83990,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -375,7 +401,7 @@ index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..7a9a168f29773f37ef9a51ef9f07ade9
  
  					} else if ( binding.isStorageBuffer ) {
 diff --git a/src/renderers/common/RenderObject.js b/src/renderers/common/RenderObject.js
-index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..d0a87eabffc8f667ebe9b2f0eccda0ddf3309652 100644
+index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..3a8b0012abf054f50ab66466bab7efa16fe1bc09 100644
 --- a/src/renderers/common/RenderObject.js
 +++ b/src/renderers/common/RenderObject.js
 @@ -299,6 +299,18 @@ class RenderObject {
@@ -397,11 +423,29 @@ index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..d0a87eabffc8f667ebe9b2f0eccda0dd
  		/**
  		 * An event listener which is defined by `RenderObjects`. It performs
  		 * clean up tasks when `dispose()` on this render object.
+@@ -486,7 +498,7 @@ class RenderObject {
+ 	 */
+ 	getChainArray() {
+ 
+-		return [ this.object, this.material, this.context, this.lightsNode ];
++		return [ this.object, this.material, this.context, this.lightsNode, this._sourceMaterial ?? this.material ];
+ 
+ 	}
+ 
 diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
-index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..0fa661db793548254a15ff43f39207abcc43ef49 100644
+index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a803c852a6 100644
 --- a/src/renderers/common/RenderObjects.js
 +++ b/src/renderers/common/RenderObjects.js
-@@ -124,9 +124,18 @@ class RenderObjects {
+@@ -97,6 +97,8 @@ class RenderObjects {
+ 		_chainKeys[ 1 ] = material;
+ 		_chainKeys[ 2 ] = renderContext;
+ 		_chainKeys[ 3 ] = lightsNode;
++		// Material groups share the shadow override, but must retain separate GPU bindings.
++		_chainKeys[ 4 ] = this.renderer._currentSourceMaterial ?? material;
+ 
+ 		//
+ 
+@@ -124,9 +126,18 @@ class RenderObjects {
  
  			}
  
@@ -422,7 +466,7 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..0fa661db793548254a15ff43f39207ab
  
  					renderObject.dispose();
  
-@@ -136,6 +145,8 @@ class RenderObjects {
+@@ -136,6 +147,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -431,6 +475,14 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..0fa661db793548254a15ff43f39207ab
  				}
  
  			}
+@@ -148,6 +161,7 @@ class RenderObjects {
+ 		_chainKeys[ 1 ] = null;
+ 		_chainKeys[ 2 ] = null;
+ 		_chainKeys[ 3 ] = null;
++		_chainKeys[ 4 ] = null;
+ 
+ 		//
+ 
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
 index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60afd2b259 100644
 --- a/src/renderers/common/Renderer.js

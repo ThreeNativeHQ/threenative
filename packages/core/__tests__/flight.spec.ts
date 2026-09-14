@@ -79,6 +79,21 @@ function modelAt(speed: number): { model: FlightModel; state: IFlightState } {
 }
 
 describe("FlightModel", () => {
+  it("settles after releasing a pull-up without climbing into a stall", () => {
+    const { model, state: s } = modelAt(100);
+    for (let i = 0; i < 60; i += 1) model.step(1 / 60, { pitch: 0.6 });
+    expect(s.pitch).toBeGreaterThan(0.05);
+    let worstStall = 0;
+    for (let i = 0; i < 1800; i += 1) {
+      model.step(1 / 60, {});
+      worstStall = Math.max(worstStall, s.stall);
+    }
+    expect(worstStall).toBeLessThan(0.1);
+    expect(Math.abs(s.vy)).toBeLessThan(3);
+    expect(Math.abs(s.pitch)).toBeLessThan(0.12);
+    expect(s.speed).toBeGreaterThan(70);
+  });
+
   it("trims to roughly level flight instead of holding a commanded vector", () => {
     const { model, state: s } = modelAt(100);
     for (let i = 0; i < 900; i += 1) model.step(1 / 60, { pitch: 0.02 });

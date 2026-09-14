@@ -1,6 +1,6 @@
 # PRD-382 — FlightModel is mechanism, not a game's private physics
 
-Status: DONE, 2026-09-13. Owner instruction: port `Midway-Open-Pacific-v3.html` to
+Status: DONE, 2026-09-13, including neutral-stick regression follow-up. Owner instruction: port `Midway-Open-Pacific-v3.html` to
 `sandbox/midway-open-pacific` and lift the airplane abstractions into the engine. Evidence in this
 PRD and in `sandbox/midway-open-pacific` (commit `ffdb5d6`).
 
@@ -56,6 +56,21 @@ constants are gone, replaced by one tested implementation.
 - [x] `pnpm typecheck` and `vite build` green.
 - [x] `playtests/launch.playtest.json` passes: `{"pass": true}`, diagnostics clean.
 - [x] Committed and pushed to `ThreeNativeHQ/examples` (`ffdb5d6`), with two screenshots.
+
+### Phase 4 — Neutral-stick regression follow-up
+
+- [x] Reproduce release-to-stall: one-second pull-up then 30 seconds neutral reaches stall
+      0.744; new regression fails before the fix. Restore the reference's division by the 4.8
+      lift slope when deriving trim angle from required lift. Flight tests pass 6/6 afterward;
+      neutral flight settles below 3 m/s vertical speed and retains more than 70 m/s airspeed.
+- [x] Core typecheck/build and all 6 flight tests pass. Reinstalled core tarball
+      `1e03226208ca` (also includes the shadow-cache repair) into Midway. Installed consumer
+      `Battle` simulation: one second of pull-up then 30 seconds neutral now settles at
+      +0.036 m/s vertical speed, 96.88 m/s airspeed, zero stall; before reinstall it was still
+      climbing at +7.83 m/s. Browser verification is recorded in the game's repair PRD.
+      Root lint passes with existing warnings. Root typecheck fails in the unchanged site lane
+      resolving `three-mesh-bvh` and `three-mesh-bvh/webgpu`; core typecheck passes. Root test
+      is still running; no full-suite success claimed.
 
 ## Acceptance criteria
 
