@@ -75,7 +75,9 @@ export async function request(
       }
       if (Object.hasOwn(parsed, "error")) {
         const error = parsed.error;
-        const detail = isRecord(error) ? `${String(error.code)}: ${String(error.message)}` : "malformed error";
+        const detail = isRecord(error)
+          ? `${String(error.code)}: ${String(error.message)}`
+          : "malformed error";
         fail(new Error(`MCP ${method}: ${detail}`));
         return;
       }
@@ -121,11 +123,24 @@ export async function listTools(
   const names = new Set<string>();
   const cursors = new Set<string>();
   let cursor: string | undefined;
-  do {
-    const listed = await request(child, lines, next, "tools/list", cursor === undefined ? {} : { cursor });
+  // `for (;;)` rather than `do … while (true)`: the exit is the `break` on a missing cursor, and
+  // biome rejects the constant condition.
+  for (;;) {
+    const listed = await request(
+      child,
+      lines,
+      next,
+      "tools/list",
+      cursor === undefined ? {} : { cursor },
+    );
     if (!Array.isArray(listed.tools)) throw new Error("MCP tools/list: invalid tools array");
     for (const tool of listed.tools) {
-      if (!isRecord(tool) || typeof tool.name !== "string" || tool.name.trim() === "" || names.has(tool.name)) {
+      if (
+        !isRecord(tool) ||
+        typeof tool.name !== "string" ||
+        tool.name.trim() === "" ||
+        names.has(tool.name)
+      ) {
         throw new Error("MCP tools/list: invalid or duplicate tool name");
       }
       names.add(tool.name);
@@ -137,9 +152,10 @@ export async function listTools(
     }
     cursors.add(nextCursor);
     cursor = nextCursor;
-  } while (true);
+  }
   const missing = RECOMMENDED.filter((name) => !names.has(name));
-  if (missing.length) throw new Error(`MCP tools/list: missing recommended tools: ${missing.join(", ")}`);
+  if (missing.length)
+    throw new Error(`MCP tools/list: missing recommended tools: ${missing.join(", ")}`);
   return [...names].sort();
 }
 
