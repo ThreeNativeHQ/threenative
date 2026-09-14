@@ -2,8 +2,7 @@ name: PRD-383 one-shot reconcile
 
 on:
   push:
-    branches:
-      - automation/pr237-reconcile-20260914
+    branches: [automation/pr237-reconcile-20260914]
 
 permissions:
   contents: write
@@ -21,6 +20,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+
       - name: Merge current develop and resolve only known mechanical conflicts
         shell: bash
         run: |
@@ -39,7 +39,6 @@ jobs:
           git merge --no-ff --no-commit origin/develop
           merge_status=$?
           set -e
-
           if [ "$merge_status" -ne 0 ]; then
             mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
             printf 'Merge conflicts: %s\n' "${conflicts[*]}"
@@ -60,7 +59,6 @@ jobs:
               esac
             done
           fi
-
           if git diff --name-only --diff-filter=U | grep -q .; then
             echo "Unresolved conflicts remain" >&2
             git diff --name-only --diff-filter=U >&2
@@ -68,7 +66,6 @@ jobs:
           fi
 
           git rm -f --ignore-unmatch docs/PRDs/assets/PRD-383-rig-and-retarget-humanoids-through-the-asset-mcp.md
-
           node <<'NODE'
           const fs = require('node:fs');
           const p = 'packages/create-threenative/__tests__/scaffold.spec.ts';
@@ -98,18 +95,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/recompute-scaffold-hashes.ts" <<'TS'
+          cat > "$RUNNER_TEMP/recompute-scaffold-hashes.mjs" <<'NODE'
           import { createHash } from "node:crypto";
           import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
           import { tmpdir } from "node:os";
           import path from "node:path";
-          import { createProject, discoverTemplateNames } from "${{ github.workspace }}/packages/create-threenative/src/index.ts";
+          import { pathToFileURL } from "node:url";
 
+          const entry = pathToFileURL(path.resolve("packages/create-threenative/dist/index.js")).href;
+          const { createProject, discoverTemplateNames } = await import(entry);
           const templateRoot = path.resolve("packages/create-threenative/templates");
           const ignored = /^(?:node_modules(?:\/|$)|dist(?:\/|$)|\.vite(?:\/|$)|coverage(?:\/|$)|pnpm-lock\.yaml$|package-lock\.json$|yarn\.lock$)/u;
-          async function treeHash(directory: string): Promise<string> {
-            const files: Array<[string, Buffer]> = [];
-            async function walk(current: string): Promise<void> {
+          async function treeHash(directory) {
+            const files = [];
+            async function walk(current) {
               for (const entry of (await readdir(current, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
                 const file = path.join(current, entry.name);
                 if (entry.isDirectory()) await walk(file);
@@ -125,22 +124,19 @@ jobs:
             return hash.digest("hex");
           }
 
-          async function main(): Promise<void> {
-            const root = await mkdtemp(path.join(tmpdir(), "tn-scaffold-hashes-"));
-            const actual: Record<string, string> = {};
-            try {
-              for (const template of discoverTemplateNames(templateRoot)) {
-                const { target } = await createProject({ install: false, target: template, template }, root);
-                actual[template] = await treeHash(target);
-              }
-            } finally {
-              await rm(root, { force: true, recursive: true });
+          const root = await mkdtemp(path.join(tmpdir(), "tn-scaffold-hashes-"));
+          const actual = {};
+          try {
+            for (const template of discoverTemplateNames(templateRoot)) {
+              const { target } = await createProject({ install: false, target: template, template }, root);
+              actual[template] = await treeHash(target);
             }
-            process.stdout.write(JSON.stringify(actual));
+          } finally {
+            await rm(root, { force: true, recursive: true });
           }
-          main().catch((error) => { console.error(error); process.exitCode = 1; });
-          TS
-          hashes=$(pnpm exec tsx "$RUNNER_TEMP/recompute-scaffold-hashes.ts")
+          process.stdout.write(JSON.stringify(actual));
+          NODE
+          hashes=$(node "$RUNNER_TEMP/recompute-scaffold-hashes.mjs")
           node - "$hashes" <<'NODE'
           const fs = require('node:fs');
           const hashes = JSON.parse(process.argv[2]);
