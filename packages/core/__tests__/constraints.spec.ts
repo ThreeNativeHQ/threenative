@@ -54,6 +54,10 @@ describe("core constraints", () => {
           file !== "softbody.ts" &&
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
+          // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
+          // constructs no material, light, colour or shader; the word "light" it trips on is
+          // inside "flight".
+          file !== "flight.ts" &&
           file !== "instanced-batch.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
