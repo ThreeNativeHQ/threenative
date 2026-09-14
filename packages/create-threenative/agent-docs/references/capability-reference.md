@@ -256,6 +256,22 @@ const report = await addInSlices(objects, (object) => ctx.add(object), {
 });
 ```
 
+### `aerodynamicCoefficients`
+
+`function` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+
+```ts
+export function aerodynamicCoefficients( alpha: number, flaps = 0, gear = 0, brakes = 0, ): { … }
+```
+
+- **Use when:** fly an airplane with lift, drag, stall and control authority · launch an aircraft off a moving carrier deck · apply component damage or a loadout to an aircraft's performance
+- **Constraints:** every mass, area, power and inertia value comes from the game's airframe · damage, stores and configuration arrive as the game's own modifier sample
+
+```ts
+const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+model.step(1 / 60, { turn: -1, pitch: 0.4 });
+```
+
 ### `afterPhysics`
 
 `function` — Register work that reads a body or camera after physics has moved it and before this frame draws. The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
@@ -269,6 +285,38 @@ export function afterPhysics( context: IAfterPhysicsContext, callback: AfterPhys
 
 ```ts
 afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));
+```
+
+### `aircraftMass`
+
+`function` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+
+```ts
+export function aircraftMass(state: IFlightState, airframe: IAircraftAirframe): number { … }
+```
+
+- **Use when:** fly an airplane with lift, drag, stall and control authority · launch an aircraft off a moving carrier deck · apply component damage or a loadout to an aircraft's performance
+- **Constraints:** every mass, area, power and inertia value comes from the game's airframe · damage, stores and configuration arrive as the game's own modifier sample
+
+```ts
+const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+model.step(1 / 60, { turn: -1, pitch: 0.4 });
+```
+
+### `airDensity`
+
+`function` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+
+```ts
+export function airDensity(y: number): number { … }
+```
+
+- **Use when:** fly an airplane with lift, drag, stall and control authority · launch an aircraft off a moving carrier deck · apply component damage or a loadout to an aircraft's performance
+- **Constraints:** every mass, area, power and inertia value comes from the game's airframe · damage, stores and configuration arrive as the game's own modifier sample
+
+```ts
+const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+model.step(1 / 60, { turn: -1, pitch: 0.4 });
 ```
 
 ### `AnimationPlayer`
@@ -332,6 +380,22 @@ export function attachToBone(root: Object3D, boneName: string, child: Object3D):
 ```ts
 import { attachToBone } from "@threenative/core";
 attachToBone(character, "RightHand", rifle);
+```
+
+### `attitudeAxes`
+
+`function` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+
+```ts
+export function attitudeAxes(state: IFlightState): IFlightAxes { … }
+```
+
+- **Use when:** fly an airplane with lift, drag, stall and control authority · launch an aircraft off a moving carrier deck · apply component damage or a loadout to an aircraft's performance
+- **Constraints:** every mass, area, power and inertia value comes from the game's airframe · damage, stores and configuration arrive as the game's own modifier sample
+
+```ts
+const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+model.step(1 / 60, { turn: -1, pitch: 0.4 });
 ```
 
 ### `AudioBus`
@@ -676,6 +740,22 @@ renderer.render(scene, camera);
 tracker.commit(scene);
 ```
 
+### `FlightModel`
+
+`class` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+
+```ts
+export class FlightModel<TState extends IFlightState = IFlightState> { … }
+```
+
+- **Use when:** fly an airplane with lift, drag, stall and control authority · launch an aircraft off a moving carrier deck · apply component damage or a loadout to an aircraft's performance
+- **Constraints:** every mass, area, power and inertia value comes from the game's airframe · damage, stores and configuration arrive as the game's own modifier sample
+
+```ts
+const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+model.step(1 / 60, { turn: -1, pitch: 0.4 });
+```
+
 ### `FluidField2D`
 
 `class` — Simulate a deterministic 2D velocity-and-dye field on the GPU while exposing its data to game-owned rendering.
@@ -707,6 +787,22 @@ export class FrameBudget { … }
 
 ```ts
 defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
+```
+
+### `gearClearance`
+
+`function` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+
+```ts
+export function gearClearance(state: IFlightState): number { … }
+```
+
+- **Use when:** fly an airplane with lift, drag, stall and control authority · launch an aircraft off a moving carrier deck · apply component damage or a loadout to an aircraft's performance
+- **Constraints:** every mass, area, power and inertia value comes from the game's airframe · damage, stores and configuration arrive as the game's own modifier sample
+
+```ts
+const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+model.step(1 / 60, { turn: -1, pitch: 0.4 });
 ```
 
 ### `getPlatform`
@@ -1281,6 +1377,22 @@ export class Scheduler { … }
 ```ts
 const door = { y: 0 };
 await ctx.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
+```
+
+### `setAttitude`
+
+`function` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+
+```ts
+export function setAttitude( state: IFlightState, heading = 0, pitch = 0, roll = 0, ): IFlightQuaternion { … }
+```
+
+- **Use when:** fly an airplane with lift, drag, stall and control authority · launch an aircraft off a moving carrier deck · apply component damage or a loadout to an aircraft's performance
+- **Constraints:** every mass, area, power and inertia value comes from the game's airframe · damage, stores and configuration arrive as the game's own modifier sample
+
+```ts
+const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+model.step(1 / 60, { turn: -1, pitch: 0.4 });
 ```
 
 ### `SkeletalMesh3D`

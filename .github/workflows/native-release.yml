@@ -1331,8 +1331,278 @@ jobs:
             ${{ runner.temp }}/ios-toolchain-invocations.log
           if-no-files-found: warn
 
+  clean-consumer-windows:
+    needs: [validate-tag, gates, build, publish]
+    if: >-
+      ${{ !cancelled() && needs.gates.result == 'success' &&
+      needs.build.result == 'success' &&
+      ((github.ref_type != 'tag' && needs.publish.result == 'skipped') ||
+      (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
+    runs-on: windows-2025
+    # `clean-consumer`'s mechanisms all assume POSIX: a `/bin/sh` toolchain mask, an apt Vulkan
+    # ICD, WebKitGTK and an `xvfb` wrapper. Windows gets its own lane rather than a flag, because
+    # none of those has a Windows equivalent and every one of them is load-bearing. The claim is
+    # the same as the Linux lane's, about a different platform: install from the published cohort,
+    # build the desktop target with every native compiler masked, launch the packed game.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # Only the Windows runtime artifact is downloaded. The consumer installs only `win32-x64`, so
+      # the served lock advertises just those two assets and never waits on `build-android`'s output;
+      # the full published cohort is the Linux lane's claim.
+      - name: Download this run's proof assets
+        if: github.ref_type != 'tag'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: runtime-win32-x64
+          path: release
+          merge-multiple: true
+      - name: Serve same-run proof assets without publishing
+        if: github.ref_type != 'tag'
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" != tag
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+          import { PREBUILT_ASSET_NAMES, PUBLISHED_PREBUILT_KEYS } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          // The Windows row this lane installs, and nothing else: the full non-iOS cohort is the
+          // Linux lane's claim and depends on `build-android`, which this job deliberately drops.
+          const names = PUBLISHED_PREBUILT_KEYS.filter((key) => key.startsWith("win32-"))
+            .map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
+          const expected = names.map(([, name]) => name).sort();
+          if (JSON.stringify(readdirSync("release").sort()) !== JSON.stringify(expected)) {
+            throw new Error("Proof assets must contain the published Windows runtime and its helper, and no extras.");
+          }
+          const artifacts = Object.fromEntries(names.map(([key, name]) => {
+            const bytes = readFileSync(`release/${name}`);
+            if (!bytes.length) throw new Error(`Empty proof asset: ${name}`);
+            return [key, { sha256: createHash("sha256").update(bytes).digest("hex"), url: `http://127.0.0.1:8765/${name}` }];
+          }));
+          writeFileSync(`${process.env.RUNNER_TEMP}/proof-prebuilt-lock.json`, `${JSON.stringify({ artifacts }, null, 2)}\n`);
+          writeFileSync(`${process.env.RUNNER_TEMP}/proof-asset-identity.json`, `${JSON.stringify({
+            candidateSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+            scope: "same-run-artifacts-not-public-installation", artifacts }, null, 2)}\n`);
+          NODE
+          # `python`, not the Linux lane's `python3`: actions/setup-python puts `python` on PATH on
+          # Windows and does not guarantee the `python3` alias.
+          python -m http.server 8765 --bind 127.0.0.1 --directory "$GITHUB_WORKSPACE/release" \
+            > "$RUNNER_TEMP/proof-assets-server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/proof-assets-server.pid"
+          ready=false
+          for attempt in $(seq 1 30); do
+            # Node rather than curl: the probe must not depend on whether the runner resolves
+            # `curl` to Git Bash's build or Windows's, which spell their null sink differently.
+            if node -e 'fetch("http://127.0.0.1:8765/").then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          echo "THREENATIVE_PREBUILT_MANIFEST=$RUNNER_TEMP/proof-prebuilt-lock.json" >> "$GITHUB_ENV"
+          echo "THREENATIVE_ALLOW_INSECURE_PREBUILT=1" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      - name: Pack the exact scaffold consumer packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" --if-present run build
+            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/packages"
+          done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Scaffold from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-consumer-proof
+          template: minimal
+      - name: Prepare the scaffolded consumer proof
+        run: |
+          target="$RUNNER_TEMP/threenative-consumer-proof"
+          CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
+          import { copyFileSync } from "node:fs";
+          copyFileSync("examples/native-smoke/src/game.ts", `${process.env.CONSUMER_TARGET}/src/game.ts`);
+          // The entry's own siblings. Copying `game.ts` alone left the consumer build with
+          //   [UNRESOLVED_IMPORT] Could not resolve './networking-game.js' in src/game.ts
+          //   [UNRESOLVED_IMPORT] Could not resolve './worker-proof.js' in src/game.ts
+          copyFileSync("examples/native-smoke/src/networking-game.ts", `${process.env.CONSUMER_TARGET}/src/networking-game.ts`);
+          copyFileSync("examples/native-smoke/src/worker-proof.ts", `${process.env.CONSUMER_TARGET}/src/worker-proof.ts`);
+          copyFileSync("examples/native-smoke/vite.config.ts", `${process.env.CONSUMER_TARGET}/vite.config.ts`);
+          // `vite.config.ts` reads `physics-parity.scenario.json` beside itself and otherwise falls
+          // back to the repo-relative path, which does not exist outside a checkout: the first hosted
+          // Windows run died on `ENOENT ... D:\a\packages\physics\__tests__\fixtures\...`.
+          copyFileSync("packages/physics/__tests__/fixtures/physics-parity.scenario.json", `${process.env.CONSUMER_TARGET}/physics-parity.scenario.json`);
+          NODE
+          echo "CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
+      - name: Mask every native toolchain entry point
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolchain-mask"
+          TOOLCHAIN_MASK="$RUNNER_TEMP/toolchain-mask" node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          // Windows resolves a bare command through PATHEXT, so a `.cmd` shim in a directory ahead
+          // of the real one shadows the `.exe`. MSVC ships on this image, which is exactly why the
+          // mask has to be proved to shadow it rather than assumed to be the only copy.
+          const commands = ["cargo", "cl", "clang", "clang++", "cmake", "c++", "g++", "gcc", "link", "ninja", "rustc"];
+          for (const command of commands) {
+            writeFileSync(
+              `${process.env.TOOLCHAIN_MASK}/${command}.cmd`,
+              '@echo off\r\necho %0 %* >> "%TN_TOOLCHAIN_LOG%"\r\nexit /b 97\r\n',
+            );
+          }
+          NODE
+          # The runner prepends `GITHUB_PATH` entries for every shell, so the directory is written
+          # in Windows form; a Git Bash POSIX path means nothing to a PowerShell or cmd step.
+          echo "$(cygpath -w "$RUNNER_TEMP/toolchain-mask")" >> "$GITHUB_PATH"
+          echo "TN_TOOLCHAIN_LOG=$RUNNER_TEMP/toolchain-invocations.log" >> "$GITHUB_ENV"
+      - name: Install and build without a native toolchain
+        run: |
+          pnpm --dir "$CONSUMER_TARGET" install
+          # Provenance the PRD-262 consumer gate asserts: the installed runtime must record a
+          # successful prebuilt install, never a source-checkout build.
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const status = JSON.parse(readFileSync(`${process.env.CONSUMER_TARGET}/node_modules/@threenative/runtime-native/prebuilt/install-status.json`, "utf8"));
+          if (status.ok !== true) throw new Error(`prebuilt install-status.ok is ${status.ok}, not true`);
+          NODE
+          # Both binaries arrive from the release the install just read; no step here places either,
+          # so a regression in what the release publishes fails this consumer. The helper is checked
+          # before the build: asserting it after would not prove the install produced it.
+          test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/threenative-runtime.exe"
+          test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Prove the mask shadows MSVC, then restore the positive path
+        run: |
+          # Phase 1 observed-red (a): a real `cl` invocation must be shadowed by the `.cmd` shim,
+          # recorded in TN_TOOLCHAIN_LOG, and refused with exit 97 rather than reaching MSVC. The
+          # marker is resolved the way a Windows build tool resolves it -- through `cmd.exe`, which
+          # honours PATHEXT -- because Git Bash does not execute a `.cmd` from a bare name and would
+          # otherwise report 127, proving nothing about the mask.
+          set +e
+          cmd.exe //c "cl /?" > "$RUNNER_TEMP/masked-cl.log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/masked-cl.exit"
+          test "$status" -eq 97
+          test -s "$TN_TOOLCHAIN_LOG"
+          grep -E '(^|[\\/])cl(\.cmd)? ' "$TN_TOOLCHAIN_LOG"
+          rm -f "$TN_TOOLCHAIN_LOG"
+      - name: Launch the packed desktop game for 300 frames
+        run: |
+          log="$RUNNER_TEMP/threenative-consumer.log"
+          screenshot="$RUNNER_TEMP/threenative-consumer.png"
+          game="$CONSUMER_TARGET/dist-native/threenative-consumer-proof.exe"
+          test -s "$game"
+          # No `xvfb`: a hosted Windows session has a desktop. The windowed launcher prints the
+          # adapter it bound at `[WebGPU] Adapter:`, recorded rather than asserted because this
+          # runner has no GPU and a WARP adapter is the expected, honest answer.
+          "$game" --screenshot "$screenshot" --frames 300 > "$log" 2>&1
+          grep -F 'TN_NATIVE_SMOKE_READY:webgpu' "$log"
+          grep -F 'TN_NATIVE_SMOKE_FIRST_FRAME' "$log"
+          grep -F 'TN_NATIVE_SMOKE_300_FRAMES:300' "$log"
+          grep -E 'Rendered 300 frames in [0-9]+ms' "$log"
+          grep -E '\[WebGPU\] (Adapter|Vendor|Backend):' "$log" | tee "$RUNNER_TEMP/windows-adapter.txt"
+          SCREENSHOT="$screenshot" node --input-type=module <<'NODE'
+          import { inspectScreenshot } from "./packages/runtime-native/scripts/verify-desktop-core.mjs";
+          console.log(inspectScreenshot(process.env.SCREENSHOT));
+          NODE
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Prove a renderer that never presents fails the launch assertions
+        run: |
+          # Phase 2 observed-red, measured by run 34746542857: with the entry replaced by one that
+          # starts cleanly and never renders a frame, the launcher exits non-zero with "Error: Failed
+          # to save screenshot!" and prints no `TN_NATIVE_SMOKE_FIRST_FRAME`, so the launch step's own
+          # assertions fail. The genuine entry is restored afterwards so the finished job keeps the
+          # positive proof.
+          entry="$CONSUMER_TARGET/src/game.ts"
+          backup="$RUNNER_TEMP/game.ts.bak"
+          cp "$entry" "$backup"
+          cat > "$entry" <<'TS'
+          export const status = { frames: 0, ready: false };
+          export default {
+            async start(): Promise<void> {
+              // Starts cleanly and never enters a render loop, so no frame is ever presented and no
+              // `TN_NATIVE_SMOKE_FIRST_FRAME` line is produced.
+            },
+          };
+          TS
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          set +e
+          "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.exe" \
+            --screenshot "$RUNNER_TEMP/renderer-disabled.png" --frames 300 \
+            > "$RUNNER_TEMP/renderer-disabled.log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/renderer-disabled.exit"
+          # A build that never presents cannot pass the launch step: it exits non-zero, the first-
+          # frame marker is absent, and no capture was written.
+          test "$status" -ne 0
+          test ! -e "$RUNNER_TEMP/renderer-disabled.png"
+          test ! -e "$TN_TOOLCHAIN_LOG"
+          set +e
+          grep -F 'TN_NATIVE_SMOKE_FIRST_FRAME' "$RUNNER_TEMP/renderer-disabled.log"
+          marker=$?
+          set -e
+          printf '%s\n' "$marker" > "$RUNNER_TEMP/renderer-disabled.marker-exit"
+          test "$marker" -ne 0
+          cp "$backup" "$entry"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+      - name: Prove a removed helper is re-fetched, never source-built, then restore it
+        run: |
+          # Phase 1 observed-red (b), corrected by measurement: deleting the installed helper does
+          # NOT fail the build. Run 34745227091 showed the build instead re-installing it
+          # ("Installed verified ThreeNative runtime and build tool helper for 'win32-x64'.") with an
+          # empty toolchain log, so the honest claim is that a removed helper is re-fetched from the
+          # served release rather than satisfied by a silent source build. The control asserts that
+          # measured behaviour and leaves the helper present.
+          helper="$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
+          backup="$RUNNER_TEMP/mystral-tools.exe.bak"
+          cp "$helper" "$backup"
+          rm -f "$helper"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop > "$RUNNER_TEMP/missing-helper.log" 2>&1
+          # The build re-provisions the helper from the release: it is present again afterwards, no
+          # compiler ran, and the bytes match the published artifact the install originally placed.
+          test -s "$helper"
+          cmp -s "$backup" "$helper"
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Stop the proof asset server
+        if: ${{ always() && github.ref_type != 'tag' }}
+        run: |
+          if [ -s "$RUNNER_TEMP/proof-assets-server.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/proof-assets-server.pid")" 2>/dev/null || true
+          fi
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: clean-consumer-windows-x64
+          path: |
+            ${{ runner.temp }}/threenative-consumer.log
+            ${{ runner.temp }}/threenative-consumer.png
+            ${{ runner.temp }}/windows-adapter.txt
+            ${{ runner.temp }}/toolchain-invocations.log
+            ${{ runner.temp }}/masked-cl.log
+            ${{ runner.temp }}/masked-cl.exit
+            ${{ runner.temp }}/missing-helper.log
+            ${{ runner.temp }}/renderer-disabled.log
+            ${{ runner.temp }}/renderer-disabled.exit
+            ${{ runner.temp }}/renderer-disabled.marker-exit
+            ${{ runner.temp }}/proof-*.json
+            ${{ runner.temp }}/proof-assets-server.log
+            ${{ runner.temp }}/packages/*.tgz
+
   finalize:
-    needs: [validate-tag, clean-consumer, clean-consumer-ios]
+    needs: [validate-tag, clean-consumer, clean-consumer-ios, clean-consumer-windows]
     if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1352,8 +1622,9 @@ jobs:
     if: >-
       ${{ always() && github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
       needs.publish.result == 'success' &&
-      (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success') }}
-    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios]
+      (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success' ||
+      needs.clean-consumer-windows.result != 'success') }}
+    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios, clean-consumer-windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

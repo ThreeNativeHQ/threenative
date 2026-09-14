@@ -36,7 +36,7 @@ function field(markdown: string, label: string): string {
     .slice(label.length + 1)
     .trim()
     .replaceAll("`", "");
-  if (value.length === 0 || /TBD/i.test(value) || /^<.*>$/.test(value))
+  if (value.length === 0 || /^TBD\b/i.test(value) || /^<.*>$/.test(value))
     throw new Error(`Required field ${label} is blank.`);
   return value;
 }
@@ -71,7 +71,7 @@ function validateLedger(markdown: string, filename = "sweep.md"): void {
   for (const [index, cells] of dataRows.entries()) {
     if (
       cells.length !== 4 ||
-      cells.some((cell) => cell.length === 0 || /TBD/i.test(cell) || /^<.*>$/.test(cell))
+      cells.some((cell) => cell.length === 0 || /^TBD\b/i.test(cell) || /^<.*>$/.test(cell))
     )
       throw new Error(`${filename}: friction row ${index + 1} is incomplete.`);
   }

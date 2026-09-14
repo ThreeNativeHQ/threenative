@@ -659,6 +659,39 @@ export { PathFollow3D } from "./path-follow.js";
  * const snap = new GroundSnap(character, { enabled: true });
  */
 export { GroundSnap } from "./grounding.js";
+/**
+ * Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
+ * @situation fly an airplane with lift, drag, stall and control authority
+ * @situation launch an aircraft off a moving carrier deck
+ * @situation apply component damage or a loadout to an aircraft's performance
+ * @constraint every mass, area, power and inertia value comes from the game's airframe
+ * @constraint damage, stores and configuration arrive as the game's own modifier sample
+ * @example const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
+ * model.step(1 / 60, { turn: -1, pitch: 0.4 });
+ */
+export {
+  FlightModel,
+  NEUTRAL_FLIGHT_MODIFIERS,
+  aerodynamicCoefficients,
+  airDensity,
+  aircraftMass,
+  attitudeAxes,
+  gearClearance,
+  setAttitude,
+} from "./flight.js";
+export type {
+  IAircraftAirframe,
+  IFlightAxes,
+  IFlightControls,
+  IFlightDeck,
+  IFlightEnvironment,
+  IFlightForces,
+  IFlightModelOptions,
+  IFlightModifiers,
+  IFlightQuaternion,
+  IFlightState,
+  IFlightVector3,
+} from "./flight.js";
 export type { IGroundSnapOptions } from "./grounding.js";
 /**
  * Measure a Three.js pose for grounded or attachment-aware checks.
