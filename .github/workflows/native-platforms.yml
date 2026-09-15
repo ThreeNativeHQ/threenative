@@ -1233,8 +1233,18 @@ jobs:
             echo "TN_DESKTOP_RELEASE_ARCHIVE_COUNT: expected exactly one release archive under $target/dist-native, found: $archive" >&2
             exit 1
           fi
-          # bsdtar reads ZIP on macOS and Windows.
-          tar -xf "$archive" -C "$dest"
+          # The container is a ZIP on both, and only bsdtar reads ZIP. macOS's `tar` is bsdtar, but
+          # on Windows git-bash's GNU tar shadows the system one, so name System32's explicitly
+          # rather than extracting with whichever `tar` happens to win the PATH.
+          archiver=tar
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            archiver=/c/Windows/System32/tar.exe
+            [ -x "$archiver" ] || {
+              echo "TN_DESKTOP_ARCHIVE_TOOL_MISSING: $archiver is required to read the ZIP container." >&2
+              exit 1
+            }
+          fi
+          "$archiver" -xf "$archive" -C "$dest"
           # Locate the container root by its manifest; this also ignores a stray __MACOSX entry an
           # archiver may add, which a bare "one top-level directory" check would mistake for a root.
           manifest=$(find "$dest" -name threenative-container.json -type f -print)
