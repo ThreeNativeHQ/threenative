@@ -212,7 +212,8 @@ reproduced here so the claim is inspectable from this repository.
 **Engine side.** `f7c64c5fc` on branch `perf/projection-dirty` (base `b1cae8803`) changes
 `packages/core/src/renderProjection.ts` to the non-forcing call above, with four new cases in
 `packages/core/__tests__/renderProjection.spec.ts` (moving object, frozen-subtree sentinel, a
-scene that marks its world static, a static subtree whose parent moved). Focused run 66/66 pass.
+scene that marks its world static, a static subtree whose parent moved). Focused run 66/66 pass;
+the whole `packages/core` suite run on develop passes 113 files / 1276 tests (2026-09-14).
 The content-hashed package built from it is
 `threenative-core-0.3.2-projdirty-12c96c25114f.tgz`
 (sha256 `12c96c25114f91335895102fc7f50c58719782c7a445d97a777dd01618bdd858`).
