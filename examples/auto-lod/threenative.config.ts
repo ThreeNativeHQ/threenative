@@ -2,7 +2,7 @@ import type { IThreeNativeConfig } from "@threenative/core";
 
 const config: IThreeNativeConfig = {
   app: {
-    id: "com.threenative.auto-lod",
+    id: "com.threenative.autolod",
     name: "auto-lod",
     version: "1.0.0",
     build: 1,
@@ -24,6 +24,9 @@ const config: IThreeNativeConfig = {
   },
   // The explicit opt-in. Default-on lands after qualification; `{}` resolves to enabled/balanced.
   assets: { lod: {} },
+  // No React, no DOM: this example is a portable game, so the native desktop build ships no web
+  // view and no second process.
+  ui: { renderer: "native" },
 };
 
 export default config;

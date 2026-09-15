@@ -224,6 +224,9 @@ importers:
       '@threenative/playtest':
         specifier: workspace:*
         version: link:../../packages/playtest
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3

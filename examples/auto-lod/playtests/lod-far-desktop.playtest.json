@@ -1,15 +1,15 @@
 {
-  "name": "lod-far",
+  "name": "lod-far-desktop",
   "schemaVersion": 1,
-  "subject": "the far camera submits at most half the model's authored triangles",
-  "target": "web",
+  "subject": "the native host's far camera submits at most half the model's authored triangles",
+  "target": "desktop",
   "viewport": {
     "width": 1280,
     "height": 720
   },
   "warmupFrames": 90,
   "artifacts": {
-    "screenshots": true,
+    "screenshots": false,
     "console": true
   },
   "steps": [
@@ -17,19 +17,10 @@
       "kind": "wait",
       "label": "settled",
       "waitTicks": 120,
-      "release": true,
-      "screenshot": "far"
+      "release": true
     }
   ],
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": true,
-      "noNetworkErrors": true,
-      "runtimeReady": true
-    },
-    "performance": {
-      "maxTriangles": 6400
-    },
     "resources": [
       {
         "allowTrivial": "The scene starts on the far route and holds it, so the invariant is satisfied before the run; the matching near scenario drives the value from 368 to 8192 to prove the selection follows the camera.",
@@ -45,17 +36,6 @@
         },
         "minCount": 1,
         "visible": true
-      }
-    ],
-    "visual": [
-      {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 1280,
-          "height": 720,
-          "minNonblankPixelRatio": 0.01
-        }
       }
     ]
   }

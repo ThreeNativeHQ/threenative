@@ -10,7 +10,7 @@ A developer authors one GLB and loads it through ThreeNative's normal asset path
 
 This is not a greenfield LOD renderer. The repository already has default-on virtual geometry for sufficiently dense primitives. Extend and reconcile that machinery, adding a conservative discrete-LOD path where it supplies missing value. Exactly one system owns detail selection for a primitive. Preserve the original source, the full-detail fallback, materials, object identity, and gameplay semantics.
 
-**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact and Phase 2 engine-owned runtime landed and tested; Phase 3 browser WebGPU consumer evidence and the dense-asset triangle-reduction gate pass on hardware (8,192 → 369 far-route triangles, RTX 2080), with native qualification, frame-time/quality/byte gates, default-on (Phase 4) and the remaining Closure Gates NOT started. No Closure Gate is claimed complete.
+**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact and Phase 2 engine-owned runtime landed and tested; Phase 3 browser WebGPU and Linux native consumer evidence plus both dense-asset triangle-reduction gates pass on hardware (8,192 → 369 web / 368 native far-route triangles, RTX 2080). Windows/macOS/Android/iOS qualification, frame-time/quality/byte gates, default-on (Phase 4) and the remaining Closure Gates are NOT started. No Closure Gate is claimed complete.
 **Date:** 2026-09-11.
 **Scope:** Asset compilation, configuration, ordinary model loading, and existing render integration.
 **Complexity:** HIGH — default-on lossy processing crosses build, runtime, and platform boundaries.
@@ -274,7 +274,12 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       not evidence.
 - [ ] Windows native consumer evidence establishes the default policy. NOT RUN; no host here.
 - [ ] macOS native consumer evidence establishes the default policy. NOT RUN; no host here.
-- [ ] Linux native consumer evidence establishes the default policy. NOT RUN.
+- [x] Linux native consumer evidence establishes the default policy. Evidence: the same example built
+      for the owned host (`threenative build --target desktop`, embeddable desktop artifact) and run
+      through the desktop playtest lane. `lod-near-desktop` drives the scene state from 368 to 8,192
+      triangles (`changed`, `gte 8000`, `sceneNodes.minTriangles 8192`) and `lod-far-desktop` holds 368
+      (`lte 4096`); both exit 0. The native lane carries the state channel and not the browser
+      performance sampler, so the gate is the published triangle count rather than `performance`.
 - [ ] Android's policy is backed by target evidence or explicitly remains baseline-only. NOT RUN;
       adb is on PATH, no emulator or device was started.
 - [ ] iOS's policy is backed by target evidence or explicitly remains baseline-only. BLOCKED: `xcrun`
@@ -283,9 +288,10 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       submitted on the far route (`lod-far`, exit 0), 95.5% fewer, above the 50% floor; the near route
       keeps LOD0 at 8,192. Frame meters were sampled (1,024 samples) but no regression allowance was
       asserted, so no frame-time claim is made here.
-- [ ] The dense-asset triangle-reduction gate passes on a native target. NOT RUN.
+- [x] The dense-asset triangle-reduction gate passes on a native target. Evidence: Linux desktop,
+      8,192 authored -> 368 submitted on the far route (`lod-far-desktop`, exit 0), 95.5% fewer.
 - [ ] The frame-time regression gates pass on every default-enabled target. NOT RUN; a browser pass
-      was measured but not bounded, and no native target ran.
+      was measured but not bounded, and the native lane reports no performance samples.
 - [ ] The rendered-quality gate passes on the declared corpus. NOT RUN. The two browser scenarios
       assert a non-blank capture and the far/near screenshots exist in `artifacts/playtest/`, but the
       declared corpus comparison at transitions was not performed.

@@ -1,11 +1,11 @@
 {
-  "name": "lod-near",
+  "name": "lod-near-desktop",
   "schemaVersion": 1,
-  "subject": "the near camera selects LOD0 for the model",
-  "target": "web",
+  "subject": "the native host's near camera selects LOD0 for the model",
+  "target": "desktop",
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 90,
-  "artifacts": { "screenshots": true, "console": true },
+  "artifacts": { "screenshots": false, "console": true },
   "steps": [
     {
       "kind": "input",
@@ -18,16 +18,10 @@
       "kind": "wait",
       "label": "settled",
       "waitTicks": 120,
-      "release": true,
-      "screenshot": "near"
+      "release": true
     }
   ],
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": true,
-      "noNetworkErrors": true,
-      "runtimeReady": true
-    },
     "resources": [
       {
         "changed": true,
@@ -42,17 +36,6 @@
         "minCount": 1,
         "minTriangles": 8000,
         "visible": true
-      }
-    ],
-    "visual": [
-      {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 1280,
-          "height": 720,
-          "minNonblankPixelRatio": 0.05
-        }
       }
     ]
   }

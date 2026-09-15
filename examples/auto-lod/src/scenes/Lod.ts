@@ -10,17 +10,24 @@ const FAR = 140;
  * One static model, a camera route with two ends, and nothing else. `assets.lod` cooks a
  * `TN_discrete_lod` chain into `hull.glb`; the engine selects the level; the scenarios read the
  * submitted triangle count at each end of the route.
+ *
+ * The count is published as scene state rather than only read from the renderer, because the
+ * native playtest target carries the state channel and not the browser performance sampler. The
+ * engine swaps `mesh.geometry` before the render, so a frame after a settle reads the selected level.
  */
 export class Lod extends Scene {
-  static override readonly initialState = { camera: "far" };
+  static override readonly initialState = { camera: "far", triangles: 0 };
 
   #loaded = false;
+  readonly #meshes: Mesh[] = [];
 
   override async load(ctx: ICtx): Promise<void> {
     const model = await ctx.assets.model<{ scene: Group }>("hull.glb");
     model.scene.name = "hull";
     model.scene.traverse((object) => {
-      if (object instanceof Mesh) object.name = "hull-mesh";
+      if (!(object instanceof Mesh)) return;
+      object.name = "hull-mesh";
+      this.#meshes.push(object);
     });
     ctx.scene.add(model.scene);
     this.#loaded = true;
@@ -42,8 +49,17 @@ export class Lod extends Scene {
     ctx.scene.add(key);
 
     return (frameCtx) => {
+      let triangles = 0;
+      for (const mesh of this.#meshes) {
+        const drawn = mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position")?.count;
+        triangles += Math.floor((drawn ?? 0) / 3);
+      }
+      frameCtx.state.set({ triangles });
       if (!frameCtx.input.justPressed("toggleNear")) return;
-      camera.position.set(0, 0, NEAR);
+      // Toggle, so a scenario can drive the value and prove the selection follows the camera
+      // rather than reporting a number that never changed.
+      const wasNear = camera.position.z === NEAR;
+      camera.position.set(0, 0, wasNear ? FAR : NEAR);
       camera.lookAt(0, 0, 0);
     };
   }
