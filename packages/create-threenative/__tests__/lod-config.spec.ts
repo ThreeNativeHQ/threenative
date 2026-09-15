@@ -37,6 +37,12 @@ describe("config validation", () => {
     [{ generation: { maxLevels: 9 } }, "assets.lod.generation.maxLevels"],
     [{ generation: { maxLevels: 2.5 } }, "assets.lod.generation.maxLevels"],
     [{ generation: { minTriangles: 0 } }, "assets.lod.generation.minTriangles"],
+    [{ generation: { minTrianglesScope: "world" } }, "assets.lod.generation.minTrianglesScope"],
+    [{ generation: { minSaving: -0.1 } }, "assets.lod.generation.minSaving"],
+    [{ generation: { minSaving: 1 } }, "assets.lod.generation.minSaving"],
+    [{ generation: { errorTargets: [] } }, "assets.lod.generation.errorTargets"],
+    [{ generation: { errorTargets: [0.01, 0.001] } }, "assets.lod.generation.errorTargets"],
+    [{ generation: { errorTargets: [0] } }, "assets.lod.generation.errorTargets"],
     [{ runtime: { maxPixelError: 0 } }, "assets.lod.runtime.maxPixelError"],
     [{ runtime: { maxPixelError: Number.POSITIVE_INFINITY } }, "assets.lod.runtime.maxPixelError"],
     [{ runtime: { hysteresis: 0.5 } }, "assets.lod.runtime.hysteresis"],
@@ -45,6 +51,10 @@ describe("config validation", () => {
     [{ overrides: { "models/hero.glb": { preset: "cinematic" } } }, "assets.lod.overrides"],
     [
       { overrides: { "models/hero.glb": { runtime: { hysteresis: 0.9 } } } },
+      "assets.lod.overrides",
+    ],
+    [
+      { overrides: { "models/hero.glb": { generation: { minSaving: 2 } } } },
       "assets.lod.overrides",
     ],
   ])("fails %j naming its config path", async (lod, namedPath) => {
@@ -81,6 +91,28 @@ describe("the validated config seam", () => {
     );
     await expect(loadConfig(root)).resolves.toMatchObject({
       assets: { lod: { preset: "aggressive", generation: { maxLevels: 6 } } },
+    });
+  });
+
+  it("carries the generation knobs, globally and inside an asset override", async () => {
+    const root = await project();
+    await config(
+      root,
+      'export default { assets: { lod: { generation: { maxLevels: 6, minTriangles: 256, minTrianglesScope: "asset", minSaving: 0.3, errorTargets: [0.005, 0.05] }, overrides: { "models/carrier.glb": { generation: { minTrianglesScope: "primitive" } } } } } };',
+    );
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      assets: {
+        lod: {
+          generation: {
+            maxLevels: 6,
+            minTriangles: 256,
+            minTrianglesScope: "asset",
+            minSaving: 0.3,
+            errorTargets: [0.005, 0.05],
+          },
+          overrides: { "models/carrier.glb": { generation: { minTrianglesScope: "primitive" } } },
+        },
+      },
     });
   });
 

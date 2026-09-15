@@ -14,12 +14,24 @@ export type DiscreteLodSkipReason =
   | "deforming"
   | "disabled"
   | "explicit-legacy-simplify"
+  | "insufficient-reduction"
   | "material-unsupported"
   | "too-small"
   | "unsupported-attributes"
   | "unsupported-topology"
   | "virtual-none"
   | "virtual-owned";
+
+/**
+ * What the `minTriangles` pre-filter is measured against.
+ *
+ * `"primitive"` compares each primitive on its own; `"asset"` compares the whole source asset's
+ * total. The asset total is the evidence-backed default: a carrier can be 347,497 triangles split
+ * over 300 primitives of ~1,200, where an absolute per-primitive floor measures how the artist
+ * happened to split the mesh rather than whether simplification would pay. Whichever is chosen, the
+ * floor is only a cheap pre-filter — the measured saving rule below is the gate.
+ */
+export type LodMinTrianglesScope = "primitive" | "asset";
 
 /** Attribute semantics an index-only chain can share without reconstructing them. */
 const SUPPORTED_ATTRIBUTES: ReadonlySet<string> = new Set([
@@ -46,8 +58,12 @@ export interface IEligibilityFlags {
   readonly legacySimplify: boolean;
   /** `assets.models.virtual` is `"none"` and the new policy did not explicitly override it. */
   readonly legacyVirtualNone: boolean;
-  /** Lower bound on source triangles for a primitive to be worth a chain. */
+  /** Total triangles in the whole source asset, compared against the floor when it scopes to asset. */
+  readonly assetTriangles: number;
+  /** Cheap pre-filter floor in triangles; the measured saving rule, not this, is the real gate. */
   readonly minTriangles: number;
+  /** Whether the floor is measured against this primitive or the whole asset. */
+  readonly minTrianglesScope: LodMinTrianglesScope;
   /** The owning node has a skin. */
   readonly skinned: boolean;
   /** The primitive already carries a virtual-geometry DAG (or the bake will attach one). */
@@ -165,12 +181,15 @@ export function classifyPrimitive(primitive: Primitive, flags: IEligibilityFlags
   if (unsupportedMaterial(primitive.getMaterial()))
     return { eligible: false, reason: "material-unsupported" };
 
-  if (triangleCount(primitive) < flags.minTriangles)
-    return { eligible: false, reason: "too-small" };
+  // Cheap pre-filter only: skip units where the simplifier's fixed per-call cost would dominate
+  // any reduction. Asset scope is the default because an absolute per-primitive floor measures the
+  // artist's mesh split, not whether simplification pays; the measured saving rule is the real gate.
+  const measured =
+    flags.minTrianglesScope === "asset" ? flags.assetTriangles : triangleCount(primitive);
+  if (measured < flags.minTriangles) return { eligible: false, reason: "too-small" };
   if (nonManifold(primitive)) return { eligible: false, reason: "boundary-unsafe" };
   return { eligible: true };
 }
-
 /**
  * Authored LOD detection: a node or mesh whose name carries a level suffix (`hull_LOD1`,
  * `hull-lod2`) is a hand-authored variant, and generating on top of it would stack two owners on

@@ -1992,13 +1992,14 @@
       "constraints": [
         "the chain is baked by the asset cook; there is no runtime generation and no runtime flag",
         "`assets.lod: false` opts out globally and `assets.lod.overrides` per asset, with no runtime controller installed",
-        "only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail"
+        "only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail",
+        "the real gate is measured benefit: a level must save at least `minSaving` (20% default) of its predecessor, and a mesh that cannot is skipped, not forced"
       ],
       "example": "// Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.\nconst hull = await ctx.assets.model(\"hull.glb\");\nctx.scene.add(hull.scene);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [
-        "`assets.lod.runtime.maxPixelError` and `.hysteresis` set the budget and the coarsen band, by project, preset or asset"
+        "`assets.lod.generation.maxLevels`, `.minTriangles`, `.minTrianglesScope`, `.minSaving` and `.errorTargets` move the bake's ceiling, pre-filter, its scope, its saving rule and its error ladder; `assets.lod.runtime.maxPixelError` and `.hysteresis` move the runtime budget and coarsen band; all by project, preset or asset"
       ],
       "package": "@threenative/core",
       "signature": "export function updateModelLods( root: { … }",

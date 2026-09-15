@@ -1611,8 +1611,8 @@ export function updateModelLods( root: { … }
 ```
 
 - **Use when:** draw a vehicle or hull built from many small meshes at distance without its full triangles · stop a distant model from costing its authored mesh count and triangle count · one source model, right detail by default, no hand-authored LOD files
-- **Constraints:** the chain is baked by the asset cook; there is no runtime generation and no runtime flag · `assets.lod: false` opts out globally and `assets.lod.overrides` per asset, with no runtime controller installed · only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail
-- **Overrides:** `assets.lod.runtime.maxPixelError` and `.hysteresis` set the budget and the coarsen band, by project, preset or asset
+- **Constraints:** the chain is baked by the asset cook; there is no runtime generation and no runtime flag · `assets.lod: false` opts out globally and `assets.lod.overrides` per asset, with no runtime controller installed · only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail · the real gate is measured benefit: a level must save at least `minSaving` (20% default) of its predecessor, and a mesh that cannot is skipped, not forced
+- **Overrides:** `assets.lod.generation.maxLevels`, `.minTriangles`, `.minTrianglesScope`, `.minSaving` and `.errorTargets` move the bake's ceiling, pre-filter, its scope, its saving rule and its error ladder; `assets.lod.runtime.maxPixelError` and `.hysteresis` move the runtime budget and coarsen band; all by project, preset or asset
 
 ```ts
 // Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.

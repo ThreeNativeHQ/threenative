@@ -21,6 +21,7 @@ import {
   type IModelLodOptions,
   type IModelLodOverride,
   type IModelLodRuntimeOptions,
+  type LodMinTrianglesScope,
   type LodPreset,
   isLodPreset,
   resolveLodPolicy,
@@ -455,13 +456,27 @@ function lodRow(value: unknown): ILodRow | undefined {
     "generated",
     "levels",
     "maxLevels",
+    "minSaving",
     "minTriangles",
     "skipped",
     "trianglesAfter",
     "trianglesBefore",
   ] as const;
   if (numbers.some((key) => typeof value[key] !== "number")) return undefined;
-  if (typeof value.fingerprint !== "string" || typeof value.preset !== "string") return undefined;
+  if (
+    typeof value.fingerprint !== "string" ||
+    typeof value.preset !== "string" ||
+    typeof value.minTrianglesScope !== "string"
+  ) {
+    return undefined;
+  }
+  const errorTargets = value.errorTargets;
+  if (
+    !Array.isArray(errorTargets) ||
+    errorTargets.some((target) => typeof target !== "number" || !Number.isFinite(target))
+  ) {
+    return undefined;
+  }
   if (!isRecord(value.runtime)) return undefined;
   const runtime = value.runtime;
   if (
@@ -491,11 +506,14 @@ function lodRow(value: unknown): ILodRow | undefined {
   return {
     byteOverhead: value.byteOverhead as number,
     diagnostics,
+    errorTargets: errorTargets as number[],
     fingerprint: value.fingerprint,
     generated: value.generated as number,
     levels: value.levels as number,
     maxLevels: value.maxLevels as number,
+    minSaving: value.minSaving as number,
     minTriangles: value.minTriangles as number,
+    minTrianglesScope: value.minTrianglesScope as string,
     preset: value.preset,
     reasons,
     runtime: { hysteresis: runtime.hysteresis, maxPixelError: runtime.maxPixelError },
@@ -924,8 +942,9 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
   }
   const generation = (value: unknown, label: string): IModelLodOptions["generation"] => {
     if (!isRecord(value)) throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be an object.`);
+    const allowed = ["errorTargets", "maxLevels", "minSaving", "minTriangles", "minTrianglesScope"];
     for (const key of Object.keys(value)) {
-      if (key !== "maxLevels" && key !== "minTriangles") {
+      if (!allowed.includes(key)) {
         throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: ${label}.${key} is not recognised.`);
       }
     }
@@ -947,9 +966,56 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
         `TN_ASSETS_CONFIG_INVALID: ${label}.minTriangles must be a positive integer.`,
       );
     }
+    if (
+      value.minTrianglesScope !== undefined &&
+      value.minTrianglesScope !== "primitive" &&
+      value.minTrianglesScope !== "asset"
+    ) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label}.minTrianglesScope must be "primitive" or "asset".`,
+      );
+    }
+    if (
+      value.minSaving !== undefined &&
+      (typeof value.minSaving !== "number" ||
+        !Number.isFinite(value.minSaving) ||
+        value.minSaving < 0 ||
+        value.minSaving >= 1)
+    ) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label}.minSaving must be a finite number in [0, 1).`,
+      );
+    }
+    if (value.errorTargets !== undefined) {
+      const targets = value.errorTargets;
+      if (!Array.isArray(targets) || targets.length === 0 || targets.length > 16) {
+        throw new Error(
+          `TN_ASSETS_CONFIG_INVALID: ${label}.errorTargets must be 1 to 16 geometric-error targets.`,
+        );
+      }
+      let previous = -1;
+      for (const target of targets) {
+        if (typeof target !== "number" || !Number.isFinite(target) || target <= 0) {
+          throw new Error(
+            `TN_ASSETS_CONFIG_INVALID: ${label}.errorTargets must be positive finite numbers.`,
+          );
+        }
+        if (target <= previous) {
+          throw new Error(
+            `TN_ASSETS_CONFIG_INVALID: ${label}.errorTargets must increase strictly.`,
+          );
+        }
+        previous = target;
+      }
+    }
     return {
+      ...(value.errorTargets === undefined ? {} : { errorTargets: value.errorTargets as number[] }),
       ...(value.maxLevels === undefined ? {} : { maxLevels: value.maxLevels as number }),
+      ...(value.minSaving === undefined ? {} : { minSaving: value.minSaving as number }),
       ...(value.minTriangles === undefined ? {} : { minTriangles: value.minTriangles as number }),
+      ...(value.minTrianglesScope === undefined
+        ? {}
+        : { minTrianglesScope: value.minTrianglesScope as LodMinTrianglesScope }),
     };
   };
   const presetValue = (value: unknown, label: string): LodPreset => {

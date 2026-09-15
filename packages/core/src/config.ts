@@ -180,12 +180,36 @@ export interface IThreeNativeModelsConfig {
 /** Quality policy for automatic discrete LOD; it picks the projected pixel-error budget. */
 export type ThreeNativeLodPreset = "aggressive" | "balanced" | "quality";
 
-/** Generation knobs shared by every preset. Both are ceilings, not promises. */
+/** What the `minTriangles` pre-filter is measured against. */
+export type ThreeNativeLodMinTrianglesScope = "primitive" | "asset";
+
+/** Generation knobs shared by every preset. All are ceilings or filters, not promises. */
 export interface IThreeNativeLodGenerationConfig {
+  /**
+   * Increasing geometric-error targets in normalized mesh-extent units; 1–16 positive finite
+   * numbers that strictly increase. Default `[0.002, 0.006, 0.02, 0.06]`. Each is simplified from
+   * LOD0 independently and a target that cannot reduce is dropped.
+   */
+  readonly errorTargets?: readonly number[];
   /** Levels in the chain **including LOD0**; integer 1–8, default 4. `1` emits nothing derived. */
   readonly maxLevels?: number;
-  /** Per eligible primitive, not per GLB; positive integer, default 5,000. */
+  /**
+   * Fraction of its predecessor's triangles a derived level must save to be kept; finite in
+   * `[0, 1)`, default `0.2`. This is the benefit gate — a mesh that cannot reach it is skipped
+   * with `insufficient-reduction`, which is a normal outcome, not an error.
+   */
+  readonly minSaving?: number;
+  /**
+   * Cheap pre-filter floor in triangles; positive integer, default `128`. It only avoids
+   * clearly-pointless work (the simplifier's fixed per-call cost); `minSaving` is the real gate.
+   */
   readonly minTriangles?: number;
+  /**
+   * What `minTriangles` is measured against; `"primitive"` or `"asset"`, default `"asset"`. The
+   * asset scope measures the whole model, so a model split into many small primitives is still
+   * eligible on its total.
+   */
+  readonly minTrianglesScope?: ThreeNativeLodMinTrianglesScope;
 }
 
 /** Screen-space selection knobs. */

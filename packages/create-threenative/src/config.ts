@@ -11,6 +11,7 @@ import type {
   IThreeNativeLodConfig,
   IThreeNativeLodOverride,
   IThreeNativeTexturesConfig,
+  ThreeNativeLodMinTrianglesScope,
   ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
@@ -27,6 +28,7 @@ export type {
   IThreeNativeLodOverride,
   IThreeNativeLodRuntimeConfig,
   IThreeNativeTexturesConfig,
+  ThreeNativeLodMinTrianglesScope,
   ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
@@ -1237,15 +1239,28 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
 }
 
 const LOD_PRESETS: readonly ThreeNativeLodPreset[] = ["aggressive", "balanced", "quality"];
+const LOD_MIN_TRIANGLES_SCOPES: readonly ThreeNativeLodMinTrianglesScope[] = ["primitive", "asset"];
 const LOD_KEYS: readonly string[] = ["enabled", "generation", "overrides", "preset", "runtime"];
-const LOD_GENERATION_KEYS: readonly string[] = ["maxLevels", "minTriangles"];
+const LOD_GENERATION_KEYS: readonly string[] = [
+  "errorTargets",
+  "maxLevels",
+  "minSaving",
+  "minTriangles",
+  "minTrianglesScope",
+];
 const LOD_RUNTIME_KEYS: readonly string[] = ["hysteresis", "maxPixelError"];
 const LOD_OVERRIDE_KEYS: readonly string[] = ["enabled", "generation", "preset", "runtime"];
 
 function lodGeneration(raw: unknown, label: string): IThreeNativeLodConfig["generation"] {
   const value = assertRecord(raw, label);
   assertKeys(value, label, LOD_GENERATION_KEYS);
-  const generation: { maxLevels?: number; minTriangles?: number } = {};
+  const generation: {
+    errorTargets?: readonly number[];
+    maxLevels?: number;
+    minSaving?: number;
+    minTriangles?: number;
+    minTrianglesScope?: ThreeNativeLodMinTrianglesScope;
+  } = {};
   if (value.maxLevels !== undefined) {
     if (
       !Number.isSafeInteger(value.maxLevels) ||
@@ -1263,6 +1278,49 @@ function lodGeneration(raw: unknown, label: string): IThreeNativeLodConfig["gene
       "TN_CONFIG_ASSETS_INVALID",
       `${label}.minTriangles`,
     );
+  }
+  if (value.minTrianglesScope !== undefined) {
+    if (
+      typeof value.minTrianglesScope !== "string" ||
+      !LOD_MIN_TRIANGLES_SCOPES.includes(value.minTrianglesScope as ThreeNativeLodMinTrianglesScope)
+    ) {
+      fail(
+        "TN_CONFIG_ASSETS_INVALID",
+        `${label}.minTrianglesScope must be one of ${LOD_MIN_TRIANGLES_SCOPES.join(", ")}.`,
+      );
+    }
+    generation.minTrianglesScope = value.minTrianglesScope as ThreeNativeLodMinTrianglesScope;
+  }
+  if (value.minSaving !== undefined) {
+    if (
+      typeof value.minSaving !== "number" ||
+      !Number.isFinite(value.minSaving) ||
+      value.minSaving < 0 ||
+      value.minSaving >= 1
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.minSaving must be a finite number in [0, 1).`);
+    }
+    generation.minSaving = value.minSaving;
+  }
+  if (value.errorTargets !== undefined) {
+    const targets = value.errorTargets;
+    if (!Array.isArray(targets) || targets.length === 0 || targets.length > 16) {
+      fail(
+        "TN_CONFIG_ASSETS_INVALID",
+        `${label}.errorTargets must be 1 to 16 geometric-error targets.`,
+      );
+    }
+    let previous = -1;
+    for (const target of targets) {
+      if (typeof target !== "number" || !Number.isFinite(target) || target <= 0) {
+        fail("TN_CONFIG_ASSETS_INVALID", `${label}.errorTargets must be positive finite numbers.`);
+      }
+      if (target <= previous) {
+        fail("TN_CONFIG_ASSETS_INVALID", `${label}.errorTargets must increase strictly.`);
+      }
+      previous = target;
+    }
+    generation.errorTargets = [...targets];
   }
   return generation;
 }

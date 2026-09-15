@@ -11,10 +11,13 @@ import { MeshoptSimplifier } from "meshoptimizer";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
 import {
   type DiscreteLodSkipReason,
+  type LodMinTrianglesScope,
   authoredLodName,
   classifyPrimitive,
   primitiveTriangleCount,
 } from "./eligibility.js";
+
+export type { DiscreteLodSkipReason, LodMinTrianglesScope } from "./eligibility.js";
 import {
   type DiscreteLod,
   type ILodArtifactMetadata,
@@ -26,10 +29,31 @@ import {
 
 /** Generation knobs, shared by every preset (PRD-377 §3.2); both are ceilings, not promises. */
 export interface IModelLodGenerationOptions {
-  /** Levels in the chain including LOD0; integer 1–8. */
+  /**
+   * Versioned increasing geometric-error targets, in normalized mesh-extent units. Each target is
+   * simplified from LOD0 independently; a target that cannot reduce is dropped. Default
+   * {@link LOD_ERROR_TARGETS}.
+   */
+  readonly errorTargets?: readonly number[];
+  /** Levels in the chain including LOD0; integer 1–8. Default {@link DEFAULT_LOD_MAX_LEVELS}. */
   readonly maxLevels?: number;
-  /** Per eligible primitive, not per GLB. */
+  /**
+   * Fraction of its predecessor's triangles a derived level must save to be kept. Default
+   * {@link LOD_MIN_SAVING}. This is the benefit gate: an inability to reach it is a normal skip.
+   */
+  readonly minSaving?: number;
+  /**
+   * Cheap pre-filter floor in triangles. It is not the benefit gate — {@link minSaving} is — and
+   * only skips work where the simplifier's fixed per-call cost would dominate. Default
+   * {@link DEFAULT_LOD_MIN_TRIANGLES}.
+   */
   readonly minTriangles?: number;
+  /**
+   * What {@link minTriangles} is measured against. Default
+   * {@link DEFAULT_LOD_MIN_TRIANGLES_SCOPE}, which floors the whole asset rather than each
+   * primitive, so a model split into many small primitives is still measured by its total.
+   */
+  readonly minTrianglesScope?: LodMinTrianglesScope;
 }
 
 /** Quality policy for automatic LOD; it selects the projected pixel-error budget (PRD-377 §3.2). */
@@ -75,14 +99,37 @@ export const LOD_TOOLCHAIN = "meshoptimizer@1.1.1";
  * Versioned increasing geometric-error targets, normalized to the mesh extent. Error-driven rather
  * than a forced `100/50/20/5` ladder: the simplifier stops at the topology the error allows, and a
  * level that saves less than {@link LOD_MIN_SAVING} is dropped rather than shipped for its own sake.
+ * Overridable through `assets.lod.generation.errorTargets`.
  */
 export const LOD_ERROR_TARGETS: readonly number[] = [0.002, 0.006, 0.02, 0.06];
 
-/** A derived level must save at least this fraction of its predecessor's triangles (PRD-377 §4.3). */
+/**
+ * A derived level must save at least this fraction of its predecessor's triangles (PRD-377 §4.3).
+ * This is the benefit gate the pre-filter only approximates; overridable through
+ * `assets.lod.generation.minSaving`.
+ */
 export const LOD_MIN_SAVING = 0.2;
 
 export const DEFAULT_LOD_MAX_LEVELS = 4;
-export const DEFAULT_LOD_MIN_TRIANGLES = 5_000;
+/**
+ * Cheap pre-filter floor in triangles, not the benefit gate.
+ *
+ * It exists only to avoid the simplifier's fixed per-primitive cost — an attribute pack and one
+ * `simplifyWithAttributes` call per target — on units too small for any reduction to be worth the
+ * chain bookkeeping. At ~64 quads the whole primitive is smaller than the rounding it would pay for;
+ * below that, even a halving of the count is a rounding error against a frame. This is deliberately
+ * low because the measured saving rule, not this, decides what ships.
+ */
+export const DEFAULT_LOD_MIN_TRIANGLES = 128;
+/**
+ * Default floor scope: the whole asset.
+ *
+ * A shipped carrier is 347,497 triangles over ~300 primitives of ~1,200, and a 10-15k aircraft is
+ * ~600 per primitive; an absolute per-primitive floor below 5,000 made the feature inert on exactly
+ * the assets that needed it. Measuring the total is project-agnostic and lets the saving rule reject
+ * the primitives where simplification does not pay.
+ */
+export const DEFAULT_LOD_MIN_TRIANGLES_SCOPE: LodMinTrianglesScope = "asset";
 /** Default hysteresis: coarsen only when the cheaper level falls below `(1 - h) * budget`. */
 export const DEFAULT_LOD_HYSTERESIS = 0.15;
 
@@ -135,6 +182,9 @@ export interface IModelLodSummary {
   readonly generated: number;
   readonly maxLevels: number;
   readonly minTriangles: number;
+  readonly minTrianglesScope: LodMinTrianglesScope;
+  readonly minSaving: number;
+  readonly errorTargets: readonly number[];
   /** Max derived levels on any one primitive. */
   readonly levels: number;
   /** The quality policy the resolver chose; the runtime budget follows from it. */
@@ -168,7 +218,13 @@ export interface IResolvedLodPolicy {
   readonly enabled: boolean;
   /** Generation and runtime are separate cache identities (PRD-377 §3.2, §5). */
   readonly fingerprint: { readonly generation: string; readonly runtime: string };
-  readonly generation: { readonly maxLevels: number; readonly minTriangles: number };
+  readonly generation: {
+    readonly errorTargets: readonly number[];
+    readonly maxLevels: number;
+    readonly minSaving: number;
+    readonly minTriangles: number;
+    readonly minTrianglesScope: LodMinTrianglesScope;
+  };
   readonly preset: LodPreset;
   readonly reasons: readonly DiscreteLodSkipReason[];
   readonly runtime: { readonly hysteresis: number; readonly maxPixelError: number };
@@ -194,25 +250,36 @@ export function resolveLodPolicy(
   const globalOff = lod === false || lod === "none" || project?.enabled === false;
 
   const preset = assetBlock?.preset ?? project?.preset ?? "balanced";
-  const generation = {
+  const generation: {
+    errorTargets: readonly number[];
+    maxLevels: number;
+    minSaving: number;
+    minTriangles: number;
+    minTrianglesScope: LodMinTrianglesScope;
+  } = {
+    errorTargets: [...LOD_ERROR_TARGETS],
     maxLevels: DEFAULT_LOD_MAX_LEVELS,
+    minSaving: LOD_MIN_SAVING,
     minTriangles: DEFAULT_LOD_MIN_TRIANGLES,
+    minTrianglesScope: DEFAULT_LOD_MIN_TRIANGLES_SCOPE,
   };
   const runtime = {
     hysteresis: DEFAULT_LOD_HYSTERESIS,
     maxPixelError: presetPixelError(preset),
   };
-  if (project?.generation?.maxLevels !== undefined)
-    generation.maxLevels = project.generation.maxLevels;
-  if (project?.generation?.minTriangles !== undefined)
-    generation.minTriangles = project.generation.minTriangles;
+  // Project first, then the asset override, so an asset moves only the fields it names and every
+  // knob is reachable globally and per asset (PRD-377 §3.2).
+  for (const block of [project?.generation, assetBlock?.generation]) {
+    if (block?.errorTargets !== undefined) generation.errorTargets = [...block.errorTargets];
+    if (block?.maxLevels !== undefined) generation.maxLevels = block.maxLevels;
+    if (block?.minSaving !== undefined) generation.minSaving = block.minSaving;
+    if (block?.minTriangles !== undefined) generation.minTriangles = block.minTriangles;
+    if (block?.minTrianglesScope !== undefined)
+      generation.minTrianglesScope = block.minTrianglesScope;
+  }
   if (project?.runtime?.maxPixelError !== undefined)
     runtime.maxPixelError = project.runtime.maxPixelError;
   if (project?.runtime?.hysteresis !== undefined) runtime.hysteresis = project.runtime.hysteresis;
-  if (assetBlock?.generation?.maxLevels !== undefined)
-    generation.maxLevels = assetBlock.generation.maxLevels;
-  if (assetBlock?.generation?.minTriangles !== undefined)
-    generation.minTriangles = assetBlock.generation.minTriangles;
   if (assetBlock?.runtime?.maxPixelError !== undefined)
     runtime.maxPixelError = assetBlock.runtime.maxPixelError;
   if (assetBlock?.runtime?.hysteresis !== undefined)
@@ -266,8 +333,11 @@ export function resolveLodPolicy(
   const generationFingerprint = lodFingerprint({
     algorithm: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
     enabled,
+    errorTargets: generation.errorTargets,
     maxLevels: generation.maxLevels,
+    minSaving: generation.minSaving,
     minTriangles: generation.minTriangles,
+    minTrianglesScope: generation.minTrianglesScope,
     schema: LOD_ARTIFACT_SCHEMA_VERSION,
     toolchain: LOD_TOOLCHAIN,
   });
@@ -320,15 +390,17 @@ export interface ILodLevelCandidate {
 
 /**
  * Applies PRD-377 §4.3's rejection rules to candidates ordered by increasing error: a level must
- * reduce triangles, must save at least {@link LOD_MIN_SAVING} of its predecessor, and its error
- * must be no lower than the last kept level's. A candidate that does not reduce is skipped rather
- * than ending the ladder, because each candidate was derived from LOD0 independently. A zero-error
- * level is kept explicitly when it still removes work under the recorded metric.
+ * reduce triangles, must save at least `minSaving` of its predecessor, and its error must be no
+ * lower than the last kept level's. `minSaving` defaults to {@link LOD_MIN_SAVING} and is the real
+ * benefit gate — an inability to reach it is a normal skip, not a failure. A candidate that does not
+ * reduce is skipped rather than ending the ladder, because each candidate was derived from LOD0
+ * independently. A zero-error level is kept explicitly when it still removes work under the metric.
  */
 export function selectDiscreteLevels(
   candidates: readonly ILodLevelCandidate[],
   maxLevels: number,
   referenceTriangles: number,
+  minSaving: number = LOD_MIN_SAVING,
 ): readonly ILodLevelCandidate[] {
   const kept: ILodLevelCandidate[] = [];
   let previousTriangles = referenceTriangles;
@@ -337,7 +409,7 @@ export function selectDiscreteLevels(
     if (kept.length >= Math.max(0, maxLevels - 1)) break;
     if (candidate.triangles <= 0 || candidate.triangles >= previousTriangles) continue;
     const saving = (previousTriangles - candidate.triangles) / previousTriangles;
-    if (saving < LOD_MIN_SAVING) continue;
+    if (saving < minSaving) continue;
     if (candidate.error < previousError) continue;
     kept.push(candidate);
     previousTriangles = candidate.triangles;
@@ -429,11 +501,14 @@ interface IGeneratedChain {
 /**
  * Every level is derived from the same LOD0 reference — never from the previous level — so the
  * reported error is relative to the authored geometry and a change to one target cannot disturb
- * another level's error budget (PRD-377 §4.3).
+ * another level's error budget (PRD-377 §4.3). Targets and the saving rule come from the resolved
+ * policy; neither is a module constant the game cannot move.
  */
 async function generateChain(
   primitive: Primitive,
   maxLevels: number,
+  errorTargets: readonly number[],
+  minSaving: number,
 ): Promise<IGeneratedChain | null> {
   const position = primitive.getAttribute("POSITION");
   if (position === null) return null;
@@ -447,7 +522,7 @@ async function generateChain(
   const attributes = packAttributes(primitive, vertexCount);
 
   const candidates: { error: number; indices: Uint32Array; triangles: number }[] = [];
-  for (const targetError of LOD_ERROR_TARGETS) {
+  for (const targetError of errorTargets) {
     // target_index_count 3 is the smallest triangle list; the error target is the binding
     // constraint, which is what makes this an error-driven chain rather than a ratio ladder.
     const [simplified, error] = MeshoptSimplifier.simplifyWithAttributes(
@@ -468,7 +543,7 @@ async function generateChain(
       triangles: Math.floor(simplified.length / 3),
     });
   }
-  const kept = selectDiscreteLevels(candidates, maxLevels, lod0Triangles);
+  const kept = selectDiscreteLevels(candidates, maxLevels, lod0Triangles, minSaving);
   if (kept.length === 0) return null;
   const keptSet = new Set(kept);
   const chain = candidates.filter((candidate) => keptSet.has(candidate));
@@ -523,11 +598,14 @@ function emptySummary(policy: IResolvedLodPolicy, generatedSeconds: number): IMo
     byteOverhead: 0,
     diagnostics: [...policy.diagnostics],
     enabled: policy.enabled,
+    errorTargets: [...policy.generation.errorTargets],
     fingerprint: policy.fingerprint.generation,
     generated: 0,
     levels: 0,
     maxLevels: policy.generation.maxLevels,
+    minSaving: policy.generation.minSaving,
     minTriangles: policy.generation.minTriangles,
+    minTrianglesScope: policy.generation.minTrianglesScope,
     preset: policy.preset,
     primitives: [],
     reasons: [...policy.reasons],
@@ -563,6 +641,13 @@ export async function generateDiscreteLod(
   await MeshoptSimplifier.ready;
 
   const flags = meshFlags(document);
+  // The whole-asset total, computed once: the default floor scope compares every primitive against
+  // it so a model split into many small primitives is measured by the asset, not the split.
+  const assetTriangles = document
+    .getRoot()
+    .listMeshes()
+    .flatMap((mesh) => mesh.listPrimitives())
+    .reduce((total, primitive) => total + primitiveTriangleCount(primitive), 0);
   let extension: TNDiscreteLod | null = null;
   const primitives: IModelLodPrimitiveSummary[] = [];
   const skipped: IModelLodSkipSummary[] = [];
@@ -577,10 +662,12 @@ export async function generateDiscreteLod(
     for (const [primitiveIndex, primitive] of mesh.listPrimitives().entries()) {
       const eligibility = classifyPrimitive(primitive, {
         alreadyCooked: primitive.getExtension(TN_DISCRETE_LOD) !== null,
+        assetTriangles,
         authoredLod: meshState.authoredLod,
         legacySimplify: legacy.simplify === true,
         legacyVirtualNone: false,
         minTriangles: policy.generation.minTriangles,
+        minTrianglesScope: policy.generation.minTrianglesScope,
         skinned: meshState.skinned,
         virtualOwned: primitive.getExtension(TN_VIRTUAL_GEOMETRY) !== null,
       });
@@ -592,10 +679,21 @@ export async function generateDiscreteLod(
       }
       const before = primitiveTriangleCount(primitive);
       trianglesBefore += before;
-      const chain = await generateChain(primitive, policy.generation.maxLevels);
+      const chain = await generateChain(
+        primitive,
+        policy.generation.maxLevels,
+        policy.generation.errorTargets,
+        policy.generation.minSaving,
+      );
       if (chain === null) {
-        reasons.add("too-small");
-        skipped.push({ mesh: mesh.getName(), primitive: primitiveIndex, reason: "too-small" });
+        // The simplifier could not reach the configured saving at any target: a normal skip, not a
+        // failure, and named distinctly from the cheap pre-filter's `too-small`.
+        reasons.add("insufficient-reduction");
+        skipped.push({
+          mesh: mesh.getName(),
+          primitive: primitiveIndex,
+          reason: "insufficient-reduction",
+        });
         trianglesAfter += before;
         continue;
       }
@@ -633,11 +731,14 @@ export async function generateDiscreteLod(
     byteOverhead,
     diagnostics: [...policy.diagnostics],
     enabled: true,
+    errorTargets: [...policy.generation.errorTargets],
     fingerprint,
     generated: primitives.length,
     levels,
     maxLevels: policy.generation.maxLevels,
+    minSaving: policy.generation.minSaving,
     minTriangles: policy.generation.minTriangles,
+    minTrianglesScope: policy.generation.minTrianglesScope,
     preset: policy.preset,
     primitives,
     reasons: [...reasons],

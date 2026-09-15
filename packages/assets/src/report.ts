@@ -85,11 +85,17 @@ export interface ILodRow {
   readonly byteOverhead: number;
   /** Migration/legacy notes the resolver raised, by code. */
   readonly diagnostics: readonly string[];
+  /** The resolved increasing geometric-error targets, as the bake consumed them. */
+  readonly errorTargets: readonly number[];
   readonly fingerprint: string;
   readonly generated: number;
   readonly levels: number;
   readonly maxLevels: number;
+  /** Fraction of its predecessor's triangles a derived level had to save. */
+  readonly minSaving: number;
   readonly minTriangles: number;
+  /** What `minTriangles` measured against: `"primitive"` or `"asset"`. */
+  readonly minTrianglesScope: string;
   readonly preset: string;
   readonly reasons: readonly string[];
   /** The runtime selection budget this asset ships with; the loader reads it from the manifest. */

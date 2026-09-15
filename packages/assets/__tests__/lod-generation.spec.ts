@@ -10,9 +10,11 @@ import { compileAssets } from "../src/index.js";
 import { authoredLodName } from "../src/lod/eligibility.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
 import {
+  DEFAULT_LOD_MIN_TRIANGLES,
   type IModelLodOptions,
   type IModelLodSummary,
   LOD_ERROR_TARGETS,
+  LOD_MIN_SAVING,
   resolveLodPolicy,
   selectDiscreteLevels,
 } from "../src/lod/generate.js";
@@ -100,9 +102,59 @@ async function mediumGlb(options: Parameters<typeof torusGlb>[2] = {}): Promise<
   return torusGlb(256, 16, options);
 }
 
-/** 512 triangles: under the default floor, so a chain here could only come from config. */
+/** 512 triangles: under the old per-primitive floor, so a chain here could only come from config. */
 async function smallGlb(options: Parameters<typeof torusGlb>[2] = {}): Promise<Buffer> {
   return torusGlb(32, 8, options);
+}
+
+/** 32 triangles: below the new pre-filter floor as an asset, so it is skipped before any work. */
+async function tinyGlb(options: Parameters<typeof torusGlb>[2] = {}): Promise<Buffer> {
+  return torusGlb(4, 4, options);
+}
+
+/**
+ * A shape like a shipped carrier: many primitives, each well under an absolute per-primitive
+ * triangle floor, whose asset total is large. This is the case PRD-377's fixed per-primitive
+ * `minTriangles: 5000` could never help — 8 primitives x 1,536 triangles = 12,288 total, every
+ * primitive skipped. The floor's scope is what this fixture pins.
+ */
+async function carrierGlb(primitives: number, tubular = 96, radial = 8): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const mesh = document.createMesh("carrier");
+  const material = document.createMaterial("hull");
+  for (let index = 0; index < primitives; index += 1) {
+    const geometry = new TorusKnotGeometry(1, 0.35, tubular, radial);
+    mesh.addPrimitive(
+      document
+        .createPrimitive()
+        .setAttribute(
+          "POSITION",
+          accessor(
+            document,
+            buffer,
+            "VEC3",
+            Float32Array.from(geometry.attributes.position?.array ?? []),
+          ),
+        )
+        .setAttribute(
+          "NORMAL",
+          accessor(
+            document,
+            buffer,
+            "VEC3",
+            Float32Array.from(geometry.attributes.normal?.array ?? []),
+          ),
+        )
+        .setIndices(
+          accessor(document, buffer, "SCALAR", Uint32Array.from(geometry.index?.array ?? [])),
+        )
+        .setMaterial(material),
+    );
+  }
+  scene.addChild(document.createNode("carrier").setMesh(mesh));
+  return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
 }
 
 /** A raw primitive with explicit indices, for topology and boundary fixtures. */
@@ -152,8 +204,9 @@ async function readGeneric(root: Buffer): Promise<Document> {
 async function cook(
   input: Buffer,
   options: Parameters<typeof modelPass>[0],
+  logicalPath = "hull.glb",
 ): Promise<IModelLodSummary> {
-  const result = await modelPass(options).apply(input, "hull.glb");
+  const result = await modelPass(options).apply(input, logicalPath);
   if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
   if (result.entry?.lod === undefined) throw new Error("the pass produced no lod summary");
   return result.entry.lod as IModelLodSummary;
@@ -221,6 +274,96 @@ describe("automatic discrete LOD generation", () => {
     expect(summary.generated).toBe(0);
     expect(summary.reasons).toContain("too-small");
   }, 60_000);
+
+  it("generates levels for a many-small-primitive asset whose total is large", async () => {
+    // The Midway shape: 8 primitives of 1,536 triangles each. Every primitive is far under a
+    // 5,000-triangle floor, but the asset is 12,288 triangles. The old per-primitive floor
+    // produced nothing here; the benefit test now decides, primitive by primitive.
+    const summary = await cook(await carrierGlb(8), {
+      lod: { generation: { maxLevels: 4 } },
+      virtual: "none",
+    });
+    expect(summary.generated).toBeGreaterThan(0);
+    expect(summary.reasons).not.toContain("too-small");
+    expect(summary.trianglesAfter).toBeLessThan(summary.trianglesBefore);
+  }, 120_000);
+
+  it("still skips a genuinely tiny asset, with its reason", async () => {
+    const summary = await cook(await tinyGlb(), {
+      lod: { generation: { maxLevels: 4 } },
+      virtual: "none",
+    });
+    expect(summary.generated).toBe(0);
+    expect(summary.reasons).toContain("too-small");
+  }, 60_000);
+
+  it("measures the floor against the asset by default and against a primitive when asked", async () => {
+    // Scope is the switch: the same floor passes the 12,288-triangle asset as a whole and fails
+    // every 1,536-triangle primitive.
+    const asset = await cook(await carrierGlb(8), {
+      lod: { generation: { maxLevels: 4, minTriangles: 5_000, minTrianglesScope: "asset" } },
+      virtual: "none",
+    });
+    expect(asset.generated).toBeGreaterThan(0);
+
+    const primitive = await cook(await carrierGlb(8), {
+      lod: { generation: { maxLevels: 4, minTriangles: 5_000, minTrianglesScope: "primitive" } },
+      virtual: "none",
+    });
+    expect(primitive.generated).toBe(0);
+    expect(primitive.reasons).toContain("too-small");
+  }, 180_000);
+
+  it("moves the floor scope for one asset through the per-asset override map", async () => {
+    const summary = await cook(
+      await carrierGlb(8),
+      {
+        lod: {
+          generation: { maxLevels: 4, minTriangles: 5_000, minTrianglesScope: "primitive" },
+          overrides: { "carrier.glb": { generation: { minTrianglesScope: "asset" } } },
+        },
+        virtual: "none",
+      },
+      "carrier.glb",
+    );
+    expect(summary.generated).toBeGreaterThan(0);
+    expect(summary.minTrianglesScope).toBe("asset");
+  }, 120_000);
+
+  it("drives the simplifier from the configured error targets and saving rule", async () => {
+    const all = await cook(await mediumGlb(), {
+      lod: { generation: { maxLevels: 4 } },
+      virtual: "none",
+    });
+    // One target can only produce one candidate; the full ladder produces more.
+    expect(all.primitives[0]?.levels.length ?? 0).toBeGreaterThan(1);
+
+    const tight = await cook(await mediumGlb(), {
+      lod: { generation: { maxLevels: 4, errorTargets: [0.02] } },
+      virtual: "none",
+    });
+    const loose = await cook(await mediumGlb(), {
+      lod: { generation: { maxLevels: 4, errorTargets: [0.06] } },
+      virtual: "none",
+    });
+    expect(tight.primitives[0]?.levels).toHaveLength(1);
+    expect(loose.primitives[0]?.levels).toHaveLength(1);
+    // A looser error target must buy more reduction and report a larger error.
+    expect(loose.primitives[0]?.levels[0]?.triangles ?? 0).toBeLessThanOrEqual(
+      tight.primitives[0]?.levels[0]?.triangles ?? 0,
+    );
+    expect(loose.primitives[0]?.levels[0]?.error ?? 0).toBeGreaterThan(
+      tight.primitives[0]?.levels[0]?.error ?? 0,
+    );
+
+    // A saving rule nothing can satisfy leaves the primitive with no accepted level.
+    const unsatisfiable = await cook(await mediumGlb(), {
+      lod: { generation: { maxLevels: 4, errorTargets: [0.06], minSaving: 0.99 } },
+      virtual: "none",
+    });
+    expect(unsatisfiable.generated).toBe(0);
+    expect(unsatisfiable.reasons).toContain("insufficient-reduction");
+  }, 240_000);
 
   it("does not generate when the policy is off", async () => {
     const summary = await cook(await mediumGlb(), { lod: { enabled: false }, virtual: "none" });
@@ -390,6 +533,22 @@ describe("discrete LOD artifact rules", () => {
     expect(kept.map((level) => level.triangles)).toEqual([700, 500]);
   });
 
+  it("honours a configured saving rule instead of the built-in 20%", () => {
+    const candidates = [
+      { error: 0.01, triangles: 700 },
+      { error: 0.02, triangles: 640 },
+      { error: 0.05, triangles: 500 },
+    ];
+    // Default 20%: 700 saves 30%, then 500 saves 28.5% off 700.
+    expect(selectDiscreteLevels(candidates, 4, 1_000).map((level) => level.triangles)).toEqual([
+      700, 500,
+    ]);
+    // A 50% rule drops both partial reductions and keeps only the level that halves the count.
+    expect(selectDiscreteLevels(candidates, 4, 1_000, 0.5).map((level) => level.triangles)).toEqual(
+      [500],
+    );
+  });
+
   it("honours maxLevels as a ceiling, not a promise", () => {
     const kept = selectDiscreteLevels(
       [
@@ -421,6 +580,69 @@ describe("discrete LOD artifact rules", () => {
       enabled: false,
       reasons: ["disabled"],
     });
+  });
+
+  it("defaults every generation knob and lets project and asset move each one", () => {
+    const base = resolveLodPolicy(undefined, "carrier.glb");
+    expect(base.generation).toEqual({
+      errorTargets: LOD_ERROR_TARGETS,
+      maxLevels: 4,
+      minSaving: LOD_MIN_SAVING,
+      minTriangles: DEFAULT_LOD_MIN_TRIANGLES,
+      minTrianglesScope: "asset",
+    });
+    // The default floors the asset, not the primitive: the case that made the old gate inert.
+    expect(resolveLodPolicy({}, "carrier.glb").generation.minTrianglesScope).toBe("asset");
+
+    const project = resolveLodPolicy(
+      {
+        generation: {
+          errorTargets: [0.01, 0.1],
+          maxLevels: 6,
+          minSaving: 0.35,
+          minTriangles: 4_000,
+          minTrianglesScope: "primitive",
+        },
+      },
+      "carrier.glb",
+    );
+    expect(project.generation).toEqual({
+      errorTargets: [0.01, 0.1],
+      maxLevels: 6,
+      minSaving: 0.35,
+      minTriangles: 4_000,
+      minTrianglesScope: "primitive",
+    });
+
+    // A per-asset override moves one nested field without replacing the rest of the block.
+    const asset = resolveLodPolicy(
+      {
+        generation: { maxLevels: 6, minTriangles: 4_000, minTrianglesScope: "primitive" },
+        overrides: {
+          "carrier.glb": { generation: { minSaving: 0.5, minTrianglesScope: "asset" } },
+        },
+      },
+      "carrier.glb",
+    );
+    expect(asset.generation).toEqual({
+      errorTargets: LOD_ERROR_TARGETS,
+      maxLevels: 6,
+      minSaving: 0.5,
+      minTriangles: 4_000,
+      minTrianglesScope: "asset",
+    });
+
+    // Every one of the new knobs is part of the generation cache identity.
+    for (const generation of [
+      { minSaving: 0.3 },
+      { minTrianglesScope: "primitive" as const },
+      { errorTargets: [0.02] },
+      { minTriangles: 64 },
+    ]) {
+      expect(resolveLodPolicy({ generation }, "carrier.glb").fingerprint.generation).not.toBe(
+        base.fingerprint.generation,
+      );
+    }
   });
 
   it("keeps the runtime budget out of the generation fingerprint", () => {

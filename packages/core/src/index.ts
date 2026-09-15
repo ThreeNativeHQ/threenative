@@ -127,6 +127,7 @@ export type {
   IThreeNativeLodRuntimeConfig,
   IThreeNativeTexturesConfig,
   ThreeNativeBackgroundMode,
+  ThreeNativeLodMinTrianglesScope,
   ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
@@ -346,7 +347,8 @@ export type { IClusteredMeshOptions, IClusterTable } from "./clustered-mesh.js";
  * @constraint the chain is baked by the asset cook; there is no runtime generation and no runtime flag
  * @constraint `assets.lod: false` opts out globally and `assets.lod.overrides` per asset, with no runtime controller installed
  * @constraint only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail
- * @override `assets.lod.runtime.maxPixelError` and `.hysteresis` set the budget and the coarsen band, by project, preset or asset
+ * @constraint the real gate is measured benefit: a level must save at least `minSaving` (20% default) of its predecessor, and a mesh that cannot is skipped, not forced
+ * @override `assets.lod.generation.maxLevels`, `.minTriangles`, `.minTrianglesScope`, `.minSaving` and `.errorTargets` move the bake's ceiling, pre-filter, its scope, its saving rule and its error ladder; `assets.lod.runtime.maxPixelError` and `.hysteresis` move the runtime budget and coarsen band; all by project, preset or asset
  * @example
  * // Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.
  * const hull = await ctx.assets.model("hull.glb");

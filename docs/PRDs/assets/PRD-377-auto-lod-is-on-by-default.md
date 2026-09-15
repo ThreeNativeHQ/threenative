@@ -66,7 +66,10 @@ assets: {
     preset: 'balanced',
     generation: {
       maxLevels: 4,
-      minTriangles: 5_000,
+      minTriangles: 128,
+      minTrianglesScope: 'asset',
+      minSaving: 0.2,
+      errorTargets: [0.002, 0.006, 0.02, 0.06],
     },
     runtime: {
       maxPixelError: 1,
@@ -90,13 +93,16 @@ Keep overrides in this same config. V1 accepts exact canonical project-relative 
 | --- | --- |
 | `preset` | `quality`, `balanced`, or `aggressive`; default `balanced`. |
 | `generation.maxLevels` | Default 4 **including LOD0**, integer 1–8; applies to discrete LOD, not the existing cluster DAG's depth. `1` emits no derived discrete levels. |
-| `generation.minTriangles` | Default 5,000 per eligible primitive, not per entire GLB; positive integer. Eligibility and measured benefit may still cause a skip. |
-| `runtime.maxPixelError` | Positive finite projected geometric-error budget in actual raster pixels. Initial preset defaults: quality 0.5, balanced 1.0, aggressive 2.0. These are policy starting points, not measured guarantees. |
+| `generation.minTriangles` | Default **128** (was 5,000 — see §4.3), a cheap pre-filter only, measured against `generation.minTrianglesScope`; positive integer. It avoids clearly-pointless work; the measured benefit rule in §4.3 is the gate, so eligibility may still cause a skip. |
+| `generation.minTrianglesScope` | `"primitive"` or `"asset"`, default `"asset"`. `"asset"` measures the whole source model's triangle total, so a model split into many small primitives still clears the pre-filter on its total; `"primitive"` keeps the old per-primitive meaning. |
+| `generation.minSaving` | Fraction in `[0, 1)`, default `0.2`. A derived level must save at least this much of its predecessor's triangles to be kept. This is the primary gate: an inability to reach it is a normal skip with reason `insufficient-reduction`. |
+| `generation.errorTargets` | 1–16 strictly increasing positive finite geometric-error targets in normalized mesh-extent units, default `[0.002, 0.006, 0.02, 0.06]`. Each is simplified from LOD0 independently. |
+| `runtime.maxPixelError` | Positive finite projected geometric-error budget in actual raster pixels. Initial preset defaults: quality 0.5, balanced 1.0, aggressive 2.0. These are policy starting points, not measured guarantees, and an explicit value overrides the preset at project or asset level. |
 | `runtime.hysteresis` | Default 0.15, finite value in `[0, 0.5)`; stabilizes coarsening without postponing required refinement. |
 
 Resolve the effective preset from asset override, then project, then default. Expand its defaults once; overlay explicit project fields, then explicit asset fields. Overrides are partial, not replacements for whole nested objects. A global `false` is absolute and cannot be re-enabled by a per-asset override; an asset `false` always disables automatic work for that asset. Validate the resolved policy before any bake. Unknown fields, non-finite numbers, invalid enums, and out-of-range values name their config path and fail instead of silently falling back.
 
-V1 presets primarily set the screen-error budget; generation defaults above are shared. Do not expose arbitrary percentage ladders or invent hidden, unmeasured preset differences. Explicit numeric settings win over preset defaults. Generation and runtime settings have separate cache fingerprints: changing only pixel budget/hysteresis refreshes runtime metadata/config, not geometry generation.
+V1 presets primarily set the screen-error budget; generation defaults above are shared. Every generation knob above is reachable both project-wide and per asset through `overrides`; no threshold the document names may remain a constant a game cannot move. Do not expose arbitrary percentage ladders or invent hidden, unmeasured preset differences. Explicit numeric settings win over preset defaults. Generation and runtime settings have separate cache fingerprints: changing only pixel budget/hysteresis refreshes runtime metadata/config, not geometry generation; changing any generation knob (including scope, saving rule or error targets) is part of the generation fingerprint and invalidates the baked geometry.
 
 ### 3.3 Existing settings and cook boundaries
 
@@ -126,7 +132,13 @@ For newly cooked dense inputs, compare the incumbent clustered strategy against 
 
 Use the already available meshoptimizer/glTF Transform integration, not a new simplifier dependency. Derive each discrete level from the same LOD0 reference, or conservatively accumulate and validate error if using a successive chain. Store actual achieved counts and actual error relative to that reference. Preserve an unsimplified LOD0 relative to the existing non-AutoLOD cook result; never overwrite the authored GLB.
 
-Choose versioned increasing geometric-error targets and stop when simplification stalls, quality checks fail, or the level/storage budget is reached. Do not force `100% / 50% / 20% / 5%`. Initially reject a derived level saving less than 20% of its predecessor's triangles. `maxLevels` is a ceiling, not a promise to create redundant geometry. Drop rejected levels and maintain monotonic usable error/count ordering, including an explicitly handled zero-error level.
+Choose versioned increasing geometric-error targets (configurable through `generation.errorTargets`) and stop when simplification stalls, quality checks fail, or the level/storage budget is reached. Do not force `100% / 50% / 20% / 5%`. **The primary gate is measured benefit**: reject a derived level saving less than `generation.minSaving` (default 20%) of its predecessor's triangles, and treat an inability to reach it as a normal skip with reason `insufficient-reduction`, never a mandate to force a ratio. `generation.minTriangles` is only a cheap pre-filter — default **128**, measured against the whole asset (`generation.minTrianglesScope: 'asset'`) — that avoids the simplifier's fixed per-primitive cost on units too small for any reduction to matter. `maxLevels` is a ceiling, not a promise to create redundant geometry. Drop rejected levels and maintain monotonic usable error/count ordering, including an explicitly handled zero-error level.
+
+**The 5,000-triangle per-primitive default was wrong and is gone.** It was measured against a real shipped game (Midway): its three US carriers are 347,497 triangles each but spread over 280–301 meshes (about 1,150–2,700 triangles per primitive), and its aircraft are 10–15k triangles over ~22 meshes (~600 per primitive). Every primitive fell under the floor, so the feature generated **zero** levels, zero derived bytes — it was inert on the one asset that needed it. An absolute per-primitive count measures how the artist split the mesh, not whether simplification would pay. The corrected contract makes the measured saving rule the gate and reduces the floor to a cheap pre-filter whose default scope is the whole asset; a model whose primitives are each small but whose total is large is now exactly the case the pre-filter admits and the saving rule decides, primitive by primitive. The defaults are deliberately project-agnostic: measured with no Midway-specific value, name or special case anywhere in the engine.
+
+### 4.4 What the per-primitive discrete path cannot fix
+
+Recorded honestly so the next person does not rediscover it the hard way: an asset whose cost is **draw count** rather than triangle density is not helped by this path. Midway's carrier is 300 small primitives; the discrete path simplifies each of them independently and the benefit rule may accept many of them, but the 300-node/300-primitive structure — the draw calls and per-mesh CPU cost — is untouched. Collapsing those primitives by material (a join-by-material / HLOD path) is the change that would actually reduce the carrier's cost, and it is deliberately **out of scope here**: §2 excludes HLOD and instancing, this PRD does not join primitives across materials, and doing so safely interacts with object identity, boundaries and authored LOD in ways this contract does not settle. Per-primitive discrete LOD and a join-by-material HLOD are complementary, not substitutes; the follow-on is its own PRD with its own measured benefit gate, not a quiet addition to this one.
 
 Report normalized simplifier error and the scale used to convert it to local-space absolute error. Attribute-weighted error must not be mislabeled as a pure position bound. Include downstream quantization effects in the reported budget or measure against the decoded baseline; do not lose units between the baker and runtime.
 
@@ -208,13 +220,22 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 #### Phase 1 — config and artifact
 
 - [x] Public config validation and per-asset resolution pass the precedence and invalid-input tests.
-      Evidence: validation in `packages/create-threenative/__tests__/lod-config.spec.ts` and resolution
-      in `packages/assets/__tests__/lod-generation.spec.ts` (`resolveLodPolicy`: preset defaults,
-      overlay precedence, absolute kill switch, legacy translation, split fingerprints); 34/34 green;
-      both packages typecheck (exit 0). One resolver owns the decision — the compiler calls
-      `resolveLodPolicy` where the asset is known; the config layer only validates.
+      Evidence: validation in `packages/create-threenative/__tests__/lod-config.spec.ts` (24/24) and
+      resolution in `packages/assets/__tests__/lod-generation.spec.ts` (27/27) — preset defaults,
+      overlay precedence, absolute kill switch, legacy translation, split fingerprints, and every
+      generation knob (`maxLevels`, `minTriangles`, `minTrianglesScope`, `minSaving`, `errorTargets`)
+      honoured globally and per asset. `pnpm typecheck` (exit 0) and the package builds (exit 0)
+      cover both packages. One resolver owns the decision — the compiler calls `resolveLodPolicy`
+      where the asset is known; the config layer only validates.
+- [x] The pre-filter is measured-benefit-driven, not an absolute per-primitive constant.
+      Evidence: the default `minTriangles` moved 5,000 → 128 with `minTrianglesScope: 'asset'` after
+      the Midway census (347,497-triangle carriers over ~300 primitives each), fixing a gate that
+      generated zero levels on the asset that needed it; the measured saving rule
+      (`minSaving`, default 0.2) is now the primary gate and an unreachable level reports
+      `insufficient-reduction` instead of a forced ratio. Proven by the carrier, tiny-asset, scope,
+      error-target and saving-rule tests in `lod-generation.spec.ts`.
 - [x] The normal compiler applies tested eligibility and error-driven generation. Evidence:
-      `packages/assets/__tests__/lod-generation.spec.ts`, 18/18 green;
+      `packages/assets/__tests__/lod-generation.spec.ts`, 27/27 green;
       `modelPass` generates `TN_discrete_lod` via `packages/assets/src/lod/` (meshoptimizer, index-only,
       `LockBorder`), attached after the virtual bake and before quantize.
 - [x] Cooked GLBs pass extension round-trip and baseline-preservation tests. Evidence: same spec —
