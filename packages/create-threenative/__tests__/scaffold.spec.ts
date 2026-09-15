@@ -307,13 +307,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-14 for PRD-382/PRD-384: `RippleField` and `WaveField.heightAt` enter
   // the public capability manifest and the generated reference, and the sailing template
   // documents the ripple patch, so all ten trees move together.
-  // Recomputed again 2026-09-14 for the `ctx.beforeRender` seam: the generated capability manifest
-  // and the reference derived from it each gained the new Situation + example, the shared
-  // `threenative-context` SKILL gained its row, and the starter's AGENTS/CLAUDE gained the seam's
-  // instruction — all bytes embedded in every scaffold, so all ten trees move together on top of
-  // the develop tree the seam rebased onto.
-  "action-rpg": "0480ae92e85c39c4e223f4440bfad8a0fe4d9aae3cbd30440f0436aa73509ea8",
-  defense: "2e7513bc9b9ac8f157c771a14637129eaee6ef1901ad852915f468c4fa3af915",
+  // Recomputed 2026-09-14 for the Midway tooling slice: operation-correct discovery metadata for
+  // the browser/scenario callables and the `withBrowserCapture` export enter the public manifest
+  // and generated reference, which every scaffold embeds, so all ten trees move together.
+  // Recomputed again 2026-09-14 after merging develop's `ctx.beforeRender` seam (its own capability
+  // bytes reach every scaffold) and PRD-382's starter auto-resolution wording; values are from the
+  // merged tree after regeneration.
+  "action-rpg": "3368553ed1d440dd3e68ea0a91955f8adfe2107fcb0a840c821738397782d9b3",
+  defense: "d11716584b57d2fa20b58afa39e2f6ce6b05efddcb9a63686562cff599a7baf2",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -321,17 +322,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "6e830d1d2d97f496b5a5f40cbc4dc572e7daa9efd75256f62396094355ed8129",
-  platformer: "dfb9ef980c0899d9f534161c9cdb34846083f60c2bb27b28f87d84cab19dfb08",
-  runner: "14ae76837a68c543d4e34ae028a43511aee997674b182ee38c7183fb969b2fb9",
-  puzzle: "27a23fcc6b360e8a6aba4a631c928f3adf99b59850b50ad1f4dfb34fab5876fa",
-  racing: "9e8c1cb70d36a23effd5438945ed48791c2c05a6194c939e81931f7c9e1fb8ec",
-  shooter: "c0a4996b4a6c2905e43379333558f0e383fbf0b4c1cd4f25c9861c634a4c9c80",
+  minimal: "8350aa80ec6a998545f280e8aab2bcb78a336709ed767f1c639788a01e5d7966",
+  platformer: "ce54d6a956094f2b0eb5d276a2a931e2b3c15ea15ff3f77e93e4fdb0ee5b025b",
+  runner: "6b17c8050f30d11bd6e8d4e920bee3ebd0e2d4bf56a4fbcd27c83c4617f11c78",
+  puzzle: "a281921ab5d2bad23054745e6ecb95f5d12968d9b5b7ec98ae1c262cb577b50c",
+  racing: "863b124ce09c4229c82040dcfeb5bcfbea577bc8e9f1fabe21b9c8f5bee16474",
+  shooter: "3cd2e95054c66df3b093ba84f854657d2e87583a19f26e95163632cc4f75b589",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "3f6eb4350d75e61cf37bbf32dff70b9fff757c368a52a9170406825a224592ef",
+  // Recomputed 2026-09-14 for the Midway tooling slice merged with PRD-382's starter auto-resolution
+  // wording: the starter carries both the regenerated capability bytes and the develop doc edit.
+  starter: "d1b629f65cc67eda6506b8fccc2a5f6366478e6f7da2f6027c81e2e8ebd7c607",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -357,7 +360,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "d8b97d0405ae576a4efbd60d404a777f94bb68d3ce408c59efc06ddfc5ecb3a5",
+  sailing: "ccb3551c11effbed824af09dc0da95e1f8c2c52d1e979a1a56786d26b0030959",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

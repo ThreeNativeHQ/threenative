@@ -30,3 +30,16 @@ The first that exists wins, so the manifest can never drift from the engine the 
 
 A project copy committed at scaffold time is therefore inert whenever the package is installed:
 the two never need re-syncing by hand.
+
+## The call log
+
+Every tool call appends one JSON line to `.threenative/engine-mcp.log` in the launch directory, so
+a finished session's searches can be read back:
+
+```json
+{"time":"2026-09-14T20:20:00.000Z","results":["MultiMesh3D"],"scope":"mechanic","situation":"spawn many identical props","tool":"engine_search_capabilities","verdict":"matched"}
+```
+
+A rejected call is logged with its `error`, which is where an agent asked for something the engine
+could not answer. `THREENATIVE_ENGINE_MCP_LOG` names another file, or `off` to disable the log. A
+log that cannot be written reports once on stderr and never fails a tool call.

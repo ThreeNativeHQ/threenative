@@ -1,5 +1,7 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleLine } from "../src/index.js";
 
 const manifestFile = path.resolve("packages/create-threenative/capabilities.json");
@@ -9,6 +11,14 @@ function frame(id: unknown, method: string, params?: unknown): string {
 }
 
 describe("threenative-engine-mcp stdio contract", () => {
+  // Every tools/call below would otherwise append to the launch directory's real log.
+  beforeEach(() => {
+    process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
+  });
+  afterEach(() => {
+    process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
+  });
+
   it("answers initialize with the pinned protocol version and server info", () => {
     const response = JSON.parse(handleLine(frame(1, "initialize", {}), manifestFile) ?? "");
     expect(response).toEqual({
@@ -138,5 +148,49 @@ describe("threenative-engine-mcp stdio contract", () => {
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toContain("situation");
+  });
+
+  it("appends one JSON line per tool call, rejections included", () => {
+    const logFile = path.join(mkdtempSync(path.join(tmpdir(), "engine-mcp-log-")), "calls.log");
+    process.env.THREENATIVE_ENGINE_MCP_LOG = logFile;
+    handleLine(
+      frame(1, "tools/call", {
+        arguments: { situation: "spawn many identical props" },
+        name: "engine_search_capabilities",
+      }),
+      manifestFile,
+    );
+    handleLine(
+      frame(2, "tools/call", {
+        arguments: { symbol: "nope" },
+        name: "engine_capability_detail",
+      }),
+      manifestFile,
+    );
+    const lines = readFileSync(logFile, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({
+      situation: "spawn many identical props",
+      tool: "engine_search_capabilities",
+      verdict: "matched",
+    });
+    expect(Array.isArray(lines[0]?.results)).toBe(true);
+    expect(String(lines[1]?.error)).toContain("nope");
+  });
+
+  it("writes nothing when the log is off", () => {
+    const logFile = path.join(mkdtempSync(path.join(tmpdir(), "engine-mcp-log-")), "calls.log");
+    process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
+    handleLine(
+      frame(1, "tools/call", {
+        arguments: { situation: "spawn many identical props" },
+        name: "engine_search_capabilities",
+      }),
+      manifestFile,
+    );
+    expect(() => readFileSync(logFile, "utf8")).toThrow();
   });
 });
