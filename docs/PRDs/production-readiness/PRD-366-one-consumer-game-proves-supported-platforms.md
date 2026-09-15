@@ -4,11 +4,45 @@ prd_contract: v1
 
 # PRD-366 — One installed consumer game proves the supported platform contract
 
-**Status:** PARTIAL — phase 1's scenario, consumer harness step, unit contract and a real browser run are green; a public-registry cohort install still waits on PRD-196. Phase 2's distributed-target row contract, fixtures, registry threading and workflow wiring are green; independent review returned NEEDS CORRECTION because the shared scenario's `noNetworkErrors: true` is refused on native targets, and a real desktop/Android consumer run is unverified (desktop host GBM-blocked, Android prebuilt fetch failed, containers are PRD-365). Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract worked 2026-09-15.
+**Status:** PARTIAL — phase 1's local-tarball browser gameplay proof is recorded below; a public-registry cohort install still waits on PRD-196. Phase 2's cross-target scenario policy was corrected in `d10375e500df5d82cf93fe3487e7d70124f1a157`; the bounded evidence-hardening checkpoint below passes 42 isolated Node regressions, but repository gates, real distributed desktop/Android consumer runs and independent approval remain unverified for this repair. Phase 3 physical Android qualification remains open. Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract and repair worked 2026-09-15.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 lifecycle/proof state, +1 hosted/device integration).
 **Problem:** Isolated engine feature tests and core smoke screenshots do not establish that a developer can build, customize and distribute a playable game using installed packages only.
 
 Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+
+## Phase 2 evidence-hardening checkpoint — 2026-09-15
+
+This bounded three-file checkpoint changes the existing engine consumer verifier, adds
+`packages/runtime-native/tests/starter-consumer-qualification.test.mjs`, and updates this PRD.
+It does not complete the distributed-platform or physical-device qualification phases.
+
+The verifier rejects malformed or contradictory assertion evidence, diagnostics-only reports,
+incomplete process completion, duplicate target rows and substituted scenarios. It invalidates
+old passing rows before reruns, preserves failure logs, binds scenario bytes and checks artifact
+stability across execution. Per-target expected identities allow desktop and Android artifacts
+to have different hashes. Android installs the selected APK, passes its package/activity to the
+installed runner and checks the installed APK hash before and after gameplay.
+
+Fresh verification against `d10375e500df5d82cf93fe3487e7d70124f1a157`: its verifier blob
+`9ac43b2f014189ac56fffb049956bb0d22e1fa94` exactly matches the recovered repair baseline. The same
+42 regressions produced **38 failed / 4 passed** on that source and **42 passed / 0 failed** on
+the repair, using Node 22.16.0 with `node:test`. The test block is the same as the new Vitest file;
+only the unrelated PNG import was isolated, with a stub that throws if used. Runner/ADB results
+were boundary fixtures, including one real subprocess executing a fixture CLI, not a game.
+`node --check` passed for both changed JavaScript files. Uploaded source and test Git blob hashes
+match the tested local files. Existing CLI flags were checked against `packages/playtest/src/runner/config.ts`.
+
+Repository Vitest, typecheck, Biome lint, full tests, budgets, scaffold snapshot and actual
+browser/native/device runs were **not executed** in this sandbox: it has no repository checkout,
+pnpm/Vitest or native toolchain and cannot resolve GitHub/npm for dependency installation. This
+is not an independent reviewer PASS. The historical phase-test counts below are not rerun claims.
+
+The scenario's explicit `noNetworkErrors` field was already removed in `d10375e`: the existing
+target policy retains browser observation and allows reasoned native waivers. This checkpoint
+preserves that newer change. The coupled starter scaffold snapshot still needs verification from
+the complete candidate; no replacement hash is invented. Android workflow staging, real target
+rows, release aggregation, actual desktop session coverage and all phase 3 requirements remain
+open. Phase and acceptance checkboxes are unchanged; this PR must remain draft/PARTIAL.
 
 ## Integration ledger
 
