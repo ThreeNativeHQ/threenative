@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -8,7 +9,10 @@ import type {
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,
+  IThreeNativeLodConfig,
+  IThreeNativeLodOverride,
   IThreeNativeTexturesConfig,
+  ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "@threenative/core";
@@ -19,7 +23,12 @@ export type {
   IThreeNativeAudioOverride,
   IThreeNativeAudioSpectrum,
   IThreeNativeConfig,
+  IThreeNativeLodConfig,
+  IThreeNativeLodGenerationConfig,
+  IThreeNativeLodOverride,
+  IThreeNativeLodRuntimeConfig,
   IThreeNativeTexturesConfig,
+  ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "@threenative/core";
@@ -70,6 +79,8 @@ export interface IResolvedThreeNativeConfig {
     readonly exclude?: readonly string[];
     /** The bound on how many workers a bake may use; absent means the driver's default. */
     readonly concurrency?: number;
+    /** Validated, not yet resolved: per-asset resolution happens where the asset is known. */
+    readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;
@@ -1226,6 +1237,358 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   };
 }
 
+const LOD_PRESETS: readonly ThreeNativeLodPreset[] = ["aggressive", "balanced", "quality"];
+const LOD_KEYS: readonly string[] = ["enabled", "generation", "overrides", "preset", "runtime"];
+const LOD_GENERATION_KEYS: readonly string[] = ["maxLevels", "minTriangles"];
+const LOD_RUNTIME_KEYS: readonly string[] = ["hysteresis", "maxPixelError"];
+const LOD_OVERRIDE_KEYS: readonly string[] = ["enabled", "generation", "preset", "runtime"];
+
+function lodGeneration(raw: unknown, label: string): IThreeNativeLodConfig["generation"] {
+  const value = assertRecord(raw, label);
+  assertKeys(value, label, LOD_GENERATION_KEYS);
+  const generation: { maxLevels?: number; minTriangles?: number } = {};
+  if (value.maxLevels !== undefined) {
+    if (
+      !Number.isSafeInteger(value.maxLevels) ||
+      (value.maxLevels as number) < 1 ||
+      (value.maxLevels as number) > 8
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.maxLevels must be an integer between 1 and 8.`);
+    }
+    generation.maxLevels = value.maxLevels as number;
+  }
+  if (value.minTriangles !== undefined) {
+    generation.minTriangles = positiveInteger(
+      value.minTriangles,
+      1,
+      "TN_CONFIG_ASSETS_INVALID",
+      `${label}.minTriangles`,
+    );
+  }
+  return generation;
+}
+
+function lodRuntime(raw: unknown, label: string): IThreeNativeLodConfig["runtime"] {
+  const value = assertRecord(raw, label);
+  assertKeys(value, label, LOD_RUNTIME_KEYS);
+  const runtime: { hysteresis?: number; maxPixelError?: number } = {};
+  if (value.maxPixelError !== undefined) {
+    if (
+      typeof value.maxPixelError !== "number" ||
+      !Number.isFinite(value.maxPixelError) ||
+      value.maxPixelError <= 0
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.maxPixelError must be a positive finite number.`);
+    }
+    runtime.maxPixelError = value.maxPixelError;
+  }
+  if (value.hysteresis !== undefined) {
+    if (
+      typeof value.hysteresis !== "number" ||
+      !Number.isFinite(value.hysteresis) ||
+      value.hysteresis < 0 ||
+      value.hysteresis >= 0.5
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.hysteresis must be a finite number in [0, 0.5).`);
+    }
+    runtime.hysteresis = value.hysteresis;
+  }
+  return runtime;
+}
+
+function lodPreset(raw: unknown, label: string): ThreeNativeLodPreset {
+  if (typeof raw !== "string" || !LOD_PRESETS.includes(raw as ThreeNativeLodPreset)) {
+    fail("TN_CONFIG_ASSETS_INVALID", `${label} must be one of ${LOD_PRESETS.join(", ")}.`);
+  }
+  return raw as ThreeNativeLodPreset;
+}
+
+function lodOverride(raw: unknown, label: string): boolean | IThreeNativeLodOverride {
+  if (typeof raw === "boolean") return raw;
+  const value = assertRecord(raw, label);
+  assertKeys(value, label, LOD_OVERRIDE_KEYS);
+  return {
+    ...(value.enabled === undefined
+      ? {}
+      : {
+          enabled: booleanValue(
+            value.enabled,
+            true,
+            "TN_CONFIG_ASSETS_INVALID",
+            `${label}.enabled`,
+          ),
+        }),
+    ...(value.generation === undefined
+      ? {}
+      : { generation: lodGeneration(value.generation, `${label}.generation`) }),
+    ...(value.preset === undefined ? {} : { preset: lodPreset(value.preset, `${label}.preset`) }),
+    ...(value.runtime === undefined
+      ? {}
+      : { runtime: lodRuntime(value.runtime, `${label}.runtime`) }),
+  };
+}
+
+/**
+ * Validates and normalizes `assets.lod` without resolving it: resolution is per asset (the
+ * override table is keyed by source asset), so it happens where the asset is known. Unknown
+ * fields, non-finite numbers, invalid enums and out-of-range values name their config path and
+ * throw rather than silently falling back.
+ */
+function validateLod(raw: unknown): boolean | IThreeNativeLodConfig {
+  if (typeof raw === "boolean") return raw;
+  const value = assertRecord(raw, "assets.lod");
+  assertKeys(value, "assets.lod", LOD_KEYS);
+  const overrides: Record<string, boolean | IThreeNativeLodOverride> = {};
+  if (value.overrides !== undefined) {
+    if (!isRecord(value.overrides)) {
+      fail("TN_CONFIG_ASSETS_INVALID", "assets.lod.overrides must be an object.");
+    }
+    for (const [key, entry] of Object.entries(value.overrides)) {
+      if (key.trim() === "") {
+        fail(
+          "TN_CONFIG_ASSETS_INVALID",
+          "assets.lod.overrides keys must be non-empty source asset paths.",
+        );
+      }
+      overrides[key] = lodOverride(entry, `assets.lod.overrides['${key}']`);
+    }
+  }
+  return {
+    ...(value.enabled === undefined
+      ? {}
+      : {
+          enabled: booleanValue(
+            value.enabled,
+            true,
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.lod.enabled",
+          ),
+        }),
+    ...(value.generation === undefined
+      ? {}
+      : { generation: lodGeneration(value.generation, "assets.lod.generation") }),
+    ...(Object.keys(overrides).length === 0 ? {} : { overrides }),
+    ...(value.preset === undefined ? {} : { preset: lodPreset(value.preset, "assets.lod.preset") }),
+    ...(value.runtime === undefined
+      ? {}
+      : { runtime: lodRuntime(value.runtime, "assets.lod.runtime") }),
+  };
+}
+
+function presetPixelError(preset: ThreeNativeLodPreset): number {
+  switch (preset) {
+    case "aggressive":
+      return 2;
+    case "quality":
+      return 0.5;
+    case "balanced":
+      return 1;
+  }
+  return 1;
+}
+/** Bumped when a fingerprint's inputs or meaning change, so no stale entry survives it. */
+const LOD_SCHEMA_VERSION = 1;
+const LOD_DEFAULT_HYSTERESIS = 0.15;
+const LOD_DEFAULT_MAX_LEVELS = 4;
+const LOD_DEFAULT_MIN_TRIANGLES = 5_000;
+
+/** The legacy `assets.models` declarations the new policy is translated from. */
+export interface ILodLegacyDeclaration {
+  /** `assets.models.simplify` is declared. */
+  readonly simplify?: boolean;
+  /** `assets.models.virtual === "none"`. */
+  readonly virtualNone?: boolean;
+}
+
+export interface ILodDiagnostic {
+  readonly code: string;
+  readonly message: string;
+  readonly path: string;
+}
+
+export interface IResolvedLodPolicy {
+  readonly diagnostics: readonly ILodDiagnostic[];
+  readonly enabled: boolean;
+  /** Generation and runtime are separate cache identities; see {@link lodFingerprints}. */
+  readonly fingerprint: { readonly generation: string; readonly runtime: string };
+  readonly generation: { readonly maxLevels: number; readonly minTriangles: number };
+  readonly preset: ThreeNativeLodPreset;
+  /** Stable reasons an asset does no automatic generation: `disabled`, `virtual-none`, `explicit-legacy-simplify`. */
+  readonly reasons: readonly string[];
+  readonly runtime: { readonly hysteresis: number; readonly maxPixelError: number };
+}
+
+function lodBlock(lod: boolean | IThreeNativeLodConfig | undefined): IThreeNativeLodConfig | undefined {
+  return typeof lod === "object" && lod !== null ? lod : undefined;
+}
+
+/** True when the block declares at least one field; `{}` and omission are the same policy. */
+function lodHasExplicitPolicy(
+  lod: boolean | IThreeNativeLodConfig | IThreeNativeLodOverride | undefined,
+): boolean {
+  if (lod === true) return true;
+  if (lod === false || lod === undefined) return false;
+  return (
+    lod.enabled !== undefined ||
+    lod.preset !== undefined ||
+    (lod.generation !== undefined && Object.keys(lod.generation).length > 0) ||
+    (lod.runtime !== undefined && Object.keys(lod.runtime).length > 0) ||
+    ("overrides" in lod &&
+      lod.overrides !== undefined &&
+      Object.keys(lod.overrides).length > 0)
+  );
+}
+
+function lodFingerprint(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
+}
+
+/**
+ * Resolves the effective policy for one asset: asset override, then project, then default;
+ * the chosen preset's defaults expand once, then explicit project fields overlay, then explicit
+ * asset fields. Nested objects overlay field by field, never replace whole objects.
+ *
+ * The global `false` / `{ enabled: false }` is absolute and survives a per-asset `true`. Legacy
+ * declarations translate here rather than running as a parallel path: `models.virtual: "none"`
+ * keeps the asset off unless a new declaration explicitly enables it, and an explicit legacy
+ * `simplify` skips generation with reason `explicit-legacy-simplify`. A new and legacy
+ * declaration for the same asset produces a migration diagnostic, never a silent winner.
+ */
+export function resolveLodPolicy(
+  lod?: boolean | IThreeNativeLodConfig,
+  asset?: string,
+  legacy?: ILodLegacyDeclaration,
+): IResolvedLodPolicy {
+  const project = lodBlock(lod);
+  const override = asset === undefined ? undefined : project?.overrides?.[asset];
+  const assetBlock = typeof override === "object" && override !== null ? override : undefined;
+  const globalOff = lod === false || project?.enabled === false;
+  const preset = assetBlock?.preset ?? project?.preset ?? "balanced";
+  const runtime = {
+    hysteresis: LOD_DEFAULT_HYSTERESIS,
+    maxPixelError: presetPixelError(preset),
+  };
+  const generation = {
+    maxLevels: LOD_DEFAULT_MAX_LEVELS,
+    minTriangles: LOD_DEFAULT_MIN_TRIANGLES,
+  };
+  let enabled = project?.enabled ?? true;
+
+  if (project?.runtime?.maxPixelError !== undefined)
+    runtime.maxPixelError = project.runtime.maxPixelError;
+  if (project?.runtime?.hysteresis !== undefined) runtime.hysteresis = project.runtime.hysteresis;
+  if (project?.generation?.maxLevels !== undefined) generation.maxLevels = project.generation.maxLevels;
+  if (project?.generation?.minTriangles !== undefined)
+    generation.minTriangles = project.generation.minTriangles;
+
+  if (override === false) enabled = false;
+  if (override === true) enabled = true;
+  if (assetBlock?.enabled !== undefined) enabled = assetBlock.enabled;
+  if (assetBlock?.runtime?.maxPixelError !== undefined)
+    runtime.maxPixelError = assetBlock.runtime.maxPixelError;
+  if (assetBlock?.runtime?.hysteresis !== undefined)
+    runtime.hysteresis = assetBlock.runtime.hysteresis;
+  if (assetBlock?.generation?.maxLevels !== undefined)
+    generation.maxLevels = assetBlock.generation.maxLevels;
+  if (assetBlock?.generation?.minTriangles !== undefined)
+    generation.minTriangles = assetBlock.generation.minTriangles;
+
+  // The global kill switch is absolute: nothing above may outlive it.
+  if (globalOff) enabled = false;
+
+  const diagnostics: ILodDiagnostic[] = [];
+  const reasons: string[] = [];
+  if (globalOff) {
+    reasons.push("disabled");
+  } else {
+    const explicitlyEnabled =
+      enabled && (project?.enabled === true || override === true || assetBlock?.enabled === true);
+    const explicitNewPolicy = lodHasExplicitPolicy(lod) || lodHasExplicitPolicy(override);
+    if (legacy?.virtualNone === true) {
+      if (explicitlyEnabled) {
+        diagnostics.push({
+          code: "lod-legacy-virtual-none-conflict",
+          message:
+            'assets.models.virtual is "none" and assets.lod explicitly enables automatic LOD; the explicit declaration wins for this asset.',
+          path: "assets.lod",
+        });
+      } else {
+        enabled = false;
+        reasons.push("virtual-none");
+        if (explicitNewPolicy) {
+          diagnostics.push({
+            code: "lod-legacy-virtual-none-suppressed",
+            message:
+              'assets.models.virtual is "none", so automatic LOD stays off; set assets.lod.enabled=true to override it.',
+            path: "assets.lod",
+          });
+        }
+      }
+    }
+    if (legacy?.simplify === true) {
+      if (explicitlyEnabled) {
+        diagnostics.push({
+          code: "lod-legacy-simplify-conflict",
+          message:
+            "assets.models.simplify is declared and assets.lod explicitly enables automatic LOD; the explicit declaration wins for this asset.",
+          path: "assets.lod",
+        });
+      } else {
+        enabled = false;
+        reasons.push("explicit-legacy-simplify");
+        if (explicitNewPolicy) {
+          diagnostics.push({
+            code: "lod-legacy-simplify-suppressed",
+            message:
+              "assets.models.simplify is declared, so the asset keeps its single-ratio result and automatic generation is skipped; set assets.lod.enabled=true to override it.",
+            path: "assets.lod",
+          });
+        }
+      }
+    }
+  }
+  if (!enabled && reasons.length === 0) reasons.push("disabled");
+
+  return {
+    diagnostics,
+    enabled,
+    fingerprint: lodFingerprints({ enabled, generation, preset, runtime }),
+    generation,
+    preset,
+    reasons,
+    runtime,
+  };
+}
+
+/**
+ * Generation and runtime are separate cache identities: a pixel-budget or hysteresis edit
+ * refreshes runtime metadata only, while a generation edit changes both, because the runtime
+ * metadata points at different geometry.
+ */
+export function lodFingerprints(policy: {
+  readonly enabled: boolean;
+  readonly generation: { readonly maxLevels: number; readonly minTriangles: number };
+  readonly preset: ThreeNativeLodPreset;
+  readonly runtime: { readonly hysteresis: number; readonly maxPixelError: number };
+}): { readonly generation: string; readonly runtime: string } {
+  const generation = lodFingerprint({
+    algorithm: "threenative-discrete-lod",
+    enabled: policy.enabled,
+    maxLevels: policy.generation.maxLevels,
+    minTriangles: policy.generation.minTriangles,
+    schema: LOD_SCHEMA_VERSION,
+  });
+  const runtime = lodFingerprint({
+    enabled: policy.enabled,
+    generation,
+    hysteresis: policy.runtime.hysteresis,
+    maxPixelError: policy.runtime.maxPixelError,
+    preset: policy.preset,
+    schema: LOD_SCHEMA_VERSION,
+  });
+  return { generation, runtime };
+}
+
 function validateBudget(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["budget"] {
   const limit = (value: unknown): value is number | "none" =>
     value === "none" || (typeof value === "number" && Number.isSafeInteger(value) && value > 0);
@@ -1272,6 +1635,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     "budget",
     "exclude",
     "concurrency",
+    "lod",
     "models",
     "source",
     "output",
@@ -1279,6 +1643,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     "textures",
   ]);
   const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
+  const lod = assets.lod === undefined ? undefined : validateLod(assets.lod);
   const models = assets.models === undefined ? undefined : validateModels(assets.models);
   const textures = assets.textures === undefined ? undefined : validateTextures(assets.textures);
   if (
@@ -1312,6 +1677,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
       ? {}
       : { output: nonEmptyString(assets.output, "TN_CONFIG_ASSETS_INVALID", "assets.output") }),
     ...(targets === undefined ? {} : { targets }),
+    ...(lod === undefined ? {} : { lod }),
     ...(models === undefined ? {} : { models }),
     ...(textures === undefined ? {} : { textures }),
   };

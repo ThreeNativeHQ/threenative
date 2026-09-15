@@ -177,6 +177,46 @@ export interface IThreeNativeModelsConfig {
       };
 }
 
+/** Quality policy for automatic discrete LOD; it picks the projected pixel-error budget. */
+export type ThreeNativeLodPreset = "aggressive" | "balanced" | "quality";
+
+/** Generation knobs shared by every preset. Both are ceilings, not promises. */
+export interface IThreeNativeLodGenerationConfig {
+  /** Levels in the chain **including LOD0**; integer 1–8, default 4. `1` emits nothing derived. */
+  readonly maxLevels?: number;
+  /** Per eligible primitive, not per GLB; positive integer, default 5,000. */
+  readonly minTriangles?: number;
+}
+
+/** Screen-space selection knobs. */
+export interface IThreeNativeLodRuntimeConfig {
+  /** Projected geometric-error budget in raster pixels; positive finite. Default by preset. */
+  readonly maxPixelError?: number;
+  /** Fraction in `[0, 0.5)`, default 0.15, that stabilizes coarsening at a boundary. */
+  readonly hysteresis?: number;
+}
+
+/** A partial override for one asset; nested objects overlay, they never replace. */
+export interface IThreeNativeLodOverride {
+  readonly enabled?: boolean;
+  readonly generation?: IThreeNativeLodGenerationConfig;
+  readonly preset?: ThreeNativeLodPreset;
+  readonly runtime?: IThreeNativeLodRuntimeConfig;
+}
+
+/**
+ * Automatic discrete LOD policy. Absent or `{}` resolves to enabled/balanced; `false` and
+ * `{ enabled: false }` are equivalent absolute kill switches that no per-asset override can
+ * re-enable. Overrides are keyed by canonical project-relative source asset (`/` separators).
+ */
+export interface IThreeNativeLodConfig {
+  readonly enabled?: boolean;
+  readonly generation?: IThreeNativeLodGenerationConfig;
+  readonly overrides?: Readonly<Record<string, boolean | IThreeNativeLodOverride>>;
+  readonly preset?: ThreeNativeLodPreset;
+  readonly runtime?: IThreeNativeLodRuntimeConfig;
+}
+
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -237,6 +277,12 @@ export interface IThreeNativeConfig {
         };
     /** Source-relative globs omitted from builds; excluded bytes are still reported. */
     readonly exclude?: readonly string[];
+    /**
+     * Automatic discrete LOD: on by default, `false` or `{ enabled: false }` is the absolute
+     * kill switch, and per-asset overrides key off canonical source asset paths. See
+     * {@link IThreeNativeLodConfig}.
+     */
+    readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;

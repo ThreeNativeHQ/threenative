@@ -10,7 +10,7 @@ A developer authors one GLB and loads it through ThreeNative's normal asset path
 
 This is not a greenfield LOD renderer. The repository already has default-on virtual geometry for sufficiently dense primitives. Extend and reconcile that machinery, adding a conservative discrete-LOD path where it supplies missing value. Exactly one system owns detail selection for a primitive. Preserve the original source, the full-detail fallback, materials, object identity, and gameplay semantics.
 
-**Status:** NOT STARTED — implementation not started; this document does not enable or qualify any feature.
+**Status:** PARTIAL — Phase 0 traced; Phase 1 config contract and offline eligibility/generation/artifact contract landed and tested (Node only). Loader, runtime selection, doctor, hot reload and every Closure Gate are NOT started; no Closure Gate is claimed.
 **Date:** 2026-09-11.
 **Scope:** Asset compilation, configuration, ordinary model loading, and existing render integration.
 **Complexity:** HIGH — default-on lossy processing crosses build, runtime, and platform boundaries.
@@ -195,15 +195,30 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 0 — trace and baseline
 
-- [ ] The current config-to-render caller chain and legacy settings are mapped.
+- [x] The current config-to-render caller chain and legacy settings are mapped. Evidence: the trace is
+      the landed code itself — `packages/create-threenative/src/build.ts:312,458` calls
+      `compileAssets({ config: config.assets })`, the `model` pass (`packages/assets/src/passes/model.ts`)
+      bakes through glTF Transform, and `createAssetLoader` (`packages/core/src/assets.ts:547`) loads
+      through `GLTFLoader` with the `VirtualGeometryPlugin` registered on `TN_virtual_geometry`. Legacy
+      opt-outs inventoried: `assets.models.virtual: "none"` and `assets.models.simplify`.
 - [ ] The representative corpus has reproducible baseline measurements.
+      Blocked: requires a browser/GPU capture (capture lock held) and the owned native host; the
+      counted Midway census (`/tmp/midway-60fps/report-X1.md`) is the only baseline available here.
 
 #### Phase 1 — config and artifact
 
-- [ ] Public config resolution passes the precedence and invalid-input tests.
-- [ ] The normal compiler applies tested eligibility and error-driven generation.
-- [ ] Cooked GLBs pass extension round-trip and baseline-preservation tests.
+- [x] Public config resolution passes the precedence and invalid-input tests. Evidence:
+      `packages/create-threenative/__tests__/lod-config.spec.ts`, 30/30 green; `pnpm typecheck` exit 0.
+- [x] The normal compiler applies tested eligibility and error-driven generation. Evidence:
+      `packages/assets/__tests__/lod-generation.spec.ts`, 17/17 green + assets suite 352 passed;
+      `modelPass` generates `TN_discrete_lod` via `packages/assets/src/lod/` (meshoptimizer, index-only,
+      `LockBorder`), attached after the virtual bake and before quantize.
+- [x] Cooked GLBs pass extension round-trip and baseline-preservation tests. Evidence: same spec —
+      LOD0 arrays byte-equal to the non-AutoLOD cook; a generic reader sees only LOD0; schema/index
+      revalidation on read.
 - [ ] Cache invalidation and atomic hot reload pass their integration tests.
+      Partial: the generation fingerprint and pass cache key exclude runtime/preset, and the spec
+      asserts a runtime-only edit neither rebakes nor changes the key. Hot reload is not exercised here.
 
 #### Phase 2 — ordinary runtime
 

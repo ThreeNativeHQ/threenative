@@ -79,6 +79,21 @@ export interface ISimplifyRow {
   readonly trianglesBefore: number;
 }
 
+/** What automatic discrete generation produced for one model (PRD-377 §4.3). */
+export interface ILodRow {
+  /** Bytes the derived index buffers add, before compression. */
+  readonly byteOverhead: number;
+  readonly fingerprint: string;
+  readonly generated: number;
+  readonly levels: number;
+  readonly maxLevels: number;
+  readonly minTriangles: number;
+  readonly reasons: readonly string[];
+  readonly skipped: number;
+  readonly trianglesAfter: number;
+  readonly trianglesBefore: number;
+}
+
 /** Whether the pass executed this bake or every input that reached it was compile-cache-served. */
 export type PassCostStatus = "cached" | "ran";
 
@@ -310,6 +325,8 @@ export interface IModelSizeRow {
   };
   /** LOD simplification, when it was configured for this model. */
   readonly simplify?: ISimplifyRow;
+  /** Automatic discrete LOD generation (PRD-377), when the effective policy ran. */
+  readonly lod?: ILodRow;
   /** The cluster-DAG bake, when it was configured for this model. */
   readonly virtual?: IVirtualRow;
   /** Triangle count of the compiled output, recorded in the manifest. */
@@ -355,10 +372,25 @@ function virtualLine(row: IModelSizeRow): readonly string[] {
     `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
   ];
 }
-
 function extensionLabel(row: IModelSizeRow): string {
   const extensions = row.extensions ?? [];
   return extensions.length === 0 ? "" : ` (${extensions.join(", ")})`;
+}
+
+/**
+ * Names what automatic generation did: the primitives that got a chain, the primitives that were
+ * skipped and why, the far-route triangle outcome, and the payload bytes it cost. A model where
+ * every primitive was skipped says so rather than leaving the reader to infer it from a zero.
+ */
+function lodLine(row: IModelSizeRow): readonly string[] {
+  const lod = row.lod;
+  if (lod === undefined) return [];
+  const reasons = [...new Set(lod.reasons)].sort().join(", ");
+  const outcome =
+    lod.generated === 0
+      ? `no primitive was eligible (${lod.skipped} skipped${reasons === "" ? "" : `: ${reasons}`})`
+      : `${lod.generated} primitive(s) to ${lod.levels} level(s), ${lod.trianglesBefore} -> ${lod.trianglesAfter} triangles, ${lod.byteOverhead} payload bytes, ${lod.skipped} skipped${reasons === "" ? "" : ` (${reasons})`}`;
+  return [`lod ${row.logicalPath}: ${outcome}; fingerprint ${lod.fingerprint}`];
 }
 
 export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly string[] {
@@ -379,7 +411,7 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
                 `embedded texture ${row.logicalPath}#${name}: compression skipped: ${reason}`,
             ),
           ];
-    const reduced = [...simplifyLine(row), ...virtualLine(row)];
+    const reduced = [...simplifyLine(row), ...virtualLine(row), ...lodLine(row)];
     if (row.lightmap === undefined) return [model, ...reduced, ...images];
     const map = row.lightmap;
     return [

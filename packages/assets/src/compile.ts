@@ -17,6 +17,7 @@ import { assertBudget, measureBudget, parseBudget } from "./budget.js";
 import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import type { IModelLodOptions, IModelLodOverride } from "./lod/generate.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
 import { parseAudioConfig } from "./passes/audio-config.js";
@@ -54,6 +55,7 @@ import {
 import type {
   IAudioRow,
   IEmbeddedTextureRow,
+  ILodRow,
   IModelSizeRow,
   IPassCostAssetRow,
   IPassCostRow,
@@ -145,6 +147,12 @@ export interface IAssetSourceConfig {
    * exactly as committed. Absent means optimization runs with defaults.
    */
   readonly models?: IModelsConfig | "none";
+  /**
+   * Automatic discrete LOD (`assets.lod`): a boolean kill switch/enable, an object carrying the
+   * resolved generation policy, or `"none"`. Absent means this phase generates nothing; the
+   * default-on decision is a later phase (PRD-377 §8).
+   */
+  readonly lod?: boolean | IModelLodOptions | "none";
   readonly output?: string;
   readonly source?: string;
   readonly targets?: IAssetTargets;
@@ -293,6 +301,8 @@ interface IAssetManifestEntry {
   readonly embeddedTextures?: IEmbeddedTextureRow;
   /** Requested against achieved LOD simplification (model pass). */
   readonly simplify?: ISimplifyRow;
+  /** Automatic discrete LOD generation, when the effective policy ran (model pass). */
+  readonly lod?: ILodRow;
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
@@ -422,6 +432,36 @@ function simplifyRow(value: unknown): ISimplifyRow | undefined {
     achievedRatio: value.achievedRatio as number,
     error: value.error as number,
     requestedRatio: value.requestedRatio as number,
+    trianglesAfter: value.trianglesAfter as number,
+    trianglesBefore: value.trianglesBefore as number,
+  };
+}
+
+function lodRow(value: unknown): ILodRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const numbers = [
+    "byteOverhead",
+    "generated",
+    "levels",
+    "maxLevels",
+    "minTriangles",
+    "skipped",
+    "trianglesAfter",
+    "trianglesBefore",
+  ] as const;
+  if (numbers.some((key) => typeof value[key] !== "number")) return undefined;
+  if (typeof value.fingerprint !== "string") return undefined;
+  if (!Array.isArray(value.reasons) || value.reasons.some((reason) => typeof reason !== "string"))
+    return undefined;
+  return {
+    byteOverhead: value.byteOverhead as number,
+    fingerprint: value.fingerprint,
+    generated: value.generated as number,
+    levels: value.levels as number,
+    maxLevels: value.maxLevels as number,
+    minTriangles: value.minTriangles as number,
+    reasons: value.reasons as string[],
+    skipped: value.skipped as number,
     trianglesAfter: value.trianglesAfter as number,
     trianglesBefore: value.trianglesBefore as number,
   };
@@ -831,6 +871,88 @@ function parseModelVirtual(raw: unknown): IModelVirtualOptions | "none" {
   return parsed as IModelVirtualOptions;
 }
 
+function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
+  if (raw === "none" || typeof raw === "boolean") return raw;
+  if (!isRecord(raw)) {
+    throw new Error(
+      'TN_ASSETS_CONFIG_INVALID: assets.lod must be a boolean, "none", or an object.',
+    );
+  }
+  const allowed = ["enabled", "generation", "overrides", "preset", "runtime"];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) {
+      throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.lod.${key} is not recognised.`);
+    }
+  }
+  const generation = (value: unknown, label: string): IModelLodOptions["generation"] => {
+    if (!isRecord(value)) throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be an object.`);
+    for (const key of Object.keys(value)) {
+      if (key !== "maxLevels" && key !== "minTriangles") {
+        throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: ${label}.${key} is not recognised.`);
+      }
+    }
+    if (
+      value.maxLevels !== undefined &&
+      (!Number.isSafeInteger(value.maxLevels) ||
+        (value.maxLevels as number) < 1 ||
+        (value.maxLevels as number) > 8)
+    ) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label}.maxLevels must be an integer between 1 and 8.`,
+      );
+    }
+    if (
+      value.minTriangles !== undefined &&
+      (!Number.isSafeInteger(value.minTriangles) || (value.minTriangles as number) <= 0)
+    ) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label}.minTriangles must be a positive integer.`,
+      );
+    }
+    return {
+      ...(value.maxLevels === undefined ? {} : { maxLevels: value.maxLevels as number }),
+      ...(value.minTriangles === undefined ? {} : { minTriangles: value.minTriangles as number }),
+    };
+  };
+  const override = (value: unknown, label: string): boolean | IModelLodOverride => {
+    if (typeof value === "boolean") return value;
+    if (!isRecord(value)) throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be an object.`);
+    for (const key of Object.keys(value)) {
+      if (key !== "enabled" && key !== "generation") {
+        throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: ${label}.${key} is not recognised.`);
+      }
+    }
+    if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+      throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label}.enabled must be a boolean.`);
+    }
+    return {
+      ...(value.enabled === undefined ? {} : { enabled: value.enabled }),
+      ...(value.generation === undefined
+        ? {}
+        : { generation: generation(value.generation, `${label}.generation`) }),
+    };
+  };
+  const overrides: Record<string, boolean | IModelLodOverride> = {};
+  if (raw.overrides !== undefined) {
+    if (!isRecord(raw.overrides))
+      throw new Error("TN_ASSETS_CONFIG_INVALID: assets.lod.overrides must be an object.");
+    for (const [key, value] of Object.entries(raw.overrides))
+      overrides[key] = override(value, `assets.lod.overrides['${key}']`);
+  }
+  if (raw.enabled !== undefined && typeof raw.enabled !== "boolean") {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.lod.enabled must be a boolean.");
+  }
+  return {
+    ...(raw.enabled === undefined ? {} : { enabled: raw.enabled as boolean }),
+    ...(raw.generation === undefined
+      ? {}
+      : { generation: generation(raw.generation, "assets.lod.generation") }),
+    ...(Object.keys(overrides).length === 0 ? {} : { overrides }),
+    ...(typeof raw.preset === "string" ? { preset: raw.preset } : {}),
+    ...(isRecord(raw.runtime) ? { runtime: raw.runtime } : {}),
+  };
+}
+
 function parseLightmap(raw: unknown): ILightmapPassOptions {
   if (!isRecord(raw)) {
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.lightmap must be an object.");
@@ -913,6 +1035,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       key !== "budget" &&
       key !== "exclude" &&
       key !== "concurrency" &&
+      // `assets.lod` is validated and resolved by the project config loader; this package accepts
+      // it so the resolved config crosses the seam intact. Phase 2 consumes it for generation.
+      key !== "lod" &&
       key !== "source" &&
       key !== "output" &&
       key !== "targets" &&
@@ -956,6 +1081,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);
+  const configuredLod = config.lod === undefined ? undefined : parseModelLod(config.lod);
   const modelCompressionDecoders: readonly ("meshopt" | "KTX2")[] =
     configuredModels === undefined
       ? []
@@ -1025,8 +1151,12 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         options.platform === undefined || options.platform === "web"
           ? models
           : { ...models, vertexLayout: "separate" as const };
+      // `assets.lod` is top-level, not under `models`, but it drives the model pass. It rides in
+      // the pass options (and its spec) so it is part of the compile cache key.
+      const modelOptionsWithLod =
+        configuredLod === undefined ? modelOptions : { ...modelOptions, lod: configuredLod };
       const pass = modelPass({
-        ...modelOptions,
+        ...modelOptionsWithLod,
         preserveLightmapUv: lightmap !== undefined,
         // Bound to the output root so a second build finds last build's encodes on
         // disk instead of paying for them again.
@@ -1040,7 +1170,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         kind: "model",
         needsRuntimeDecoder: pass.needsRuntimeDecoder ?? false,
         options: {
-          ...modelOptions,
+          ...modelOptionsWithLod,
           preserveLightmapUv: lightmap !== undefined,
           sharedImages: modelOptions.sharedImages,
         },
@@ -1174,6 +1304,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
     JSON.stringify(existing.simplify) === JSON.stringify(entry.simplify) &&
+    JSON.stringify(existing.lod) === JSON.stringify(entry.lod) &&
     existing.bytes === entry.bytes &&
     existing.bytesBefore === entry.bytesBefore &&
     existing.bytesAfter === entry.bytesAfter &&
@@ -1838,6 +1969,7 @@ export async function compileAssets(
           ? {}
           : { embeddedTextures: entry.embeddedTextures }),
         ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
+        ...(entry.lod === undefined ? {} : { lod: entry.lod }),
         extensions: entry.extensions,
         logicalPath: logical,
         ...(lightmap === undefined ? {} : { lightmap }),
@@ -1923,6 +2055,7 @@ export async function compileAssets(
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
             simplify: simplifyRow(applied.entry.simplify),
+            lod: lodRow(applied.entry.lod),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
             ...(applied.entry.compressionSkipped === "block-size" ||
             applied.entry.compressionSkipped === "not-smaller"

@@ -121,8 +121,13 @@ export type {
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,
+  IThreeNativeLodConfig,
+  IThreeNativeLodGenerationConfig,
+  IThreeNativeLodOverride,
+  IThreeNativeLodRuntimeConfig,
   IThreeNativeTexturesConfig,
   ThreeNativeBackgroundMode,
+  ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "./config.js";

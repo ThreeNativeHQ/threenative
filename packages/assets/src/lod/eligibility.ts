@@ -1,0 +1,183 @@
+// PRD-377 §4.1 — who is allowed to have a discrete chain, and the stable reason why not.
+//
+// Conservative by construction: anything the simplifier cannot be proven to leave visually and
+// structurally intact is declined with a named reason rather than forced to a triangle target. An
+// inability to reduce safely is a normal skip, not a failure.
+
+import type { Material, Primitive } from "@gltf-transform/core";
+
+/** The stable reason codes reported for a primitive that gets no automatic discrete chain. */
+export type DiscreteLodSkipReason =
+  | "already-cooked"
+  | "authored-lod"
+  | "boundary-unsafe"
+  | "deforming"
+  | "disabled"
+  | "explicit-legacy-simplify"
+  | "material-unsupported"
+  | "too-small"
+  | "unsupported-attributes"
+  | "unsupported-topology"
+  | "virtual-none"
+  | "virtual-owned";
+
+/** Attribute semantics an index-only chain can share without reconstructing them. */
+const SUPPORTED_ATTRIBUTES: ReadonlySet<string> = new Set([
+  "COLOR_0",
+  "NORMAL",
+  "POSITION",
+  "TANGENT",
+  "TEXCOORD_0",
+  "TEXCOORD_1",
+]);
+
+const DEFORMING_ATTRIBUTES: ReadonlySet<string> = new Set(["JOINTS_0", "WEIGHTS_0"]);
+
+const TRIANGLES_MODE = 4;
+
+const TRIANGLE = 3;
+
+export interface IEligibilityFlags {
+  /** The primitive already carries a `TN_discrete_lod` payload from an earlier cook. */
+  readonly alreadyCooked: boolean;
+  /** A node or mesh name marks this as a hand-authored LOD variant (`hull_LOD1`). */
+  readonly authoredLod: boolean;
+  /** `assets.models.simplify` is declared for this asset. */
+  readonly legacySimplify: boolean;
+  /** `assets.models.virtual` is `"none"` and the new policy did not explicitly override it. */
+  readonly legacyVirtualNone: boolean;
+  /** Lower bound on source triangles for a primitive to be worth a chain. */
+  readonly minTriangles: number;
+  /** The owning node has a skin. */
+  readonly skinned: boolean;
+  /** The primitive already carries a virtual-geometry DAG (or the bake will attach one). */
+  readonly virtualOwned: boolean;
+}
+
+export interface IEligibility {
+  readonly eligible: boolean;
+  readonly reason?: DiscreteLodSkipReason;
+}
+
+function triangleCount(primitive: Primitive): number {
+  const position = primitive.getAttribute("POSITION");
+  const drawn = primitive.getIndices()?.getCount() ?? position?.getCount() ?? 0;
+  return Math.floor(drawn / TRIANGLE);
+}
+
+function finitePositions(primitive: Primitive): boolean {
+  const position = primitive.getAttribute("POSITION");
+  if (position === null) return false;
+  const array = position.getArray();
+  if (array === null) return false;
+  for (let index = 0; index < array.length; index += 1) {
+    if (!Number.isFinite(array[index] as number)) return false;
+  }
+  const min = position.getMin([0, 0, 0]);
+  const max = position.getMax([0, 0, 0]);
+  return min.every(Number.isFinite) && max.every(Number.isFinite);
+}
+
+function validIndices(primitive: Primitive): boolean {
+  const position = primitive.getAttribute("POSITION");
+  const indices = primitive.getIndices();
+  if (indices === null) return position !== null && position.getCount() > 0;
+  const array = indices.getArray();
+  if (array === null || array.length === 0 || array.length % TRIANGLE !== 0) return false;
+  const vertices = position?.getCount() ?? 0;
+  for (let index = 0; index < array.length; index += 1) {
+    const value = array[index] as number;
+    if (!Number.isInteger(value) || value < 0 || value >= vertices) return false;
+  }
+  return true;
+}
+
+/** A material whose appearance index-only geometry cannot preserve. */
+function unsupportedMaterial(material: Material | null): boolean {
+  if (material === null) return false;
+  if (material.getAlphaMode() !== "OPAQUE") return true;
+  for (const extension of material.listExtensions()) {
+    const name = extension.extensionName.toLowerCase();
+    if (name.includes("transmission") || name.includes("displacement") || name.includes("volume"))
+      return true;
+  }
+  return false;
+}
+
+/**
+ * Non-manifold edges (`> 2` triangles on one edge) are the shape where independent simplification
+ * of one primitive against a neighbour can open a crack. Manifold borders are handled by locking
+ * the border in the simplifier; a non-manifold fan is declined outright.
+ */
+function nonManifold(primitive: Primitive): boolean {
+  const indices = primitive.getIndices();
+  if (indices === null) return false;
+  const array = indices.getArray();
+  if (array === null) return false;
+  const seen = new Map<number, number>();
+  for (let index = 0; index + 2 < array.length; index += 3) {
+    const a = array[index] as number;
+    const b = array[index + 1] as number;
+    const c = array[index + 2] as number;
+    if (a === b || b === c || a === c) continue;
+    for (const [u, v] of [
+      [a, b],
+      [b, c],
+      [c, a],
+    ] as const) {
+      const low = Math.min(u, v);
+      const high = Math.max(u, v);
+      const key = low * 0x1_0000_0000 + high;
+      const count = (seen.get(key) ?? 0) + 1;
+      if (count > 2) return true;
+      seen.set(key, count);
+    }
+  }
+  return false;
+}
+
+/**
+ * The eligibility decision order of PRD-377 §4.1/§4.2. Ownership and opt-out reasons are checked
+ * before geometry, because a virtual-owned or explicitly-authored primitive must never be silently
+ * simplified just because it happens to be dense.
+ */
+export function classifyPrimitive(primitive: Primitive, flags: IEligibilityFlags): IEligibility {
+  if (flags.alreadyCooked) return { eligible: false, reason: "already-cooked" };
+  if (flags.virtualOwned) return { eligible: false, reason: "virtual-owned" };
+  if (flags.legacySimplify) return { eligible: false, reason: "explicit-legacy-simplify" };
+  if (flags.legacyVirtualNone) return { eligible: false, reason: "virtual-none" };
+  if (flags.authoredLod) return { eligible: false, reason: "authored-lod" };
+  if (flags.skinned) return { eligible: false, reason: "deforming" };
+
+  if (primitive.getMode() !== TRIANGLES_MODE)
+    return { eligible: false, reason: "unsupported-topology" };
+  if (primitive.listTargets().length > 0) return { eligible: false, reason: "deforming" };
+
+  const semantics = primitive.listSemantics();
+  for (const semantic of semantics) {
+    if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
+    if (!SUPPORTED_ATTRIBUTES.has(semantic))
+      return { eligible: false, reason: "unsupported-attributes" };
+  }
+  if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
+  if (!finitePositions(primitive) || !validIndices(primitive))
+    return { eligible: false, reason: "unsupported-topology" };
+  if (unsupportedMaterial(primitive.getMaterial()))
+    return { eligible: false, reason: "material-unsupported" };
+
+  if (triangleCount(primitive) < flags.minTriangles)
+    return { eligible: false, reason: "too-small" };
+  if (nonManifold(primitive)) return { eligible: false, reason: "boundary-unsafe" };
+  return { eligible: true };
+}
+
+/**
+ * Authored LOD detection: a node or mesh whose name carries a level suffix (`hull_LOD1`,
+ * `hull-lod2`) is a hand-authored variant, and generating on top of it would stack two owners on
+ * one primitive (PRD-377 §4.2).
+ */
+export function authoredLodName(name: string): boolean {
+  return /(^|[_\-.\s])lod[0-9]+($|[_\-.\s])/i.test(name);
+}
+
+export { triangleCount as primitiveTriangleCount };
