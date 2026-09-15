@@ -1681,7 +1681,7 @@
     {
       "aliases": [],
       "constraints": ["scene code must stay portable across web and native"],
-      "example": "class Play extends Scene { update(ctx, dt) {} }",
+      "example": "class Play extends Scene { update(ctx, dt) {} }\nctx.beforeRender(() => packBatches()); // cleared on scene change and stop, like ctx.afterPhysics",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -1689,7 +1689,8 @@
       "signature": "export abstract class Scene< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, > { … }",
       "situations": [
         "add a playable level or menu scene",
-        "move scene setup and per-frame gameplay out of the entry point"
+        "move scene setup and per-frame gameplay out of the entry point",
+        "run scene work once per actual world draw, after the frame's last fixed update and before the projection packs"
       ],
       "summary": "Implement a portable Godot-shaped game scene lifecycle.",
       "supersedes": [],

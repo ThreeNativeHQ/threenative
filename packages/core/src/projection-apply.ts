@@ -6,6 +6,8 @@ import {
   LOD,
   type Light,
   Line,
+  LineLoop,
+  LineSegments,
   type Material,
   Matrix4,
   Mesh,
@@ -145,6 +147,8 @@ function shallowProxy(object: Object3D): Object3D {
     isSprite?: boolean;
     isPoints?: boolean;
     isLine?: boolean;
+    isLineSegments?: boolean;
+    isLineLoop?: boolean;
     isLOD?: boolean;
     count?: number;
   };
@@ -163,6 +167,10 @@ function shallowProxy(object: Object3D): Object3D {
   if (source.isSkinnedMesh === true) return new SkinnedMesh(source.geometry, source.material);
   if (source.isSprite === true) return new Sprite(source.material as SpriteMaterial);
   if (source.isPoints === true) return new Points(source.geometry, source.material);
+  // `LineSegments` and `LineLoop` both set `isLine`, so the flag alone would flatten either into
+  // a plain `Line` and draw its separate segments joined end to end.
+  if (source.isLineSegments === true) return new LineSegments(source.geometry, source.material);
+  if (source.isLineLoop === true) return new LineLoop(source.geometry, source.material);
   if (source.isLine === true) return new Line(source.geometry, source.material);
   if (source.isLOD === true) return new LOD();
   return new Mesh(source.geometry, source.material);

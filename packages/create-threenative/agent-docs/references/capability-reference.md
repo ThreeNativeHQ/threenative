@@ -1360,11 +1360,12 @@ const lift = ripples.heightAt(boat.x, boat.z);
 export abstract class Scene< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, > { … }
 ```
 
-- **Use when:** add a playable level or menu scene · move scene setup and per-frame gameplay out of the entry point
+- **Use when:** add a playable level or menu scene · move scene setup and per-frame gameplay out of the entry point · run scene work once per actual world draw, after the frame's last fixed update and before the projection packs
 - **Constraints:** scene code must stay portable across web and native
 
 ```ts
 class Play extends Scene { update(ctx, dt) {} }
+ctx.beforeRender(() => packBatches()); // cleared on scene change and stop, like ctx.afterPhysics
 ```
 
 ### `ScenePicker`
