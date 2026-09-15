@@ -10,6 +10,7 @@ import { compileAssets } from "../src/index.js";
 import { authoredLodName } from "../src/lod/eligibility.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
 import {
+  type IModelLodOptions,
   type IModelLodSummary,
   LOD_ERROR_TARGETS,
   resolveLodPolicy,
@@ -469,5 +470,39 @@ describe("assets.lod through the public compiler", () => {
       extensionsUsed?: string[];
     };
     expect(json.extensionsUsed).toContain(TN_DISCRETE_LOD);
+  }, 120_000);
+
+  it("refreshes the manifest runtime budget on a cache hit without rebaking", async () => {
+    const root = await makeTempDir("threenative-lod-cache-");
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    await writeFile(path.join(root, "assets/hull.glb"), await mediumGlb());
+    const compile = (lod: IModelLodOptions) =>
+      compileAssets({
+        concurrency: 1,
+        config: {
+          audio: "none",
+          lod,
+          models: { virtual: "none", textures: "none" },
+          textures: "none",
+        },
+        cwd: root,
+      });
+    const manifest = async (): Promise<{
+      entries: Record<string, { bytes?: number; lod?: IModelLodSummary; output: string }>;
+    }> =>
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")) as never;
+
+    await compile({ runtime: { maxPixelError: 1 } });
+    const first = await manifest();
+    await compile({ runtime: { maxPixelError: 5, hysteresis: 0.3 } });
+    const second = await manifest();
+
+    expect(second.entries["hull.glb"]?.lod?.runtime).toEqual({
+      hysteresis: 0.3,
+      maxPixelError: 5,
+    });
+    // The geometry is reused byte-for-byte: a runtime-only edit must not rebake.
+    expect(second.entries["hull.glb"]?.output).toBe(first.entries["hull.glb"]?.output);
+    expect(second.entries["hull.glb"]?.bytes).toBe(first.entries["hull.glb"]?.bytes);
   }, 120_000);
 });

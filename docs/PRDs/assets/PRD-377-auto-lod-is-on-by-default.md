@@ -221,10 +221,11 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       LOD0 arrays byte-equal to the non-AutoLOD cook; a generic reader sees only LOD0; schema/index
       revalidation on read.
 - [ ] Cache invalidation and atomic hot reload pass their integration tests.
-      Partial: the generation fingerprint and pass cache key exclude runtime/preset, and the spec
-      asserts a runtime-only edit neither rebakes nor changes the key. Known gap: a compile cache hit
-      reuses the previous manifest entry, so `lod.runtime` is not yet refreshed on a runtime-only edit;
-      hot reload is not exercised here.
+      Partial: the generation fingerprint and pass cache key exclude runtime/preset, and a spec
+      asserts a runtime-only edit neither rebakes nor changes the key. A cache hit now re-resolves
+      and rewrites `lod.runtime` in the manifest (`withFreshLodRuntime`), proven by
+      "refreshes the manifest runtime budget on a cache hit without rebaking" (payload `output` and
+      `bytes` unchanged, runtime moved 1 -> 5 / 0.15 -> 0.3). Hot reload is not exercised here.
 
 #### Phase 2 — ordinary runtime
 
@@ -248,8 +249,9 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       mesh is drawn at the coarse level. Node identity/transform preservation is not yet asserted.
 - [ ] Instance isolation and shared-resource lifetime tests pass. Levels are index-only and share the
       base attributes, but instance isolation and unload/reload lifetime are not yet exercised.
-- [ ] Runtime policy reaches the controller from the manifest. The loader reads `lod.runtime`;
-      the compile-cache-hit refresh of that value is the known gap recorded under Phase 1.
+- [ ] Runtime policy reaches the controller from the manifest. `createAssetLoader` reads `lod.runtime`
+      and passes it to `attach`, and the manifest value is now fresh on cache hits; no test yet proves
+      the loader path end to end.
 
 #### Phase 3 — consumer qualification
 

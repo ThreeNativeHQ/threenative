@@ -23,6 +23,7 @@ import {
   type IModelLodRuntimeOptions,
   type LodPreset,
   isLodPreset,
+  resolveLodPolicy,
 } from "./lod/generate.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
@@ -348,6 +349,10 @@ interface ICompileLayout {
   readonly passes: readonly IAssetPass[];
   readonly sourceRoot: string;
   readonly targets: IAssetTargets;
+  /** The validated `assets.lod` block, kept so a cache hit can refresh its runtime half. */
+  readonly lod: boolean | IModelLodOptions | "none" | undefined;
+  /** The legacy `assets.models` declarations the LOD policy translates against, per project. */
+  readonly lodLegacy: { readonly simplify: boolean; readonly virtualNone: boolean };
   /** True when the built-in KTX2 pass is part of `passes` (drives the transcoder copy). */
   readonly texturesActive: boolean;
   /** Why the model's decoder-backed sub-passes were not emitted, if they were skipped. */
@@ -1273,6 +1278,17 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     exclude,
     concurrency: config.concurrency as number | undefined,
     runtimeDecoderCapabilities,
+    lod: configuredLod,
+    lodLegacy: {
+      simplify:
+        typeof configuredModels === "object" &&
+        configuredModels !== null &&
+        configuredModels.simplify !== undefined,
+      virtualNone:
+        typeof configuredModels === "object" &&
+        configuredModels !== null &&
+        configuredModels.virtual === "none",
+    },
     modelCompressionReason:
       options.passes !== undefined
         ? undefined
@@ -1376,6 +1392,28 @@ function sameTargets(
 ): boolean {
   if (left === undefined || right === undefined) return left === right;
   return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+/**
+ * Refreshes an entry's `lod.runtime` from the current resolved policy before it is written.
+ *
+ * A compile cache hit reuses the whole previous entry without re-running the pass, which is correct
+ * for geometry — a runtime-only edit must not rebake it — but would otherwise keep serving the old
+ * pixel budget and hysteresis. Preset and runtime are policy, not bytes, so they are re-resolved
+ * here for both the cache-hit and fresh paths (PRD-377 §3.2, §5).
+ */
+function withFreshLodRuntime(
+  entry: IAssetManifestEntry,
+  logical: string,
+  lod: boolean | IModelLodOptions | "none" | undefined,
+  legacy: { readonly simplify: boolean; readonly virtualNone: boolean },
+): IAssetManifestEntry {
+  if (entry.lod === undefined || lod === undefined) return entry;
+  const policy = resolveLodPolicy(lod, logical, legacy);
+  return {
+    ...entry,
+    lod: { ...entry.lod, preset: policy.preset, runtime: { ...policy.runtime } },
+  };
 }
 
 function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): boolean {
@@ -2103,13 +2141,14 @@ export async function compileAssets(
         ? undefined
         : await reusableEntry(layout.outputRoot, logical, digest.slice(0, 8), previousEntry);
     if (previousEntry !== undefined && reusable !== undefined) {
-      entries[logical] = previousEntry;
+      const reused = withFreshLodRuntime(previousEntry, logical, layout.lod, layout.lodLegacy);
+      entries[logical] = reused;
       // A cache hit never ran the converter, so the GLB the report must measure is the one already
       // on disk under this entry's output name.
       const measured = needsBlenderImport(logical)
         ? await readFile(path.join(layout.outputRoot, previousEntry.output))
         : input;
-      bookkeep(logical, measured, previousEntry, reusable, undefined);
+      bookkeep(logical, measured, reused, reusable, undefined);
       recordCachedInputs(costInputs, passNames);
       skipped += 1;
       return;
@@ -2124,7 +2163,7 @@ export async function compileAssets(
     const extensions = Array.isArray(applied.entry?.extensions)
       ? (applied.entry.extensions as string[])
       : sourceModelExtensions(logical, input);
-    const entry: IAssetManifestEntry = {
+    const created: IAssetManifestEntry = {
       bytes: applied.buffer.length,
       kind: classify(logical),
       output: outputNameFor(logical, digest.slice(0, 8), applied.extension),
@@ -2161,6 +2200,7 @@ export async function compileAssets(
               typeof applied.entry.vertices === "number" ? applied.entry.vertices : undefined,
           }),
     };
+    const entry = withFreshLodRuntime(created, logical, layout.lod, layout.lodLegacy);
     entries[logical] = entry;
     const lightmapOutput = auxiliaryOutputs.find((output) => output.manifestField === "lightmaps");
     const lightmapMetadata = lightmapOutput?.metadata;
