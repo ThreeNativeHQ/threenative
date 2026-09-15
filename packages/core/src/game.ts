@@ -28,6 +28,7 @@ import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
+import { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
@@ -522,6 +523,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #initialState: TState;
   #loop: FixedStepLoop | undefined;
   #projection: SceneRenderProjection | undefined;
+  #cameraCull: RenderCameraCull | undefined;
   #cleanup: Array<() => void> = [];
   #computeDriven = new ComputeDrivenRegistry();
   #entities: Registry | undefined;
@@ -670,6 +672,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // scene is cleared, so a scene change cannot leave the next level drawing the last one's
     // props — and released rather than rebuilt, because every source it referenced is about to go.
     this.#projection?.dispose();
+    // Put back anything the cull hid before the outgoing scene is cleared, so a scene change never
+    // leaves an object invisible if the game keeps a reference to it.
+    this.#cameraCull?.restore();
     clearScene(ctx.scene, this.#computeDriven);
     const scene = new SceneType();
     this.#scene = scene;
@@ -856,6 +861,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
     });
     this.#projection = projection;
+    // Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 px,
+    // and measured whether or not the game narrows or declines it. Its decision is per camera, so
+    // a shadow caster and anything attached to the camera are never dropped on the main view alone.
+    const cameraCull = new RenderCameraCull({
+      minimumPixels: this.#config.render?.minimumProjectedPixels,
+    });
+    this.#cameraCull = cameraCull;
     let projectionSettled = false;
     let worldRendered = false;
     let loadingFramePresented = false;
@@ -1123,7 +1135,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               // the exact lane and whether the renderer agrees with the plan.
               if (projection !== undefined) {
                 console.info(
-                  formatProjectionWindow(projection.report, reported.window, lastWorldDrawCalls),
+                  formatProjectionWindow(
+                    projection.report,
+                    reported.window,
+                    lastWorldDrawCalls,
+                    this.#cameraCull?.report,
+                  ),
                 );
               }
               if (this.#config.frameBudget !== false)
@@ -1281,7 +1298,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             camera,
             renderer.surface().drawingBufferHeight,
           );
+          // Projected-size cull, per render camera, default on. It writes only `object.visible` —
+          // the one per-frame flag the projection's batch key ignores — and restores what it hid
+          // immediately after the draw, so the authored scene is untouched between frames. The
+          // renderer walks the same root the projection is about to draw, so a declined projection
+          // and an active one both get the gate.
+          const drawingBufferHeight = renderer.surface().drawingBufferHeight;
+          this.#cameraCull?.apply(
+            this.#projection?.root ?? threeScene,
+            camera,
+            drawingBufferHeight,
+          );
           renderer.render(this.#projection?.root ?? threeScene, camera);
+          this.#cameraCull?.restore();
           this.#projection?.commit();
           renderer.observeRenderChainFrame?.();
           frameBudget?.addRender(budgetNow() - renderStart);
@@ -1607,6 +1636,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     if (ctx !== undefined) clearScene(ctx.scene, this.#computeDriven);
+    this.#cameraCull?.dispose();
+    this.#cameraCull = undefined;
     this.#input?.dispose();
     this.#state.stop();
     ctx?.canvasLayer.dispose();

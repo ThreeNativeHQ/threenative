@@ -367,6 +367,29 @@ export { updateModelLods } from "./model-lod.js";
  */
 export { baseGeometryOf } from "./model-lod.js";
 /**
+ * Keep an object drawn even when the render camera cannot resolve it.
+ *
+ * The engine's projected-size gate is on by default: an object whose world bounding sphere
+ * projects to fewer than 0.5 raster pixels in the camera about to render it is not submitted, per
+ * camera. Mark the player's own cockpit, a nameplate, a quest marker, or anything a game never
+ * wants to pop out of the frame. `alwaysRender(object, false)` removes the marker. Camera-attached
+ * objects and shadow casters are already kept, and the number of marked objects is reported beside
+ * the cull in the `TN_PROJECTION` window rather than hidden. The threshold itself is
+ * `renderer.minimumProjectedPixels` — a larger number cuts more aggressively, `false` leaves
+ * every object drawn while still measuring.
+ *
+ * @situation keep a small object drawn when the engine would skip it as too far to resolve
+ * @situation stop my cockpit, marker or player model popping out at distance
+ * @situation a tiny object disappeared at range and I need it always visible
+ * @situation widen or narrow the projected-size cull with a named threshold
+ * @constraint the marker is per object and is reported as `exemptMarked` in the projection window
+ * @constraint `renderer.minimumProjectedPixels: false` leaves the scene drawn and keeps the measurement on
+ * @override renderer.minimumProjectedPixels sets the projected-pixel threshold, default 0.5
+ * @example import { alwaysRender } from "@threenative/core";
+ * alwaysRender(ctx.camera.children[0]); // a camera-attached cockpit stays drawn
+ */
+export { alwaysRender } from "./render-camera-cull.js";
+/**
  * Read where the frame's milliseconds went, per presented frame, on any platform; each
  * `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and
  * triangles each render pass submitted.

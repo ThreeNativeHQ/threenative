@@ -9,6 +9,13 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the dungeon, combat, stats, inventory, persistence, and every
 visual decision; `src/game.ts` stays portable and `src/main.ts` is the web-only React mount.
 
+## Distant objects the camera cannot resolve are not submitted
+
+On by default: an object projecting under **0.5 px** in the render camera is skipped per camera,
+reported in `TN_PROJECTION`. `renderer.minimumProjectedPixels` raises or lowers the threshold
+(`false` disables the cut, not the count); `alwaysRender(object)` exempts an object. Camera-attached
+objects and shadow casters are kept.
+
 ## Start every change
 
 1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search
