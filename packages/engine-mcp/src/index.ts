@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -723,6 +723,29 @@ export function toolDefinitions(): readonly IEngineTool[] {
   return TOOL_DEFINITIONS;
 }
 
+const DEFAULT_LOG_FILE = path.join(".threenative", "engine-mcp.log");
+let logBroken = false;
+
+/**
+ * Appends one JSON line per tool call so a finished session's capability searches can be read
+ * back. The default target is `.threenative/engine-mcp.log` under the launch directory — the game
+ * project root — and `THREENATIVE_ENGINE_MCP_LOG` names another file or `off` to disable it.
+ * A log that cannot be written reports once on stderr and then stays quiet: a read-only tool must
+ * never fail because its record keeping did.
+ */
+function logToolCall(entry: Record<string, unknown>): void {
+  if (logBroken) return;
+  const target = process.env.THREENATIVE_ENGINE_MCP_LOG ?? DEFAULT_LOG_FILE;
+  if (target === "off") return;
+  try {
+    mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
+    appendFileSync(target, `${JSON.stringify({ time: new Date().toISOString(), ...entry })}\n`);
+  } catch (error) {
+    logBroken = true;
+    process.stderr.write(`engine-mcp log disabled (${target}): ${String(error)}\n`);
+  }
+}
+
 function jsonRpcError(id: unknown, code: number, message: string): string {
   return JSON.stringify({ id, jsonrpc: "2.0", error: { code, message } });
 }
@@ -754,12 +777,22 @@ function handleToolCall(
     const scope = argumentsValue.scope ?? "mechanic";
     if (scope !== "request" && scope !== "mechanic")
       throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
-    return toolText(searchCapabilities(argumentsValue.situation, manifestFile, scope));
+    const response = searchCapabilities(argumentsValue.situation, manifestFile, scope);
+    logToolCall({
+      results: response.results.map((result) => result.symbol),
+      scope,
+      situation: argumentsValue.situation,
+      tool: name,
+      verdict: response.verdict,
+    });
+    return toolText(response);
   }
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
       throw new Error("engine_capability_detail requires a string 'symbol' argument.");
-    return toolText(capabilityDetail(argumentsValue.symbol, manifestFile));
+    const detail = capabilityDetail(argumentsValue.symbol, manifestFile);
+    logToolCall({ symbol: argumentsValue.symbol, tool: name });
+    return toolText(detail);
   }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
 }
@@ -797,7 +830,11 @@ export function handleLine(line: string, manifestFile: string): string | undefin
     }
     return jsonRpcError(request.id, -32601, `Method not found: ${request.method}`);
   } catch (error) {
-    return jsonRpcError(request.id, -32000, error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    // A rejected call is the most useful line in the log: it is where an authoring agent asked
+    // for something the engine could not answer.
+    if (request.method === "tools/call") logToolCall({ error: message, request: request.params });
+    return jsonRpcError(request.id, -32000, message);
   }
 }
 

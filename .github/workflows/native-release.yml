@@ -563,7 +563,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # `packages:` is explicit because the action's default is `tools platform-tools`, and
+      # Google removed the obsolete `tools` package from the SDK repository: the default
+      # now fails the whole step with `Failed to find package 'tools'`.
       - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - name: Install Android NDK 28.2 and select it for all native steps
         run: |
           sdkmanager "ndk;28.2.13676358" "cmake;3.22.1"
@@ -917,7 +922,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # `packages:` is explicit because the action's default is `tools platform-tools`, and
+      # Google removed the obsolete `tools` package from the SDK repository: the default
+      # now fails the whole step with `Failed to find package 'tools'`.
       - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - name: Provision the consumer emulator before masking native toolchains
         run: sdkmanager "platform-tools" "emulator" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
       - name: Expose an Android SDK with no NDK or CMake installation

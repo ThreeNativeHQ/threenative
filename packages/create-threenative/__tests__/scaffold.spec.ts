@@ -316,8 +316,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `agent-docs/performance-basics.md`, and each template's AGENTS.md/CLAUDE.md names it in the
   // recipe index. Both are scaffolded bytes, so all ten trees move together; re-measured from the
   // clean worktree.
-  "action-rpg": "160cf0fc3feef19f6051ab7d7707cbb5da8162b2f9d116f0588c0ebc3de351f5",
-  defense: "24809ddc923d626e3c2c1a2449a343f80ffa93bfde6cfc0600d40198d2049791",
+  // Recomputed again 2026-09-15 after merging origin/develop: PRD-383 adds
+  // `agent-docs/rigging-characters.md` to that same recipe index in every template, so all ten
+  // trees move together once more.
+  "action-rpg": "3a36c090e8715bdb0c177518796daa2a74f2e05d74b61c6aeb06f3a271a594a9",
+  defense: "3c04470228591a7bcecb0715327bd88ffbd507e9e2c85607409c8b45de766bbe",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -325,17 +328,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "23b3163d68ea0485d9065eddaef3c880ff0be5b0321ee3648f2bcde3383c6ea2",
-  platformer: "c2709051c8420fde512c73ae31aa00c9b127219174b9e6620d1d47959b281cb0",
-  runner: "b8bda6652b4509fecf6fe9dd71ff31499b5bc815824d05aee31c4910fb734e59",
-  puzzle: "1849203a0beeeb56247575abc86e434e61edd10f19be969b50022e572fc0cdfa",
-  racing: "b51907ba49ec92901c64c888d7a532bb2bd0f22f0f0e76354e7767eceb7704d8",
-  shooter: "5a3e58787db7669709a31db48c844068f4130fa9eebebd37923f53faafe3d7a8",
+  minimal: "742af6e49a18837891f19444a29cb97549a46c567a225cafaa35b020c42f3bef",
+  platformer: "050b9040bf47a84fd88c09141b606687d7eded2c5f6d14bc993040df7396ddf0",
+  runner: "519f7cd079f7b5910531094ccfc64e6d0f452b5a28659c9e6f29398fa30d6e56",
+  puzzle: "c62b74fc56c0ed0426f5a48309e82e30b42c9cbeea4ea6a7f51594fbb59b1396",
+  racing: "bf2bf69851812e8ab7474ec14502f2d547fd0823bbb4bce3c403dd9f21b01752",
+  shooter: "19dcb23caa7cfe1b8018bb0e490bc78c7a9b1429caead92ba98ebe501a42bf89",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "345e42e688166cd486eacd0fd4c1c02ed2dec8fc89025874c36499f504389c79",
+  starter: "982ca4f7e0aefb0714757f3438e6689681ec1e4b3bd37d9f4d73894e114cfdbe",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -361,7 +364,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "51bb4f3a59b0a0ae5bc3310a4aa2e2fca3035258636a43a4e8ecc8a67f05cb8d",
+  sailing: "210ff1de7069ea2216c3adb58b84e1a70604af98acb54ffa4443c6be9db2c52e",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -726,6 +729,7 @@ describe("create-threenative", () => {
         "menu-screens.md",
         "mobile-memory-budget.md",
         "performance-basics.md",
+        "rigging-characters.md",
         "sculpt-from-a-reference.md",
         "trace-a-slow-frame.md",
         "visual-baseline.md",

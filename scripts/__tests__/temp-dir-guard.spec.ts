@@ -87,6 +87,10 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/capture-blender-mcp-tools.ts",
     "The tool-snapshot gate packs and installs into scratch roots removed in finally.",
   ],
+  [
+    "scripts/capture-asset-mcp-tools.ts",
+    "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the Blender one above.",
+  ],
 ]);
 
 async function sourceFiles(directory: string): Promise<string[]> {

@@ -158,7 +158,7 @@ export class WaterSurface3D {
       // call returns it.
       // `reflector()` returns the texture node; the pass itself — and the virtual cameras it mints —
       // live on the reflector base node hanging off it.
-      const pass = (node as unknown as IReflectorWithPass)._reflectorBaseNode;
+      const pass = (node as unknown as IReflectorWithPass)._reflectorBaseNode; // quality-allow: three 0.185 does not type `_reflectorBaseNode` on the reflector node it returns
       const mint = pass.getVirtualCamera.bind(pass);
       pass.getVirtualCamera = (camera: Camera): Camera => {
         const virtual = mint(camera);
@@ -183,7 +183,10 @@ export class WaterSurface3D {
    */
   reflectionCameraFor(camera: Camera): Camera | undefined {
     if (this.#reflector === undefined) return undefined;
-    return (this.#reflector as unknown as IReflectorWithPass)._reflectorBaseNode.getVirtualCamera(camera);
+    // quality-allow: three 0.185 does not type `_reflectorBaseNode` on the reflector node it returns
+    return (this.#reflector as unknown as IReflectorWithPass)._reflectorBaseNode.getVirtualCamera(
+      camera,
+    );
   }
 
   /** What the mirrored pass draws, as the mask the game supplied. Undefined means everything. */
