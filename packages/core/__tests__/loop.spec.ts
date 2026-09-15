@@ -373,4 +373,17 @@ describe("after-physics phase dispatch", () => {
     phase.run(1 / 60);
     expect(seen).toEqual(["outer", "outer", "second", "second"]);
   });
+
+  it("leaves the deep pool clean after a callback throws", () => {
+    const phase = createAfterPhysicsPhase();
+    const seen: string[] = [];
+    phase.register(() => {
+      throw new Error("callback failed");
+    });
+    expect(() => phase.run(1 / 60)).toThrow("callback failed");
+    phase.clear();
+    phase.register(() => seen.push("after"));
+    phase.run(1 / 60);
+    expect(seen).toEqual(["after"]);
+  });
 });
