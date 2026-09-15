@@ -241,8 +241,10 @@ from this repository keeps its own line with its blocker named underneath rather
   - 2026-09-15: the starter scaffolded from this candidate's packed packages, built with `threenative build --target desktop --mode release`, extracted under a path containing a space and verified by the installed verifier: exit 0, `pass: true`, 300 frames, 21 813 colours, 338 cyan asset pixels. Archive sha256 `a0107a9c40800520e34c377424fe75816b96b7af2ac517b764efddc55a18c0a5`.
 - [x] linux-x64: the container records the game's OS identity and refuses a tampered or missing resource.
   - The produced `threenative-container.json` records `share/applications/com.threenative.starter.desktop` (carrying `Name=` and `Exec=`) and `share/icons/hicolor/256x256/apps/com.threenative.starter.png` with SHA-256s, alongside the executable and every UI resource. Tamper and omission are refused by `resolveContainer`, covered by `tests/desktop-container.test.mjs`.
-- [ ] macOS: `--mode release` produces a `.app` inside a ZIP that extracts outside the project and launches the unchanged starter with its WebView HUD attached.
-- [ ] macOS: the container carries `Contents/Info.plist` at its bundle location and the `.icns` converted from the authored icon by `sips`/`iconutil`.
+- [x] macOS: `--mode release` produces a `.app` inside a ZIP that extracts outside the project and launches the unchanged starter with its WebView HUD attached.
+  - CI run [35017332390](https://github.com/ThreeNativeHQ/threenative/actions/runs/35017332390), `macOS desktop core` on `macos-15`: the container was built on the host, relocated to a path containing a space and launched by the installed verifier. `TN_NATIVE_SMOKE_READY:webgpu`, `TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb`, `TN_UI_OVERLAY:{"attached":true}`, `Rendered 300 frames in 15332ms`, verifier `pass: true`. Archive `threenative-starter-native.zip` sha256 `e3e03e152f91736b5b57f9804478ca697b5640b3ce64c11e00d0296e1fbd86ac`.
+- [x] macOS: the container carries `Contents/Info.plist` at its bundle location and the `.icns` converted from the authored icon by `sips`/`iconutil`.
+  - Same run: the identity step read `CFBundleName` back out of the relocated bundle with `plutil` and required the `.icns` named by `CFBundleIconFile` to exist. The manifest records `Contents/Info.plist`, `Contents/Resources/threenative-starter-native.icns` and the executable at `Contents/MacOS/`, with 30 system prerequisites.
 - [ ] windows-x64: `--mode release` produces a ZIP that extracts outside the project and launches the unchanged starter with its WebView HUD attached.
 - [ ] windows-x64: the executable carries the authored icon and version strings in its PE resources, embedded by `rcedit`.
 
@@ -252,7 +254,8 @@ from this repository keeps its own line with its blocker named underneath rather
   - Phase 2, 2026-09-13: launched from an unprivileged bubblewrap sandbox with a fresh `HOME`, `PATH=/nonexistent` and no engine checkout bound.
 - [x] linux-x64: the unpacked container launches with networking disabled.
   - Same run, `--unshare-net`: `TN_NATIVE_SMOKE_READY:webgpu`, assets loaded, HUD attached, 300 frames, non-blank capture.
-- [ ] macOS: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+- [x] macOS: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+  - Same run: a second launch of the relocated executable with `PATH=/usr/bin:/bin`, asserting `TN_NATIVE_SMOKE_READY:webgpu` and a completed frame count.
 - [ ] windows-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
 - [x] Every claimed OS documents its player-side WebView/library prerequisite, and the Linux one is machine-checked with an actionable failure naming the library and its install step.
   - `packages/runtime-native/README.md` documents WebKitGTK/GTK, WebView2 Evergreen and system WebKit. A missing `libwebkit2gtk-4.1.so.0` refuses with `TN_NATIVE_STARTER_PREREQUISITE_MISSING` and its install step; covered by `tests/starter-desktop.test.mjs`.
@@ -280,7 +283,8 @@ from this repository keeps its own line with its blocker named underneath rather
 
 **Downstream consumers and promotion**
 
-- [ ] The container archive hash and its manifest are published as retrievable evidence that another PRD can consume.
+- [x] The container archive hash and its manifest are published as retrievable evidence that another PRD can consume.
+  - Each lane uploads `archive.sha256` and `container-manifest.json` as `native-desktop-release-<platform>`. Both the Linux and macOS artifacts of run 35017332390 were downloaded and read back.
 - [ ] PRD-375 appearance consumes this container's hash.
   - Blocked: PRD-375 phase 2 is its own PRD and its own PR; it was parked on these containers reaching `develop`.
 - [ ] PRD-366 gameplay consumes this container's hash.
