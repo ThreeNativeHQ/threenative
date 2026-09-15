@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { test } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { notarizeArchive, packageDesktopContainer } from '../scripts/desktop-distribution.mjs';
 
 const config = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
@@ -13,7 +13,7 @@ const digest = (path) => createHash('sha256').update(readFileSync(path)).digest(
 // Real filesystem and staging; OS signing/notary tools are fixtures, not credentialed proof.
 // Archive bytes are deterministic stand-ins here. The local verification also runs real ZIP/tar.
 function fixture(runTest) {
-  const root = mkdtempSync(join(tmpdir(), 'threenative-release-transaction-'));
+  const root = makeTempDirSync('threenative-release-transaction-');
   try {
     const executable = join(root, 'input');
     writeFileSync(executable, 'unsigned executable');
