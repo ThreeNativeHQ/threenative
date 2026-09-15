@@ -10,6 +10,25 @@ Filed 2026-09-02 against `5879799d` from a probe of `packages/runtime-native` an
 standing records: `docs/verification/runtime-perf-state.md` and
 `docs/architecture/NATIVE-PERF-BOTTLENECKS.md`.
 
+## Midway game-render PRDs (filed 2026-09-15)
+
+These four are the game-render counterpart to the native-runtime rows below: they were filed from a
+measured optimisation campaign on the external game `sandbox/midway-open-pacific` (RTX 2080, WebGPU)
+and they are ordered by dependency. PRD-387 precedes PRD-386 because GPU-driven submission multiplies
+the variant count that 387 must prepare off-frame.
+
+| PRD | Title | Kind |
+| --- | --- | --- |
+| [PRD-386](PRD-386-gpu-driven-rendering-compute-culling-and-indirect-draws.md) | GPU-driven rendering: compute culling and indirect draws | mechanism |
+| [PRD-387](PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md) | shader variants are prepared off-frame, and bounded | prerequisite |
+| [PRD-388](PRD-388-an-automatic-optimizer-must-price-its-own-cost.md) | an automatic optimizer must price its own cost | policy |
+| [PRD-389](PRD-389-the-frame-budgets-instruments-do-not-lie.md) | the frame budget's instruments do not lie | instrument honesty |
+
+The measured evidence behind them lives outside this repository in the Midway campaign capture; the
+in-repo record of the adopted engine fix and its raw evidence is
+[`docs/midway-adoption-verify/`](../../../midway-adoption-verify/README.md). Each PRD states which
+closure gates a single-NVIDIA-GPU, no-mobile-hardware machine can reach and which it cannot.
+
 ## What the evidence says, in five lines
 
 1. **A scaffolded template already holds 60 fps at full resolution on the phone** (59.99–60.02
