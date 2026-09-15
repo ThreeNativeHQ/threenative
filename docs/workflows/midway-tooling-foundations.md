@@ -169,7 +169,8 @@ Canonical workspace tools with the pinned dependencies (Node `v20.19.6`, pnpm `1
   example tests pass, and `packages/engine-mcp` type-checks every hand-authored example.
 - [x] `pnpm typecheck` clean; `pnpm lint` exits 0 (Biome); `pnpm budgets` exits 0; `pnpm build`
   exits 0; `pnpm check:docs` clean.
-- [x] Root Vitest: 5205 passed, 5 skipped, 0 failed.
+- [x] Root Vitest: 5218 passed, 5 skipped, 0 failed (after merging develop's resolution-scaler and
+  `ctx.beforeRender` commits).
 - [x] Real browser/private-display capture for `withBrowserCapture` against the in-repo
   `abyss-framework` fixture: a private Xvfb display, a non-blank PNG, and provenance naming a
   hardware WebGPU adapter (NVIDIA Turing), not SwiftShader.
