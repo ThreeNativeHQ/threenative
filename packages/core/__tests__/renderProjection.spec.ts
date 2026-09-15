@@ -9,6 +9,10 @@ import {
   Group,
   InstancedMesh,
   LOD,
+  Line,
+  LineBasicMaterial,
+  LineLoop,
+  LineSegments,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -60,8 +64,13 @@ function fill(parent: Object3D, material: MeshStandardMaterial, count: number): 
 function drawCandidates(root: Object3D): Object3D[] {
   const found: Object3D[] = [];
   root.traverse((object) => {
-    const candidate = object as Mesh & { isSprite?: boolean; isPoints?: boolean };
-    if (candidate.isMesh === true || candidate.isSprite === true || candidate.isPoints === true) {
+    const candidate = object as Mesh & { isSprite?: boolean; isPoints?: boolean; isLine?: boolean };
+    if (
+      candidate.isMesh === true ||
+      candidate.isSprite === true ||
+      candidate.isPoints === true ||
+      candidate.isLine === true
+    ) {
       found.push(object);
     }
   });
@@ -1251,6 +1260,61 @@ describe("SceneRenderProjection exact lane corpus", () => {
     expect(projection.report.exact.sprite).toBe(1);
     expect(projection.report.exact.points).toBe(1);
     expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps Line, LineSegments and LineLoop as their own primitive on the game's geometry", () => {
+    // `LineSegments` and `LineLoop` both set `isLine`, so a stand-in chosen by that flag alone is
+    // a plain `Line` and draws every segment joined into one connected zigzag — the wrong shape,
+    // in the mirror the renderer is handed. The primitive class is part of what makes the exact
+    // draw the game authored, exactly as the skeleton is for a `SkinnedMesh`.
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const material = new LineBasicMaterial();
+    const makeGeometry = (drawCount: number) => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(12), 3));
+      geometry.setDrawRange(0, drawCount);
+      return geometry;
+    };
+    const lineGeometry = makeGeometry(2);
+    const segmentsGeometry = makeGeometry(4);
+    const loopGeometry = makeGeometry(8);
+    scene.add(new Line(lineGeometry, material));
+    scene.add(new LineSegments(segmentsGeometry, material));
+    scene.add(new LineLoop(loopGeometry, material));
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+    projection.root.updateMatrixWorld();
+
+    // The projection is actually engaged, and every line kept a draw of its own.
+    expect(projection.report.exact.points).toBe(3);
+    expect(projection.report.projectedObjects).toBe(300);
+
+    const proxyFor = (geometry: BufferGeometry) =>
+      drawCandidates(projection.root).find((o) => (o as Mesh).geometry === geometry) as unknown as {
+        geometry: BufferGeometry;
+        isLine?: boolean;
+        isLineSegments?: boolean;
+        isLineLoop?: boolean;
+      };
+
+    const lineProxy = proxyFor(lineGeometry);
+    expect(lineProxy.isLine).toBe(true);
+    expect(lineProxy.isLineSegments).toBeUndefined();
+    expect(lineProxy.isLineLoop).toBeUndefined();
+    expect(lineProxy.geometry).toBe(lineGeometry);
+    expect(lineProxy.geometry.drawRange.count).toBe(2);
+
+    const segmentsProxy = proxyFor(segmentsGeometry);
+    expect(segmentsProxy.isLineSegments).toBe(true);
+    expect(segmentsProxy.geometry).toBe(segmentsGeometry);
+    expect(segmentsProxy.geometry.drawRange.count).toBe(4);
+
+    const loopProxy = proxyFor(loopGeometry);
+    expect(loopProxy.isLineLoop).toBe(true);
+    expect(loopProxy.geometry).toBe(loopGeometry);
+    expect(loopProxy.geometry.drawRange.count).toBe(8);
   });
 
   it("keeps an LOD's levels out of one another", () => {

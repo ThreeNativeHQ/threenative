@@ -825,8 +825,10 @@ export type { ITweenOptions, ScheduleHandle } from "./schedule.js";
  * Implement a portable Godot-shaped game scene lifecycle.
  * @situation add a playable level or menu scene
  * @situation move scene setup and per-frame gameplay out of the entry point
+ * @situation run scene work once per actual world draw, after the frame's last fixed update and before the projection packs
  * @constraint scene code must stay portable across web and native
  * @example class Play extends Scene { update(ctx, dt) {} }
+ * @example ctx.beforeRender(() => packBatches()); // cleared on scene change and stop, like ctx.afterPhysics
  */
 export { Scene } from "./scene.js";
 export type { ICtx, SceneFrame } from "./scene.js";
