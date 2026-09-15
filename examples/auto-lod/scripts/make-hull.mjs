@@ -24,7 +24,9 @@ for (let vertex = 0; vertex < position.count; vertex += 1) {
 }
 
 const pad = (buffer, fill) =>
-  buffer.length % 4 === 0 ? buffer : Buffer.concat([buffer, Buffer.alloc(4 - (buffer.length % 4), fill)]);
+  buffer.length % 4 === 0
+    ? buffer
+    : Buffer.concat([buffer, Buffer.alloc(4 - (buffer.length % 4), fill)]);
 const positionBuffer = Buffer.from(positions.buffer, positions.byteOffset, positions.byteLength);
 const indexBuffer = Buffer.from(indices.buffer, indices.byteOffset, indices.byteLength);
 const bin = pad(Buffer.concat([positionBuffer, indexBuffer]), 0);
@@ -54,8 +56,13 @@ const json = pad(
         },
       ],
       buffers: [{ byteLength: bin.length }],
-      materials: [{ name: "hull", pbrMetallicRoughness: { metallicFactor: 0.1, roughnessFactor: 0.7 } }],
-      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1, material: 0, mode: 4 }] }],
+      materials: [
+        { name: "hull", pbrMetallicRoughness: { metallicFactor: 0.1, roughnessFactor: 0.7 } },
+      ],
+      meshes: [
+        // biome-ignore lint/style/useNamingConvention: `POSITION` is the glTF attribute semantic, fixed by the spec.
+        { primitives: [{ attributes: { POSITION: 0 }, indices: 1, material: 0, mode: 4 }] },
+      ],
       nodes: [{ mesh: 0 }],
       scene: 0,
       scenes: [{ nodes: [0] }],
