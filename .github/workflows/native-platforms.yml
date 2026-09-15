@@ -1210,11 +1210,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target="$RUNNER_TEMP/threenative-starter-native"
+          # git-bash ships GNU tar, which reads `D:\a\_temp\...` as a remote host:path spec and
+          # fails with "Cannot connect to D". Work in POSIX paths on Windows so no argument carries
+          # a drive-letter colon; every later step takes these same normalised values.
+          root="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then root=$(cygpath -u "$RUNNER_TEMP"); fi
+          target="$root/threenative-starter-native"
           # The space in the destination is the point: the unpacked container must launch wherever a
           # player put it, so it is relocated out of the build tree before it is verified.
-          dest="$RUNNER_TEMP/tn relocated/unpacked"
-          rm -rf "$RUNNER_TEMP/tn relocated"
+          dest="$root/tn relocated/unpacked"
+          rm -rf "$root/tn relocated"
           mkdir -p "$dest"
           # dist-native also holds the debug build's raw executable and ui/, so match the release
           # archive by extension instead of a project name that varies per scaffold.
@@ -1308,7 +1313,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target="$RUNNER_TEMP/threenative-starter-native"
+          # Same POSIX normalisation as the relocate step, so the verifier sees one path style.
+          root="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then root=$(cygpath -u "$RUNNER_TEMP"); fi
+          target="$root/threenative-starter-native"
           cd "$target"
           # The installed verifier, not the engine checkout: it is the copy a player gets.
           node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \

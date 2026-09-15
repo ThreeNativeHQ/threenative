@@ -248,6 +248,16 @@ from this repository keeps its own line with its blocker named underneath rather
 - [ ] windows-x64: `--mode release` produces a ZIP that extracts outside the project and launches the unchanged starter with its WebView HUD attached.
 - [ ] windows-x64: the executable carries the authored icon and version strings in its PE resources, embedded by `rcedit`.
 
+**Known limitation, Windows dependency bundling**
+
+`dumpbin /DEPENDENTS` reports names without paths, so on Windows a dependency can only ever be
+classified as a system prerequisite, never located and carried inside the container. A game shipping
+its own DLL beside the executable is therefore refused by name
+(`TN_DESKTOP_DEPENDENCY_UNLOCATABLE`) rather than bundled. That is fail-closed and correct for every
+consumer this PRD claims — the starter's dependencies are all system-provided or statically linked —
+but a game with a private DLL needs the census to resolve names against the binary's own directory
+first. Not built here because nothing needs it; recorded so it is not mistaken for working.
+
 **Installed-player proof**
 
 - [x] linux-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
