@@ -405,6 +405,18 @@ function clearScene(scene: ThreeScene, computeDriven: ComputeDrivenRegistry): vo
   scene.fog = null;
 }
 
+/** The measured draw count on its own, for the projection line that reads it every frame. */
+function rendererDrawCallCount(raw: unknown): number | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const info = (raw as { info?: unknown }).info;
+  if (typeof info !== "object" || info === null) return undefined;
+  const render = (info as { render?: unknown }).render;
+  if (typeof render !== "object" || render === null) return undefined;
+  const drawCalls = (render as { drawCalls?: unknown }).drawCalls;
+  const calls = drawCalls ?? (render as { calls?: unknown }).calls;
+  return typeof calls === "number" && Number.isFinite(calls) && calls >= 0 ? calls : undefined;
+}
+
 function rendererPerformanceMetrics(raw: unknown): {
   drawCalls?: number;
   triangles?: number;
@@ -414,13 +426,10 @@ function rendererPerformanceMetrics(raw: unknown): {
   if (typeof info !== "object" || info === null) return {};
   const render = (info as { render?: unknown }).render;
   if (typeof render !== "object" || render === null) return {};
-  const drawCalls = (render as { drawCalls?: unknown }).drawCalls;
-  const calls = drawCalls ?? (render as { calls?: unknown }).calls;
   const triangles = (render as { triangles?: unknown }).triangles;
+  const drawCalls = rendererDrawCallCount(raw);
   return {
-    ...(typeof calls === "number" && Number.isFinite(calls) && calls >= 0
-      ? { drawCalls: calls }
-      : {}),
+    ...(drawCalls === undefined ? {} : { drawCalls }),
     ...(typeof triangles === "number" && Number.isFinite(triangles) && triangles >= 0
       ? { triangles }
       : {}),
@@ -522,6 +531,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   // Unlike afterPhysics, this seam's frame boundary is the world-render block below, so it is a
   // plain scene-owned set rather than a phase on the loop.
   #beforeRenderCallbacks = new Set<() => void>();
+  // Reused snapshot buffers, one per nesting depth, so a steady frame allocates no callback array.
+  #beforeRenderSnapshots: Array<Array<() => void>> = [];
+  #beforeRenderDepth = 0;
   #frameBudget: FrameBudget | undefined;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
@@ -1221,8 +1233,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           const renderStart = frameBudget === undefined ? 0 : budgetNow();
           // Scene prep that must read the frame's last solved state before the projection packs and
           // the renderer draws. Inside the world-render block it cannot land on a held loader frame.
-          if (this.#beforeRenderCallbacks.size > 0)
-            for (const callback of [...this.#beforeRenderCallbacks]) callback();
+          if (this.#beforeRenderCallbacks.size > 0) {
+            let snapshot = this.#beforeRenderSnapshots[this.#beforeRenderDepth];
+            if (snapshot === undefined) {
+              snapshot = [];
+              this.#beforeRenderSnapshots[this.#beforeRenderDepth] = snapshot;
+            }
+            this.#beforeRenderDepth += 1;
+            snapshot.length = 0;
+            for (const callback of this.#beforeRenderCallbacks) snapshot.push(callback);
+            try {
+              for (const callback of snapshot) callback();
+            } finally {
+              this.#beforeRenderDepth -= 1;
+            }
+          }
           // Let a depth-coupled scene update its output node while the scene pass is still the
           // next render. Ordinary scenes keep the historical hook order and timing.
           const depthCoupledOutput = this.#hasDepthCoupledOutput;
@@ -1235,7 +1260,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           updateClusteredMeshes(
             this.#projection?.root ?? threeScene,
             camera,
-            renderer.surface().drawingBufferHeight,
+            renderer.surfaceDrawingBufferHeight?.() ?? renderer.surface().drawingBufferHeight,
           );
           renderer.render(this.#projection?.root ?? threeScene, camera);
           this.#projection?.commit();
@@ -1264,7 +1289,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // Read whether or not the game asked for render metrics: the projection line reports
           // the measured draw count, and a convention's measurement does not switch off with the
           // convention that happens to sit beside it.
-          lastWorldDrawCalls = rendererPerformanceMetrics(renderer.raw).drawCalls;
+          lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
         }
         if (mustPresentLoader) loadingFramePresented = true;
         if (canvasLayer.scene.children.length > 0) {
