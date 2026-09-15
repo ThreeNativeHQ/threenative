@@ -1,4 +1,12 @@
-import { PerspectiveCamera, Quaternion, Vector3 } from "three";
+import {
+  type Camera,
+  PerspectiveCamera,
+  Quaternion,
+  Scene,
+  Vector2,
+  Vector3,
+  WebGPUCoordinateSystem,
+} from "three";
 import { vec2 } from "three/tsl";
 import { describe, expect, it } from "vitest";
 import { WaterSurface3D } from "../src/water-surface.js";
@@ -120,5 +128,148 @@ describe("WaterSurface3D", () => {
       surface.thicknessAt(offset),
     ])
       expect(isNode(node)).toBe(true);
+  });
+});
+
+/**
+ * `IWaterReflectionOptions.refreshInterval` is how often the mirrored pass redraws. It is the whole
+ * render that costs, not the binding between renders, so skipping the pass on the frames between
+ * leaves the previous target bound and the material sampling it. The default — no interval — is
+ * today's behaviour: a redraw on every update.
+ */
+describe("WaterSurface3D reflection refresh interval", () => {
+  interface IReflectorPass {
+    updateBefore(frame: {
+      scene: Scene;
+      camera: Camera;
+      renderer: IStubRenderer;
+      material: { visible: boolean };
+    }): void;
+  }
+
+  interface IStubRenderer {
+    autoClear: boolean;
+    coordinateSystem: number;
+    getDrawingBufferSize(target: Vector2): Vector2;
+    getMRT(): null;
+    getRenderTarget(): null;
+    setMRT(mrt: unknown): void;
+    setRenderTarget(target: unknown): void;
+    clear(): void;
+    render(scene: Scene, camera: Camera): void;
+  }
+
+  function stubRenderer(renders: Camera[]): IStubRenderer {
+    return {
+      autoClear: true,
+      coordinateSystem: WebGPUCoordinateSystem,
+      getDrawingBufferSize: (target: Vector2): Vector2 => target.set(960, 540),
+      getMRT: (): null => null,
+      getRenderTarget: (): null => null,
+      setMRT: (_mrt: unknown): void => {},
+      setRenderTarget: (_target: unknown): void => {},
+      clear: (): void => {},
+      render: (_scene: Scene, camera: Camera): void => {
+        renders.push(camera);
+      },
+    };
+  }
+
+  function passOf(surface: WaterSurface3D): IReflectorPass {
+    const split = surface.reflectionAt() as unknown as {
+      node: { _reflectorBaseNode: IReflectorPass };
+    };
+    return split.node._reflectorBaseNode;
+  }
+
+  /** The render target texture the material samples right now. */
+  function boundTexture(surface: WaterSurface3D): unknown {
+    return (surface.reflectionAt() as unknown as { node: { value: unknown } }).node.value;
+  }
+
+  function sceneCamera(): PerspectiveCamera {
+    const camera = new PerspectiveCamera(50, 1, 0.5, 8000);
+    camera.position.set(0, 20, 60);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    return camera;
+  }
+
+  function drive(pass: IReflectorPass, camera: PerspectiveCamera, renders: Camera[]): void {
+    pass.updateBefore({
+      scene: new Scene(),
+      camera,
+      renderer: stubRenderer(renders),
+      material: { visible: true },
+    });
+  }
+
+  it("redraws every update when no interval is named — today's behaviour", () => {
+    const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection });
+    const pass = passOf(surface);
+    const camera = sceneCamera();
+    const renders: Camera[] = [];
+    for (let i = 0; i < 4; i += 1) drive(pass, camera, renders);
+    expect(renders).toHaveLength(4);
+  });
+
+  it("skips the render between refreshes and keeps sampling the previous target", () => {
+    const surface = new WaterSurface3D({
+      level: 0,
+      maxThickness: 3,
+      reflection: { ...reflection, refreshInterval: 2 },
+    });
+    expect(surface.reflectionRefreshInterval).toBe(2);
+    const pass = passOf(surface);
+    const camera = sceneCamera();
+    const renders: Camera[] = [];
+
+    drive(pass, camera, renders); // call 0 — render
+    const first = boundTexture(surface);
+    expect(first).toBeDefined();
+
+    drive(pass, camera, renders); // call 1 — skipped
+    expect(renders).toHaveLength(1);
+    expect(boundTexture(surface)).toBe(first);
+
+    drive(pass, camera, renders); // call 2 — render
+    drive(pass, camera, renders); // call 3 — skipped
+    expect(renders).toHaveLength(2);
+  });
+
+  it("still refreshes while the camera moves, on the interval's schedule", () => {
+    const surface = new WaterSurface3D({
+      level: 0,
+      maxThickness: 3,
+      reflection: { ...reflection, refreshInterval: 3 },
+    });
+    const pass = passOf(surface);
+    const renders: Camera[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const camera = sceneCamera();
+      camera.position.x = i * 5;
+      camera.updateMatrixWorld();
+      drive(pass, camera, renders); // calls 0, 3 and 6 render; the rest skip
+    }
+    expect(renders).toHaveLength(3);
+    // The last redraw was taken from the camera presented at call 6, not a stale one: the virtual
+    // camera is that camera mirrored through the water plane.
+    const last = renders.at(-1);
+    if (last === undefined) throw new Error("no reflection render");
+    expect(last.position.x).toBeCloseTo(30, 5);
+    expect(last.position.y).toBeCloseTo(-20, 5);
+  });
+
+  it("refuses an interval that is not a positive integer", () => {
+    for (const refreshInterval of [0, -1, 1.5, Number.NaN]) {
+      expect(
+        () =>
+          new WaterSurface3D({
+            level: 0,
+            maxThickness: 3,
+            reflection: { ...reflection, refreshInterval },
+          }),
+      ).toThrow(/refreshInterval/u);
+    }
   });
 });
