@@ -284,6 +284,16 @@ export interface IThreeNativeConfig {
      */
     readonly projection?: boolean;
     /**
+     * Projected diameter, in raster pixels, below which the engine does not submit an object to
+     * the render camera. On by default at a conservative **0.5 px**: an object under half a pixel
+     * cannot light a whole pixel of the frame, so only unresolvable geometry is removed. Set a
+     * larger number for a tuned cut — a shipped game's ladder chose 2 px — or `false` to leave
+     * every object drawn. The measurement still runs with `false`; `TN_PROJECTION` reports how many
+     * objects were considered and skipped. Exempt a single object with `alwaysRender` from
+     * `@threenative/core`; the player's camera-attached objects and shadow casters are already kept.
+     */
+    readonly minimumProjectedPixels?: number | false;
+    /**
      * Android-only rendering overrides selected by the engine.
      *
      * `antialias` belongs here beside `resolutionScale` because they spend the same budget: a
