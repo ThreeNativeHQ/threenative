@@ -246,8 +246,14 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       `packages/core/__tests__/picking.spec.ts` "picks the authored LOD0 surface while the camera
       draws a coarser level" — the BVH is built from LOD0 and the ray is run against LOD0 while the
       mesh is drawn at the coarse level. Node identity/transform preservation is not yet asserted.
-- [ ] Instance isolation and shared-resource lifetime tests pass. Levels are index-only and share the
-      base attributes, but instance isolation and unload/reload lifetime are not yet exercised.
+- [ ] Instance isolation and shared-resource lifetime tests pass.
+      Instance isolation is done: `model-lod-runtime.spec.ts` "isolates two instances that share one
+      base geometry" — each builds its own derived level and swapping one leaves the other and the
+      shared base untouched. Lifetime is **open and hazardous**: derived levels share the base
+      geometry's `BufferAttribute` objects, and three frees a geometry's attribute buffers on
+      `dispose()`, so disposing one geometry can free a sibling's shared vertex buffers. A correct fix
+      needs attribute refcounting in `disposeModel` (or detaching shared attributes before dispose);
+      no test yet.
 - [x] Runtime policy reaches the controller from the manifest. Evidence:
       `model-lod-loader.spec.ts` serves a manifest whose entry resolves `maxPixelError: 0.1` and the
       same far camera that coarsens under the default 1-pixel budget keeps LOD0 — the loader read the

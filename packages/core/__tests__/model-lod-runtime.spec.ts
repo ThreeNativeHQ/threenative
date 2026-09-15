@@ -1,4 +1,11 @@
-import { BufferAttribute, BufferGeometry, Mesh, PerspectiveCamera, Scene } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  Scene,
+} from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DiscreteLodPlugin,
@@ -146,5 +153,60 @@ describe("DiscreteLodPlugin", () => {
     await plugin.afterRoot({ scene: target });
     expect(plugin.attach(target, undefined)).toBe(0);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("TN_DISCRETE_LOD_INVALID"));
+  });
+
+  it("leaves node identity, transform, material and shadow flags intact", async () => {
+    const target = mesh();
+    const material = new MeshBasicMaterial();
+    target.material = material;
+    target.name = "hull";
+    target.position.set(3, 1, -2);
+    target.castShadow = true;
+    target.receiveShadow = true;
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser(parserFor(target, definition()) as never);
+    await plugin.afterRoot({ scene: target });
+    plugin.attach(target, { hysteresis: 0.15, maxPixelError: 1 });
+
+    const scene = new Scene();
+    scene.add(target);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 100);
+    camera.updateMatrixWorld(true);
+    updateModelLods(scene, camera, 1080);
+
+    expect(target.name).toBe("hull");
+    expect(target.material).toBe(material);
+    expect(target.position.toArray()).toEqual([3, 1, -2]);
+    expect(target.castShadow).toBe(true);
+    expect(target.receiveShadow).toBe(true);
+  });
+
+  it("isolates two instances that share one base geometry", async () => {
+    const base = baseGeometry();
+    const left = new Mesh(base, undefined);
+    const right = new Mesh(base, undefined);
+    for (const instance of [left, right]) {
+      const plugin = new DiscreteLodPlugin();
+      plugin.setParser(parserFor(instance, definition()) as never);
+      await plugin.afterRoot({ scene: instance });
+      plugin.attach(instance, { hysteresis: 0.15, maxPixelError: 1 });
+    }
+
+    const scene = new Scene();
+    scene.add(left);
+    scene.add(right);
+    const far = new PerspectiveCamera(60, 1, 0.1, 1000);
+    far.position.set(0, 0, 100);
+    far.updateMatrixWorld(true);
+    updateModelLods(scene, far, 1080);
+
+    // Each instance built its own derived level; neither swap touched the other.
+    expect(left.geometry).not.toBe(base);
+    expect(right.geometry).not.toBe(base);
+    expect(left.geometry).not.toBe(right.geometry);
+    expect(left.geometry.getAttribute("position")).toBe(base.getAttribute("position"));
+    expect(right.geometry.getAttribute("position")).toBe(base.getAttribute("position"));
+    expect(base.index?.count).toBe(BASE_INDICES.length);
   });
 });
