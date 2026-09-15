@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { invalidScenario, loadPlaytestScenario, PlaytestScenarioError, playtestStepHoldTicks, playtestStepWaitTicks, rejectUnknownKeys } from "../src/index.js";
 import { reconcileBrowserPointers, resolveBrowserArguments, softwareAdapterName, WEBGPU_BROWSER_ARGS } from "../src/runner/index.js";
 
@@ -18,23 +18,19 @@ test("the browser capability examples invoke the advertised public operations", 
 });
 
 test("loader and tick examples work through the public entry, not the error factory", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "tn-capability-example-"));
-  try {
-    await writeFile(join(directory, "smoke.playtest.json"), JSON.stringify({
-      schemaVersion: 1, name: "capability-example", target: "web",
-      viewport: { width: 640, height: 480 }, warmupFrames: 0,
-      assert: { diagnostics: { runtimeReady: true } },
-      steps: [{ kind: "input", press: "KeyW", holdTicks: 30, release: true }, { kind: "wait", waitTicks: 30 }],
-    }));
-    const scenario = await loadPlaytestScenario(directory, "smoke.playtest.json");
-    const hold = scenario.steps[0];
-    const wait = scenario.steps[1];
-    assert.ok(hold !== undefined && wait !== undefined);
-    assert.equal(playtestStepHoldTicks(hold), 30);
-    assert.equal(playtestStepWaitTicks(wait), 30);
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
+  const directory = await makeTempDir("tn-capability-example-");
+  await writeFile(join(directory, "smoke.playtest.json"), JSON.stringify({
+    schemaVersion: 1, name: "capability-example", target: "web",
+    viewport: { width: 640, height: 480 }, warmupFrames: 0,
+    assert: { diagnostics: { runtimeReady: true } },
+    steps: [{ kind: "input", press: "KeyW", holdTicks: 30, release: true }, { kind: "wait", waitTicks: 30 }],
+  }));
+  const scenario = await loadPlaytestScenario(directory, "smoke.playtest.json");
+  const hold = scenario.steps[0];
+  const wait = scenario.steps[1];
+  assert.ok(hold !== undefined && wait !== undefined);
+  assert.equal(playtestStepHoldTicks(hold), 30);
+  assert.equal(playtestStepWaitTicks(wait), 30);
 });
 
 test("error and validation examples do not perform a playtest", () => {

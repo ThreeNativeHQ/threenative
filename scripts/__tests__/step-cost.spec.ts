@@ -8,18 +8,22 @@ function clockedFixture(cost: number) {
   let clock = 0;
   let calls = 0;
   const ticks: number[] = [];
-  const result = measureStepCost(workload, () => {
-    clock += 100;
-    return {
-      snapshot: () => calls,
-      step: (tick: number, dt: number) => {
-        assert.equal(dt, workload.dt);
-        ticks.push(tick);
-        calls += 1;
-        clock += cost;
-      },
-    };
-  }, () => clock);
+  const result = measureStepCost(
+    workload,
+    () => {
+      clock += 100;
+      return {
+        snapshot: () => calls,
+        step: (tick: number, dt: number) => {
+          assert.equal(dt, workload.dt);
+          ticks.push(tick);
+          calls += 1;
+          clock += cost;
+        },
+      };
+    },
+    () => clock,
+  );
   return { result, ticks };
 }
 
@@ -43,7 +47,13 @@ test("the same workload's more expensive implementation trips the budget", () =>
 });
 
 test("percentiles use the complete finite observed series", () => {
-  assert.deepEqual(summarizeStepCost([5, 1, 2, 3, 4]), { count: 5, maxMs: 5, meanMs: 3, p50Ms: 3, p95Ms: 5 });
+  assert.deepEqual(summarizeStepCost([5, 1, 2, 3, 4]), {
+    count: 5,
+    maxMs: 5,
+    meanMs: 3,
+    p50Ms: 3,
+    p95Ms: 5,
+  });
 });
 
 for (const samples of [[], [0], [-1], [Number.NaN], [Number.POSITIVE_INFINITY]]) {
@@ -52,26 +62,47 @@ for (const samples of [[], [0], [-1], [Number.NaN], [Number.POSITIVE_INFINITY]])
   });
 }
 
-for (const patch of [{ population: 0 }, { measuredTicks: 0 }, { warmupTicks: -1 }, { seed: Number.NaN }, { dt: 0 }]) {
+for (const patch of [
+  { population: 0 },
+  { measuredTicks: 0 },
+  { warmupTicks: -1 },
+  { seed: Number.NaN },
+  { dt: 0 },
+]) {
   test(`rejects invalid workload ${JSON.stringify(patch)} before setup`, () => {
     let entered = false;
-    assert.throws(() => measureStepCost({ ...workload, ...patch }, () => {
-      entered = true;
-      return { snapshot: () => 0, step: () => undefined };
-    }), /TN_STEP_COST_WORKLOAD_INVALID/);
+    assert.throws(
+      () =>
+        measureStepCost({ ...workload, ...patch }, () => {
+          entered = true;
+          return { snapshot: () => 0, step: () => undefined };
+        }),
+      /TN_STEP_COST_WORKLOAD_INVALID/,
+    );
     assert.equal(entered, false);
   });
 }
 
 test("an empty or malformed budget is not a passing assertion", () => {
   assert.throws(() => evaluateStepCost([1], {}), /TN_STEP_COST_BUDGET_INVALID/);
-  assert.throws(() => evaluateStepCost([1], { maxMeanMs: Number.NaN }), /TN_STEP_COST_BUDGET_INVALID/);
+  assert.throws(
+    () => evaluateStepCost([1], { maxMeanMs: Number.NaN }),
+    /TN_STEP_COST_BUDGET_INVALID/,
+  );
 });
 
 test("a changing or backwards clock fails instead of producing negative setup time", () => {
   let clock = 10;
-  assert.throws(() => measureStepCost(workload, () => ({
-    snapshot: () => 0,
-    step: () => undefined,
-  }), () => clock--), /TN_STEP_COST_CLOCK_INVALID/);
+  assert.throws(
+    () =>
+      measureStepCost(
+        workload,
+        () => ({
+          snapshot: () => 0,
+          step: () => undefined,
+        }),
+        () => clock--,
+      ),
+    /TN_STEP_COST_CLOCK_INVALID/,
+  );
 });

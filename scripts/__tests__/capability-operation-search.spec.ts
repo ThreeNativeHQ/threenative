@@ -1,29 +1,32 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { beforeAll, expect, test } from "vitest";
 import { searchCapabilities } from "../../packages/engine-mcp/src/index.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { buildCapabilityManifest } from "../build-capability-manifest.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-let directory: string | undefined;
 let manifestFile: string;
 
 beforeAll(async () => {
-  directory = await mkdtemp(join(tmpdir(), "threenative-operation-search-"));
+  const directory = await makeTempDir("threenative-operation-search-");
   manifestFile = join(directory, "capabilities.json");
   // Rebuild from source: a hand-edited JSON fixture cannot prove a metadata correction.
   await writeFile(manifestFile, JSON.stringify(buildCapabilityManifest(root)));
 }, 30_000);
 
-afterAll(async () => {
-  if (directory !== undefined) await rm(directory, { force: true, recursive: true });
-});
-
 test.each([
-  ["run a browser playtest with Vulkan WebGPU", "resolveBrowserArguments", "reconcileBrowserPointers"],
-  ["wait or hold a game for a deterministic number of ticks", "playtestStepWaitTicks", "invalidScenario"],
+  [
+    "run a browser playtest with Vulkan WebGPU",
+    "resolveBrowserArguments",
+    "reconcileBrowserPointers",
+  ],
+  [
+    "wait or hold a game for a deterministic number of ticks",
+    "playtestStepWaitTicks",
+    "invalidScenario",
+  ],
   ["load a deterministic tick-based playtest scenario", "loadPlaytestScenario", "invalidScenario"],
 ])("%s selects the callable shown by its example", (query, expected, wrong) => {
   const response = searchCapabilities(query, manifestFile);

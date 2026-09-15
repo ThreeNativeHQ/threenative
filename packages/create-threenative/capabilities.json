@@ -2849,18 +2849,15 @@
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["returns an error; the caller must throw it"],
+      "example": "import { invalidScenario } from \"@threenative/playtest\";\nthrow invalidScenario(\"smoke.playtest.json\", \"Expected a non-empty assertion set\");",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["construct a validation error for malformed scenario input"],
+      "summary": "Construct a named invalid-scenario error without loading or executing a scenario.",
       "supersedes": [],
       "symbol": "invalidScenario"
     },
@@ -2884,8 +2881,11 @@
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": [
+        "unknown scenario keys and missing referenced evidence fail closed",
+        "loading validates the fixture; use the runner to execute it"
+      ],
+      "example": "import { loadPlaytestScenario } from \"@threenative/playtest\";\nconst scenario = await loadPlaytestScenario(process.cwd(), \"playtests/smoke.playtest.json\");",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
@@ -2893,9 +2893,9 @@
       "signature": "export async function loadPlaytestScenario(projectPath: string, scenarioPath: string): Promise<IPlaytestScenario> { … }",
       "situations": [
         "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
+        "load a deterministic tick-based playtest scenario"
       ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "summary": "Load and validate a scenario and its referenced evidence before running it.",
       "supersedes": [],
       "symbol": "loadPlaytestScenario"
     },
@@ -3015,69 +3015,59 @@
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": [
+        "the diagnostic describes a failed load, not a successfully executed scenario"
+      ],
+      "example": "import { PlaytestScenarioError } from \"@threenative/playtest\";\nconst error = new PlaytestScenarioError({ code: \"TN_PLAYTEST_SCENARIO_INVALID\", message: \"Invalid fixture\", severity: \"error\", suggestion: \"Fix the fixture\" });",
       "importPath": "@threenative/playtest",
       "kind": "class",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export class PlaytestScenarioError extends Error { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["catch a structured playtest scenario validation error"],
+      "summary": "Carry a structured scenario validation diagnostic as an error.",
       "supersedes": [],
       "symbol": "PlaytestScenarioError"
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["reads the duration only; the runner advances the simulation"],
+      "example": "import { playtestStepHoldTicks } from \"@threenative/playtest\";\nconst ticks = playtestStepHoldTicks({ kind: \"input\", press: \"KeyW\", holdTicks: 30, release: true });",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["read the deterministic number of ticks to hold a playtest input"],
+      "summary": "Read a validated step's input-hold duration in simulation ticks.",
       "supersedes": [],
       "symbol": "playtestStepHoldTicks"
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["reads the wait duration only; the runner advances the simulation"],
+      "example": "import { playtestStepWaitTicks } from \"@threenative/playtest\";\nconst ticks = playtestStepWaitTicks({ kind: \"wait\", waitTicks: 30, release: true });",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function playtestStepWaitTicks(step: IPlaytestStep): number { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["wait or hold a game for a deterministic number of ticks"],
+      "summary": "Read a validated step's no-input duration in simulation ticks.",
       "supersedes": [],
       "symbol": "playtestStepWaitTicks"
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["throws an invalid-scenario error on the first unknown key"],
+      "example": "import { rejectUnknownKeys } from \"@threenative/playtest\";\nrejectUnknownKeys({ name: \"smoke\" }, [\"name\"], \"smoke.playtest.json\", \"scenario\");",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function rejectUnknownKeys( value: Record<string, unknown>, allowedKeys: readonly string[], scenarioPath: string, objectPath: string, ): void { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["reject an unknown field while validating a scenario object"],
+      "summary": "Reject object keys outside the explicitly allowed scenario fields.",
       "supersedes": [],
       "symbol": "rejectUnknownKeys"
     },
@@ -3911,18 +3901,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["inspect the adapter name before claiming GPU proof"],
-      "example": "const args = resolveBrowserArguments(undefined);",
+      "constraints": [
+        "returns changes only; the caller dispatches them and retains the next snapshot"
+      ],
+      "example": "import { reconcileBrowserPointers } from \"@threenative/playtest/runner\";\nconst changes = reconcileBrowserPointers(new Map(), [{ id: 1, x: 20, y: 30 }]);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function reconcileBrowserPointers( previous: ReadonlyMap<number, Required<IPlaytestPointer>>, next: readonly IPlaytestPointer[], ): IBrowserPointerChange[] { … }",
-      "situations": [
-        "run a browser playtest with Vulkan WebGPU",
-        "reject a SwiftShader adapter as evidence"
-      ],
-      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "situations": ["reconcile pointer contacts into down move and up events"],
+      "summary": "Compare pointer snapshots and produce down, move, and up transitions.",
       "supersedes": [],
       "symbol": "reconcileBrowserPointers"
     },
@@ -3962,18 +3951,18 @@
     },
     {
       "aliases": [],
-      "constraints": ["inspect the adapter name before claiming GPU proof"],
-      "example": "const args = resolveBrowserArguments(undefined);",
+      "constraints": [
+        "pass WEBGPU_BROWSER_ARGS explicitly; undefined selects no additional arguments",
+        "inspect the observed adapter before claiming hardware GPU evidence"
+      ],
+      "example": "import { resolveBrowserArguments, WEBGPU_BROWSER_ARGS } from \"@threenative/playtest/runner\";\nconst args = resolveBrowserArguments(WEBGPU_BROWSER_ARGS);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] { … }",
-      "situations": [
-        "run a browser playtest with Vulkan WebGPU",
-        "reject a SwiftShader adapter as evidence"
-      ],
-      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "situations": ["run a browser playtest with Vulkan WebGPU"],
+      "summary": "Copy the selected Chromium arguments without silently enabling a rendering recipe.",
       "supersedes": [],
       "symbol": "resolveBrowserArguments"
     },
@@ -4129,18 +4118,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["inspect the adapter name before claiming GPU proof"],
-      "example": "const args = resolveBrowserArguments(undefined);",
+      "constraints": [
+        "undefined means no software name was found, not proof of a hardware adapter"
+      ],
+      "example": "import { softwareAdapterName } from \"@threenative/playtest/runner\";\nconst software = softwareAdapterName({ architecture: \"swiftshader\" });",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function softwareAdapterName(adapter: Readonly<Record<string, string>> | undefined): string | undefined { … }",
-      "situations": [
-        "run a browser playtest with Vulkan WebGPU",
-        "reject a SwiftShader adapter as evidence"
-      ],
-      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "situations": ["reject a SwiftShader adapter as evidence"],
+      "summary": "Identify a software renderer in the fields reported by adapter.info.",
       "supersedes": [],
       "symbol": "softwareAdapterName"
     },
@@ -4298,6 +4286,25 @@
       "summary": "Drive and inspect Android playtest transport.",
       "supersedes": [],
       "symbol": "viewportRestoreCommands"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "browser only; requires a scenario and runtime.startup; does not execute scenario steps or assertions",
+        "cancellation is checked between resource acquisitions; lock waiting retains its own bounded queue policy",
+        "use session.screenshot for nonblank PNGs; private-display captures are not FPS evidence",
+        "use threenative-playtest trace --url <url> for slow-frame attribution instead of creating another profiler"
+      ],
+      "example": "import { parseStandalonePlaytestArgs, withBrowserCapture } from \"@threenative/playtest/runner\";\nconst config = parseStandalonePlaytestArgs([\"--scenario\", \"playtests/smoke.playtest.json\", \"--url\", \"http://127.0.0.1:5173\"]);\nawait withBrowserCapture(config, async (session) => session.screenshot(\"ready\"));",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function withBrowserCapture<T>( config: IStandalonePlaytestConfig, capture: (session: IBrowserCaptureSession) => Promise<T>, signal?: AbortSignal, ): Promise<T> { … }",
+      "situations": ["write a custom browser capture without owning Xvfb or Chromium cleanup"],
+      "summary": "Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.",
+      "supersedes": [],
+      "symbol": "withBrowserCapture"
     },
     {
       "aliases": [],

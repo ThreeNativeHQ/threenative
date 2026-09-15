@@ -30,27 +30,42 @@ export interface IStepCostResult<T> {
 }
 
 function validateWorkload(workload: IStepCostWorkload): void {
-  if (!Number.isSafeInteger(workload.population) || workload.population <= 0
-    || !Number.isSafeInteger(workload.measuredTicks) || workload.measuredTicks <= 0
-    || !Number.isSafeInteger(workload.warmupTicks) || workload.warmupTicks < 0
-    || !Number.isSafeInteger(workload.seed)
-    || !Number.isFinite(workload.dt) || workload.dt <= 0
-    || !Number.isSafeInteger(workload.warmupTicks + workload.measuredTicks)) {
-    throw new Error("TN_STEP_COST_WORKLOAD_INVALID: positive population/ticks/dt, integer seed and non-negative warmup are required.");
+  if (
+    !Number.isSafeInteger(workload.population) ||
+    workload.population <= 0 ||
+    !Number.isSafeInteger(workload.measuredTicks) ||
+    workload.measuredTicks <= 0 ||
+    !Number.isSafeInteger(workload.warmupTicks) ||
+    workload.warmupTicks < 0 ||
+    !Number.isSafeInteger(workload.seed) ||
+    !Number.isFinite(workload.dt) ||
+    workload.dt <= 0 ||
+    !Number.isSafeInteger(workload.warmupTicks + workload.measuredTicks)
+  ) {
+    throw new Error(
+      "TN_STEP_COST_WORKLOAD_INVALID: positive population/ticks/dt, integer seed and non-negative warmup are required.",
+    );
   }
 }
 
 function elapsed(now: () => number, started: number): number {
   const duration = now() - started;
   if (!Number.isFinite(duration) || duration < 0) {
-    throw new Error("TN_STEP_COST_CLOCK_INVALID: expected a finite monotonic clock in milliseconds.");
+    throw new Error(
+      "TN_STEP_COST_CLOCK_INVALID: expected a finite monotonic clock in milliseconds.",
+    );
   }
   return duration;
 }
 
 export function summarizeStepCost(samplesMs: readonly number[]): IStepCostSummary {
-  if (samplesMs.length === 0 || samplesMs.some((sample) => !Number.isFinite(sample) || sample <= 0)) {
-    throw new Error("TN_STEP_COST_SAMPLES_INVALID: every measured tick needs a finite positive duration.");
+  if (
+    samplesMs.length === 0 ||
+    samplesMs.some((sample) => !Number.isFinite(sample) || sample <= 0)
+  ) {
+    throw new Error(
+      "TN_STEP_COST_SAMPLES_INVALID: every measured tick needs a finite positive duration.",
+    );
   }
   const sorted = [...samplesMs].sort((a, b) => a - b);
   const count = sorted.length;
@@ -58,7 +73,13 @@ export function summarizeStepCost(samplesMs: readonly number[]): IStepCostSummar
   const p50Ms = sorted[Math.ceil(count * 0.5) - 1];
   const p95Ms = sorted[Math.ceil(count * 0.95) - 1];
   const meanMs = samplesMs.reduce((sum, sample) => sum + sample / count, 0);
-  if (maxMs === undefined || p50Ms === undefined || p95Ms === undefined || (!Number.isFinite(meanMs) || meanMs <= 0)) {
+  if (
+    maxMs === undefined ||
+    p50Ms === undefined ||
+    p95Ms === undefined ||
+    !Number.isFinite(meanMs) ||
+    meanMs <= 0
+  ) {
     throw new Error("TN_STEP_COST_SAMPLES_INVALID: the observed distribution is not measurable.");
   }
   return { count, maxMs, meanMs, p50Ms, p95Ms };
@@ -102,14 +123,17 @@ export function evaluateStepCost(
   budget: { readonly maxMeanMs?: number; readonly maxP95Ms?: number },
 ): { readonly pass: boolean; readonly summary: IStepCostSummary } {
   const limits = [budget.maxMeanMs, budget.maxP95Ms];
-  if (limits.every((limit) => limit === undefined)
-    || limits.some((limit) => limit !== undefined && (!Number.isFinite(limit) || limit <= 0))) {
+  if (
+    limits.every((limit) => limit === undefined) ||
+    limits.some((limit) => limit !== undefined && (!Number.isFinite(limit) || limit <= 0))
+  ) {
     throw new Error("TN_STEP_COST_BUDGET_INVALID: declare at least one finite positive bound.");
   }
   const summary = summarizeStepCost(samplesMs);
   return {
-    pass: (budget.maxMeanMs === undefined || summary.meanMs <= budget.maxMeanMs)
-      && (budget.maxP95Ms === undefined || summary.p95Ms <= budget.maxP95Ms),
+    pass:
+      (budget.maxMeanMs === undefined || summary.meanMs <= budget.maxMeanMs) &&
+      (budget.maxP95Ms === undefined || summary.p95Ms <= budget.maxP95Ms),
     summary,
   };
 }

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, test, vi } from "vitest";
+import { beforeEach, test, vi } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 vi.mock("playwright", async () => import("./fixtures/capture-session.js"));
 vi.mock("../src/capture.js", async () => import("./fixtures/capture-session.js"));
@@ -18,8 +18,7 @@ vi.mock("../src/runner/steps.js", async () => import("./fixtures/capture-session
 import { withBrowserCapture } from "../src/runner/captureSession.js";
 import { captureConfig, resetCaptureFixture, state } from "./fixtures/capture-session.js";
 let directory = "";
-beforeEach(async () => { resetCaptureFixture(); directory = await mkdtemp(join(tmpdir(), "tn-capture-session-")); });
-afterEach(async () => { await rm(directory, { force: true, recursive: true }); });
+beforeEach(async () => { resetCaptureFixture(); directory = await makeTempDir("tn-capture-session-"); });
 
 const cleanup = ["close-browser", "profiles", "stop-server", "release-display", "release-lock"];
 

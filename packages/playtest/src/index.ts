@@ -173,7 +173,7 @@ export { playtestStepHoldTicks } from "./scenario.js";
  * @situation wait or hold a game for a deterministic number of ticks
  * @constraint reads the wait duration only; the runner advances the simulation
  * @example import { playtestStepWaitTicks } from "@threenative/playtest";
- * const ticks = playtestStepWaitTicks({ kind: "wait", waitTicks: 30 });
+ * const ticks = playtestStepWaitTicks({ kind: "wait", waitTicks: 30, release: true });
  */
 export { playtestStepWaitTicks } from "./scenario.js";
 /**
