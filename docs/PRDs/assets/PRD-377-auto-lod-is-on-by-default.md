@@ -10,7 +10,7 @@ A developer authors one GLB and loads it through ThreeNative's normal asset path
 
 This is not a greenfield LOD renderer. The repository already has default-on virtual geometry for sufficiently dense primitives. Extend and reconcile that machinery, adding a conservative discrete-LOD path where it supplies missing value. Exactly one system owns detail selection for a primitive. Preserve the original source, the full-detail fallback, materials, object identity, and gameplay semantics.
 
-**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact and Phase 2 engine-owned runtime landed and tested; Phase 3 browser WebGPU and Linux native consumer evidence plus both dense-asset triangle-reduction gates pass on hardware (8,192 → 369 web / 368 native far-route triangles, RTX 2080). Windows/macOS/Android/iOS qualification, frame-time/quality/byte gates, default-on (Phase 4) and the remaining Closure Gates are NOT started. No Closure Gate is claimed complete. The opt-in join far rung (§4.4) landed for draw-bound assets — generation, config and artifact only; runtime selection of the joined rung is not wired.
+**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact and Phase 2 engine-owned runtime landed and tested; Phase 3 browser WebGPU and Linux native consumer evidence plus both dense-asset triangle-reduction gates pass on hardware (8,192 → 369 web / 368 native far-route triangles, RTX 2080). Windows/macOS/Android/iOS qualification, frame-time/quality/byte gates, default-on (Phase 4) and the remaining Closure Gates are NOT started. No Closure Gate is claimed complete. The opt-in join far rung (§4.4) is now selected at runtime by the one selection authority: the authored primitives are hidden and the joined proxy is shown as one unit, reversibly, with picking kept on the authored nodes. Shadow/reflection passes still share the main selection (no dedicated coarser shadow rung), and no GPU/browser run exercises the joined selection yet.
 **Date:** 2026-09-11.
 **Scope:** Asset compilation, configuration, ordinary model loading, and existing render integration.
 **Complexity:** HIGH — default-on lossy processing crosses build, runtime, and platform boundaries.
@@ -169,11 +169,24 @@ through the same `overrides` map as every other generation knob:
   primitives it collapsed and into how many draws, and record the exact `mesh#primitive` sources it
   joined. A requested join that collapsed nothing says so rather than implying a collapse.
 
-Runtime selection of the joined rung — swapping the authored meshes for the far mesh at distance —
-is **not wired by this extension**. It is the remaining step that makes the collapse pay at frame
-time, and it is where the node-identity constraint must be enforced per asset. What landed here is
-the generation and artifact contract: a cook can now produce and describe the draw-collapsed rung
-that a draw-bound asset needs.
+Runtime selection of the joined rung is **now wired**, still inside the one selection authority
+(`packages/core/src/model-lod.ts`), so a cook that wrote no `join` is byte-identical to before. The
+rung's absolute error is recorded in the artifact and appended as the coarsest step of the same
+discrete chain, so `selectLodLevel` picks it only when its projected error fits
+`runtime.maxPixelError`, with the same `hysteresis`. Selecting it is a draw-topology change, not a
+geometry pointer swap: the authored primitives are hidden and a proxy built from the detached far
+mesh is added under their shared container as one unit. The authored meshes are never removed or
+replaced, so node identity, transforms, render order and authored per-node visibility are restored
+byte-for-byte on the way back. Picking stays on the authored primitives: the framework picker
+skips the proxy (`isLodJoinProxy`), and the authored meshes remain raycastable because a ray test
+does not honour `visible`. The runtime re-checks what it is about to hide — every source present,
+all direct siblings under one container, none skinned or morphed, and none targeted by an animation
+channel — and refuses the rung with `TN_DISCRETE_LOD_JOIN_INVALID` otherwise rather than
+half-joining. The selection fact and the draw collapse are named once per activation in
+`TN_DISCRETE_LOD_JOINED`. What is **not** wired: a dedicated coarser shadow rung (shadow and
+reflection passes share the main selection, the same conservative shared choice the discrete path
+already made), and the join proxy uses the loaded far mesh's own materials, so a per-node material
+override made after load is not reflected in the joined draw.
 
 Report normalized simplifier error and the scale used to convert it to local-space absolute error. Attribute-weighted error must not be mislabeled as a pure position bound. Include downstream quantization effects in the reported budget or measure against the decoded baseline; do not lose units between the baker and runtime.
 
@@ -210,7 +223,11 @@ Refine immediately when the selected level exceeds budget. Coarsen only when the
 
 Multiple cameras, stereo views, reflection captures, and shadows must not reuse a stale choice from another pass. Choose the finest detail required by all relevant views, or use a proven pass-local selection mechanism. V1 does **not** automatically request an even coarser shadow LOD: retain LOD0 for shadows or prove a conservative shared choice. Main-camera invisibility does not remove an off-screen shadow caster.
 
+For the joined rung this is met without pass-local caching: the authority holds no per-pass level, and every call to `updateModelLods` recomputes from the camera it is handed, so a second pass cannot read a first pass's choice. The joined draw replaces the authored nodes for every pass at once — the same shared choice the discrete path makes — so a shadow or reflection camera does not get an independently coarser rung; that remains the open shadow question above, not a stale-reuse bug. Per-container state means two instances of the same joined model at different distances each join or refine on their own.
+
 Keep entity/node identity, names, transforms, materials, event mappings, authored visibility, and render order intact. Physics, collision, navigation, and default precision picking continue using baseline/source semantics, not camera-dependent render geometry. Document raw Three.js face-index behavior; stable framework picking must not depend on the selected render LOD.
+
+The joined rung keeps all of this by never touching the authored graph: it hides the authored primitives (`visible = false`), adds one proxy object under their shared container, and on revert removes the proxy and restores each primitive's captured `visible`. A framework pick skips the proxy (`isLodJoinProxy`), so it still answers with an authored node and its LOD0 surface; a stock three ray test also skips it, because the proxy's meshes carry a no-op `raycast`.
 
 Instances sharing an asset may need different detail. Do not mutate a shared geometry/index so that one instance changes every other instance, and do not silently de-instance a large batch into hundreds of draws. Reuse safe existing batches; otherwise decline that optimization and report the reason. Preserve shared resource lifetimes: disposing one instance or geometry must not destroy a sibling's attributes. Test unload, reload, scene restart, and device-resource recreation where supported.
 
@@ -306,10 +323,25 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       `model-lod-runtime.spec.ts` (5/5) and the loader-driven `model-lod-loader.spec.ts` (2/2).
 - [ ] Multi-view and shadow correctness tests pass. `selectLodLevel` accepts several views and a
       `finest` view; the engine passes only the main camera and shadows have no dedicated test yet.
+      The joined authority adds no pass-local cache — every `updateModelLods` call recomputes from
+      the camera it is handed, and `model-lod-join.spec.ts` proves two cameras at different
+      distances do not corrupt each other's choice — but shadow/reflection still share the main
+      selection, so the shadow half remains open.
 - [x] Precision-picking does not depend on the selected render LOD. Evidence:
       `packages/core/__tests__/picking.spec.ts` "picks the authored LOD0 surface while the camera
       draws a coarser level" — the BVH is built from LOD0 and the ray is run against LOD0 while the
-      mesh is drawn at the coarse level. Node identity/transform preservation is not yet asserted.
+      mesh is drawn at the coarse level. `model-lod-join.spec.ts` "keeps picking on the authored
+      primitives while the joined rung is drawn" adds the joined case: the runtime proxy is skipped
+      and the hit is an authored member.
+- [x] The opt-in joined rung is selected at runtime inside the one authority. Evidence:
+      `model-lod-join.spec.ts` (9/9) — a model with a joined rung selects it beyond the budget and
+      its submitted triangles fall to the rung's, the switch is logged once as
+      `TN_DISCRETE_LOD_JOINED` naming the primitive→draw collapse, reverting on a close camera
+      restores authored visibility/render order/transform and removes the proxy, an
+      animation-targeted or skinned/morphed mesh never joins, a clone behaves like its source, two
+      instances at different distances choose independently, and a cook with no `join` is
+      unchanged. The rung's absolute error is written by the cook and read back (asserted in
+      `lod-generation.spec.ts`), and `picking.ts` skips the proxy.
 - [x] Instance isolation and shared-resource lifetime tests pass. Evidence:
       `model-lod-runtime.spec.ts` "isolates two instances that share one base geometry" — each builds
       its own derived level, swapping one leaves the other and the shared base untouched, and

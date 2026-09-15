@@ -9,7 +9,7 @@ import {
   type Vector3,
 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
-import { baseGeometryOf } from "./model-lod.js";
+import { baseGeometryOf, isLodJoinProxy } from "./model-lod.js";
 import type { Viewport } from "./viewport.js";
 
 export interface IRaycastOptions {
@@ -187,6 +187,10 @@ export class ScenePicker {
   }
 
   #hitTest(object: Object3D, into: Intersection[]): void {
+    // A joined rung inserts a proxy object carrying the collapsed geometry but none of the authored
+    // node identity. Authored primitives are hidden from the render, never from a ray test, so the
+    // proxy must be skipped or a pick at distance would answer with an object the game never added.
+    if (isLodJoinProxy(object)) return;
     const tree = this.#treeFor(object);
     if (tree === undefined) {
       object.raycast(this.#raycaster, into);

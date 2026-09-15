@@ -972,13 +972,22 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
 
   it("simplifies the joined rung when a discrete chain is configured", async () => {
     const input = await joinCarrierGlb(12, 3);
-    const summary = await cook(input, {
+    const result = await modelPass({
       lod: { generation: { maxLevels: 4, join: true, errorTargets: [0.06] } },
       virtual: "none",
-    });
+    }).apply(input, "hull.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const summary = result.entry?.lod as IModelLodSummary;
     expect(summary.joined?.draws).toBe(3);
     expect(summary.joined?.triangles ?? Number.POSITIVE_INFINITY).toBeLessThan(
       summary.joined?.trianglesBefore ?? 0,
     );
+    // The runtime budgets the rung by its recorded absolute error, so the artifact must carry it.
+    const error = summary.joined?.rungs[0]?.error ?? 0;
+    expect(error).toBeGreaterThan(0);
+    const json = JSON.parse(
+      result.buffer.subarray(20, 20 + result.buffer.readUInt32LE(12)).toString("utf8"),
+    ) as { extensions?: Record<string, { joined?: { error?: number }[] }> };
+    expect(json.extensions?.[TN_DISCRETE_LOD]?.joined?.[0]?.error).toBeCloseTo(error, 10);
   }, 180_000);
 });

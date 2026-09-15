@@ -201,6 +201,8 @@ export interface IModelLodJoinedGroup {
 /** One mesh's joined far rung: the primitives it collapsed and the draws it produced. */
 export interface IModelLodJoinedRungSummary {
   readonly draws: number;
+  /** Absolute local-space error of the reduced far geometry; the runtime's coarsest step. */
+  readonly error: number;
   readonly mesh: string;
   readonly primitives: number;
   readonly triangles: number;
@@ -832,6 +834,9 @@ async function buildJoinedRungs(
     }
     const rung: IModelLodJoinedRungSummary = {
       draws: farMesh.listPrimitives().length,
+      // The conservative rung error: the coarsest group's, since the runtime picks or rejects the
+      // whole joined object as one step, not one material at a time.
+      error: groups.reduce((worst, group) => Math.max(worst, group.error), 0),
       groups,
       mesh: farName,
       primitives: groups.reduce((total, group) => total + group.primitives, 0),
@@ -841,6 +846,7 @@ async function buildJoinedRungs(
     rungs.push(rung);
     metadata.push({
       draws: rung.draws,
+      error: rung.error,
       mesh: farName,
       primitives: rung.primitives,
       sources: groups.flatMap((group) =>

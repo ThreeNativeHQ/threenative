@@ -64,6 +64,12 @@ export interface ILodArtifactMetadata {
 /** One joined far rung as recorded in the artifact: what it collapsed and how many draws it makes. */
 export interface IJoinedRungMetadata {
   readonly draws: number;
+  /**
+   * Absolute local-space geometric error of the joined, reduced far geometry. The runtime appends
+   * this as the coarsest step after the discrete chain, so a joined rung is selected only when the
+   * projected error fits the same pixel budget as every other level.
+   */
+  readonly error: number;
   readonly mesh: string;
   readonly primitives: number;
   readonly sources: readonly string[];

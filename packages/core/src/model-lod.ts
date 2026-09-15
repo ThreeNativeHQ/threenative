@@ -1,10 +1,12 @@
 import {
+  Box3,
   BufferAttribute,
   BufferGeometry,
   type Camera,
+  Group,
   type Matrix4,
-  type Mesh,
-  type Object3D,
+  Mesh,
+  Object3D,
   Sphere,
   Vector3,
 } from "three";
@@ -188,10 +190,12 @@ interface IDiscreteLodDef {
 }
 
 interface IParserLike {
-  readonly associations: Map<object, { meshes?: number; primitives?: number }>;
-  getDependency(type: string, index: number): Promise<{ array: ArrayLike<number> }>;
+  readonly associations: Map<object, { meshes?: number; nodes?: number; primitives?: number }>;
+  getDependency(type: string, index: number): Promise<unknown>;
   readonly json: {
-    meshes?: { primitives?: { extensions?: Record<string, unknown> }[] }[];
+    animations?: { channels?: { target?: { node?: number } }[] }[];
+    extensions?: Record<string, unknown>;
+    meshes?: { name?: string; primitives?: { extensions?: Record<string, unknown> }[] }[];
   };
 }
 
@@ -233,7 +237,9 @@ async function readPendingLevels(
     throw new Error("lod0Triangles must be a positive number.");
   const resolved: Uint32Array[] = [];
   for (const index of indices) {
-    const accessor = await parser.getDependency("accessor", index);
+    const accessor = (await parser.getDependency("accessor", index)) as {
+      array: ArrayLike<number>;
+    };
     const array = accessor.array;
     resolved.push(array instanceof Uint32Array ? array : Uint32Array.from(array));
   }
@@ -270,6 +276,12 @@ interface ILodChain {
   readonly sphere: Sphere;
 }
 
+/** Triangles one level of a chain submits. */
+function drawTriangles(geometry: BufferGeometry): number {
+  const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
+  return Math.floor(drawn / 3);
+}
+
 /**
  * One mesh's selection state. Every clone shares the source's chain, so this — and only this — holds
  * the level a particular copy currently shows: two copies at different distances must not fight.
@@ -278,12 +290,16 @@ class ModelLod {
   readonly #mesh: Mesh;
   readonly #chain: ILodChain;
   readonly #policy: IAppliedLod;
+  readonly #rung: JoinedRung | undefined;
   #current = 0;
+  /** The container a joined rung was last activated under, so removal can reverse it. */
+  #container: Object3D | null = null;
 
-  constructor(mesh: Mesh, chain: ILodChain, policy: IAppliedLod) {
+  constructor(mesh: Mesh, chain: ILodChain, policy: IAppliedLod, rung?: JoinedRung) {
     this.#mesh = mesh;
     this.#chain = chain;
     this.#policy = policy;
+    this.#rung = rung;
   }
 
   get index(): number {
@@ -296,12 +312,48 @@ class ModelLod {
   }
 
   get triangles(): number {
-    const geometry = this.#chain.levels[this.#current] as BufferGeometry;
-    const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
-    return Math.floor(drawn / 3);
+    // With a joined rung active, the authored primitive draws nothing and the proxy draws the
+    // collapse: the authority reports the rung's triangles, every hidden sibling reports zero.
+    const container = this.#mesh.parent;
+    if (container !== null) {
+      const active = activeJoins.get(container);
+      if (active !== undefined) return this.#rung === active ? active.triangles : 0;
+    }
+    return drawTriangles(this.#chain.levels[this.#current] as BufferGeometry);
   }
 
   update(camera: Camera, viewportHeight: number): void {
+    const container = this.#mesh.parent;
+    const rung = this.#rung;
+    if (rung !== undefined && container !== null) {
+      this.#container = container;
+      // The rung replaces the whole mesh, so its bounds — not one primitive's — set the depth.
+      const world = worldSphere(rung.sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
+      const { depth, degenerate } = conservativeViewDepth(
+        camera,
+        world.center,
+        world.radius,
+        (camera as ILodCameraLike).near ?? 0,
+      );
+      const errors = [...this.#chain.errors, rung.error];
+      const joinedIndex = this.#chain.errors.length;
+      const view: ILodView = { camera, degenerate, depth, viewportHeight };
+      const index = selectLodLevel(
+        errors,
+        this.#current,
+        this.#policy.maxPixelError,
+        this.#policy.hysteresis,
+        [view],
+      );
+      if (index === joinedIndex) rung.activate(container);
+      else rung.deactivate(container);
+      if (index !== this.#current) {
+        this.#current = index;
+        if (index !== joinedIndex)
+          this.#mesh.geometry = this.#chain.levels[index] as BufferGeometry;
+      }
+      return;
+    }
     const world = worldSphere(this.#chain.sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
     const { depth, degenerate } = conservativeViewDepth(
       camera,
@@ -321,6 +373,12 @@ class ModelLod {
     this.#current = index;
     this.#mesh.geometry = this.#chain.levels[index] as BufferGeometry;
   }
+
+  /** Reverses an active joined rung when the mesh is removed from the graph. */
+  release(): void {
+    if (this.#rung !== undefined && this.#container !== null)
+      this.#rung.deactivate(this.#container);
+  }
 }
 
 /** Resolved runtime policy the loader stamps onto a controller, from the manifest. */
@@ -334,10 +392,168 @@ interface IAppliedLod {
   readonly maxPixelError: number;
 }
 
+/**
+ * The joined far rung as the artifact records it (`TN_discrete_lod.joined`, PRD-377 §4.4).
+ *
+ * `error` is the absolute local-space error of the merged, reduced far geometry: the coarsest step
+ * the one selection authority may pick, after every discrete level. `mesh` names the detached far
+ * mesh, `sources` are the authored `"mesh#primitive"` primitives it collapsed, and `draws` is the
+ * one-per-material count it draws as.
+ */
+interface IJoinedRungDef {
+  readonly draws: number;
+  readonly error: number;
+  readonly mesh: string;
+  readonly primitives: number;
+  readonly sources: readonly string[];
+  readonly triangles: number;
+}
+
+/**
+ * Proxy objects this module inserts to represent a joined rung. They carry the joined geometry but
+ * no authored node identity, so picking must not answer with them: `isLodJoinProxy` is how the
+ * framework picker keeps returning the authored primitives whether or not the camera joined them.
+ */
+const joinedProxies = new WeakSet<object>();
+
+/** True when `object` was inserted by the runtime as a joined-rung proxy, not authored in the file. */
+export function isLodJoinProxy(object: object): boolean {
+  return joinedProxies.has(object);
+}
+
+/** A primitive a joined rung can never represent: the bake refuses these, and the runtime re-checks. */
+function isDeforming(mesh: Mesh): boolean {
+  return (
+    (mesh as Mesh & { isSkinnedMesh?: boolean }).isSkinnedMesh === true ||
+    Object.keys(mesh.geometry.morphAttributes).length > 0
+  );
+}
+
+/** True when the mesh, or any ancestor up to and including `container`, is animation-targeted. */
+function isAnimatedInContainer(
+  mesh: Mesh,
+  container: Object3D,
+  animated: WeakSet<object>,
+): boolean {
+  let current: Object3D | null = mesh;
+  while (current !== null) {
+    if (animated.has(current)) return true;
+    if (current === container) break;
+    current = current.parent;
+  }
+  return false;
+}
+
+/** Narrows the artifact's joined-rung record, failing closed on a malformed one. */
+function isJoinedRungDef(value: unknown): value is IJoinedRungDef {
+  if (typeof value !== "object" || value === null) return false;
+  const def = value as Partial<IJoinedRungDef>;
+  return (
+    typeof def.draws === "number" &&
+    Number.isFinite(def.draws) &&
+    typeof def.error === "number" &&
+    Number.isFinite(def.error) &&
+    typeof def.mesh === "string" &&
+    typeof def.primitives === "number" &&
+    typeof def.triangles === "number" &&
+    Array.isArray(def.sources) &&
+    def.sources.every((source) => typeof source === "string")
+  );
+}
+
+interface IJoinActivation {
+  readonly proxy: Object3D;
+  readonly restored: readonly { readonly mesh: Mesh; readonly visible: boolean }[];
+}
+
+/** The active joined rung for a container, so a hidden authored sibling knows it draws nothing now. */
+const activeJoins = new WeakMap<Object3D, JoinedRung>();
+
+/**
+ * One mesh's joined far rung: many authored primitives collapsed to one object, one draw per
+ * material.
+ *
+ * Selecting it is a draw-topology change, not a geometry pointer swap. The authored primitives stay
+ * in the graph — same identities, transforms, render order and picking — and are hidden while one
+ * proxy object is added under their shared container as a unit. Reverting removes the proxy and
+ * restores each primitive's authored visibility exactly. Per-container state lives here, so two
+ * instances of the same model at different distances never fight and a `clone()` gets its own.
+ */
+class JoinedRung {
+  readonly name: string;
+  readonly draws: number;
+  readonly primitives: number;
+  readonly triangles: number;
+  readonly error: number;
+  readonly sphere: Sphere;
+  readonly #prototype: Object3D;
+  readonly #geometries: Set<BufferGeometry>;
+  readonly #activations = new WeakMap<Object3D, IJoinActivation>();
+
+  constructor(options: {
+    readonly def: IJoinedRungDef;
+    readonly geometries: ReadonlySet<BufferGeometry>;
+    readonly prototype: Object3D;
+    readonly sphere: Sphere;
+  }) {
+    this.name = options.def.mesh;
+    this.draws = options.def.draws;
+    this.primitives = options.def.primitives;
+    this.triangles = options.def.triangles;
+    this.error = options.def.error;
+    this.#prototype = options.prototype;
+    this.#geometries = new Set(options.geometries);
+    this.sphere = options.sphere;
+  }
+
+  isActive(container: Object3D): boolean {
+    return this.#activations.has(container);
+  }
+
+  activate(container: Object3D): boolean {
+    if (this.#activations.has(container)) return false;
+    const proxy = this.#prototype.clone(true);
+    proxy.name = `${this.name}__instance`;
+    proxy.visible = true;
+    proxy.traverse((node) => {
+      joinedProxies.add(node);
+      // A stock `Raycaster` ignores `visible`; a no-op raycast keeps the authored primitives the
+      // only picking surface even for a game that runs `intersectObjects` on the scene directly.
+      if ((node as Partial<Mesh>).isMesh === true) node.raycast = () => undefined;
+    });
+    const restored: { mesh: Mesh; visible: boolean }[] = [];
+    for (const child of container.children) {
+      if (child instanceof Mesh && this.#geometries.has(child.geometry))
+        restored.push({ mesh: child, visible: child.visible });
+    }
+    for (const { mesh } of restored) mesh.visible = false;
+    container.add(proxy);
+    this.#activations.set(container, { proxy, restored });
+    activeJoins.set(container, this);
+    // The LOD path's diagnostic: the selection fact and the draw collapse it bought, once per join.
+    console.info(
+      `TN_DISCRETE_LOD_JOINED ${this.name}: ${String(this.primitives)} primitive(s) collapsed to ${String(this.draws)} draw(s)`,
+    );
+    return true;
+  }
+
+  deactivate(container: Object3D): boolean {
+    const activation = this.#activations.get(container);
+    if (activation === undefined) return false;
+    for (const { mesh, visible } of activation.restored) mesh.visible = visible;
+    activation.proxy.removeFromParent();
+    this.#activations.delete(container);
+    if (activeJoins.get(container) === this) activeJoins.delete(container);
+    return true;
+  }
+}
+
 /** A chain and its policy, registered against every level geometry so a clone can find it. */
 interface IRegisteredChain {
   readonly chain: ILodChain;
   readonly policy: IAppliedLod;
+  /** Present only on a joined rung's authority primitive, so a clone resolves to the same rung. */
+  readonly joined?: JoinedRung;
 }
 
 /**
@@ -372,7 +588,7 @@ function controllerFor(mesh: Mesh): ModelLod | undefined {
   if (existing !== undefined) return existing;
   const registered = chains.get(mesh.geometry);
   if (registered === undefined) return undefined;
-  const controller = new ModelLod(mesh, registered.chain, registered.policy);
+  const controller = new ModelLod(mesh, registered.chain, registered.policy, registered.joined);
   controllers.set(mesh, controller);
   return controller;
 }
@@ -389,12 +605,15 @@ export class DiscreteLodPlugin {
   readonly name = TN_DISCRETE_LOD;
   #parser: IParserLike | undefined;
   readonly #pending = new Map<Mesh, IPendingLevels>();
+  readonly #rungs: { readonly def: IJoinedRungDef; readonly prototype: Object3D }[] = [];
+  /** A temporary holder for far-mesh prototypes, so widening reaches their joined geometry. */
+  #holder: Group | undefined;
 
   setParser(parser: IParserLike): void {
     this.#parser = parser;
   }
 
-  async afterRoot(_result: { scene?: Object3D }): Promise<void> {
+  async afterRoot(result: { scene?: Object3D }): Promise<void> {
     const parser = this.#parser;
     if (parser === undefined) return;
     for (const [object, association] of parser.associations) {
@@ -415,6 +634,48 @@ export class DiscreteLodPlugin {
         );
       }
     }
+    const metadata = parser.json.extensions?.[TN_DISCRETE_LOD] as { joined?: unknown } | undefined;
+    const joined = metadata?.joined;
+    if (!Array.isArray(joined) || joined.length === 0) return;
+    for (const value of joined) {
+      if (!isJoinedRungDef(value)) {
+        console.error(
+          "TN_DISCRETE_LOD_JOIN_INVALID: a joined rung record is malformed; its primitives keep full detail.",
+        );
+        continue;
+      }
+      const farIndex = (parser.json.meshes ?? []).findIndex((mesh) => mesh.name === value.mesh);
+      if (farIndex < 0) {
+        console.error(
+          `TN_DISCRETE_LOD_JOIN_INVALID: '${value.mesh}' is not one of the file's meshes; its primitives keep full detail.`,
+        );
+        continue;
+      }
+      try {
+        const prototype = (await parser.getDependency("mesh", farIndex)) as unknown;
+        if (!(prototype instanceof Object3D))
+          throw new Error("the far mesh dependency is not an Object3D.");
+        // Held under the loaded root until `attach` removes the holder, so `widenQuantizedPositions`
+        // reaches the joined geometry exactly as it reaches the authored primitives.
+        if (result.scene !== undefined) {
+          if (this.#holder === undefined) {
+            this.#holder = new Group();
+            this.#holder.name = "TN_LOD_JOIN_HOLDER";
+            result.scene.add(this.#holder);
+          }
+          this.#holder.add(prototype);
+        }
+        this.#rungs.push({ def: value, prototype });
+      } catch (error) {
+        console.error(
+          `TN_DISCRETE_LOD_JOIN_INVALID: '${value.mesh}' could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    if (this.#rungs.length === 0 && this.#holder !== undefined) {
+      this.#holder.removeFromParent();
+      this.#holder = undefined;
+    }
   }
 
   /** Builds the derived geometries against the mesh's final (widened) attributes and registers. */
@@ -423,6 +684,12 @@ export class DiscreteLodPlugin {
       hysteresis: policy?.hysteresis ?? DISCRETE_LOD_DEFAULT_HYSTERESIS,
       maxPixelError: policy?.maxPixelError ?? DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
     };
+    // Detach the prototypes before anything else: they are loaded far meshes, never scene content.
+    for (const { prototype } of this.#rungs) prototype.removeFromParent();
+    if (this.#holder !== undefined) {
+      this.#holder.removeFromParent();
+      this.#holder = undefined;
+    }
     let appliedCount = 0;
     for (const [mesh, pending] of this.#pending) {
       const base = mesh.geometry;
@@ -462,7 +729,106 @@ export class DiscreteLodPlugin {
       controllers.set(mesh, new ModelLod(mesh, registered.chain, applied));
       appliedCount += 1;
     }
+    this.#registerJoinedRungs(applied);
     return appliedCount;
+  }
+
+  /**
+   * Resolves each loaded joined rung to its authored primitives and registers it on the authority's
+   * chain — and only there. A clone shares that geometry, so it adopts the same rung; the rung's own
+   * per-container state keeps two instances independent.
+   *
+   * Refusal is the honest default: a rung whose sources are not all present, not siblings under one
+   * container, or skinned, morphed or animated is dropped rather than half-joined. The bake already
+   * made that call; the runtime re-checks because the loaded graph, not the bake, is what it hides.
+   */
+  #registerJoinedRungs(applied: IAppliedLod): void {
+    const parser = this.#parser;
+    if (parser === undefined || this.#rungs.length === 0) return;
+    const byKey = new Map<string, Mesh>();
+    const animated = new WeakSet<object>();
+    const targeted = new Set<number>();
+    for (const animation of parser.json.animations ?? []) {
+      for (const channel of animation.channels ?? []) {
+        if (typeof channel.target?.node === "number") targeted.add(channel.target.node);
+      }
+    }
+    for (const [object, association] of parser.associations) {
+      if (targeted.size > 0 && association.nodes !== undefined && targeted.has(association.nodes))
+        animated.add(object);
+      const mesh = object as Mesh;
+      if (mesh.isMesh !== true) continue;
+      const { meshes, primitives } = association;
+      if (meshes === undefined || primitives === undefined) continue;
+      const name = parser.json.meshes?.[meshes]?.name ?? "";
+      byKey.set(`${name}#${String(primitives)}`, mesh);
+    }
+
+    for (const { def, prototype } of this.#rungs) {
+      const members: Mesh[] = [];
+      let missing = false;
+      for (const source of def.sources) {
+        const mesh = byKey.get(source);
+        if (mesh === undefined) {
+          missing = true;
+          break;
+        }
+        members.push(mesh);
+      }
+      const container = members[0]?.parent ?? null;
+      const refused =
+        missing ||
+        members.length < 2 ||
+        container === null ||
+        members.some(
+          (member) =>
+            member.parent !== container ||
+            isDeforming(member) ||
+            isAnimatedInContainer(member, container, animated),
+        );
+      if (refused) {
+        console.error(
+          `TN_DISCRETE_LOD_JOIN_INVALID: '${def.mesh}' cannot be shown as one unit at runtime; its primitives keep full detail.`,
+        );
+        continue;
+      }
+      // Every member needs a chain so the frame tracker manages it, even one the discrete pass
+      // skipped: a join-only cook (maxLevels 1) writes no per-primitive chain at all.
+      const geometries = new Set<BufferGeometry>();
+      for (const member of members) {
+        let registered = chains.get(member.geometry);
+        if (registered === undefined) {
+          member.geometry.computeBoundingSphere();
+          const sphere = new Sphere();
+          if (
+            member.geometry.boundingSphere !== null &&
+            member.geometry.boundingSphere !== undefined
+          )
+            sphere.copy(member.geometry.boundingSphere);
+          registered = {
+            chain: { base: member.geometry, errors: [0], levels: [member.geometry], sphere },
+            policy: applied,
+          };
+          chains.set(member.geometry, registered);
+        }
+        for (const geometry of registered.chain.levels) geometries.add(geometry);
+      }
+      const box = new Box3().setFromObject(prototype);
+      const sphere = new Sphere();
+      box.getBoundingSphere(sphere);
+      const rung = new JoinedRung({ def, geometries, prototype, sphere });
+      const authority = members[0] as Mesh;
+      const registered = chains.get(authority.geometry);
+      if (registered === undefined) continue;
+      const withJoined: IRegisteredChain = {
+        chain: registered.chain,
+        joined: rung,
+        policy: registered.policy,
+      };
+      for (const geometry of registered.chain.levels) chains.set(geometry, withJoined);
+      // The authority's controller was built before the rung was known; give it the rung now.
+      controllers.set(authority, new ModelLod(authority, registered.chain, applied, rung));
+    }
   }
 }
 
@@ -519,6 +885,8 @@ function hookSubtree(tracking: ITrackedRoot, subtree: object): void {
 function unhookSubtree(tracking: ITrackedRoot, subtree: object): void {
   (subtree as IGraphNode).traverse((node) => {
     tracking.items.delete(node as Mesh);
+    // A removed mesh must not leave a joined proxy behind in a container that stays in the scene.
+    controllers.get(node as Mesh)?.release();
     if (!tracking.hooked.has(node)) return;
     tracking.hooked.delete(node);
     const link = node as Partial<IGraphNode>;
@@ -571,24 +939,28 @@ export function updateModelLods(
 ): number {
   camera.updateMatrixWorld();
   if (!isGraphNode(root)) {
-    let triangles = 0;
+    const entries: ModelLod[] = [];
     root.traverse((object) => {
       const entry = controllerFor(object as Mesh);
-      if (entry === undefined) return;
-      entry.update(camera, viewportHeight);
-      triangles += entry.triangles;
+      if (entry !== undefined) entries.push(entry);
     });
+    for (const entry of entries) entry.update(camera, viewportHeight);
+    // Summed after every selection, so a joined rung activated by the authority is reflected in
+    // its hidden siblings' counts whatever order the traversal visited them in.
+    let triangles = 0;
+    for (const entry of entries) triangles += entry.triangles;
     return triangles;
   }
-  let triangles = 0;
-  for (const mesh of trackRoot(root).items) {
+  const tracking = trackRoot(root);
+  for (const mesh of tracking.items) {
     const entry = controllerFor(mesh);
     if (entry === undefined) {
-      trackRoot(root).items.delete(mesh);
+      tracking.items.delete(mesh);
       continue;
     }
     entry.update(camera, viewportHeight);
-    triangles += entry.triangles;
   }
+  let triangles = 0;
+  for (const mesh of tracking.items) triangles += controllers.get(mesh)?.triangles ?? 0;
   return triangles;
 }
