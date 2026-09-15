@@ -245,8 +245,21 @@ from this repository keeps its own line with its blocker named underneath rather
   - CI run [35017332390](https://github.com/ThreeNativeHQ/threenative/actions/runs/35017332390), `macOS desktop core` on `macos-15`: the container was built on the host, relocated to a path containing a space and launched by the installed verifier. `TN_NATIVE_SMOKE_READY:webgpu`, `TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb`, `TN_UI_OVERLAY:{"attached":true}`, `Rendered 300 frames in 15332ms`, verifier `pass: true`. Archive `threenative-starter-native.zip` sha256 `e3e03e152f91736b5b57f9804478ca697b5640b3ce64c11e00d0296e1fbd86ac`.
 - [x] macOS: the container carries `Contents/Info.plist` at its bundle location and the `.icns` converted from the authored icon by `sips`/`iconutil`.
   - Same run: the identity step read `CFBundleName` back out of the relocated bundle with `plutil` and required the `.icns` named by `CFBundleIconFile` to exist. The manifest records `Contents/Info.plist`, `Contents/Resources/threenative-starter-native.icns` and the executable at `Contents/MacOS/`, with 30 system prerequisites.
-- [ ] windows-x64: `--mode release` produces a ZIP that extracts outside the project and launches the unchanged starter with its WebView HUD attached.
-- [ ] windows-x64: the executable carries the authored icon and version strings in its PE resources, embedded by `rcedit`.
+- [x] windows-x64: `--mode release` produces a ZIP that extracts outside the project with its payload intact.
+  - CI run [35034052417](https://github.com/ThreeNativeHQ/threenative/actions/runs/35034052417), `Windows desktop core` on `windows-2025`: built on the host inside the MSVC environment, extracted to a path containing a space with System32's bsdtar, and its integrity records resolved. Archive `threenative-starter-native.zip` sha256 `cee495026f13ee6b6c07fcfe6cf0d3e875f2595f433f341efaeb217ea929aeea`, manifest `win32-x64`/`zip`, 23 system prerequisites, `signed: false`.
+- [ ] windows-x64: the extracted container launches the unchanged starter with its WebView HUD attached.
+  - **Open, with a defect named.** In the run above the container's executable printed the `mystral`
+    CLI usage and `Unknown command or missing arguments` instead of running the game: it no longer
+    recognises its own appended bundle. The likely cause is that `rcedit` rewrites the PE to embed
+    the icon and version strings *after* the game payload has been appended as an overlay, dropping
+    it. macOS and Linux never run `rcedit`, which is why only Windows is affected. Confirming that
+    requires a Windows host, and the fix belongs where the icon is applied to the runtime before the
+    game is compiled into it, not in the container packager. Tracked as the follow-on to this PRD.
+- [x] windows-x64: the executable carries the authored icon and version strings in its PE resources, embedded by `rcedit`.
+  - Same run: the identity step read `ProductName`, `FileDescription` and a non-empty `FileVersion`
+    back out of the relocated executable with PowerShell, and required the manifest's recorded icon
+    to be present in the container. This is what confirms `rcedit` ran and rewrote the PE, which is
+    also why the launch box above stays open.
 
 **Known limitation, Windows dependency bundling**
 
@@ -267,6 +280,8 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
 - [x] macOS: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
   - Same run: a second launch of the relocated executable with `PATH=/usr/bin:/bin`, asserting `TN_NATIVE_SMOKE_READY:webgpu` and a completed frame count.
 - [ ] windows-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+  - Blocked behind the launch box above: the step exists in the lane and is reached, but the
+    container cannot launch at all yet, so a clean-toolchain launch proves nothing.
 - [x] Every claimed OS documents its player-side WebView/library prerequisite, and the Linux one is machine-checked with an actionable failure naming the library and its install step.
   - `packages/runtime-native/README.md` documents WebKitGTK/GTK, WebView2 Evergreen and system WebKit. A missing `libwebkit2gtk-4.1.so.0` refuses with `TN_NATIVE_STARTER_PREREQUISITE_MISSING` and its install step; covered by `tests/starter-desktop.test.mjs`.
 - [ ] The same launch is performed by a consumer installed from the public registry rather than local tarballs.
@@ -289,7 +304,8 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
   - CI run [34988394963](https://github.com/ThreeNativeHQ/threenative/actions/runs/34988394963): `macOS desktop core`, `Windows desktop core` and `Scaffolded starter desktop artifact` all SUCCESS on this candidate, each running the starter's debug `test:native`.
 - [x] Release mode reuses the existing `--mode` flag from PRD-212; no new public command is added.
   - `packages/create-threenative/src/build.ts` dispatches on the existing `--mode`; no CLI verb was added.
-- [ ] Every container is produced on its own OS runner; no cross-OS compilation is performed or claimed.
+- [x] Every container is produced on its own OS runner; no cross-OS compilation is performed or claimed.
+  - `native-platforms` builds each container on its own host — `ubuntu-24.04`, `macos-15`, `windows-2025` — each from a runtime compiled on that same runner. No lane cross-compiles, and none claims a platform it did not execute.
 
 **Downstream consumers and promotion**
 
