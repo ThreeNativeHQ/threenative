@@ -1271,8 +1271,11 @@ jobs:
           # PRD-365 claims the identity, so read it back out of the relocated container.
           container="$TN_RELEASE_CONTAINER_ROOT"
           manifest=$(find "$container" -name threenative-container.json -type f -print)
-          name=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['app']['name'])" "$manifest")
-          icon=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['app'].get('icon',''))" "$manifest")
+          # node, not python3: git-bash on the Windows runner has no `python3` on PATH, and node is
+          # already guaranteed by the setup-node step above.
+          read_app() { node -e "const m=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(String(m.app[process.argv[2]]??''))" "$1" "$2"; }
+          name=$(read_app "$manifest" name)
+          icon=$(read_app "$manifest" icon)
           [ -n "$name" ] || { echo "TN_DESKTOP_IDENTITY_NAME_MISSING: manifest records no app name." >&2; exit 1; }
           if [ "${{ matrix.platform }}" = "Windows" ]; then
             executable=$(find "$container" -maxdepth 1 -name '*.exe' -type f -print)
@@ -1545,8 +1548,11 @@ jobs:
           # The packaging tool exiting 0 is not the same as the identity being in the artifact.
           container="$TN_RELEASE_CONTAINER_ROOT"
           manifest="$container/threenative-container.json"
-          name=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['app']['name'])" "$manifest")
-          icon=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['app'].get('icon',''))" "$manifest")
+          # node, not python3: git-bash on the Windows runner has no `python3` on PATH, and node is
+          # already guaranteed by the setup-node step above.
+          read_app() { node -e "const m=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(String(m.app[process.argv[2]]??''))" "$1" "$2"; }
+          name=$(read_app "$manifest" name)
+          icon=$(read_app "$manifest" icon)
           entry=$(find "$container/share/applications" -maxdepth 1 -name '*.desktop' -type f -print)
           [ -n "$entry" ] || { echo "TN_DESKTOP_IDENTITY_ENTRY_MISSING: no .desktop entry in the container." >&2; exit 1; }
           cat "$entry"
