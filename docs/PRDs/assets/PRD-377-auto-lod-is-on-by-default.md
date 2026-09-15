@@ -207,10 +207,14 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 1 — config and artifact
 
-- [x] Public config resolution passes the precedence and invalid-input tests. Evidence:
-      `packages/create-threenative/__tests__/lod-config.spec.ts`, 30/30 green; `pnpm typecheck` exit 0.
+- [x] Public config validation and per-asset resolution pass the precedence and invalid-input tests.
+      Evidence: validation in `packages/create-threenative/__tests__/lod-config.spec.ts` and resolution
+      in `packages/assets/__tests__/lod-generation.spec.ts` (`resolveLodPolicy`: preset defaults,
+      overlay precedence, absolute kill switch, legacy translation, split fingerprints); 34/34 green;
+      both packages typecheck (exit 0). One resolver owns the decision — the compiler calls
+      `resolveLodPolicy` where the asset is known; the config layer only validates.
 - [x] The normal compiler applies tested eligibility and error-driven generation. Evidence:
-      `packages/assets/__tests__/lod-generation.spec.ts`, 17/17 green + assets suite 352 passed;
+      `packages/assets/__tests__/lod-generation.spec.ts`, 18/18 green;
       `modelPass` generates `TN_discrete_lod` via `packages/assets/src/lod/` (meshoptimizer, index-only,
       `LockBorder`), attached after the virtual bake and before quantize.
 - [x] Cooked GLBs pass extension round-trip and baseline-preservation tests. Evidence: same spec —
@@ -218,7 +222,9 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       revalidation on read.
 - [ ] Cache invalidation and atomic hot reload pass their integration tests.
       Partial: the generation fingerprint and pass cache key exclude runtime/preset, and the spec
-      asserts a runtime-only edit neither rebakes nor changes the key. Hot reload is not exercised here.
+      asserts a runtime-only edit neither rebakes nor changes the key. Known gap: a compile cache hit
+      reuses the previous manifest entry, so `lod.runtime` is not yet refreshed on a runtime-only edit;
+      hot reload is not exercised here.
 
 #### Phase 2 — ordinary runtime
 

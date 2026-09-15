@@ -83,12 +83,17 @@ export interface ISimplifyRow {
 export interface ILodRow {
   /** Bytes the derived index buffers add, before compression. */
   readonly byteOverhead: number;
+  /** Migration/legacy notes the resolver raised, by code. */
+  readonly diagnostics: readonly string[];
   readonly fingerprint: string;
   readonly generated: number;
   readonly levels: number;
   readonly maxLevels: number;
   readonly minTriangles: number;
+  readonly preset: string;
   readonly reasons: readonly string[];
+  /** The runtime selection budget this asset ships with; the loader reads it from the manifest. */
+  readonly runtime: { readonly hysteresis: number; readonly maxPixelError: number };
   readonly skipped: number;
   readonly trianglesAfter: number;
   readonly trianglesBefore: number;

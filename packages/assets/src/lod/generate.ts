@@ -32,31 +32,36 @@ export interface IModelLodGenerationOptions {
   readonly minTriangles?: number;
 }
 
+/** Quality policy for automatic LOD; it selects the projected pixel-error budget (PRD-377 §3.2). */
+export type LodPreset = "aggressive" | "balanced" | "quality";
+
+/** Screen-space selection knobs; they change what the runtime picks, never what is baked. */
+export interface IModelLodRuntimeOptions {
+  /** Projected geometric-error budget in raster pixels; positive finite. */
+  readonly maxPixelError?: number;
+  /** Fraction in `[0, 0.5)`, default 0.15, that stabilizes coarsening at a boundary. */
+  readonly hysteresis?: number;
+}
+
+/** A partial override for one asset; nested objects overlay, they never replace. */
 export interface IModelLodOverride {
   readonly enabled?: boolean;
   readonly generation?: IModelLodGenerationOptions;
-  /** Accepted for the seam; generation never reads it. */
-  readonly preset?: string;
-  readonly runtime?: {
-    readonly hysteresis?: number;
-    readonly maxPixelError?: number;
-  };
+  readonly preset?: LodPreset;
+  readonly runtime?: IModelLodRuntimeOptions;
 }
 
 /**
- * `assets.lod`, as the compile step reads it. `preset` and `runtime` travel here for the seam's
- * sake but generation never reads them: a pixel-budget edit must not change baked geometry
- * (PRD-377 §3.2, §5).
+ * `assets.lod`, as the compile step reads it. Absent or `{}` resolves to enabled/balanced; `false`
+ * and `{ enabled: false }` are equivalent absolute kill switches that no per-asset override can
+ * re-enable. Resolution is per asset and happens where the asset is known (PRD-377 §3.2, §5).
  */
 export interface IModelLodOptions {
   readonly enabled?: boolean;
   readonly generation?: IModelLodGenerationOptions;
   readonly overrides?: Readonly<Record<string, boolean | IModelLodOverride>>;
-  readonly preset?: string;
-  readonly runtime?: {
-    readonly hysteresis?: number;
-    readonly maxPixelError?: number;
-  };
+  readonly preset?: LodPreset;
+  readonly runtime?: IModelLodRuntimeOptions;
 }
 
 export const LOD_GENERATOR = "threenative-discrete-lod";
@@ -78,6 +83,26 @@ export const LOD_MIN_SAVING = 0.2;
 
 export const DEFAULT_LOD_MAX_LEVELS = 4;
 export const DEFAULT_LOD_MIN_TRIANGLES = 5_000;
+/** Default hysteresis: coarsen only when the cheaper level falls below `(1 - h) * budget`. */
+export const DEFAULT_LOD_HYSTERESIS = 0.15;
+
+const LOD_PRESETS: readonly LodPreset[] = ["aggressive", "balanced", "quality"];
+
+/** The preset's policy starting point. These are budgets to be measured against, not guarantees. */
+export function presetPixelError(preset: LodPreset): number {
+  switch (preset) {
+    case "aggressive":
+      return 2;
+    case "quality":
+      return 0.5;
+    case "balanced":
+      return 1;
+  }
+}
+
+export function isLodPreset(value: unknown): value is LodPreset {
+  return typeof value === "string" && (LOD_PRESETS as readonly string[]).includes(value);
+}
 
 export interface IModelLodLevel {
   /** Normalized simplifier error, in mesh-extent units. */
@@ -103,6 +128,8 @@ export interface IModelLodSkipSummary {
 
 export interface IModelLodSummary {
   readonly byteOverhead: number;
+  /** Migration/legacy notes the resolver raised; never a silent winner over an explicit setting. */
+  readonly diagnostics: readonly ILodDiagnostic[];
   readonly enabled: boolean;
   readonly fingerprint: string;
   readonly generated: number;
@@ -110,12 +137,23 @@ export interface IModelLodSummary {
   readonly minTriangles: number;
   /** Max derived levels on any one primitive. */
   readonly levels: number;
+  /** The quality policy the resolver chose; the runtime budget follows from it. */
+  readonly preset: LodPreset;
   readonly primitives: readonly IModelLodPrimitiveSummary[];
   readonly reasons: readonly DiscreteLodSkipReason[];
+  /** The runtime selection budget this asset ships with, serialized into the manifest. */
+  readonly runtime: { readonly hysteresis: number; readonly maxPixelError: number };
   readonly skipped: number;
   readonly trianglesAfter: number;
   readonly trianglesBefore: number;
   readonly generatedSeconds: number;
+}
+
+/** One migration note from resolving a new declaration against a legacy one (PRD-377 §3.3). */
+export interface ILodDiagnostic {
+  readonly code: string;
+  readonly message: string;
+  readonly path: string;
 }
 
 export interface ILodLegacyFlags {
@@ -125,58 +163,137 @@ export interface ILodLegacyFlags {
   readonly virtualNone?: boolean;
 }
 
-export interface IResolvedGenerationPolicy {
+export interface IResolvedLodPolicy {
+  readonly diagnostics: readonly ILodDiagnostic[];
   readonly enabled: boolean;
-  readonly maxLevels: number;
-  readonly minTriangles: number;
+  /** Generation and runtime are separate cache identities (PRD-377 §3.2, §5). */
+  readonly fingerprint: { readonly generation: string; readonly runtime: string };
+  readonly generation: { readonly maxLevels: number; readonly minTriangles: number };
+  readonly preset: LodPreset;
   readonly reasons: readonly DiscreteLodSkipReason[];
+  readonly runtime: { readonly hysteresis: number; readonly maxPixelError: number };
 }
 
 /**
- * Asset override, then project, then default — the generation half of PRD-377 §3.2. The global
- * `false` / `{ enabled: false }` is absolute; legacy declarations translate here rather than
- * running a parallel path.
+ * Asset override, then project, then default — PRD-377 §3.2. The chosen preset's defaults expand
+ * once, then explicit project fields overlay, then explicit asset fields; nested objects overlay
+ * field by field. The global `false` / `{ enabled: false }` is absolute. Legacy declarations
+ * translate here rather than running as a parallel path: `models.virtual: "none"` keeps the asset
+ * off unless a new declaration explicitly enables it, and an explicit legacy `simplify` skips
+ * generation with `explicit-legacy-simplify`. A new and a legacy declaration for the same asset
+ * produce a migration diagnostic, never a silent winner.
  */
-export function resolveGenerationPolicy(
+export function resolveLodPolicy(
   lod: boolean | IModelLodOptions | "none" | undefined,
   asset: string,
   legacy: ILodLegacyFlags = {},
-): IResolvedGenerationPolicy {
+): IResolvedLodPolicy {
   const project = typeof lod === "object" && lod !== null ? lod : undefined;
   const override = project?.overrides?.[asset];
   const assetBlock = typeof override === "object" && override !== null ? override : undefined;
   const globalOff = lod === false || lod === "none" || project?.enabled === false;
+
+  const preset = assetBlock?.preset ?? project?.preset ?? "balanced";
+  const generation = {
+    maxLevels: DEFAULT_LOD_MAX_LEVELS,
+    minTriangles: DEFAULT_LOD_MIN_TRIANGLES,
+  };
+  const runtime = {
+    hysteresis: DEFAULT_LOD_HYSTERESIS,
+    maxPixelError: presetPixelError(preset),
+  };
+  if (project?.generation?.maxLevels !== undefined)
+    generation.maxLevels = project.generation.maxLevels;
+  if (project?.generation?.minTriangles !== undefined)
+    generation.minTriangles = project.generation.minTriangles;
+  if (project?.runtime?.maxPixelError !== undefined)
+    runtime.maxPixelError = project.runtime.maxPixelError;
+  if (project?.runtime?.hysteresis !== undefined) runtime.hysteresis = project.runtime.hysteresis;
+  if (assetBlock?.generation?.maxLevels !== undefined)
+    generation.maxLevels = assetBlock.generation.maxLevels;
+  if (assetBlock?.generation?.minTriangles !== undefined)
+    generation.minTriangles = assetBlock.generation.minTriangles;
+  if (assetBlock?.runtime?.maxPixelError !== undefined)
+    runtime.maxPixelError = assetBlock.runtime.maxPixelError;
+  if (assetBlock?.runtime?.hysteresis !== undefined)
+    runtime.hysteresis = assetBlock.runtime.hysteresis;
+
   let enabled = project?.enabled ?? true;
   if (override === false) enabled = false;
   else if (override === true) enabled = true;
   else if (assetBlock?.enabled !== undefined) enabled = assetBlock.enabled;
-  // Any explicit new declaration — even one that only names a generation knob — is a deliberate
-  // opt-in when it conflicts with a legacy declaration (PRD-377 §3.3).
-  const explicitlyEnabled = hasExplicitPolicy(lod) || hasExplicitPolicy(override);
+  // The global kill switch is absolute: nothing above may outlive it.
   if (globalOff) enabled = false;
 
-  const maxLevels =
-    assetBlock?.generation?.maxLevels ?? project?.generation?.maxLevels ?? DEFAULT_LOD_MAX_LEVELS;
-  const minTriangles =
-    assetBlock?.generation?.minTriangles ??
-    project?.generation?.minTriangles ??
-    DEFAULT_LOD_MIN_TRIANGLES;
-
+  const diagnostics: ILodDiagnostic[] = [];
   const reasons: DiscreteLodSkipReason[] = [];
-  if (!enabled) {
+  if (globalOff) {
     reasons.push("disabled");
-  } else if (legacy.virtualNone === true && !explicitlyEnabled) {
-    enabled = false;
-    reasons.push("virtual-none");
-  } else if (legacy.simplify === true && !explicitlyEnabled) {
-    enabled = false;
-    reasons.push("explicit-legacy-simplify");
+  } else {
+    // Any new declaration — even one that only names a generation knob — is a deliberate opt-in
+    // when it conflicts with a legacy declaration (PRD-377 §3.3). An empty block or omission is
+    // not a declaration, so the explicit legacy setting keeps its meaning.
+    const explicitNewPolicy = lodHasExplicitPolicy(lod) || lodHasExplicitPolicy(override);
+    if (legacy.virtualNone === true) {
+      if (explicitNewPolicy) {
+        diagnostics.push({
+          code: "lod-legacy-virtual-none-conflict",
+          message:
+            'assets.models.virtual is "none" and assets.lod declares an automatic policy; the explicit declaration wins for this asset.',
+          path: "assets.lod",
+        });
+      } else {
+        enabled = false;
+        reasons.push("virtual-none");
+      }
+    }
+    if (legacy.simplify === true) {
+      if (explicitNewPolicy) {
+        diagnostics.push({
+          code: "lod-legacy-simplify-conflict",
+          message:
+            "assets.models.simplify is declared and assets.lod declares an automatic policy; the explicit declaration wins for this asset.",
+          path: "assets.lod",
+        });
+      } else {
+        enabled = false;
+        reasons.push("explicit-legacy-simplify");
+      }
+    }
   }
-  return { enabled, maxLevels, minTriangles, reasons };
+  if (!enabled && reasons.length === 0) reasons.push("disabled");
+
+  const generationFingerprint = lodFingerprint({
+    algorithm: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
+    enabled,
+    maxLevels: generation.maxLevels,
+    minTriangles: generation.minTriangles,
+    schema: LOD_ARTIFACT_SCHEMA_VERSION,
+    toolchain: LOD_TOOLCHAIN,
+  });
+  return {
+    diagnostics,
+    enabled,
+    fingerprint: {
+      generation: generationFingerprint,
+      runtime: lodFingerprint({
+        enabled,
+        generation: generationFingerprint,
+        hysteresis: runtime.hysteresis,
+        maxPixelError: runtime.maxPixelError,
+        preset,
+        schema: LOD_ARTIFACT_SCHEMA_VERSION,
+      }),
+    },
+    generation,
+    preset,
+    reasons,
+    runtime,
+  };
 }
 
 /** True when a `lod` value declares at least one field; `{}` and omission are the same policy. */
-function hasExplicitPolicy(
+function lodHasExplicitPolicy(
   value: boolean | IModelLodOptions | IModelLodOverride | "none" | undefined,
 ): boolean {
   if (value === true) return true;
@@ -188,6 +305,11 @@ function hasExplicitPolicy(
     (value.runtime !== undefined && Object.keys(value.runtime).length > 0) ||
     ("overrides" in value && value.overrides !== undefined)
   );
+}
+
+/** A stable 16-hex-character identity over the policy inputs that produced an artifact. */
+function lodFingerprint(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
 /** A candidate level before the 20%-saving and monotonicity rules are applied. */
@@ -396,39 +518,20 @@ function meshFlags(document: Document): Map<Mesh, IMeshFlags> {
   return flags;
 }
 
-/** The identity a stale artifact must fail to match: policy, generator, schema and toolchain. */
-export function generationFingerprint(policy: IResolvedGenerationPolicy, asset: string): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        asset,
-        enabled: policy.enabled,
-        generator: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
-        maxLevels: policy.maxLevels,
-        minTriangles: policy.minTriangles,
-        schema: LOD_ARTIFACT_SCHEMA_VERSION,
-        toolchain: LOD_TOOLCHAIN,
-      }),
-    )
-    .digest("hex")
-    .slice(0, 16);
-}
-
-function emptySummary(
-  policy: IResolvedGenerationPolicy,
-  generatedSeconds: number,
-  fingerprint: string,
-): IModelLodSummary {
+function emptySummary(policy: IResolvedLodPolicy, generatedSeconds: number): IModelLodSummary {
   return {
     byteOverhead: 0,
+    diagnostics: [...policy.diagnostics],
     enabled: policy.enabled,
-    fingerprint,
+    fingerprint: policy.fingerprint.generation,
     generated: 0,
     levels: 0,
-    maxLevels: policy.maxLevels,
-    minTriangles: policy.minTriangles,
+    maxLevels: policy.generation.maxLevels,
+    minTriangles: policy.generation.minTriangles,
+    preset: policy.preset,
     primitives: [],
     reasons: [...policy.reasons],
+    runtime: { ...policy.runtime },
     skipped: 0,
     trianglesAfter: 0,
     trianglesBefore: 0,
@@ -452,10 +555,10 @@ export async function generateDiscreteLod(
   now: () => number = () => Date.now(),
 ): Promise<IModelLodSummary> {
   const started = now();
-  const policy = resolveGenerationPolicy(lod, logicalPath, legacy);
-  const fingerprint = generationFingerprint(policy, logicalPath);
-  if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000, fingerprint);
-  if (policy.maxLevels <= 1) return emptySummary(policy, (now() - started) / 1000, fingerprint);
+  const policy = resolveLodPolicy(lod, logicalPath, legacy);
+  const fingerprint = policy.fingerprint.generation;
+  if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000);
+  if (policy.generation.maxLevels <= 1) return emptySummary(policy, (now() - started) / 1000);
 
   await MeshoptSimplifier.ready;
 
@@ -477,7 +580,7 @@ export async function generateDiscreteLod(
         authoredLod: meshState.authoredLod,
         legacySimplify: legacy.simplify === true,
         legacyVirtualNone: false,
-        minTriangles: policy.minTriangles,
+        minTriangles: policy.generation.minTriangles,
         skinned: meshState.skinned,
         virtualOwned: primitive.getExtension(TN_VIRTUAL_GEOMETRY) !== null,
       });
@@ -489,7 +592,7 @@ export async function generateDiscreteLod(
       }
       const before = primitiveTriangleCount(primitive);
       trianglesBefore += before;
-      const chain = await generateChain(primitive, policy.maxLevels);
+      const chain = await generateChain(primitive, policy.generation.maxLevels);
       if (chain === null) {
         reasons.add("too-small");
         skipped.push({ mesh: mesh.getName(), primitive: primitiveIndex, reason: "too-small" });
@@ -528,14 +631,17 @@ export async function generateDiscreteLod(
 
   return {
     byteOverhead,
+    diagnostics: [...policy.diagnostics],
     enabled: true,
     fingerprint,
     generated: primitives.length,
     levels,
-    maxLevels: policy.maxLevels,
-    minTriangles: policy.minTriangles,
+    maxLevels: policy.generation.maxLevels,
+    minTriangles: policy.generation.minTriangles,
+    preset: policy.preset,
     primitives,
     reasons: [...reasons],
+    runtime: { ...policy.runtime },
     skipped: skipped.length,
     trianglesAfter,
     trianglesBefore,

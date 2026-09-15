@@ -12,7 +12,7 @@ import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/ext
 import {
   type IModelLodSummary,
   LOD_ERROR_TARGETS,
-  resolveGenerationPolicy,
+  resolveLodPolicy,
   selectDiscreteLevels,
 } from "../src/lod/generate.js";
 import { modelPass } from "../src/passes/model.js";
@@ -408,19 +408,26 @@ describe("discrete LOD artifact rules", () => {
       generation: { maxLevels: 6, minTriangles: 9_000 },
       overrides: { "hull.glb": { generation: { maxLevels: 2 } }, "off.glb": false },
     };
-    expect(resolveGenerationPolicy(project, "hull.glb")).toMatchObject({
+    expect(resolveLodPolicy(project, "hull.glb")).toMatchObject({
       enabled: true,
-      maxLevels: 2,
-      minTriangles: 9_000,
+      generation: { maxLevels: 2, minTriangles: 9_000 },
     });
-    expect(resolveGenerationPolicy(project, "off.glb")).toMatchObject({
+    expect(resolveLodPolicy(project, "off.glb")).toMatchObject({
       enabled: false,
       reasons: ["disabled"],
     });
-    expect(resolveGenerationPolicy(false, "hull.glb", { virtualNone: true })).toMatchObject({
+    expect(resolveLodPolicy(false, "hull.glb", { virtualNone: true })).toMatchObject({
       enabled: false,
       reasons: ["disabled"],
     });
+  });
+
+  it("keeps the runtime budget out of the generation fingerprint", () => {
+    const base = resolveLodPolicy(undefined, "hull.glb");
+    const budget = resolveLodPolicy({ runtime: { hysteresis: 0.3, maxPixelError: 2 } }, "hull.glb");
+    expect(budget.fingerprint.generation).toBe(base.fingerprint.generation);
+    expect(budget.fingerprint.runtime).not.toBe(base.fingerprint.runtime);
+    expect(budget.runtime).toEqual({ hysteresis: 0.3, maxPixelError: 2 });
   });
 
   it("matches authored LOD names", () => {
@@ -454,6 +461,9 @@ describe("assets.lod through the public compiler", () => {
     const entry = manifest.entries["hull.glb"];
     expect(entry?.lod?.generated).toBe(1);
     expect(entry?.lod?.fingerprint).toMatch(/^[0-9a-f]{16}$/);
+    // The runtime selection budget travels in the manifest, not in executable config (PRD-377 §5).
+    expect(entry?.lod?.preset).toBe("balanced");
+    expect(entry?.lod?.runtime).toEqual({ hysteresis: 0.15, maxPixelError: 1 });
     const output = await readFile(path.join(root, "public", entry?.output ?? ""));
     const json = JSON.parse(output.subarray(20, 20 + output.readUInt32LE(12)).toString("utf8")) as {
       extensionsUsed?: string[];

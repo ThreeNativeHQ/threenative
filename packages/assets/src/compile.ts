@@ -17,7 +17,13 @@ import { assertBudget, measureBudget, parseBudget } from "./budget.js";
 import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
-import type { IModelLodOptions, IModelLodOverride } from "./lod/generate.js";
+import {
+  type IModelLodOptions,
+  type IModelLodOverride,
+  type IModelLodRuntimeOptions,
+  type LodPreset,
+  isLodPreset,
+} from "./lod/generate.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
 import { parseAudioConfig } from "./passes/audio-config.js";
@@ -450,17 +456,44 @@ function lodRow(value: unknown): ILodRow | undefined {
     "trianglesBefore",
   ] as const;
   if (numbers.some((key) => typeof value[key] !== "number")) return undefined;
-  if (typeof value.fingerprint !== "string") return undefined;
-  if (!Array.isArray(value.reasons) || value.reasons.some((reason) => typeof reason !== "string"))
+  if (typeof value.fingerprint !== "string" || typeof value.preset !== "string") return undefined;
+  if (!isRecord(value.runtime)) return undefined;
+  const runtime = value.runtime;
+  if (
+    typeof runtime.hysteresis !== "number" ||
+    typeof runtime.maxPixelError !== "number" ||
+    !Number.isFinite(runtime.hysteresis) ||
+    !Number.isFinite(runtime.maxPixelError)
+  ) {
     return undefined;
+  }
+  const strings = (key: "reasons" | "diagnostics"): string[] | undefined => {
+    const array = value[key];
+    if (!Array.isArray(array)) return undefined;
+    // The pass reports diagnostics as `{ code, message, path }`; the manifest keeps the codes.
+    const codes = array.map((entry) =>
+      typeof entry === "string"
+        ? entry
+        : isRecord(entry) && typeof entry.code === "string"
+          ? entry.code
+          : undefined,
+    );
+    return codes.every((entry): entry is string => entry !== undefined) ? codes : undefined;
+  };
+  const reasons = strings("reasons");
+  const diagnostics = strings("diagnostics");
+  if (reasons === undefined || diagnostics === undefined) return undefined;
   return {
     byteOverhead: value.byteOverhead as number,
+    diagnostics,
     fingerprint: value.fingerprint,
     generated: value.generated as number,
     levels: value.levels as number,
     maxLevels: value.maxLevels as number,
     minTriangles: value.minTriangles as number,
-    reasons: value.reasons as string[],
+    preset: value.preset,
+    reasons,
+    runtime: { hysteresis: runtime.hysteresis, maxPixelError: runtime.maxPixelError },
     skipped: value.skipped as number,
     trianglesAfter: value.trianglesAfter as number,
     trianglesBefore: value.trianglesBefore as number,
@@ -914,11 +947,54 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
       ...(value.minTriangles === undefined ? {} : { minTriangles: value.minTriangles as number }),
     };
   };
+  const presetValue = (value: unknown, label: string): LodPreset => {
+    if (!isLodPreset(value)) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label} must be one of aggressive, balanced, quality.`,
+      );
+    }
+    return value;
+  };
+  const runtimeValue = (value: unknown, label: string): IModelLodRuntimeOptions => {
+    if (!isRecord(value)) throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be an object.`);
+    for (const key of Object.keys(value)) {
+      if (key !== "hysteresis" && key !== "maxPixelError") {
+        throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: ${label}.${key} is not recognised.`);
+      }
+    }
+    if (
+      value.maxPixelError !== undefined &&
+      (typeof value.maxPixelError !== "number" ||
+        !Number.isFinite(value.maxPixelError) ||
+        value.maxPixelError <= 0)
+    ) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label}.maxPixelError must be a positive finite number.`,
+      );
+    }
+    if (
+      value.hysteresis !== undefined &&
+      (typeof value.hysteresis !== "number" ||
+        !Number.isFinite(value.hysteresis) ||
+        value.hysteresis < 0 ||
+        value.hysteresis >= 0.5)
+    ) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: ${label}.hysteresis must be a finite number in [0, 0.5).`,
+      );
+    }
+    return {
+      ...(value.maxPixelError === undefined
+        ? {}
+        : { maxPixelError: value.maxPixelError as number }),
+      ...(value.hysteresis === undefined ? {} : { hysteresis: value.hysteresis as number }),
+    };
+  };
   const override = (value: unknown, label: string): boolean | IModelLodOverride => {
     if (typeof value === "boolean") return value;
     if (!isRecord(value)) throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be an object.`);
     for (const key of Object.keys(value)) {
-      if (key !== "enabled" && key !== "generation") {
+      if (key !== "enabled" && key !== "generation" && key !== "preset" && key !== "runtime") {
         throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: ${label}.${key} is not recognised.`);
       }
     }
@@ -926,10 +1002,16 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
       throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label}.enabled must be a boolean.`);
     }
     return {
-      ...(value.enabled === undefined ? {} : { enabled: value.enabled }),
+      ...(value.enabled === undefined ? {} : { enabled: value.enabled as boolean }),
       ...(value.generation === undefined
         ? {}
         : { generation: generation(value.generation, `${label}.generation`) }),
+      ...(value.preset === undefined
+        ? {}
+        : { preset: presetValue(value.preset, `${label}.preset`) }),
+      ...(value.runtime === undefined
+        ? {}
+        : { runtime: runtimeValue(value.runtime, `${label}.runtime`) }),
     };
   };
   const overrides: Record<string, boolean | IModelLodOverride> = {};
@@ -948,8 +1030,10 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
       ? {}
       : { generation: generation(raw.generation, "assets.lod.generation") }),
     ...(Object.keys(overrides).length === 0 ? {} : { overrides }),
-    ...(typeof raw.preset === "string" ? { preset: raw.preset } : {}),
-    ...(isRecord(raw.runtime) ? { runtime: raw.runtime } : {}),
+    ...(raw.preset === undefined ? {} : { preset: presetValue(raw.preset, "assets.lod.preset") }),
+    ...(raw.runtime === undefined
+      ? {}
+      : { runtime: runtimeValue(raw.runtime, "assets.lod.runtime") }),
   };
 }
 
