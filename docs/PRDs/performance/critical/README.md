@@ -12,10 +12,11 @@ standing records: `docs/verification/runtime-perf-state.md` and
 
 ## Midway game-render PRDs (filed 2026-09-15)
 
-These four are the game-render counterpart to the native-runtime rows below: they were filed from a
+These five are the game-render counterpart to the native-runtime rows below: they were filed from a
 measured optimisation campaign on the external game `sandbox/midway-open-pacific` (RTX 2080, WebGPU)
 and they are ordered by dependency. PRD-387 precedes PRD-386 because GPU-driven submission multiplies
-the variant count that 387 must prepare off-frame.
+the variant count that 387 must prepare off-frame; PRD-390 lands the CPU visibility rule the campaign
+proved and depends on 388's measured-cost policy and 389's honest instruments.
 
 | PRD | Title | Kind |
 | --- | --- | --- |
@@ -23,6 +24,11 @@ the variant count that 387 must prepare off-frame.
 | [PRD-387](PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md) | shader variants are prepared off-frame, and bounded | prerequisite |
 | [PRD-388](PRD-388-an-automatic-optimizer-must-price-its-own-cost.md) | an automatic optimizer must price its own cost | policy |
 | [PRD-389](PRD-389-the-frame-budgets-instruments-do-not-lie.md) | the frame budget's instruments do not lie | instrument honesty |
+| [PRD-390](PRD-390-do-not-submit-what-the-render-camera-cannot-resolve.md) | do not submit what the render camera cannot resolve | default policy |
+
+PRD-390 is the "optimized by default" rule the other four serve: it cites 386 for the per-draw CPU cost
+that makes culling pay, 388 for the self-pricing rule and the opt-out it must not duplicate, and 389 for
+the instrument that must be a series before any cut is justified by it.
 
 The measured evidence behind them lives outside this repository in the Midway campaign capture; the
 in-repo record of the adopted engine fix and its raw evidence is
