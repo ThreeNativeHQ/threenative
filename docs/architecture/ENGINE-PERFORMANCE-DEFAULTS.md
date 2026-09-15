@@ -3,6 +3,13 @@
 **2026-09-14 · Priority 1 shipped and adopted by the Midway game (Section 6); priorities 2-3
 proposed; stable 60 FPS remains unproved.**
 
+Status change. This report previously carried the title "Proposed engine work · Stable 60 FPS
+remains unproved." and, for the transform-ownership item, the status "In progress per the handoff,
+not integrated at this report's review". Both are superseded for Priority 1: the fix is shipped on
+develop (`3c78a7e22`) and the game adopted it (Section 6). The stable 60 FPS target itself remains
+unproved. The game is an external checkout; its real diff and raw evidence are copied into
+`docs/midway-adoption-verify/` in this repository so they are inspectable here.
+
 Build these improvements into the engine so a developer can create ordinary Three.js
 objects, update gameplay, and receive correct, efficient rendering automatically. This
 report gives the next developer an ordered implementation loop. The existing
