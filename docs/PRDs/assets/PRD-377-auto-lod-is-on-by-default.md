@@ -367,7 +367,9 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       non-blank capture. Both exit 0 under `--browser-recipe webgpu --headed` with no console or
       network errors. Reproduce with `DISPLAY` on the GPU's X server and
       `TN_PLAYTEST_HOST_DISPLAY=1`; the runner defaults to headless, which serves SwiftShader and is
-      not evidence.
+      not evidence. Run locally with `pnpm --filter auto-lod playtest:web` (and `playtest:desktop`
+      for the native lane); the package `test` script is the install-only `pnpm run build` proof,
+      because the playtest needs a real adapter and cannot run in the CI package walk.
 - [ ] Windows native consumer evidence establishes the default policy. NOT RUN; no host here.
 - [ ] macOS native consumer evidence establishes the default policy. NOT RUN; no host here.
 - [x] Linux native consumer evidence establishes the default policy. Evidence: the same example built
