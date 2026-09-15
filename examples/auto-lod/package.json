@@ -1,0 +1,24 @@
+{
+  "name": "auto-lod",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "make-hull": "node scripts/make-hull.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm dev --host 127.0.0.1 --port $PORT --strictPort\""
+  },
+  "dependencies": {
+    "@threenative/assets": "workspace:*",
+    "@threenative/core": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/playtest": "workspace:*",
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

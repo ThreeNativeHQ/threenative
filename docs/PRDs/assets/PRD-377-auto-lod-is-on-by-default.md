@@ -10,7 +10,7 @@ A developer authors one GLB and loads it through ThreeNative's normal asset path
 
 This is not a greenfield LOD renderer. The repository already has default-on virtual geometry for sufficiently dense primitives. Extend and reconcile that machinery, adding a conservative discrete-LOD path where it supplies missing value. Exactly one system owns detail selection for a primitive. Preserve the original source, the full-detail fallback, materials, object identity, and gameplay semantics.
 
-**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact landed and tested; Phase 2 engine-owned projection/hysteresis selection and LOD0-stable picking landed and tested, with the end-to-end loader test, multi-view/shadow and instance-lifetime evidence outstanding. Qualification (Phase 3), default-on (Phase 4) and every Closure Gate are NOT started; no Closure Gate is claimed.
+**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact and Phase 2 engine-owned runtime landed and tested; Phase 3 browser WebGPU consumer evidence and the dense-asset triangle-reduction gate pass on hardware (8,192 → 369 far-route triangles, RTX 2080), with native qualification, frame-time/quality/byte gates, default-on (Phase 4) and the remaining Closure Gates NOT started. No Closure Gate is claimed complete.
 **Date:** 2026-09-11.
 **Scope:** Asset compilation, configuration, ordinary model loading, and existing render integration.
 **Complexity:** HIGH — default-on lossy processing crosses build, runtime, and platform boundaries.
@@ -262,16 +262,15 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 3 — consumer qualification
 
-- [ ] Browser WebGPU consumer evidence establishes the default policy. NOT RUN. The lane is
-      available (`doctor` finds node/playwright/chromium/display and adb), but there is no example
-      whose assets the `model` pass actually cooks, so there is no compiled `TN_discrete_lod` model
-      to serve. Attempting the quarry fixture (`quarry-boot`) exposed three lane problems, each
-      recorded rather than worked around: Vite v8 binds `localhost`/IPv6 only, so the runner's
-      `127.0.0.1` readiness probe times out (`curl localhost` 200, `127.0.0.1` 000); with
-      `--url http://localhost:5173` the bridge `describe` exceeded the 15 s operation timeout on the
-      procedurally heavy scene; and with the timeout raised the page navigated during the handshake
-      (Vite dependency pre-bundling). A browser proof needs a purpose-built compiled example and a
-      warmed build first.
+- [x] Browser WebGPU consumer evidence establishes the default policy. Evidence: `examples/auto-lod`
+      (an 8,192-triangle `assets/hull.glb`, `assets.lod: {}`, compiled through the same `watchAssets`
+      dev seam a scaffolded project uses) on an RTX 2080 (adapter `turing / nvidia` in
+      `artifacts/playtest/capture.json`). `playtests/lod-near.playtest.json` selects LOD0
+      (`sceneNodes` 8,192 triangles); `playtests/lod-far.playtest.json` submits 369 triangles with a
+      non-blank capture. Both exit 0 under `--browser-recipe webgpu --headed` with no console or
+      network errors. Reproduce with `DISPLAY` on the GPU's X server and
+      `TN_PLAYTEST_HOST_DISPLAY=1`; the runner defaults to headless, which serves SwiftShader and is
+      not evidence.
 - [ ] Windows native consumer evidence establishes the default policy. NOT RUN; no host here.
 - [ ] macOS native consumer evidence establishes the default policy. NOT RUN; no host here.
 - [ ] Linux native consumer evidence establishes the default policy. NOT RUN.
@@ -279,13 +278,19 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       adb is on PATH, no emulator or device was started.
 - [ ] iOS's policy is backed by target evidence or explicitly remains baseline-only. BLOCKED: `xcrun`
       is not on PATH (macOS only).
-- [ ] The dense-asset triangle-reduction gate passes. Mechanism-level reduction is proven in Node
-      (`model-lod-loader.spec.ts`: a 64-triangle LOD0 grid selects the 16-triangle level on the far
-      route, 75% fewer), but the declared dense-asset browser/native route with real frame meters is
-      NOT RUN.
-- [ ] The frame-time regression gates pass on every default-enabled target. NOT RUN.
-- [ ] The rendered-quality gate passes on the declared corpus. NOT RUN.
-- [ ] The new discrete-artifact byte budgets pass. NOT RUN.
+- [x] The dense-asset triangle-reduction gate passes on browser WebGPU. Evidence: 8,192 authored -> 369
+      submitted on the far route (`lod-far`, exit 0), 95.5% fewer, above the 50% floor; the near route
+      keeps LOD0 at 8,192. Frame meters were sampled (1,024 samples) but no regression allowance was
+      asserted, so no frame-time claim is made here.
+- [ ] The dense-asset triangle-reduction gate passes on a native target. NOT RUN.
+- [ ] The frame-time regression gates pass on every default-enabled target. NOT RUN; a browser pass
+      was measured but not bounded, and no native target ran.
+- [ ] The rendered-quality gate passes on the declared corpus. NOT RUN. The two browser scenarios
+      assert a non-blank capture and the far/near screenshots exist in `artifacts/playtest/`, but the
+      declared corpus comparison at transitions was not performed.
+- [ ] The new discrete-artifact byte budgets pass. NOT RUN as the declared 1.5x cap. The cook reports
+      8,192 -> 368 triangles across 3 levels at 88,728 payload bytes, and the cooked file 150,188 ->
+      59,116 bytes (-60.6%), against a non-AutoLOD baseline that was not measured.
 
 #### Phase 4 — default and discovery
 
