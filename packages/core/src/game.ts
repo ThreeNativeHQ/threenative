@@ -519,6 +519,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pointerEvents: PointerEvents3D | undefined;
   #scheduler: Scheduler | undefined;
   #afterPhysicsPhase: IAfterPhysicsPhase | undefined;
+  // Unlike afterPhysics, this seam's frame boundary is the world-render block below, so it is a
+  // plain scene-owned set rather than a phase on the loop.
+  #beforeRenderCallbacks = new Set<() => void>();
   #frameBudget: FrameBudget | undefined;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
@@ -640,6 +643,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#hasDepthCoupledOutput = false;
     this.#sceneFrame = undefined;
     this.#afterPhysicsPhase?.clear();
+    this.#beforeRenderCallbacks.clear();
     this.#scene?.exit(ctx);
     this.#pointerEvents?.clear();
     this.#sceneEntered = false;
@@ -973,6 +977,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       assets,
       after: (delay, callback) => scheduler.after(delay, callback),
       afterPhysics: (callback) => afterPhysicsPhase.register(callback),
+      beforeRender: (callback) => {
+        if (typeof callback !== "function")
+          throw new Error("beforeRender requires a callback function.");
+        this.#beforeRenderCallbacks.add(callback);
+        return () => this.#beforeRenderCallbacks.delete(callback);
+      },
       camera,
       canvasLayer,
       entities,
@@ -1209,6 +1219,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // sync are render-path work, and a frame budget that hid it in `residual` made the
           // optimizer's own cost unmeasurable exactly where the optimizer is engaged.
           const renderStart = frameBudget === undefined ? 0 : budgetNow();
+          // Scene prep that must read the frame's last solved state before the projection packs and
+          // the renderer draws. Inside the world-render block it cannot land on a held loader frame.
+          if (this.#beforeRenderCallbacks.size > 0)
+            for (const callback of [...this.#beforeRenderCallbacks]) callback();
           // Let a depth-coupled scene update its output node while the scene pass is still the
           // next render. Ordinary scenes keep the historical hook order and timing.
           const depthCoupledOutput = this.#hasDepthCoupledOutput;
@@ -1508,6 +1522,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#uiBridge = undefined;
     this.#loop?.stop();
     this.#afterPhysicsPhase?.clear();
+    this.#beforeRenderCallbacks.clear();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
     this.#sceneFrame = undefined;
     this.#sceneEntered = false;

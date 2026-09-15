@@ -177,6 +177,12 @@ export interface ICtx<
   readonly after: (delay: number, callback: () => void) => ScheduleHandle;
   /** Register a callback for the engine-owned phase after physics writes solved transforms. */
   readonly afterPhysics: (callback: AfterPhysicsCallback) => () => void;
+  /**
+   * Register work that runs once per actual world render, after the frame's last fixed update and
+   * before the projection reconciles and the renderer draws. A held, loader-only frame has no world
+   * draw and therefore dispatches nothing.
+   */
+  readonly beforeRender: (callback: () => void) => () => void;
   readonly every: (callback: (dt: number) => void) => ScheduleHandle;
   readonly state: GameStore<TState>;
   readonly tween: <T extends object>(

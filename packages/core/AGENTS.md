@@ -104,6 +104,9 @@ particular, Godot-borrowed node names stay unchanged.
   is exposed as `window.__THREENATIVE__` in dev builds only, and playtest reads it.
 - Scene-owned time lives behind `ctx.after`, `ctx.every`, `ctx.tween`; `Scheduler` and
   `ScheduleHandle` are the public supporting types, and transitions cancel it.
+- `ctx.beforeRender(cb)` runs once per actual world draw, after the frame's last fixed update and
+  before the projection reconciles and the renderer draws; a held loader frame draws no world and
+  dispatches nothing. It is scene-owned and cleared on scene change and stop, like `ctx.afterPhysics`.
 - `AudioBus` is the audio sink; `IAudioBusOptions` and `IAudioPlayOptions` configure listener
   and voice cleanup.
 - `ctx.random` is the seeded randomness surface playtest reports; `createRandom` and `IRandom`
