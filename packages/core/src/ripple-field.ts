@@ -226,8 +226,8 @@ export class RippleField {
         const k = j * n + i;
         const q = ((i - ix) ** 2 + (j - iz) ** 2) / (r * r);
         const g = Math.exp(-q);
-        this.#velocity[k] = this.#velocity[k]! + amplitude * (1 - q - correction) * g;
-        if (foam !== 0) this.foam[k] = clamp(this.foam[k]! + g * foam, 0, 1);
+        this.#velocity[k] = (this.#velocity[k] as number) + amplitude * (1 - q - correction) * g;
+        if (foam !== 0) this.foam[k] = clamp((this.foam[k] as number) + g * foam, 0, 1);
       }
     this.#empty = false;
     this.version++;
@@ -259,7 +259,7 @@ export class RippleField {
       ) {
         const k = j * n + i;
         const g = Math.exp(-(((i - ix) ** 2 + (j - iz) ** 2) / (r * r)));
-        this.foam[k] = clamp(this.foam[k]! + g * amount, 0, 1);
+        this.foam[k] = clamp((this.foam[k] as number) + g * amount, 0, 1);
       }
     this.#empty = false;
     this.version++;
@@ -303,24 +303,26 @@ export class RippleField {
     for (let j = 1; j < n - 1; j++)
       for (let i = 1; i < n - 1; i++) {
         const k = j * n + i;
-        const a = h[k - 1]!;
-        const b = h[k + 1]!;
-        const d = h[k - n]!;
-        const e = h[k + n]!;
-        const lap = a + b + d + e - 4 * h[k]!;
-        v[k] = (v[k]! + c * lap * dt) / (1 + loss[k]! * dt);
-        next[k] = h[k]! + v[k]! * dt;
+        const a = h[k - 1] as number;
+        const b = h[k + 1] as number;
+        const d = h[k - n] as number;
+        const e = h[k + n] as number;
+        const lap = a + b + d + e - 4 * (h[k] as number);
+        v[k] = ((v[k] as number) + c * lap * dt) / (1 + (loss[k] as number) * dt);
+        next[k] = (h[k] as number) + (v[k] as number) * dt;
         // Horizontal flow is the surface gradient relaxing under gravity — enough to drift foam
         // down the face of a wave, and far short of a three-dimensional solve.
         const gx = (b - a) / (2 * dx);
         const gz = (e - d) / (2 * dx);
-        flowX[k] = clamp((flowX[k]! - 9.81 * gx * dt) / (1 + 0.65 * dt), -9, 9);
-        flowZ[k] = clamp((flowZ[k]! - 9.81 * gz * dt) / (1 + 0.65 * dt), -9, 9);
+        flowX[k] = clamp(((flowX[k] as number) - 9.81 * gx * dt) / (1 + 0.65 * dt), -9, 9);
+        flowZ[k] = clamp(((flowZ[k] as number) - 9.81 * gz * dt) / (1 + 0.65 * dt), -9, 9);
         // A crest that is both steep and collapsing is a crest that is breaking, and a breaking
         // crest is white. Calm swell never satisfies both and so never invents foam.
         const breaking =
-          lap < 0 ? Math.max(0, Math.hypot(gx, gz) - 0.3) * Math.min(3, Math.abs(v[k]!)) : 0;
-        if (breaking > 0) foam[k] = clamp(foam[k]! + breaking * dt * 0.55, 0, 1);
+          lap < 0
+            ? Math.max(0, Math.hypot(gx, gz) - 0.3) * Math.min(3, Math.abs(v[k] as number))
+            : 0;
+        if (breaking > 0) foam[k] = clamp((foam[k] as number) + breaking * dt * 0.55, 0, 1);
       }
     this.height = next;
     this.#scratch = h;
@@ -341,17 +343,22 @@ export class RippleField {
     for (let j = 1; j < n - 1; j++)
       for (let i = 1; i < n - 1; i++) {
         const k = j * n + i;
-        const x = clamp(i - ((current.x + flowX[k]!) * dt) / dx, 0, n - 1.001);
-        const z = clamp(j - ((current.z + flowZ[k]!) * dt) / dx, 0, n - 1.001);
+        const x = clamp(i - ((current.x + (flowX[k] as number)) * dt) / dx, 0, n - 1.001);
+        const z = clamp(j - ((current.z + (flowZ[k] as number)) * dt) / dx, 0, n - 1.001);
         const a = Math.floor(x);
         const b = Math.floor(z);
         const q = b * n + a;
         const u = x - a;
         const w = z - b;
         const back =
-          (foam[q]! * (1 - u) + foam[q + 1]! * u) * (1 - w) +
-          (foam[q + n]! * (1 - u) + foam[q + n + 1]! * u) * w;
-        const lap = foam[k - 1]! + foam[k + 1]! + foam[k - n]! + foam[k + n]! - 4 * foam[k]!;
+          ((foam[q] as number) * (1 - u) + (foam[q + 1] as number) * u) * (1 - w) +
+          ((foam[q + n] as number) * (1 - u) + (foam[q + n + 1] as number) * u) * w;
+        const lap =
+          (foam[k - 1] as number) +
+          (foam[k + 1] as number) +
+          (foam[k - n] as number) +
+          (foam[k + n] as number) -
+          4 * (foam[k] as number);
         next[k] = clamp((back + lap * 0.06 * dt) * decay, 0, 1);
       }
     this.foam = next;
@@ -369,8 +376,8 @@ export class RippleField {
     const b = fz - iz;
     const k = iz * n + ix;
     return (
-      (data[k]! * (1 - a) + data[k + 1]! * a) * (1 - b) +
-      (data[k + n]! * (1 - a) + data[k + n + 1]! * a) * b
+      ((data[k] as number) * (1 - a) + (data[k + 1] as number) * a) * (1 - b) +
+      ((data[k + n] as number) * (1 - a) + (data[k + n + 1] as number) * a) * b
     );
   }
 
@@ -395,7 +402,9 @@ export class RippleField {
   energy(): number {
     let total = 0;
     for (let i = 0; i < this.height.length; i++)
-      total += this.height[i]! ** 2 + this.#velocity[i]! ** 2 / (this.speed * this.speed);
+      total +=
+        (this.height[i] as number) ** 2 +
+        (this.#velocity[i] as number) ** 2 / (this.speed * this.speed);
     return total;
   }
 

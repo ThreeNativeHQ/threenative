@@ -2327,17 +2327,18 @@ const result = evaluateRichPlaytestAssertions(input);
 
 ### `invalidScenario`
 
-`function` — Load and validate a scenario, then control its tick steps.
+`function` — Construct a named invalid-scenario error without loading or executing a scenario.
 
 ```ts
 export function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError { … }
 ```
 
-- **Use when:** create a browser or device playtest scenario · wait or hold a game for a deterministic number of ticks
-- **Constraints:** unknown scenario keys fail closed
+- **Use when:** construct a validation error for malformed scenario input
+- **Constraints:** returns an error; the caller must throw it
 
 ```ts
-const scenario = await loadPlaytestScenario(project, file);
+import { invalidScenario } from "@threenative/playtest";
+throw invalidScenario("smoke.playtest.json", "Expected a non-empty assertion set");
 ```
 
 ### `jsonByteLength`
@@ -2357,17 +2358,18 @@ assertJsonSafe({ score: 10 });
 
 ### `loadPlaytestScenario`
 
-`function` — Load and validate a scenario, then control its tick steps.
+`function` — Load and validate a scenario and its referenced evidence before running it.
 
 ```ts
 export async function loadPlaytestScenario(projectPath: string, scenarioPath: string): Promise<IPlaytestScenario> { … }
 ```
 
-- **Use when:** create a browser or device playtest scenario · wait or hold a game for a deterministic number of ticks
-- **Constraints:** unknown scenario keys fail closed
+- **Use when:** create a browser or device playtest scenario · load a deterministic tick-based playtest scenario
+- **Constraints:** unknown scenario keys and missing referenced evidence fail closed · loading validates the fixture; use the runner to execute it
 
 ```ts
-const scenario = await loadPlaytestScenario(project, file);
+import { loadPlaytestScenario } from "@threenative/playtest";
+const scenario = await loadPlaytestScenario(process.cwd(), "playtests/smoke.playtest.json");
 ```
 
 ### `missingPlaytestCapabilities`
@@ -2460,62 +2462,66 @@ playtestDiagnostic("TN_PLAYTEST_CAPABILITY_MISSING", "body missing", "register r
 
 ### `PlaytestScenarioError`
 
-`class` — Load and validate a scenario, then control its tick steps.
+`class` — Carry a structured scenario validation diagnostic as an error.
 
 ```ts
 export class PlaytestScenarioError extends Error { … }
 ```
 
-- **Use when:** create a browser or device playtest scenario · wait or hold a game for a deterministic number of ticks
-- **Constraints:** unknown scenario keys fail closed
+- **Use when:** catch a structured playtest scenario validation error
+- **Constraints:** the diagnostic describes a failed load, not a successfully executed scenario
 
 ```ts
-const scenario = await loadPlaytestScenario(project, file);
+import { PlaytestScenarioError } from "@threenative/playtest";
+const error = new PlaytestScenarioError({ code: "TN_PLAYTEST_SCENARIO_INVALID", message: "Invalid fixture", severity: "error", suggestion: "Fix the fixture" });
 ```
 
 ### `playtestStepHoldTicks`
 
-`function` — Load and validate a scenario, then control its tick steps.
+`function` — Read a validated step's input-hold duration in simulation ticks.
 
 ```ts
 export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number { … }
 ```
 
-- **Use when:** create a browser or device playtest scenario · wait or hold a game for a deterministic number of ticks
-- **Constraints:** unknown scenario keys fail closed
+- **Use when:** read the deterministic number of ticks to hold a playtest input
+- **Constraints:** reads the duration only; the runner advances the simulation
 
 ```ts
-const scenario = await loadPlaytestScenario(project, file);
+import { playtestStepHoldTicks } from "@threenative/playtest";
+const ticks = playtestStepHoldTicks({ kind: "input", press: "KeyW", holdTicks: 30, release: true });
 ```
 
 ### `playtestStepWaitTicks`
 
-`function` — Load and validate a scenario, then control its tick steps.
+`function` — Read a validated step's no-input duration in simulation ticks.
 
 ```ts
 export function playtestStepWaitTicks(step: IPlaytestStep): number { … }
 ```
 
-- **Use when:** create a browser or device playtest scenario · wait or hold a game for a deterministic number of ticks
-- **Constraints:** unknown scenario keys fail closed
+- **Use when:** wait or hold a game for a deterministic number of ticks
+- **Constraints:** reads the wait duration only; the runner advances the simulation
 
 ```ts
-const scenario = await loadPlaytestScenario(project, file);
+import { playtestStepWaitTicks } from "@threenative/playtest";
+const ticks = playtestStepWaitTicks({ kind: "wait", waitTicks: 30, release: true });
 ```
 
 ### `rejectUnknownKeys`
 
-`function` — Load and validate a scenario, then control its tick steps.
+`function` — Reject object keys outside the explicitly allowed scenario fields.
 
 ```ts
 export function rejectUnknownKeys( value: Record<string, unknown>, allowedKeys: readonly string[], scenarioPath: string, objectPath: string, ): void { … }
 ```
 
-- **Use when:** create a browser or device playtest scenario · wait or hold a game for a deterministic number of ticks
-- **Constraints:** unknown scenario keys fail closed
+- **Use when:** reject an unknown field while validating a scenario object
+- **Constraints:** throws an invalid-scenario error on the first unknown key
 
 ```ts
-const scenario = await loadPlaytestScenario(project, file);
+import { rejectUnknownKeys } from "@threenative/playtest";
+rejectUnknownKeys({ name: "smoke" }, ["name"], "smoke.playtest.json", "scenario");
 ```
 
 ### `requiredPlaytestCapabilities`
@@ -3257,17 +3263,18 @@ const report = await runStandalonePlaytest(options);
 
 ### `reconcileBrowserPointers`
 
-`function` — Select safe Chromium arguments for WebGPU playtests.
+`function` — Compare pointer snapshots and produce down, move, and up transitions.
 
 ```ts
 export function reconcileBrowserPointers( previous: ReadonlyMap<number, Required<IPlaytestPointer>>, next: readonly IPlaytestPointer[], ): IBrowserPointerChange[] { … }
 ```
 
-- **Use when:** run a browser playtest with Vulkan WebGPU · reject a SwiftShader adapter as evidence
-- **Constraints:** inspect the adapter name before claiming GPU proof
+- **Use when:** reconcile pointer contacts into down move and up events
+- **Constraints:** returns changes only; the caller dispatches them and retains the next snapshot
 
 ```ts
-const args = resolveBrowserArguments(undefined);
+import { reconcileBrowserPointers } from "@threenative/playtest/runner";
+const changes = reconcileBrowserPointers(new Map(), [{ id: 1, x: 20, y: 30 }]);
 ```
 
 ### `recordToScenario`
@@ -3302,17 +3309,18 @@ const scenario = recordToScenario(recording);
 
 ### `resolveBrowserArguments`
 
-`function` — Select safe Chromium arguments for WebGPU playtests.
+`function` — Copy the selected Chromium arguments without silently enabling a rendering recipe.
 
 ```ts
 export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] { … }
 ```
 
-- **Use when:** run a browser playtest with Vulkan WebGPU · reject a SwiftShader adapter as evidence
-- **Constraints:** inspect the adapter name before claiming GPU proof
+- **Use when:** run a browser playtest with Vulkan WebGPU
+- **Constraints:** pass WEBGPU_BROWSER_ARGS explicitly; undefined selects no additional arguments · inspect the observed adapter before claiming hardware GPU evidence
 
 ```ts
-const args = resolveBrowserArguments(undefined);
+import { resolveBrowserArguments, WEBGPU_BROWSER_ARGS } from "@threenative/playtest/runner";
+const args = resolveBrowserArguments(WEBGPU_BROWSER_ARGS);
 ```
 
 ### `resolveManagedServerCommand`
@@ -3452,17 +3460,18 @@ const report = await runStandalonePlaytest(options);
 
 ### `softwareAdapterName`
 
-`function` — Select safe Chromium arguments for WebGPU playtests.
+`function` — Identify a software renderer in the fields reported by adapter.info.
 
 ```ts
 export function softwareAdapterName(adapter: Readonly<Record<string, string>> | undefined): string | undefined { … }
 ```
 
-- **Use when:** run a browser playtest with Vulkan WebGPU · reject a SwiftShader adapter as evidence
-- **Constraints:** inspect the adapter name before claiming GPU proof
+- **Use when:** reject a SwiftShader adapter as evidence
+- **Constraints:** undefined means no software name was found, not proof of a hardware adapter
 
 ```ts
-const args = resolveBrowserArguments(undefined);
+import { softwareAdapterName } from "@threenative/playtest/runner";
+const software = softwareAdapterName({ architecture: "swiftshader" });
 ```
 
 ### `substituteManagedPort`
@@ -3598,6 +3607,23 @@ export function viewportRestoreCommands(): string[][] { … }
 
 ```ts
 const adb = discoverAdb(process.env);
+```
+
+### `withBrowserCapture`
+
+`function` — Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.
+
+```ts
+export async function withBrowserCapture<T>( config: IStandalonePlaytestConfig, capture: (session: IBrowserCaptureSession) => Promise<T>, signal?: AbortSignal, ): Promise<T> { … }
+```
+
+- **Use when:** write a custom browser capture without owning Xvfb or Chromium cleanup
+- **Constraints:** browser only; requires a scenario and runtime.startup; does not execute scenario steps or assertions · cancellation is checked between resource acquisitions; lock waiting retains its own bounded queue policy · use session.screenshot for nonblank PNGs; private-display captures are not FPS evidence · use threenative-playtest trace --url <url> for slow-frame attribution instead of creating another profiler
+
+```ts
+import { parseStandalonePlaytestArgs, withBrowserCapture } from "@threenative/playtest/runner";
+const config = parseStandalonePlaytestArgs(["--scenario", "playtests/smoke.playtest.json", "--url", "http://127.0.0.1:5173"]);
+await withBrowserCapture(config, async (session) => session.screenshot("ready"));
 ```
 
 ### `writeCaptureProvenance`
