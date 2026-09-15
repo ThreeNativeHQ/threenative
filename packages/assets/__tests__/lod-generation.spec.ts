@@ -472,6 +472,35 @@ describe("assets.lod through the public compiler", () => {
     expect(json.extensionsUsed).toContain(TN_DISCRETE_LOD);
   }, 120_000);
 
+  it("bakes nothing and installs nothing when the global switch is off", async () => {
+    for (const lod of [false, { enabled: false }] as const) {
+      const root = await makeTempDir("threenative-lod-off-");
+      await mkdir(path.join(root, "assets"), { recursive: true });
+      await writeFile(path.join(root, "assets/hull.glb"), await mediumGlb());
+      await compileAssets({
+        concurrency: 1,
+        config: {
+          audio: "none",
+          lod,
+          models: { virtual: "none", textures: "none" },
+          textures: "none",
+        },
+        cwd: root,
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { lod?: IModelLodSummary; output: string }> };
+      const entry = manifest.entries["hull.glb"];
+      // `false` emits no row; `{ enabled: false }` reports the disabled policy. Neither bakes.
+      expect(entry?.lod?.generated ?? 0).toBe(0);
+      const output = await readFile(path.join(root, "public", entry?.output ?? ""));
+      const json = JSON.parse(
+        output.subarray(20, 20 + output.readUInt32LE(12)).toString("utf8"),
+      ) as { extensionsUsed?: string[] };
+      expect(json.extensionsUsed ?? []).not.toContain(TN_DISCRETE_LOD);
+    }
+  }, 120_000);
+
   it("refreshes the manifest runtime budget on a cache hit without rebaking", async () => {
     const root = await makeTempDir("threenative-lod-cache-");
     await mkdir(path.join(root, "assets"), { recursive: true });

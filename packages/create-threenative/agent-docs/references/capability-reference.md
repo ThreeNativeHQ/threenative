@@ -1604,7 +1604,7 @@ updateClusteredMeshes(stagedRoot, myCamera, ctx.renderer.domElement.height);
 
 ### `updateModelLods`
 
-`function` — Draw a model at the detail its projected geometric error earns, from a chain the asset cook baked. **This is on, and a game does not call it.** `assets.lod` resolves on by default, the `model` pass bakes `TN_discrete_lod` into eligible models, the loader registers the reader, and the engine runs the selection every frame before it renders. Each frame the mesh picks the cheapest baked level whose measured error projects to fewer than the resolved pixel budget, taking the camera's own projection, zoom, viewport and a conservative nearest depth into account. Refinement is immediate; coarsening waits for the resolved hysteresis. A mesh with no baked chain draws its full geometry.
+`function` — Draw a model at the detail its projected geometric error earns, from a chain the asset cook baked. **This is engine-owned, and a game does not call it.** `assets.lod: {}` opts in — the default-on front door opens after qualification — the `model` pass bakes `TN_discrete_lod` into eligible models, the loader registers the reader, and the engine runs the selection every frame before it renders. Each frame the mesh picks the cheapest baked level whose measured error projects to fewer than the resolved pixel budget, taking the camera's own projection, zoom, viewport and a conservative nearest depth into account. Refinement is immediate; coarsening waits for the resolved hysteresis. A mesh with no baked chain draws its full geometry.
 
 ```ts
 export function updateModelLods( root: { … }

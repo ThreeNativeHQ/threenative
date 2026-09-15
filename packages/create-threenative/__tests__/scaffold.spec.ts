@@ -317,10 +317,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to the 0.3.2 npm cohort (PRD-377), which changes the package metadata embedded in every
   // scaffold; the documented recompute-after-release case above. All ten trees move together.
   // Recomputed 2026-09-15 for PRD-377: the capability manifest and reference gained
-  // `updateModelLods` and `baseGeometryOf`, whose bytes every scaffold copies, so all ten
-  // trees move together and no template source changed.
-  "action-rpg": "85260808eb2b8aebaea814081223ecf3301627750325e10830bf10d64935f21a",
-  defense: "963eca3bb3a1bc21d933460b7cd76a48f55f2ee68fbbb7c808ef1bc8bdcde76e",
+  // `updateModelLods` and `baseGeometryOf`, and their text now states that omission bakes
+  // nothing until qualification. Those bytes are copied into every scaffold, so all ten trees
+  // move together and no template source changed.
+  "action-rpg": "b778a54a578bd5286a7a8c3b6eec3c641d73ae8c4c181651384ca2cfc47af971",
+  defense: "45bbadf4452272a74030305be971884153a2093eb5004419a37262fffa6fd200",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -328,17 +329,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "6ff1bbb723638031759b87b6096902a8f45c8d8277914c215c8a839a4a77dacb",
-  platformer: "4ba46259d20bb9a65f922f2249c5149d5b9f37125326b4ead47b687f9822b444",
-  runner: "c33ba795f619844f098c4f5dd4836b14084f9d2323c134bbcc77defdae6b624b",
-  puzzle: "fe2325f82a0304d85bd35b944f527e1e35691b127c35687a3cb812a187dbfa6d",
-  racing: "6509ef769a30e6079ea157871dac77dc877af0a99af71602662a8c262f3e6a9b",
-  shooter: "37d3311214fe41b4088ea73a6173666f6547c849112a191f62123baa53afe781",
+  minimal: "35d511a55eb5b2d4d01d3c81a157fe238c40cb52ee13a616e9bbe53799608946",
+  platformer: "8d2420c436f5638d1043cdb1948685ebe37bfd0f778e5c09a0a1b676100f53d9",
+  runner: "5f8593d3478d5e6bd223071d0c91f4d8be70aee202e50b0a0eff3a13350150ea",
+  puzzle: "4dff840267d87f86b839c52366f790d150a99167d40c2288867e34314a3a4adc",
+  racing: "3fd24bb4a2cff2ef26bc4d109ce20c1462fa40ecb6abd46a1a13d29d5196136d",
+  shooter: "d857dba302af3326c6f4768a18616c8b3ab4a08dfc9e8d2f40c2002dc3d44f0f",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "8d8f8d37a19851029f710e66be7a3dfdee5bebe59da48de6537fe789b7dee970",
+  starter: "974b7336b3d39b81f80ef186948ca6c7e9f59da0a6eec7a94acb327f6bf29591",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -364,7 +365,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "20aa457f53356f64b1938142cfe56bd55dff994b93a1af9e1988f15d82af4f9d",
+  sailing: "994b08da13b375ada7d31bfc2404df901e4ceb72a918055ff908d51ae4b0aabe",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

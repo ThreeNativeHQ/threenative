@@ -205,9 +205,13 @@ export interface IThreeNativeLodOverride {
 }
 
 /**
- * Automatic discrete LOD policy. Absent or `{}` resolves to enabled/balanced; `false` and
- * `{ enabled: false }` are equivalent absolute kill switches that no per-asset override can
- * re-enable. Overrides are keyed by canonical project-relative source asset (`/` separators).
+ * Automatic discrete LOD policy. `{}` resolves to enabled/balanced and any explicit block turns
+ * generation on; `false` and `{ enabled: false }` are equivalent absolute kill switches that no
+ * per-asset override can re-enable. Overrides are keyed by canonical project-relative source asset
+ * (`/` separators).
+ *
+ * Omission currently bakes nothing: the default-on front door opens only after the qualification
+ * phase passes. Until then `assets.lod: {}` is the opt-in that resolves to enabled/balanced.
  */
 export interface IThreeNativeLodConfig {
   readonly enabled?: boolean;
@@ -278,9 +282,10 @@ export interface IThreeNativeConfig {
     /** Source-relative globs omitted from builds; excluded bytes are still reported. */
     readonly exclude?: readonly string[];
     /**
-     * Automatic discrete LOD: on by default, `false` or `{ enabled: false }` is the absolute
-     * kill switch, and per-asset overrides key off canonical source asset paths. See
-     * {@link IThreeNativeLodConfig}.
+     * Automatic discrete LOD. `assets.lod: {}` opts in with the balanced default; `false` or
+     * `{ enabled: false }` is the absolute kill switch, and per-asset overrides key off canonical
+     * source asset paths. Omission currently bakes nothing — the default-on front door opens only
+     * after the qualification phase passes. See {@link IThreeNativeLodConfig}.
      */
     readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;

@@ -274,10 +274,19 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 4 — default and discovery
 
-- [ ] Omitted configuration enables the qualified policy through the real front door.
-- [ ] The global off switch passes its end-to-end negative control.
-- [ ] Existing config documentation and discovery expose the effective settings.
-- [ ] Generated-project guidance documents default behavior and migration.
+- [ ] Omitted configuration enables the qualified policy through the real front door. Open by
+      design: omission bakes nothing until Phase 3 qualification passes; `assets.lod: {}` is the
+      current opt-in that resolves to enabled/balanced.
+- [x] The global off switch passes its end-to-end negative control. Evidence:
+      `lod-generation.spec.ts` "bakes nothing and installs nothing when the global switch is off" —
+      `assets.lod: false` and `{ enabled: false }` both ship a GLB whose `extensionsUsed` does not
+      contain `TN_discrete_lod` and a manifest with `generated === 0`.
+- [x] Existing config documentation and discovery expose the effective settings. Evidence:
+      `IThreeNativeConfig.assets.lod` and `IThreeNativeLodConfig` JSDoc state the opt-in, the absolute
+      kill switch and the override keys, and the generated capability reference documents
+      `updateModelLods` with its `assets.lod` constraints/overrides (`pnpm capabilities:sync`).
+- [ ] Generated-project guidance documents default behavior and migration. Template guidance lands
+      with the default-on flip, after qualification, so it does not document a default that is not on.
 
 ### Minimum acceptance matrix
 
