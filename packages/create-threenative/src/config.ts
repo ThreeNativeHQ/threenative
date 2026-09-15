@@ -1243,6 +1243,7 @@ const LOD_MIN_TRIANGLES_SCOPES: readonly ThreeNativeLodMinTrianglesScope[] = ["p
 const LOD_KEYS: readonly string[] = ["enabled", "generation", "overrides", "preset", "runtime"];
 const LOD_GENERATION_KEYS: readonly string[] = [
   "errorTargets",
+  "join",
   "maxLevels",
   "minSaving",
   "minTriangles",
@@ -1256,11 +1257,18 @@ function lodGeneration(raw: unknown, label: string): IThreeNativeLodConfig["gene
   assertKeys(value, label, LOD_GENERATION_KEYS);
   const generation: {
     errorTargets?: readonly number[];
+    join?: boolean;
     maxLevels?: number;
     minSaving?: number;
     minTriangles?: number;
     minTrianglesScope?: ThreeNativeLodMinTrianglesScope;
   } = {};
+  if (value.join !== undefined) {
+    if (typeof value.join !== "boolean") {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.join must be a boolean.`);
+    }
+    generation.join = value.join;
+  }
   if (value.maxLevels !== undefined) {
     if (
       !Number.isSafeInteger(value.maxLevels) ||

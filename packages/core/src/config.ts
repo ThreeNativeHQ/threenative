@@ -210,6 +210,14 @@ export interface IThreeNativeLodGenerationConfig {
    * eligible on its total.
    */
   readonly minTrianglesScope?: ThreeNativeLodMinTrianglesScope;
+  /**
+   * Opt-in far rung that joins a mesh's same-material primitives into one draw per material group.
+   * Default `false`: with no option the cook is byte-identical to today. A join never crosses a
+   * material, never touches a skinned, morph-target or animated node, and never leaves the mesh's
+   * own node, so authored LOD0, node identity, per-node visibility, picking and transforms are
+   * untouched; the joined geometry is an additional far rung beside LOD0.
+   */
+  readonly join?: boolean;
 }
 
 /** Screen-space selection knobs. */

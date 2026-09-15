@@ -80,6 +80,22 @@ export interface ISimplifyRow {
 }
 
 /** What automatic discrete generation produced for one model (PRD-377 §4.3). */
+/** One material group inside an opt-in joined far rung: what it collapsed and how much it draws. */
+export interface ILodJoinedGroupRow {
+  readonly material: string;
+  readonly primitives: number;
+  readonly triangles: number;
+}
+
+/** The opt-in joined far rung as the manifest carries it: draws and the primitives collapsed. */
+export interface ILodJoinedRow {
+  readonly draws: number;
+  readonly groups: readonly ILodJoinedGroupRow[];
+  readonly primitives: number;
+  readonly triangles: number;
+  readonly trianglesBefore: number;
+}
+
 export interface ILodRow {
   /** Bytes the derived index buffers add, before compression. */
   readonly byteOverhead: number;
@@ -89,6 +105,10 @@ export interface ILodRow {
   readonly errorTargets: readonly number[];
   readonly fingerprint: string;
   readonly generated: number;
+  /** Whether the opt-in join was requested; {@link joined} is present only when it did something. */
+  readonly join: boolean;
+  /** The opt-in joined far rung's honesty record, when one was produced. */
+  readonly joined?: ILodJoinedRow;
   readonly levels: number;
   readonly maxLevels: number;
   /** Fraction of its predecessor's triangles a derived level had to save. */
@@ -401,7 +421,16 @@ function lodLine(row: IModelSizeRow): readonly string[] {
     lod.generated === 0
       ? `no primitive was eligible (${lod.skipped} skipped${reasons === "" ? "" : `: ${reasons}`})`
       : `${lod.generated} primitive(s) to ${lod.levels} level(s), ${lod.trianglesBefore} -> ${lod.trianglesAfter} triangles, ${lod.byteOverhead} payload bytes, ${lod.skipped} skipped${reasons === "" ? "" : ` (${reasons})`}`;
-  return [`lod ${row.logicalPath}: ${outcome}; fingerprint ${lod.fingerprint}`];
+  // A join is never inferred from a triangle count: it either states the draws it produced or says
+  // it was asked for and produced none, so a caller can never mistake a no-op for a collapse.
+  const join =
+    lod.joined === undefined
+      ? lod.join
+        ? "; join was requested but no material group collapsed"
+        : ""
+      : `; join collapsed ${lod.joined.primitives} primitive(s) into ${lod.joined.draws} draw(s) across ${lod.joined.groups.length} material group(s)` +
+        ` (${lod.joined.trianglesBefore} -> ${lod.joined.triangles} triangles)`;
+  return [`lod ${row.logicalPath}: ${outcome}${join}; fingerprint ${lod.fingerprint}`];
 }
 
 export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly string[] {

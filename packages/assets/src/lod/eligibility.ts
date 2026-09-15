@@ -9,6 +9,7 @@ import type { Material, Primitive } from "@gltf-transform/core";
 /** The stable reason codes reported for a primitive that gets no automatic discrete chain. */
 export type DiscreteLodSkipReason =
   | "already-cooked"
+  | "animated"
   | "authored-lod"
   | "boundary-unsafe"
   | "deforming"
@@ -188,6 +189,48 @@ export function classifyPrimitive(primitive: Primitive, flags: IEligibilityFlags
     flags.minTrianglesScope === "asset" ? flags.assetTriangles : triangleCount(primitive);
   if (measured < flags.minTriangles) return { eligible: false, reason: "too-small" };
   if (nonManifold(primitive)) return { eligible: false, reason: "boundary-unsafe" };
+  return { eligible: true };
+}
+
+export interface IJoinEligibilityFlags {
+  /** The primitive already carries a `TN_discrete_lod` payload from an earlier cook. */
+  readonly alreadyCooked: boolean;
+  /** A node in the primitive's ancestry is targeted by an animation channel. */
+  readonly animated: boolean;
+  /** The owning node has a skin. */
+  readonly skinned: boolean;
+  /** The primitive already carries a virtual-geometry DAG. */
+  readonly virtualOwned: boolean;
+}
+
+/**
+ * Whether a primitive may be merged into an opt-in joined far rung (PRD-377 §4.4 extension).
+ *
+ * Deliberately stricter than {@link classifyPrimitive} in the ways a join cares about: no triangle
+ * floor (joining pays regardless of density) and no material check (a join never crosses a
+ * material), but skinned, morph-target and animated geometry is refused outright because a joined
+ * rung has no rig to drive it.
+ */
+export function classifyJoinCandidate(
+  primitive: Primitive,
+  flags: IJoinEligibilityFlags,
+): IEligibility {
+  if (flags.skinned) return { eligible: false, reason: "deforming" };
+  if (flags.animated) return { eligible: false, reason: "animated" };
+  if (flags.alreadyCooked) return { eligible: false, reason: "already-cooked" };
+  if (flags.virtualOwned) return { eligible: false, reason: "virtual-owned" };
+  if (primitive.getMode() !== TRIANGLES_MODE)
+    return { eligible: false, reason: "unsupported-topology" };
+  if (primitive.listTargets().length > 0) return { eligible: false, reason: "deforming" };
+  const semantics = primitive.listSemantics();
+  for (const semantic of semantics) {
+    if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
+    if (!SUPPORTED_ATTRIBUTES.has(semantic))
+      return { eligible: false, reason: "unsupported-attributes" };
+  }
+  if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
+  if (!finitePositions(primitive) || !validIndices(primitive))
+    return { eligible: false, reason: "unsupported-topology" };
   return { eligible: true };
 }
 /**

@@ -63,6 +63,8 @@ import {
 import type {
   IAudioRow,
   IEmbeddedTextureRow,
+  ILodJoinedGroupRow,
+  ILodJoinedRow,
   ILodRow,
   IModelSizeRow,
   IPassCostAssetRow,
@@ -503,12 +505,52 @@ function lodRow(value: unknown): ILodRow | undefined {
   const reasons = strings("reasons");
   const diagnostics = strings("diagnostics");
   if (reasons === undefined || diagnostics === undefined) return undefined;
+  // The joined rung is optional and additive; a malformed one is dropped rather than failing the
+  // manifest, because it is a report about the bake, not the bake itself.
+  const joined = ((): ILodJoinedRow | undefined => {
+    const raw = value.joined;
+    if (!isRecord(raw)) return undefined;
+    if (
+      typeof raw.draws !== "number" ||
+      typeof raw.primitives !== "number" ||
+      typeof raw.triangles !== "number" ||
+      typeof raw.trianglesBefore !== "number" ||
+      !Array.isArray(raw.groups)
+    ) {
+      return undefined;
+    }
+    const groups: ILodJoinedGroupRow[] = [];
+    for (const group of raw.groups) {
+      if (
+        !isRecord(group) ||
+        typeof group.material !== "string" ||
+        typeof group.primitives !== "number" ||
+        typeof group.triangles !== "number"
+      ) {
+        return undefined;
+      }
+      groups.push({
+        material: group.material,
+        primitives: group.primitives,
+        triangles: group.triangles,
+      });
+    }
+    return {
+      draws: raw.draws,
+      groups,
+      primitives: raw.primitives,
+      triangles: raw.triangles,
+      trianglesBefore: raw.trianglesBefore,
+    };
+  })();
   return {
     byteOverhead: value.byteOverhead as number,
     diagnostics,
     errorTargets: errorTargets as number[],
     fingerprint: value.fingerprint,
     generated: value.generated as number,
+    join: value.join === true,
+    ...(joined === undefined ? {} : { joined }),
     levels: value.levels as number,
     maxLevels: value.maxLevels as number,
     minSaving: value.minSaving as number,
@@ -942,7 +984,14 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
   }
   const generation = (value: unknown, label: string): IModelLodOptions["generation"] => {
     if (!isRecord(value)) throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be an object.`);
-    const allowed = ["errorTargets", "maxLevels", "minSaving", "minTriangles", "minTrianglesScope"];
+    const allowed = [
+      "errorTargets",
+      "join",
+      "maxLevels",
+      "minSaving",
+      "minTriangles",
+      "minTrianglesScope",
+    ];
     for (const key of Object.keys(value)) {
       if (!allowed.includes(key)) {
         throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: ${label}.${key} is not recognised.`);
@@ -986,6 +1035,9 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
         `TN_ASSETS_CONFIG_INVALID: ${label}.minSaving must be a finite number in [0, 1).`,
       );
     }
+    if (value.join !== undefined && typeof value.join !== "boolean") {
+      throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label}.join must be a boolean.`);
+    }
     if (value.errorTargets !== undefined) {
       const targets = value.errorTargets;
       if (!Array.isArray(targets) || targets.length === 0 || targets.length > 16) {
@@ -1010,6 +1062,7 @@ function parseModelLod(raw: unknown): boolean | IModelLodOptions | "none" {
     }
     return {
       ...(value.errorTargets === undefined ? {} : { errorTargets: value.errorTargets as number[] }),
+      ...(value.join === undefined ? {} : { join: value.join as boolean }),
       ...(value.maxLevels === undefined ? {} : { maxLevels: value.maxLevels as number }),
       ...(value.minSaving === undefined ? {} : { minSaving: value.minSaving as number }),
       ...(value.minTriangles === undefined ? {} : { minTriangles: value.minTriangles as number }),

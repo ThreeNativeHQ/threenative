@@ -53,6 +53,21 @@ export interface ILodArtifactMetadata {
   readonly sourceDigest: string;
   readonly sourcePath: string;
   readonly toolchain: string;
+  /**
+   * The opt-in joined far rungs this cook produced, and the authored primitives each one collapsed.
+   * Absent unless `assets.lod.generation.join` was enabled; it names the detached far mesh, the
+   * draws it produces and every `"mesh#primitive"` source that went into it.
+   */
+  readonly joined?: readonly IJoinedRungMetadata[];
+}
+
+/** One joined far rung as recorded in the artifact: what it collapsed and how many draws it makes. */
+export interface IJoinedRungMetadata {
+  readonly draws: number;
+  readonly mesh: string;
+  readonly primitives: number;
+  readonly sources: readonly string[];
+  readonly triangles: number;
 }
 
 interface IDiscreteLodProperties extends IProperty {

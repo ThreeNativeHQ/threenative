@@ -157,6 +157,89 @@ async function carrierGlb(primitives: number, tubular = 96, radial = 8): Promise
   return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
 }
 
+/**
+ * A carrier shape with a chosen primitive/material split: `primitives` small same-attribute
+ * primitives across `materials` materials — the Midway shape whose cost is the draw count, not the
+ * per-primitive triangle density. Each primitive is ~1,200 triangles at the default tub/rad.
+ */
+async function joinCarrierGlb(
+  primitives: number,
+  materials: number,
+  options: { joints?: boolean; animated?: boolean; tubular?: number; radial?: number } = {},
+): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const tubular = options.tubular ?? 30;
+  const radial = options.radial ?? 20;
+  const mesh = document.createMesh("carrier");
+  const palette = Array.from({ length: materials }, (_, index) =>
+    document
+      .createMaterial(`mat${index}`)
+      // Distinct base colours keep `dedup` from merging them: the fixture must keep its materials.
+      .setBaseColorFactor([(index + 1) / (materials + 1), 0.5, 0.25, 1]),
+  );
+  for (let index = 0; index < primitives; index += 1) {
+    const geometry = new TorusKnotGeometry(1, 0.35, tubular, radial);
+    // Offset each copy: coincident identical geometry is exactly the degenerate case the simplifier
+    // refuses to touch, and a real carrier's primitives sit at distinct positions.
+    const position = Float32Array.from(geometry.attributes.position?.array ?? []);
+    const offsetX = (index % 20) * 0.02;
+    const offsetY = Math.floor(index / 20) * 0.02;
+    for (let vertex = 0; vertex + 2 < position.length; vertex += 3) {
+      position[vertex] = (position[vertex] as number) + offsetX;
+      position[vertex + 1] = (position[vertex + 1] as number) + offsetY;
+    }
+    const primitive = document
+      .createPrimitive()
+      .setAttribute("POSITION", accessor(document, buffer, "VEC3", position))
+      .setAttribute(
+        "NORMAL",
+        accessor(
+          document,
+          buffer,
+          "VEC3",
+          Float32Array.from(geometry.attributes.normal?.array ?? []),
+        ),
+      )
+      .setIndices(
+        accessor(document, buffer, "SCALAR", Uint32Array.from(geometry.index?.array ?? [])),
+      )
+      .setMaterial(palette[index % materials] ?? null);
+    if (options.joints === true) {
+      const count = primitive.getAttribute("POSITION")?.getCount() ?? 0;
+      primitive.setAttribute(
+        "JOINTS_0",
+        accessor(document, buffer, "VEC4", new Uint16Array(count * 4)),
+      );
+      primitive.setAttribute(
+        "WEIGHTS_0",
+        accessor(document, buffer, "VEC4", new Float32Array(count * 4)),
+      );
+    }
+    mesh.addPrimitive(primitive);
+  }
+  const node = document.createNode("carrier").setMesh(mesh);
+  scene.addChild(node);
+  if (options.animated === true) {
+    const animation = document.createAnimation("spin");
+    const input = accessor(document, buffer, "SCALAR", new Float32Array([0, 1]));
+    const output = accessor(document, buffer, "VEC3", new Float32Array([0, 0, 0, 1, 0, 0]));
+    const sampler = document
+      .createAnimationSampler()
+      .setInput(input)
+      .setOutput(output)
+      .setInterpolation("LINEAR");
+    const channel = document
+      .createAnimationChannel()
+      .setTargetPath("translation")
+      .setTargetNode(node)
+      .setSampler(sampler);
+    animation.addSampler(sampler).addChannel(channel);
+  }
+  return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+}
+
 /** A raw primitive with explicit indices, for topology and boundary fixtures. */
 async function rawGlb(spec: {
   indices: number[];
@@ -586,6 +669,7 @@ describe("discrete LOD artifact rules", () => {
     const base = resolveLodPolicy(undefined, "carrier.glb");
     expect(base.generation).toEqual({
       errorTargets: LOD_ERROR_TARGETS,
+      join: false,
       maxLevels: 4,
       minSaving: LOD_MIN_SAVING,
       minTriangles: DEFAULT_LOD_MIN_TRIANGLES,
@@ -593,11 +677,14 @@ describe("discrete LOD artifact rules", () => {
     });
     // The default floors the asset, not the primitive: the case that made the old gate inert.
     expect(resolveLodPolicy({}, "carrier.glb").generation.minTrianglesScope).toBe("asset");
+    // The join is opt-in: no option means no joined rung, byte-identical to today.
+    expect(resolveLodPolicy({}, "carrier.glb").generation.join).toBe(false);
 
     const project = resolveLodPolicy(
       {
         generation: {
           errorTargets: [0.01, 0.1],
+          join: true,
           maxLevels: 6,
           minSaving: 0.35,
           minTriangles: 4_000,
@@ -608,6 +695,7 @@ describe("discrete LOD artifact rules", () => {
     );
     expect(project.generation).toEqual({
       errorTargets: [0.01, 0.1],
+      join: true,
       maxLevels: 6,
       minSaving: 0.35,
       minTriangles: 4_000,
@@ -619,13 +707,14 @@ describe("discrete LOD artifact rules", () => {
       {
         generation: { maxLevels: 6, minTriangles: 4_000, minTrianglesScope: "primitive" },
         overrides: {
-          "carrier.glb": { generation: { minSaving: 0.5, minTrianglesScope: "asset" } },
+          "carrier.glb": { generation: { join: true, minSaving: 0.5, minTrianglesScope: "asset" } },
         },
       },
       "carrier.glb",
     );
     expect(asset.generation).toEqual({
       errorTargets: LOD_ERROR_TARGETS,
+      join: true,
       maxLevels: 6,
       minSaving: 0.5,
       minTriangles: 4_000,
@@ -634,6 +723,7 @@ describe("discrete LOD artifact rules", () => {
 
     // Every one of the new knobs is part of the generation cache identity.
     for (const generation of [
+      { join: true },
       { minSaving: 0.3 },
       { minTrianglesScope: "primitive" as const },
       { errorTargets: [0.02] },
@@ -692,6 +782,32 @@ describe("assets.lod through the public compiler", () => {
       extensionsUsed?: string[];
     };
     expect(json.extensionsUsed).toContain(TN_DISCRETE_LOD);
+  }, 120_000);
+
+  it("reports the opt-in joined rung in the compiler manifest when a game enables it", async () => {
+    const root = await makeTempDir("threenative-lod-join-");
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    await writeFile(
+      path.join(root, "assets/carrier.glb"),
+      await joinCarrierGlb(12, 3, { tubular: 8, radial: 6 }),
+    );
+    await compileAssets({
+      concurrency: 1,
+      config: {
+        audio: "none",
+        lod: { generation: { join: true, maxLevels: 1 } },
+        models: { virtual: "none", textures: "none" },
+        textures: "none",
+      },
+      cwd: root,
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { lod?: IModelLodSummary }> };
+    const lod = manifest.entries["carrier.glb"]?.lod;
+    expect(lod?.join).toBe(true);
+    // The cook report names the collapse: 12 authored primitives into 3 draws, one per material.
+    expect(lod?.joined).toMatchObject({ draws: 3, primitives: 12 });
   }, 120_000);
 
   it("bakes nothing and installs nothing when the global switch is off", async () => {
@@ -756,4 +872,113 @@ describe("assets.lod through the public compiler", () => {
     expect(second.entries["hull.glb"]?.output).toBe(first.entries["hull.glb"]?.output);
     expect(second.entries["hull.glb"]?.bytes).toBe(first.entries["hull.glb"]?.bytes);
   }, 120_000);
+});
+
+// PRD-377 §4.4 extension — the opt-in far rung that joins primitives. It is off unless the game
+// asks, and its only effect is one draw per material group instead of one per authored primitive.
+describe("opt-in join far rung (draw count, not triangle density)", () => {
+  it("joins a 300-primitive carrier into one draw per material, leaving LOD0 authored", async () => {
+    const input = await joinCarrierGlb(300, 3);
+    const result = await modelPass({
+      lod: { generation: { maxLevels: 1, join: true } },
+      virtual: "none",
+    }).apply(input, "carrier.glb");
+    if (Buffer.isBuffer(result)) throw new Error("unchanged");
+    const summary = result.entry?.lod as IModelLodSummary;
+    expect(summary.join).toBe(true);
+    expect(summary.joined?.primitives).toBe(300);
+    expect(summary.joined?.draws).toBe(3);
+    expect(summary.joined?.groups.map((group) => group.primitives)).toEqual([100, 100, 100]);
+    const root = (await readWithLod(result.buffer)).getRoot();
+    const far = root.listMeshes().find((mesh) => mesh.getName().endsWith("__lod_join"));
+    expect(far?.listPrimitives()).toHaveLength(3);
+    // The authored LOD0 structure is untouched — all 300 primitives and their materials remain.
+    const authored = root.listMeshes().find((mesh) => mesh.getName() === "carrier");
+    expect(authored?.listPrimitives()).toHaveLength(300);
+    // The artifact itself records which primitives the rung joined, not just the cookie summary.
+    const extension = root
+      .listExtensionsUsed()
+      .find((entry) => entry.extensionName === TN_DISCRETE_LOD) as TNDiscreteLod | undefined;
+    expect(extension?.getMetadata()?.joined?.[0]).toMatchObject({ draws: 3, primitives: 300 });
+    expect(extension?.getMetadata()?.joined?.[0]?.sources).toHaveLength(300);
+    // A generic reader's scene still holds only the authored mesh; the far rung is unreferenced.
+    const generic = await readGeneric(result.buffer);
+    expect(generic.getRoot().listScenes()[0]?.listChildren()).toHaveLength(1);
+    expect(
+      generic
+        .getRoot()
+        .listMeshes()
+        .find((mesh) => mesh.getName() === "carrier")
+        ?.listPrimitives(),
+    ).toHaveLength(300);
+  }, 300_000);
+
+  it("changes neither bytes nor policy when join is absent or false", async () => {
+    const input = await joinCarrierGlb(12, 3, { tubular: 8, radial: 6 });
+    const absent = await modelPass({
+      lod: { generation: { maxLevels: 1 } },
+      virtual: "none",
+    }).apply(input, "carrier.glb");
+    const off = await modelPass({
+      lod: { generation: { maxLevels: 1, join: false } },
+      virtual: "none",
+    }).apply(input, "carrier.glb");
+    if (Buffer.isBuffer(absent) || Buffer.isBuffer(off)) throw new Error("unchanged");
+    expect(absent.buffer.equals(off.buffer)).toBe(true);
+    expect((absent.entry?.lod as IModelLodSummary).join).toBe(false);
+    expect((absent.entry?.lod as IModelLodSummary).joined).toBeUndefined();
+    expect(resolveLodPolicy(undefined, "carrier.glb").generation.join).toBe(false);
+    // Turning join on changes the generation cache identity so a stale bake cannot be served.
+    expect(
+      resolveLodPolicy({ generation: { join: true } }, "carrier.glb").fingerprint.generation,
+    ).not.toBe(resolveLodPolicy(undefined, "carrier.glb").fingerprint.generation);
+  }, 120_000);
+
+  it("never joins a skinned, morph-target or animated node", async () => {
+    const cases: readonly { input: Buffer; reason: string }[] = [
+      {
+        input: await joinCarrierGlb(4, 1, { joints: true, tubular: 8, radial: 6 }),
+        reason: "deforming",
+      },
+      {
+        input: await joinCarrierGlb(4, 1, { animated: true, tubular: 8, radial: 6 }),
+        reason: "animated",
+      },
+    ];
+    for (const { input, reason } of cases) {
+      const summary = await cook(input, {
+        lod: { generation: { maxLevels: 1, join: true } },
+        virtual: "none",
+      });
+      expect(summary.joined, reason).toBeUndefined();
+      expect(summary.reasons, reason).toContain(reason);
+    }
+  }, 120_000);
+
+  it("turns join on for one asset through the per-asset override map", async () => {
+    const input = await joinCarrierGlb(12, 3, { tubular: 8, radial: 6 });
+    const policy = {
+      lod: {
+        generation: { maxLevels: 1 },
+        overrides: { "carrier.glb": { generation: { join: true } } },
+      },
+      virtual: "none",
+    } as const;
+    const on = await cook(input, policy, "carrier.glb");
+    const off = await cook(input, policy, "other.glb");
+    expect(on.joined?.draws).toBe(3);
+    expect(off.joined).toBeUndefined();
+  }, 180_000);
+
+  it("simplifies the joined rung when a discrete chain is configured", async () => {
+    const input = await joinCarrierGlb(12, 3);
+    const summary = await cook(input, {
+      lod: { generation: { maxLevels: 4, join: true, errorTargets: [0.06] } },
+      virtual: "none",
+    });
+    expect(summary.joined?.draws).toBe(3);
+    expect(summary.joined?.triangles ?? Number.POSITIVE_INFINITY).toBeLessThan(
+      summary.joined?.trianglesBefore ?? 0,
+    );
+  }, 180_000);
 });

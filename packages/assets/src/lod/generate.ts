@@ -6,13 +6,15 @@
 // reconstructed, and the authored GLB is never overwritten.
 
 import { createHash } from "node:crypto";
-import type { Document, Node as GltfNode, Mesh, Primitive } from "@gltf-transform/core";
+import type { Document, Node as GltfNode, Material, Mesh, Primitive } from "@gltf-transform/core";
+import { joinPrimitives } from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
 import {
   type DiscreteLodSkipReason,
   type LodMinTrianglesScope,
   authoredLodName,
+  classifyJoinCandidate,
   classifyPrimitive,
   primitiveTriangleCount,
 } from "./eligibility.js";
@@ -20,6 +22,7 @@ import {
 export type { DiscreteLodSkipReason, LodMinTrianglesScope } from "./eligibility.js";
 import {
   type DiscreteLod,
+  type IJoinedRungMetadata,
   type ILodArtifactMetadata,
   TNDiscreteLod,
   TN_DISCRETE_LOD,
@@ -54,6 +57,14 @@ export interface IModelLodGenerationOptions {
    * primitive, so a model split into many small primitives is still measured by its total.
    */
   readonly minTrianglesScope?: LodMinTrianglesScope;
+  /**
+   * Opt-in far rung that joins a mesh's same-material primitives into one draw per material group
+   * (PRD-377 §4.4 extension). **Default `false`: with no option the cook is byte-identical to
+   * today.** A join never crosses a material, never touches a skinned, morph-target or animated
+   * node, and never leaves the mesh's own node, so authored LOD0, node identity and picking are
+   * untouched; the joined geometry is an additional far rung beside LOD0.
+   */
+  readonly join?: boolean;
 }
 
 /** Quality policy for automatic LOD; it selects the projected pixel-error budget (PRD-377 §3.2). */
@@ -173,6 +184,43 @@ export interface IModelLodSkipSummary {
   readonly reason: DiscreteLodSkipReason;
 }
 
+export interface IModelLodJoinedSource {
+  readonly mesh: string;
+  readonly primitive: number;
+}
+
+/** One material group's far draw inside a joined rung. */
+export interface IModelLodJoinedGroup {
+  readonly material: string;
+  readonly primitives: number;
+  readonly triangles: number;
+  readonly error: number;
+  readonly sources: readonly IModelLodJoinedSource[];
+}
+
+/** One mesh's joined far rung: the primitives it collapsed and the draws it produced. */
+export interface IModelLodJoinedRungSummary {
+  readonly draws: number;
+  readonly mesh: string;
+  readonly primitives: number;
+  readonly triangles: number;
+  readonly trianglesBefore: number;
+  readonly groups: readonly IModelLodJoinedGroup[];
+}
+
+/**
+ * The opt-in join outcome, reported honestly: total draws after joining, the authored primitives
+ * collapsed, the triangle counts, and per rung the exact source primitives that were joined.
+ */
+export interface IModelLodJoined {
+  readonly draws: number;
+  readonly groups: readonly IModelLodJoinedGroup[];
+  readonly primitives: number;
+  readonly rungs: readonly IModelLodJoinedRungSummary[];
+  readonly triangles: number;
+  readonly trianglesBefore: number;
+}
+
 export interface IModelLodSummary {
   readonly byteOverhead: number;
   /** Migration/legacy notes the resolver raised; never a silent winner over an explicit setting. */
@@ -180,6 +228,10 @@ export interface IModelLodSummary {
   readonly enabled: boolean;
   readonly fingerprint: string;
   readonly generated: number;
+  /** The resolved opt-in join policy; its outcome, when anything joined, is in {@link joined}. */
+  readonly join: boolean;
+  /** Present only when the opt-in join actually produced a far rung. */
+  readonly joined?: IModelLodJoined;
   readonly maxLevels: number;
   readonly minTriangles: number;
   readonly minTrianglesScope: LodMinTrianglesScope;
@@ -220,6 +272,7 @@ export interface IResolvedLodPolicy {
   readonly fingerprint: { readonly generation: string; readonly runtime: string };
   readonly generation: {
     readonly errorTargets: readonly number[];
+    readonly join: boolean;
     readonly maxLevels: number;
     readonly minSaving: number;
     readonly minTriangles: number;
@@ -252,12 +305,14 @@ export function resolveLodPolicy(
   const preset = assetBlock?.preset ?? project?.preset ?? "balanced";
   const generation: {
     errorTargets: readonly number[];
+    join: boolean;
     maxLevels: number;
     minSaving: number;
     minTriangles: number;
     minTrianglesScope: LodMinTrianglesScope;
   } = {
     errorTargets: [...LOD_ERROR_TARGETS],
+    join: false,
     maxLevels: DEFAULT_LOD_MAX_LEVELS,
     minSaving: LOD_MIN_SAVING,
     minTriangles: DEFAULT_LOD_MIN_TRIANGLES,
@@ -271,6 +326,7 @@ export function resolveLodPolicy(
   // knob is reachable globally and per asset (PRD-377 §3.2).
   for (const block of [project?.generation, assetBlock?.generation]) {
     if (block?.errorTargets !== undefined) generation.errorTargets = [...block.errorTargets];
+    if (block?.join !== undefined) generation.join = block.join;
     if (block?.maxLevels !== undefined) generation.maxLevels = block.maxLevels;
     if (block?.minSaving !== undefined) generation.minSaving = block.minSaving;
     if (block?.minTriangles !== undefined) generation.minTriangles = block.minTriangles;
@@ -334,6 +390,7 @@ export function resolveLodPolicy(
     algorithm: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
     enabled,
     errorTargets: generation.errorTargets,
+    join: generation.join,
     maxLevels: generation.maxLevels,
     minSaving: generation.minSaving,
     minTriangles: generation.minTriangles,
@@ -576,17 +633,35 @@ function reachableNodes(document: Document): GltfNode[] {
 }
 
 interface IMeshFlags {
+  animated: boolean;
   authoredLod: boolean;
   skinned: boolean;
 }
 
-function meshFlags(document: Document): Map<Mesh, IMeshFlags> {
+/**
+ * Nodes targeted by an animation channel. A joined rung has no rig and no per-node channels, so a
+ * transform clip on the node would drive the authored mesh while leaving the joined rung behind;
+ * those nodes are refused outright rather than guessed about.
+ */
+function animatedNodes(document: Document): Set<GltfNode> {
+  const targeted = new Set<GltfNode>();
+  for (const animation of document.getRoot().listAnimations()) {
+    for (const channel of animation.listChannels()) {
+      const node = channel.getTargetNode();
+      if (node !== null) targeted.add(node);
+    }
+  }
+  return targeted;
+}
+
+function meshFlags(document: Document, animated: Set<GltfNode>): Map<Mesh, IMeshFlags> {
   const flags = new Map<Mesh, IMeshFlags>();
   for (const node of reachableNodes(document)) {
     const mesh = node.getMesh();
     if (mesh === null) continue;
-    const current = flags.get(mesh) ?? { authoredLod: false, skinned: false };
+    const current = flags.get(mesh) ?? { animated: false, authoredLod: false, skinned: false };
     current.skinned ||= node.getSkin() !== null;
+    current.animated ||= animated.has(node);
     current.authoredLod ||= authoredLodName(node.getName()) || authoredLodName(mesh.getName());
     flags.set(mesh, current);
   }
@@ -601,6 +676,7 @@ function emptySummary(policy: IResolvedLodPolicy, generatedSeconds: number): IMo
     errorTargets: [...policy.generation.errorTargets],
     fingerprint: policy.fingerprint.generation,
     generated: 0,
+    join: policy.generation.join,
     levels: 0,
     maxLevels: policy.generation.maxLevels,
     minSaving: policy.generation.minSaving,
@@ -614,6 +690,177 @@ function emptySummary(policy: IResolvedLodPolicy, generatedSeconds: number): IMo
     trianglesAfter: 0,
     trianglesBefore: 0,
     generatedSeconds,
+  };
+}
+
+/** Stable signature of "these primitives can be joined": same material, mode and attribute layout. */
+function joinGroupKey(primitive: Primitive, materials: Map<Material, number>): string {
+  const material = primitive.getMaterial();
+  const materialKey = material === null ? "none" : String(materials.get(material) ?? -1);
+  const attributes = [...primitive.listSemantics()]
+    .sort()
+    .map((semantic) => {
+      const accessor = primitive.getAttribute(semantic);
+      return accessor === null
+        ? semantic
+        : `${semantic}:${String(accessor.getComponentType())}:${accessor.getType()}:${accessor.getNormalized() ? 1 : 0}`;
+    })
+    .join(",");
+  return `${materialKey}|${String(primitive.getMode())}|${attributes}`;
+}
+
+interface IJoinedBuild {
+  readonly joined: IModelLodJoined;
+  readonly metadata: readonly IJoinedRungMetadata[];
+}
+
+/**
+ * The opt-in join (PRD-377 §4.4 extension). Groups each mesh's eligible primitives by material and
+ * attribute layout and merges each group into one primitive — `joinPrimitives` already refuses
+ * incompatible groups, so a join can never cross a material. Skinned, morph-target and animated
+ * nodes are refused before grouping; the detached far mesh never replaces the authored one, so
+ * LOD0, node identity, picking and per-node visibility are untouched.
+ *
+ * Only meshes where a group actually collapses two or more primitives get a rung: a mesh already at
+ * one primitive per material gains nothing and is left alone. Returns `null` when nothing joined.
+ */
+async function buildJoinedRungs(
+  document: Document,
+  policy: IResolvedLodPolicy,
+  flags: Map<Mesh, IMeshFlags>,
+  reason: (reason: DiscreteLodSkipReason) => void,
+): Promise<IJoinedBuild | null> {
+  const root = document.getRoot();
+  const buffer = root.listBuffers()[0] ?? document.createBuffer();
+  const materials = new Map<Material, number>();
+  for (const material of root.listMaterials()) materials.set(material, materials.size);
+
+  const rungs: IModelLodJoinedRungSummary[] = [];
+  const metadata: IJoinedRungMetadata[] = [];
+  let unnamed = 0;
+
+  for (const mesh of root.listMeshes()) {
+    const state = flags.get(mesh) ?? { animated: false, authoredLod: false, skinned: false };
+    if (state.skinned) {
+      reason("deforming");
+      continue;
+    }
+    if (state.animated) {
+      reason("animated");
+      continue;
+    }
+    const grouped = new Map<
+      string,
+      { primitives: Primitive[]; sources: IModelLodJoinedSource[]; trianglesBefore: number }
+    >();
+    mesh.listPrimitives().forEach((primitive, index) => {
+      const eligibility = classifyJoinCandidate(primitive, {
+        alreadyCooked: primitive.getExtension(TN_DISCRETE_LOD) !== null,
+        animated: false,
+        skinned: false,
+        virtualOwned: primitive.getExtension(TN_VIRTUAL_GEOMETRY) !== null,
+      });
+      if (!eligibility.eligible) {
+        if (eligibility.reason !== undefined) reason(eligibility.reason);
+        return;
+      }
+      const key = joinGroupKey(primitive, materials);
+      const entry = grouped.get(key) ?? { primitives: [], sources: [], trianglesBefore: 0 };
+      entry.primitives.push(primitive);
+      entry.sources.push({ mesh: mesh.getName(), primitive: index });
+      entry.trianglesBefore += primitiveTriangleCount(primitive);
+      grouped.set(key, entry);
+    });
+    if (![...grouped.values()].some((entry) => entry.primitives.length >= 2)) continue;
+
+    const baseName = mesh.getName() === "" ? `mesh${String(unnamed)}` : mesh.getName();
+    unnamed += 1;
+    const farName = `${baseName}__lod_join`;
+    const farMesh = document.createMesh(farName);
+    const groups: IModelLodJoinedGroup[] = [];
+    let rungTriangles = 0;
+    let rungBefore = 0;
+    for (const entry of grouped.values()) {
+      let joined: Primitive;
+      try {
+        joined = joinPrimitives(entry.primitives);
+      } catch {
+        // An attribute layout glTF-Transform refuses to merge inside one material is left authored.
+        reason("boundary-unsafe");
+        continue;
+      }
+      farMesh.addPrimitive(joined);
+      const position = joined.getAttribute("POSITION");
+      let triangles = Math.floor(
+        (joined.getIndices()?.getCount() ?? position?.getCount() ?? 0) / 3,
+      );
+      let error = 0;
+      // Combined with the discrete chain: reduce the joined geometry to its coarsest accepted level.
+      if (policy.generation.maxLevels > 1) {
+        const chain = await generateChain(
+          joined,
+          policy.generation.maxLevels,
+          policy.generation.errorTargets,
+          policy.generation.minSaving,
+        );
+        if (chain !== null) {
+          const level = chain.indices[chain.indices.length - 1] as Uint32Array;
+          joined.setIndices(
+            document
+              .createAccessor()
+              .setArray(Uint32Array.from(level))
+              .setType("SCALAR")
+              .setBuffer(buffer),
+          );
+          triangles = chain.counts[chain.counts.length - 1] as number;
+          error = chain.absoluteErrors[chain.absoluteErrors.length - 1] as number;
+        }
+      }
+      groups.push({
+        error,
+        material: entry.primitives[0]?.getMaterial()?.getName() ?? "",
+        primitives: entry.primitives.length,
+        sources: entry.sources,
+        triangles,
+      });
+      rungTriangles += triangles;
+      rungBefore += entry.trianglesBefore;
+    }
+    if (farMesh.listPrimitives().length === 0) {
+      farMesh.dispose();
+      continue;
+    }
+    const rung: IModelLodJoinedRungSummary = {
+      draws: farMesh.listPrimitives().length,
+      groups,
+      mesh: farName,
+      primitives: groups.reduce((total, group) => total + group.primitives, 0),
+      triangles: rungTriangles,
+      trianglesBefore: rungBefore,
+    };
+    rungs.push(rung);
+    metadata.push({
+      draws: rung.draws,
+      mesh: farName,
+      primitives: rung.primitives,
+      sources: groups.flatMap((group) =>
+        group.sources.map((source) => `${source.mesh}#${String(source.primitive)}`),
+      ),
+      triangles: rung.triangles,
+    });
+  }
+
+  if (rungs.length === 0) return null;
+  return {
+    joined: {
+      draws: rungs.reduce((total, rung) => total + rung.draws, 0),
+      groups: rungs.flatMap((rung) => rung.groups),
+      primitives: rungs.reduce((total, rung) => total + rung.primitives, 0),
+      rungs,
+      triangles: rungs.reduce((total, rung) => total + rung.triangles, 0),
+      trianglesBefore: rungs.reduce((total, rung) => total + rung.trianglesBefore, 0),
+    },
+    metadata,
   };
 }
 
@@ -636,11 +883,21 @@ export async function generateDiscreteLod(
   const policy = resolveLodPolicy(lod, logicalPath, legacy);
   const fingerprint = policy.fingerprint.generation;
   if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000);
-  if (policy.generation.maxLevels <= 1) return emptySummary(policy, (now() - started) / 1000);
+  const joinRequested = policy.generation.join;
+  const discrete = policy.generation.maxLevels > 1;
+  // The join is orthogonal to the discrete ladder: a game can join with no discrete levels at all.
+  if (!discrete && !joinRequested) return emptySummary(policy, (now() - started) / 1000);
 
   await MeshoptSimplifier.ready;
 
-  const flags = meshFlags(document);
+  const animated = animatedNodes(document);
+  const flags = meshFlags(document, animated);
+  const reasons = new Set<DiscreteLodSkipReason>(policy.reasons);
+  // Join before the discrete chains attach: a joined rung must see the authored primitives, not the
+  // cooked ones, and it shares none of the per-primitive `TN_discrete_lod` payloads.
+  const joined = joinRequested
+    ? await buildJoinedRungs(document, policy, flags, (reason) => reasons.add(reason))
+    : null;
   // The whole-asset total, computed once: the default floor scope compares every primitive against
   // it so a model split into many small primitives is measured by the asset, not the split.
   const assetTriangles = document
@@ -651,14 +908,13 @@ export async function generateDiscreteLod(
   let extension: TNDiscreteLod | null = null;
   const primitives: IModelLodPrimitiveSummary[] = [];
   const skipped: IModelLodSkipSummary[] = [];
-  const reasons = new Set<DiscreteLodSkipReason>(policy.reasons);
   let levels = 0;
   let byteOverhead = 0;
   let trianglesBefore = 0;
   let trianglesAfter = 0;
 
-  for (const mesh of document.getRoot().listMeshes()) {
-    const meshState = flags.get(mesh) ?? { authoredLod: false, skinned: false };
+  for (const mesh of discrete ? document.getRoot().listMeshes() : []) {
+    const meshState = flags.get(mesh) ?? { animated: false, authoredLod: false, skinned: false };
     for (const [primitiveIndex, primitive] of mesh.listPrimitives().entries()) {
       const eligibility = classifyPrimitive(primitive, {
         alreadyCooked: primitive.getExtension(TN_DISCRETE_LOD) !== null,
@@ -717,6 +973,9 @@ export async function generateDiscreteLod(
     }
   }
 
+  // The joined rung is recorded in the same extension's document metadata; when it is the only
+  // output, the extension exists solely to carry that record.
+  if (joined !== null) extension ??= document.createExtension(TNDiscreteLod).setRequired(false);
   const metadata: ILodArtifactMetadata = {
     generator: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
     generationFingerprint: fingerprint,
@@ -724,6 +983,7 @@ export async function generateDiscreteLod(
     sourceDigest,
     sourcePath: logicalPath,
     toolchain: LOD_TOOLCHAIN,
+    ...(joined === null ? {} : { joined: joined.metadata }),
   };
   extension?.setMetadata(metadata);
 
@@ -734,6 +994,8 @@ export async function generateDiscreteLod(
     errorTargets: [...policy.generation.errorTargets],
     fingerprint,
     generated: primitives.length,
+    join: joinRequested,
+    ...(joined === null ? {} : { joined: joined.joined }),
     levels,
     maxLevels: policy.generation.maxLevels,
     minSaving: policy.generation.minSaving,

@@ -38,6 +38,7 @@ describe("config validation", () => {
     [{ generation: { maxLevels: 2.5 } }, "assets.lod.generation.maxLevels"],
     [{ generation: { minTriangles: 0 } }, "assets.lod.generation.minTriangles"],
     [{ generation: { minTrianglesScope: "world" } }, "assets.lod.generation.minTrianglesScope"],
+    [{ generation: { join: "yes" } }, "assets.lod.generation.join"],
     [{ generation: { minSaving: -0.1 } }, "assets.lod.generation.minSaving"],
     [{ generation: { minSaving: 1 } }, "assets.lod.generation.minSaving"],
     [{ generation: { errorTargets: [] } }, "assets.lod.generation.errorTargets"],
@@ -98,7 +99,7 @@ describe("the validated config seam", () => {
     const root = await project();
     await config(
       root,
-      'export default { assets: { lod: { generation: { maxLevels: 6, minTriangles: 256, minTrianglesScope: "asset", minSaving: 0.3, errorTargets: [0.005, 0.05] }, overrides: { "models/carrier.glb": { generation: { minTrianglesScope: "primitive" } } } } } };',
+      'export default { assets: { lod: { generation: { maxLevels: 6, minTriangles: 256, minTrianglesScope: "asset", minSaving: 0.3, errorTargets: [0.005, 0.05], join: true }, overrides: { "models/carrier.glb": { generation: { minTrianglesScope: "primitive" } } } } } };',
     );
     await expect(loadConfig(root)).resolves.toMatchObject({
       assets: {
@@ -109,6 +110,7 @@ describe("the validated config seam", () => {
             minTrianglesScope: "asset",
             minSaving: 0.3,
             errorTargets: [0.005, 0.05],
+            join: true,
           },
           overrides: { "models/carrier.glb": { generation: { minTrianglesScope: "primitive" } } },
         },
