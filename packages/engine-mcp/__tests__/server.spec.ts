@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { handleLine } from "../src/index.js";
 
 const manifestFile = path.resolve("packages/create-threenative/capabilities.json");
@@ -151,7 +151,7 @@ describe("threenative-engine-mcp stdio contract", () => {
   });
 
   it("appends one JSON line per tool call, rejections included", () => {
-    const logFile = path.join(mkdtempSync(path.join(tmpdir(), "engine-mcp-log-")), "calls.log");
+    const logFile = path.join(makeTempDirSync("threenative-engine-mcp-log-"), "calls.log");
     process.env.THREENATIVE_ENGINE_MCP_LOG = logFile;
     handleLine(
       frame(1, "tools/call", {
@@ -182,7 +182,7 @@ describe("threenative-engine-mcp stdio contract", () => {
   });
 
   it("writes nothing when the log is off", () => {
-    const logFile = path.join(mkdtempSync(path.join(tmpdir(), "engine-mcp-log-")), "calls.log");
+    const logFile = path.join(makeTempDirSync("threenative-engine-mcp-log-"), "calls.log");
     process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
     handleLine(
       frame(1, "tools/call", {
