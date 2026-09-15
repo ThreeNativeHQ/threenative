@@ -8,8 +8,8 @@
     "build": "vite build",
     "make-hull": "node scripts/make-hull.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "threenative-playtest --scenario \"playtests/lod-far.playtest.json\" --scenario \"playtests/lod-near.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm dev --host 127.0.0.1 --port $PORT --strictPort\"",
-    "test:desktop": "threenative-playtest --scenario \"playtests/lod-far-desktop.playtest.json\" --scenario \"playtests/lod-near-desktop.playtest.json\" --target desktop --executable dist-native/auto-lod"
+    "test": "node ../../packages/playtest/dist/runner/cli.js --scenario \"playtests/lod-far.playtest.json\" --scenario \"playtests/lod-near.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm dev --host 127.0.0.1 --port $PORT --strictPort\"",
+    "test:desktop": "node ../../packages/playtest/dist/runner/cli.js --scenario \"playtests/lod-far-desktop.playtest.json\" --scenario \"playtests/lod-near-desktop.playtest.json\" --target desktop --executable dist-native/auto-lod"
   },
   "dependencies": {
     "@threenative/assets": "workspace:*",
