@@ -1162,7 +1162,9 @@ jobs:
             curl -fsSL -o "$tools/rcedit.exe" \
               https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
             sha256sum "$tools/rcedit.exe"
-            printf '%s\n' "$tools" >> "$GITHUB_PATH"
+            # GITHUB_PATH is consumed by later steps in their own shell. The release build below is
+            # a `cmd` step, so this has to be the Windows form, not the git-bash POSIX one.
+            cygpath -w "$tools" >> "$GITHUB_PATH"
             PATH="$tools:$PATH" rcedit.exe --help >/dev/null 2>&1 || {
               echo "TN_DESKTOP_RESOURCE_TOOL_MISSING: downloaded rcedit.exe does not run." >&2
               exit 1
@@ -1181,16 +1183,28 @@ jobs:
             echo "TN_DESKTOP_ARCHIVER_MISSING: 'zip' is required to write the desktop release container." >&2
             exit 1
           fi
+      # The container records every DLL the executable imports so it can be relocated, and
+      # `desktop-distribution.mjs` reads them with `dumpbin`, which lives only inside the Visual
+      # Studio developer environment. Enter it here rather than exporting it through GITHUB_ENV,
+      # for the same reason the native build and verify steps above do.
+      - name: Build the desktop release container with MSVC
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          where dumpbin || exit /b 1
+          where rcedit || exit /b 1
+          set "THREENATIVE_RUNTIME_BINARY=%GITHUB_WORKSPACE%\packages\runtime-native\build\tn-windows\mystral.exe"
+          pnpm --dir "%RUNNER_TEMP%\threenative-starter-native" exec threenative build --target desktop --mode release
       - name: Build the desktop release container
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-starter-native"
-          runtime="$PWD/packages/runtime-native/build/tn-macos/mystral"
-          if [ "${{ matrix.platform }}" = "Windows" ]; then
-            runtime="$PWD/packages/runtime-native/build/tn-windows/mystral.exe"
-          fi
-          THREENATIVE_RUNTIME_BINARY="$runtime" \
+          THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-macos/mystral" \
             pnpm --dir "$target" exec threenative build --target desktop --mode release
       - name: Relocate and extract the release container outside the project
         shell: bash

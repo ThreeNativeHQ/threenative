@@ -110,6 +110,7 @@ it. They are needed on the machine that packages the game, never on the player's
 | macOS | `sips`, `iconutil` | converting `app.icon` into the `.icns` the `.app` bundle carries | included with macOS |
 | Windows | `zip` | the `.zip` container | `choco install zip` |
 | Windows | `rcedit` | embedding `app.icon` and the version strings into the executable's PE resources | <https://github.com/electron/rcedit/releases>, with `rcedit.exe` on `PATH` |
+| Windows | `dumpbin` | listing the DLLs the executable imports, so the container records them and stays relocatable | ships with Visual Studio; run the release build from a Developer Command Prompt |
 
 A missing tool refuses the release with `TN_DESKTOP_ARCHIVE_TOOL_MISSING` or
 `TN_DESKTOP_RESOURCE_TOOL_MISSING` naming the tool, rather than shipping a container without the
