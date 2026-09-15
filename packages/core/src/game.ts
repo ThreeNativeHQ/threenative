@@ -28,6 +28,7 @@ import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
+import { RenderPassBudget } from "./render-pass-budget.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveRendererAlphaAntialiasing,
@@ -1162,6 +1163,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             },
           });
     this.#frameBudget = frameBudget;
+    // Per-pass draws and triangles ride the frame budget's window by default. The same property
+    // that makes `info.render` an aggregate — one reset per frame before the world render, and
+    // nested shadow/reflection renders sharing that counter — is what this recorder unwinds.
+    const renderPassBudget =
+      frameBudget === undefined
+        ? undefined
+        : RenderPassBudget.install(renderer.raw as Parameters<typeof RenderPassBudget.install>[0]);
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
@@ -1173,6 +1181,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // a concurrent internal renderer callback can otherwise leave stale work in the first
         // sample after a held playtest start.
         resetRendererPerformanceMetrics(renderer.raw);
+        renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
         // before the render, inside the same frame, so a change the game made this tick reaches
@@ -1221,6 +1230,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const waitingForFirstUse =
           firstWorldPass &&
           (explicitWarmUpPending || (startupCoverActive() && !startupReadiness.compileSettled));
+        let worldPasses: ReturnType<RenderPassBudget["passes"]> | undefined;
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
@@ -1276,6 +1286,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           this.#projection?.commit();
           renderer.observeRenderChainFrame?.();
           frameBudget?.addRender(budgetNow() - renderStart);
+          // Read the split before the overlay renders: the overlay is its own draw, not part of the
+          // world pass, and the budget window already accounts for it in its own phase.
+          worldPasses = renderPassBudget?.passes();
+          if (worldPasses !== undefined && worldPasses.length > 0)
+            frameBudget?.addRenderPasses(worldPasses);
           // Resolve the GPU timestamps every frame, not once per reported window.
           //
           // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
@@ -1295,7 +1310,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (this.#sceneEntered) {
             worldRendered = true;
           }
-          if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
+          if (this.#renderMetricsEnabled) {
+            const metrics = rendererPerformanceMetrics(renderer.raw);
+            worldMetrics =
+              worldPasses === undefined || worldPasses.length === 0
+                ? metrics
+                : { ...metrics, passes: worldPasses.map((pass) => ({ ...pass })) };
+          }
           // Read whether or not the game asked for render metrics: the projection line reports
           // the measured draw count, and a convention's measurement does not switch off with the
           // convention that happens to sit beside it.

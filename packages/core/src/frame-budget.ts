@@ -21,6 +21,12 @@
  * instead of skipping.
  */
 
+import {
+  FRAME_PASS_KINDS,
+  type FramePassKind,
+  type IRenderPassSample,
+} from "./render-pass-budget.js";
+
 /** Marker printed once per report window. */
 export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET";
 /** Marker printed the moment a gap between presented frames exceeds `hitchMs`. */
@@ -141,6 +147,17 @@ export interface IFrameBudgetSummary {
   readonly max: number;
 }
 
+/**
+ * One render-pass kind's submissions across a window, so a change that trades triangles for CPU is
+ * visible in the same report as the milliseconds it traded for.
+ */
+export interface IFrameBudgetPassSummary {
+  readonly draws: IFrameBudgetSummary;
+  /** Frames in the window that submitted a pass of this kind. */
+  readonly frames: number;
+  readonly triangles: IFrameBudgetSummary;
+}
+
 export interface IFrameBudgetWindow {
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
@@ -159,6 +176,14 @@ export interface IFrameBudgetWindow {
   readonly phases: Readonly<Record<FrameBudgetPhase, IFrameBudgetSummary>>;
   /** Each phase's mean as a fraction of the mean presented interval. */
   readonly shares: Readonly<Record<FrameBudgetPhase, number>>;
+  /**
+   * Draw calls and triangles submitted per render pass, when a pass recorder was installed.
+   *
+   * Absent rather than defaulted: a renderer whose submissions nothing measured and a frame that
+   * submitted nothing are different facts, and a zero would merge them. A kind no frame submitted
+   * is absent; `frames` says how many frames did.
+   */
+  readonly passes?: Readonly<Partial<Record<FramePassKind, IFrameBudgetPassSummary>>>;
   /**
    * The resolution and sampling this window's frames were drawn at, when the loop reported one.
    * Absent rather than defaulted: a consumer asserting on it must fail loudly instead of reading
@@ -301,6 +326,10 @@ export class FrameBudget {
   #frame: Ring;
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
+  #passDrawRings: Record<FramePassKind, Ring>;
+  #passTriangleRings: Record<FramePassKind, Ring>;
+  #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
+  #passesThisFrame: IRenderPassSample[] = [];
   #open = false;
   #frameStart = 0;
   #simulationEnd: number | undefined;
@@ -339,6 +368,18 @@ export class FrameBudget {
       render: new Ring(capacity),
       residual: new Ring(capacity),
       update: new Ring(capacity),
+    };
+    this.#passDrawRings = {
+      main: new Ring(capacity),
+      nested: new Ring(capacity),
+      reflection: new Ring(capacity),
+      shadow: new Ring(capacity),
+    };
+    this.#passTriangleRings = {
+      main: new Ring(capacity),
+      nested: new Ring(capacity),
+      reflection: new Ring(capacity),
+      shadow: new Ring(capacity),
     };
   }
 
@@ -380,6 +421,22 @@ export class FrameBudget {
   }
 
   /**
+   * Records the frame's per-pass submissions, from `RenderPassBudget` or any other source. At most
+   * one entry per kind per frame is meaningful; a second of the same kind is summed by the caller.
+   * An unknown kind throws rather than being dropped, the same fail-closed rule as a phase.
+   */
+  addRenderPasses(passes: readonly IRenderPassSample[]): void {
+    if (!this.#open) throw new Error("FrameBudget.addRenderPasses called outside a frame.");
+    for (const pass of passes) {
+      if (!(FRAME_PASS_KINDS as readonly string[]).includes(pass.kind))
+        throw new Error(
+          `FrameBudget received an unknown pass kind: ${String(pass.kind)}. Expected one of: ${FRAME_PASS_KINDS.join(", ")}.`,
+        );
+      this.#passesThisFrame.push(pass);
+    }
+  }
+
+  /**
    * Closes the frame and returns its phase split, or `undefined` when the frame was a hitch and
    * therefore excluded — a 27-second startup stall is not a frame time and must not enter a
    * percentile anybody is asked to act on.
@@ -399,6 +456,7 @@ export class FrameBudget {
 
     const isHitch = this.#presentedDelta >= this.hitchMs;
     if (isHitch) {
+      this.#passesThisFrame.length = 0;
       this.#hitchesInWindow += 1;
       this.#report(
         `${FRAME_HITCH_MARKER}:${JSON.stringify({
@@ -433,6 +491,12 @@ export class FrameBudget {
     this.#phaseRings.render.push(this.#renderMs);
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
+    for (const pass of this.#passesThisFrame) {
+      this.#passDrawRings[pass.kind].push(pass.draws);
+      this.#passTriangleRings[pass.kind].push(pass.triangles);
+      this.#passFrames[pass.kind] += 1;
+    }
+    this.#passesThisFrame.length = 0;
     this.#framesInWindow += 1;
     this.#maybeReport();
     return sample;
@@ -450,6 +514,15 @@ export class FrameBudget {
     };
     const share = (value: number): number =>
       presented.mean === 0 ? 0 : Math.round((value / presented.mean) * 1_000) / 1_000;
+    const passes: Partial<Record<FramePassKind, IFrameBudgetPassSummary>> = {};
+    for (const kind of FRAME_PASS_KINDS) {
+      if (this.#passFrames[kind] === 0) continue;
+      passes[kind] = {
+        draws: this.#passDrawRings[kind].summarize(this.#scratch),
+        frames: this.#passFrames[kind],
+        triangles: this.#passTriangleRings[kind].summarize(this.#scratch),
+      };
+    }
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
     const gpuMs = this.#readGpuMs?.();
@@ -477,6 +550,7 @@ export class FrameBudget {
         update: share(phases.update.mean),
       },
       substeps: this.#substeps.summarize(this.#scratch),
+      ...(Object.keys(passes).length === 0 ? {} : { passes }),
       ...(gpuMs === undefined ? {} : { gpuMs: round(gpuMs) }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(surface === undefined ? {} : { surface }),
@@ -493,6 +567,11 @@ export class FrameBudget {
     this.#frame.reset();
     this.#substeps.reset();
     for (const phase of FRAME_BUDGET_PHASES) this.#phaseRings[phase].reset();
+    for (const kind of FRAME_PASS_KINDS) {
+      this.#passDrawRings[kind].reset();
+      this.#passTriangleRings[kind].reset();
+      this.#passFrames[kind] = 0;
+    }
     this.#framesInWindow = 0;
     this.#hitchesInWindow = 0;
     // After the reset, so a consumer that changes the scene from this callback changes it for the

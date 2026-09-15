@@ -8,11 +8,16 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 Refill scratch and pool objects. Static GLBs may use `assets.models.lightmap:{atlasSize,padding}`;
 load through `ctx.assets.model()`, remove it to roll back, and never claim Android/iOS from a
 web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, and
-`residual`; `defineGame({ frameBudget: false })` silences output, never measurement.
+`residual`; the same window carries `passes`, the draw calls and triangles each render pass
+(`main`, `shadow`, `reflection`) submitted, attributed to the innermost active render call so a
+nested shadow or reflection pass does not read as main. `defineGame({ frameBudget: false })`
+silences output, never measurement.
 
 Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. The bounded proof shape is
-`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12}}}` and its
-fields are defined in `agent-docs/assertion-reference.md#performance`.
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}` and its
+fields are defined in `agent-docs/assertion-reference.md#performance`. `maxPassDrawCalls` and
+`maxPassTriangles` bound one pass kind at a time; they fail closed when the run carries no
+per-pass split, so keep the frame budget installed.
 
 |Tier|Measure|Floor|Target|
 |---|---|---:|---:|

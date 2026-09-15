@@ -3,7 +3,7 @@ import {
   PerspectiveCamera,
   Quaternion,
   Scene,
-  Vector2,
+  type Vector2,
   Vector3,
   WebGPUCoordinateSystem,
 } from "three";

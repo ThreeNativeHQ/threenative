@@ -978,7 +978,8 @@
     {
       "aliases": [],
       "constraints": [
-        "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement"
+        "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement",
+        "per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main"
       ],
       "example": "defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });",
       "importPath": "@threenative/core",
@@ -988,9 +989,11 @@
       "signature": "export class FrameBudget { … }",
       "situations": [
         "find out why a game runs slowly on a phone",
-        "attribute a frame to present wait, simulation, three.js render, or overlay"
+        "attribute a frame to present wait, simulation, three.js render, or overlay",
+        "split a frame's draw calls and triangles per render pass (main, shadow, reflection)",
+        "tell a shadow or reflection pass's cost from the main colour pass"
       ],
-      "summary": "Read where the frame's milliseconds went, per presented frame, on any platform.",
+      "summary": "Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the draw calls and triangles each render pass submitted.",
       "supersedes": [],
       "symbol": "FrameBudget"
     },
