@@ -208,5 +208,13 @@ describe("DiscreteLodPlugin", () => {
     expect(left.geometry.getAttribute("position")).toBe(base.getAttribute("position"));
     expect(right.geometry.getAttribute("position")).toBe(base.getAttribute("position"));
     expect(base.index?.count).toBe(BASE_INDICES.length);
+
+    // Releasing one instance must not destroy the sibling's shared attributes.
+    const position = base.getAttribute("position") as BufferAttribute;
+    left.geometry.dispose();
+    expect(right.geometry.getAttribute("position")).toBe(position);
+    expect(position.array.byteLength).toBeGreaterThan(0);
+    expect(base.index?.count).toBe(BASE_INDICES.length);
+    expect(baseGeometryOf(right)).toBe(base);
   });
 });

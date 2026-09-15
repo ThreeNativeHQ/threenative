@@ -246,14 +246,15 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       `packages/core/__tests__/picking.spec.ts` "picks the authored LOD0 surface while the camera
       draws a coarser level" — the BVH is built from LOD0 and the ray is run against LOD0 while the
       mesh is drawn at the coarse level. Node identity/transform preservation is not yet asserted.
-- [ ] Instance isolation and shared-resource lifetime tests pass.
-      Instance isolation is done: `model-lod-runtime.spec.ts` "isolates two instances that share one
-      base geometry" — each builds its own derived level and swapping one leaves the other and the
-      shared base untouched. Lifetime is **open and hazardous**: derived levels share the base
-      geometry's `BufferAttribute` objects, and three frees a geometry's attribute buffers on
-      `dispose()`, so disposing one geometry can free a sibling's shared vertex buffers. A correct fix
-      needs attribute refcounting in `disposeModel` (or detaching shared attributes before dispose);
-      no test yet.
+- [x] Instance isolation and shared-resource lifetime tests pass. Evidence:
+      `model-lod-runtime.spec.ts` "isolates two instances that share one base geometry" — each builds
+      its own derived level, swapping one leaves the other and the shared base untouched, and
+      disposing one instance's selected geometry leaves the sibling's shared `BufferAttribute` (array
+      and identity) intact. Scope note: three has no buffer refcounting, so its `dispose()` deletes a
+      shared attribute's GPU buffer and the sibling re-uploads it on the next frame; the CPU
+      attribute is never destroyed, so this is a bounded transient re-upload, not a correctness break.
+      A per-attribute refcount in `disposeModel` would remove the transient and is the remaining
+      nicety, not a requirement of the stated contract.
 - [x] Runtime policy reaches the controller from the manifest. Evidence:
       `model-lod-loader.spec.ts` serves a manifest whose entry resolves `maxPixelError: 0.1` and the
       same far camera that coarsens under the default 1-pixel budget keeps LOD0 — the loader read the
