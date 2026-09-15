@@ -191,13 +191,30 @@ export interface IFrameBudgetWindow {
    */
   readonly surface?: IFrameSurfaceState;
   /**
-   * GPU milliseconds for a frame in this window, from `timestamp-query`, when the adapter has it.
+   * GPU milliseconds per resolved frame in this window, from `timestamp-query`, summarised like a
+   * phase — mean/p50/p95/p99/max over the frames the device actually reported.
    *
-   * Absent rather than zero when there is nothing to report: an adapter without timestamps and a
-   * frame that genuinely cost no GPU time are different facts, and a zero would merge them.
+   * A single instantaneous `info.render.timestamp` read is lagged by up to `gpuAgeFrames` and
+   * spread 3.5x between consecutive reads of one steady frame, so it is not the frame's GPU cost
+   * and is not what this reports. Absent rather than zero when no frame resolved a reading: an
+   * adapter without timestamps and a frame that genuinely cost no GPU time are different facts,
+   * and a zero would merge them.
+   */
+  readonly gpu?: IFrameBudgetSummary;
+  /**
+   * Frames in the window whose GPU reading had not advanced since the previous frame, or was
+   * absent. `gpu.samples + gpuStale` is the frames the device was asked about; a window where
+   * every frame is stale reports `gpu` absent rather than the last reading looking current.
+   */
+  readonly gpuStale: number;
+  /**
+   * The window mean of `gpu`, when present. The scalar the resolution scaler reads.
+   *
+   * It is the same number as `gpu.mean`; a single field keeps the scaler and the perf report on
+   * one series rather than a second instantaneous read.
    */
   readonly gpuMs?: number;
-  /** Age of the resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
+  /** Age of the most recent resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
   readonly gpuAgeFrames?: number;
 }
 
@@ -223,8 +240,6 @@ export interface IFrameBudgetOptions {
    * loop, which is the only place that knows both the renderer and the window boundary.
    */
   readonly readSurface?: () => IFrameSurfaceState;
-  /** Reads the last resolved GPU frame time, called once per reported window. */
-  readonly readGpuMs?: () => number | undefined;
   /** Reads the successful GPU query frame age, not the age of the last resolve attempt. */
   readonly readGpuAgeFrames?: () => number | undefined;
 }
@@ -319,17 +334,24 @@ export class FrameBudget {
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
   #readSurface: (() => IFrameSurfaceState) | undefined;
-  #readGpuMs: (() => number | undefined) | undefined;
   #readGpuAgeFrames: (() => number | undefined) | undefined;
   #scratch: Float64Array;
   #presented: Ring;
   #frame: Ring;
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
+  #gpu: Ring;
   #passDrawRings: Record<FramePassKind, Ring>;
   #passTriangleRings: Record<FramePassKind, Ring>;
   #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
   #passesThisFrame: IRenderPassSample[] = [];
+  // The resolved frame the last sample belonged to, so a reading still in flight is not measured
+  // twice. It survives a window boundary: the first frame of a new window can still be showing the
+  // previous window's resolved frame.
+  #lastGpuFrame: number | undefined;
+  #gpuThisFrame: number | undefined;
+  #gpuStaleThisFrame = false;
+  #gpuStaleInWindow = 0;
   #open = false;
   #frameStart = 0;
   #simulationEnd: number | undefined;
@@ -356,12 +378,12 @@ export class FrameBudget {
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
     this.#readSurface = options.readSurface;
-    this.#readGpuMs = options.readGpuMs;
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
+    this.#gpu = new Ring(capacity);
     this.#phaseRings = {
       hostGap: new Ring(capacity),
       overlay: new Ring(capacity),
@@ -397,6 +419,8 @@ export class FrameBudget {
     this.#renderMs = 0;
     this.#overlayMs = 0;
     this.#substepCount = 0;
+    this.#gpuThisFrame = undefined;
+    this.#gpuStaleThisFrame = false;
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
     this.#presentedDelta =
       this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
@@ -418,6 +442,42 @@ export class FrameBudget {
   addOverlay(ms: number): void {
     if (!this.#open) throw new Error("FrameBudget.addOverlay called outside a frame.");
     this.#overlayMs += ms;
+  }
+
+  /**
+   * Records one presented frame's GPU duration, from a resolved `timestamp-query`.
+   *
+   * `ms` is `undefined` when the device reported no reading for the frame. `frame` is the
+   * Three.js frame id the duration belongs to — `gpuFrameSample`/`gpuFrameAge` on the renderer.
+   * A reading whose `frame` has not advanced since the previous frame is the previous frame's
+   * resolve still in flight, so it is counted as stale and not pushed again; that repetition was
+   * what made one lagged sample read as the current frame's cost. Without a `frame` a reading is
+   * always taken as fresh, since there is nothing to tell repeats from a genuine re-measurement.
+   *
+   * Once per frame. A window with no reading at all reports `gpu` absent, never a zero.
+   */
+  addGpuMs(ms: number | undefined, frame?: number): void {
+    if (!this.#open) throw new Error("FrameBudget.addGpuMs called outside a frame.");
+    if (ms === undefined) {
+      this.#gpuStaleThisFrame = true;
+      return;
+    }
+    if (!Number.isFinite(ms) || ms < 0) {
+      throw new Error(`Frame budget gpuMs must be a non-negative number, received ${String(ms)}.`);
+    }
+    if (frame !== undefined) {
+      if (!Number.isInteger(frame) || frame < 0) {
+        throw new Error(
+          `Frame budget gpu frame must be a non-negative integer, received ${String(frame)}.`,
+        );
+      }
+      if (frame === this.#lastGpuFrame) {
+        this.#gpuStaleThisFrame = true;
+        return;
+      }
+      this.#lastGpuFrame = frame;
+    }
+    this.#gpuThisFrame = ms;
   }
 
   /**
@@ -491,6 +551,8 @@ export class FrameBudget {
     this.#phaseRings.render.push(this.#renderMs);
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
+    if (this.#gpuThisFrame !== undefined) this.#gpu.push(this.#gpuThisFrame);
+    if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
     for (const pass of this.#passesThisFrame) {
       this.#passDrawRings[pass.kind].push(pass.draws);
       this.#passTriangleRings[pass.kind].push(pass.triangles);
@@ -525,16 +587,13 @@ export class FrameBudget {
     }
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
-    const gpuMs = this.#readGpuMs?.();
-    const gpuAgeFrames = gpuMs === undefined ? undefined : this.#readGpuAgeFrames?.();
+    const gpuAgeFrames = this.#readGpuAgeFrames?.();
     if (gpuAgeFrames !== undefined && (!Number.isInteger(gpuAgeFrames) || gpuAgeFrames < 0))
       throw new Error(
         `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,
       );
-    if (gpuMs !== undefined && (!Number.isFinite(gpuMs) || gpuMs < 0))
-      throw new Error(
-        `Frame budget gpuMs must be a non-negative number, received ${String(gpuMs)}.`,
-      );
+    const gpuSummary = this.#gpu.summarize(this.#scratch);
+    const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
     return {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
@@ -551,7 +610,11 @@ export class FrameBudget {
       },
       substeps: this.#substeps.summarize(this.#scratch),
       ...(Object.keys(passes).length === 0 ? {} : { passes }),
-      ...(gpuMs === undefined ? {} : { gpuMs: round(gpuMs) }),
+      // One series, two readers: `gpu` is the distribution and `gpuMs` is its mean for the scaler
+      // and the perf record, which want a single number.
+      ...(gpu === undefined ? {} : { gpu }),
+      gpuStale: this.#gpuStaleInWindow,
+      ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(surface === undefined ? {} : { surface }),
       window: this.#windowIndex + 1,
@@ -566,6 +629,8 @@ export class FrameBudget {
     this.#presented.reset();
     this.#frame.reset();
     this.#substeps.reset();
+    this.#gpu.reset();
+    this.#gpuStaleInWindow = 0;
     for (const phase of FRAME_BUDGET_PHASES) this.#phaseRings[phase].reset();
     for (const kind of FRAME_PASS_KINDS) {
       this.#passDrawRings[kind].reset();

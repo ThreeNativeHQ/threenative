@@ -1138,7 +1138,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // Last, so the engine's own renderer answers this and a game cannot report a
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
-            readGpuMs: () => renderer.gpuFrameMs(),
             readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
             readSurface: () => {
               observeCompilation();
@@ -1272,6 +1271,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // fire-and-forget and already catch-guarded, which was the original cadence's only
           // stated concern.
           renderer.resolveGpuFrame();
+          // The budget's GPU series is fed every frame, not read once per reported window. A
+          // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
+          // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
+          // resolved frame id so a resolve still in flight is counted stale, not measured twice.
+          const gpuSample = renderer.gpuFrameSample?.();
+          frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;
