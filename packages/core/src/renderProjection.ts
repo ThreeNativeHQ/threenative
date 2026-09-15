@@ -232,9 +232,13 @@ export class SceneRenderProjection {
         this.#mirror.releaseAll();
         this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
       } else {
-        // The authored scene is not what the renderer is given while projecting, so nothing else
-        // refreshes its world matrices. Every world transform the mirror copies is read after this.
-        this.#source.updateMatrixWorld(true);
+        // The renderer is handed the mirror, so the authored scene's world matrices are refreshed
+        // here. Forcing (`updateMatrixWorld(true)`) overrode a game's deliberate static marking and
+        // recomposed every node every frame; honouring `matrixWorldAutoUpdate` and Three's own
+        // `matrixWorldNeedsUpdate` propagation is the contract every Three renderer uses. A game
+        // that turns the flag off has promised to update the scene itself, and a subtree marked
+        // `matrixWorldAutoUpdate = false` under a still parent is skipped instead of walked.
+        if (this.#source.matrixWorldAutoUpdate === true) this.#source.updateMatrixWorld();
         this.#mirror.prepare(scan.exactLane, scan.exactLaneCount);
         const lightFailure = this.#mirror.apply(scan.plan);
         if (lightFailure !== undefined) {
