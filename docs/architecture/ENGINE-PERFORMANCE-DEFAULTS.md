@@ -1,6 +1,7 @@
 # Engine performance defaults
 
-**2026-09-14 · Proposed engine work · Stable 60 FPS remains unproved.**
+**2026-09-14 · Priority 1 shipped and adopted by the Midway game (Section 6); priorities 2-3
+proposed; stable 60 FPS remains unproved.**
 
 Build these improvements into the engine so a developer can create ordinary Three.js
 objects, update gameplay, and receive correct, efficient rendering automatically. This
