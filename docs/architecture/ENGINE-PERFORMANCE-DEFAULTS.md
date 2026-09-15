@@ -214,7 +214,10 @@ reproduced here so the claim is inspectable from this repository.
 `packages/core/__tests__/renderProjection.spec.ts` (moving object, frozen-subtree sentinel, a
 scene that marks its world static, a static subtree whose parent moved). Focused run 66/66 pass;
 the whole `packages/core` suite run on develop passes 113 files / 1276 tests, and `pnpm typecheck`
-exits 0 after building core (2026-09-14). The content-hashed package built from it is
+exits 0 after building core (2026-09-14). `pnpm lint` still reports the repository's pre-existing
+`noExcessiveCognitiveComplexity` diagnostics in unrelated example files (abyss-framework,
+engine-load-test, native-smoke, quarry, vfx-gallery, native-cpu-load-test, test-support); this
+change's files are lint-clean. The content-hashed package built from it is
 `threenative-core-0.3.2-projdirty-12c96c25114f.tgz`
 (sha256 `12c96c25114f91335895102fc7f50c58719782c7a445d97a777dd01618bdd858`).
 

@@ -107,12 +107,7 @@
   "playtests": {
     "command": "bash tools/capture-lock.sh node node_modules/@threenative/playtest/dist/runner/cli.js --scenario \"playtests/*.playtest.json\" --url http://127.0.0.1:5399 --browser-recipe webgpu --headed --timeout 60000",
     "exit": 0,
-    "scenarios": [
-      "midway-audio-realism",
-      "midway-briefing",
-      "midway-flight",
-      "midway-launches"
-    ],
+    "scenarios": ["midway-audio-realism", "midway-briefing", "midway-flight", "midway-launches"],
     "topLevelPass": true
   },
   "battleProfiles": {
