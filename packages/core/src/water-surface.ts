@@ -1,4 +1,4 @@
-import { type Object3D, Quaternion, Vector3 } from "three";
+import { type Camera, type Object3D, Quaternion, Vector3 } from "three";
 import {
   cameraFar,
   cameraNear,
@@ -15,17 +15,37 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
-/** How the mirrored pass is sized. Both numbers are cost, not appearance. */
+/** What the mirrored pass costs: how big it is, how many of them, and how much of the world. */
 export interface IWaterReflectionOptions {
   /**
    * The mirrored pass's render target, as a fraction of the drawing buffer.
    *
-   * A reflection is a second draw of the whole world, so this is the one number that decides
-   * whether a water surface is affordable. Half is the usual answer.
+   * How many *pixels* the second pass costs. Half is the usual answer. This is not on its own the
+   * number that decides whether a surface is affordable, and a game that reads it that way will
+   * measure no improvement and conclude its water is free: a scene with many objects is bound by
+   * the draw calls the mirrored pass submits, not by its pixels, and those do not shrink with the
+   * target. Measured on `sandbox/midway-open-pacific` at 1920x1080 on an nvidia/turing adapter with
+   * 1,965 draws in the frame, halving this again — 0.5 to 0.25 — moved GPU p95 from 17.80 ms to
+   * 17.58 ms. Removing the pass entirely moved it to 7.67 ms. `layers` is the number that mattered.
    */
   readonly resolutionScale: number;
   /** Whether this surface may appear in other reflectors' passes. Off is one pass; on is n². */
   readonly bounces?: boolean;
+  /**
+   * Which layers the mirrored pass draws, as a three `Layers` mask. Omit to draw everything the
+   * scene camera draws, which is the default and what a reflection means when nothing says
+   * otherwise.
+   *
+   * This is how much *world* the second pass costs, and on a crowded scene it is the whole bill.
+   * The mirrored pass is a second draw of everything, so a frame with sixty-eight aircraft in it
+   * pays for sixty-eight aircraft twice — once where the player can see them and once in the water,
+   * where they are a few pixels and half of them are behind the camera anyway. Put the big
+   * silhouettes a player actually reads in the water on their own layer and name it here.
+   *
+   * The mask decides what appears in the mirror, so the game owns it: this only carries the number
+   * through to the pass, and a game that omits it gets the whole world reflected as before.
+   */
+  readonly layers?: number;
 }
 
 export interface IWaterSurfaceOptions {
@@ -40,6 +60,18 @@ export interface IWaterSurfaceOptions {
   readonly maxThickness: number;
   /** Omit for a surface that reflects nothing; `reflectionAt` then throws rather than lying. */
   readonly reflection?: IWaterReflectionOptions;
+}
+
+/**
+ * The pass three hangs off the node `reflector()` returns. Its virtual cameras are the only place a
+ * layer mask can be applied, and three's published types stop at the texture node, so the one field
+ * this file needs is named here rather than cast at each use.
+ */
+interface IReflectorPass {
+  getVirtualCamera(camera: Camera): Camera;
+}
+interface IReflectorWithPass {
+  _reflectorBaseNode: IReflectorPass;
 }
 
 const UP = new Vector3(0, 1, 0);
@@ -115,12 +147,47 @@ export class WaterSurface3D {
       generateMipmaps: false,
       resolutionScale,
     });
+    this.reflectionLayers = reflection.layers;
+    if (reflection.layers !== undefined) {
+      const mask = reflection.layers;
+      if (!Number.isInteger(mask) || mask < 0)
+        throw new Error("WaterSurface3D.reflection.layers must be a non-negative integer mask.");
+      // The pass mints one virtual camera per scene camera, lazily, inside three. There is no
+      // constructor seam for it and no list to walk afterwards, so the mask is applied where every
+      // such camera is born. A camera three has already handed out is caught too, because the same
+      // call returns it.
+      // `reflector()` returns the texture node; the pass itself — and the virtual cameras it mints —
+      // live on the reflector base node hanging off it.
+      const pass = (node as unknown as IReflectorWithPass)._reflectorBaseNode;
+      const mint = pass.getVirtualCamera.bind(pass);
+      pass.getVirtualCamera = (camera: Camera): Camera => {
+        const virtual = mint(camera);
+        virtual.layers.mask = mask;
+        return virtual;
+      };
+    }
     this.#reflector = node;
     this.target = node.target;
     node.target.matrixAutoUpdate = false;
     node.target.matrixWorldAutoUpdate = false;
     this.#placeTarget();
   }
+
+  /**
+   * The camera the mirrored pass draws this surface with, for one scene camera.
+   *
+   * The pass mints one of these per scene camera, lazily, and reflects the camera through the
+   * mirror plane each frame. It is exposed because `layers` is not the only thing a game may need
+   * to say about the second draw — a near/far pair is the other — and because a reflection you
+   * cannot inspect is a reflection you cannot cost. Undefined when this surface has no reflection.
+   */
+  reflectionCameraFor(camera: Camera): Camera | undefined {
+    if (this.#reflector === undefined) return undefined;
+    return (this.#reflector as unknown as IReflectorWithPass)._reflectorBaseNode.getVirtualCamera(camera);
+  }
+
+  /** What the mirrored pass draws, as the mask the game supplied. Undefined means everything. */
+  readonly reflectionLayers: number | undefined;
 
   /** The world-space height of the surface, in metres. */
   get level(): number {

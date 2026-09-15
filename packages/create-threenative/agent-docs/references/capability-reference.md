@@ -1333,6 +1333,25 @@ export function resolveAtmosphereParameters( options: IAtmosphereParameters, ): 
 const parameters = resolveAtmosphereParameters({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
 ```
 
+### `RippleField`
+
+`class` — Propagate a disturbance across a patch of water surface and let it fade. step is 1/60s or the CFL stability limit for the given resolution and speed, whichever is smaller
+
+```ts
+export class RippleField { … }
+```
+
+- **Use when:** make a splash or explosion ripple outward across water · show the sea reacting to a bomb, shell, or torpedo hitting it · leave a foam trail behind something moving through water · disturb a water surface the player can see respond · spread and drift foam on a water surface over time
+- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · add its height to an analytic swell, never in place of one · the patch is finite and its rim absorbs; call recenter to keep it over the action · there is no obstacle mask, because a mask is only correct for a body that never moves
+- **Overrides:** speed, damping, foamHalfLife, current, step and maxSteps tune the solve; the default
+
+```ts
+const ripples = new RippleField({ resolution: 128, size: 400 });
+ripples.impulse(hit.x, hit.z, 6, -40, 0.5);
+ripples.advance(dt);
+const lift = ripples.heightAt(boat.x, boat.z);
+```
+
 ### `Scene`
 
 `class` — Implement a portable Godot-shaped game scene lifecycle.
@@ -1650,28 +1669,30 @@ await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) })
 export class WaterSurface3D { … }
 ```
 
-- **Use when:** reflect the sky and the shoreline in a lake, pond or river · see the bed through the water and have the shallows fade at the shore · know how deep the water is under a pixel without a second render pass · stop a water surface repeating in visible bands or stripes
-- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world, so resolutionScale is the whole cost · the mirror plane is level, from level alone; do not parent target to a scaled mesh
+- **Use when:** reflect the sky and the shoreline in a lake, pond or river · see the bed through the water and have the shallows fade at the shore · know how deep the water is under a pixel without a second render pass · stop a water surface repeating in visible bands or stripes · keep a crowd of small actors out of the water's reflection so the frame can afford it
+- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world; resolutionScale is its pixels only · on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice · the mirror plane is level, from level alone; do not parent target to a scaled mesh
 
 ```ts
-const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
+const REFLECTED = 1; // the layer the big silhouettes sit on
+const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });
 material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
 ```
 
 ### `WaveField`
 
-`class` — Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.
+`class` — Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph. wanted, and the warp jacobian, every slope and both allocations are skipped
 
 ```ts
 export class WaveField { … }
 ```
 
 - **Use when:** float a boat on waves · make water move · find the water surface height at a point
-- **Constraints:** supply every wave amplitude, wavelength, direction, speed and warp value · call setTime for the default graph clock when the game advances its own time
+- **Constraints:** supply every wave amplitude, wavelength, direction, speed and warp value · call setTime for the default graph clock when the game advances its own time · sample allocates a result and a normal vector; ask heightAt when only the height is
 
 ```ts
 const field = new WaveField({ waves });
 const { height, normal } = field.sample(x, z, elapsed);
+const lift = field.heightAt(x, z, elapsed);
 ```
 
 ### `withVelocityContext`

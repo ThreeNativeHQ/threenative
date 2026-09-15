@@ -1653,6 +1653,33 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "it draws nothing; the game supplies the mesh, the material and every colour",
+        "add its height to an analytic swell, never in place of one",
+        "the patch is finite and its rim absorbs; call recenter to keep it over the action",
+        "there is no obstacle mask, because a mask is only correct for a body that never moves"
+      ],
+      "example": "const ripples = new RippleField({ resolution: 128, size: 400 });\nripples.impulse(hit.x, hit.z, 6, -40, 0.5);\nripples.advance(dt);\nconst lift = ripples.heightAt(boat.x, boat.z);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "speed, damping, foamHalfLife, current, step and maxSteps tune the solve; the default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class RippleField { … }",
+      "situations": [
+        "make a splash or explosion ripple outward across water",
+        "show the sea reacting to a bomb, shell, or torpedo hitting it",
+        "leave a foam trail behind something moving through water",
+        "disturb a water surface the player can see respond",
+        "spread and drift foam on a water surface over time"
+      ],
+      "summary": "Propagate a disturbance across a patch of water surface and let it fade. step is 1/60s or the CFL stability limit for the given resolution and speed, whichever is smaller",
+      "supersedes": [],
+      "symbol": "RippleField"
+    },
+    {
+      "aliases": [],
       "constraints": ["scene code must stay portable across web and native"],
       "example": "class Play extends Scene { update(ctx, dt) {} }",
       "importPath": "@threenative/core",
@@ -2035,10 +2062,11 @@
         "it draws nothing; the game supplies the mesh, the material and every colour",
         "the material must be transparent so the frame beneath it is already drawn",
         "thickness is metres, saturating at maxThickness; sky behind the surface reads deep",
-        "one reflection is a second draw of the world, so resolutionScale is the whole cost",
+        "one reflection is a second draw of the world; resolutionScale is its pixels only",
+        "on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice",
         "the mirror plane is level, from level alone; do not parent target to a scaled mesh"
       ],
-      "example": "const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
+      "example": "const REFLECTED = 1; // the layer the big silhouettes sit on\nconst surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -2048,7 +2076,8 @@
         "reflect the sky and the shoreline in a lake, pond or river",
         "see the bed through the water and have the shallows fade at the shore",
         "know how deep the water is under a pixel without a second render pass",
-        "stop a water surface repeating in visible bands or stripes"
+        "stop a water surface repeating in visible bands or stripes",
+        "keep a crowd of small actors out of the water's reflection so the frame can afford it"
       ],
       "summary": "Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres of water between them.",
       "supersedes": [],
@@ -2058,9 +2087,10 @@
       "aliases": [],
       "constraints": [
         "supply every wave amplitude, wavelength, direction, speed and warp value",
-        "call setTime for the default graph clock when the game advances its own time"
+        "call setTime for the default graph clock when the game advances its own time",
+        "sample allocates a result and a normal vector; ask heightAt when only the height is"
       ],
-      "example": "const field = new WaveField({ waves });\nconst { height, normal } = field.sample(x, z, elapsed);",
+      "example": "const field = new WaveField({ waves });\nconst { height, normal } = field.sample(x, z, elapsed);\nconst lift = field.heightAt(x, z, elapsed);",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -2071,7 +2101,7 @@
         "make water move",
         "find the water surface height at a point"
       ],
-      "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.",
+      "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph. wanted, and the warp jacobian, every slope and both allocations are skipped",
       "supersedes": [],
       "symbol": "WaveField"
     },
