@@ -8,8 +8,8 @@
  * its UI bundle and the runtime dependencies discovered from that executable into one relocatable
  * container per native host, and writes the OS metadata that names the game.
  *
- * Signing and notarization are deliberately absent: they arrive in PRD-365 phase 3 and are
- * separate from an unsigned, complete container.
+ * Signing and notarization are optional OS-tool operations. A release archive replaces the
+ * previous output only after every requested packaging/signing/notarization stage succeeds.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -351,18 +351,24 @@ function buildIcon(icon, destination, { platform, run }) {
       return;
     }
     // .icns is what Finder and Dock read; it is built with the OS's own tools, never hand-rolled.
-    const iconset = mkdtempSync(join(tmpdir(), 'threenative-iconset-'));
+    const iconsetDirectory = mkdtempSync(join(tmpdir(), 'threenative-iconset-'));
+    const iconset = join(iconsetDirectory, 'app.iconset');
     try {
-      for (const size of [16, 32, 64, 128, 256, 512]) {
-        const sips = run('sips', ['-z', String(size), String(size), icon, '--out', join(iconset, `icon_${size}x${size}.png`)], {});
-        if (sips.error) throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'sips' is required to build an .icns (${sips.error.message}).`);
-        if (sips.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: sips exited ${sips.status ?? 'unknown'}.`);
+      mkdirSync(iconset);
+      for (const size of [16, 32, 128, 256, 512]) {
+        for (const scale of [1, 2]) {
+          const pixels = String(size * scale);
+          const name = `icon_${size}x${size}${scale === 2 ? '@2x' : ''}.png`;
+          const sips = run('sips', ['-z', pixels, pixels, icon, '--out', join(iconset, name)], {});
+          if (sips.error) throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'sips' is required to build an .icns (${sips.error.message}).`);
+          if (sips.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: sips exited ${sips.status ?? 'unknown'}.`);
+        }
       }
       const built = run('iconutil', ['-c', 'icns', iconset, '-o', destination], {});
       if (built.error) throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'iconutil' is required to build an .icns (${built.error.message}).`);
       if (built.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: iconutil exited ${built.status ?? 'unknown'}.`);
     } finally {
-      rmSync(iconset, { force: true, recursive: true });
+      rmSync(iconsetDirectory, { force: true, recursive: true });
     }
     return;
   }
@@ -586,6 +592,8 @@ export function notarizeArchive({ archive, signing, run = exec } = {}) {
   if (!signing?.keychainProfile) {
     throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: macOS notarization needs a notarytool keychain profile.');
   }
+  assertFile(archive, 'desktop container archive');
+  const submittedSha256 = sha256File(archive);
   const result = signingTool(
     run,
     'xcrun',
@@ -601,7 +609,7 @@ export function notarizeArchive({ archive, signing, run = exec } = {}) {
   const artifactSha256 = sha256File(archive);
   return assertNotaryEvidence({
     artifactSha256,
-    evidence: { artifactSha256, id: payload.id, status: payload.status },
+    evidence: { artifactSha256: submittedSha256, id: payload.id, status: payload.status },
   });
 }
 
@@ -758,20 +766,21 @@ export function packageDesktopContainer({
     writeFileSync(stage(paths.manifest), `${JSON.stringify(manifest, null, 2)}\n`);
 
     mkdirSync(dirname(archive), { recursive: true });
-    const previousArchive = existsSync(archive);
+    // Keep the public destination untouched until the entire release transaction succeeds,
+    // including notarization, stapling and re-archiving. The candidate lives on the destination
+    // filesystem so the final rename never needs a cross-device copy.
+    const candidateDirectory = mkdtempSync(join(dirname(archive), '.threenative-release-'));
+    const candidateArchive = join(candidateDirectory, basename(archive));
     try {
-      archiveContainer({ output: archive, platform, rootFolder, run, staging });
-      // macOS notarizes the archive, staples the ticket to the application, then re-archives the
-      // stapled bundle. A failure is caught below: the release is refused and the archive this call
-      // just wrote is removed, unless one already existed.
+      archiveContainer({ output: candidateArchive, platform, rootFolder, run, staging });
       if (platform === 'darwin' && signing?.notarize) {
-        notarizeArchive({ archive, run, signing });
+        notarizeArchive({ archive: candidateArchive, run, signing });
         signingTool(run, 'xcrun', ['stapler', 'staple', join(staging, rootFolder)], 'TN_DESKTOP_NOTARY_STAPLE');
-        archiveContainer({ output: archive, platform, rootFolder, run, staging });
+        archiveContainer({ output: candidateArchive, platform, rootFolder, run, staging });
       }
-    } catch (error) {
-      if (!previousArchive) rmSync(archive, { force: true });
-      throw error;
+      renameSync(candidateArchive, archive);
+    } finally {
+      rmSync(candidateDirectory, { force: true, recursive: true });
     }
     return { archive, manifest, rootFolder, signed: signedArtifact.signed };
   } finally {

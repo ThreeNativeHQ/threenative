@@ -8,6 +8,16 @@ prd_contract: v1
 **Complexity:** 10 → HIGH (+3 files, +2 platform packaging module, +2 signing/container state, +2 multi-package, +1 OS tools).
 **Problem:** The desktop command produces a host executable plus UI files, without a proved complete installed-app container, signing/notarization path or player-machine dependency story.
 
+**2026-09-14 correction audit — still PARTIAL, not ready:** The phase checkpoints below retain their dated historical evidence; they are not fresh verification of this correction. Starting candidate: `933ace7926f85607896910132b3020132b534c28`. The bounded engine correction touches this PRD, `packages/runtime-native/scripts/desktop-distribution.mjs` and `packages/runtime-native/tests/desktop-release-transaction.test.mjs`; no public command, debug caller, signing authority or acceptance scope changes.
+
+The correction makes archive publication transactional across notarization, stapling and final re-archiving, preserving any previous output on failure. `notarizeArchive` now hashes before submission and rejects changed bytes after the external call. PNG-to-ICNS conversion now gives `iconutil` an actual `.iconset` directory with the ten standard/Retina image slots. The tested helper Git blob is `57a1142fb2dfb81bd3cd4e7e9e6d33a9625bbe1d`; the new test blob is `2b9e3deaccc832be7d0b2815cc7665f0e1970080`.
+
+Verification actually executed on a Linux x64 sandbox with Node 22.16.0: the new nine-case test body, with only its `vitest` import substituted by `node:test` in an uncommitted driver, went from **3 passed / 6 failed** against the original helper to **9 passed / 0 failed / 0 skipped** after the correction. `node --check` and `git diff --check` passed. A separate four-case transport probe using real `tar`, `zip` and `unzip` passed **4/4**: all three layouts round-tripped into a path containing spaces, obsolete UI files were absent after rebuilding, missing UI resources were rejected, and failed notarization preserved the previous real ZIP byte-for-byte. These probes use a fixture executable (`/bin/echo`), not the ThreeNative starter; they are neither macOS/Windows execution nor a game/HUD/playtest claim.
+
+**Unrun for this correction:** repository Vitest, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm budgets`, `pnpm prd:progress`, native game/playtest lanes, real macOS resource tooling, credentialed signing/notarization, clean public-consumer machines and independent review. The extracted CI package's original helper was Git-blob matched to the starting candidate before editing. Its historical CI results do not qualify the new candidate. Run the new test in the repository alongside `desktop-container.test.mjs`, `distribution.test.mjs` and `starter-desktop.test.mjs` before taking merge-readiness credit.
+
+**Remaining code/evidence blockers:** `packageDesktopContainer` still signs/verifies the macOS bundle before writing its integrity manifest under `Contents/Resources`; adding that resource after signing invalidates the bundle seal. The manifest also hashes the signed main executable, so simply moving signing after it introduces an integrity/signature ordering problem; this needs a native-verified layout/integrity correction, not another fixture PASS. The discovered Windows DLL names have no paths before `classifyDependencies`, and macOS `@rpath`/`@loader_path` install names are not resolved to copyable files. Real release-container lanes must establish dependency relocation and OS identity on every claimed architecture. Windows WebView2 absence, registry/public-runtime clean-player offline launch, actual Windows/macOS trust, and PRD-375/366 consumption of the same final container hashes remain unproved. No acceptance checkbox is changed by this audit.
+
 Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
@@ -53,7 +63,7 @@ sequenceDiagram
         CLI-->>Developer: Output path and precise supported claim
     else Missing prerequisite or failed observation
         Target-->>CLI: Concrete failure
-        CLI-->>Developer: Non-success with location, cause and fix
+        CLI-->>Developer: Output path, cause and fix
     end
 ```
 
