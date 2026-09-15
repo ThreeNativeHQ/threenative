@@ -105,4 +105,32 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
       "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.",
     ],
   }),
+  // Not a render stage: the engine's scene-draw optimizer, which a game can decline. It lives
+  // here because it is framework render-path behaviour with no package export for an agent to
+  // search — the same reason the stages above are hand-entered. A game that measured the
+  // projection as a loss (paid reconcile without a frame-time win) opts out with `false`.
+  {
+    symbol: "renderer.projection",
+    package: "@threenative/core",
+    importPath: "src/game.ts",
+    kind: "function",
+    signature: "renderer.projection?: boolean",
+    summary:
+      "The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.",
+    situations: [
+      "the game got slower after the projection engaged",
+      "turn off the render projection, batching, or the instanced mirror",
+      "draw count fell but frame time did not",
+      "a multi-second freeze when the mirror first engages",
+      "opt out of an engine render optimizer",
+    ],
+    example: "renderer: { projection: false } // in threenative.config.ts",
+    constraints: [
+      "Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it.",
+      "An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame.",
+      "TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.",
+    ],
+    overrides: [],
+    supersedes: [],
+  },
 ];

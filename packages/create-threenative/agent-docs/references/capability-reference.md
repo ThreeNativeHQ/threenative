@@ -1670,8 +1670,8 @@ await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) })
 export class WaterSurface3D { … }
 ```
 
-- **Use when:** reflect the sky and the shoreline in a lake, pond or river · see the bed through the water and have the shallows fade at the shore · know how deep the water is under a pixel without a second render pass · stop a water surface repeating in visible bands or stripes · keep a crowd of small actors out of the water's reflection so the frame can afford it
-- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world; resolutionScale is its pixels only · on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice · the mirror plane is level, from level alone; do not parent target to a scaled mesh
+- **Use when:** reflect the sky and the shoreline in a lake, pond or river · see the bed through the water and have the shallows fade at the shore · know how deep the water is under a pixel without a second render pass · stop a water surface repeating in visible bands or stripes · keep a crowd of small actors out of the water's reflection so the frame can afford it · stop the water reflection redrawing the whole world every frame
+- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world; resolutionScale is its pixels only · on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice · reflection.refreshInterval is in presented frames; 1 is every frame, and the default · the mirror plane is level, from level alone; do not parent target to a scaled mesh
 
 ```ts
 const REFLECTED = 1; // the layer the big silhouettes sit on
@@ -4339,6 +4339,23 @@ export function useUiState<TState extends object>(): TState | undefined;
 
 ```ts
 const score = useUiState<GameState, number>((state) => state.score);
+```
+
+## `src/game.ts`
+
+### `renderer.projection`
+
+`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.
+
+```ts
+renderer.projection?: boolean
+```
+
+- **Use when:** the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer
+- **Constraints:** Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it. · An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame. · TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.
+
+```ts
+renderer: { projection: false } // in threenative.config.ts
 ```
 
 ## `src/render/worldEnvironment.ts`
