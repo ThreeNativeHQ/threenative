@@ -1813,7 +1813,9 @@ describe("SceneRenderProjection respects an authored static marking", () => {
     } finally {
       walk.mockRestore();
     }
-    expect(projection.inspect(meshes[3] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([3, 0, 0]);
+    expect(projection.inspect(meshes[3] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([
+      3, 0, 0,
+    ]);
   });
 
   // (d) Safety: a static-marked object whose parent moved this frame is still refreshed, because
@@ -1838,7 +1840,9 @@ describe("SceneRenderProjection respects an authored static marking", () => {
 
     mover.position.set(50, 0, 0);
     projection.reconcile();
-    expect(projection.inspect(held[0] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([50, 0, 0]);
+    expect(projection.inspect(held[0] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([
+      50, 0, 0,
+    ]);
   });
 });
 
