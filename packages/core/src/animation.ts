@@ -244,14 +244,13 @@ export class AnimationPlayer {
   #strideRoot: Object3D;
   #lastRootPosition = new Vector3();
   #hasLastRootPosition = false;
-  #stride: IStrideReport = {
-    clipGroundSpeed: 0,
-    groundSpeed: 0,
-    inPlace: false,
-    overridden: false,
-    rate: 1,
-    synced: false,
-  };
+  // The last update's numbers, kept as scalars so a frame that never reads `.stride` builds no
+  // report. A read materializes a fresh snapshot, so a retained report never changes under it.
+  #strideGroundSpeed = 0;
+  #strideRate = 1;
+  #strideSynced = false;
+  #strideOverridden = false;
+  #strideInPlace = false;
 
   constructor(options: IAnimationPlayerOptions) {
     const owner = new.target.name || "AnimationPlayer";
@@ -318,14 +317,17 @@ export class AnimationPlayer {
    */
   get stride(): IStrideReport {
     const name = this.#current;
-    if (name === undefined) return this.#stride;
-    // Derived on read so a clip's own ground speed is answerable the moment it is played, before
-    // any frame has advanced. It is a property of the asset, and cached.
-    const measured = this.#measureOf(name);
-    return measured.groundSpeed === this.#stride.clipGroundSpeed &&
-      measured.inPlace === this.#stride.inPlace
-      ? this.#stride
-      : { ...this.#stride, clipGroundSpeed: measured.groundSpeed, inPlace: measured.inPlace };
+    const measured = name === undefined ? undefined : this.#measureOf(name);
+    // A fresh snapshot each read: what the last update stored, with the clip's own ground speed
+    // derived so it is answerable the moment it is played, before any frame has advanced.
+    return {
+      clipGroundSpeed: measured?.groundSpeed ?? 0,
+      groundSpeed: this.#strideGroundSpeed,
+      inPlace: measured?.inPlace ?? this.#strideInPlace,
+      overridden: this.#strideOverridden,
+      rate: this.#strideRate,
+      synced: this.#strideSynced,
+    };
   }
 
   /** The clip behind a name, for a game that wants the action or the raw `AnimationClip`. */
@@ -447,14 +449,11 @@ export class AnimationPlayer {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
       // and warping it by how fast the body happens to be sliding is a bug, not a convention.
       if (action.getEffectiveTimeScale() !== 1) action.setEffectiveTimeScale(1);
-      this.#stride = {
-        clipGroundSpeed,
-        groundSpeed,
-        inPlace: measured.inPlace,
-        overridden: false,
-        rate: 1,
-        synced: false,
-      };
+      this.#strideGroundSpeed = groundSpeed;
+      this.#strideRate = 1;
+      this.#strideSynced = false;
+      this.#strideOverridden = false;
+      this.#strideInPlace = measured.inPlace;
       return;
     }
     const wanted =
@@ -466,14 +465,11 @@ export class AnimationPlayer {
     // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
     const applies = this.#strideSync && this.#mode === "loop";
     if (applies) action.setEffectiveTimeScale(rate);
-    this.#stride = {
-      clipGroundSpeed,
-      groundSpeed,
-      inPlace: measured.inPlace,
-      overridden: !this.#strideSync,
-      rate,
-      synced: applies,
-    };
+    this.#strideGroundSpeed = groundSpeed;
+    this.#strideRate = rate;
+    this.#strideSynced = applies;
+    this.#strideOverridden = !this.#strideSync;
+    this.#strideInPlace = measured.inPlace;
   }
 
   #playAction(action: AnimationAction, mode: AnimationMode, weight: number): void {
@@ -596,14 +592,11 @@ export class AnimationPlayer {
 
   #resetStride(): void {
     this.#hasLastRootPosition = false;
-    this.#stride = {
-      clipGroundSpeed: 0,
-      groundSpeed: 0,
-      inPlace: false,
-      overridden: false,
-      rate: 1,
-      synced: false,
-    };
+    this.#strideGroundSpeed = 0;
+    this.#strideRate = 1;
+    this.#strideSynced = false;
+    this.#strideOverridden = false;
+    this.#strideInPlace = false;
   }
 
   dispose(): void {

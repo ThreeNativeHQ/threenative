@@ -358,6 +358,26 @@ describe("AnimationPlayer stride sync", () => {
     expect(player.stride.rate).toBeCloseTo(2, 1);
     expect(player.stride.synced).toBe(true);
   });
+
+  /**
+   * PRD-385 decision B: the update no longer builds a report the reader may not ask for, so a
+   * report a caller retained must keep the values it observed rather than being mutated in place.
+   */
+  it("keeps a retained stride report unchanged after a later update", () => {
+    const { body, player } = character({ clips: [walkClip()] });
+    player.play("walk");
+    player.update(1 / 60);
+    const retained = player.stride;
+    expect(retained.groundSpeed).toBe(0);
+
+    body.position.z += 2 * (1 / 60);
+    player.update(1 / 60);
+    const later = player.stride;
+
+    expect(later).not.toBe(retained);
+    expect(retained.groundSpeed).toBe(0);
+    expect(later.groundSpeed).toBeCloseTo(2, 1);
+  });
 });
 
 describe("SkeletalMesh3D shared character preparation", () => {

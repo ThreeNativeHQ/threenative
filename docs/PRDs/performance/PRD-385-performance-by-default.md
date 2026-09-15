@@ -164,9 +164,9 @@ render-target samples](https://threejs.org/docs/pages/Renderer.html#currentSampl
 - [ ] AC-1 [local; actor: implementation agent]: Repeated eligible `SkeletalMesh3D` creation and first clip use perform at most one full binding audit and one full stride sample per equivalent source/clip/input combination, including Midway's uniformly scale-varied crew clones through proven normalization; existing calls require no new option. Evidence: shared path implemented and covered by focused specs (`PropertyBinding.bind` and `AnimationMixer.setTime` counts); the scale-varied Midway crew case is not yet run on the real GLBs, so this stays open.
 - [x] AC-2 [local; actor: implementation agent]: Source, clone, hierarchy, track-content and transform changes cannot reuse stale preparation; missing/zero-bound required clips still fail through the constructor. Evidence: `packages/core/__tests__/animation.spec.ts` "SkeletalMesh3D shared preparation reuse" — hierarchy, clip-keyframe, undriven-bone and ambiguous-name changes miss, and missing/zero-bound required clips still throw; `pnpm exec vitest run packages/core/__tests__/animation.spec.ts` 40 passed.
 - [ ] AC-3 [local; actor: implementation agent]: Real sailor/director/pilot fixtures preserve baseline pose, stride values, per-instance phase/rate, one-shot timing and `strideSync: false` reporting; paired preparation medians improve at least 20% on a declared repeated-rig workload. Evidence: pending.
-- [ ] AC-4 [local; actor: implementation agent]: Steady iterations eliminate the specific scratch-map, callback-snapshot-array, unread stride-report and scalar-query record construction sites in decision B. Caller-visible event/snapshot objects and first-seen capacity growth are explicitly excluded; this is not a claim about every allocation inside those methods. Evidence: pending.
-- [ ] AC-5 [local; actor: implementation agent]: Retained stride/surface/metric observations stay unchanged after later updates; current values, world-before-overlay counts and diagnostic cadence match baseline. Evidence: pending.
-- [ ] AC-6 [local; actor: implementation agent]: Existing lifecycle consumers preserve nested dispatch, add/remove/clear order, exception cleanup, pointer edges and hover behavior. Evidence: pending.
+- [ ] AC-4 [local; actor: implementation agent]: Steady iterations eliminate the specific scratch-map, callback-snapshot-array, unread stride-report and scalar-query record construction sites in decision B. Caller-visible event/snapshot objects and first-seen capacity growth are explicitly excluded; this is not a claim about every allocation inside those methods. Evidence: all four sites replaced — `.stride` materializes on read (`animation.ts`), after-physics and before-render dispatches snapshot into reused arrays (`loop.ts`, `game.ts`), the pointer active set reuses a field (`pointer-events.ts`), and the per-frame draw-call and buffer-height reads use scalar accessors (`game.ts` from `renderer.ts`); constructor/allocation instrumentation is still pending, so this stays open.
+- [ ] AC-5 [local; actor: implementation agent]: Retained stride/surface/metric observations stay unchanged after later updates; current values, world-before-overlay counts and diagnostic cadence match baseline. Evidence: "keeps a retained stride report unchanged after a later update" passes; surface/metric cadence evidence still pending.
+- [ ] AC-6 [local; actor: implementation agent]: Existing lifecycle consumers preserve nested dispatch, add/remove/clear order, exception cleanup, pointer edges and hover behavior. Evidence: after-physics dispatch cases cover add/remove/clear order and nested dispatch; exception cleanup and the game's before-render seam are still pending.
 - [ ] AC-7 [local; actor: implementation agent]: Unedited Midway game source consumes distinct baseline/candidate hashed tarballs; browser WebGPU deck captures preserve crew appearance and launch behavior. Evidence: pending.
 - [ ] AC-8 [local; actor: implementation agent]: Matched Midway browser runs report preparation and frame distributions separately; candidate frame p95 does not regress over 5% across paired runs on the same named adapter and workload. Evidence: pending.
 - [ ] AC-9 [local; actor: implementation agent]: A native desktop real-rig fixture exercises the changed default preparation and reports on the installed candidate; values/behavior match the browser contract. Evidence: pending. Native target execution is mandatory before claiming portability.
@@ -199,19 +199,22 @@ expand before that lane runs.
 
 ### Phase 2 — Existing frame consumers reuse private storage
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-4–AC-6
 **Files:** `packages/core/src/animation.ts`, `loop.ts`, `game.ts`, `pointer-events.ts`, `renderer.ts`;
 existing animation, loop, game, pointer and projection allocation specs.
 
-Implement the bounded replacements in decision B. Preserve snapshot semantics instead of exposing
-scratch storage. Use constructor/allocation instrumentation that can observe the targeted object
-literals as well as arrays/maps; stable identity or heap deltas alone do not prove no allocation.
+Decision B's four sites are replaced: `.stride` now materializes a fresh report on read instead of
+per update, the after-physics and before-render dispatches snapshot into reused depth-pooled arrays,
+the pointer active set reuses a scratch map, and the per-frame draw-call and drawing-buffer-height
+reads use scalar accessors instead of building records. Snapshot/dispatch semantics are covered by
+new focused cases. What is still missing: constructor/allocation instrumentation that observes the
+object literals themselves, and an explicit exception-cleanup case.
 
-- [ ] Named hot paths reuse storage while their public snapshots and dispatch semantics pass — E2: focused affected specs through real lifecycle entry points, including exception/reentrancy cases.
+- [ ] Named hot paths reuse storage while their public snapshots and dispatch semantics pass — E2: focused animation/loop/game/pointer specs pass (134 total); explicit allocation instrumentation and an exception-cleanup case pending.
 
-**Checkpoint:** Pending; inspect lifetime cleanup and allocation measurements. Do not claim the
-whole engine or whole game is allocation-free.
+**Checkpoint:** Partial; snapshot lifetimes and dispatch order reviewed through the focused specs.
+Allocation measurement is not yet done, so no allocation-free claim is made.
 
 ### Phase 3 — Ship the defaults through installed packages and prove their consumers
 
