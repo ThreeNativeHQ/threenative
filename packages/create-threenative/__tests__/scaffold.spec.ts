@@ -312,8 +312,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `threenative-context` SKILL gained its row, and the starter's AGENTS/CLAUDE gained the seam's
   // instruction — all bytes embedded in every scaffold, so all ten trees move together on top of
   // the develop tree the seam rebased onto.
-  "action-rpg": "0480ae92e85c39c4e223f4440bfad8a0fe4d9aae3cbd30440f0436aa73509ea8",
-  defense: "2e7513bc9b9ac8f157c771a14637129eaee6ef1901ad852915f468c4fa3af915",
+  // Recomputed 2026-09-15 for the performance-basics reference: every scaffold gains
+  // `agent-docs/performance-basics.md`, and each template's AGENTS.md/CLAUDE.md names it in the
+  // recipe index. Both are scaffolded bytes, so all ten trees move together; re-measured from the
+  // clean worktree.
+  "action-rpg": "160cf0fc3feef19f6051ab7d7707cbb5da8162b2f9d116f0588c0ebc3de351f5",
+  defense: "24809ddc923d626e3c2c1a2449a343f80ffa93bfde6cfc0600d40198d2049791",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -321,17 +325,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "6e830d1d2d97f496b5a5f40cbc4dc572e7daa9efd75256f62396094355ed8129",
-  platformer: "dfb9ef980c0899d9f534161c9cdb34846083f60c2bb27b28f87d84cab19dfb08",
-  runner: "14ae76837a68c543d4e34ae028a43511aee997674b182ee38c7183fb969b2fb9",
-  puzzle: "27a23fcc6b360e8a6aba4a631c928f3adf99b59850b50ad1f4dfb34fab5876fa",
-  racing: "9e8c1cb70d36a23effd5438945ed48791c2c05a6194c939e81931f7c9e1fb8ec",
-  shooter: "c0a4996b4a6c2905e43379333558f0e383fbf0b4c1cd4f25c9861c634a4c9c80",
+  minimal: "23b3163d68ea0485d9065eddaef3c880ff0be5b0321ee3648f2bcde3383c6ea2",
+  platformer: "c2709051c8420fde512c73ae31aa00c9b127219174b9e6620d1d47959b281cb0",
+  runner: "b8bda6652b4509fecf6fe9dd71ff31499b5bc815824d05aee31c4910fb734e59",
+  puzzle: "1849203a0beeeb56247575abc86e434e61edd10f19be969b50022e572fc0cdfa",
+  racing: "b51907ba49ec92901c64c888d7a532bb2bd0f22f0f0e76354e7767eceb7704d8",
+  shooter: "5a3e58787db7669709a31db48c844068f4130fa9eebebd37923f53faafe3d7a8",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "3f6eb4350d75e61cf37bbf32dff70b9fff757c368a52a9170406825a224592ef",
+  starter: "345e42e688166cd486eacd0fd4c1c02ed2dec8fc89025874c36499f504389c79",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -357,7 +361,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "d8b97d0405ae576a4efbd60d404a777f94bb68d3ce408c59efc06ddfc5ecb3a5",
+  sailing: "51bb4f3a59b0a0ae5bc3310a4aa2e2fca3035258636a43a4e8ecc8a67f05cb8d",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -533,6 +537,7 @@ const STARTER_PATHS = [
   "agent-docs/finding-assets.md",
   "agent-docs/gameplay-recipes.md",
   "agent-docs/menu-screens.md",
+  "agent-docs/performance-basics.md",
   "agent-docs/sculpt-from-a-reference.md",
   "agent-docs/visual-baseline.md",
 ];
@@ -720,6 +725,7 @@ describe("create-threenative", () => {
         "gameplay-recipes.md",
         "menu-screens.md",
         "mobile-memory-budget.md",
+        "performance-basics.md",
         "sculpt-from-a-reference.md",
         "trace-a-slow-frame.md",
         "visual-baseline.md",
