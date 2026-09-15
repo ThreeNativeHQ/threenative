@@ -38,8 +38,9 @@ import {
   releaseProjectionScanWorkspace,
   scanProjection,
 } from "../src/projection-plan.js";
+import * as projectionPlan from "../src/projection-plan.js";
 import { readVelocityPreviousMatrices } from "../src/render/velocity.js";
-import { SceneRenderProjection } from "../src/renderProjection.js";
+import { type IRenderProjectionReport, SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
  * PRD-152 Phase 2. The projection's whole claim is that a game cannot tell it is there. These
@@ -1839,5 +1840,275 @@ describe("SceneRenderProjection respects an authored static marking", () => {
     mover.position.set(50, 0, 0);
     projection.reconcile();
     expect(projection.inspect(held[0] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([50, 0, 0]);
+  });
+});
+
+/**
+ * While the projection holds, the renderer is handed the mirror, and three builds a frame's
+ * lighting from the lights of the scene it is handed (the mirror), not from the authored scene
+ * the shared materials came from. The mirror holds a clone of each game light, and `light.clone()`
+ * gives that clone its own `LightShadow` and shadow camera. So the game's own light renders a
+ * shadow map nothing samples while the mirror draws — the dead map measured in report F.
+ *
+ * Three's WebGPU `ShadowNode.updateBefore` reads each light's own `shadow.autoUpdate`, so the
+ * dead map is dropped by taking the authored light offline and restoring it exactly when the
+ * projection releases. These assertions pin which light is switched off, that the clone's own map
+ * stays live, and the restoration on every release path.
+ */
+describe("SceneRenderProjection takes the unsampled authored light's shadow offline", () => {
+  function mirroredLight(root: Scene, source: DirectionalLight): DirectionalLight {
+    let found: DirectionalLight | undefined;
+    root.traverse((object) => {
+      const light = object as DirectionalLight;
+      if (light.isDirectionalLight === true) found = light;
+    });
+    if (found === undefined) throw new Error("mirror did not clone the directional light");
+    expect(found).not.toBe(source);
+    return found;
+  }
+
+  // (a) The measured case: the authored sun's map is the one no drawn pixel reads, so its update
+  // stops; the clone the mirror draws with keeps updating its own separate map.
+  it("stops the source light's shadow update while the cloned light's keeps updating", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    sun.castShadow = true;
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    expect(sun.shadow.autoUpdate).toBe(false);
+    const clone = mirroredLight(projection.root as Scene, sun);
+    expect(clone.shadow).not.toBe(sun.shadow);
+    expect(clone.shadow.autoUpdate).toBe(true);
+  });
+
+  // (b) Reversibility is the contract: a scene that stops projecting gets its authored shadows
+  // back on the very next frame, so the release path restores the exact captured value.
+  it("restores the authored light's shadow update on dispose", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    expect(sun.shadow.autoUpdate).toBe(false);
+
+    projection.dispose();
+    expect(projection.root).toBe(scene);
+    expect(sun.shadow.autoUpdate).toBe(true);
+  });
+
+  it("restores the authored light's shadow update on a decline", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const sun = new DirectionalLight(0xffffff, 1);
+    scene.add(sun);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    expect(sun.shadow.autoUpdate).toBe(false);
+
+    // A render hook is a decline; the mirror is released and the authored scene draws again.
+    (meshes[10] as Mesh).onBeforeRender = () => undefined;
+    projection.reconcile();
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.report.reasonCode).toBe("renderHook");
+    expect(sun.shadow.autoUpdate).toBe(true);
+  });
+
+  // A light the game had already told three not to auto-update must come back off, never forced
+  // on by the restore. This case passes on the unpatched code too — it is the guard that the fix
+  // does not invent an update the game had deliberately switched off.
+  it("leaves a light that had autoUpdate off to off across projection and release", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    sun.shadow.autoUpdate = false;
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    expect(sun.shadow.autoUpdate).toBe(false);
+
+    projection.dispose();
+    expect(sun.shadow.autoUpdate).toBe(false);
+  });
+
+  // (c) A scene that never projects keeps its authored shadow state: the mirror never takes the
+  // light, so nothing is captured and nothing is restored.
+  it("leaves a scene that never projects untouched", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 4);
+
+    const projection = projected(scene, 2, 200);
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.root).toBe(scene);
+    expect(sun.shadow.autoUpdate).toBe(true);
+  });
+});
+
+/**
+ * The reported bug: ~22 s in, the image darkens once and stays dark on the frame the projection
+ * takes over. The mirror is a fresh `Scene`, so `backgroundRotation` and `environmentRotation`
+ * defaulted to zero while the game had authored `SKY_ROTATION = Euler(0, 2.76, 0)`. When the
+ * mirror becomes the rendered scene the sky and the environment lighting snap back to yaw 0 —
+ * the room turns and the lit top of everything drops with it. The fix copies both rotations, value
+ * and order, onto the mirror alongside the rest of the scene look.
+ */
+describe("SceneRenderProjection copies the authored background and environment rotations", () => {
+  function projecting(source: Scene): Scene {
+    const projection = projected(source, 2);
+    expect(projection.deoptimized).toBe(false);
+    const mirror = projection.root as Scene;
+    expect(mirror).not.toBe(source);
+    return mirror;
+  }
+
+  // (a) The authored yaw must survive the handover; it fails on the unpatched mirror (0,0,0).
+  it("carries the authored background rotation and its order onto the mirror", () => {
+    const scene = new Scene();
+    scene.backgroundRotation.set(0, 2.76, 0, "YXZ");
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const mirror = projecting(scene);
+    expect(mirror.backgroundRotation.x).toBe(0);
+    expect(mirror.backgroundRotation.y).toBe(2.76);
+    expect(mirror.backgroundRotation.z).toBe(0);
+    expect(mirror.backgroundRotation.order).toBe("YXZ");
+  });
+
+  // (b) Same for the environment rotation, which is what lights the aircraft's top.
+  it("carries the authored environment rotation and its order onto the mirror", () => {
+    const scene = new Scene();
+    scene.environmentRotation.set(0.1, 2.76, -0.2, "ZXY");
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const mirror = projecting(scene);
+    expect(mirror.environmentRotation.x).toBe(0.1);
+    expect(mirror.environmentRotation.y).toBe(2.76);
+    expect(mirror.environmentRotation.z).toBe(-0.2);
+    expect(mirror.environmentRotation.order).toBe("ZXY");
+  });
+
+  // (c) No aliasing: the mirror owns its own Euler, and each reconcile re-reads the source.
+  it("does not alias the source rotations, and re-reads changed ones", () => {
+    const scene = new Scene();
+    scene.backgroundRotation.set(0, 1, 0);
+    scene.environmentRotation.set(0, 1, 0);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    const mirror = projection.root as Scene;
+    expect(mirror.backgroundRotation).not.toBe(scene.backgroundRotation);
+    expect(mirror.environmentRotation).not.toBe(scene.environmentRotation);
+
+    scene.backgroundRotation.set(0, 2, 0);
+    mirror.environmentRotation.set(0, 3, 0);
+    projection.reconcile();
+    expect(mirror.backgroundRotation.y).toBe(2);
+    expect(scene.environmentRotation.y).toBe(1);
+  });
+
+  // (d) The default case is untouched: a source that never set a rotation reconciles to zero.
+  it("reconciles a scene that never set a rotation to zero", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const mirror = projecting(scene);
+    expect([mirror.backgroundRotation.x, mirror.backgroundRotation.y, mirror.backgroundRotation.z]).toEqual([0, 0, 0]);
+    expect([mirror.environmentRotation.x, mirror.environmentRotation.y, mirror.environmentRotation.z]).toEqual([0, 0, 0]);
+  });
+});
+
+/**
+ * The named opt-out. Projection is an optimizer, and an optimizer a game cannot decline is a tax:
+ * a scene whose draw count falls without its frame time following should be able to say so. The
+ * option is `enabled: false` on the constructor — `renderer.projection: false` in config — and the
+ * contract is that it costs nothing: no mirror, no scan, the authored scene every frame, and a
+ * verdict that names the opt-out rather than impersonating one of the measured declines.
+ */
+describe("SceneRenderProjection honors a game's opt-out", () => {
+  // (a) Unset is the shipping behaviour: the option's absence changes nothing and a qualifying
+  // scene still projects. This passes on both sides of the change, which is the point.
+  it("still projects a qualifying scene when the option is unset", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.root).not.toBe(scene);
+    expect(projection.inspect(meshes[0] as Mesh)?.lane).toBeDefined();
+  });
+
+  // (b) An opted-out scene that WOULD qualify never projects: no mirror is built, no scan runs, and
+  // the renderer is handed the authored scene. Must fail before the opt-out exists.
+  it("never projects a qualifying scene when the game opts out", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const scanSpy = vi.spyOn(projectionPlan, "scanProjection");
+
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    projection.reconcile();
+
+    expect(scanSpy).not.toHaveBeenCalled();
+    expect(projection.root).toBe(scene);
+    expect(projection.inspect(meshes[0] as Mesh)).toBeUndefined();
+    expect(projection.report.batches).toBe(0);
+    expect(projection.report.projecting).toBe(false);
+    // `sourceRenderables` is written by the scan and by nothing else, so it staying at zero is the
+    // same fact the spy asserts, counted from the report the boundary actually publishes.
+    expect(projection.report.sourceRenderables).toBe(0);
+    scanSpy.mockRestore();
+  });
+
+  // (c) The verdict names the opt-out: `disabled`, its own reason code, not `belowMeshFloor` or
+  // `notWorthwhile` and not silence. Must fail before the opt-out exists.
+  it("reports the opt-out with its own reason code", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const reports: IRenderProjectionReport[] = [];
+
+    const projection = new SceneRenderProjection(scene, {
+      minMeshes: 8,
+      enabled: false,
+      onReport: (report) => reports.push(report),
+    });
+    projection.reconcile();
+
+    expect(projection.report.reasonCode).toBe("disabled");
+    expect(projection.report.reason).toMatch(/projection/);
+    expect(reports.at(-1)?.reasonCode).toBe("disabled");
+  });
+
+  // (d) Off and on across scene changes leaves no leaked mirror state: a disabled projection builds
+  // nothing an enabled one inherits, and an enabled projection's batches do not survive a later
+  // disabled one.
+  it("toggles off and on across scene changes with no leaked mirror state", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const off = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    off.reconcile();
+    expect(off.root).toBe(scene);
+    expect(off.report.batches).toBe(0);
+
+    const on = new SceneRenderProjection(scene, { minMeshes: 8, enabled: true });
+    on.reconcile();
+    expect(on.root).not.toBe(scene);
+    expect(on.report.batches).toBeGreaterThan(0);
+    on.dispose();
+
+    const offAgain = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    offAgain.reconcile();
+    expect(offAgain.root).toBe(scene);
+    expect(offAgain.report.batches).toBe(0);
+    expect(offAgain.report.projecting).toBe(false);
   });
 });

@@ -679,11 +679,13 @@ export type {
  * @situation know how deep the water is under a pixel without a second render pass
  * @situation stop a water surface repeating in visible bands or stripes
  * @situation keep a crowd of small actors out of the water's reflection so the frame can afford it
+ * @situation stop the water reflection redrawing the whole world every frame
  * @constraint it draws nothing; the game supplies the mesh, the material and every colour
  * @constraint the material must be transparent so the frame beneath it is already drawn
  * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
  * @constraint one reflection is a second draw of the world; resolutionScale is its pixels only
  * @constraint on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice
+ * @constraint reflection.refreshInterval is in presented frames; 1 is every frame, and the default
  * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
  * @example const REFLECTED = 1; // the layer the big silhouettes sit on
  * const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });

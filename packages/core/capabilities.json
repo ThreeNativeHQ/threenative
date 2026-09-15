@@ -2106,6 +2106,7 @@
         "thickness is metres, saturating at maxThickness; sky behind the surface reads deep",
         "one reflection is a second draw of the world; resolutionScale is its pixels only",
         "on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice",
+        "reflection.refreshInterval is in presented frames; 1 is every frame, and the default",
         "the mirror plane is level, from level alone; do not parent target to a scaled mesh"
       ],
       "example": "const REFLECTED = 1; // the layer the big silhouettes sit on\nconst surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
@@ -2119,7 +2120,8 @@
         "see the bed through the water and have the shallows fade at the shore",
         "know how deep the water is under a pixel without a second render pass",
         "stop a water surface repeating in visible bands or stripes",
-        "keep a crowd of small actors out of the water's reflection so the frame can afford it"
+        "keep a crowd of small actors out of the water's reflection so the frame can afford it",
+        "stop the water reflection redrawing the whole world every frame"
       ],
       "summary": "Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres of water between them.",
       "supersedes": [],
@@ -5178,6 +5180,30 @@
       "summary": "Read the game's published state from a UI that may be in another process.",
       "supersedes": [],
       "symbol": "useUiState"
+    },
+    {
+      "symbol": "renderer.projection",
+      "package": "@threenative/core",
+      "importPath": "src/game.ts",
+      "kind": "function",
+      "signature": "renderer.projection?: boolean",
+      "summary": "The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.",
+      "situations": [
+        "the game got slower after the projection engaged",
+        "turn off the render projection, batching, or the instanced mirror",
+        "draw count fell but frame time did not",
+        "a multi-second freeze when the mirror first engages",
+        "opt out of an engine render optimizer"
+      ],
+      "example": "renderer: { projection: false } // in threenative.config.ts",
+      "constraints": [
+        "Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it.",
+        "An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame.",
+        "TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines."
+      ],
+      "overrides": [],
+      "supersedes": [],
+      "aliases": []
     },
     {
       "symbol": "WorldEnvironment",

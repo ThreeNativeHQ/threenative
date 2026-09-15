@@ -64,6 +64,7 @@ export interface IResolvedThreeNativeConfig {
     readonly resolutionScale?: number | "auto";
     readonly antialias?: boolean;
     readonly alphaAntialiasing?: boolean;
+    readonly projection?: boolean;
     readonly android?: {
       readonly resolutionScale?: number | "auto";
       readonly antialias?: boolean;
@@ -921,6 +922,7 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     "resolutionScale",
     "antialias",
     "alphaAntialiasing",
+    "projection",
     "android",
   ]);
   const android = assertRecord(renderer.android, "renderer.android");
@@ -952,6 +954,7 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     android.alphaAntialiasing,
     "renderer.android.alphaAntialiasing",
   );
+  const projection = booleanOrUndefined(renderer.projection, "renderer.projection");
   const androidOverrides = {
     ...(androidResolutionScale === undefined
       ? {}
@@ -970,6 +973,7 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     ),
     ...(antialias === undefined ? {} : { antialias }),
     ...(alphaAntialiasing === undefined ? {} : { alphaAntialiasing }),
+    ...(projection === undefined ? {} : { projection }),
     ...(resolutionScale === undefined
       ? {}
       : { resolutionScale: resolutionScale as number | "auto" }),
