@@ -220,7 +220,15 @@ export function discoverRuntimeDependencies(binary, { platform = process.platfor
 }
 
 function isSystemLibrary(library, platform) {
-  if (platform === 'win32') return SYSTEM_WINDOWS_DLLS.has(library.name.toLowerCase());
+  if (platform === 'win32') {
+    const name = library.name.toLowerCase();
+    // api-ms-win-* and ext-ms-win-* are API Set contracts: virtual names the loader redirects to a
+    // real implementation. They are never files on disk and always come from the OS, and dumpbin
+    // reports them for anything linked against the UCRT, so no allowlist of real DLL names can
+    // enumerate them.
+    if (name.startsWith('api-ms-win-') || name.startsWith('ext-ms-win-')) return true;
+    return SYSTEM_WINDOWS_DLLS.has(name);
+  }
   if (!library.path) return false;
   if (platform === 'darwin') {
     return library.path.startsWith('/usr/lib/') || library.path.startsWith('/System/');

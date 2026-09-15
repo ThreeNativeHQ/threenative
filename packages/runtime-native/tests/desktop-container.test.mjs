@@ -6,6 +6,7 @@ import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import {
   assertContainerIdentity,
+  classifyDependencies,
   CONTAINER_MANIFEST,
   containerMetadata,
   packageDesktopContainer,
@@ -81,6 +82,33 @@ test('macOS stages Info.plist at the application bundle root, not under Resource
   assert.ok(existsSync(join(root, 'Contents/Info.plist')));
   assert.ok(manifest.resources['Contents/Info.plist']);
   assert.equal(existsSync(join(root, 'Contents/Resources/Contents/Info.plist')), false);
+});
+
+test('Windows API set contracts are prerequisites, not libraries to copy', () => {
+  // api-ms-win-* and ext-ms-win-* are API Set contract names the Windows loader redirects to a real
+  // implementation. They are never files on disk, so a hardcoded allowlist of real DLL names can
+  // never cover them, and dumpbin reports them for any binary linked against the UCRT.
+  const directory = makeTempDirSync('threenative-apiset-');
+  const support = join(directory, 'game-support.dll');
+  writeFileSync(support, 'a real game dependency');
+  const libraries = [
+    { name: 'api-ms-win-core-synch-l1-2-0.dll' },
+    { name: 'ext-ms-win-ntuser-window-l1-1-0.dll' },
+    { name: 'KERNEL32.dll' },
+    { name: 'game-support.dll', path: support },
+  ];
+  const { bundled, prerequisites } = classifyDependencies(libraries, { platform: 'win32' });
+  assert.deepEqual(prerequisites.map((library) => library.name).sort(), [
+    'KERNEL32.dll', 'api-ms-win-core-synch-l1-2-0.dll', 'ext-ms-win-ntuser-window-l1-1-0.dll',
+  ].sort());
+  assert.deepEqual(bundled.map((library) => library.name), ['game-support.dll']);
+});
+
+test('a Windows dependency that is neither a system library nor locatable is still refused', () => {
+  assert.throws(
+    () => classifyDependencies([{ name: 'game-physics.dll' }], { platform: 'win32' }),
+    /TN_DESKTOP_DEPENDENCY_UNLOCATABLE/u,
+  );
 });
 
 test('macOS stages the web UI where the runtime resolves it, under Contents/Resources', () => {
