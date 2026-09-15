@@ -166,8 +166,8 @@ render-target samples](https://threejs.org/docs/pages/Renderer.html#currentSampl
 - [ ] AC-3 [local; actor: implementation agent]: Real sailor/director/pilot fixtures preserve baseline pose, stride values, per-instance phase/rate, one-shot timing and `strideSync: false` reporting; paired preparation medians improve at least 20% on a declared repeated-rig workload. Evidence: pending.
 - [ ] AC-4 [local; actor: implementation agent]: Steady iterations eliminate the specific scratch-map, callback-snapshot-array, unread stride-report and scalar-query record construction sites in decision B. Caller-visible event/snapshot objects and first-seen capacity growth are explicitly excluded; this is not a claim about every allocation inside those methods. Evidence: all four sites replaced — `.stride` materializes on read (`animation.ts`), after-physics and before-render dispatches snapshot into reused arrays (`loop.ts`, `game.ts`), the pointer active set reuses a field (`pointer-events.ts`), and the per-frame draw-call and buffer-height reads use scalar accessors (`game.ts` from `renderer.ts`); constructor/allocation instrumentation is still pending, so this stays open.
 - [ ] AC-5 [local; actor: implementation agent]: Retained stride/surface/metric observations stay unchanged after later updates; current values, world-before-overlay counts and diagnostic cadence match baseline. Evidence: "keeps a retained stride report unchanged after a later update" passes; surface/metric cadence evidence still pending.
-- [ ] AC-6 [local; actor: implementation agent]: Existing lifecycle consumers preserve nested dispatch, add/remove/clear order, exception cleanup, pointer edges and hover behavior. Evidence: after-physics dispatch cases cover add/remove/clear order and nested dispatch; exception cleanup and the game's before-render seam are still pending.
-- [ ] AC-7 [local; actor: implementation agent]: Unedited Midway game source consumes distinct baseline/candidate hashed tarballs; browser WebGPU deck captures preserve crew appearance and launch behavior. Evidence: pending.
+- [ ] AC-6 [local; actor: implementation agent]: Existing lifecycle consumers preserve nested dispatch, add/remove/clear order, exception cleanup, pointer edges and hover behavior. Evidence: after-physics dispatch cases cover add/remove/clear order and nested dispatch; the full engine dev-instance playtest (`pnpm test:playtest`) passed all six scenarios after the change; exception cleanup and the game's before-render seam are still pending.
+- [ ] AC-7 [local; actor: implementation agent]: Unedited Midway game source consumes distinct baseline/candidate hashed tarballs; browser WebGPU deck captures preserve crew appearance and launch behavior. Evidence: unedited Midway consumed candidate `threenative-core-0.3.2-prd385-02d6b80e0be4.tgz` in an isolated copy (the shared canonical checkout was left untouched); `launch.playtest.json` on WebGPU (NVIDIA turing) passed all gameplay assertions with 0 console errors and the scene reported `skinned: 12` crew clones; the baseline `projfix-b2629381e2dc` also passed. Deck appearance captures (`capture-deck.mjs`) and the fleet captures are not yet run.
 - [ ] AC-8 [local; actor: implementation agent]: Matched Midway browser runs report preparation and frame distributions separately; candidate frame p95 does not regress over 5% across paired runs on the same named adapter and workload. Evidence: pending.
 - [ ] AC-9 [local; actor: implementation agent]: A native desktop real-rig fixture exercises the changed default preparation and reports on the installed candidate; values/behavior match the browser contract. Evidence: pending. Native target execution is mandatory before claiming portability.
 - [ ] AC-10 [local; actor: implementation agent]: Existing capability/template documentation describes the automatic behavior and fallback honestly; affected checks and required engine gates pass. Evidence: pending.
@@ -218,18 +218,20 @@ Allocation measurement is not yet done, so no allocation-free claim is made.
 
 ### Phase 3 — Ship the defaults through installed packages and prove their consumers
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-7–AC-10
 **Files:** affected engine capability descriptions and template `AGENTS.md` sources/mirrors;
 Midway dependency/lock files and existing capture fixtures only where required for observation.
 
-At execution start create one draft PR for this PRD, before implementation phase 1, following the
-repository workflow. Use repository-owned worktrees for isolation and retain other lanes' changes.
-Capture baseline before candidate installation. Build/pack the affected packages, give tarballs
-content-hashed names, install them as a user would, and record resolved artifact hashes. Never patch
-`node_modules` or add game-side cache hints. Reconcile current template edits from other lanes.
+The draft PR was opened first (PR #251). The candidate `@threenative/core` was built and packed from
+this branch, content-hashed as `threenative-core-0.3.2-prd385-02d6b80e0be4.tgz`, and installed into
+an isolated Midway copy because the canonical Midway checkout is in use by another lane. The
+unedited Midway `playtests/launch.playtest.json` then passed on the WebGPU lane with 0 console
+errors and 12 skinned crew objects in the scene. Still missing: the baseline/candidate deck
+appearance captures, the paired performance runs, native desktop proof, and the template/doc
+adoption pass.
 
-- [ ] Installed browser/native consumers, documentation and required gates satisfy acceptance — E3: commands below, with concise results recorded on the owning ACs.
+- [ ] Installed browser/native consumers, documentation and required gates satisfy acceptance — E3: `launch.playtest.json` passes on the installed candidate; deck captures, paired performance, native and docs gates pending.
 
 **Verification:**
 
