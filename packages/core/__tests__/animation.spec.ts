@@ -834,6 +834,25 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
     }
   });
 
+  it("keeps per-instance measurement under a non-uniform world scale", () => {
+    const { root } = fixture();
+    const clip = inPlaceClip();
+    const body = new Group();
+    body.scale.set(2, 1, 1);
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
+      const afterFirst = setTime.mock.calls.length;
+      const scaled = new SkeletalMesh3D({ source: root, clips: [clip] });
+      body.add(scaled.root);
+      strideOf(scaled);
+      // A non-uniform scale cannot be normalized, so this clone measures its own stride.
+      expect(setTime.mock.calls.length).toBeGreaterThan(afterFirst);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
   it("misses the audit when the source hierarchy changes between clones", () => {
     const { root, hips } = fixture();
     const clip = inPlaceClip();
@@ -911,6 +930,25 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
       second.root.getObjectByName("Prop")?.position.setX(1);
       strideOf(second);
       expect(setTime.mock.calls.length).toBeGreaterThan(0);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
+  it("keeps per-instance measurement under a non-uniform world scale", () => {
+    const { root } = fixture();
+    const clip = inPlaceClip();
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
+      const afterFirst = setTime.mock.calls.length;
+      const scaled = new SkeletalMesh3D({ source: root, clips: [clip] });
+      const body = new Group();
+      body.scale.set(2, 1, 1);
+      body.add(scaled.root);
+      strideOf(scaled);
+      // A non-uniform scale cannot be normalized, so this clone measures its own stride.
+      expect(setTime.mock.calls.length).toBeGreaterThan(afterFirst);
     } finally {
       setTime.mockRestore();
     }
