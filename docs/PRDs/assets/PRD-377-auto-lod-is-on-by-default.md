@@ -229,18 +229,17 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 2 — ordinary runtime
 
-- [ ] Normal model loading reaches the single engine-owned LOD controller. Wiring is in place —
-      `createAssetLoader` registers `DiscreteLodPlugin` when the file declares `TN_discrete_lod` and
-      builds the levels after `widenQuantizedPositions`, and `game.ts` calls `updateModelLods` beside
-      `updateClusteredMeshes`. The plugin and controller are unit-tested, but no test yet drives a real
-      cooked `.glb` through `GLTFLoader`.
+- [x] Normal model loading reaches the single engine-owned LOD controller. Evidence:
+      `packages/core/__tests__/model-lod-loader.spec.ts` (2/2) drives a hand-written cooked GLB
+      through `createAssetLoader` — fetch, `extensionsUsed` detection, `GLTFLoader`, the reader,
+      `widenQuantizedPositions`, then `attach` — and shows the far camera swapping to the 1-triangle
+      level while the near camera keeps the 2-triangle LOD0. The level shares the authored position
+      attribute by reference.
 - [x] Projection and hysteresis tests pass on decoded artifacts. Evidence:
       `packages/core/__tests__/model-lod.spec.ts` (17/17 — perspective/orthographic/zoom projection,
       conservative nearest depth, near-plane/inside-bounds full detail, immediate refinement,
-      hysteresis-gated coarsening, zero-error level, multi-view and `finest` view) and
-      `model-lod-runtime.spec.ts` (5/5 — pending-chain read, shared attributes, far/close selection,
-      malformed schema and LOD0-mismatch fallback to full detail). Caveat: geometries are hand-built,
-      not yet a `.glb` through `GLTFLoader`.
+      hysteresis-gated coarsening, zero-error level, multi-view and `finest` view),
+      `model-lod-runtime.spec.ts` (5/5) and the loader-driven `model-lod-loader.spec.ts` (2/2).
 - [ ] Multi-view and shadow correctness tests pass. `selectLodLevel` accepts several views and a
       `finest` view; the engine passes only the main camera and shadows have no dedicated test yet.
 - [x] Precision-picking does not depend on the selected render LOD. Evidence:
@@ -249,9 +248,10 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       mesh is drawn at the coarse level. Node identity/transform preservation is not yet asserted.
 - [ ] Instance isolation and shared-resource lifetime tests pass. Levels are index-only and share the
       base attributes, but instance isolation and unload/reload lifetime are not yet exercised.
-- [ ] Runtime policy reaches the controller from the manifest. `createAssetLoader` reads `lod.runtime`
-      and passes it to `attach`, and the manifest value is now fresh on cache hits; no test yet proves
-      the loader path end to end.
+- [x] Runtime policy reaches the controller from the manifest. Evidence:
+      `model-lod-loader.spec.ts` serves a manifest whose entry resolves `maxPixelError: 0.1` and the
+      same far camera that coarsens under the default 1-pixel budget keeps LOD0 — the loader read the
+      asset's budget, not a framework constant.
 
 #### Phase 3 — consumer qualification
 
