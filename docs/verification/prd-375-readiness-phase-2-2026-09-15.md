@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-15
 **Branch:** `prd-375/desktop-brand` (cut from `origin/develop` at `26bf28a66`)
-**Scope proved:** the brand-inspection half — `inspectContainerBrand(root, config)` in
+**Historical scope at `7bbb2216f327cbec8ca033979759cf209dd00eee`:** the brand-inspection half — `inspectContainerBrand(root, config)` in
 `packages/runtime-native/scripts/verify-starter-desktop.mjs`, its fixtures in
 `packages/runtime-native/tests/starter-desktop.test.mjs`, and the game-owned-branding section in
 `packages/create-threenative/README.md`.
@@ -12,7 +12,7 @@ human capture. Those consume PRD-365's containers, which live only on the still-
 is additionally environmentally blocked on this host (GBM buffer creation fails on every desktop
 run); no desktop launch was attempted or claimed green.
 
-## What landed
+## Historical implementation (superseded where corrected below)
 
 `inspectContainerBrand(root, config, options)` takes an unpacked PRD-365 container directory and the
 consumer config, and compares three independent surfaces, each failing closed with a distinct code:
@@ -36,7 +36,7 @@ consumer config, and compares three independent surfaces, each failing closed wi
 Missing container, malformed manifest and a non-object config each throw. A container with nothing
 inspectable is a failure, not a pass (`TN_NATIVE_STARTER_CONTAINER_BRAND_UNVERIFIED`).
 
-## Red then green
+## Historical red then green
 
 Red (test first, before the export existed):
 
@@ -61,7 +61,7 @@ Negative controls also green: engine-default icon substituted, macOS `CFBundleNa
 `.desktop` `Name=` removed, icon resource dropped, missing container, malformed manifest, loading
 mismatch, empty brand, malformed config.
 
-## Gates
+## Historical gates (not rerun for the review correction)
 
 | Command | Result |
 | --- | --- |
@@ -72,7 +72,7 @@ mismatch, empty brand, malformed config.
 | root `pnpm exec vitest run` (the phase `pnpm test` never reached) | **exit 0** — 440 files passed, 5257 tests passed |
 | `pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts` | **pass** — 7 tests; the README names only shipped packages/commands |
 
-## Not verified (blocked on PRD-365 / PR #224)
+## Historical blockers (current status below)
 
 - Real `threenative build --target desktop --mode release` container: PR #224 is not on `develop`,
   so there is no `.app`, Windows resource, or Linux `.tar.gz` to extract and inspect.
@@ -90,3 +90,92 @@ mismatch, empty brand, malformed config.
 - EDIT `packages/create-threenative/README.md`
 - EDIT `docs/PRDs/production-readiness/PRD-375-release-artifacts-carry-the-game-brand.md`
 - NEW `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`
+
+## Review correction — 2026-09-15
+
+Parent: `7bbb2216f327cbec8ca033979759cf209dd00eee`. Compared the actual PRD-365 writer at
+`ab44d634b4378b007b7ea9f843bf40cff7bf33f4`; that draft dependency is not merged by this change.
+This correction stays within the original five-file phase budget (four existing files edited).
+
+**Corrected behavior:**
+
+- Inspected paths must be files within the physical container root, including manifest and resource
+  symlinks. Resource hashes are required and verified; nested config, platform and loading records
+  are validated. Existing fixtures now use the writer's `{ sha256 }` inventory objects.
+- Linux reads only the authored application's `[Desktop Entry]`, not another desktop action or
+  another inventory entry, and checks its icon reference. macOS checks both displayed names,
+  rejects duplicate keys and checks the plist's icon link.
+- `app.iconSha256` means source-icon identity; `resources[app.icon].sha256` means final payload
+  integrity. Converted ICNS bytes need not equal the input PNG. This proves provenance and integrity,
+  not conversion correctness or Finder pixels. Missing engine-default comparison fails unverified.
+- Windows now throws `TN_NATIVE_STARTER_CONTAINER_BRAND_UNVERIFIED`: manifest identity and a sidecar
+  are not PE-resource inspection. The earlier Windows acceptance was a false pass.
+- A configured splash without a loading record fails. A loading record cannot bypass a missing or
+  directory-valued web entry. UI-only metadata and an empty splash object do not establish a brand.
+  Splash declarations remain declarations, not evidence of a nonblank live handoff. Missing authored
+  images have a named config error; relative input assets use `options.project` (default: cwd).
+
+**Actual local verification:** Linux x64 sandbox, Node 22.16.0. The shell could not resolve
+`github.com`; pnpm, Vitest, pngjs, the workspace build and a native runtime were unavailable.
+GitHub connector reads supplied the source. Tests used real temporary files and the unchanged
+brand-function text extracted from the actual candidate script, with built-in Node imports only.
+Vitest `test` and the temp-directory helper were adapted in the disposable harness; no filesystem
+or metadata assertions were mocked. This is not a full-module, screenshot, CLI, Vitest or native run.
+
+| Executed check | Result |
+| --- | --- |
+| Initial new controls against the parent inspector | 25 failed / 2 passed, exit 1 |
+| First corrected inspector | 27 passed / 0 failed, exit 0 |
+| Additional empty-splash, missing-image and duplicate-plist controls before fixes | 3 failed / 27 passed, exit 1 |
+| New regression controls after iteration | 30 passed / 0 failed, exit 0 |
+| Combined branding section: 10 retained tests + 30 new tests | 40 passed / 0 failed / 0 skipped, exit 0 |
+| `node --check` on both changed `.mjs` files | exit 0 |
+
+**Still pending:** full focused Vitest (59 total tests after this change), workspace typecheck,
+Biome/format, budgets, full test suite and platform lanes for this candidate. The inspector remains
+an export: no current `verifyStarterDesktop`/CLI path calls it. Live container integration, real
+Windows PE inspection, converted-art verification, loading/gameplay capture and independent human
+review remain acceptance work. No independent reviewer PASS, release, dependency merge or done move
+is claimed. Phase 2's caller and full-required-test boxes are reopened rather than treating the
+historical or isolated results as current end-to-end verification.
+
+Re-run the full focused suite in the repository environment:
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-desktop.test.mjs
+pnpm typecheck && pnpm lint && pnpm test
+pnpm budgets
+```
+
+To reproduce only the isolated 40-test branding check from the repository root:
+
+```sh
+node --input-type=module <<'JS'
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+const dir = mkdtempSync(join(tmpdir(), 'prd375-isolated-'));
+try {
+  const script = readFileSync('packages/runtime-native/scripts/verify-starter-desktop.mjs', 'utf8');
+  const tests = readFileSync('packages/runtime-native/tests/starter-desktop.test.mjs', 'utf8');
+  const imports = script.slice(0, script.indexOf('const READY_MARKER')).replace("import { PNG } from 'pngjs';", '');
+  const body = script.slice(script.indexOf('const CONTAINER_MANIFEST'), script.indexOf('export function verifyStarterDesktop'));
+  writeFileSync(join(dir, 'brand.mjs'), imports + body);
+  const header = `import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { test } from 'node:test';
+import { inspectContainerBrand } from './brand.mjs';
+function makeTempDirSync(prefix) { return mkdtempSync(join(${JSON.stringify(dir)}, prefix)); }
+`;
+  writeFileSync(join(dir, 'brand.test.mjs'), header + tests.slice(tests.indexOf('// PRD-375 phase 2:')));
+  const run = spawnSync(process.execPath, ['--test', join(dir, 'brand.test.mjs')], { stdio: 'inherit' });
+  if (run.error) throw run.error;
+  process.exitCode = run.status ?? 1;
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
+JS
+```

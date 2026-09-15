@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) landed its brand-inspection caller, fixtures and README (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)); the container launch, OS-launcher inspection and human capture stay blocked on PRD-365 containers (draft PR #224, not on `develop`).
+**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) has a review-corrected inspector export, fixtures and README, but no live container-verifier caller yet (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)); the container launch, OS-launcher inspection and human capture stay blocked on PRD-365 containers (draft PR #224, not on `develop`).
 Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
@@ -109,28 +109,38 @@ pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts
 
 ### Phase 2 — Distributed desktop apps display the developer brand
 
-**Landing split:** the brand-inspection half landed here — `inspectContainerBrand(root, config)`
-compares the embedded icon, the launcher/file-manager name and the loading/launch sequence against
-the consumer config, failing closed with a distinct code per cause. The container-dependent half is
-still blocked: PRD-365's complete containers and native icon resources
-(`scripts/desktop-distribution.mjs`) live only on draft PR #224, none of it on `develop`, so there
-is nothing to extract or launch yet. The desktop native lane is also environmentally blocked on this
-host (GBM buffer creation fails on every desktop run). Not narrowed to SDL window-icon evidence,
-which the acceptance criteria explicitly forbid.
+**Landing split:** `inspectContainerBrand(root, config, options)` is implemented and fixture-covered,
+not yet connected to `verifyStarterDesktop` or its CLI. Review of PR #255 found that the original
+export could accept missing splash evidence, trust Windows manifest identity as PE evidence, and
+misread PRD-365's source-versus-converted-icon hash contract. The corrections below are engine
+verification plumbing; they do not introduce another packager or change the game's appearance.
+PR #224 remains a draft dependency, not merged into `develop`. Its writer does not emit a loading
+record: a configured `bootSplash` must therefore report missing evidence, never a UI-only pass.
+Windows inspection explicitly remains unverified until actual PE resources are inspected. macOS
+source provenance, payload integrity and plist linkage are not proof of converted icon pixels.
+The original author reported a GBM-blocked host; this review sandbox has no pnpm/Vitest/native
+runtime and cannot resolve GitHub from its shell, so no native launch is claimed here either.
 
 **Progress:**
 
-- [x] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
-      `inspectContainerBrand` exported and fixture-covered; `pnpm typecheck` pass, `pnpm lint` exit 0, `primary-docs.spec.ts` 7/7.
-- [x] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
-      29/29 passed 2026-09-15, including the required row and the engine-icon / plist / .desktop / missing-container controls.
+- [ ] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
+      Export and fixtures implemented; live container/CLI integration is missing. Historical parent `7bbb2216` reported typecheck/lint/primary-docs green; those workspace gates have not been rerun for this correction.
+- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+      Historical parent: 29/29 Vitest. Review correction: all 40 branding test bodies pass under an isolated Node 22.16.0 harness (10 retained + 30 new); full Vitest, including the 19 untouched screenshot/CLI/workflow tests, remains unrun. Node syntax checks pass for both changed executable files.
 - [x] Observed red recorded, then restored green
-      Test-first red: 10 failed / 19 passed with `inspectContainerBrand is not a function`; then 29/29. Record: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`.
+      Historical test-first red: 10 failed / 19 passed, then 29/29. Review regressions: 25 failed / 2 passed, then 27/27; three further controls failed before correction, then 30/30. Combined branding section: 40/40, exit 0. Record: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`.
 - [ ] User verification performed on the named platform
-      Blocked on PR #224 landing a real container; this host also fails desktop runs on GBM buffer creation. No launch or OS-launcher inspection was attempted or claimed.
+      Pending real container/CLI integration, OS-launcher inspection and same-artifact loading/gameplay captures. No native launch or human inspection was performed in this review.
 - [x] Evidence record written: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`
 - [ ] Independent reviewer returned PASS
-      Blocked: no reviewer has seen this phase yet; the container half stays unverified until #224 is on `develop`.
+      Review findings corrected with local regressions, but no separate independent reviewer PASS was obtained; the container and visual acceptance remain unverified.
+
+**Review correction (2026-09-15):** same phase and existing file budget. Unsafe paths and escaping
+symlinks, missing payload/source hashes, malformed config/platform/loading records, wrong launcher
+icon links, desktop-action name confusion, duplicate/stale plist names and empty brand assertions
+now fail. Relative authored assets resolve against `options.project`. Loading and web-entry checks
+both run; UI existence cannot substitute for a configured splash. Existing fixtures now use the
+producer's `{ sha256 }` inventory shape. No screenshot/runtime launch behavior was changed.
 
 **Files (maximum five):**
 
@@ -168,7 +178,7 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+The original planning revision ran no implementation gates. Phase 1 retains its dated evidence; phase 2 has historical Vitest evidence and the isolated review-correction results above, not current full-workspace or OS acceptance. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
 
 ## Acceptance criteria
 
