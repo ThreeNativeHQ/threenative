@@ -21,6 +21,7 @@ import {
   type IRenderPerformanceSample,
   createAfterPhysicsPhase,
 } from "./loop.js";
+import { updateModelLods } from "./model-lod.js";
 import { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { getPlatform } from "./platform.js";
@@ -1233,6 +1234,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // because an empty cut has to skip its draw rather than submit a zero-count one — and a
           // scene holding no clustered mesh pays no traversal at all, only the tracked set.
           updateClusteredMeshes(
+            this.#projection?.root ?? threeScene,
+            camera,
+            renderer.surface().drawingBufferHeight,
+          );
+          // Automatic discrete LOD ships on with the pipeline, so the engine takes the selection
+          // too. It shares the render root and the same drawing-buffer height, and a scene with no
+          // managed mesh pays only the tracked-set walk.
+          updateModelLods(
             this.#projection?.root ?? threeScene,
             camera,
             renderer.surface().drawingBufferHeight,

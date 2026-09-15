@@ -414,6 +414,20 @@ export class AudioBus { … }
 const effects = new AudioBus({ camera });
 ```
 
+### `baseGeometryOf`
+
+`function` — The full-detail geometry of a mesh the loader gave an automatic LOD chain. Selection swaps `mesh.geometry`, so a ray test or a collision body built from the current geometry would change with the camera. Framework picking and gameplay collide against this instead: the authored LOD0, which never changes as the camera moves.
+
+```ts
+export function baseGeometryOf(mesh: Mesh): BufferGeometry { … }
+```
+
+- **Use when:** collide or ray-test the authored geometry of a mesh whose render detail changes with distance
+
+```ts
+const geometry = baseGeometryOf(mesh);
+```
+
 ### `Billboard3D`
 
 `class` — Face a game-owned object toward a perspective or orthographic camera.
@@ -1586,6 +1600,24 @@ export function updateClusteredMeshes( root: { … }
 
 ```ts
 updateClusteredMeshes(stagedRoot, myCamera, ctx.renderer.domElement.height);
+```
+
+### `updateModelLods`
+
+`function` — Draw a model at the detail its projected geometric error earns, from a chain the asset cook baked. **This is on, and a game does not call it.** `assets.lod` resolves on by default, the `model` pass bakes `TN_discrete_lod` into eligible models, the loader registers the reader, and the engine runs the selection every frame before it renders. Each frame the mesh picks the cheapest baked level whose measured error projects to fewer than the resolved pixel budget, taking the camera's own projection, zoom, viewport and a conservative nearest depth into account. Refinement is immediate; coarsening waits for the resolved hysteresis. A mesh with no baked chain draws its full geometry.
+
+```ts
+export function updateModelLods( root: { … }
+```
+
+- **Use when:** draw a vehicle or hull built from many small meshes at distance without its full triangles · stop a distant model from costing its authored mesh count and triangle count · one source model, right detail by default, no hand-authored LOD files
+- **Constraints:** the chain is baked by the asset cook; there is no runtime generation and no runtime flag · `assets.lod: false` opts out globally and `assets.lod.overrides` per asset, with no runtime controller installed · only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail
+- **Overrides:** `assets.lod.runtime.maxPixelError` and `.hysteresis` set the budget and the coarsen band, by project, preset or asset
+
+```ts
+// Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.
+const hull = await ctx.assets.model("hull.glb");
+ctx.scene.add(hull.scene);
 ```
 
 ### `velocityTexture`

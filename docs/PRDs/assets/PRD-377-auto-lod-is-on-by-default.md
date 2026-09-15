@@ -10,7 +10,7 @@ A developer authors one GLB and loads it through ThreeNative's normal asset path
 
 This is not a greenfield LOD renderer. The repository already has default-on virtual geometry for sufficiently dense primitives. Extend and reconcile that machinery, adding a conservative discrete-LOD path where it supplies missing value. Exactly one system owns detail selection for a primitive. Preserve the original source, the full-detail fallback, materials, object identity, and gameplay semantics.
 
-**Status:** PARTIAL — Phase 0 traced; Phase 1 config contract and offline eligibility/generation/artifact contract landed and tested (Node only). Loader, runtime selection, doctor, hot reload and every Closure Gate are NOT started; no Closure Gate is claimed.
+**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact landed and tested; Phase 2 engine-owned projection/hysteresis selection and LOD0-stable picking landed and tested, with the end-to-end loader test, multi-view/shadow and instance-lifetime evidence outstanding. Qualification (Phase 3), default-on (Phase 4) and every Closure Gate are NOT started; no Closure Gate is claimed.
 **Date:** 2026-09-11.
 **Scope:** Asset compilation, configuration, ordinary model loading, and existing render integration.
 **Complexity:** HIGH — default-on lossy processing crosses build, runtime, and platform boundaries.
@@ -228,11 +228,28 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 2 — ordinary runtime
 
-- [ ] Normal model loading reaches the single engine-owned LOD controller.
-- [ ] Projection and hysteresis tests pass on decoded assets.
-- [ ] Multi-view and shadow correctness tests pass.
-- [ ] Gameplay identity and precision-picking tests pass.
-- [ ] Instance isolation and shared-resource lifetime tests pass.
+- [ ] Normal model loading reaches the single engine-owned LOD controller. Wiring is in place —
+      `createAssetLoader` registers `DiscreteLodPlugin` when the file declares `TN_discrete_lod` and
+      builds the levels after `widenQuantizedPositions`, and `game.ts` calls `updateModelLods` beside
+      `updateClusteredMeshes`. The plugin and controller are unit-tested, but no test yet drives a real
+      cooked `.glb` through `GLTFLoader`.
+- [x] Projection and hysteresis tests pass on decoded artifacts. Evidence:
+      `packages/core/__tests__/model-lod.spec.ts` (17/17 — perspective/orthographic/zoom projection,
+      conservative nearest depth, near-plane/inside-bounds full detail, immediate refinement,
+      hysteresis-gated coarsening, zero-error level, multi-view and `finest` view) and
+      `model-lod-runtime.spec.ts` (5/5 — pending-chain read, shared attributes, far/close selection,
+      malformed schema and LOD0-mismatch fallback to full detail). Caveat: geometries are hand-built,
+      not yet a `.glb` through `GLTFLoader`.
+- [ ] Multi-view and shadow correctness tests pass. `selectLodLevel` accepts several views and a
+      `finest` view; the engine passes only the main camera and shadows have no dedicated test yet.
+- [x] Precision-picking does not depend on the selected render LOD. Evidence:
+      `packages/core/__tests__/picking.spec.ts` "picks the authored LOD0 surface while the camera
+      draws a coarser level" — the BVH is built from LOD0 and the ray is run against LOD0 while the
+      mesh is drawn at the coarse level. Node identity/transform preservation is not yet asserted.
+- [ ] Instance isolation and shared-resource lifetime tests pass. Levels are index-only and share the
+      base attributes, but instance isolation and unload/reload lifetime are not yet exercised.
+- [ ] Runtime policy reaches the controller from the manifest. The loader reads `lod.runtime`;
+      the compile-cache-hit refresh of that value is the known gap recorded under Phase 1.
 
 #### Phase 3 — consumer qualification
 
