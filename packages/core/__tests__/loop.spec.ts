@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { FixedStepLoop, type IRenderPerformanceMetrics } from "../src/loop.js";
+import {
+  FixedStepLoop,
+  type IRenderPerformanceMetrics,
+  createAfterPhysicsPhase,
+} from "../src/loop.js";
 
 describe("FixedStepLoop", () => {
   it("should reject a maxSteps that can never run an update", () => {
@@ -313,5 +317,73 @@ describe("FixedStepLoop metrics collection", () => {
     expect(loop.stepFrame(121 * 16.6667)).toBe(1);
     expect(steps).toEqual([1 / 60]);
     expect(loop.tick()).toBe(1);
+  });
+});
+
+describe("after-physics phase dispatch", () => {
+  it("runs a callback registered during dispatch on the next run only", () => {
+    const phase = createAfterPhysicsPhase();
+    const seen: string[] = [];
+    phase.register(() => {
+      seen.push("first");
+      phase.register(() => seen.push("late"));
+    });
+    phase.run(1 / 60);
+    expect(seen).toEqual(["first"]);
+    phase.run(1 / 60);
+    expect(seen).toEqual(["first", "first", "late"]);
+  });
+
+  it("still runs a snapshotted callback removed by an earlier one", () => {
+    const phase = createAfterPhysicsPhase();
+    const seen: string[] = [];
+    let removeSecond: () => void = () => undefined;
+    phase.register(() => {
+      seen.push("first");
+      removeSecond();
+    });
+    removeSecond = phase.register(() => seen.push("second"));
+    phase.run(1 / 60);
+    expect(seen).toEqual(["first", "second"]);
+  });
+
+  it("drops cleared callbacks before the next run", () => {
+    const phase = createAfterPhysicsPhase();
+    let calls = 0;
+    phase.register(() => {
+      calls += 1;
+    });
+    phase.clear();
+    phase.run(1 / 60);
+    expect(calls).toBe(0);
+  });
+
+  it("keeps a nested dispatch from clobbering the outer snapshot", () => {
+    const phase = createAfterPhysicsPhase();
+    const seen: string[] = [];
+    let nested = false;
+    phase.register(() => {
+      seen.push("outer");
+      if (!nested) {
+        nested = true;
+        phase.run(1 / 60);
+      }
+    });
+    phase.register(() => seen.push("second"));
+    phase.run(1 / 60);
+    expect(seen).toEqual(["outer", "outer", "second", "second"]);
+  });
+
+  it("leaves the deep pool clean after a callback throws", () => {
+    const phase = createAfterPhysicsPhase();
+    const seen: string[] = [];
+    phase.register(() => {
+      throw new Error("callback failed");
+    });
+    expect(() => phase.run(1 / 60)).toThrow("callback failed");
+    phase.clear();
+    phase.register(() => seen.push("after"));
+    phase.run(1 / 60);
+    expect(seen).toEqual(["after"]);
   });
 });

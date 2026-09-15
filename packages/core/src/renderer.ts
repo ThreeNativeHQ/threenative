@@ -188,6 +188,11 @@ export interface IRendererLike {
    * session because nothing in the measurement could say which one produced it.
    */
   surface(): IFrameSurfaceState;
+  /**
+   * The drawing buffer height on its own, for a caller that wants one number every frame and no
+   * record. Optional so a platform or test double can keep exposing only `surface()`.
+   */
+  surfaceDrawingBufferHeight?(): number;
   dispose(): void;
 }
 
@@ -400,6 +405,7 @@ function wrapRenderer(
       sampleCount: resolveSampleCount(raw),
       scaleSource: state.scaleSource,
     }),
+    surfaceDrawingBufferHeight: () => applied.height,
     alphaAntialiasing: () => alphaAntialiasing.report(),
     domElement: raw.domElement,
     kind,

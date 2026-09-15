@@ -360,6 +360,131 @@ describe("IGame", () => {
     }
   });
 
+  it("snapshots ctx.beforeRender so additions wait a frame and removals still run", async () => {
+    const canvas = testCanvas();
+    const events: string[] = [];
+    let frame: ((time: number) => void) | undefined;
+    let addedLate = false;
+    let removeEarly: () => void = () => undefined;
+    class BeforeRenderSnapshotScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        removeEarly = ctx.beforeRender(() => {
+          events.push("early");
+          removeEarly();
+        });
+        ctx.beforeRender(() => {
+          events.push("late");
+          if (!addedLate) {
+            addedLate = true;
+            ctx.beforeRender(() => events.push("added-during"));
+          }
+        });
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => events.push("world"),
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: BeforeRenderSnapshotScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(0);
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(34);
+      expect(events).toEqual(["early", "late", "world"]);
+      frame(68);
+      // `early` removed itself during the first dispatch; the callback added during it runs now.
+      expect(events).toEqual(["early", "late", "world", "late", "added-during", "world"]);
+    } finally {
+      game.stop();
+      nowSpy.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("snapshots ctx.beforeRender so additions wait a frame and removals still run", async () => {
+    const canvas = testCanvas();
+    const events: string[] = [];
+    let frame: ((time: number) => void) | undefined;
+    let addedLate = false;
+    let removeEarly: () => void = () => undefined;
+    class BeforeRenderSnapshotScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        removeEarly = ctx.beforeRender(() => {
+          events.push("early");
+          removeEarly();
+        });
+        ctx.beforeRender(() => {
+          events.push("late");
+          if (!addedLate) {
+            addedLate = true;
+            ctx.beforeRender(() => events.push("added-during"));
+          }
+        });
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => events.push("world"),
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: BeforeRenderSnapshotScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(0);
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(34);
+      // The first dispatch snapshots both callbacks: `early` removes itself, `late` adds one.
+      expect(events).toEqual(["early", "late", "world"]);
+      frame(68);
+      // `early` is gone; `late` and the callback it added during the previous frame both run.
+      expect(events).toEqual(["early", "late", "world", "late", "added-during", "world"]);
+    } finally {
+      game.stop();
+      nowSpy.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
   it("clears ctx.beforeRender registrations on dispose, scene change, and restart", async () => {
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;
