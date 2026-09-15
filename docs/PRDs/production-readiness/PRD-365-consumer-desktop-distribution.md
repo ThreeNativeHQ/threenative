@@ -230,8 +230,59 @@ The planning revision itself ran no implementation gate. **Phase 1 is implemente
 
 ## Acceptance criteria
 
-- [ ] Each claimed desktop OS/architecture has a complete relocatable release container with working unchanged starter HUD/assets and game OS identity.
-- [ ] Installed-player proof uses no Node/engine checkout/native build tools and includes offline launch plus documented system WebView/library prerequisites.
-- [ ] Signed Windows and notarized macOS artifacts are verified on their real hosts; unsigned preparation never claims signed readiness.
-- [ ] Debug raw executable behavior remains supported; no cross-OS compiler or new public command is invented.
-- [ ] PRD-375 appearance and PRD-366 gameplay consume the same container hashes; public promotion remains PRD-060.
+The five original criteria each conjoined a platform matrix with several independent properties, so
+none of them could move off `[ ]` while any one clause was out of reach — the shape this repository's
+PRD rules name as unworkable. They are split below to one claim per box. A box that cannot be reached
+from this repository keeps its own line with its blocker named underneath rather than being dropped.
+
+**A complete relocatable release container, per platform**
+
+- [x] linux-x64: `--mode release` produces a `tar.gz` container that extracts outside the project and launches the unchanged starter with its assets.
+  - 2026-09-15: the starter scaffolded from this candidate's packed packages, built with `threenative build --target desktop --mode release`, extracted under a path containing a space and verified by the installed verifier: exit 0, `pass: true`, 300 frames, 21 813 colours, 338 cyan asset pixels. Archive sha256 `a0107a9c40800520e34c377424fe75816b96b7af2ac517b764efddc55a18c0a5`.
+- [x] linux-x64: the container records the game's OS identity and refuses a tampered or missing resource.
+  - The produced `threenative-container.json` records `share/applications/com.threenative.starter.desktop` (carrying `Name=` and `Exec=`) and `share/icons/hicolor/256x256/apps/com.threenative.starter.png` with SHA-256s, alongside the executable and every UI resource. Tamper and omission are refused by `resolveContainer`, covered by `tests/desktop-container.test.mjs`.
+- [ ] macOS: `--mode release` produces a `.app` inside a ZIP that extracts outside the project and launches the unchanged starter with its WebView HUD attached.
+- [ ] macOS: the container carries `Contents/Info.plist` at its bundle location and the `.icns` converted from the authored icon by `sips`/`iconutil`.
+- [ ] windows-x64: `--mode release` produces a ZIP that extracts outside the project and launches the unchanged starter with its WebView HUD attached.
+- [ ] windows-x64: the executable carries the authored icon and version strings in its PE resources, embedded by `rcedit`.
+
+**Installed-player proof**
+
+- [x] linux-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+  - Phase 2, 2026-09-13: launched from an unprivileged bubblewrap sandbox with a fresh `HOME`, `PATH=/nonexistent` and no engine checkout bound.
+- [x] linux-x64: the unpacked container launches with networking disabled.
+  - Same run, `--unshare-net`: `TN_NATIVE_SMOKE_READY:webgpu`, assets loaded, HUD attached, 300 frames, non-blank capture.
+- [ ] macOS: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+- [ ] windows-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+- [x] Every claimed OS documents its player-side WebView/library prerequisite, and the Linux one is machine-checked with an actionable failure naming the library and its install step.
+  - `packages/runtime-native/README.md` documents WebKitGTK/GTK, WebView2 Evergreen and system WebKit. A missing `libwebkit2gtk-4.1.so.0` refuses with `TN_NATIVE_STARTER_PREREQUISITE_MISSING` and its install step; covered by `tests/starter-desktop.test.mjs`.
+- [ ] The same launch is performed by a consumer installed from the public registry rather than local tarballs.
+  - Blocked: the public-registry cohort is PRD-196 and the public consumer run is PRD-060/PRD-366. Local tarballs prove the mechanics only.
+
+**Signing separates prepared from signed**
+
+- [x] Unsigned preparation records `signed: false`, names itself unsigned in the release log, and never claims signed readiness.
+  - The produced Linux manifest carries `"signed": false`; `tests/distribution.test.mjs` covers the unsigned-preparation and missing-credentials rows.
+- [ ] windows-x64: the `signtool` path signs the distributed executable and verifies it on a real Windows host.
+  - The adapter is implemented and unit-tested through injected transport, and now signs from the Windows certificate store by subject so a CA-issued key never leaves it. A real-host run is PRD-060.
+- [ ] windows-x64: the artifact is signed with a publicly trusted Authenticode certificate.
+  - Blocked: no code-signing certificate exists for this repository; signing is per developer, per game. Delegated to PRD-060.
+- [ ] macOS: the artifact is notarized by Apple, stapled, and assessed with `spctl` on a real macOS host.
+  - Blocked: no Apple Developer account credentials exist for this repository. Delegated to PRD-060.
+
+**Nothing was invented and nothing regressed**
+
+- [x] The debug raw-executable path still builds and verifies unchanged on linux-x64, macOS and windows-x64.
+  - CI run [34988394963](https://github.com/ThreeNativeHQ/threenative/actions/runs/34988394963): `macOS desktop core`, `Windows desktop core` and `Scaffolded starter desktop artifact` all SUCCESS on this candidate, each running the starter's debug `test:native`.
+- [x] Release mode reuses the existing `--mode` flag from PRD-212; no new public command is added.
+  - `packages/create-threenative/src/build.ts` dispatches on the existing `--mode`; no CLI verb was added.
+- [ ] Every container is produced on its own OS runner; no cross-OS compilation is performed or claimed.
+
+**Downstream consumers and promotion**
+
+- [ ] The container archive hash and its manifest are published as retrievable evidence that another PRD can consume.
+- [ ] PRD-375 appearance consumes this container's hash.
+  - Blocked: PRD-375 phase 2 is its own PRD and its own PR; it was parked on these containers reaching `develop`.
+- [ ] PRD-366 gameplay consumes this container's hash.
+  - Blocked: PRD-366 phase 2, waiting on the same public cohort as the registry-consumer box above.
+- [x] Public promotion stays in PRD-060; this PRD publishes nothing.

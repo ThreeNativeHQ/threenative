@@ -98,6 +98,23 @@ does not machine-check them here.
 node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --container <unpacked-directory>
 ```
 
+### Packaging prerequisites (the developer's machine)
+
+`--mode release` shells out to OS tools to build the container and stamp the game's identity into
+it. They are needed on the machine that packages the game, never on the player's:
+
+| OS | Tool | Needed for | Install |
+| --- | --- | --- | --- |
+| Linux | `tar` | the `tar.gz` container | included with the distribution |
+| macOS | `zip` | the `.zip` container | included with macOS |
+| macOS | `sips`, `iconutil` | converting `app.icon` into the `.icns` the `.app` bundle carries | included with macOS |
+| Windows | `zip` | the `.zip` container | `choco install zip` |
+| Windows | `rcedit` | embedding `app.icon` and the version strings into the executable's PE resources | <https://github.com/electron/rcedit/releases>, with `rcedit.exe` on `PATH` |
+
+A missing tool refuses the release with `TN_DESKTOP_ARCHIVE_TOOL_MISSING` or
+`TN_DESKTOP_RESOURCE_TOOL_MISSING` naming the tool, rather than shipping a container without the
+identity it claims. The icon tools are required only when `app.icon` is configured.
+
 ### Standard distribution recipe
 
 1. Build: `pnpm exec threenative build --target desktop --mode release`.
