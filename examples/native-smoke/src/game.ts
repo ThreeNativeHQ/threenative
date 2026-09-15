@@ -31,6 +31,8 @@ interface ISmokeState extends INetworkingState {
   airborne: boolean;
   currentPointers: number;
   frames: number;
+  preparedFrames: number;
+  preparationErrors: number;
   leftGroundWithTwoPointers: boolean;
   maxPointers: number;
   movedWithTwoPointers: boolean;
@@ -264,10 +266,16 @@ class NativeSmoke extends Scene<ISmokeState> {
   #profileFirstFrameAt: number | undefined;
   #profileFrames = 0;
   #workerProof: IWorkerProof | undefined;
+  #preparedFrames = 0;
+  #preparedTick = -1;
+  #worldDraws = 0;
+  #preparationErrors = 0;
   static override readonly initialState: ISmokeState = {
     airborne: false,
     currentPointers: 0,
     frames: 0,
+    preparedFrames: 0,
+    preparationErrors: 0,
     lastUiIntent: "",
     leftGroundWithTwoPointers: false,
     maxPointers: 0,
@@ -322,6 +330,10 @@ class NativeSmoke extends Scene<ISmokeState> {
 
   override enter(ctx: ICtx<ISmokeState>) {
     networkingGame.enter(ctx.state);
+    ctx.beforeRender(() => {
+      this.#preparedFrames += 1;
+      this.#preparedTick = status.frames;
+    });
     ctx.camera.position.z = 3;
     if (profile.frustum === "contain") {
       // The lattice spans roughly ±2 units, so at z=3 a portrait frustum culled all but a few
@@ -551,7 +563,15 @@ class NativeSmoke extends Scene<ISmokeState> {
     networkingGame.exit();
   }
 
-  override render(): void {
+  override render(ctx: ICtx<ISmokeState>): void {
+    // Scene.render follows an actual world draw: verify the native frame used its last fixed state.
+    this.#worldDraws += 1;
+    if (this.#preparedFrames !== this.#worldDraws || this.#preparedTick !== status.frames)
+      this.#preparationErrors += 1;
+    ctx.state.set({
+      preparedFrames: this.#preparedFrames,
+      preparationErrors: this.#preparationErrors,
+    });
     this.#profileFrames += 1;
     if (this.#profileFrames === profile.warmupFrames + 1) {
       this.#profileFirstFrameAt = performance.now();
