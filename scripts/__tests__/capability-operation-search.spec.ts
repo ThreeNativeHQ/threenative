@@ -1,20 +1,25 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "vitest";
 import { searchCapabilities } from "../../packages/engine-mcp/src/index.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { buildCapabilityManifest } from "../build-capability-manifest.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+let directory: string | undefined;
 let manifestFile: string;
 
 beforeAll(async () => {
-  const directory = await makeTempDir("threenative-operation-search-");
+  directory = await makeTempDir("threenative-operation-search-");
   manifestFile = join(directory, "capabilities.json");
   // Rebuild from source: a hand-edited JSON fixture cannot prove a metadata correction.
   await writeFile(manifestFile, JSON.stringify(buildCapabilityManifest(root)));
 }, 30_000);
+
+afterAll(async () => {
+  if (directory !== undefined) await rm(directory, { force: true, recursive: true });
+});
 
 test.each([
   [
