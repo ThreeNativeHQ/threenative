@@ -14,15 +14,37 @@ function padTo4(buffer: Buffer, fill: number): Buffer {
   return Buffer.concat([buffer, Buffer.alloc(4 - remainder, fill)]);
 }
 
+const QUADS = 32;
+const LOD0_TRIANGLES = QUADS * 2;
+const COARSE_TRIANGLES = QUADS / 2;
+
+/** A grid strip of `QUADS` quads: `2 * QUADS` LOD0 triangles, half of them in the derived level. */
+function gridIndices(triangles: number): number[] {
+  const indices: number[] = [];
+  for (let quad = 0; quad < triangles / 2; quad += 1) {
+    const a = quad * 2;
+    indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  return indices;
+}
+
 /**
- * A minimal valid GLB: one quad (2 triangles) with LOD0 indices, one derived 1-triangle level, and
- * the `TN_discrete_lod` extension on the primitive. Written by hand so the loader — not the asset
+ * A minimal valid GLB: a dense grid with LOD0 indices, a coarser index-only level, and the
+ * `TN_discrete_lod` extension on the primitive. Written by hand so the loader — not the asset
  * package the pipeline owns — is what this test exercises.
  */
 function cookedGlb(): Buffer {
-  const positions = new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]);
-  const baseIndices = new Uint32Array([0, 1, 2, 0, 2, 3]);
-  const levelIndices = new Uint32Array([0, 1, 2]);
+  const positions = new Float32Array((QUADS + 1) * 2 * 3);
+  for (let vertex = 0; vertex <= QUADS; vertex += 1) {
+    positions[vertex * 6] = (vertex / QUADS) * 2 - 1;
+    positions[vertex * 6 + 1] = -1;
+    positions[vertex * 6 + 2] = 0;
+    positions[vertex * 6 + 3] = (vertex / QUADS) * 2 - 1;
+    positions[vertex * 6 + 4] = 1;
+    positions[vertex * 6 + 5] = 0;
+  }
+  const baseIndices = new Uint32Array(gridIndices(LOD0_TRIANGLES));
+  const levelIndices = new Uint32Array(gridIndices(COARSE_TRIANGLES));
   const binPadded = padTo4(
     Buffer.concat([
       Buffer.from(positions.buffer, positions.byteOffset, positions.byteLength),
@@ -31,24 +53,31 @@ function cookedGlb(): Buffer {
     ]),
     0,
   );
+  const positionBytes = positions.byteLength;
+  const baseBytes = baseIndices.byteLength;
   const json = {
     accessors: [
       {
         bufferView: 0,
         componentType: 5126,
-        count: 4,
+        count: (QUADS + 1) * 2,
         max: [1, 1, 0],
         min: [-1, -1, 0],
         type: "VEC3",
       },
-      { bufferView: 1, componentType: 5125, count: 6, type: "SCALAR" },
-      { bufferView: 2, componentType: 5125, count: 3, type: "SCALAR" },
+      { bufferView: 1, componentType: 5125, count: baseIndices.length, type: "SCALAR" },
+      { bufferView: 2, componentType: 5125, count: levelIndices.length, type: "SCALAR" },
     ],
     asset: { version: "2.0" },
     bufferViews: [
-      { buffer: 0, byteLength: 48, byteOffset: 0, target: 34962 },
-      { buffer: 0, byteLength: 24, byteOffset: 48, target: 34963 },
-      { buffer: 0, byteLength: 12, byteOffset: 72, target: 34963 },
+      { buffer: 0, byteLength: positionBytes, byteOffset: 0, target: 34962 },
+      { buffer: 0, byteLength: baseBytes, byteOffset: positionBytes, target: 34963 },
+      {
+        buffer: 0,
+        byteLength: levelIndices.byteLength,
+        byteOffset: positionBytes + baseBytes,
+        target: 34963,
+      },
     ],
     buffers: [{ byteLength: binPadded.length }],
     extensionsUsed: [TN_DISCRETE_LOD],
@@ -60,10 +89,10 @@ function cookedGlb(): Buffer {
             extensions: {
               [TN_DISCRETE_LOD]: {
                 absoluteErrors: [0.05],
-                counts: [1],
+                counts: [COARSE_TRIANGLES],
                 errors: [0.05],
                 indices: [2],
-                lod0Triangles: 2,
+                lod0Triangles: LOD0_TRIANGLES,
                 schemaVersion: 1,
                 sharedVertexBuffers: true,
                 strategy: "discrete",
@@ -137,9 +166,9 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     const value = await loader.model<{ scene: Object3D }>("hull.glb");
     const mesh = firstMesh(value.scene);
     const base = baseGeometryOf(mesh);
-    expect(base.index?.count).toBe(6);
+    expect(base.index?.count).toBe(LOD0_TRIANGLES * 3);
     // LOD0 is what the mesh draws before any selection.
-    expect(mesh.geometry.index?.count).toBe(6);
+    expect(mesh.geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
 
     const scene = new Scene();
     scene.add(mesh);
@@ -147,8 +176,10 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     camera.position.set(0, 0, 100);
     camera.updateMatrixWorld(true);
     const triangles = updateModelLods(scene, camera, 1080);
-    expect(triangles).toBe(1);
-    expect(mesh.geometry.index?.count).toBe(3);
+    expect(triangles).toBe(COARSE_TRIANGLES);
+    expect(mesh.geometry.index?.count).toBe(COARSE_TRIANGLES * 3);
+    // The far route submits at least half the triangles fewer than LOD0 (PRD-377 §8).
+    expect(triangles).toBeLessThanOrEqual(LOD0_TRIANGLES / 2);
     // The derived level shares the authored vertices, so no buffer was duplicated.
     expect(mesh.geometry.getAttribute("position")).toBe(base.getAttribute("position"));
     // LOD0 is still recoverable for picking.
@@ -167,7 +198,7 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     camera.position.set(0, 0, 3);
     camera.updateMatrixWorld(true);
     updateModelLods(scene, camera, 1080);
-    expect(mesh.geometry.index?.count).toBe(6);
+    expect(mesh.geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
   }, 120_000);
 
   it("honours the runtime budget the manifest resolved", async () => {
@@ -194,7 +225,7 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     camera.position.set(0, 0, 100);
     camera.updateMatrixWorld(true);
     // 0.05 * ~9.5 = ~0.47 px: inside the default 1-pixel budget, outside the manifest's 0.1.
-    expect(updateModelLods(scene, camera, 1080)).toBe(2);
-    expect(mesh.geometry.index?.count).toBe(6);
+    expect(updateModelLods(scene, camera, 1080)).toBe(LOD0_TRIANGLES);
+    expect(mesh.geometry.index?.count).toBe(LOD0_TRIANGLES * 3);
   }, 120_000);
 });

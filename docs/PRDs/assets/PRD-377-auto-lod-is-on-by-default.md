@@ -230,11 +230,11 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 #### Phase 2 — ordinary runtime
 
 - [x] Normal model loading reaches the single engine-owned LOD controller. Evidence:
-      `packages/core/__tests__/model-lod-loader.spec.ts` (2/2) drives a hand-written cooked GLB
+      `packages/core/__tests__/model-lod-loader.spec.ts` (3/3) drives a hand-written cooked GLB
       through `createAssetLoader` — fetch, `extensionsUsed` detection, `GLTFLoader`, the reader,
-      `widenQuantizedPositions`, then `attach` — and shows the far camera swapping to the 1-triangle
-      level while the near camera keeps the 2-triangle LOD0. The level shares the authored position
-      attribute by reference.
+      `widenQuantizedPositions`, then `attach` — and shows the far camera swapping a 64-triangle
+      LOD0 to the 16-triangle level while the near camera keeps LOD0. The level shares the authored
+      position attribute by reference.
 - [x] Projection and hysteresis tests pass on decoded artifacts. Evidence:
       `packages/core/__tests__/model-lod.spec.ts` (17/17 — perspective/orthographic/zoom projection,
       conservative nearest depth, near-plane/inside-bounds full detail, immediate refinement,
@@ -261,16 +261,30 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 3 — consumer qualification
 
-- [ ] Browser WebGPU consumer evidence establishes the default policy.
-- [ ] Windows native consumer evidence establishes the default policy.
-- [ ] macOS native consumer evidence establishes the default policy.
-- [ ] Linux native consumer evidence establishes the default policy.
-- [ ] Android's policy is backed by target evidence or explicitly remains baseline-only.
-- [ ] iOS's policy is backed by target evidence or explicitly remains baseline-only.
-- [ ] The dense-asset triangle-reduction gate passes.
-- [ ] The frame-time regression gates pass on every default-enabled target.
-- [ ] The rendered-quality gate passes on the declared corpus.
-- [ ] The new discrete-artifact byte budgets pass.
+- [ ] Browser WebGPU consumer evidence establishes the default policy. NOT RUN. The lane is
+      available (`doctor` finds node/playwright/chromium/display and adb), but there is no example
+      whose assets the `model` pass actually cooks, so there is no compiled `TN_discrete_lod` model
+      to serve. Attempting the quarry fixture (`quarry-boot`) exposed three lane problems, each
+      recorded rather than worked around: Vite v8 binds `localhost`/IPv6 only, so the runner's
+      `127.0.0.1` readiness probe times out (`curl localhost` 200, `127.0.0.1` 000); with
+      `--url http://localhost:5173` the bridge `describe` exceeded the 15 s operation timeout on the
+      procedurally heavy scene; and with the timeout raised the page navigated during the handshake
+      (Vite dependency pre-bundling). A browser proof needs a purpose-built compiled example and a
+      warmed build first.
+- [ ] Windows native consumer evidence establishes the default policy. NOT RUN; no host here.
+- [ ] macOS native consumer evidence establishes the default policy. NOT RUN; no host here.
+- [ ] Linux native consumer evidence establishes the default policy. NOT RUN.
+- [ ] Android's policy is backed by target evidence or explicitly remains baseline-only. NOT RUN;
+      adb is on PATH, no emulator or device was started.
+- [ ] iOS's policy is backed by target evidence or explicitly remains baseline-only. BLOCKED: `xcrun`
+      is not on PATH (macOS only).
+- [ ] The dense-asset triangle-reduction gate passes. Mechanism-level reduction is proven in Node
+      (`model-lod-loader.spec.ts`: a 64-triangle LOD0 grid selects the 16-triangle level on the far
+      route, 75% fewer), but the declared dense-asset browser/native route with real frame meters is
+      NOT RUN.
+- [ ] The frame-time regression gates pass on every default-enabled target. NOT RUN.
+- [ ] The rendered-quality gate passes on the declared corpus. NOT RUN.
+- [ ] The new discrete-artifact byte budgets pass. NOT RUN.
 
 #### Phase 4 — default and discovery
 
