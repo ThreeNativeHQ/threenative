@@ -1687,7 +1687,7 @@ describe("SceneRenderProjection declined-frame cost", () => {
     }
   });
 
-  it("still forces the matrix pass on frames it projects", () => {
+  it("refreshes the matrix pass on frames it projects without forcing", () => {
     const scene = new Scene();
     fill(scene, new MeshStandardMaterial(), 300);
     const projection = projected(scene, 2);
@@ -1696,7 +1696,9 @@ describe("SceneRenderProjection declined-frame cost", () => {
     const updateSpy = vi.spyOn(scene, "updateMatrixWorld");
     try {
       projection.reconcile();
-      expect(updateSpy).toHaveBeenCalledWith(true);
+      // Three's own renderer contract: one pass, no force, so a game's static marking survives.
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      expect(updateSpy).toHaveBeenCalledWith();
     } finally {
       updateSpy.mockRestore();
     }
@@ -1726,5 +1728,116 @@ describe("SceneRenderProjection declined-frame cost", () => {
     projection.reconcile();
     expect(projection.deoptimized).toBe(true);
     expect(projection.report.reasonCode).toBe("renderHook");
+  });
+});
+
+/**
+ * A game that has promised to keep its own scene matrices current — by marking the scene or a
+ * subtree `matrixWorldAutoUpdate = false` — must keep that promise. The reconciler used to run a
+ * forced whole-scene matrix pass (`updateMatrixWorld(true)`) on every projected frame, defeating
+ * both the authored flag and Three's own `matrixWorldNeedsUpdate` propagation. Three's renderers
+ * call `updateMatrixWorld()` (no force) and only when the scene still auto-updates its world, which
+ * is the contract honoured here.
+ *
+ * A note on where a sentinel has to sit to prove a subtree was left alone: in Three 0.185 a node
+ * marked `matrixWorldAutoUpdate = false` already skips recomposing *its own* `matrixWorld` even
+ * under a forced pass — the flag guards that one node. What a forced pass still does is overwrite
+ * that node's descendants, which inherit `force = true` while a node still auto-updating skips
+ * them. So the sentinel goes one level inside the frozen subtree root, which is the behaviour the
+ * forced pass destroyed and the unflagged pass preserves.
+ */
+describe("SceneRenderProjection respects an authored static marking", () => {
+  // (a) The ordinary case: nothing is marked, an object moves, the mirror still sees it.
+  it("reflects a moving projected object on the next reconcile", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    const mover = meshes[7] as Mesh;
+    mover.position.set(123, 45, 6);
+    projection.reconcile();
+    expect(projection.inspect(mover)?.matrixWorld.elements.slice(12, 15)).toEqual([123, 45, 6]);
+
+    mover.position.set(-7, 8, 9);
+    projection.reconcile();
+    expect(projection.inspect(mover)?.matrixWorld.elements.slice(12, 15)).toEqual([-7, 8, 9]);
+  });
+
+  // (b) A frozen subtree under a still parent. Its world matrices carry a sentinel; a forced pass
+  // recomposes the descendants and destroys it, the unflagged pass leaves the whole subtree alone.
+  it("leaves a static subtree's world matrices untouched", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    fill(scene, material, 300);
+    // The scene root is static too, so it does not re-dirty itself and hand the subtree `force`.
+    scene.matrixAutoUpdate = false;
+
+    const frozen = new Group();
+    frozen.matrixAutoUpdate = false;
+    frozen.matrixWorldAutoUpdate = false;
+    const held: Mesh[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      const mesh = new Mesh(GEOMETRY, material);
+      mesh.matrixAutoUpdate = false;
+      mesh.matrixWorldNeedsUpdate = false;
+      frozen.add(mesh);
+      held.push(mesh);
+    }
+    scene.add(frozen);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    const sentinel = held[0] as Mesh;
+    sentinel.matrixWorld.copy(new Matrix4().makeTranslation(999, 0, 0));
+    sentinel.matrixWorldNeedsUpdate = false;
+
+    projection.reconcile();
+    expect(projection.inspect(sentinel)?.matrixWorld.elements.slice(12, 15)).toEqual([999, 0, 0]);
+  });
+
+  // (c) The scene itself marks its world static: the reconciler must not walk it at all, yet the
+  // mirror keeps drawing from the matrices that are already present.
+  it("does not walk a source scene that marks its world static", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    scene.matrixWorldAutoUpdate = false;
+    const walk = vi.spyOn(scene, "updateMatrixWorld");
+    try {
+      projection.reconcile();
+      expect(walk).not.toHaveBeenCalled();
+    } finally {
+      walk.mockRestore();
+    }
+    expect(projection.inspect(meshes[3] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([3, 0, 0]);
+  });
+
+  // (d) Safety: a static-marked object whose parent moved this frame is still refreshed, because
+  // the moving parent's update propagates the world change down to it.
+  it("refreshes a static-marked subtree whose parent moved", () => {
+    const scene = new Scene();
+    const material = new MeshStandardMaterial();
+    fill(scene, material, 300);
+
+    const mover = new Group();
+    const held: Mesh[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      const mesh = new Mesh(GEOMETRY, material);
+      mesh.matrixAutoUpdate = false;
+      mover.add(mesh);
+      held.push(mesh);
+    }
+    scene.add(mover);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    mover.position.set(50, 0, 0);
+    projection.reconcile();
+    expect(projection.inspect(held[0] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([50, 0, 0]);
   });
 });
