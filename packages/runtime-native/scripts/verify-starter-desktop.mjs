@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
@@ -163,6 +163,261 @@ export function analyzeStarterLog(log, frames = 300) {
     failures.push('startup gate never opened before capture (TN_STARTUP_CAPTURE_READY:0)');
   }
   return failures;
+}
+
+const CONTAINER_MANIFEST = 'threenative-container.json';
+// The scaffold copies this PNG to a starter's `public/icon.png` as the engine's own art. A
+// distributed game whose embedded icon is still these bytes never replaced it.
+const ENGINE_DEFAULT_ICON = new URL(
+  '../../create-threenative/template-assets/icon.png',
+  import.meta.url,
+);
+
+function sha256File(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function containerManifestPath(root) {
+  for (const relative of [join('Contents', 'Resources', CONTAINER_MANIFEST), CONTAINER_MANIFEST]) {
+    if (existsSync(join(root, relative))) return join(root, relative);
+  }
+  return undefined;
+}
+
+/** First `.desktop` entry named by the container's resource inventory, so the id stays authored. */
+function desktopEntryPath(manifest) {
+  const resources = manifest.resources;
+  if (!resources || typeof resources !== 'object') return undefined;
+  return Object.keys(resources).find(
+    (relative) => relative.endsWith('.desktop') && relative.includes('applications/'),
+  );
+}
+
+function desktopEntryValues(text) {
+  const values = {};
+  for (const line of text.split('\n')) {
+    const match = /^([A-Za-z][A-Za-z0-9-]*)=(.*)$/u.exec(line.trim());
+    if (match && values[match[1]] === undefined) values[match[1]] = match[2];
+  }
+  return values;
+}
+
+function plistString(plist, key) {
+  const match = new RegExp(`<key>${key}</key>\\s*<string>([\\s\\S]*?)</string>`, 'u').exec(plist);
+  return match?.[1]
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'");
+}
+
+function inspectContainerIcon(containerRoot, manifest, config, options) {
+  const configured = config.app?.icon;
+  if (configured === undefined) return undefined;
+  const configuredPath = resolve(configured);
+  if (!existsSync(configuredPath)) {
+    throw new Error(
+      `TN_NATIVE_STARTER_BRAND_CONFIG_ICON_MISSING: app.icon does not exist: ${configuredPath}`,
+    );
+  }
+  const declared = manifest.app?.icon;
+  if (typeof declared !== 'string' || declared.length === 0) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_ICON_MISSING: the container manifest names no embedded application icon.',
+    );
+  }
+  const iconPath = join(containerRoot, declared);
+  if (!existsSync(iconPath) || !statSync(iconPath).isFile()) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_ICON_MISSING: ${declared} is named by the container but absent from the payload.`,
+    );
+  }
+  const embedded = sha256File(iconPath);
+  const engineIcon = options.engineIcon
+    ?? (existsSync(ENGINE_DEFAULT_ICON) ? fileURLToPath(ENGINE_DEFAULT_ICON) : undefined);
+  if (engineIcon !== undefined && embedded === sha256File(engineIcon)) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT: the embedded application icon is the engine default, not the game-authored icon.',
+    );
+  }
+  if (typeof manifest.app.iconSha256 === 'string' && manifest.app.iconSha256 !== embedded) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_TAMPERED: ${declared} does not match the container's recorded icon hash.`,
+    );
+  }
+  if (embedded !== sha256File(configuredPath)) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_ICON_MISMATCH: the embedded icon ${declared} is not the icon app.icon declares.`,
+    );
+  }
+  return { path: declared, sha256: embedded };
+}
+
+function linuxLauncherName(containerRoot, manifest) {
+  const relative = desktopEntryPath(manifest);
+  if (relative === undefined) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_DESKTOP_ENTRY_MISSING: the Linux container declares no .desktop application metadata.',
+    );
+  }
+  const path = join(containerRoot, relative);
+  if (!existsSync(path)) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_DESKTOP_ENTRY_MISSING: ${relative} is named but absent from the payload.`,
+    );
+  }
+  const entry = desktopEntryValues(readFileSync(path, 'utf8'));
+  if (entry.Name === undefined) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_DESKTOP_ENTRY_MISSING: ${relative} has no Name= entry for the file manager.`,
+    );
+  }
+  return { name: entry.Name, source: relative };
+}
+
+function darwinLauncherName(containerRoot) {
+  const relative = join('Contents', 'Info.plist');
+  const path = join(containerRoot, relative);
+  if (!existsSync(path)) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_PLIST_ENTRY_MISSING: the macOS bundle has no ${relative}.`,
+    );
+  }
+  const name =
+    plistString(readFileSync(path, 'utf8'), 'CFBundleName') ??
+    plistString(readFileSync(path, 'utf8'), 'CFBundleDisplayName');
+  if (name === undefined) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_PLIST_ENTRY_MISSING: Info.plist has no CFBundleName or CFBundleDisplayName.',
+    );
+  }
+  return { name, source: relative };
+}
+
+function inspectContainerName(containerRoot, manifest, config, platform) {
+  const expected = config.app?.name;
+  if (expected === undefined) return undefined;
+  // Windows identity lives in the executable's PE resource section, which is written and read by
+  // OS tooling, not this inspector; the manifest records the identity the writer embedded.
+  const found = platform === 'linux'
+    ? linuxLauncherName(containerRoot, manifest)
+    : platform === 'darwin'
+      ? darwinLauncherName(containerRoot)
+      : { name: manifest.app?.name, source: CONTAINER_MANIFEST };
+  if (found.name !== expected) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH: the ${platform} launcher names '${found.name}', config says '${expected}'.`,
+    );
+  }
+  return found;
+}
+
+function assertDeclaredLoading(declared, config) {
+  const expected = config.bootSplash ?? null;
+  const actual = declared.bootSplash ?? null;
+  if (expected === null || actual === null) {
+    if (expected !== actual) {
+      throw new Error(
+        'TN_NATIVE_STARTER_CONTAINER_LOADING_MISSING: the container does not declare the boot/loading sequence the config requires.',
+      );
+    }
+    return { bootSplash: actual, source: CONTAINER_MANIFEST };
+  }
+  const expectedImage = expected.image === undefined ? null : sha256File(resolve(expected.image));
+  if (
+    actual.backgroundColor !== expected.backgroundColor ||
+    (actual.imageSha256 ?? null) !== expectedImage
+  ) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_LOADING_MISMATCH: the container boot/loading sequence differs from the consumer config.',
+    );
+  }
+  return { bootSplash: actual, source: CONTAINER_MANIFEST };
+}
+
+function inspectContainerLoading(containerRoot, manifest, config) {
+  if (manifest.loading !== undefined) return assertDeclaredLoading(manifest.loading, config);
+  // PRD-365 containers already declare their launch surface, which is what the game's loading
+  // handoff renders through. Fall back to it until the container records a boot/loading block.
+  if (config.ui === undefined && config.bootSplash === undefined) return undefined;
+  const renderer = config.ui?.renderer ?? 'native';
+  if (renderer === 'web') {
+    const entry = manifest.ui?.entry;
+    if (typeof entry !== 'string' || !existsSync(join(containerRoot, entry))) {
+      throw new Error(
+        'TN_NATIVE_STARTER_CONTAINER_LOADING_MISSING: the container declares no UI launch entry for the web loading handoff.',
+      );
+    }
+    return { uiEntry: entry, source: CONTAINER_MANIFEST };
+  }
+  if (manifest.ui !== null && manifest.ui !== undefined) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_LOADING_MISMATCH: the config uses the native loading path but the container ships a UI launch surface.',
+    );
+  }
+  return { uiEntry: null, source: CONTAINER_MANIFEST };
+}
+
+function readContainerManifest(containerRoot) {
+  const manifestPath = containerManifestPath(containerRoot);
+  if (manifestPath === undefined) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_MISSING: no ${CONTAINER_MANIFEST} under ${containerRoot}.`,
+    );
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_MANIFEST_INVALID: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (
+    !manifest ||
+    typeof manifest !== 'object' ||
+    Array.isArray(manifest) ||
+    !manifest.app ||
+    typeof manifest.app !== 'object'
+  ) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_MANIFEST_INVALID: the manifest carries no application identity.',
+    );
+  }
+  return manifest;
+}
+
+/**
+ * Inspect a distributed desktop container's brand against the consumer config that declared it.
+ *
+ * `root` is the directory PRD-365 packages (the single top-level folder an archive extracts to).
+ * Three independent surfaces are compared and each failure names the actual cause: the embedded
+ * application icon, the launcher/file-manager application name, and the declared loading/launch
+ * sequence. It never launches the app and never inspects the runtime SDL window, so it makes no
+ * claim about pixels a player sees.
+ */
+export function inspectContainerBrand(root, config, options = {}) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error('TN_NATIVE_STARTER_BRAND_CONFIG_INVALID: consumer config must be an object.');
+  }
+  const containerRoot = resolve(root);
+  if (!existsSync(containerRoot) || !statSync(containerRoot).isDirectory()) {
+    throw new Error(`TN_NATIVE_STARTER_CONTAINER_MISSING: ${containerRoot} is not a directory.`);
+  }
+  const manifest = readContainerManifest(containerRoot);
+  const platform = String(manifest.platform ?? process.platform).split('-')[0];
+  const evidence = {
+    icon: inspectContainerIcon(containerRoot, manifest, config, options),
+    name: inspectContainerName(containerRoot, manifest, config, platform),
+    loading: inspectContainerLoading(containerRoot, manifest, config),
+  };
+  if (Object.values(evidence).every((value) => value === undefined)) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CONTAINER_BRAND_UNVERIFIED: the container and config declare no brand to inspect.',
+    );
+  }
+  return evidence;
 }
 
 export function verifyStarterDesktop({ frames = 300, project = process.cwd() } = {}) {

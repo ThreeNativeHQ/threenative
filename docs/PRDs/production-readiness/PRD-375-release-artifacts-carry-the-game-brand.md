@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) is parked on PRD-365 containers, which are not on `develop` yet.
+**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) landed its brand-inspection caller, fixtures and README (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)); the container launch, OS-launcher inspection and human capture stay blocked on PRD-365 containers (draft PR #224, not on `develop`).
 Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
@@ -109,19 +109,28 @@ pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts
 
 ### Phase 2 — Distributed desktop apps display the developer brand
 
-**Parked:** this phase consumes PRD-365's complete desktop containers and native icon resources
-(`scripts/desktop-distribution.mjs`). PRD-365 phase 1 is still draft PR #224 and none of it is on
-`develop`, so there is no container to inspect yet. Not started rather than narrowed to SDL
-window-icon evidence, which the acceptance criteria explicitly forbid.
+**Landing split:** the brand-inspection half landed here — `inspectContainerBrand(root, config)`
+compares the embedded icon, the launcher/file-manager name and the loading/launch sequence against
+the consumer config, failing closed with a distinct code per cause. The container-dependent half is
+still blocked: PRD-365's complete containers and native icon resources
+(`scripts/desktop-distribution.mjs`) live only on draft PR #224, none of it on `develop`, so there
+is nothing to extract or launch yet. The desktop native lane is also environmentally blocked on this
+host (GBM buffer creation fails on every desktop run). Not narrowed to SDL window-icon evidence,
+which the acceptance criteria explicitly forbid.
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
-- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
+      `inspectContainerBrand` exported and fixture-covered; `pnpm typecheck` pass, `pnpm lint` exit 0, `primary-docs.spec.ts` 7/7.
+- [x] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+      29/29 passed 2026-09-15, including the required row and the engine-icon / plist / .desktop / missing-container controls.
+- [x] Observed red recorded, then restored green
+      Test-first red: 10 failed / 19 passed with `inspectContainerBrand is not a function`; then 29/29. Record: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-375-readiness-phase-2-<date>.md`
+      Blocked on PR #224 landing a real container; this host also fails desktop runs on GBM buffer creation. No launch or OS-launcher inspection was attempted or claimed.
+- [x] Evidence record written: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`
 - [ ] Independent reviewer returned PASS
+      Blocked: no reviewer has seen this phase yet; the container half stays unverified until #224 is on `develop`.
 
 **Files (maximum five):**
 

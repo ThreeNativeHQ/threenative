@@ -1,15 +1,17 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { test } from 'vitest';
 
 import {
   analyzeStarterLog,
+  inspectContainerBrand,
   inspectStarterScreenshot,
 } from '../scripts/verify-starter-desktop.mjs';
 
@@ -397,4 +399,238 @@ test('starter verifier executes through a pnpm-style symlink', () => {
   const result = spawnSync(process.execPath, [entrypoint], { cwd: directory, encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /TN_NATIVE_STARTER_ARTIFACT_MISSING/u);
+});
+
+// PRD-375 phase 2: the distributed desktop container must carry the game's brand, not the
+// engine's. These fixtures stage the directory PRD-365 produces (manifest, platform metadata,
+// embedded icon); they make no claim of a real packaged launch or OS launcher inspection, which
+// stays blocked until PRD-365's containers are on `develop`.
+function sha256Of(contents) {
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+function writeContainerFile(root, relative, contents) {
+  const path = join(root, relative);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, contents);
+  return { path, sha256: sha256Of(contents) };
+}
+
+function authoredIcon(contents = 'authored game icon') {
+  const directory = makeTempDirSync('starter-brand-icon-');
+  const path = join(directory, 'icon.png');
+  writeFileSync(path, contents);
+  return path;
+}
+
+function brandConfig(iconPath) {
+  return {
+    app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7, icon: iconPath },
+    ui: { renderer: 'web' },
+    bootSplash: { backgroundColor: '#0d1b2a' },
+  };
+}
+
+function stageIcon(root, platform, embeddedIcon, app, resources) {
+  if (embeddedIcon === null) return;
+  const iconRelative = platform === 'darwin'
+    ? 'Contents/Resources/orbit.icns'
+    : 'share/icons/hicolor/256x256/apps/com.example.orbit.png';
+  const icon = writeContainerFile(root, iconRelative, embeddedIcon);
+  resources[iconRelative] = { sha256: icon.sha256 };
+  app.icon = iconRelative;
+  app.iconSha256 = icon.sha256;
+}
+
+function stagePlatformMetadata(root, platform, app, resources, { dropPlistName, dropDesktopName }) {
+  if (platform === 'linux') {
+    const relative = 'share/applications/com.example.orbit.desktop';
+    const entry = dropDesktopName
+      ? '[Desktop Entry]\nType=Application\n'
+      : `[Desktop Entry]\nType=Application\nName=${app.name}\nExec=orbit\nIcon=com.example.orbit\n`;
+    resources[relative] = writeContainerFile(root, relative, entry).sha256;
+  }
+  if (platform === 'darwin') {
+    const plist = dropPlistName
+      ? '<plist version="1.0"><dict></dict></plist>'
+      : `<plist version="1.0"><dict><key>CFBundleName</key><string>${app.name}</string></dict></plist>`;
+    resources['Contents/Info.plist'] = writeContainerFile(root, 'Contents/Info.plist', plist).sha256;
+  }
+}
+
+function brandedContainer({
+  platform = 'linux',
+  config,
+  embeddedIcon = Buffer.from('authored game icon'),
+  manifestName,
+  dropIconResource = false,
+  dropPlistName = false,
+  dropDesktopName = false,
+  loading,
+  ui = true,
+} = {}) {
+  const directory = makeTempDirSync('starter-brand-container-');
+  const root = join(directory, 'game');
+  mkdirSync(root, { recursive: true });
+  const executableRelative = platform === 'darwin'
+    ? 'Contents/MacOS/orbit'
+    : platform === 'win32'
+      ? 'orbit.exe'
+      : 'orbit';
+  const executable = writeContainerFile(root, executableRelative, Buffer.from('game executable'));
+  const resources = { [executableRelative]: { sha256: executable.sha256 } };
+  const app = {
+    id: config.app.id,
+    name: manifestName ?? config.app.name,
+    version: config.app.version,
+    build: config.app.build,
+  };
+  stageIcon(root, platform, dropIconResource ? null : embeddedIcon, app, resources);
+  stagePlatformMetadata(root, platform, app, resources, { dropPlistName, dropDesktopName });
+  if (ui) {
+    resources['ui/index.html'] = writeContainerFile(root, 'ui/index.html', '<main>HUD</main>').sha256;
+  }
+  const manifestRelative = platform === 'darwin'
+    ? 'Contents/Resources/threenative-container.json'
+    : 'threenative-container.json';
+  writeContainerFile(
+    root,
+    manifestRelative,
+    JSON.stringify(
+      {
+        app,
+        dependencies: [],
+        executable: executableRelative,
+        format: platform === 'linux' ? 'tar.gz' : 'zip',
+        platform: `${platform}-x64`,
+        prerequisites: [],
+        resources,
+        schemaVersion: 1,
+        ui: ui ? { directory: 'ui', entry: 'ui/index.html' } : null,
+        ...(loading === undefined ? {} : { loading }),
+      },
+      null,
+      2,
+    ),
+  );
+  return root;
+}
+
+const ENGINE_ICON = authoredIcon('the engine default icon');
+
+test('a branded container matches its consumer config', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  const root = brandedContainer({ config });
+  const report = inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON });
+  assert.equal(report.name.name, 'Orbit Game');
+  assert.equal(report.icon.sha256, sha256Of(readFileSync(icon)));
+});
+
+test('should reject a distributed starter when the embedded application icon or runtime brand differs from its consumer config', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  // A different game's icon, not the engine default: only the config comparison can catch this.
+  const wrongIcon = brandedContainer({ config, embeddedIcon: Buffer.from('another game icon') });
+  assert.throws(
+    () => inspectContainerBrand(wrongIcon, config, { engineIcon: ENGINE_ICON }),
+    /TN_NATIVE_STARTER_CONTAINER_ICON_MISMATCH/u,
+  );
+  const wrongName = brandedContainer({ config, manifestName: 'Engine Default' });
+  assert.throws(
+    () => inspectContainerBrand(wrongName, config, { engineIcon: ENGINE_ICON }),
+    /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u,
+  );
+});
+
+test('an embedded engine-default icon is rejected even when the config declares custom art', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  const root = brandedContainer({ config, embeddedIcon: readFileSync(ENGINE_ICON) });
+  assert.throws(
+    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    /TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT/u,
+  );
+});
+
+test('a container that dropped its icon resource fails closed', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  const root = brandedContainer({ config, dropIconResource: true });
+  assert.throws(
+    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    /TN_NATIVE_STARTER_CONTAINER_ICON_MISSING/u,
+  );
+});
+
+test('a macOS bundle without a CFBundleName entry fails closed', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  const root = brandedContainer({ config, platform: 'darwin', dropPlistName: true });
+  assert.throws(
+    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    /TN_NATIVE_STARTER_CONTAINER_PLIST_ENTRY_MISSING/u,
+  );
+});
+
+test('a Linux container without .desktop metadata fails closed', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  const root = brandedContainer({ config, dropDesktopName: true });
+  assert.throws(
+    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    /TN_NATIVE_STARTER_CONTAINER_DESKTOP_ENTRY_MISSING/u,
+  );
+});
+
+test('a missing container or malformed manifest is a hard failure', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  assert.throws(
+    () => inspectContainerBrand(join(makeTempDirSync('starter-brand-empty-'), 'absent'), config),
+    /TN_NATIVE_STARTER_CONTAINER_MISSING/u,
+  );
+  const malformed = brandedContainer({ config });
+  writeFileSync(join(malformed, 'threenative-container.json'), '{ not json');
+  assert.throws(
+    () => inspectContainerBrand(malformed, config),
+    /TN_NATIVE_STARTER_CONTAINER_MANIFEST_INVALID/u,
+  );
+});
+
+test('the declared loading sequence must match the consumer config', () => {
+  const icon = authoredIcon();
+  const config = brandConfig(icon);
+  const matching = brandedContainer({
+    config,
+    loading: { bootSplash: { backgroundColor: '#0d1b2a', imageSha256: null } },
+  });
+  assert.deepEqual(
+    inspectContainerBrand(matching, config, { engineIcon: ENGINE_ICON }).loading.bootSplash,
+    { backgroundColor: '#0d1b2a', imageSha256: null },
+  );
+  const wrong = brandedContainer({
+    config,
+    loading: { bootSplash: { backgroundColor: '#ffffff', imageSha256: null } },
+  });
+  assert.throws(
+    () => inspectContainerBrand(wrong, config, { engineIcon: ENGINE_ICON }),
+    /TN_NATIVE_STARTER_CONTAINER_LOADING_MISMATCH/u,
+  );
+});
+
+test('a container with no inspectable brand is a failure, not a pass', () => {
+  const bare = { app: { id: 'com.example.orbit', version: '1.2.3', build: 7 } };
+  const root = brandedContainer({ config: bare, dropIconResource: true, ui: false });
+  assert.throws(
+    () => inspectContainerBrand(root, bare),
+    /TN_NATIVE_STARTER_CONTAINER_BRAND_UNVERIFIED/u,
+  );
+});
+
+test('a malformed consumer config throws instead of reporting a pass', () => {
+  assert.throws(
+    () => inspectContainerBrand(makeTempDirSync('starter-brand-config-'), null),
+    /TN_NATIVE_STARTER_BRAND_CONFIG_INVALID/u,
+  );
 });
