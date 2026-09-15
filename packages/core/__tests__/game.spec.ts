@@ -963,7 +963,7 @@ describe("IGame", () => {
       // The frame budget ships on by default, so every sample carries its phase split; the
       // render-metric fields below are what this test is about.
       expect(series.every((sample) => sample.phases !== undefined)).toBe(true);
-      expect(series.map(({ phases: _phases, ...sample }) => sample)).toEqual([
+      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 3, frameMs: 16, triangles: 30 },

@@ -325,10 +325,14 @@ export { updateClusteredMeshes } from "./clustered-mesh.js";
 // to call them would be re-implementing the cut rather than using it.
 export type { IClusteredMeshOptions, IClusterTable } from "./clustered-mesh.js";
 /**
- * Read where the frame's milliseconds went, per presented frame, on any platform.
+ * Read where the frame's milliseconds went, per presented frame, on any platform; each
+ * `TN_FRAME_BUDGET` window also carries the draw calls and triangles each render pass submitted.
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay
+ * @situation split a frame's draw calls and triangles per render pass (main, shadow, reflection)
+ * @situation tell a shadow or reflection pass's cost from the main colour pass
  * @constraint on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
+ * @constraint per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main
  * @example defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
  */
 export {
@@ -340,10 +344,12 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
+  IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
+export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 /**
  * Register work that reads a body or camera after physics has moved it and before this frame draws.
  * The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
