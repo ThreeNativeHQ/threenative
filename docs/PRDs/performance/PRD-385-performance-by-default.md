@@ -161,8 +161,8 @@ render-target samples](https://threejs.org/docs/pages/Renderer.html#currentSampl
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: implementation agent]: Repeated eligible `SkeletalMesh3D` creation and first clip use perform at most one full binding audit and one full stride sample per equivalent source/clip/input combination, including Midway's uniformly scale-varied crew clones through proven normalization; existing calls require no new option. Evidence: pending.
-- [ ] AC-2 [local; actor: implementation agent]: Source, clone, hierarchy, track-content and transform changes cannot reuse stale preparation; missing/zero-bound required clips still fail through the constructor. Evidence: pending.
+- [ ] AC-1 [local; actor: implementation agent]: Repeated eligible `SkeletalMesh3D` creation and first clip use perform at most one full binding audit and one full stride sample per equivalent source/clip/input combination, including Midway's uniformly scale-varied crew clones through proven normalization; existing calls require no new option. Evidence: shared path implemented and covered by focused specs (`PropertyBinding.bind` and `AnimationMixer.setTime` counts); the scale-varied Midway crew case is not yet run on the real GLBs, so this stays open.
+- [x] AC-2 [local; actor: implementation agent]: Source, clone, hierarchy, track-content and transform changes cannot reuse stale preparation; missing/zero-bound required clips still fail through the constructor. Evidence: `packages/core/__tests__/animation.spec.ts` "SkeletalMesh3D shared preparation reuse" — hierarchy, clip-keyframe, undriven-bone and ambiguous-name changes miss, and missing/zero-bound required clips still throw; `pnpm exec vitest run packages/core/__tests__/animation.spec.ts` 40 passed.
 - [ ] AC-3 [local; actor: implementation agent]: Real sailor/director/pilot fixtures preserve baseline pose, stride values, per-instance phase/rate, one-shot timing and `strideSync: false` reporting; paired preparation medians improve at least 20% on a declared repeated-rig workload. Evidence: pending.
 - [ ] AC-4 [local; actor: implementation agent]: Steady iterations eliminate the specific scratch-map, callback-snapshot-array, unread stride-report and scalar-query record construction sites in decision B. Caller-visible event/snapshot objects and first-seen capacity growth are explicitly excluded; this is not a claim about every allocation inside those methods. Evidence: pending.
 - [ ] AC-5 [local; actor: implementation agent]: Retained stride/surface/metric observations stay unchanged after later updates; current values, world-before-overlay counts and diagnostic cadence match baseline. Evidence: pending.
@@ -181,20 +181,21 @@ leave its criterion open and record the concrete attempted command; do not repla
 
 ### Phase 1 — Existing rig creation shares equivalent preparation
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-1–AC-3
-**Files:** `packages/core/src/animation.ts`, `skeletal-mesh.ts`, `clip-audit.ts`; existing animation
-specs and the smallest real-rig fixture needed to exercise the public constructors.
+**Files:** `packages/core/src/animation.ts`, `packages/core/src/rig-preparation.ts`,
+`packages/core/src/skeletal-mesh.ts`; `packages/core/__tests__/animation.spec.ts`.
 
-Implement the conservative reuse path against real call sites. Validate binary decoding and collect
-a paired baseline first. Include the actual three-rig deck composition, scale differences, clip
-switches and required-clip failures. Cache-hit evidence must come from the public constructor/update
-path, not a test importing an otherwise unused helper.
+The conservative reuse path is wired into the existing `SkeletalMesh3D` → `AnimationPlayer`
+constructor and lazy stride measurement, with a per-source `WeakMap` cache and content signatures.
+`clip-audit.ts` was left as the audit primitive rather than moving it. Still missing: the real
+sailor/director/pilot GLBs and the warmed baseline/candidate timing comparison (AC-3).
 
-- [ ] Shared preparation and conservative fallback reach existing constructor/clip consumers — E1: focused animation specs and warmed alternating baseline/candidate preparation timings.
+- [ ] Shared preparation and conservative fallback reach existing constructor/clip consumers — E1: 8 focused animation cases pass (`pnpm exec vitest run packages/core/__tests__/animation.spec.ts`, 40 passed); real fixtures and warmed alternating timings pending.
 
-**Checkpoint:** Pending; review cache keys, mutation/fallback correctness, restored mixer state and
-actual savings. Stop cache expansion if evidence does not meet AC-3.
+**Checkpoint:** Partial; cache keys, mutation/fallback correctness and the fallback paths are
+covered by focused specs. Real-fixture savings (AC-3) are not yet measured, so cache scope must not
+expand before that lane runs.
 
 ### Phase 2 — Existing frame consumers reuse private storage
 

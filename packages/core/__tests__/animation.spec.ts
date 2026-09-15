@@ -1,5 +1,6 @@
 import {
   AnimationClip,
+  AnimationMixer,
   Bone,
   BufferGeometry,
   Float32BufferAttribute,
@@ -7,11 +8,12 @@ import {
   MeshBasicMaterial,
   NumberKeyframeTrack,
   Object3D,
+  PropertyBinding,
   Skeleton,
   SkinnedMesh,
   VectorKeyframeTrack,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 import { SkeletalMesh3D } from "../src/skeletal-mesh.js";
 
@@ -716,5 +718,174 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     }
     expect(player.stride.rate).toBeCloseTo(2, 1);
     expect(player.stride.synced).toBe(true);
+  });
+});
+
+/**
+ * Shared preparation across clones of one source.
+ *
+ * A party of identical characters built from one GLB pays for the binding audit and the
+ * foot-plant sample once per member. The reuse is guarded by content signatures, so an edited
+ * source, clip or clone falls back to its own measurement — a fast answer is never a stale one.
+ */
+describe("SkeletalMesh3D shared preparation reuse", () => {
+  /** Three bones plus a clip that drives all of them and carries no root motion. */
+  const fixture = () => {
+    const root = new Group();
+    root.name = "source-rig";
+    const hips = new Bone();
+    hips.name = "Hips";
+    const spine = new Bone();
+    spine.name = "Spine";
+    const foot = new Bone();
+    foot.name = "Foot";
+    hips.add(spine);
+    spine.add(foot);
+    root.add(hips);
+    return { root, hips, spine, foot };
+  };
+
+  const inPlaceClip = () =>
+    new AnimationClip("walk", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 0.5, 1], [0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      new VectorKeyframeTrack("Spine.position", [0, 0.5, 1], [0, 0, 0, 0, 0, 0.2, 0, 0, 0]),
+      new VectorKeyframeTrack("Foot.position", [0, 0.5, 1], [0, 0.5, 0.5, 0, 0, 0.25, 0, 0.5, 0.5]),
+    ]);
+
+  const strideOf = (player: SkeletalMesh3D): number => {
+    player.play("walk");
+    return player.stride.clipGroundSpeed;
+  };
+
+  it("performs one binding audit for equivalent required-clip clones", () => {
+    const { root } = fixture();
+    const clip = inPlaceClip();
+    const bind = vi.spyOn(PropertyBinding.prototype, "bind");
+    try {
+      new SkeletalMesh3D({ source: root, clips: [clip], requiredClips: ["walk"] });
+      const afterFirst = bind.mock.calls.length;
+      expect(afterFirst).toBe(3);
+      new SkeletalMesh3D({ source: root, clips: [clip], requiredClips: ["walk"] });
+      expect(bind.mock.calls.length).toBe(afterFirst);
+    } finally {
+      bind.mockRestore();
+    }
+  });
+
+  it("performs one foot-plant sample for equivalent in-place clones", () => {
+    const { root } = fixture();
+    const clip = inPlaceClip();
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      const first = new SkeletalMesh3D({ source: root, clips: [clip] });
+      strideOf(first);
+      const afterFirst = setTime.mock.calls.length;
+      expect(afterFirst).toBeGreaterThan(0);
+      const second = new SkeletalMesh3D({ source: root, clips: [clip] });
+      strideOf(second);
+      expect(setTime.mock.calls.length).toBe(afterFirst);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
+  it("shares the stride across uniformly scaled clones and rescales the reported value", () => {
+    const { root } = fixture();
+    const clip = inPlaceClip();
+    const firstBody = new Group();
+    const secondBody = new Group();
+    secondBody.scale.setScalar(2);
+    const first = new SkeletalMesh3D({ source: root, clips: [clip] });
+    firstBody.add(first.root);
+    const second = new SkeletalMesh3D({ source: root, clips: [clip] });
+    secondBody.add(second.root);
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      const firstStride = strideOf(first);
+      const afterFirst = setTime.mock.calls.length;
+      const secondStride = strideOf(second);
+      expect(secondStride).toBeCloseTo(firstStride * 2, 4);
+      expect(setTime.mock.calls.length).toBe(afterFirst);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
+  it("misses the audit when the source hierarchy changes between clones", () => {
+    const { root, hips } = fixture();
+    const clip = inPlaceClip();
+    new SkeletalMesh3D({ source: root, clips: [clip], requiredClips: ["walk"] });
+    const extra = new Bone();
+    extra.name = "Extra";
+    hips.add(extra);
+    const bind = vi.spyOn(PropertyBinding.prototype, "bind");
+    try {
+      new SkeletalMesh3D({ source: root, clips: [clip], requiredClips: ["walk"] });
+      expect(bind.mock.calls.length).toBeGreaterThan(0);
+    } finally {
+      bind.mockRestore();
+    }
+  });
+
+  it("misses the shared stride when a clip's keyframe content changes", () => {
+    const { root } = fixture();
+    const clip = inPlaceClip();
+    strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      const track = clip.tracks[2] as VectorKeyframeTrack;
+      track.values[1] = 0.9;
+      strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
+      expect(setTime.mock.calls.length).toBeGreaterThan(0);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
+  it("does not share when a clip leaves a bone undriven", () => {
+    const { root } = fixture();
+    const partial = new AnimationClip("walk", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 1], [0, 0, 0, 0, 0, 0]),
+      new VectorKeyframeTrack("Foot.position", [0, 0.5, 1], [0, 0.5, 0.5, 0, 0, 0.25, 0, 0.5, 0.5]),
+    ]);
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      strideOf(new SkeletalMesh3D({ source: root, clips: [partial] }));
+      const afterFirst = setTime.mock.calls.length;
+      strideOf(new SkeletalMesh3D({ source: root, clips: [partial] }));
+      expect(setTime.mock.calls.length).toBeGreaterThan(afterFirst);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
+  it("does not share a rig with an ambiguous duplicate node name", () => {
+    const { root, spine } = fixture();
+    const clip = inPlaceClip();
+    const duplicate = new Bone();
+    duplicate.name = "Spine";
+    spine.add(duplicate);
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
+      const afterFirst = setTime.mock.calls.length;
+      strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
+      expect(setTime.mock.calls.length).toBeGreaterThan(afterFirst);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
+  it("still fails through the constructor for a missing or zero-bound required clip", () => {
+    const { root } = fixture();
+    const alien = new AnimationClip("alien", 1, [
+      new VectorKeyframeTrack("Alien.position", [0, 1], [0, 0, 0, 0, 0, 1]),
+    ]);
+    expect(
+      () => new SkeletalMesh3D({ source: root, clips: [alien], requiredClips: ["missing"] }),
+    ).toThrow(/missing required clip 'missing'/);
+    expect(
+      () => new SkeletalMesh3D({ source: root, clips: [alien], requiredClips: ["alien"] }),
+    ).toThrow(/binds 0 tracks/);
   });
 });
