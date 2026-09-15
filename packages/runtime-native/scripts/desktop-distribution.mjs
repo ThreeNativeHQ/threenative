@@ -219,7 +219,7 @@ export function discoverRuntimeDependencies(binary, { platform = process.platfor
   return libraries;
 }
 
-function isSystemLibrary(library, platform) {
+function isSystemLibrary(library, platform, systemRoot) {
   if (platform === 'win32') {
     const name = library.name.toLowerCase();
     // api-ms-win-* and ext-ms-win-* are API Set contracts: virtual names the loader redirects to a
@@ -227,7 +227,12 @@ function isSystemLibrary(library, platform) {
     // reports them for anything linked against the UCRT, so no allowlist of real DLL names can
     // enumerate them.
     if (name.startsWith('api-ms-win-') || name.startsWith('ext-ms-win-')) return true;
-    return SYSTEM_WINDOWS_DLLS.has(name);
+    if (SYSTEM_WINDOWS_DLLS.has(name)) return true;
+    // `dumpbin /DEPENDENTS` prints names and no paths, so an allowlist is the only thing standing
+    // between a real system DLL and a refusal. Ask the system directory the loader itself searches
+    // instead of guessing which names Microsoft ships; the allowlist above stays a fast path and
+    // keeps this decidable on a non-Windows host, where there is no system directory to consult.
+    return systemRoot !== undefined && existsSync(join(systemRoot, 'System32', library.name));
   }
   if (!library.path) return false;
   if (platform === 'darwin') {
@@ -242,11 +247,14 @@ function isSystemLibrary(library, platform) {
  * prerequisites) and the ones the container must carry. A library that is neither system nor
  * locatable fails closed rather than shipping an artifact that only launches here.
  */
-export function classifyDependencies(libraries, { platform = process.platform } = {}) {
+export function classifyDependencies(
+  libraries,
+  { platform = process.platform, systemRoot = process.env.SystemRoot } = {},
+) {
   const bundled = [];
   const prerequisites = [];
   for (const library of libraries) {
-    if (isSystemLibrary(library, platform)) {
+    if (isSystemLibrary(library, platform, systemRoot)) {
       prerequisites.push({ name: library.name });
       continue;
     }

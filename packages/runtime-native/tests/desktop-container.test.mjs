@@ -104,6 +104,23 @@ test('Windows API set contracts are prerequisites, not libraries to copy', () =>
   assert.deepEqual(bundled.map((library) => library.name), ['game-support.dll']);
 });
 
+test('a Windows DLL the system directory provides is a prerequisite, not a refusal', () => {
+  // dumpbin prints names with no paths, so before this the only Windows DLL that could pass was one
+  // of 24 hardcoded names: VCRUNTIME140.dll and every other redistributable refused the container.
+  // Ask the directory the loader searches instead of enumerating what Microsoft ships.
+  const systemRoot = makeTempDirSync('threenative-systemroot-');
+  mkdirSync(join(systemRoot, 'System32'));
+  writeFileSync(join(systemRoot, 'System32', 'VCRUNTIME140.dll'), 'a redistributable');
+  const libraries = [{ name: 'VCRUNTIME140.dll' }, { name: 'game-physics.dll' }];
+  const { prerequisites } = classifyDependencies([libraries[0]], { platform: 'win32', systemRoot });
+  assert.deepEqual(prerequisites, [{ name: 'VCRUNTIME140.dll' }]);
+  // Still fails closed for a DLL the system does not provide and that has no path to copy.
+  assert.throws(
+    () => classifyDependencies([libraries[1]], { platform: 'win32', systemRoot }),
+    /TN_DESKTOP_DEPENDENCY_UNLOCATABLE/u,
+  );
+});
+
 test('a Windows dependency that is neither a system library nor locatable is still refused', () => {
   assert.throws(
     () => classifyDependencies([{ name: 'game-physics.dll' }], { platform: 'win32' }),
