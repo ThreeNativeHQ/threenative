@@ -101,15 +101,24 @@ describe("frame-budget surface reporting", () => {
 });
 
 describe("frame-budget GPU time", () => {
-  it("reports the GPU milliseconds the adapter measured", () => {
-    const budget = new FrameBudget({
-      readGpuMs: () => 4.25,
-      readSurface: () => PINNED,
-      report: () => {},
-      reportEvery: 4,
-    });
-    driveWindow(budget, 4);
-    expect(budget.window().gpuMs).toBe(4.25);
+  it("reports the mean of the GPU series the adapter measured", () => {
+    const budget = new FrameBudget({ readSurface: () => PINNED, report: () => {}, reportEvery: 100 });
+    const clock = { now: 0, timestamp: 0 };
+    for (let index = 0; index < 4; index += 1) {
+      clock.now += 1;
+      clock.timestamp += 16.7;
+      budget.beginFrame(clock.timestamp, clock.now);
+      clock.now += 2;
+      budget.markSimulationEnd(clock.now, 1);
+      budget.addRender(9);
+      clock.now += 9;
+      budget.addGpuMs(4.25, index);
+      budget.endFrame(clock.now);
+    }
+    const window = budget.window();
+    expect(window.gpu?.mean).toBe(4.25);
+    expect(window.gpuMs).toBe(4.25);
+    expect(window.gpuStale).toBe(0);
   });
 
   it("omits it entirely when the adapter has no timestamps", () => {
@@ -117,16 +126,13 @@ describe("frame-budget GPU time", () => {
     // different facts; a zero would merge them.
     const budget = new FrameBudget({ readSurface: () => PINNED, report: () => {}, reportEvery: 4 });
     driveWindow(budget, 4);
+    expect(budget.window().gpu).toBeUndefined();
     expect(budget.window().gpuMs).toBeUndefined();
   });
 
   it("refuses a negative GPU time rather than reporting it", () => {
-    const budget = new FrameBudget({
-      readGpuMs: () => -1,
-      readSurface: () => PINNED,
-      report: () => {},
-      reportEvery: 4,
-    });
-    expect(() => driveWindow(budget, 4)).toThrow(/gpuMs/u);
+    const budget = new FrameBudget({ readSurface: () => PINNED, report: () => {}, reportEvery: 4 });
+    budget.beginFrame(0, 0);
+    expect(() => budget.addGpuMs(-1, 1)).toThrow(/gpuMs/u);
   });
 });

@@ -790,14 +790,14 @@ field.splat({ x: 0.5, y: 0.5 }, { x: 0.2, y: 0 }, 1);
 
 ### `FrameBudget`
 
-`class` — Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the draw calls and triangles each render pass submitted.
+`class` — Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and triangles each render pass submitted.
 
 ```ts
 export class FrameBudget { … }
 ```
 
-- **Use when:** find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay · split a frame's draw calls and triangles per render pass (main, shadow, reflection) · tell a shadow or reflection pass's cost from the main colour pass
-- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement · per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main
+- **Use when:** find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay · tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp · split a frame's draw calls and triangles per render pass (main, shadow, reflection) · tell a shadow or reflection pass's cost from the main colour pass
+- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement · per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main · GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
 
 ```ts
 defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });

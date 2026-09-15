@@ -368,13 +368,16 @@ export { updateModelLods } from "./model-lod.js";
 export { baseGeometryOf } from "./model-lod.js";
 /**
  * Read where the frame's milliseconds went, per presented frame, on any platform; each
- * `TN_FRAME_BUDGET` window also carries the draw calls and triangles each render pass submitted.
+ * `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and
+ * triangles each render pass submitted.
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay
+ * @situation tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp
  * @situation split a frame's draw calls and triangles per render pass (main, shadow, reflection)
  * @situation tell a shadow or reflection pass's cost from the main colour pass
  * @constraint on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
  * @constraint per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main
+ * @constraint GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
  * @example defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
  */
 export {
