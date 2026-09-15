@@ -253,21 +253,37 @@ async function readPendingLevels(
 }
 
 /**
- * One mesh's chain: LOD0 is the mesh's own geometry, then one derived geometry per level sharing the
+ * One baked chain: LOD0 is the mesh's own geometry, then one derived geometry per level sharing the
  * same vertex attributes and differing only in index.
+ *
+ * A chain belongs to the geometry, not to the mesh, because `Object3D.clone()` — which is how a game
+ * reuses an imported model, and what `SkeletonUtils.clone` does for a rig — copies the mesh but
+ * *shares* its geometry. Keying selection to mesh identity would silently drop every clone to LOD0
+ * forever; recovering the chain from the geometry the clone carries is what makes a clone behave
+ * like the source.
+ */
+interface ILodChain {
+  readonly levels: BufferGeometry[];
+  readonly errors: readonly number[];
+  readonly base: BufferGeometry;
+  /** Local-space bounds of the base, shared by every mesh over the chain; the mesh matrix is not. */
+  readonly sphere: Sphere;
+}
+
+/**
+ * One mesh's selection state. Every clone shares the source's chain, so this — and only this — holds
+ * the level a particular copy currently shows: two copies at different distances must not fight.
  */
 class ModelLod {
   readonly #mesh: Mesh;
-  readonly #levels: BufferGeometry[];
-  readonly #errors: readonly number[];
-  readonly #sphere = new Sphere();
-  #sphereReady = false;
+  readonly #chain: ILodChain;
+  readonly #policy: IAppliedLod;
   #current = 0;
 
-  constructor(mesh: Mesh, levels: BufferGeometry[], errors: readonly number[]) {
+  constructor(mesh: Mesh, chain: ILodChain, policy: IAppliedLod) {
     this.#mesh = mesh;
-    this.#levels = levels;
-    this.#errors = errors;
+    this.#chain = chain;
+    this.#policy = policy;
   }
 
   get index(): number {
@@ -276,23 +292,17 @@ class ModelLod {
 
   /** The full-detail geometry the chain was built against. */
   get base(): BufferGeometry {
-    return this.#levels[0] as BufferGeometry;
+    return this.#chain.base;
   }
 
   get triangles(): number {
-    const geometry = this.#levels[this.#current] as BufferGeometry;
+    const geometry = this.#chain.levels[this.#current] as BufferGeometry;
     const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
     return Math.floor(drawn / 3);
   }
 
-  update(camera: Camera, viewportHeight: number, maxPixelError: number, hysteresis: number): void {
-    const base = this.#levels[0] as BufferGeometry;
-    if (!this.#sphereReady) {
-      base.computeBoundingSphere();
-      if (base.boundingSphere !== null) this.#sphere.copy(base.boundingSphere);
-      this.#sphereReady = true;
-    }
-    const world = worldSphere(this.#sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
+  update(camera: Camera, viewportHeight: number): void {
+    const world = worldSphere(this.#chain.sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
     const { depth, degenerate } = conservativeViewDepth(
       camera,
       world.center,
@@ -300,10 +310,16 @@ class ModelLod {
       (camera as ILodCameraLike).near ?? 0,
     );
     const view: ILodView = { camera, degenerate, depth, viewportHeight };
-    const index = selectLodLevel(this.#errors, this.#current, maxPixelError, hysteresis, [view]);
+    const index = selectLodLevel(
+      this.#chain.errors,
+      this.#current,
+      this.#policy.maxPixelError,
+      this.#policy.hysteresis,
+      [view],
+    );
     if (index === this.#current) return;
     this.#current = index;
-    this.#mesh.geometry = this.#levels[index] as BufferGeometry;
+    this.#mesh.geometry = this.#chain.levels[index] as BufferGeometry;
   }
 }
 
@@ -318,8 +334,48 @@ interface IAppliedLod {
   readonly maxPixelError: number;
 }
 
-/** Every controller currently applied, keyed weakly by its mesh so a disposed mesh drops out. */
-const controllers = new WeakMap<Mesh, { lod: ModelLod; policy: IAppliedLod }>();
+/** A chain and its policy, registered against every level geometry so a clone can find it. */
+interface IRegisteredChain {
+  readonly chain: ILodChain;
+  readonly policy: IAppliedLod;
+}
+
+/**
+ * Every chain currently registered, keyed weakly by each of its level geometries.
+ *
+ * Keyed by geometry, never by mesh, so a `clone()` — a new mesh over the shared geometry — resolves
+ * to the source's chain instead of vanishing. Weak on the key, so a chain whose last live geometry
+ * is dropped leaves with it: the value holds its own level geometries, and an ephemeron keeps that
+ * self-reference from pinning them.
+ */
+const chains = new WeakMap<BufferGeometry, IRegisteredChain>();
+
+/** Per-mesh selection state, keyed weakly by the mesh so a disposed or dropped clone drops out. */
+const controllers = new WeakMap<Mesh, ModelLod>();
+
+/** True when `object` is a mesh whose geometry carries a registered chain (a clone, or the source). */
+function isChained(object: object): boolean {
+  const mesh = object as Partial<Mesh>;
+  const geometry = mesh.geometry;
+  return mesh.isMesh === true && geometry !== undefined && chains.has(geometry);
+}
+
+/**
+ * The mesh's selection state, or `undefined` when its geometry carries no chain.
+ *
+ * A clone the loader never saw is adopted here, on its first frame, from the geometry it shares with
+ * the source; every later frame finds the entry already made. The entry lives in a `WeakMap`, so a
+ * dropped clone is not retained, and adopts at most once, so a clone cannot double-register.
+ */
+function controllerFor(mesh: Mesh): ModelLod | undefined {
+  const existing = controllers.get(mesh);
+  if (existing !== undefined) return existing;
+  const registered = chains.get(mesh.geometry);
+  if (registered === undefined) return undefined;
+  const controller = new ModelLod(mesh, registered.chain, registered.policy);
+  controllers.set(mesh, controller);
+  return controller;
+}
 
 /**
  * `GLTFLoader` plugin that reads `TN_discrete_lod` and, once the base geometry is final, builds the
@@ -392,10 +448,18 @@ export class DiscreteLodPlugin {
           geometry.boundingBox = base.boundingBox.clone();
         levels.push(geometry);
       }
-      controllers.set(mesh, {
-        lod: new ModelLod(mesh, levels, [0, ...pending.absoluteErrors]),
+      base.computeBoundingSphere();
+      const sphere = new Sphere();
+      if (base.boundingSphere !== null && base.boundingSphere !== undefined)
+        sphere.copy(base.boundingSphere);
+      const registered: IRegisteredChain = {
+        chain: { base, errors: [0, ...pending.absoluteErrors], levels, sphere },
         policy: applied,
-      });
+      };
+      // Every level, not just the base: a clone made after a selection already swapped the source to
+      // a coarser level carries that derived geometry, and must still resolve to this chain.
+      for (const geometry of levels) chains.set(geometry, registered);
+      controllers.set(mesh, new ModelLod(mesh, registered.chain, applied));
       appliedCount += 1;
     }
     return appliedCount;
@@ -404,7 +468,9 @@ export class DiscreteLodPlugin {
 
 /** The LOD0 geometry of a mesh under a discrete chain, or the mesh's own geometry otherwise. */
 export function baseGeometryOf(mesh: Mesh): BufferGeometry {
-  return controllers.get(mesh)?.lod.base ?? mesh.geometry;
+  const controller = controllers.get(mesh);
+  if (controller !== undefined) return controller.base;
+  return chains.get(mesh.geometry)?.chain.base ?? mesh.geometry;
 }
 
 // --- Per-frame update, mirroring `updateClusteredMeshes` ----------------------------------------
@@ -440,7 +506,7 @@ function isGraphNode(root: object): root is IGraphNode {
 
 function hookSubtree(tracking: ITrackedRoot, subtree: object): void {
   (subtree as IGraphNode).traverse((node) => {
-    if (controllers.has(node as Mesh)) tracking.items.add(node as Mesh);
+    if (controllers.has(node as Mesh) || isChained(node)) tracking.items.add(node as Mesh);
     if (tracking.hooked.has(node)) return;
     tracking.hooked.add(node);
     const link = node as Partial<IGraphNode>;
@@ -507,22 +573,22 @@ export function updateModelLods(
   if (!isGraphNode(root)) {
     let triangles = 0;
     root.traverse((object) => {
-      const entry = controllers.get(object as Mesh);
+      const entry = controllerFor(object as Mesh);
       if (entry === undefined) return;
-      entry.lod.update(camera, viewportHeight, entry.policy.maxPixelError, entry.policy.hysteresis);
-      triangles += entry.lod.triangles;
+      entry.update(camera, viewportHeight);
+      triangles += entry.triangles;
     });
     return triangles;
   }
   let triangles = 0;
   for (const mesh of trackRoot(root).items) {
-    const entry = controllers.get(mesh);
+    const entry = controllerFor(mesh);
     if (entry === undefined) {
       trackRoot(root).items.delete(mesh);
       continue;
     }
-    entry.lod.update(camera, viewportHeight, entry.policy.maxPixelError, entry.policy.hysteresis);
-    triangles += entry.lod.triangles;
+    entry.update(camera, viewportHeight);
+    triangles += entry.triangles;
   }
   return triangles;
 }
