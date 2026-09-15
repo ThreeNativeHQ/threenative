@@ -264,8 +264,9 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 - [x] Browser WebGPU consumer evidence establishes the default policy. Evidence: `examples/auto-lod`
       (an 8,192-triangle `assets/hull.glb`, `assets.lod: {}`, compiled through the same `watchAssets`
-      dev seam a scaffolded project uses) on an RTX 2080 (adapter `turing / nvidia` in
-      `artifacts/playtest/capture.json`). `playtests/lod-near.playtest.json` selects LOD0
+      dev seam a scaffolded project uses) on an RTX 2080. The runner reported adapter
+      `turing / nvidia` and would have rejected a software adapter as non-evidence.
+      `playtests/lod-near.playtest.json` selects LOD0
       (`sceneNodes` 8,192 triangles); `playtests/lod-far.playtest.json` submits 369 triangles with a
       non-blank capture. Both exit 0 under `--browser-recipe webgpu --headed` with no console or
       network errors. Reproduce with `DISPLAY` on the GPU's X server and
