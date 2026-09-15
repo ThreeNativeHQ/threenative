@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export const CONTAINER_MANIFEST = 'threenative-container.json';
 export const CONTAINER_SCHEMA_VERSION = 1;
@@ -357,6 +357,33 @@ function dependencyRelativePath(platform, name) {
   if (platform === 'darwin') return `Contents/Frameworks/${name}`;
   if (platform === 'linux') return `lib/${name}`;
   return name;
+}
+
+/**
+ * Wrap a PNG in a single-image Windows .ico. rcedit's `--set-icon` needs an icon Windows can parse
+ * and refuses a bare PNG, and Vista onwards reads a PNG-compressed icon entry directly, so the
+ * container needs no image tool on the packaging machine and no new player prerequisite.
+ */
+export function pngToIco(source, destination) {
+  const png = readFileSync(source);
+  // 8-byte signature, then the IHDR length and tag, then width and height as big-endian uint32.
+  if (png.length < 24 || png.readUInt32BE(0) !== 0x89504e47 || png.readUInt32BE(12) !== 0x49484452) {
+    throw new Error(`TN_DESKTOP_RESOURCE_FAILED: ${source} is not a PNG, so it cannot become a Windows icon.`);
+  }
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  const header = Buffer.alloc(22);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(1, 4);
+  // 0 means 256 in an icon directory entry; anything larger cannot be described at all.
+  header.writeUInt8(width >= 256 ? 0 : width, 6);
+  header.writeUInt8(height >= 256 ? 0 : height, 7);
+  header.writeUInt16LE(1, 10);
+  header.writeUInt16LE(32, 12);
+  header.writeUInt32LE(png.length, 14);
+  header.writeUInt32LE(header.length, 18);
+  writeFileSync(destination, Buffer.concat([header, png]));
 }
 
 function buildIcon(icon, destination, { platform, run }) {
@@ -714,9 +741,18 @@ export function packageDesktopContainer({
         // Identity for Windows is the executable's PE resource section, so rcedit runs after the
         // binary is staged; the game icon also travels as a sidecar for the manifest record.
         const version = String(app.version ?? '0.0.0');
+        // rcedit parses --set-icon as a Windows icon and exits 1 on the authored PNG. macOS converts
+        // to .icns and Linux copies the PNG the .desktop entry wants; Windows needs an .ico, built
+        // outside the staging directory so it never becomes an unrecorded container resource.
+        let windowsIcon = icon;
+        if (!icon.toLowerCase().endsWith('.ico')) {
+          const iconDirectory = mkdtempSync(join(tmpdir(), 'threenative-ico-'));
+          windowsIcon = join(iconDirectory, `${basename(icon, extname(icon))}.ico`);
+          pngToIco(icon, windowsIcon);
+        }
         const rcedit = run('rcedit', [
           stage(paths.executable),
-          '--set-icon', icon,
+          '--set-icon', windowsIcon,
           '--set-file-version', version,
           '--set-product-version', version,
           '--set-version-string', 'ProductName', appName,

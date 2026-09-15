@@ -10,12 +10,25 @@ import {
   CONTAINER_MANIFEST,
   containerMetadata,
   packageDesktopContainer,
+  pngToIco,
   parseLinkedLibraries,
   resolveContainer,
 } from '../scripts/desktop-distribution.mjs';
 
 const config = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
 const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+
+/** The smallest byte sequence `pngToIco` accepts: signature, IHDR tag, and a 256x256 size. */
+function authoredPng() {
+  const png = Buffer.alloc(40);
+  png.writeUInt32BE(0x89504e47, 0);
+  png.writeUInt32BE(0x0d0a1a0a, 4);
+  png.writeUInt32BE(13, 8);
+  png.writeUInt32BE(0x49484452, 12);
+  png.writeUInt32BE(256, 16);
+  png.writeUInt32BE(256, 20);
+  return png;
+}
 
 // Exercise the real staging and resolver. Only OS resource tools/archive transport are replaced;
 // these unit cases do not claim a Windows/macOS native launch or signing proof.
@@ -24,14 +37,18 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false } = {})
   const executable = join(directory, 'input');
   const captured = join(directory, 'relocated container');
   const uiDirectory = join(directory, 'ui');
-  const iconPath = join(directory, convertIcon ? 'icon.png' : 'icon.icns');
+  // A Windows game authors a .png or a .ico; an .icns there is not a thing. Give each platform the
+  // icon a real project would hand it, so the conversion each one performs is actually exercised.
+  const iconPath = join(directory, platform === 'win32' || convertIcon ? 'icon.png' : 'icon.icns');
   const dependency = join(directory, 'dependency');
   writeFileSync(executable, 'original executable');
-  writeFileSync(iconPath, 'authored icon');
+  writeFileSync(iconPath, iconPath.endsWith('.png') ? authoredPng() : Buffer.from('authored icon'));
   writeFileSync(dependency, 'native dependency');
   mkdirSync(uiDirectory);
   writeFileSync(join(uiDirectory, 'index.html'), '<main>HUD</main>');
+  const invocations = [];
   const run = (command, args, options) => {
+    invocations.push({ args, command });
     if (command === 'rcedit') writeFileSync(args[0], 'executable with PE resources');
     else if (command === 'sips') writeFileSync(args.at(-1), 'resized icon');
     else if (command === 'iconutil') writeFileSync(args.at(-1), 'converted icns');
@@ -49,7 +66,7 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false } = {})
     ...(icon ? { icon: iconPath } : {}), output: join(directory, 'game'), run,
   });
   const manifestPath = join(captured, platform === 'darwin' ? 'Contents/Resources' : '', CONTAINER_MANIFEST);
-  return { ...packed, root: captured, directory, manifestPath, icon: iconPath };
+  return { ...packed, root: captured, directory, invocations, manifestPath, icon: iconPath };
 }
 
 for (const platform of ['linux', 'darwin', 'win32']) {
@@ -82,6 +99,39 @@ test('macOS stages Info.plist at the application bundle root, not under Resource
   assert.ok(existsSync(join(root, 'Contents/Info.plist')));
   assert.ok(manifest.resources['Contents/Info.plist']);
   assert.equal(existsSync(join(root, 'Contents/Resources/Contents/Info.plist')), false);
+});
+
+test('Windows packaging hands rcedit an .ico, never the authored PNG', () => {
+  // The guard the original defect needed: pngToIco being correct is no use if the packager still
+  // passes the .png straight through, which is what made rcedit exit 1 and refuse every Windows
+  // release container that declared an app.icon.
+  const { invocations } = fixture('win32', { icon: true });
+  const rcedit = invocations.find((invocation) => invocation.command === 'rcedit');
+  assert.ok(rcedit, 'rcedit runs when an icon is configured');
+  const iconArgument = rcedit.args[rcedit.args.indexOf('--set-icon') + 1];
+  assert.ok(iconArgument.toLowerCase().endsWith('.ico'), `--set-icon got ${iconArgument}`);
+  assert.equal(readFileSync(iconArgument).readUInt16LE(2), 1, 'and it is a real icon file');
+});
+
+test('the Windows icon is a real .ico, because rcedit refuses a bare PNG', () => {
+  // rcedit --set-icon parses the file as a Windows icon. Handing it the authored PNG exits 1 and
+  // refuses the container, which is what every Windows release with an app.icon did.
+  const directory = makeTempDirSync('threenative-ico-');
+  const png = join(directory, 'icon.png');
+  const pixels = authoredPng();
+  writeFileSync(png, pixels);
+  const ico = join(directory, 'icon.ico');
+  pngToIco(png, ico);
+  const written = readFileSync(ico);
+  assert.equal(written.readUInt16LE(0), 0, 'reserved');
+  assert.equal(written.readUInt16LE(2), 1, 'type is icon');
+  assert.equal(written.readUInt16LE(4), 1, 'one image');
+  assert.equal(written.readUInt8(6), 0, '256 is encoded as 0');
+  assert.equal(written.readUInt8(7), 0, '256 is encoded as 0');
+  assert.equal(written.readUInt32LE(14), pixels.length, 'declares the PNG payload size');
+  assert.equal(written.readUInt32LE(18), 22, 'payload starts after the 22-byte header');
+  assert.deepEqual(written.subarray(22), pixels, 'carries the PNG bytes verbatim');
+  assert.throws(() => pngToIco(join(directory, 'icon.ico'), join(directory, 'nope.ico')), /TN_DESKTOP_RESOURCE_FAILED/u);
 });
 
 test('Windows API set contracts are prerequisites, not libraries to copy', () => {
