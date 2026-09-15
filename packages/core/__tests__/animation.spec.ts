@@ -739,10 +739,13 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
     spine.name = "Spine";
     const foot = new Bone();
     foot.name = "Foot";
+    const prop = new Object3D();
+    prop.name = "Prop";
     hips.add(spine);
     spine.add(foot);
+    hips.add(prop);
     root.add(hips);
-    return { root, hips, spine, foot };
+    return { root, hips, spine, foot, prop };
   };
 
   const inPlaceClip = () =>
@@ -871,6 +874,23 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
       const afterFirst = setTime.mock.calls.length;
       strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
       expect(setTime.mock.calls.length).toBeGreaterThan(afterFirst);
+    } finally {
+      setTime.mockRestore();
+    }
+  });
+
+  it("misses the shared stride when an untracked prop moves on a clone", () => {
+    const { root } = fixture();
+    const clip = inPlaceClip();
+    strideOf(new SkeletalMesh3D({ source: root, clips: [clip] }));
+    const setTime = vi.spyOn(AnimationMixer.prototype, "setTime");
+    try {
+      const second = new SkeletalMesh3D({ source: root, clips: [clip] });
+      // The prop is not driven by the clip, so its local transform is what the sample starts
+      // from; moving it on this clone must not be served another clone's value.
+      second.root.getObjectByName("Prop")?.position.setX(1);
+      strideOf(second);
+      expect(setTime.mock.calls.length).toBeGreaterThan(0);
     } finally {
       setTime.mockRestore();
     }
