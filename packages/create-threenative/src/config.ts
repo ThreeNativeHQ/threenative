@@ -1418,7 +1418,9 @@ export interface IResolvedLodPolicy {
   readonly runtime: { readonly hysteresis: number; readonly maxPixelError: number };
 }
 
-function lodBlock(lod: boolean | IThreeNativeLodConfig | undefined): IThreeNativeLodConfig | undefined {
+function lodBlock(
+  lod: boolean | IThreeNativeLodConfig | undefined,
+): IThreeNativeLodConfig | undefined {
   return typeof lod === "object" && lod !== null ? lod : undefined;
 }
 
@@ -1433,9 +1435,7 @@ function lodHasExplicitPolicy(
     lod.preset !== undefined ||
     (lod.generation !== undefined && Object.keys(lod.generation).length > 0) ||
     (lod.runtime !== undefined && Object.keys(lod.runtime).length > 0) ||
-    ("overrides" in lod &&
-      lod.overrides !== undefined &&
-      Object.keys(lod.overrides).length > 0)
+    ("overrides" in lod && lod.overrides !== undefined && Object.keys(lod.overrides).length > 0)
   );
 }
 
@@ -1477,7 +1477,8 @@ export function resolveLodPolicy(
   if (project?.runtime?.maxPixelError !== undefined)
     runtime.maxPixelError = project.runtime.maxPixelError;
   if (project?.runtime?.hysteresis !== undefined) runtime.hysteresis = project.runtime.hysteresis;
-  if (project?.generation?.maxLevels !== undefined) generation.maxLevels = project.generation.maxLevels;
+  if (project?.generation?.maxLevels !== undefined)
+    generation.maxLevels = project.generation.maxLevels;
   if (project?.generation?.minTriangles !== undefined)
     generation.minTriangles = project.generation.minTriangles;
 
