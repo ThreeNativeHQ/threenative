@@ -54,9 +54,14 @@ Status:
   `src/render/particles.ts:327`. Exact order/count win: current 29 draws / 29 prepare /
   58 `writeBatch` versus legacy 31 draws / 154 prepare / 308 `writeBatch`, both with 68 aircraft. Added hook alone
   is insufficient; built-ins and templates must schedule correctly by default.
-- **In progress per the handoff, not integrated at this report's review**: respecting
-  Three's matrix update flags in engine `.worktrees/projection-dirty` (reported 66 focused /
-  1276 core tests). This is a transform-ownership fix, not structural-plan caching.
+- **Shipped and game-adopted** `f7c64c5fc`: `reconcile` honours Three's matrix update flags
+  (`if (this.#source.matrixWorldAutoUpdate === true) this.#source.updateMatrixWorld();`)
+  instead of forcing `updateMatrixWorld(true)`. Focused `renderProjection.spec.ts` 66/66
+  (four new static-marking cases). The sandbox Midway game adopted the content-hashed build
+  and moved its own once-per-world-draw walk to `ctx.beforeRender`, because a scene
+  `onBeforeRender` walk never fires while the projection mirror renders; the transform
+  regression went red (stale matrices) to green (one walk per presented frame). Section 6.
+  This is a transform-ownership fix, not structural-plan caching.
 
 **Hypotheses, not confirmed fixes:** the FPS gain from `beforeRender` (noisy timing), the
 original multi-second-freeze cause, and first-use pipelines as that freeze's cause. Do not
@@ -188,3 +193,53 @@ not existing passing results. Also retain the 16.7 ms miss rate and worst frame.
 primitive-topology, preparation-count, moving-parent, transparency/order/hook and multipass
 cases in the existing regression suite. A fresh template must get the optimization with
 zero tuning; a game author must not become the maintenance mechanism for these fixes.
+
+## 6. Sandbox Midway adoption (2026-09-14)
+
+This is the engine-side record of the game adoption that the verifier's workspace cannot read
+directly: the game lives at `sandbox/midway-open-pacific`, an external checkout, and reading it is
+blocked by the external-directory permission rules. The source change and the raw evidence are
+reproduced here so the claim is inspectable from this repository.
+
+**Engine side.** `f7c64c5fc` on branch `perf/projection-dirty` (base `b1cae8803`) changes
+`packages/core/src/renderProjection.ts` to the non-forcing call above, with four new cases in
+`packages/core/__tests__/renderProjection.spec.ts` (moving object, frozen-subtree sentinel, a
+scene that marks its world static, a static subtree whose parent moved). Focused run 66/66 pass.
+The content-hashed package built from it is
+`threenative-core-0.3.2-projdirty-12c96c25114f.tgz`
+(sha256 `12c96c25114f91335895102fc7f50c58719782c7a445d97a777dd01618bdd858`).
+
+**Game side.** Sandbox repository `ThreeNativeHQ/examples` (`/home/joao/projects/threenative/sandbox`),
+commits `8cacb94` (adoption + refactor), `7b7ef21` (evidence), `da28308` (trace). The game's
+`package.json` dependency and `pnpm.overrides` and `pnpm-lock.yaml` point `@threenative/core` at the
+tarball above (`pnpm install` exit 0). `midway-open-pacific/src/scenes/Midway.ts` keeps
+`scene.matrixWorldAutoUpdate = false` (restored on exit) and moves the world walk off the scene
+`onBeforeRender` hook onto the engine seam:
+
+```ts
+this.cleanups.push(
+  ctx.beforeRender(() => {
+    scene.updateMatrixWorld();
+    this.world.particles.prepare(this.world.camera.position);
+  }),
+);
+```
+
+The refactor is mandatory, not cosmetic: with the new engine the old `onBeforeRender` hook never
+fires while the projection mirror is what renders, so the authored scene's world matrices go stale.
+
+**Stability evidence.** Real hardware WebGPU NVIDIA Turing, private virtual display:
+
+| check | command (game root) | result |
+| --- | --- | --- |
+| transform regression, red | old hook + new engine, `bash tools/capture-lock.sh node tools/check-frame-transforms.mjs` | FAIL `airborne-cockpit max diff 0.66794` (stale matrices) |
+| transform regression, green | refactor + new engine, same command | PASS: ratio `1.0` in all five phases (briefing 45/45, deck 46/46, airborne-cockpit 13/13, chase 45/45, wide 42/42), `maxWorldDiff 0`, finite, transforms change, no console errors |
+| typecheck / build | `pnpm typecheck` / `pnpm exec vite build` | exit 0 / exit 0 |
+| playtests | `bash tools/capture-lock.sh node node_modules/@threenative/playtest/dist/runner/cli.js --scenario "playtests/*.playtest.json" --url http://127.0.0.1:5399 --browser-recipe webgpu --headed --timeout 60000` | `midway-audio-realism`, `midway-briefing`, `midway-flight`, `midway-launches` all pass; top-level pass, exit 0 |
+| live combat ×2 | `bash tools/capture-lock.sh node tools/capture-battle-profile.mjs` (350 m / 1500 m, CPU sampler off) | exit 0, `qualified: true`, 0 console errors, player alive (174-177 AA / 96-100 flak / 13-14 damage), `projecting: true` with the unchanged 99 batches (40 instanced, 59 material, 624 exact) |
+
+Absolute FPS on this host is not evidence (other lanes contended the machine; the runs reported
+9.7-10.0 fps). The game stayed functionally stable: no errors, live simulation advanced, the
+projection verdict and batch census unchanged. The adopted fix is correctness and transform
+ownership, not a frame-rate win; a per-frame saving needs a game that marks measured-static
+subtrees. Stable 60 FPS remains unproved, and priorities 2-3 remain proposals.
