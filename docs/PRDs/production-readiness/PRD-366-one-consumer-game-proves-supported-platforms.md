@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-366 — One installed consumer game proves the supported platform contract
 
-**Status:** PARTIAL — phase 1's scenario, consumer harness step, unit contract and a real browser run are green; a public-registry cohort install still waits on PRD-196. Revised 2026-09-08; phase 1 worked 2026-09-12.
+**Status:** PARTIAL — phase 1's scenario, consumer harness step, unit contract and a real browser run are green; a public-registry cohort install still waits on PRD-196. Phase 2's distributed-target row contract, fixtures, registry threading and workflow wiring are green; independent review returned NEEDS CORRECTION because the shared scenario's `noNetworkErrors: true` is refused on native targets, and a real desktop/Android consumer run is unverified (desktop host GBM-blocked, Android prebuilt fetch failed, containers are PRD-365). Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract worked 2026-09-15.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 lifecycle/proof state, +1 hosted/device integration).
 **Problem:** Isolated engine feature tests and core smoke screenshots do not establish that a developer can build, customize and distribute a playable game using installed packages only.
 
@@ -103,12 +103,17 @@ pnpm test:templates
 
 **Progress:**
 
-- [ ] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
-- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
+      Added `verifyStarterConsumerGameplay` and its row contract (`--consumer`), the fixtures, `readConsumerTargetRows`/`consumerTargets` in `scripts/verify-registry-install.ts`, and consumer steps in the `starter-linux` and `desktop` jobs. Existing step names and the smoke guard are unchanged.
+- [x] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+      31/31 passed 2026-09-15, including both PRD-named rows; `scripts/__tests__/verify-registry-install.spec.ts` 25/25 after the additive `consumerTargets` field.
+- [x] Observed red recorded, then restored green
+      Written first: 10 failed / 19 passed with `TypeError: … is not a function` for the four new exports, then 31/31. The negative controls fail distinctly: substituted native-smoke subject `SCENARIO_MISMATCH`, stale build `ARTIFACT_MISMATCH`, deleted asset/UI `NO_ASSERTIONS`, injected false state assertion `ASSERTION_FAILED`, missing target `ROW_MISSING`.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-366-readiness-phase-2-<date>.md`
+      Unverified. Desktop launch is environmentally blocked here (host GBM buffer creation on every run) and no desktop host binary is built locally; the final distributed containers are PRD-365 (draft PR #224, not on `develop`). The Android emulator is attached, but a fresh local-tarball starter's `pnpm build --target android` exits 1 at the Android prebuilt fetch (`fetch failed`; the only local manifest points at a stopped `127.0.0.1:8791`), so no APK existed to install and no Android gameplay row was run. Recorded in the phase evidence.
+- [x] Evidence record written: `docs/verification/prd-366-readiness-phase-2-2026-09-15.md`
 - [ ] Independent reviewer returned PASS
+      NEEDS CORRECTION (fresh-eyes review, 2026-09-15). Blocking finding: the phase-1 consumer scenario sets `diagnostics.noNetworkErrors: true`, which the desktop/Android runner refuses with `TN_PLAYTEST_UNSUPPORTED_ON_TARGET`, so the wired workflow steps cannot yield a qualifying row until the scenario becomes cross-target (the harness's documented waiver, outside this phase's five-file budget). The qualifier now names that case `TN_STARTER_CONSUMER_SCENARIO_NOT_CROSS_TARGET`. Secondary findings fixed: expected-identity input plus `--qualify-existing` so a stale row can fail, non-zero-exit contradiction rejected, malformed row file no longer overwritten, Android row records the device's own OS/ABI. Box stays open until the scenario is fixed and a real target run qualifies.
 
 **Files (maximum five):**
 

@@ -2,7 +2,15 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
+import { release as osRelease } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
@@ -236,6 +244,433 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   };
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   return report;
+}
+
+/**
+ * PRD-366 phase 2 — the distributed consumer gameplay row.
+ *
+ * Phase 1 proved the *installed* starter plays in a browser after a game-only edit. Phase 2 asks
+ * the same question of each claimed native target and records a row that names the machine it ran
+ * on, the artifact it ran and the application identity it carried — never a hardcoded pass. A run
+ * that evaluated no assertions, a row missing for a required target, or an artifact/application id
+ * that is not the built consumer all fail closed with the actual cause named.
+ */
+export const CONSUMER_GAMEPLAY_SCENARIO = 'playtests/production-readiness.playtest.json';
+export const CONSUMER_REQUIRED_TARGETS = ['desktop', 'android'];
+const CONSUMER_ARTIFACT_HASH = /^[0-9a-f]{64}$/u;
+
+function consumerError(code, detail) {
+  return new Error(`TN_STARTER_CONSUMER_${code}: ${detail}`);
+}
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** The session the run executed in, named rather than assumed: a headless Linux host is not X11. */
+export function describeConsumerSession(platform = process.platform, environment = process.env) {
+  if (platform === 'android') return 'android';
+  if (platform === 'win32') return 'windows-dwm';
+  if (platform === 'darwin') return 'quartz';
+  if (platform === 'linux') {
+    if (environment.WAYLAND_DISPLAY) return 'wayland';
+    if (environment.DISPLAY) return 'x11';
+    return 'headless';
+  }
+  return platform;
+}
+
+/** Fail closed on a row that is structurally unreadable, before any value comparison. */
+export function validateConsumerTargetRow(row) {
+  if (typeof row !== 'object' || row === null || Array.isArray(row))
+    throw consumerError('ROW_MALFORMED', 'a target row must be an object.');
+  for (const field of [
+    'target',
+    'os',
+    'osVersion',
+    'architecture',
+    'session',
+    'scenario',
+    'applicationId',
+    'artifactHash',
+  ]) {
+    if (!nonEmptyString(row[field]))
+      throw consumerError('ROW_MALFORMED', `target row field '${field}' is missing or empty.`);
+  }
+  if (!CONSUMER_ARTIFACT_HASH.test(row.artifactHash))
+    throw consumerError(
+      'ROW_MALFORMED',
+      `artifactHash '${row.artifactHash}' is not a sha256 hex digest.`,
+    );
+  if (typeof row.pass !== 'boolean')
+    throw consumerError('ROW_MALFORMED', "target row field 'pass' is not a boolean.");
+  if (!Number.isInteger(row.assertions) || row.assertions < 0)
+    throw consumerError(
+      'ROW_MALFORMED',
+      "target row field 'assertions' is not a non-negative integer.",
+    );
+  if (!Array.isArray(row.failures))
+    throw consumerError('ROW_MALFORMED', "target row field 'failures' is not an array.");
+  return row;
+}
+
+/**
+ * Compare one recorded row against the built consumer's own identity. Each divergence names its
+ * cause: a foreign scenario is a substituted subject, a hash that disagrees is a stale or swapped
+ * artifact, and an application id that disagrees is a different game.
+ */
+export function qualifyConsumerTargetRow(row, expected) {
+  validateConsumerTargetRow(row);
+  if (
+    !nonEmptyString(expected?.scenario) ||
+    !nonEmptyString(expected?.applicationId) ||
+    !CONSUMER_ARTIFACT_HASH.test(expected?.artifactHash ?? '')
+  )
+    throw consumerError('ROW_MALFORMED', 'the expected consumer identity is incomplete.');
+  if (row.scenario !== expected.scenario)
+    throw consumerError(
+      'SCENARIO_MISMATCH',
+      `the '${row.target}' row ran '${row.scenario}', not the built consumer's '${expected.scenario}'; a substituted native-smoke subject is not this consumer.`,
+    );
+  if (row.artifactHash !== expected.artifactHash)
+    throw consumerError(
+      'ARTIFACT_MISMATCH',
+      `the '${row.target}' row's artifact ${row.artifactHash.slice(0, 12)} does not match the built consumer ${expected.artifactHash.slice(0, 12)}; a stale or substituted build is not this consumer.`,
+    );
+  if (row.applicationId !== expected.applicationId)
+    throw consumerError(
+      'APPLICATION_ID_MISMATCH',
+      `the '${row.target}' row's applicationId '${row.applicationId}' does not match the built consumer '${expected.applicationId}'.`,
+    );
+  if (row.assertions === 0)
+    throw consumerError(
+      'NO_ASSERTIONS',
+      `the '${row.target}' run evaluated zero assertions, so a pass would prove nothing.`,
+    );
+  if (row.pass !== true)
+    throw consumerError(
+      'ASSERTION_FAILED',
+      `the '${row.target}' consumer run failed: ${row.failures.join('; ') || 'assertions did not pass'}.`,
+    );
+  return row;
+}
+
+/** Every claimed target must carry its own qualified row; a missing target is not an empty check. */
+export function assertConsumerTargetRows(rows, options) {
+  const targets = options?.targets ?? CONSUMER_REQUIRED_TARGETS;
+  if (!Array.isArray(rows) || !Array.isArray(targets) || targets.length === 0)
+    throw consumerError('ROW_MALFORMED', 'consumer rows and required targets must be non-empty.');
+  const validated = rows.map(validateConsumerTargetRow);
+  const qualified = [];
+  for (const target of targets) {
+    const row = validated.find((candidate) => candidate.target === target);
+    if (row === undefined)
+      throw consumerError(
+        'ROW_MISSING',
+        `no consumer gameplay row was recorded for target '${target}'.`,
+      );
+    qualified.push(qualifyConsumerTargetRow(row, options));
+  }
+  return qualified;
+}
+
+/** Read the JSON report the installed runner prints; a report with no assertions is a failure. */
+export function parseConsumerPlaytestReport(stdout, target) {
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch (error) {
+    throw consumerError(
+      'ROW_MALFORMED',
+      `the '${target}' playtest runner emitted no JSON report: ${error instanceof Error ? error.message : String(error)}.`,
+    );
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+    throw consumerError('ROW_MALFORMED', `the '${target}' playtest report is not an object.`);
+  const diagnostics = Array.isArray(parsed.diagnostics)
+    ? parsed.diagnostics.flatMap((diagnostic) =>
+        typeof diagnostic?.code === 'string' ? [diagnostic.code] : [],
+      )
+    : [];
+  // A scenario with an assertion the target cannot evaluate is refused by the harness with
+  // `TN_PLAYTEST_UNSUPPORTED_ON_TARGET`; that is a scenario/target mismatch, not a gameplay
+  // failure, and it must say so instead of surfacing as "the game failed".
+  const unsupported = diagnostics.find((code) => code.endsWith('UNSUPPORTED_ON_TARGET'));
+  if (unsupported !== undefined)
+    throw consumerError(
+      'SCENARIO_NOT_CROSS_TARGET',
+      `the '${target}' runner refused the shared consumer scenario with ${unsupported}: it is only runnable on the target it was authored for. Give it a scenario-owned waiver or a target-specific scenario.`,
+    );
+  if (!Array.isArray(parsed.assertionResults))
+    throw consumerError(
+      'NO_ASSERTIONS',
+      `the '${target}' run never reached assertion evaluation, so nothing was proven.`,
+    );
+  if (parsed.assertionResults.length === 0)
+    throw consumerError('NO_ASSERTIONS', `the '${target}' run evaluated zero assertions.`);
+  const failures = parsed.assertionResults
+    .filter((result) => result?.pass === false)
+    .map((result) => result?.id ?? result?.name ?? result?.code ?? 'assertion');
+  return {
+    assertions: parsed.assertionResults.length,
+    diagnostics,
+    failures,
+    pass: parsed.pass === true,
+  };
+}
+
+function readConsumerApplicationId(projectRoot) {
+  const config = join(projectRoot, 'threenative.config.ts');
+  if (!existsSync(config))
+    throw consumerError(
+      'APPLICATION_ID_MISSING',
+      `${config} is absent, so the built consumer's application id cannot be read.`,
+    );
+  const match = /id\s*:\s*["'`]([^"'`]+)["'`]/u.exec(readFileSync(config, 'utf8'));
+  if (match === null || match[1].includes('__'))
+    throw consumerError(
+      'APPLICATION_ID_MISSING',
+      `no concrete app.id was found in ${config}.`,
+    );
+  return match[1];
+}
+
+function firstFile(root, predicate) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const directory = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const file = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules') continue;
+        stack.push(file);
+      } else if (entry.isFile() && predicate(file)) return file;
+    }
+  }
+  return undefined;
+}
+
+function discoverConsumerArtifact(projectRoot, target) {
+  if (target === 'desktop') {
+    const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
+    const name = basename(String(manifest.name ?? 'starter').replace(/^@[^/]+\//u, ''));
+    return join(projectRoot, 'dist-native', `${name}${process.platform === 'win32' ? '.exe' : ''}`);
+  }
+  const apk = firstFile(join(projectRoot, 'dist-native'), (file) => file.endsWith('.apk'));
+  if (apk === undefined)
+    throw consumerError(
+      'ARTIFACT_MISSING',
+      `no .apk was found under ${join(projectRoot, 'dist-native')}; build the Android consumer first.`,
+    );
+  return apk;
+}
+
+/**
+ * The Android row must name the device it ran on, not the host that drove it. `adb` is frequently
+ * installed but off `PATH`, so `ADB` overrides the command; a probe that cannot read is a failure,
+ * never a default.
+ */
+function adbDeviceIdentity(device) {
+  const adb = process.env.ADB ?? 'adb';
+  const probe = (property) => {
+    const result = spawnSync(adb, ['-s', device, 'shell', 'getprop', property], {
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
+    const value = `${result.stdout ?? ''}`.trim();
+    if (result.status !== 0 || value.length === 0)
+      throw consumerError(
+        'DEVICE_IDENTITY_UNREADABLE',
+        `adb could not read ${property} from ${device}: ${(result.stderr ?? '').trim() || 'no output'}.`,
+      );
+    return value;
+  };
+  return {
+    architecture: probe('ro.product.cpu.abi'),
+    osVersion: `${probe('ro.build.version.release')} (API ${probe('ro.build.version.sdk')})`,
+  };
+}
+
+function recordConsumerTargetRow(projectRoot, row) {
+  const directory = join(projectRoot, 'artifacts', 'native');
+  mkdirSync(directory, { recursive: true });
+  const file = join(directory, 'consumer-targets.json');
+  let rows = [];
+  if (existsSync(file)) {
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (error) {
+      throw consumerError(
+        'ROW_MALFORMED',
+        `${file} is not readable JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!Array.isArray(parsed))
+      throw consumerError('ROW_MALFORMED', `${file} is not a row array; refusing to overwrite it.`);
+    rows = parsed;
+  }
+  rows = rows.filter((candidate) => candidate?.target !== row.target);
+  rows.push(row);
+  writeFileSync(file, `${JSON.stringify(rows, null, 2)}\n`);
+  return file;
+}
+
+function defaultConsumerRunner(command, args, cwd) {
+  const timeoutMs = Number(process.env.TN_STARTER_CONSUMER_TIMEOUT_MS ?? 900_000);
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: timeoutMs,
+  });
+  return { status: result.status, stderr: result.stderr ?? '', stdout: result.stdout ?? '' };
+}
+
+/**
+ * Run the same consumer scenario phase 1 drove in the browser through the *installed* runner for
+ * one distributed target, and return the qualified row. `run`/`runner` is injectable so the unit
+ * contract needs no display, no device and no real playtest.
+ */
+export function verifyStarterConsumerGameplay(options = {}) {
+  const target = options.target;
+  if (!CONSUMER_REQUIRED_TARGETS.includes(target))
+    throw consumerError(
+      'TARGET_UNSUPPORTED',
+      `'${String(target)}' is not a distributed consumer target; use one of ${CONSUMER_REQUIRED_TARGETS.join(', ')}.`,
+    );
+  const projectRoot = resolve(options.project ?? process.cwd());
+  const scenario = options.scenario ?? CONSUMER_GAMEPLAY_SCENARIO;
+  const applicationId = options.applicationId ?? readConsumerApplicationId(projectRoot);
+  const artifact = resolve(
+    options.artifact ?? discoverConsumerArtifact(projectRoot, target),
+  );
+  if (!existsSync(artifact))
+    throw consumerError(
+      'ARTIFACT_MISSING',
+      `${artifact} does not exist; build the consumer before qualifying it.`,
+    );
+  const cli = join(
+    projectRoot,
+    'node_modules',
+    '@threenative',
+    'playtest',
+    'dist',
+    'runner',
+    'cli.js',
+  );
+  if (!existsSync(cli))
+    throw consumerError(
+      'RUNNER_MISSING',
+      `${cli} is absent; the installed runner is what proves gameplay, not a repository checkout.`,
+    );
+  const android = target === 'android';
+  const device = android
+    ? (options.device ?? process.env.TN_ANDROID_SERIAL ?? 'emulator-5554')
+    : undefined;
+  const args = [scenario, '--target', target];
+  if (android) args.push('--device', device);
+  else args.push('--executable', artifact);
+  const runner = options.runner ?? defaultConsumerRunner;
+  const result = runner(process.execPath, [cli, ...args], projectRoot);
+  const log = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim();
+  const report = parseConsumerPlaytestReport(result.stdout ?? '', target);
+  // A runner that prints a passing report but exits non-zero is malformed, not a pass.
+  if (report.pass && typeof result.status === 'number' && result.status !== 0)
+    throw consumerError(
+      'ROW_MALFORMED',
+      `the '${target}' runner reported pass but exited ${result.status}; refusing the contradiction.`,
+    );
+  const deviceIdentity =
+    android && (options.osVersion === undefined || options.architecture === undefined)
+      ? adbDeviceIdentity(device)
+      : undefined;
+  const artifactHash = createHash('sha256').update(readFileSync(artifact)).digest('hex');
+  const row = {
+    applicationId,
+    architecture: options.architecture ?? deviceIdentity?.architecture ?? process.arch,
+    artifactHash,
+    assertions: report.assertions,
+    failures: report.failures,
+    log: log.slice(-4000),
+    os: options.os ?? (android ? 'android' : process.platform),
+    osVersion: options.osVersion ?? deviceIdentity?.osVersion ?? osRelease(),
+    pass: report.pass,
+    scenario,
+    session:
+      options.session ??
+      (android
+        ? String(device).startsWith('emulator-')
+          ? 'android-emulator'
+          : 'android-device'
+        : describeConsumerSession(process.platform)),
+    target,
+  };
+  // The caller may supply the built consumer's identity independently (a build manifest, a prior
+  // qualification); otherwise the run qualifies against the artifact it just hashed. A supplied
+  // identity is what turns a stale or substituted row into `ARTIFACT_MISMATCH` rather than a pass.
+  const expected = options.expected ?? { applicationId, artifactHash, scenario };
+  qualifyConsumerTargetRow(row, expected);
+  recordConsumerTargetRow(projectRoot, row);
+  return { expected, row };
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href &&
+  (process.argv.includes('--consumer') || process.argv.includes('--qualify-existing'))
+) {
+  const optionValue = (name, fallback) => {
+    const index = process.argv.indexOf(name);
+    return index === -1 ? fallback : process.argv[index + 1];
+  };
+  try {
+    if (process.argv.includes('--qualify-existing')) {
+      // Re-qualify the persisted row against the consumer as it is built right now. This is where
+      // a stale row is caught: a rebuild changes the artifact hash, and the recorded row no longer
+      // matches the built consumer.
+      const target = optionValue('--target', 'desktop');
+      const project = resolve(optionValue('--project', process.cwd()));
+      const applicationId =
+        optionValue('--application-id', undefined) ?? readConsumerApplicationId(project);
+      const artifact = resolve(
+        optionValue('--artifact', undefined) ?? discoverConsumerArtifact(project, target),
+      );
+      const artifactHash = createHash('sha256').update(readFileSync(artifact)).digest('hex');
+      const file = join(project, 'artifacts', 'native', 'consumer-targets.json');
+      if (!existsSync(file))
+        throw consumerError('ROW_MISSING', `${file} is absent; run --consumer first.`);
+      const rows = JSON.parse(readFileSync(file, 'utf8'));
+      assertConsumerTargetRows(rows, {
+        applicationId,
+        artifactHash,
+        scenario: optionValue('--scenario', CONSUMER_GAMEPLAY_SCENARIO),
+        targets: [target],
+      });
+      console.log(`existing ${target} consumer row matches the built consumer ${artifactHash.slice(0, 12)}`);
+      process.exit(0);
+    }
+    const { row } = verifyStarterConsumerGameplay({
+      applicationId: optionValue('--application-id', undefined),
+      artifact: optionValue('--artifact', undefined),
+      device: optionValue('--device', undefined),
+      project: optionValue('--project', process.cwd()),
+      target: optionValue('--target', 'desktop'),
+    });
+    console.log(
+      `consumer gameplay qualified on ${row.target}: ${row.assertions} assertions, artifact ${row.artifactHash.slice(0, 12)}, app ${row.applicationId}`,
+    );
+    process.exit(0);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {

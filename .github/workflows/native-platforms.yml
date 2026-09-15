@@ -676,6 +676,17 @@ jobs:
           }
           console.log(`TN_PUMP_ANDROID_STRUCTURAL_OK ${JSON.stringify(result.detail)}`);
           NODE
+      # PRD-366 phase 2: the same consumer scenario on Android. The starter APK is an artifact of
+      # PRD-212's packaging lane and is not staged in this advisory job, so the Android row is
+      # recorded UNVERIFIED rather than fabricated; the desktop rows are qualified where the
+      # starter is built. native-platforms.yml nests inside ci.yml as a reusable workflow and is
+      # NOT part of the merge verdict, so this lane cannot gate the claim either way.
+      - name: Record the Android consumer gameplay row as unverified
+        if: always()
+        run: |
+          mkdir -p packages/runtime-native/artifacts/performance-contract/android-emulator
+          printf '{"target":"android","status":"UNVERIFIED","reason":"the starter APK (PRD-212 artifact) is not staged in native-platforms.yml; the row is unverified, not fabricated"}\n' \
+            > packages/runtime-native/artifacts/performance-contract/android-emulator/consumer-targets-unverified.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -1128,6 +1139,23 @@ jobs:
             --runtime "$runtime" \
             --skip-build \
             --artifacts packages/runtime-native/artifacts/starter-ui-${{ matrix.platform }}
+      # PRD-366 phase 2: the same installed consumer gameplay row, on the hosted Windows and macOS
+      # desktop hosts it is claimed for. The artifact, application id, OS, architecture and session
+      # are recorded, and the gate fails on any divergence from the built consumer.
+      # Same known blocker as the Linux starter lane: the shared scenario's noNetworkErrors:true is
+      # refused on device/desktop targets, so this fails SCENARIO_NOT_CROSS_TARGET until fixed.
+      - name: Qualify the installed starter's consumer gameplay (${{ matrix.platform }} desktop)
+        shell: bash
+        env:
+          STARTER: ${{ runner.temp }}/threenative-starter-native
+        run: |
+          runtime="$PWD/packages/runtime-native/build/tn-macos/mystral"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            runtime="$PWD/packages/runtime-native/build/tn-windows/mystral.exe"
+          fi
+          THREENATIVE_RUNTIME_BINARY="$runtime" \
+            node packages/runtime-native/scripts/verify-starter-desktop.mjs \
+            --consumer --target desktop --project "$STARTER"
       - name: Upload the starter HUD evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -1273,6 +1301,21 @@ jobs:
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
             pnpm --dir "$target" test:native
+      # PRD-366 phase 2: the same consumer scenario phase 1 drove in a browser, run through the
+      # *installed* playtest runner against the built desktop consumer. The row records the real
+      # OS/architecture/session, the artifact hash and the application id, and fails closed on a
+      # missing row, a substituted artifact or a run that evaluated nothing.
+      # KNOWN BLOCKER: the shared scenario sets diagnostics.noNetworkErrors:true, which the device
+      # runner refuses with TN_PLAYTEST_UNSUPPORTED_ON_TARGET, so this step currently fails with
+      # TN_STARTER_CONSUMER_SCENARIO_NOT_CROSS_TARGET until the scenario carries the harness's
+      # target waiver. Fixing that is a template change outside this phase's file budget.
+      - name: Qualify the installed starter's consumer gameplay (Linux desktop)
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: |
+          node packages/runtime-native/scripts/verify-starter-desktop.mjs \
+            --consumer --target desktop \
+            --project "$RUNNER_TEMP/threenative-starter-native"
       - name: Collect starter evidence
         if: always()
         run: |
