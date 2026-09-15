@@ -61,8 +61,11 @@ describe("resolution responds to measured GPU cost", () => {
     [-1, 0],
     [Number.NaN, 0],
     [Number.POSITIVE_INFINITY, 0],
-  ])("retains the presentation fallback for unknown GPU timing (%s, %s)", (ms, age) => {
-    expect(ready().observe(slow(ms, age))).toBe(0.52);
+  ])("probes a single rung for unknown GPU timing (%s, %s)", (ms, age) => {
+    // The presentation fallback is retained as a probe, not a priced jump: without fresh GPU
+    // timing nothing can say how much of the deficit scales with pixels. The probe is refunded
+    // unless fewer pixels earn a better frame rate (see resolution-scaler-unknown-gpu.spec.ts).
+    expect(ready().observe(slow(ms, age))).toBe(0.85);
   });
 
   it("recovers from the floor and clears its overload report when GPU headroom returns", () => {

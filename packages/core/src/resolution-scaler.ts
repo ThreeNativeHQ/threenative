@@ -86,7 +86,8 @@ export const RESOLUTION_SCALER = {
    */
   warmupWindows: 1,
   /**
-   * The most rungs one down-step may cross.
+   * The most rungs one down-step may cross. Applies only when fresh GPU timing sizes the
+   * jump; without it the fallback below probes a single rung and refunds what earns nothing.
    *
    * Falling one rung per decision costs about twenty seconds per rung at the top of the ladder,
    * and the ladder is ten rungs deep — a game starting at DPR-1 physical spent about three
@@ -121,7 +122,7 @@ export interface IResolutionScalerOptions {
 
 /** A closed frame-budget window's presentation distribution and optional GPU observation. */
 export interface IScalerWindow {
-  /** The last resolved GPU duration and its age; absent/old observations use presentation. */
+  /** The last resolved GPU duration and its age; absent/old observations may only probe. */
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
   /** Frames per second this window achieved, from the mean presented interval. */
@@ -164,6 +165,16 @@ export class ResolutionScaler {
   #guardCycles = 0;
   #guardWindow = 0;
   #pinWindows = 0;
+  // Unknown-GPU probe state. A down-step taken without fresh GPU timing is a hypothesis —
+  // fewer pixels will recover the frame rate — and the next decided window tests it against
+  // the fps that motivated it. `#probeBlind` records a failed hypothesis: reprobing the same
+  // host-bound workload would only flicker, so unknown-GPU probes stop until fresh timing or
+  // a recovered frame rate reopens the question. `#lastHealthyWindow` records the last window
+  // whose fresh GPU timing showed headroom, so a single gap after healthy timing holds
+  // instead of probing.
+  #probeFps: number | undefined = undefined;
+  #probeBlind = false;
+  #lastHealthyWindow = 0;
 
   constructor(options: IResolutionScalerOptions) {
     const { start, targetFps } = options;
@@ -230,6 +241,7 @@ export class ResolutionScaler {
     // otherwise perfect 60 fps, which is a forest streaming its next hillside.
     if (this.#stalled(window)) return undefined;
     const gpuMs = this.#freshGpuMs(window);
+    this.#noteGpuObservation(window, gpuMs);
     if (window.fps < this.targetFps && (gpuMs === undefined || gpuMs > this.budgetMs)) {
       // **Only the mean is under target: hold.** `fps` is `1000 / mean`, and on the one panel
       // arrangement every game actually ships into — `display.maxFps` equal to the refresh rate,
@@ -251,11 +263,16 @@ export class ResolutionScaler {
       // fix and the wrong half.
       if (!this.#overBudget(window)) return undefined;
       this.#cleanWindows = 0;
+      // Unknown GPU timing is not evidence of a GPU bottleneck: an adapter without timestamp
+      // queries reports nothing either way, and neither this window's fps nor its presentation
+      // tail can separate fixed host cost from pixel cost. So the fallback may only probe —
+      // one rung down, refunded unless fewer pixels earn a better frame rate.
+      if (gpuMs === undefined) return this.#probeUnknown(window);
       if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
         this.#atFloor = true;
         return undefined;
       }
-      return this.#step(this.#rungsToDrop(gpuMs === undefined ? window.fps : 1000 / gpuMs));
+      return this.#step(this.#rungsToDrop(1000 / gpuMs));
     }
     this.#atFloor = false;
     if (this.#scaleSource === "auto-pinned") return undefined;
@@ -275,6 +292,56 @@ export class ResolutionScaler {
     return this.#step(-1);
   }
 
+  /**
+   * Records what this window's GPU observation settles about earlier inferences. Fresh timing
+   * supersedes everything drawn from its absence; a recovered frame rate reopens a question a
+   * failed probe closed, because the workload changed.
+   */
+  #noteGpuObservation(window: IScalerWindow, gpuMs: number | undefined): void {
+    if (gpuMs !== undefined) {
+      this.#probeFps = undefined;
+      this.#probeBlind = false;
+      if (gpuMs <= this.budgetMs) this.#lastHealthyWindow = this.#windowIndex;
+    } else if (window.fps >= this.targetFps) {
+      this.#probeFps = undefined;
+      this.#probeBlind = false;
+    }
+  }
+
+  /**
+   * One decided over-budget window with no fresh GPU timing. Returns the new scale when this
+   * window caused a step, `undefined` otherwise.
+   */
+  #probeUnknown(window: IScalerWindow): number | undefined {
+    // A pending probe is evaluated before the floor guard: parking at the final rung must
+    // not strand the hypothesis that fewer pixels would help. Improvement counts only when
+    // the new deficit prices fewer rungs than the old one — the same rung table as every
+    // sized jump, so timing noise that never crosses a rung boundary refunds instead of
+    // ratcheting the ladder down one tremor at a time.
+    if (this.#probeFps !== undefined) {
+      const earned = this.#rungsToDrop(window.fps) < this.#rungsToDrop(this.#probeFps);
+      this.#probeFps = undefined;
+      if (!earned) {
+        this.#probeBlind = true;
+        return this.#step(-1, false);
+      }
+      if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+        this.#atFloor = true;
+        return undefined;
+      }
+      this.#probeFps = window.fps;
+      return this.#step(1);
+    }
+    if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+      this.#atFloor = true;
+      return undefined;
+    }
+    // A gap immediately after fresh-healthy timing is transient, not a new bottleneck.
+    if (this.#windowIndex - this.#lastHealthyWindow <= 1) return undefined;
+    if (this.#probeBlind) return undefined;
+    this.#probeFps = window.fps;
+    return this.#step(1);
+  }
   /**
    * True when the median or tail corroborates the missed presentation budget. This alone cannot
    * identify a pixel bottleneck; fresh GPU timing takes precedence in observe().
@@ -340,7 +407,7 @@ export class ResolutionScaler {
     return Math.min(Math.max(1, rungs), RESOLUTION_SCALER.maxDownRungs);
   }
 
-  #step(direction: number): number {
+  #step(direction: number, countGuard = true): number {
     // The boundary a fall from rung n crosses is the same one the climb back to n crosses.
     const boundary = direction > 0 ? this.#index : this.#index - 1;
     this.#index = Math.min(
@@ -348,7 +415,9 @@ export class ResolutionScaler {
       Math.max(0, this.#index + direction),
     );
     this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
-    this.#noteForOscillationGuard(boundary, direction);
+    // A refund is a measurement correction, not workload oscillation: counting it would let
+    // probe/refund cycles pin the scaler at a rung pixels were just proven not to earn.
+    if (countGuard) this.#noteForOscillationGuard(boundary, direction);
     return this.scale;
   }
 
