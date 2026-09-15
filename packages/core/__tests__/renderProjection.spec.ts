@@ -1841,3 +1841,113 @@ describe("SceneRenderProjection respects an authored static marking", () => {
     expect(projection.inspect(held[0] as Mesh)?.matrixWorld.elements.slice(12, 15)).toEqual([50, 0, 0]);
   });
 });
+
+/**
+ * While the projection holds, the renderer is handed the mirror, and three builds a frame's
+ * lighting from the lights of the scene it is handed (the mirror), not from the authored scene
+ * the shared materials came from. The mirror holds a clone of each game light, and `light.clone()`
+ * gives that clone its own `LightShadow` and shadow camera. So the game's own light renders a
+ * shadow map nothing samples while the mirror draws — the dead map measured in report F.
+ *
+ * Three's WebGPU `ShadowNode.updateBefore` reads each light's own `shadow.autoUpdate`, so the
+ * dead map is dropped by taking the authored light offline and restoring it exactly when the
+ * projection releases. These assertions pin which light is switched off, that the clone's own map
+ * stays live, and the restoration on every release path.
+ */
+describe("SceneRenderProjection takes the unsampled authored light's shadow offline", () => {
+  function mirroredLight(root: Scene, source: DirectionalLight): DirectionalLight {
+    let found: DirectionalLight | undefined;
+    root.traverse((object) => {
+      const light = object as DirectionalLight;
+      if (light.isDirectionalLight === true) found = light;
+    });
+    if (found === undefined) throw new Error("mirror did not clone the directional light");
+    expect(found).not.toBe(source);
+    return found;
+  }
+
+  // (a) The measured case: the authored sun's map is the one no drawn pixel reads, so its update
+  // stops; the clone the mirror draws with keeps updating its own separate map.
+  it("stops the source light's shadow update while the cloned light's keeps updating", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    sun.castShadow = true;
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+
+    expect(sun.shadow.autoUpdate).toBe(false);
+    const clone = mirroredLight(projection.root as Scene, sun);
+    expect(clone.shadow).not.toBe(sun.shadow);
+    expect(clone.shadow.autoUpdate).toBe(true);
+  });
+
+  // (b) Reversibility is the contract: a scene that stops projecting gets its authored shadows
+  // back on the very next frame, so the release path restores the exact captured value.
+  it("restores the authored light's shadow update on dispose", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    expect(sun.shadow.autoUpdate).toBe(false);
+
+    projection.dispose();
+    expect(projection.root).toBe(scene);
+    expect(sun.shadow.autoUpdate).toBe(true);
+  });
+
+  it("restores the authored light's shadow update on a decline", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const sun = new DirectionalLight(0xffffff, 1);
+    scene.add(sun);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    expect(sun.shadow.autoUpdate).toBe(false);
+
+    // A render hook is a decline; the mirror is released and the authored scene draws again.
+    (meshes[10] as Mesh).onBeforeRender = () => undefined;
+    projection.reconcile();
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.report.reasonCode).toBe("renderHook");
+    expect(sun.shadow.autoUpdate).toBe(true);
+  });
+
+  // A light the game had already told three not to auto-update must come back off, never forced
+  // on by the restore. This case passes on the unpatched code too — it is the guard that the fix
+  // does not invent an update the game had deliberately switched off.
+  it("leaves a light that had autoUpdate off to off across projection and release", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    sun.shadow.autoUpdate = false;
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    expect(projection.deoptimized).toBe(false);
+    expect(sun.shadow.autoUpdate).toBe(false);
+
+    projection.dispose();
+    expect(sun.shadow.autoUpdate).toBe(false);
+  });
+
+  // (c) A scene that never projects keeps its authored shadow state: the mirror never takes the
+  // light, so nothing is captured and nothing is restored.
+  it("leaves a scene that never projects untouched", () => {
+    const scene = new Scene();
+    const sun = new DirectionalLight(0xffffff, 1);
+    scene.add(sun);
+    fill(scene, new MeshStandardMaterial(), 4);
+
+    const projection = projected(scene, 2, 200);
+    expect(projection.deoptimized).toBe(true);
+    expect(projection.root).toBe(scene);
+    expect(sun.shadow.autoUpdate).toBe(true);
+  });
+});
