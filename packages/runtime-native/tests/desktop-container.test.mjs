@@ -83,6 +83,19 @@ test('macOS stages Info.plist at the application bundle root, not under Resource
   assert.equal(existsSync(join(root, 'Contents/Resources/Contents/Info.plist')), false);
 });
 
+test('macOS stages the web UI where the runtime resolves it, under Contents/Resources', () => {
+  // SDL_GetBasePath() returns <App>.app/Contents/Resources/ for a bundled macOS app, and
+  // src/cli/main.cpp resolves a relative ui root against it. Staging the UI beside the executable
+  // in Contents/MacOS instead leaves the release container launching with no HUD at all, which no
+  // fixture caught because nothing asserted the bundle location.
+  const { root, manifest } = fixture('darwin', { icon: true });
+  assert.ok(existsSync(join(root, 'Contents/Resources/ui/index.html')));
+  assert.equal(manifest.ui.directory, 'Contents/Resources/ui');
+  assert.equal(manifest.ui.entry, 'Contents/Resources/ui/index.html');
+  assert.ok(manifest.resources['Contents/Resources/ui/index.html']);
+  assert.equal(existsSync(join(root, 'Contents/MacOS/ui')), false);
+});
+
 test('macOS plist names the icon that was actually staged', () => {
   const { manifest } = fixture('darwin', { icon: true });
   const plist = containerMetadata({ platform: 'darwin', config })['Contents/Info.plist'];

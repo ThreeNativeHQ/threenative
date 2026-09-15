@@ -323,7 +323,10 @@ function layout(platform, { appName, executableName, iconName }) {
       executable: `Contents/MacOS/${slug}`,
       icon: `Contents/Resources/${slug}.icns`,
       manifest: `Contents/Resources/${CONTAINER_MANIFEST}`,
-      ui: 'Contents/MacOS/ui',
+      // SDL_GetBasePath() resolves to Contents/Resources/ for a bundled macOS app, and that is
+      // what src/cli/main.cpp joins a relative ui root against. Staging beside the executable
+      // launches the container with no HUD.
+      ui: 'Contents/Resources/ui',
     };
   }
   return {
