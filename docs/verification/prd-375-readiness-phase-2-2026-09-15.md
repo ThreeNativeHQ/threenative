@@ -764,3 +764,45 @@ is exactly what the neighbouring spec does.
 high-water clamp from `packages/core/src/game.ts` reproduces the original failure verbatim —
 `sample 3 fell from 0.7 to 0.35` — and restoring it returns 3 passed. The spec still catches the
 defect it was written for.
+
+## CI run 35055978321 on `3790d0908` — Windows and macOS brand evidence is real
+
+The first completed `native-platforms` run carrying the brand steps. Every desktop leg green:
+
+| Job | Result |
+| --- | --- |
+| `native-platforms / macOS desktop core` | **success** |
+| `native-platforms / Windows desktop core` | **success** |
+| `native-platforms / Scaffolded starter desktop artifact` | **success** |
+
+Both new steps passed on both platforms:
+
+```
+Give the scaffolded starter its own authored icon: success
+Inspect the release container's game brand: success
+```
+
+**The `RT_ICON` byte-equality assumption held against real `rcedit` output.** This was
+pre-registered above, before the run, as the one untested assumption in the Windows path: the
+inspector asserts that an embedded `RT_ICON` payload equals the authored PNG byte for byte, on the
+reasoning that `pngToIco` wraps the PNG verbatim and `rcedit` stores that image data unchanged. It
+had never run against a real Windows packaging toolchain. It now has, on a `windows-latest` runner
+with `rcedit` v2.0.0, and it is correct. The pre-registered contingency — correct the assertion to
+match what `rcedit` actually writes, never delete or soften it — was not needed and was not used.
+
+What this upgrades:
+
+- **Windows is no longer fixture-backed.** The PE resource directory of a real packaged `.exe`,
+  written by real `rcedit`, was parsed by the shipped inspector and matched against the consumer
+  config: `RT_GROUP_ICON`/`RT_ICON` against the authored icon bytes, and
+  `RT_VERSION`/`VS_FIXEDFILEINFO` plus `StringFileInfo` against the container's declared identity.
+- **macOS `.icns` and `Info.plist` linkage** were inspected on a real `.app` built by `sips` and
+  `iconutil`. Note the standing limitation is unchanged: this proves provenance, payload integrity
+  and plist linkage, **not** converted icon pixels.
+- Windows brand evidence exists despite the container being unlaunchable
+  ([#264](https://github.com/ThreeNativeHQ/threenative/issues/264)), which is exactly why
+  `--brand-only` was built: inspection needs no display.
+
+The `cygpath -w` path conversion held too — win32 node received Windows-form paths and resolved the
+container, config and project correctly. That code path had never been exercised, because every
+pre-existing step passing paths to node skips Windows.
