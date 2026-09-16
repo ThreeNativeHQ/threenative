@@ -337,8 +337,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // into each template's Ownership paragraph so it adds no line to AGENTS.md or its CLAUDE.md mirror
   // (the mirror banner costs two lines, so both must stay under the 100-line cap), and the branch
   // rebased onto origin/develop. All ten trees move together; no other template source changed.
-  "action-rpg": "d58f89388beaa82a660ba7d2729301fe9377bda397255fe70bde6223fbd36df3",
-  defense: "c45691b24f4a0f5c7b74a21bf98c0f452fe58258b570eeb78228c0ae8798ac92",
+  // Recomputed 2026-09-16 for the ponytail default: every scaffold gains the `ponytail` skill in
+  // both host adapters, a project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`,
+  // `.claude/hooks/ponytail-context.mjs`) and the lazy-first clause appended to each AGENTS.md
+  // without adding a line, so all ten trees move together. Values are computed from a clean HEAD
+  // checkout (per the warning above), not from a full-suite run racing another lane's uncommitted
+  // template edits; no template source outside AGENTS.md/CLAUDE.md changed.
+  "action-rpg": "8540f50bf3aab71e1b8d31394c519a6426a6739d02affbfc7bd539518341d4ce",
+  defense: "5edc5705fa5a1f2e6b64dd9d3c1cc932fc497a00f964fd3c6ca2a7fbfdc9ece5",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -346,17 +352,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "f2c809f02d8affc02bc54f5dfddcd4e0902997166d8c83db67760711d97bc4ac",
-  platformer: "56b1fe3a46d7d2ee60fe9b3b5aef382439560930ed6430f7f1a66aea7f1ef0a2",
-  runner: "c294143639312ae4c63f63c0236c650afcbba6b905d8ed636221fe9a5ee458ff",
-  puzzle: "b3a7b0a33a0f15d8391e1585b28ea26339ce7982ed6b6eadad4f0a9e73e31fa8",
-  racing: "2874d07685ee094634955790c58c000dbd15bef6c06e92aed52b2209256df542",
-  shooter: "eac90b2605bb99fa1062a56d344847100ea56843ab7949a333fc2cfb3dee56ab",
+  minimal: "d6298e0f3e9b87ffdc01696800f0366280a690d0317a563073290a3d51b85617",
+  platformer: "7693f346f64a4029c3c98f7047dd7cc492ddfcf1256f23ef3db6b66ef4799786",
+  runner: "c8613d98582b40c93ba40c6f8b4d740eb18947fb81d0d4c488ef07425485f2d6",
+  puzzle: "6daaf7e9f944fce8733a4d076535feb84b885398717d5be27b7a43fd25ad0642",
+  racing: "ffb0bd3bf18bdd401e09ed62c01f31262eb633cff9ef559a6823178b4e04c4ac",
+  shooter: "d39d06044c47e8e4a7ff595dd1d0f5ae9a6f1995ae42f03a27bf5ef2f7a5cc7f",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "185995aaadcbc21f464417d2f8a7b6370f6d1a4e9facf17dad683173fc25b637",
+  starter: "30c6cb68987c213eb0c77e787c9337efec56d4306ff24e817dbee669e544ba1c",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -382,7 +388,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "d0c3d805e9c52cd48cff5f1eae5b1945fadd42718e6e7ac5bc3c11be3632170f",
+  sailing: "ee4786f18f272f1e271031204ff4529bec9aebd87686b5abbe9aefe7c98da924",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -492,6 +498,11 @@ const STARTER_PATHS = [
   ".mcp.json",
   "AGENTS.md",
   "CLAUDE.md",
+  ".claude/settings.json",
+  ".claude/hooks/ponytail-context.mjs",
+  ".claude/skills/ponytail/SKILL.md",
+  ".agents/skills/ponytail/SKILL.md",
+  ".codex/hooks.json",
   "kit.json",
   "package.json",
   "patches/three@0.185.1.patch",

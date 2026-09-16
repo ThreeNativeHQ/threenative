@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -42,6 +42,7 @@ const authoringSkills = [
   ["threenative-performance", "TN_FRAME_BUDGET", "Unexecuted platforms stay unverified"],
   ["threenative-ui", "data-tn-interactive", "useUiState"],
   ["threenative-context", "ctx.pointer", "ctx.raycastAll"],
+  ["ponytail", "engine_search_capabilities", "laziest"],
 ] as const;
 // The frame-time ceiling stays mandatory; PRD-214 added an fps floor and per-phase ceilings
 // beside it, so the pattern bounds the opening of the object rather than its whole shape.
@@ -857,6 +858,33 @@ describe("template contracts", () => {
         );
       }
     }
+  });
+
+  // The project hook is the force: it re-injects the ruleset every session, prompt and subagent
+  // so the inline AGENTS.md rule cannot drift out of the model's context. Proves the shipped
+  // script emits the capability-first rung in the JSON envelope both hosts read, and honours the
+  // off switch.
+  it("should inject the capability-first ponytail rule from the shipped project hook", () => {
+    const hook = path.resolve(
+      "packages/create-threenative/agent-files/.claude/hooks/ponytail-context.mjs",
+    );
+    const payload = JSON.stringify({ hook_event_name: "UserPromptSubmit" });
+    const run = spawnSync(process.execPath, [hook], { encoding: "utf8", input: payload });
+    expect(run.status, run.stderr).toBe(0);
+    const output = JSON.parse(run.stdout) as {
+      hookSpecificOutput?: { additionalContext?: string; hookEventName?: string };
+    };
+    expect(output.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
+    const context = output.hookSpecificOutput?.additionalContext ?? "";
+    expect(context).toContain("engine_search_capabilities");
+    expect(context).toMatch(/critical capability gate/iu);
+    expect(context).toContain("stop ponytail");
+    const off = spawnSync(process.execPath, [hook], {
+      encoding: "utf8",
+      input: payload,
+      env: { ...process.env, PONYTAIL: "off" },
+    });
+    expect(off.stdout).toBe("");
   });
 
   it("should proactively reuse the active browser session for Fab CLI authentication", async () => {

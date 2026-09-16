@@ -5,23 +5,11 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 
 # ThreeNative performance evidence
 
-Refill scratch and pool objects. Static GLBs may use `assets.models.lightmap:{atlasSize,padding}`;
-load through `ctx.assets.model()`, remove it to roll back, and never claim Android/iOS from a
-web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, and
-`residual`; the same window carries `passes`, the draw calls and triangles each render pass
-(`main`, `shadow`, `reflection`) submitted, attributed to the innermost active render call so a
-nested shadow or reflection pass does not read as main. `defineGame({ frameBudget: false })`
-silences output, never measurement.
+Refill scratch and pool objects; load static GLBs through `ctx.assets.model()` so rollback is removal, and never claim Android/iOS from a web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, `residual`, plus per-pass draw calls and triangles attributed to the innermost render call. `defineGame({ frameBudget: false })` silences output, never measurement.
 
 ## Reach for the shipped default before you write your own
 
-The engine already prepares transforms, batches and projects the scene, culls per pass, scales
-resolution, cooks assets and warms first use. A per-mesh render hook, a manual
-`updateMatrixWorld(true)`, a hand-rolled instanced batch with map-spanning bounds, or a second
-`scene.environment` copy of a large sky is how a game pays for that twice.
-`agent-docs/performance-basics.md` lists what to leave alone and the abstractions to reach for
-(`InstancedBatch`, `ClusteredBatch`/`ClusteredMesh`, `GPUParticles3D`, `TracerPool3D`,
-`VirtualShadowNode`, `warmUpScene`, `loadAll`, `addInSlices`). Read it before the first profile.
+The engine already prepares transforms, batches and projects the scene, culls per pass, scales resolution, cooks assets and warms first use. Hand-rolling any of that pays twice — read `agent-docs/performance-basics.md` before the first profile.
 
 Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. The bounded proof shape is
 `{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}` and its
