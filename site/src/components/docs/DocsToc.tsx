@@ -37,7 +37,13 @@ export function useActiveSection(items: readonly IDocsTocItem[]): string | undef
   return active;
 }
 
-export function DocsToc({ items, active }: { readonly items: readonly IDocsTocItem[]; readonly active: string | undefined }) {
+export function DocsToc({
+  items,
+  active,
+}: {
+  readonly items: readonly IDocsTocItem[];
+  readonly active: string | undefined;
+}) {
   return (
     <nav aria-label="On this page" className="space-y-2">
       {items.map((item) => (
