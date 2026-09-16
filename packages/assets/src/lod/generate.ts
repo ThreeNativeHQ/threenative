@@ -773,10 +773,7 @@ function isolateTransformed(primitive: Primitive, matrix: Matrix4): Primitive {
   // accessors and only the detached copy is compacted and transformed.
   const isolated = primitive.clone();
   compactPrimitive(isolated);
-  transformPrimitive(
-    isolated,
-    matrix.elements as unknown as Parameters<typeof transformPrimitive>[1],
-  );
+  transformPrimitive(isolated, matrix.elements);
   return isolated;
 }
 

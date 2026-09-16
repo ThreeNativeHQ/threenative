@@ -310,7 +310,7 @@ function boundsOf(
   object: Object3D,
   versions: WeakMap<object, number>,
 ): IBoundingSphereLike | undefined {
-  const cullable = object as unknown as ICullable;
+  const cullable = object as ICullable;
   // An `InstancedMesh` carries its own instance-aware bound; the geometry one is not it.
   if (cullable.boundingSphere != null) return cullable.boundingSphere;
   const geometry = cullable.geometry;
