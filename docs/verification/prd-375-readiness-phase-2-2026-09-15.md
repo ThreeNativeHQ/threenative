@@ -260,9 +260,11 @@ THREENATIVE_RUNTIME_BINARY=<checkout host binary> pnpm exec threenative build --
   `TN_NATIVE_SMOKE_READY:webgpu`, `TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb` and
   `Rendered 300 frames in 3017ms`-class completion, and captured a non-blank 1280x720 frame
   (sha256 `e099b09d3e0fde636b62c2321116d599df4aef1cd9bf9a725fc924361d7006f3`, 21 910 distinct
-  colours, 524 magenta / 337 cyan proof pixels). **The capture was inspected by a human-equivalent
-  visual read in this session**: an island scene over water with the checkerboard pennant visible;
-  it is the starter, drawn, not a loading state.
+  colours, 524 magenta / 337 cyan proof pixels). **The capture was viewed by the implementing agent
+  before shipping** — an island scene over water with the checkerboard pennant visible, the starter
+  drawn rather than a loading state. That is a look at the pixels rather than trust in a hash, and it
+  is **not** human inspection: no person has viewed this capture. It does not satisfy acceptance
+  criterion 5's human-inspection half on any platform.
 - brand evidence recorded in `artifacts/native/starter-container-report.json`: icon
   `share/icons/hicolor/256x256/apps/com.example.orbitbrand.png` with payload and source sha256 both
   `c414cd0e…` (the authored art), name `Orbit Brand` read from
@@ -511,8 +513,11 @@ The starter was scaffolded from local workspace tarballs and, **only in game fil
 public/brand-splash.png }`. The art is authored, not a placeholder: a 256x256 amber ringed planet on
 deep indigo for the icon (sha256 `48b3782a7fc5731f088eef3ecf17464cfd41a2219a2758d9f21d2da4ab89d907`)
 and a 1024x576 splash carrying the same mark over the configured background with a loading bar
-(sha256 `86b5578f1c389493c3fff843fc103b023ee0ea66b6639883209063b1f8c05ad5`). Both were inspected
-visually in this session. This replaces the 1x1 PNG used in the first run, which was byte-distinct
+**The capture was viewed by the implementing agent
+  before shipping** — an island scene over water with the checkerboard pennant visible, the starter
+  drawn rather than a loading state. That is a look at the pixels rather than trust in a hash, and it
+  is **not** human inspection: no person has viewed this capture. It does not satisfy acceptance
+  criterion 5's human-inspection half on any platform. This replaces the 1x1 PNG used in the first run, which was byte-distinct
 but nothing a person could look at.
 
 - container `orbit-brand.tar.gz` sha256 `f93e0953f5d0665e96ab863b6ee108a24a3d5cd0d86e998eb203ec86ea7c743b`
@@ -833,3 +838,21 @@ So AC5 stays open. Its macOS half becomes satisfiable on the first run carrying 
 (35059792538 on `443175e65` is the first), and its Windows half stays impossible until #264 is
 fixed. The brand evidence from 35055978321 is unaffected and stands; it simply is not capture
 evidence, and the two must not be conflated because both are green.
+
+## Who inspected what — stated plainly
+
+Every visual look recorded in this file was performed by the **implementing agent**, not by a person.
+That includes the Linux container capture and the authored icon and splash. It is a real check — it
+is the difference between knowing a frame is drawn and trusting a colour histogram — and it is
+deliberately recorded, but it does **not** satisfy the human-inspection half of acceptance criterion
+5, and no box is ticked on the strength of it.
+
+As of this writing **the owner has not looked at the Linux container**. He was given the launch
+command twice and went AFK without reporting a run. Phase 2's user-verification box and acceptance
+criterion 5 both stay open partly for that reason.
+
+The distinction matters here more than most places: an agent asserting that its own look satisfies a
+human-inspection criterion is the same substitution this PRD exists to reject — SDL window-icon
+evidence standing in for installed-app metadata, a UI entry standing in for a configured splash, a
+manifest standing in for PE resources. Correcting the wording was prompted by review; the loose
+phrasing was this lane's.
