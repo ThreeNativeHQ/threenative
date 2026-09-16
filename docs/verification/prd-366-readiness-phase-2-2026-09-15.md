@@ -160,6 +160,60 @@ this phase's five-file budget and would also move the frozen scaffold hash in
 gameplay failure. No workaround was applied silently; the scenario fix is the next change this
 phase needs.
 
+## Repair — the restart step and soundless-host noise (2026-09-15)
+
+The wired desktop rows still failed in CI (run `35032010996`,
+`artifacts/native/consumer-targets.json` on the `starter-linux` job) with two independent causes,
+both visible in the uploaded report:
+
+1. **The restart never happened on native.** The scenario restarted through the WebView menu
+   (`Tab`, `Tab`, `Enter`); native injects synthetic keyboard events into the JS
+   document/window/canvas, but the WebView overlay exposes pointer injection only, and on the Linux
+   lane the overlay refuses to attach (`TN_UI_OVERLAY:{"attached":false,...}`). The report confirms
+   no reset: at `restarted` the samples read `score = 1` and `entityCount = 3`, not `0` and `4`.
+   The scenario now presses the game's own portable `restart: { keys: ["KeyR"] }` binding
+   (`templates/starter/src/game.ts:24`, consumed at `src/scenes/Play.ts:281`) and samples
+   `restarted` after a 120-tick wait, so the assertion reads after `Play.enter` has restored
+   `entityCount` to 4. `restart.playtest.json`/`pause.playtest.json` keep the web-only UI-focus
+   restart proof unchanged.
+2. **Ten platform-library lines were counted as console errors.** The report's console held 1
+   `dbind-WARNING … AT-SPI`, 8 `ALSA lib …` and 1 `[Audio] Failed to open audio device: ALSA: …`
+   entry, all typed `error`. `desktopConsoleType` (`packages/playtest/src/runner/desktop.ts:180`)
+   now classifies the ALSA/`[Audio] … ALSA` library chatter and the `dbind-WARNING` AT-SPI line as
+   non-error, mirroring Android's `isPlatformWebViewNoise`: every line is kept, only its severity
+   is decided. `noConsoleErrors`/`runtimeDiagnostics`/`runtimeReady` are unchanged.
+
+Verification actually executed here:
+
+```sh
+pnpm exec vitest run packages/playtest/__tests__/desktop-playtest.spec.ts
+# red before the classifier change: 3 failed | 25 passed (the three new ALSA/dbind rows)
+# green: 28 passed (28)
+
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/starter-desktop.test.mjs tests/starter-consumer-qualification.test.mjs
+# Test Files 2 passed (2); Tests 73 passed (73)
+
+pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts
+# Test Files 1 passed (1); Tests 61 passed (61)
+# starter hash recomputed for the moved scenario bytes:
+#   aa783e68daddcb7b54a830056511db80e19ff6faa69d7c641d0b5b947d8b72c2
+
+pnpm --filter @threenative/playtest run typecheck   # pass
+pnpm --filter create-threenative run typecheck      # pass
+pnpm exec biome check packages/playtest/src/runner/desktop.ts \
+  packages/playtest/__tests__/desktop-playtest.spec.ts
+# 3 pre-existing warnings, 0 errors (none from the changed lines)
+```
+
+The moved scenario parses through the real validator (`validatePlaytestScenario`), whose steps are
+`play-scene-loads,collected,restart,restarted,moved-after-restart`. **No desktop consumer row was
+produced locally:** `packages/runtime-native/build/tn-linux/mystral` does not exist in this worktree
+and `pnpm native:build` would download and compile the whole native dependency tree, so the
+end-to-end native row remains unverified on this machine and the CI lane is the first place it runs.
+The restart binding is the same keyboard channel the passing `movement.axisDelta` already proved on
+native, but that is a reasoned expectation, not an executed native run.
+
 ## User verification on the named platform — NOT VERIFIED
 
 - **Desktop launch — NOT VERIFIED, environmentally blocked.** This machine's host errors on GBM
@@ -215,3 +269,10 @@ row-level fixtures rather than real native runs. The reviewer box therefore stay
 - EDIT `scripts/verify-registry-install.ts`
 - EDIT `.github/workflows/native-platforms.yml`
 - NEW `docs/verification/prd-366-readiness-phase-2-2026-09-15.md`
+
+Repair (the section above):
+
+- EDIT `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` — portable `KeyR` restart, sampled after re-entry.
+- EDIT `packages/playtest/src/runner/desktop.ts` — ALSA/`[Audio]`/`dbind` platform-library noise is non-error.
+- EDIT `packages/playtest/__tests__/desktop-playtest.spec.ts` — three red→green severity rows.
+- EDIT `packages/create-threenative/__tests__/scaffold.spec.ts` — starter scaffold hash for the moved scenario bytes.
