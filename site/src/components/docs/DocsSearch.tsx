@@ -41,7 +41,7 @@ export function DocsSearch() {
       </button>
       <dialog
         aria-labelledby="docs-search-title"
-        className="m-auto w-[calc(100%_-_2rem)] max-w-[640px] max-h-[85dvh] overflow-y-auto overscroll-contain rounded-2xl border border-tn-border bg-tn-bg p-5 text-tn-fg shadow-2xl backdrop:bg-black/70"
+        className="m-auto max-h-[85dvh] w-[calc(100%_-_2rem)] max-w-[640px] overflow-y-auto overscroll-contain rounded-2xl border border-tn-border bg-tn-bg p-5 text-tn-fg shadow-2xl backdrop:bg-black/70"
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Escape") {
@@ -69,10 +69,20 @@ export function DocsSearch() {
         ref={dialog}
       >
         <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 className="text-[18px] font-semibold" id="docs-search-title">Search documentation</h2>
-          <button className="rounded-md border border-tn-border px-3 py-1.5 text-[13px]" onClick={() => dialog.current?.close()} type="button">Close</button>
+          <h2 className="text-[18px] font-semibold" id="docs-search-title">
+            Search documentation
+          </h2>
+          <button
+            className="rounded-md border border-tn-border px-3 py-1.5 text-[13px]"
+            onClick={() => dialog.current?.close()}
+            type="button"
+          >
+            Close
+          </button>
         </div>
-        <label className="sr-only" htmlFor="docs-search-input">Search documentation topics</label>
+        <label className="sr-only" htmlFor="docs-search-input">
+          Search documentation topics
+        </label>
         <input
           autoComplete="off"
           className="w-full rounded-lg border border-tn-border bg-tn-surface px-4 py-3 text-[16px] outline-none focus:border-tn-accent"
@@ -95,19 +105,31 @@ export function DocsSearch() {
           type="search"
           value={query}
         />
-        <p className="mt-3 text-[12px] text-tn-fg-subtle" role="status">
-          {results.length === 0 ? "No matching topics. Try a broader search." : `${results.length} documentation topics`}
-        </p>
+        <output className="mt-3 block text-[12px] text-tn-fg-subtle">
+          {results.length === 0
+            ? "No matching topics. Try a broader search."
+            : `${results.length} documentation topics`}
+        </output>
         <nav aria-label="Search results" className="mt-3 space-y-1">
           {results.map((page, index) => (
-            <a className="block rounded-lg p-3 hover:bg-tn-surface focus:bg-tn-surface" href={page.path} key={page.path} ref={index === 0 ? firstResult : undefined}>
+            <a
+              className="block rounded-lg p-3 hover:bg-tn-surface focus:bg-tn-surface"
+              href={page.path}
+              key={page.path}
+              ref={index === 0 ? firstResult : undefined}
+            >
               <span className="text-[14px] font-medium">{page.label}</span>
               <span className="ml-2 text-[11px] text-tn-accent">{page.group}</span>
-              <span className="mt-1 block text-[13px] leading-5 text-tn-fg-muted">{page.summary}</span>
+              <span className="mt-1 block text-[13px] leading-5 text-tn-fg-muted">
+                {page.summary}
+              </span>
             </a>
           ))}
         </nav>
-        <p className="mt-4 text-[12px] text-tn-fg-subtle">Searches guide titles, summaries and topic keywords. Enter opens the first result; Escape closes.</p>
+        <p className="mt-4 text-[12px] text-tn-fg-subtle">
+          Searches guide titles, summaries and topic keywords. Enter opens the first result; Escape
+          closes.
+        </p>
       </dialog>
     </>
   );
