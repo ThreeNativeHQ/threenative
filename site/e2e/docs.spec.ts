@@ -13,7 +13,9 @@ test.describe("documentation navigation", () => {
       .getByRole("navigation", { name: "Documentation", exact: true })
       .getByRole("link", { exact: true, name: "Physics" })
       .click();
-    await expect(page.getByRole("heading", { level: 1, name: "Physics and portability" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Physics and portability" }),
+    ).toBeVisible();
     await page.locator("header").getByRole("link", { exact: true, name: "Get Started" }).click();
     await expect(page).toHaveURL(/\/#install$/u);
     await expect(page.locator("#install")).toBeVisible();
@@ -31,9 +33,9 @@ test.describe("documentation navigation", () => {
       page.getByRole("heading", { level: 1, name: "ThreeNative benchmarks and verification" }),
     ).toBeVisible();
     await expect(page.getByTestId("mobile-nav-toggle")).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(
-      true,
-    );
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
   });
 
   test("searches locally and follows the first result with Enter", async ({ page }) => {
@@ -52,7 +54,9 @@ test.describe("documentation navigation", () => {
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Unreal Engine");
   });
 
-  test("handles the keyboard shortcut, no results, Escape and focus restoration", async ({ page }) => {
+  test("handles the keyboard shortcut, no results, Escape and focus restoration", async ({
+    page,
+  }) => {
     await page.goto("/docs/comparison");
     const trigger = page.getByRole("button", { name: /^Search docs/u });
     await trigger.focus();
@@ -114,9 +118,9 @@ test.describe("documentation navigation", () => {
       await page.setViewportSize({ height: 844, width });
       for (const path of ["/docs/comparison", "/docs/benchmarks"]) {
         await page.goto(path);
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(
-          true,
-        );
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+        ).toBe(true);
       }
     }
   });
