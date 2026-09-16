@@ -404,14 +404,26 @@ family **6 files, 193 passed**, exit 0; `pnpm typecheck` and `pnpm lint` exit 0.
 
 `parseCliFlags` matched `flag === '--config' && value`, so a trailing `--config` or an empty shell
 expansion dropped the flag and the run passed printing `brand NOT inspected`. Announced, so not a
-false green — but a typo quietly disabled the whole check. The same shape was worse on `--container`, and that one was **not
-hypothetical — it was a live false green in production CI**. Both `native-platforms.yml` jobs
-invoke the verifier as `--container "$TN_RELEASE_CONTAINER_ROOT"`; if that variable had ever been
-empty — an earlier step failing to export it, a rename, a shell quoting change — the flag was
-dropped, the run fell through to `verifyStarterDesktop`, and the job **judged the developer
-artifact in `dist-native/` instead of the release container it claimed to verify, and printed a
-pass**. Nothing announced the substitution. The only thing standing between that path and a green
-job reporting on the wrong binary was the variable never happening to be empty.
+false green — but a typo quietly disabled the whole check. The same shape was worse on `--container`. Both
+`native-platforms.yml` jobs invoke the verifier as `--container "$TN_RELEASE_CONTAINER_ROOT"`
+(`:1379`, `:1636`), and the variable travels through `$GITHUB_ENV` (`:1278`, `:1594`), so an
+empty-but-set value survives `set -u`. Had it ever been empty, the old parser dropped the flag, the
+run fell through to `verifyStarterDesktop`, and the job would have **judged the developer artifact
+in `dist-native/` instead of the release container it claimed to verify, and printed a pass**, with
+nothing announcing the substitution.
+
+**That path was not reachable, and the reason matters.** Independent review checked it in both
+directions: three upstream guards red the job first, in both jobs. The relocate step derives
+`container` by suffix-stripping a `$manifest` that an exact-count check has already proved
+non-empty, so the exported value cannot be blank to begin with; and `manifest=$(find
+"$TN_RELEASE_CONTAINER_ROOT" ...)` then runs twice more before the verifier (`:1291` and `:1300`;
+`:1607` and `:1612`) under `set -euo pipefail`, where `find ""` exits 1 and takes the step with it
+— confirmed locally under `bash`, which does trip `set -e` on a failing command-substitution
+assignment. So **no false green occurred or could have** without an earlier step failing first.
+
+The defect was latent and real, the fix stands, and what masked it was three unrelated guards rather
+than anything in the CLI or in those steps designed to catch it. That is the part worth carrying
+forward: a workflow refactor that dropped those `find` calls would have exposed it silently.
 
 Every flag is now recognized or refused, and every value must be present and non-blank:
 `TN_NATIVE_STARTER_CLI_INVALID` for an unknown flag, a missing or empty value, or a `--frames`
@@ -598,3 +610,12 @@ cannot drift apart.
 | `pnpm typecheck` / `pnpm lint` / `pnpm check:docs` | exit 0 / exit 0 / clean |
 | `pnpm budgets` | **budgets ok**, no census drift |
 | `ci-structure`, `ci-needs`, `check-doc-links`, `evidence-budget`, `primary-docs` | **5 files, 153 passed**, exit 0 |
+
+## Independent confirmation of the documentation-only commit
+
+The reviewer verified that `5e00d3324..9dbe51a05` is genuinely documentation-only —
+`git diff --name-only` returns exactly two `.md` files — and ran its own gates on the final head:
+3 files / 132 passed, CI-structure plus prose 5 files / 156 passed (a different file selection from
+the 5 files / 153 passed recorded above, not a disagreement), `check:docs` 2130 links across 1101
+files exit 0, and Biome with 0 errors. It did **not** run `pnpm typecheck`, `pnpm budgets` or the
+census check, so those three remain this lane's own unreplicated results.
