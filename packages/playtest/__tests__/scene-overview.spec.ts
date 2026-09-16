@@ -149,6 +149,32 @@ describe("scene overview, the parts that catch a broken run", () => {
     expect(drewNothing.warnings.join(" ")).toMatch(/nothing drew/i);
   });
 
+  it("reports the last frame's draw calls and triangles per render pass", () => {
+    const split = summariseScene(
+      observation({
+        runtimeDiagnosticsSeries: [
+          {
+            frameMs: 16.4,
+            passes: [
+              { draws: 1418, kind: "main", triangles: 4_727_398 },
+              { draws: 316, kind: "shadow", triangles: 1_814_234 },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(split.render.passes).toEqual([
+      { draws: 1418, kind: "main", triangles: 4_727_398 },
+      { draws: 316, kind: "shadow", triangles: 1_814_234 },
+    ]);
+    expect(formatSceneOverview(split)).toContain("passes       main 1,418 draws / 4,727,398 tris · shadow 316 draws / 1,814,234 tris");
+
+    // No pass split is reported as absent, never as a zero.
+    const unsplit = summariseScene(OBSERVATION);
+    expect(unsplit.render.passes).toBeUndefined();
+    expect(formatSceneOverview(unsplit)).not.toContain("  passes ");
+  });
+
   it("calls a scene that did not change between samples frozen", () => {
     const frozen = summariseScene({
       ...OBSERVATION,

@@ -91,6 +91,7 @@ export {
   PLAYTEST_FROZEN_MARKER,
   PLAYTEST_ADVANCE_TICK_BUDGET_MS,
   PLAYTEST_STARTUP_COMPILE_BUDGET_MS,
+  PLAYTEST_FRAME_PASS_KINDS,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   PLAYTEST_STARTUP_READY_TIMEOUT_MS,
@@ -104,6 +105,7 @@ export type {
   IPlaytestContactObservation,
   IPlaytestDeviceRequest,
   IPlaytestDeviceResponse,
+  IPlaytestFramePassSample,
   IPlaytestGameplayObservation,
   IPlaytestObservationSnapshot,
   IPlaytestPerformanceObservation,
@@ -122,6 +124,7 @@ export type {
   IPlaytestWorldObservation,
   IPlaytestWorldRuntimeObservation,
   JsonValue,
+  PlaytestFramePassKind,
 } from "./protocol.js";
 // The replay wire protocol moved to @threenative/core (PRD-181); playtest no longer ships
 // its own copy. Import it from `@threenative/core` if a harness needs the parser.

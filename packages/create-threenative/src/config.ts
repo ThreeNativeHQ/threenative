@@ -64,6 +64,8 @@ export interface IResolvedThreeNativeConfig {
     readonly resolutionScale?: number | "auto";
     readonly antialias?: boolean;
     readonly alphaAntialiasing?: boolean;
+    readonly projection?: boolean;
+    readonly minimumProjectedPixels?: number | false;
     readonly android?: {
       readonly resolutionScale?: number | "auto";
       readonly antialias?: boolean;
@@ -921,6 +923,8 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     "resolutionScale",
     "antialias",
     "alphaAntialiasing",
+    "projection",
+    "minimumProjectedPixels",
     "android",
   ]);
   const android = assertRecord(renderer.android, "renderer.android");
@@ -952,6 +956,11 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     android.alphaAntialiasing,
     "renderer.android.alphaAntialiasing",
   );
+  const projection = booleanOrUndefined(renderer.projection, "renderer.projection");
+  const minimumProjectedPixels = numberOrFalse(
+    renderer.minimumProjectedPixels,
+    "renderer.minimumProjectedPixels",
+  );
   const androidOverrides = {
     ...(androidResolutionScale === undefined
       ? {}
@@ -970,6 +979,8 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     ),
     ...(antialias === undefined ? {} : { antialias }),
     ...(alphaAntialiasing === undefined ? {} : { alphaAntialiasing }),
+    ...(projection === undefined ? {} : { projection }),
+    ...(minimumProjectedPixels === undefined ? {} : { minimumProjectedPixels }),
     ...(resolutionScale === undefined
       ? {}
       : { resolutionScale: resolutionScale as number | "auto" }),
@@ -981,6 +992,14 @@ function booleanOrUndefined(value: unknown, name: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") fail("TN_CONFIG_RENDERER_INVALID", `${name} must be a boolean.`);
   return value as boolean;
+}
+
+function numberOrFalse(value: unknown, name: string): number | false | undefined {
+  if (value === undefined || value === false) return value;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    fail("TN_CONFIG_RENDERER_INVALID", `${name} must be false or a positive finite number.`);
+  }
+  return value as number;
 }
 
 const ASSET_TARGET_KEYS: readonly string[] = [

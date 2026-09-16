@@ -7,7 +7,7 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 ## Ownership
 
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the car feel, track, race rules, rescue, HUD, and look;
-`src/game.ts` is portable and React mounts from `src/main.ts`.
+`src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept.
 
 ## Start every change
 
