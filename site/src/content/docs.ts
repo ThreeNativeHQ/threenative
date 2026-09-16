@@ -93,8 +93,7 @@ export const docsPages: readonly IDocsPage[] = [
     title: "ThreeNative vs Three.js, Godot, Unity and Unreal Engine",
     description:
       "Compare ThreeNative with Three.js, Godot, Unity and Unreal Engine across authoring model, game systems, rendering control and deployment approach.",
-    summary:
-      "A constraint-by-constraint comparison, without pretending one engine fits every team.",
+    summary: "A constraint-by-constraint comparison, without pretending one engine fits every team.",
     sourceFile: "site/src/components/docs/Comparison.tsx",
     keywords: "compare engines threejs godot unity unreal alternatives",
   },
@@ -141,9 +140,13 @@ export function searchDocs(query: string): readonly IDocsPage[] {
     .map((page, index) => {
       const label = page.label.toLowerCase();
       const title = page.title.toLowerCase();
-      const text = `${label} ${title} ${page.description} ${page.summary} ${page.keywords}`.toLowerCase();
+      const text =
+        `${label} ${title} ${page.description} ${page.summary} ${page.keywords}`.toLowerCase();
       const score = terms.every((term) => text.includes(term))
-        ? terms.reduce((total, term) => total + (label.includes(term) ? 4 : title.includes(term) ? 2 : 1), 0)
+        ? terms.reduce(
+            (total, term) => total + (label.includes(term) ? 4 : title.includes(term) ? 2 : 1),
+            0,
+          )
         : 0;
       return { page, index, score };
     })
