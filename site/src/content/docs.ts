@@ -47,7 +47,8 @@ export const docsPages: readonly IDocsPage[] = [
     title: "Physics and portability",
     description:
       "Use ThreeNative's Godot-shaped Rapier physics nodes while keeping web and native portability boundaries explicit.",
-    summary: "Rigid bodies, characters and collision shapes without leaking backend-specific handles.",
+    summary:
+      "Rigid bodies, characters and collision shapes without leaking backend-specific handles.",
   },
   {
     path: "/docs/playtesting",
@@ -67,7 +68,8 @@ export const docsPages: readonly IDocsPage[] = [
     title: "Run the same game entry natively",
     description:
       "Understand ThreeNative's optional native host, prebuilt runtime path, platform toolchains and portable entry contract.",
-    summary: "Desktop and mobile builds without replacing your Three.js game source with a second API.",
+    summary:
+      "Desktop and mobile builds without replacing your Three.js game source with a second API.",
   },
   {
     path: "/docs/comparison",

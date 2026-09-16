@@ -23,10 +23,7 @@ describe("public documentation", () => {
   it("should teach the shipped core, physics, playtest and native contracts", async () => {
     const expectations = [
       ["/docs/core-concepts", ["defineGame", "fixed-step", "load", "enter", "update"]],
-      [
-        "/docs/physics",
-        ["RigidBody3D", "Area3D", "CharacterBody3D", "CollisionShape3D", "raw"],
-      ],
+      ["/docs/physics", ["RigidBody3D", "Area3D", "CharacterBody3D", "CollisionShape3D", "raw"]],
       ["/docs/playtesting", ["assertions fail closed", "--target desktop", "doctor"]],
       ["/docs/native-runtime", ["portable game entry", "build:desktop", "No WebView"]],
     ] as const;

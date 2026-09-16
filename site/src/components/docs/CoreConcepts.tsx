@@ -52,7 +52,8 @@ export function CoreConcepts() {
 
       <DocSection id="lifecycle" title="Scenes have a deliberately small lifecycle">
         <p>
-          A scene can implement three optional methods: <code className="font-mono text-tn-fg">load</code>,{" "}
+          A scene can implement three optional methods:{" "}
+          <code className="font-mono text-tn-fg">load</code>,{" "}
           <code className="font-mono text-tn-fg">enter</code> and{" "}
           <code className="font-mono text-tn-fg">update</code>. Use only the lifecycle hooks the
           scene needs rather than wrapping Three.js in another scene graph.
@@ -94,9 +95,10 @@ export function CoreConcepts() {
       <DocSection id="input" title="Name intent once, bind devices around it">
         <p>
           Input maps live in the game definition. Gameplay can then ask for a named action such as
-          <code className="font-mono text-tn-fg">ctx.input.vector(&quot;move&quot;)</code> instead of
-          scattering keyboard, pointer, gamepad and touch checks through scene code. Device bindings
-          can evolve without changing the gameplay meaning of <code className="font-mono text-tn-fg">move</code>.
+          <code className="font-mono text-tn-fg">ctx.input.vector(&quot;move&quot;)</code> instead
+          of scattering keyboard, pointer, gamepad and touch checks through scene code. Device
+          bindings can evolve without changing the gameplay meaning of{" "}
+          <code className="font-mono text-tn-fg">move</code>.
         </p>
       </DocSection>
 

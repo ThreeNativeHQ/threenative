@@ -24,8 +24,8 @@ export function NativeRuntime() {
       <DocSection id="contract" title="The native host consumes the portable game entry">
         <p>
           <code className="font-mono text-tn-fg">@threenative/runtime-native</code> is an optional
-          host for desktop, Android and iOS. It is not a second renderer or scene API: the project&apos;s
-          portable game entry remains the contract, with Three.js and the same
+          host for desktop, Android and iOS. It is not a second renderer or scene API: the
+          project&apos;s portable game entry remains the contract, with Three.js and the same
           <code className="ml-1 font-mono text-tn-fg">src/game.ts</code> at the center.
         </p>
         <DocCallout title="No WebView">
@@ -44,8 +44,8 @@ export function NativeRuntime() {
         <DocCodeBlock code={DESKTOP} label="desktop" />
         <p>
           The generated config points <code className="font-mono text-tn-fg">nativeEntry</code> at
-          <code className="ml-1 font-mono text-tn-fg">src/game.ts</code>, so the packager bundles the
-          same application entry rather than a native-only rewrite.
+          <code className="ml-1 font-mono text-tn-fg">src/game.ts</code>, so the packager bundles
+          the same application entry rather than a native-only rewrite.
         </p>
       </DocSection>
 
@@ -53,8 +53,8 @@ export function NativeRuntime() {
         <p>
           An installed runtime package does not ship the C++ source tree and build system. Native
           packaging downloads the versioned prebuilt artifact listed by the release manifest and
-          verifies its SHA-256 before using it. That makes the normal consumer path a packaging step,
-          not a local engine compilation step.
+          verifies its SHA-256 before using it. That makes the normal consumer path a packaging
+          step, not a local engine compilation step.
         </p>
         <p className="mt-4">
           Android still needs the Android SDK and a JDK. The installed-package path does not need an
@@ -66,9 +66,9 @@ export function NativeRuntime() {
         <DocCodeBlock code={ANDROID} label="android" />
         <p>
           Debug output is the default. Release APK or AAB output is an explicit mode and requires
-          the project&apos;s signing key; the packager does not fall back to a debug key when release
-          signing is missing. Produced release artifacts are checked again with the platform signing
-          tools before the command reports success.
+          the project&apos;s signing key; the packager does not fall back to a debug key when
+          release signing is missing. Produced release artifacts are checked again with the platform
+          signing tools before the command reports success.
         </p>
       </DocSection>
 
@@ -76,8 +76,8 @@ export function NativeRuntime() {
         <p>
           <code className="font-mono text-tn-fg">THREENATIVE_RUNTIME_SOURCE</code> is for a full
           ThreeNative source checkout with the runtime build files and staged native dependencies.
-          It is not a switch that turns an installed npm package into a source checkout. For ordinary
-          consumers, the verified prebuilt path is the intended path.
+          It is not a switch that turns an installed npm package into a source checkout. For
+          ordinary consumers, the verified prebuilt path is the intended path.
         </p>
       </DocSection>
     </DocsLayout>
