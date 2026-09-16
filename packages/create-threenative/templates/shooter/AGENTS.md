@@ -5,7 +5,7 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 ## Ownership
 
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the arena, weapons, waves, HUD and look; `src/game.ts` is
-portable, `src/main.ts` is the web-only React mount.
+portable, `src/main.ts` is the web-only React mount. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept.
 
 ## Start every change
 

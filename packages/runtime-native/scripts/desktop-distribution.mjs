@@ -267,6 +267,38 @@ export function classifyDependencies(
   return { bundled, prerequisites };
 }
 
+/**
+ * The loading sequence the consumer config declared, recorded so a distributed container can be
+ * checked against the config that built it.
+ *
+ * The splash is drawn by the game's own generated `src/render/loading.ts` from assets already
+ * inside the bundle, so this records identity rather than a second copy: the authored colour and
+ * the authored image's hash. A game with no `bootSplash` records that it has none — writing
+ * nothing would leave a consumer unable to tell "no splash configured" from "evidence missing",
+ * which is the difference between a pass and a false pass.
+ */
+export function containerLoading(config) {
+  const bootSplash = config?.bootSplash;
+  if (bootSplash === undefined || bootSplash === null) return { bootSplash: null };
+  let imageSha256 = null;
+  if (bootSplash.image !== undefined) {
+    if (!bootSplash.image || !existsSync(bootSplash.image) || !statSync(bootSplash.image).isFile()) {
+      throw new Error(
+        `TN_DESKTOP_SPLASH_IMAGE_MISSING: bootSplash.image does not exist: ${bootSplash.image ?? '(not provided)'}`,
+      );
+    }
+    imageSha256 = sha256File(bootSplash.image);
+  }
+  return {
+    bootSplash: {
+      ...(bootSplash.backgroundColor === undefined
+        ? {}
+        : { backgroundColor: bootSplash.backgroundColor }),
+      imageSha256,
+    },
+  };
+}
+
 export function containerMetadata({ platform = process.platform, config }) {
   const app = config?.app ?? {};
   const id = app.id ?? 'com.threenative.game';
@@ -328,6 +360,9 @@ function layout(platform, { appName, executableName, iconName }) {
   const slug = containerSlug(appName);
   if (platform === 'linux') {
     return {
+      // `findExternalBundle` looks beside the executable on Linux and Windows, and in
+      // Contents/Resources for a macOS .app. Stage it where the loader already searches.
+      bundle: 'game.bundle',
       executable: slug,
       icon: `share/icons/hicolor/256x256/apps/${iconName}.png`,
       manifest: CONTAINER_MANIFEST,
@@ -336,6 +371,7 @@ function layout(platform, { appName, executableName, iconName }) {
   }
   if (platform === 'darwin') {
     return {
+      bundle: 'Contents/Resources/game.bundle',
       executable: `Contents/MacOS/${slug}`,
       icon: `Contents/Resources/${slug}.icns`,
       manifest: `Contents/Resources/${CONTAINER_MANIFEST}`,
@@ -346,6 +382,7 @@ function layout(platform, { appName, executableName, iconName }) {
     };
   }
   return {
+    bundle: 'game.bundle',
     executable: executableName,
     icon: `${iconName}.png`,
     manifest: CONTAINER_MANIFEST,
@@ -507,8 +544,19 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
     (manifest.ui !== null && (!manifest.ui || typeof manifest.ui !== 'object' || Array.isArray(manifest.ui)))) {
     throw new Error('TN_DESKTOP_CONTAINER_MANIFEST_INVALID: unsupported schema or missing payload inventory.');
   }
+  // Without the bundle the executable is a bare runtime that prints CLI usage instead of the game,
+  // which is exactly the failure a released container must never reach a player with. Name that
+  // case rather than letting it fall through as a required resource called 'undefined': a container
+  // built before the game moved beside the executable has no `bundle` at all.
+  if (typeof manifest.bundle !== 'string' || !manifest.bundle) {
+    throw new Error(
+      'TN_DESKTOP_CONTAINER_MANIFEST_INVALID: the manifest names no game bundle, so this container ' +
+        'predates the sidecar layout and its executable would launch the runtime CLI. Rebuild it.',
+    );
+  }
   const required = [
     manifest.executable,
+    manifest.bundle,
     ...manifest.dependencies.map((dependency) => dependency?.path),
     ...(manifest.ui === null ? [] : [manifest.ui.entry]),
     ...(manifest.app?.icon === undefined ? [] : [manifest.app.icon]),
@@ -622,11 +670,18 @@ export function signDesktopArtifact({ platform = process.platform, target, signi
     return { scheme: 'codesign', signed: true };
   }
   if (platform === 'win32') {
-    if (!signing?.certificate) {
-      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: Windows signing needs a code-signing certificate; unsigned preparation can proceed without signing.');
+    if (signing?.certificate && signing?.subject) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS: Windows signing takes a certificate file or a store subject, not both; one of them would be silently ignored.');
+    }
+    if (!signing?.certificate && !signing?.subject) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: Windows signing needs a code-signing certificate file or a certificate store subject; unsigned preparation can proceed without signing.');
     }
     const timestamp = signing.timestampUrl ? ['/tr', signing.timestampUrl, '/td', 'sha256'] : [];
-    signingTool(run, 'signtool', ['sign', '/fd', 'sha256', ...timestamp, '/f', signing.certificate, target], 'TN_DESKTOP_SIGNTOOL');
+    // `/f` reads a PFX and takes a `/p` password this contract deliberately does not carry, so it
+    // only ever works for a password-less file - which is not what a CA issues. `/n` signs from the
+    // Windows certificate store, keeping the private key in the OS keychain as the README promises.
+    const credential = signing.subject ? ['/n', signing.subject] : ['/f', signing.certificate];
+    signingTool(run, 'signtool', ['sign', '/fd', 'sha256', ...timestamp, ...credential, target], 'TN_DESKTOP_SIGNTOOL');
     signingTool(run, 'signtool', ['verify', '/pa', target], 'TN_DESKTOP_SIGNTOOL_VERIFY');
     return { artifactSha256: sha256File(target), scheme: 'signtool', signed: true };
   }
@@ -669,6 +724,7 @@ export function notarizeArchive({ archive, signing, run = exec } = {}) {
 export function packageDesktopContainer({
   platform = process.platform,
   arch = process.arch,
+  bundle,
   executable,
   executableName,
   uiDirectory,
@@ -694,6 +750,7 @@ export function packageDesktopContainer({
     throw new Error(`TN_UI_BUNDLE_UNEXPECTED: a UI bundle was staged for a game whose ui.renderer is '${uiRenderer}'.`);
   }
   const app = config?.app ?? {};
+  const loading = containerLoading(config);
   const appName = app.name ?? 'ThreeNative';
   const slug = containerSlug(appName);
   const executableName2 = executableName ?? (platform === 'win32' ? `${slug}.exe` : slug);
@@ -701,6 +758,9 @@ export function packageDesktopContainer({
   const rootFolder = containerRootFolder(platform, appName);
   const archive = containerArchivePath(resolve(output), platform);
   const paths = layout(platform, { appName, executableName: executableName2, iconName });
+  // The game is as required as the executable: a container without it launches a bare runtime that
+  // prints CLI usage. Check it with the other preconditions, before anything is staged.
+  assertFile(bundle, 'game bundle');
   const staging = mkdtempSync(join(tmpdir(), 'threenative-container-'));
   const resources = {};
   const stage = (relativePath) => join(staging, rootFolder, relativePath);
@@ -711,6 +771,12 @@ export function packageDesktopContainer({
     mkdirSync(dirname(stage(paths.executable)), { recursive: true });
     copyFileSync(executable, stage(paths.executable));
     if (platform !== 'win32') chmodSync(stage(paths.executable), 0o755);
+
+    // The game travels beside the executable, never appended to it: rcedit and the signing tools
+    // rewrite the binary, and anything past the end of the image does not survive that.
+    mkdirSync(dirname(stage(paths.bundle)), { recursive: true });
+    copyFileSync(bundle, stage(paths.bundle));
+    record(paths.bundle);
 
     let ui = null;
     if (uiRenderer === 'web') {
@@ -745,23 +811,28 @@ export function packageDesktopContainer({
         // to .icns and Linux copies the PNG the .desktop entry wants; Windows needs an .ico, built
         // outside the staging directory so it never becomes an unrecorded container resource.
         let windowsIcon = icon;
-        if (!icon.toLowerCase().endsWith('.ico')) {
-          const iconDirectory = mkdtempSync(join(tmpdir(), 'threenative-ico-'));
-          windowsIcon = join(iconDirectory, `${basename(icon, extname(icon))}.ico`);
-          pngToIco(icon, windowsIcon);
+        let iconDirectory;
+        try {
+          if (!icon.toLowerCase().endsWith('.ico')) {
+            iconDirectory = mkdtempSync(join(tmpdir(), 'threenative-ico-'));
+            windowsIcon = join(iconDirectory, `${basename(icon, extname(icon))}.ico`);
+            pngToIco(icon, windowsIcon);
+          }
+          const rcedit = run('rcedit', [
+            stage(paths.executable),
+            '--set-icon', windowsIcon,
+            '--set-file-version', version,
+            '--set-product-version', version,
+            '--set-version-string', 'ProductName', appName,
+            '--set-version-string', 'FileDescription', appName,
+          ], {});
+          if (rcedit.error) {
+            throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'rcedit' is required to embed the executable icon and version (${rcedit.error.message}).`);
+          }
+          if (rcedit.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: rcedit exited ${rcedit.status ?? 'unknown'}.`);
+        } finally {
+          if (iconDirectory) rmSync(iconDirectory, { force: true, recursive: true });
         }
-        const rcedit = run('rcedit', [
-          stage(paths.executable),
-          '--set-icon', windowsIcon,
-          '--set-file-version', version,
-          '--set-product-version', version,
-          '--set-version-string', 'ProductName', appName,
-          '--set-version-string', 'FileDescription', appName,
-        ], {});
-        if (rcedit.error) {
-          throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'rcedit' is required to embed the executable icon and version (${rcedit.error.message}).`);
-        }
-        if (rcedit.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: rcedit exited ${rcedit.status ?? 'unknown'}.`);
         copyFileSync(icon, stage(paths.icon));
         iconRecord = { path: paths.icon, sha256: sha256File(icon) };
         record(paths.icon);
@@ -806,9 +877,11 @@ export function packageDesktopContainer({
         build: app.build ?? 1,
         ...(iconRecord === undefined ? {} : { icon: iconRecord.path, iconSha256: iconRecord.sha256 }),
       },
+      bundle: paths.bundle,
       dependencies: bundled,
       executable: paths.executable,
       format,
+      loading,
       platform: key,
       prerequisites,
       resources,
@@ -819,6 +892,14 @@ export function packageDesktopContainer({
     };
     mkdirSync(dirname(stage(paths.manifest)), { recursive: true });
     writeFileSync(stage(paths.manifest), `${JSON.stringify(manifest, null, 2)}\n`);
+
+    // The initial codesign verification predates the manifest write. macOS seals all bundle
+    // resources, so re-check the final tree before archiving or submitting it to Apple. Until
+    // the signed-container manifest cycle is resolved, refuse an invalid release rather than
+    // publishing it with signed: true. Keep unsigned preparation and the integrity records intact.
+    if (platform === 'darwin' && signedArtifact.signed) {
+      signingTool(run, 'codesign', ['--verify', '--strict', '--deep', join(staging, rootFolder)], 'TN_DESKTOP_CODESIGN_FINAL_VERIFY');
+    }
 
     mkdirSync(dirname(archive), { recursive: true });
     // Keep the public destination untouched until the entire release transaction succeeds,

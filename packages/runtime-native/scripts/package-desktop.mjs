@@ -61,17 +61,29 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
  */
 export function desktopSigningFromEnvironment(env = process.env) {
   const requested = env.THREENATIVE_DESKTOP_SIGN === '1' || env.THREENATIVE_DESKTOP_SIGN === 'true';
-  const identity = env.THREENATIVE_DESKTOP_CODESIGN_IDENTITY;
-  const certificate = env.THREENATIVE_DESKTOP_SIGN_CERTIFICATE;
-  const keychainProfile = env.THREENATIVE_DESKTOP_NOTARY_PROFILE;
-  const timestampUrl = env.THREENATIVE_DESKTOP_TIMESTAMP_URL;
-  if (!requested && identity === undefined && certificate === undefined && keychainProfile === undefined) {
+  // A CI job writing `SUBJECT: ${{ secrets.WIN_SIGN_SUBJECT }}` with the secret unset hands us the
+  // empty string, not undefined. Treating that as "signing requested" turns a release that used to
+  // produce an unsigned container into a hard failure, so blank reads the same as absent.
+  const set = (value) => (typeof value === 'string' && value.trim() !== '' ? value : undefined);
+  const identity = set(env.THREENATIVE_DESKTOP_CODESIGN_IDENTITY);
+  const certificate = set(env.THREENATIVE_DESKTOP_SIGN_CERTIFICATE);
+  const subject = set(env.THREENATIVE_DESKTOP_SIGN_SUBJECT);
+  const keychainProfile = set(env.THREENATIVE_DESKTOP_NOTARY_PROFILE);
+  const timestampUrl = set(env.THREENATIVE_DESKTOP_TIMESTAMP_URL);
+  if (!requested && identity === undefined && certificate === undefined && subject === undefined &&
+    keychainProfile === undefined) {
     return undefined;
+  }
+  // Knowable here, so refuse here: the same clash inside signDesktopArtifact costs a whole release
+  // build first. That check stays as well, because `signing` can be passed in directly.
+  if (certificate !== undefined && subject !== undefined) {
+    throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS: THREENATIVE_DESKTOP_SIGN_CERTIFICATE and THREENATIVE_DESKTOP_SIGN_SUBJECT are both set; one of them would be silently ignored.');
   }
   return {
     ...(requested ? { requested: true } : {}),
     ...(identity === undefined ? {} : { identity }),
     ...(certificate === undefined ? {} : { certificate }),
+    ...(subject === undefined ? {} : { subject }),
     ...(timestampUrl === undefined ? {} : { timestampUrl }),
     ...(keychainProfile === undefined ? {} : { keychainProfile, notarize: true }),
   };
@@ -158,7 +170,9 @@ async function packageDesktopRelease(options, runtime) {
     // the OS keychain. Without them, release stays an unsigned-but-complete container.
     const signing = desktopSigningFromEnvironment();
     const rawOutput = join(staging, containerSlug(basename(options.output)));
-    const executable = compileDesktopArtifact({ ...options, output: rawOutput }, runtime);
+    const { bundle, executable } = compileDesktopArtifact({ ...options, output: rawOutput }, runtime, {
+      sidecar: true,
+    });
     const uiRenderer = config.ui?.renderer === 'web' ? 'web' : 'native';
     const uiDirectory = uiRenderer === 'web' ? join(dirname(executable), 'ui') : undefined;
     const discovered = options.dependencies === undefined
@@ -169,6 +183,7 @@ async function packageDesktopRelease(options, runtime) {
     const icon = config.app?.icon === undefined ? undefined : resolve(config.app.icon);
     const result = packageDesktopContainer({
       arch: process.arch,
+      bundle,
       config,
       dependencies: discovered.bundled,
       executable,
@@ -188,11 +203,24 @@ async function packageDesktopRelease(options, runtime) {
   }
 }
 
-function compileDesktopArtifact(options, runtime) {
+/**
+ * Build the desktop artifact.
+ *
+ * Debug appends the game to a copy of the runtime, which is one self-contained file. Release takes
+ * `sidecar`, which writes the game to `game.bundle` and leaves the executable a bare runtime copy:
+ * anything that rewrites the executable afterwards - rcedit embedding the icon, `signtool` adding
+ * the certificate table, `codesign` sealing a bundle - moves or discards data appended past the
+ * end of the image, and the loader finds its footer only at physical EOF. Keeping the game beside
+ * the executable instead of inside it is what makes release resource-editing and signing safe.
+ */
+function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
   const output = process.platform === 'win32' && !options.output.endsWith('.exe')
     ? `${options.output}.exe`
     : options.output;
   mkdirSync(dirname(output), { recursive: true });
+  // Named `game.bundle` because that is what the runtime's own `findExternalBundle` looks for
+  // beside the executable; the container places it where each platform's loader searches.
+  const bundle = join(dirname(output), 'game.bundle');
   const staging = mkdtempSync(join(tmpdir(), 'threenative-desktop-'));
   try {
     const stagedEntry = stageDesktopFiles(
@@ -220,18 +248,27 @@ function compileDesktopArtifact(options, runtime) {
       '--include',
       staging,
       '--out',
-      output,
+      sidecar ? bundle : output,
     ];
+    // `--bundle-only` writes the bundle alone and copies no executable, so the runtime copy below
+    // carries no appended payload for a later PE or Mach-O rewrite to lose.
+    if (sidecar) args.push('--bundle-only');
     const result = spawnSync(runtime, args, { encoding: 'utf8', stdio: 'inherit' });
     if (result.error) throw result.error;
     if (result.status !== 0)
       throw new Error(`Runtime packager exited with code ${result.status ?? 'unknown'}.`);
+    if (sidecar) {
+      if (!existsSync(bundle)) {
+        throw new Error(`TN_DESKTOP_BUNDLE_MISSING: the runtime packager wrote no bundle at ${bundle}.`);
+      }
+      copyFileSync(runtime, output);
+    }
   } finally {
     rmSync(staging, { force: true, recursive: true });
   }
   if (process.platform !== 'win32') chmodSync(output, 0o755);
   console.log(`ThreeNative desktop artifact: ${output}`);
-  return output;
+  return sidecar ? { bundle, executable: output } : output;
 }
 
 /**

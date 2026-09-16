@@ -481,17 +481,23 @@ test.runIf(process.platform === 'linux')(
     );
     chmodSync(executable, 0o755);
     const digest = createHash('sha256').update(readFileSync(executable)).digest('hex');
+    // The game travels beside the executable, so a container without it is refused: a bare runtime
+    // prints CLI usage instead of the game.
+    const bundle = join(root, 'game.bundle');
+    writeFileSync(bundle, Buffer.from('MYSBNDL1 fixture game payload'));
+    const bundleDigest = createHash('sha256').update(readFileSync(bundle)).digest('hex');
     writeFileSync(
       join(root, 'threenative-container.json'),
       `${JSON.stringify(
         {
           app: { id: 'com.example.starter', name: 'Starter', version: '1.0.0', build: 1 },
+          bundle: 'game.bundle',
           dependencies: [],
           executable: 'starter',
           format: 'tar.gz',
           platform: 'linux-x64',
           prerequisites: [],
-          resources: { starter: { sha256: digest } },
+          resources: { 'game.bundle': { sha256: bundleDigest }, starter: { sha256: digest } },
           schemaVersion: 1,
           ui: null,
         },
@@ -530,4 +536,58 @@ test('the container flag routes the verifier to the unpacked container', () => {
   assert.equal(result.status, 1);
   assert.doesNotMatch(result.stderr, /TN_NATIVE_STARTER_CONTAINER_MISSING/u);
   assert.match(result.stderr, /TN_DESKTOP_CONTAINER_MANIFEST_MISSING/u);
+});
+
+// Cross-PR merge hazard (PRD-366 / PRD-375 #255), re-proved after #255 merged as 20f5d6191.
+// `--container ""` was once falsy, so the CLI silently dropped the flag and ran the NON-container
+// desktop path, reporting success for a container verification that never happened. #255 hardened
+// the parser in verify-starter-desktop.mjs; this branch moved that code into
+// verify-starter-desktop-base.mjs. These rows assert the hardening lives in the file that now
+// SHIPS it, so the reconciliation cannot silently lose it. The error taxonomy is #255's
+// (TN_NATIVE_STARTER_CLI_INVALID), which is the incumbent contract this branch converged on.
+const BASE_CLI = fileURLToPath(new URL('../scripts/verify-starter-desktop-base.mjs', import.meta.url));
+
+function runBaseCli(args, directory) {
+  return spawnSync(process.execPath, [BASE_CLI, ...args], { cwd: directory, encoding: 'utf8' });
+}
+
+for (const flag of ['--container', '--config', '--frames', '--project']) {
+  test(`an empty ${flag} value fails closed in the base file instead of silently dropping the flag`, () => {
+    const directory = makeTempDirSync('starter-desktop-empty-flag-');
+    const result = runBaseCli([flag, '', '--project', directory], directory);
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}${result.stderr}`, /TN_NATIVE_STARTER_CLI_INVALID/u);
+    assert.match(`${result.stdout}${result.stderr}`, new RegExp(`${flag} needs a value`, 'u'));
+  });
+}
+
+test('an unknown flag is refused by name rather than ignored', () => {
+  const directory = makeTempDirSync('starter-desktop-unknown-flag-');
+  const result = runBaseCli(['--not-a-flag', 'x', '--project', directory], directory);
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}${result.stderr}`, /TN_NATIVE_STARTER_CLI_INVALID: unknown flag/u);
+});
+
+test('--frames rejects a non-positive-integer rather than coercing it', () => {
+  const directory = makeTempDirSync('starter-desktop-frames-');
+  for (const value of ['0', '-1', 'abc', '1.5']) {
+    const result = runBaseCli(['--frames', value, '--project', directory], directory);
+    assert.notEqual(result.status, 0, `--frames ${value} should fail`);
+    assert.match(`${result.stdout}${result.stderr}`, /--frames needs a positive whole number/u);
+  }
+});
+
+test('--brand-only still reaches the brand surface and still refuses a missing --config', () => {
+  const directory = makeTempDirSync('starter-desktop-brand-only-');
+  const result = runBaseCli(['--brand-only', '--container', directory, '--project', directory], directory);
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}${result.stderr}`, /--brand-only needs --config/u);
+});
+
+test('the router re-exports the brand surface so --brand-only callers keep resolving', async () => {
+  const router = await import('../scripts/verify-starter-desktop.mjs');
+  for (const name of ['verifyContainerBrand', 'verifyStarterContainer', 'verifyStarterDesktop',
+    'verifyStarterConsumerGameplay', 'assertConsumerTargetRows']) {
+    assert.equal(typeof router[name], 'function', `${name} must resolve through the router`);
+  }
 });

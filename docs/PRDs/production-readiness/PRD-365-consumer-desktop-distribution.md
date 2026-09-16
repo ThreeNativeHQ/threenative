@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-365 — An installed game produces distributable desktop apps
 
-**Status:** PARTIAL — historical phase-1 evidence retained; phase 1R fixes review-discovered integrity/identity/archive defects and now has green focused Vitest (74/0), green repository workspace gates in CI, a linux-x64 native-smoke container launch, and an independent reviewer PASS. Phase 1R's linux-x64 container runs and the CI macOS/Windows `desktop core` starter game+HUD verification are in, while its release-container packaging on macOS/Windows and its ZIP layouts remain fixture-tested. Phase 2 has landed the container-aware verifier, player-prerequisite detection, its focused tests, an isolated linux-x64 clean-player run (no Node/engine, offline, HUD attached) and an independent reviewer PASS; a literal second machine/public-consumer run is delegated to PRD-060/366. Phase 3 has landed the signing/notarization adapter and its fixture failure contracts, with the real credentialed Windows/macOS signing PENDING on external hosts and delegated to PRD-060. Revised 2026-09-13.
+**Status:** PARTIAL — historical phase-1 evidence retained; phase 1R fixes review-discovered integrity/identity/archive defects and now has green focused Vitest (74/0), green repository workspace gates in CI, a linux-x64 native-smoke container launch, and an independent reviewer PASS. Phase 1R's linux-x64 container runs and the CI macOS/Windows `desktop core` starter game+HUD verification are in, while its release-container packaging on macOS/Windows and its ZIP layouts remain fixture-tested. Phase 2 has landed the container-aware verifier, player-prerequisite detection, its focused tests, an isolated linux-x64 clean-player run (no Node/engine, offline, HUD attached) and an independent reviewer PASS; a literal second machine/public-consumer run is delegated to PRD-060/366. Phase 3 has landed the signing/notarization adapter and its fixture failure contracts. Windows signing takes either a password-less `.pfx` or, since PR #265, a certificate-store subject signed with `signtool /n` — the form a CA-issued key needs, since the `/f` path carries no password. Real credentialed Windows/macOS signing stays PENDING on external hosts and delegated to PRD-060, along with the macOS defect that seals the `.app` before writing the manifest into it. Revised 2026-09-13.
 **Complexity:** 10 → HIGH (+3 files, +2 platform packaging module, +2 signing/container state, +2 multi-package, +1 OS tools).
 **Problem:** The desktop command produces a host executable plus UI files, without a proved complete installed-app container, signing/notarization path or player-machine dependency story.
 
@@ -247,14 +247,18 @@ from this repository keeps its own line with its blocker named underneath rather
   - Same run: the identity step read `CFBundleName` back out of the relocated bundle with `plutil` and required the `.icns` named by `CFBundleIconFile` to exist. The manifest records `Contents/Info.plist`, `Contents/Resources/threenative-starter-native.icns` and the executable at `Contents/MacOS/`, with 30 system prerequisites.
 - [x] windows-x64: `--mode release` produces a ZIP that extracts outside the project with its payload intact.
   - CI run [35034052417](https://github.com/ThreeNativeHQ/threenative/actions/runs/35034052417), `Windows desktop core` on `windows-2025`: built on the host inside the MSVC environment, extracted to a path containing a space with System32's bsdtar, and its integrity records resolved. Archive `threenative-starter-native.zip` sha256 `cee495026f13ee6b6c07fcfe6cf0d3e875f2595f433f341efaeb217ea929aeea`, manifest `win32-x64`/`zip`, 23 system prerequisites, `signed: false`.
-- [ ] windows-x64: the extracted container launches the unchanged starter with its WebView HUD attached.
-  - **Open, with a defect named.** In the run above the container's executable printed the `mystral`
-    CLI usage and `Unknown command or missing arguments` instead of running the game: it no longer
-    recognises its own appended bundle. The likely cause is that `rcedit` rewrites the PE to embed
-    the icon and version strings *after* the game payload has been appended as an overlay, dropping
-    it. macOS and Linux never run `rcedit`, which is why only Windows is affected. Confirming that
-    requires a Windows host, and the fix belongs where the icon is applied to the runtime before the
-    game is compiled into it, not in the container packager. Tracked as the follow-on to this PRD.
+- [x] windows-x64: the extracted container launches the unchanged starter with its WebView HUD attached.
+  - The defect was real and is fixed. `mystral compile` appended the game past the executable's end
+    and the loader finds it only by a `MYSBNDL1` footer at physical EOF, so `rcedit` rewriting the PE
+    for the icon discarded it and the binary fell back to the runtime CLI. The game now ships as
+    `game.bundle` beside the executable, where `findExternalBundle` already searches, so nothing that
+    rewrites the binary can lose it — which also keeps Authenticode and `codesign` from
+    reintroducing it, since both move or seal data the same way.
+  - CI run [35052702093](https://github.com/ThreeNativeHQ/threenative/actions/runs/35052702093),
+    `Windows desktop core` on `windows-2025`: `TN_NATIVE_SMOKE_READY:webgpu`,
+    `TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb`, `TN_UI_OVERLAY:{"attached":true}`,
+    `Rendered 300 frames in 93133ms`, verifier `pass: true`. Manifest `win32-x64` records
+    `bundle: game.bundle` with its integrity hash.
 - [x] windows-x64: the executable carries the authored icon and version strings in its PE resources, embedded by `rcedit`.
   - Same run: the identity step read `ProductName`, `FileDescription` and a non-empty `FileVersion`
     back out of the relocated executable with PowerShell, and required the manifest's recorded icon
@@ -279,9 +283,9 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
   - Same run, `--unshare-net`: `TN_NATIVE_SMOKE_READY:webgpu`, assets loaded, HUD attached, 300 frames, non-blank capture.
 - [x] macOS: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
   - Same run: a second launch of the relocated executable with `PATH=/usr/bin:/bin`, asserting `TN_NATIVE_SMOKE_READY:webgpu` and a completed frame count.
-- [ ] windows-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
-  - Blocked behind the launch box above: the step exists in the lane and is reached, but the
-    container cannot launch at all yet, so a clean-toolchain launch proves nothing.
+- [x] windows-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+  - Same run: a second launch of the relocated executable with `PATH=/c/Windows/System32`, asserting
+    `TN_NATIVE_SMOKE_READY:webgpu` and a completed frame count.
 - [x] Every claimed OS documents its player-side WebView/library prerequisite, and the Linux one is machine-checked with an actionable failure naming the library and its install step.
   - `packages/runtime-native/README.md` documents WebKitGTK/GTK, WebView2 Evergreen and system WebKit. A missing `libwebkit2gtk-4.1.so.0` refuses with `TN_NATIVE_STARTER_PREREQUISITE_MISSING` and its install step; covered by `tests/starter-desktop.test.mjs`.
 - [ ] The same launch is performed by a consumer installed from the public registry rather than local tarballs.
@@ -291,8 +295,8 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
 
 - [x] Unsigned preparation records `signed: false`, names itself unsigned in the release log, and never claims signed readiness.
   - The produced Linux manifest carries `"signed": false`; `tests/distribution.test.mjs` covers the unsigned-preparation and missing-credentials rows.
-- [ ] windows-x64: the `signtool` path signs the distributed executable and verifies it on a real Windows host.
-  - The adapter is implemented and unit-tested through injected transport, and now signs from the Windows certificate store by subject so a CA-issued key never leaves it. A real-host run is PRD-060.
+- [x] windows-x64: the `signtool` path signs the distributed executable and verifies it on a real Windows host.
+  - CI run [35130296569](https://github.com/ThreeNativeHQ/threenative/actions/runs/35130296569), `Windows desktop core` on `windows-2025`: a certificate generated on the runner and anchored with `certutil`, then `signDesktopArtifact` itself signing the container's own executable through `signtool /n` — `TN_DESKTOP_SIGNING_PROOF_SCHEME:signtool`. `Get-AuthenticodeSignature` read the result back independently of the code that wrote it: `status=Valid signer=CN=ThreeNative CI Signing Proof`. The certificate is self-signed and the artifact is discarded, so this proves the adapter, the tool and the host, not public trust.
 - [ ] windows-x64: the artifact is signed with a publicly trusted Authenticode certificate.
   - Blocked: no code-signing certificate exists for this repository; signing is per developer, per game. Delegated to PRD-060.
 - [ ] macOS: the artifact is notarized by Apple, stapled, and assessed with `spctl` on a real macOS host.

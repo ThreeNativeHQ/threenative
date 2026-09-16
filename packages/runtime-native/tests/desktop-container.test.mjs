@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, write
 import { basename, join } from 'node:path';
 import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import { inspectContainerBrand } from '../scripts/inspect-container-brand.mjs';
 import {
   assertContainerIdentity,
   classifyDependencies,
@@ -15,8 +16,14 @@ import {
   resolveContainer,
 } from '../scripts/desktop-distribution.mjs';
 
-const config = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
+const defaultConfig = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
+const config = defaultConfig;
 const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+
+/** A stand-in for the runtime's `game.bundle`: the real format is proven by the C++ bundle tests. */
+function authoredBundle() {
+  return Buffer.from('MYSBNDL1 fixture game payload');
+}
 
 /** The smallest byte sequence `pngToIco` accepts: signature, IHDR tag, and a 256x256 size. */
 function authoredPng() {
@@ -32,7 +39,7 @@ function authoredPng() {
 
 // Exercise the real staging and resolver. Only OS resource tools/archive transport are replaced;
 // these unit cases do not claim a Windows/macOS native launch or signing proof.
-function fixture(platform = 'linux', { icon = false, convertIcon = false } = {}) {
+function fixture(platform = 'linux', { icon = false, convertIcon = false, config = defaultConfig } = {}) {
   const directory = makeTempDirSync('threenative-container-regression-');
   const executable = join(directory, 'input');
   const captured = join(directory, 'relocated container');
@@ -41,14 +48,25 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false } = {})
   // icon a real project would hand it, so the conversion each one performs is actually exercised.
   const iconPath = join(directory, platform === 'win32' || convertIcon ? 'icon.png' : 'icon.icns');
   const dependency = join(directory, 'dependency');
+  const bundle = join(directory, 'game.bundle');
   writeFileSync(executable, 'original executable');
   writeFileSync(iconPath, iconPath.endsWith('.png') ? authoredPng() : Buffer.from('authored icon'));
   writeFileSync(dependency, 'native dependency');
+  writeFileSync(bundle, authoredBundle());
   mkdirSync(uiDirectory);
   writeFileSync(join(uiDirectory, 'index.html'), '<main>HUD</main>');
   const invocations = [];
   const run = (command, args, options) => {
-    invocations.push({ args, command });
+    // Capture the icon bytes at call time: packaging deletes its temporary .ico once rcedit
+    // succeeds, so reading the path afterwards proves nothing about what rcedit was handed.
+    const iconIndex = args.indexOf('--set-icon');
+    invocations.push({
+      args,
+      command,
+      ...(iconIndex >= 0 && existsSync(args[iconIndex + 1])
+        ? { iconBytes: readFileSync(args[iconIndex + 1]) }
+        : {}),
+    });
     if (command === 'rcedit') writeFileSync(args[0], 'executable with PE resources');
     else if (command === 'sips') writeFileSync(args.at(-1), 'resized icon');
     else if (command === 'iconutil') writeFileSync(args.at(-1), 'converted icns');
@@ -61,7 +79,7 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false } = {})
     return { status: 0, stdout: '', stderr: '' };
   };
   const packed = packageDesktopContainer({
-    platform, arch: 'x64', executable, config, uiDirectory, uiRenderer: 'web',
+    platform, arch: 'x64', bundle, executable, config, uiDirectory, uiRenderer: 'web',
     dependencies: [{ name: 'sidecar.bin', source: dependency }],
     ...(icon ? { icon: iconPath } : {}), output: join(directory, 'game'), run,
   });
@@ -101,6 +119,39 @@ test('macOS stages Info.plist at the application bundle root, not under Resource
   assert.equal(existsSync(join(root, 'Contents/Resources/Contents/Info.plist')), false);
 });
 
+for (const platform of ['linux', 'darwin', 'win32']) {
+  test(`${platform}: the game survives resource editing because it travels beside the executable`, () => {
+    // The defect this replaces: the game was appended to the end of the executable, and rcedit
+    // rewrote the PE to embed the icon, dropping everything past the end of the image. The loader
+    // looks for its footer at physical EOF, found nothing, and the container launched the bare
+    // runtime CLI. Signing would have done the same thing on Windows and macOS.
+    const { root, manifest } = fixture(platform, { icon: true });
+    const expected = platform === 'darwin' ? 'Contents/Resources/game.bundle' : 'game.bundle';
+    assert.equal(manifest.bundle, expected, 'staged where this platform\'s loader searches');
+    assert.ok(manifest.resources[expected], 'the game carries an integrity record');
+    // rcedit really did rewrite the staged executable in the win32 fixture, and the game is intact.
+    assert.deepEqual(readFileSync(join(root, expected)), authoredBundle());
+    assert.equal(manifest.resources[expected].sha256, digest(join(root, expected)));
+    assert.deepEqual(resolveContainer(root, { platform }), manifest);
+  });
+
+  test(`${platform}: a container whose game file is missing is refused`, () => {
+    const { root, manifest } = fixture(platform, { icon: true });
+    rmSync(join(root, manifest.bundle));
+    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_INCOMPLETE/u);
+  });
+
+  test(`${platform}: a container that keeps the game but drops its record is refused`, () => {
+    // A separate container, so this proves the present-file/absent-record pair is refused on its
+    // own rather than riding on the deletion above.
+    const { root, manifest, manifestPath } = fixture(platform, { icon: true });
+    assert.ok(existsSync(join(root, manifest.bundle)), 'the game file is still present');
+    const { bundle: _dropped, ...withoutBundle } = manifest;
+    writeFileSync(manifestPath, JSON.stringify(withoutBundle));
+    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_MANIFEST_INVALID/u);
+  });
+}
+
 test('Windows packaging hands rcedit an .ico, never the authored PNG', () => {
   // The guard the original defect needed: pngToIco being correct is no use if the packager still
   // passes the .png straight through, which is what made rcedit exit 1 and refuse every Windows
@@ -110,7 +161,8 @@ test('Windows packaging hands rcedit an .ico, never the authored PNG', () => {
   assert.ok(rcedit, 'rcedit runs when an icon is configured');
   const iconArgument = rcedit.args[rcedit.args.indexOf('--set-icon') + 1];
   assert.ok(iconArgument.toLowerCase().endsWith('.ico'), `--set-icon got ${iconArgument}`);
-  assert.equal(readFileSync(iconArgument).readUInt16LE(2), 1, 'and it is a real icon file');
+  assert.ok(rcedit.iconBytes, 'the icon existed when rcedit was invoked');
+  assert.equal(rcedit.iconBytes.readUInt16LE(2), 1, 'and it is a real icon file');
 });
 
 test('the Windows icon is a real .ico, because rcedit refuses a bare PNG', () => {
@@ -257,10 +309,12 @@ for (const fail of [false, true]) {
     const root = makeTempDirSync('threenative-archive-replacement-');
     const executable = join(root, 'input');
     const output = join(root, 'game.zip');
+    const bundle = join(root, 'game.bundle');
     writeFileSync(executable, 'executable');
+    writeFileSync(bundle, authoredBundle());
     writeFileSync(output, 'previous archive');
     const build = () => packageDesktopContainer({
-      platform: 'darwin', arch: 'x64', executable, output, config,
+      platform: 'darwin', arch: 'x64', bundle, executable, output, config,
       run: (command, args) => {
         assert.equal(command, 'zip');
         if (!fail) assert.equal(existsSync(args[2]), false, 'zip must not update an existing archive');
@@ -273,3 +327,67 @@ for (const fail of [false, true]) {
     assert.equal(readFileSync(output, 'utf8'), fail ? 'previous archive' : 'fresh archive');
   });
 }
+
+// PRD-375: the container must record the loading sequence the consumer config declares, or the
+// brand inspector has nothing to read back and every stock-derived project fails LOADING_MISSING.
+// This is the producer and the consumer in one test on purpose: each side alone proved nothing.
+function brandedFixture({ bootSplash } = {}) {
+  const directory = makeTempDirSync('threenative-loading-');
+  const engineIcon = join(directory, 'engine.png');
+  writeFileSync(engineIcon, 'engine default icon');
+  const branded = {
+    app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 },
+    ui: { renderer: 'web' },
+    ...(bootSplash === undefined ? {} : { bootSplash }),
+  };
+  const packed = fixture('linux', { config: branded, convertIcon: true, icon: true });
+  branded.app.icon = packed.icon;
+  return { ...packed, branded, engineIcon };
+}
+
+test('a configured bootSplash is recorded, and the brand inspector reads it back', () => {
+  const directory = makeTempDirSync('threenative-splash-');
+  const image = join(directory, 'splash.png');
+  writeFileSync(image, authoredPng());
+  const { root, manifest, branded, engineIcon } = brandedFixture({
+    bootSplash: { backgroundColor: '#0d1b2a', image },
+  });
+  assert.deepEqual(manifest.loading, {
+    bootSplash: { backgroundColor: '#0d1b2a', imageSha256: digest(image) },
+  });
+  const evidence = inspectContainerBrand(root, branded, { engineIcon });
+  assert.equal(evidence.loading.bootSplash.backgroundColor, '#0d1b2a');
+  assert.equal(evidence.loading.bootSplash.imageSha256, digest(image));
+});
+
+test('a colour-only bootSplash round-trips with a null image hash', () => {
+  const { root, manifest, branded, engineIcon } = brandedFixture({
+    bootSplash: { backgroundColor: '#0d1b2a' },
+  });
+  assert.deepEqual(manifest.loading, { bootSplash: { backgroundColor: '#0d1b2a', imageSha256: null } });
+  assert.equal(
+    inspectContainerBrand(root, branded, { engineIcon }).loading.bootSplash.imageSha256,
+    null,
+  );
+});
+
+test('a game with no bootSplash records that, rather than omitting the evidence', () => {
+  const { root, manifest, branded, engineIcon } = brandedFixture();
+  assert.deepEqual(manifest.loading, { bootSplash: null });
+  assert.equal(inspectContainerBrand(root, branded, { engineIcon }).loading.bootSplash, null);
+});
+
+test('a recorded splash that does not match the config is still refused', () => {
+  const { root, branded, engineIcon } = brandedFixture({ bootSplash: { backgroundColor: '#0d1b2a' } });
+  assert.throws(
+    () => inspectContainerBrand(root, { ...branded, bootSplash: { backgroundColor: '#ffffff' } }, { engineIcon }),
+    /TN_NATIVE_STARTER_CONTAINER_LOADING_MISMATCH/u,
+  );
+});
+
+test('a declared splash image that is not on disk refuses the release', () => {
+  assert.throws(
+    () => brandedFixture({ bootSplash: { image: join(makeTempDirSync('absent-'), 'missing.png') } }),
+    /TN_DESKTOP_SPLASH_IMAGE_MISSING/u,
+  );
+});

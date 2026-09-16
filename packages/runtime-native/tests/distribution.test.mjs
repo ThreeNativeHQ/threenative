@@ -46,6 +46,14 @@ import {
 } from '../scripts/desktop-distribution.mjs';
 import { desktopSigningFromEnvironment } from '../scripts/package-desktop.mjs';
 
+/** A stand-in for the runtime's `game.bundle`; the real format is proven by the C++ bundle tests. */
+function stageBundle(directory) {
+  const bundle = join(directory, 'game.bundle');
+  writeFileSync(bundle, Buffer.from('MYSBNDL1 fixture game payload'));
+  return bundle;
+}
+
+
 /** Serves a set of named payloads over loopback and hands back a fixture `prebuilt-lock.json`. */
 async function serveFixtureRelease(root, contents) {
   const server = createServer((request, response) => {
@@ -1369,16 +1377,34 @@ test('macOS is built but unpublished, and says so instead of 404ing', () => {
 // container per native host; debug mode keeps the raw binary. Dependencies are injected here
 // because a hermetic fixture executable links nothing; the real path discovers them from the
 // produced binary with the host's own tool (ldd/otool/dumpbin).
+/**
+ * Does this file end in the runtime's appended-bundle footer?
+ *
+ * `src/vfs/embedded_bundle.cpp` reads the last `kFooterSize` bytes and requires `MYSBNDL1`. A
+ * release executable must not carry one: that is what rcedit and the signing tools destroy.
+ */
+function hasBundleFooter(path) {
+  const bytes = readFileSync(path);
+  const magic = Buffer.from('MYSBNDL1', 'ascii');
+  const footer = magic.length + 4 + 4 + 8;
+  if (bytes.length < footer) return false;
+  return bytes.subarray(bytes.length - footer, bytes.length - footer + magic.length).equals(magic);
+}
+
 async function packageSampleRelease(root, overrides = {}) {
   const { packageDesktop } = await import('../scripts/package-desktop.mjs');
   const bundle = join(root, 'game.js');
   writeFileSync(bundle, 'export default { start() {} };\n');
   const fakeRuntime = join(root, 'fake-runtime.mjs');
+  // Record the argv rather than failing inside the runtime: a missing flag would otherwise surface
+  // as "Runtime packager exited with code 1", which is true and tells nobody which flag went.
+  const argvLog = join(root, 'runtime-argv.json');
   writeFileSync(
     fakeRuntime,
     '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\n' +
+      `writeFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2)));\n` +
       'const index = process.argv.indexOf("--out");\n' +
-      'if (index >= 0) writeFileSync(process.argv[index + 1], "compiled desktop executable");\n',
+      'if (index >= 0) writeFileSync(process.argv[index + 1], "compiled game bundle");\n',
   );
   chmodSync(fakeRuntime, 0o755);
   const ui = join(root, 'ui');
@@ -1407,8 +1433,38 @@ async function packageSampleRelease(root, overrides = {}) {
     ui,
     ...overrides,
   });
-  return { archive, config, icon, output };
+  return { archive, argvLog, config, fakeRuntime, icon, output };
 }
+
+test('a release container ships the game beside a bare runtime, never appended to it', async () => {
+  // The Windows defect this guards: the game was appended to the executable, and rcedit rewriting
+  // the PE for the icon discarded it, so the container launched the runtime CLI. Assert the shape
+  // that makes that impossible - an executable byte-identical to the runtime, plus a recorded
+  // game.bundle beside it - rather than only that the container resolves.
+  const root = makeTempDirSync('threenative-release-sidecar-');
+  roots.push(root);
+  const { archive, argvLog } = await packageSampleRelease(root);
+  const argv = JSON.parse(readFileSync(argvLog, 'utf8'));
+  assert.ok(argv.includes('--bundle-only'), `release must compile with --bundle-only, got: ${argv.join(' ')}`);
+  assert.ok(
+    String(argv[argv.indexOf('--out') + 1]).endsWith('.bundle'),
+    `--out must name a .bundle path, got: ${argv.join(' ')}`,
+  );
+  const { readdirSync } = await import('node:fs');
+  const unpacked = join(makeTempDirSync('threenative-release-sidecar-unpacked-'), 'here');
+  mkdirSync(unpacked, { recursive: true });
+  execFileSync('tar', ['-xzf', archive, '-C', unpacked]);
+  const container = join(unpacked, readdirSync(unpacked)[0]);
+  const manifest = resolveContainer(container, { platform: 'linux' });
+  assert.equal(manifest.bundle, 'game.bundle');
+  assert.ok(manifest.resources['game.bundle'], 'the game carries an integrity record');
+  // The invariant the loader actually reads, rather than byte-equality with the runtime: that is an
+  // accident of today's implementation and would break the day the executable is stripped or signed,
+  // going red for the wrong reason. src/vfs/embedded_bundle.cpp looks for MYSBNDL1 in the last 24
+  // bytes of the executable; it must not be there, and the game must be beside it instead.
+  assert.equal(hasBundleFooter(join(container, manifest.executable)), false, 'nothing is appended to the executable');
+  assert.equal(readFileSync(join(container, 'game.bundle'), 'utf8'), 'compiled game bundle');
+});
 
 test('desktop release mode packages the executable, the UI bundle and the declared dependencies', async () => {
   const root = makeTempDirSync('threenative-desktop-release-');
@@ -1585,7 +1641,7 @@ test('a signed desktop release is refused when the signing tool fails', () => {
   };
   assert.throws(
     () =>
-      packageDesktopContainer({
+      packageDesktopContainer({ bundle: stageBundle(directory),
         arch: 'x64',
         config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
         executable,
@@ -1646,7 +1702,7 @@ test('unsigned preparation proceeds and is named unsigned when no signing inputs
   const directory = makeTempDirSync('threenative-unsigned-');
   const executable = join(directory, 'input');
   writeFileSync(executable, 'executable');
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.unsigned', name: 'Unsigned Game' } },
     executable,
@@ -1702,7 +1758,7 @@ test('a successful macOS signature records the signing scheme', () => {
     }
     throw new Error(`unexpected tool ${command}`);
   };
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
     executable,
@@ -1716,6 +1772,98 @@ test('a successful macOS signature records the signing scheme', () => {
   assert.equal(result.manifest.signingScheme, 'codesign');
   assert.ok(calls.some((call) => call === 'codesign --force'));
   assert.ok(calls.some((call) => call === 'codesign --verify'));
+});
+
+test('Windows signing can use a certificate store subject, which is what a CA-issued key needs', () => {
+  // `signtool sign /f <pfx>` is the only form the packager offered, and it is passed no `/p`, so it
+  // can only consume a password-less PFX. A CA does not issue one of those. `/n <subject>` signs
+  // from the Windows certificate store, which is also what the README promises: the private key
+  // stays in the OS keychain and never reaches the build config.
+  const directory = makeTempDirSync('threenative-sign-subject-');
+  const target = join(directory, 'game.exe');
+  writeFileSync(target, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push({ args, command });
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const result = signDesktopArtifact({
+    platform: 'win32',
+    run,
+    signing: { subject: 'Example Publisher Ltd' },
+    target,
+  });
+  assert.equal(result.scheme, 'signtool');
+  assert.equal(result.signed, true);
+  const sign = calls.find((call) => call.args[0] === 'sign');
+  assert.ok(sign.args.includes('/n'), `sign must use /n, got: ${sign.args.join(' ')}`);
+  assert.equal(sign.args[sign.args.indexOf('/n') + 1], 'Example Publisher Ltd');
+  assert.equal(sign.args.includes('/f'), false, 'a store subject must not also pass a PFX path');
+  assert.ok(calls.some((call) => call.args[0] === 'verify' && call.args.includes('/pa')));
+});
+
+test('Windows signing still passes the certificate file when no subject is given', () => {
+  // The mirror of the /n case. Without it, deleting the `/f` arguments leaves signtool to auto-select
+  // a certificate and every test stays green, so the path this PR must not break is unguarded.
+  const directory = makeTempDirSync('threenative-sign-pfx-');
+  const target = join(directory, 'game.exe');
+  const certificate = join(directory, 'publisher.pfx');
+  writeFileSync(target, 'executable');
+  writeFileSync(certificate, 'pfx bytes');
+  const calls = [];
+  const result = signDesktopArtifact({
+    platform: 'win32',
+    run: (command, args) => { calls.push({ args, command }); return { status: 0, stdout: '', stderr: '' }; },
+    signing: { certificate, timestampUrl: 'http://timestamp.example/rfc3161' },
+    target,
+  });
+  assert.equal(result.scheme, 'signtool');
+  const sign = calls.find((call) => call.args[0] === 'sign');
+  assert.equal(sign.args[sign.args.indexOf('/f') + 1], certificate, `got: ${sign.args.join(' ')}`);
+  assert.equal(sign.args.includes('/n'), false, 'a certificate file must not also pass a store subject');
+  assert.equal(sign.args[sign.args.indexOf('/tr') + 1], 'http://timestamp.example/rfc3161');
+});
+
+test('a blank signing variable reads as absent, not as a request to sign', () => {
+  // A CI job writing `SUBJECT: ${{ secrets.WIN_SIGN_SUBJECT }}` with the secret unset passes the
+  // empty string. Treating that as a signing request turns a release that produced an unsigned
+  // container into a hard failure.
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_SUBJECT: '' }), undefined);
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_CERTIFICATE: '   ' }), undefined);
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_CODESIGN_IDENTITY: '' }), undefined);
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_NOTARY_PROFILE: '' }), undefined);
+});
+
+test('both Windows credential variables set is refused before a release is built', () => {
+  // The same clash inside signDesktopArtifact costs a full compile and staging first.
+  assert.throws(
+    () => desktopSigningFromEnvironment({
+      THREENATIVE_DESKTOP_SIGN_CERTIFICATE: 'C:/keys/publisher.pfx',
+      THREENATIVE_DESKTOP_SIGN_SUBJECT: 'Example Publisher Ltd',
+    }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS/u,
+  );
+});
+
+test('Windows signing refuses a certificate file and a store subject together', () => {
+  // Silently preferring one would sign with a key the author did not choose.
+  const directory = makeTempDirSync('threenative-sign-ambiguous-');
+  const target = join(directory, 'game.exe');
+  writeFileSync(target, 'executable');
+  assert.throws(
+    () => signDesktopArtifact({
+      platform: 'win32',
+      run: () => ({ status: 0, stdout: '', stderr: '' }),
+      signing: { certificate: join(directory, 'publisher.pfx'), subject: 'Example Publisher Ltd' },
+      target,
+    }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS/u,
+  );
+});
+
+test('desktopSigningFromEnvironment carries a store subject on its own', () => {
+  const signing = desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_SUBJECT: 'Example Publisher Ltd' });
+  assert.equal(signing?.subject, 'Example Publisher Ltd');
 });
 
 test('a successful Windows signature records the signing scheme', () => {
@@ -1732,7 +1880,7 @@ test('a successful Windows signature records the signing scheme', () => {
     }
     throw new Error(`unexpected tool ${command}`);
   };
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.win', name: 'Win Game' } },
     executable,
@@ -1768,7 +1916,7 @@ test('macOS notarization staples and re-archives the signed bundle', () => {
     if (command === 'xcrun' && args[0] === 'stapler') return { status: 0, stdout: '', stderr: '' };
     throw new Error(`unexpected tool ${command} ${args.join(' ')}`);
   };
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.notary', name: 'Notary Game' } },
     executable,
