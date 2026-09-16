@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
 import { parseLinkedLibraries, resolveContainer } from './desktop-distribution.mjs';
+import { inspectContainerBrand } from './inspect-container-brand.mjs';
 
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
@@ -261,7 +262,7 @@ function launchStarterExecutable(executable, { env = process.env, frames, logPat
 }
 
 // The raw debug artifact and the installed release container are judged by the same markers.
-function judgeStarterRun({ artifact, frames, log, logPath, reportPath, screenshot }) {
+function judgeStarterRun({ artifact, brand, frames, log, logPath, reportPath, screenshot }) {
   const failures = analyzeStarterLog(log, frames);
   if (failures.length > 0) throw new Error(`TN_NATIVE_STARTER_LOG_FAILED:\n${failures.join('\n')}`);
   // Windows (DWM) and macOS (Quartz) always composite, so the default starter's WebView HUD must
@@ -276,6 +277,7 @@ function judgeStarterRun({ artifact, frames, log, logPath, reportPath, screensho
   const image = inspectStarterScreenshot(screenshot);
   const report = {
     artifact,
+    brand,
     completedAt: new Date().toISOString(),
     frames,
     image,
@@ -314,13 +316,16 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
  * launch and reported with its install step, and the container's own integrity records are
  * resolved first, so a tampered or incomplete payload never reaches the launch.
  */
-export function verifyStarterContainer({ root, frames = 300, project = process.cwd(), env, run } = {}) {
+export function verifyStarterContainer({ root, config, frames = 300, project = process.cwd(), env, run } = {}) {
   if (!root) {
     throw new Error('TN_NATIVE_STARTER_CONTAINER_MISSING: pass --container <unpacked directory>.');
   }
   const projectRoot = resolve(project);
   const containerRoot = resolve(root);
   const manifest = resolveContainer(containerRoot);
+  // Brand is judged before anything launches: a container that carries the wrong identity must
+  // not be rescued by a green frame, and its failure names the surface, not the launch.
+  const brand = config === undefined ? null : inspectContainerBrand(containerRoot, config, { project: projectRoot });
   const executable = join(containerRoot, manifest.executable);
   assertPlayerPrerequisites(manifest, executable, { run });
   const artifactDirectory = join(projectRoot, 'artifacts', 'native');
@@ -329,7 +334,18 @@ export function verifyStarterContainer({ root, frames = 300, project = process.c
   const reportPath = join(artifactDirectory, 'starter-container-report.json');
   mkdirSync(artifactDirectory, { recursive: true });
   const log = launchStarterExecutable(executable, { env, frames, logPath, project: projectRoot, screenshot });
-  return judgeStarterRun({ artifact: executable, frames, log, logPath, reportPath, screenshot });
+  return judgeStarterRun({ artifact: executable, brand, frames, log, logPath, reportPath, screenshot });
+}
+
+/** The consumer config the container is judged against, read as the resolved JSON the packager takes. */
+function readBrandConfig(path) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `TN_NATIVE_STARTER_BRAND_CONFIG_INVALID: ${path} is not readable JSON (${error instanceof Error ? error.message : String(error)}).`,
+    );
+  }
 }
 
 function parseCliFlags(argv) {
@@ -338,6 +354,7 @@ function parseCliFlags(argv) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (flag === '--container' && value) options.root = resolve(value);
+    else if (flag === '--config' && value) options.config = readBrandConfig(resolve(value));
     else if (flag === '--frames' && value) options.frames = Number(value);
     else if (flag === '--project' && value) options.project = resolve(value);
   }
@@ -348,7 +365,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
   try {
     const options = parseCliFlags(process.argv.slice(2));
     const report = options.root ? verifyStarterContainer(options) : verifyStarterDesktop(options);
-    console.log(`starter desktop gate passed: ${report.frames} frames, ${report.image.colors} colors, ${report.image.cyanAssetPixels} asset pixels`);
+    const brand = report.brand === undefined || report.brand === null
+      ? 'brand NOT inspected (pass --config <resolved config json>)'
+      : `brand ${report.brand.name?.name ?? 'unnamed'} verified`;
+    console.log(`starter desktop gate passed: ${report.frames} frames, ${report.image.colors} colors, ${report.image.cyanAssetPixels} asset pixels, ${brand}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

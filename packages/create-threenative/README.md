@@ -44,6 +44,13 @@ package. Three surfaces carry it:
 
 `threenative doctor --target desktop` reports which of those a desktop build actually resolves.
 
+Once a desktop release container exists, inspect the brand it actually carries rather than the
+config you meant to ship:
+`node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --container <unpacked-directory> --config .threenative/build/config.json`.
+It compares the launcher/file-manager name, the embedded icon bytes and the declared loading
+sequence against that config, and refuses a container that still carries the engine's default icon
+— which the scaffold's own `public/icon.png` is until you replace it.
+
 The published package declares those Node and pnpm minimums. Its asset pipeline reaches `sharp`
 through `@gltf-transform/functions` → `ndarray-pixels` → `sharp`; `@threenative/core` also brings
 the asset MCP's `sharp` copy. On a machine whose system has an incompatible global libvips, let

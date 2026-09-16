@@ -1,11 +1,13 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'vitest';
 
 import { inspectContainerBrand } from '../scripts/inspect-container-brand.mjs';
+import { verifyStarterContainer } from '../scripts/verify-starter-desktop.mjs';
 
 function sha256Of(contents) {
   return createHash('sha256').update(contents).digest('hex');
@@ -471,4 +473,328 @@ test('duplicate macOS name keys are ambiguous, not matching evidence', () => {
     '<plist><dict><key>CFBundleName</key><string>Orbit Game</string><key>CFBundleName</key><string>Wrong Game</string><key>CFBundleIconFile</key><string>Orbit-Game</string></dict></plist>',
   );
   assert.throws(() => f.inspect(), /CONTAINER_MANIFEST_INVALID/);
+});
+
+// PRD-375 phase 2: the inspector's live caller, and real Windows PE resource inspection.
+
+const RSRC_RVA = 0x1000;
+const PE_HEADER_SIZE = 0x400;
+
+function pad4(buffer) {
+  return Buffer.concat([buffer, Buffer.alloc((4 - (buffer.length % 4)) % 4)]);
+}
+
+/** One VS_VERSIONINFO node: wLength, wValueLength, wType, UTF-16 key, padded value, children. */
+function vsNode(key, type, value, children) {
+  const head = Buffer.alloc(6);
+  head.writeUInt16LE(type === 1 ? value.length / 2 : value.length, 2);
+  head.writeUInt16LE(type, 4);
+  const body = Buffer.concat([
+    pad4(Buffer.concat([head, Buffer.from(`${key}\0`, 'utf16le')])),
+    pad4(value),
+  ]);
+  const node = Buffer.concat([body, ...children]);
+  node.writeUInt16LE(node.length, 0);
+  return node;
+}
+
+function versionResource(version, strings) {
+  const fixed = Buffer.alloc(52);
+  fixed.writeUInt32LE(0xfeef04bd, 0);
+  const [major, minor, build, revision] = `${version}.0.0.0`.split('.').map(Number);
+  for (const offset of [8, 16]) fixed.writeUInt32LE(((major << 16) >>> 0) + minor, offset);
+  for (const offset of [12, 20]) fixed.writeUInt32LE(((build << 16) >>> 0) + revision, offset);
+  const table = vsNode(
+    '040904b0',
+    1,
+    Buffer.alloc(0),
+    Object.entries(strings).map(([key, value]) =>
+      vsNode(key, 1, Buffer.from(`${value}\0`, 'utf16le'), []),
+    ),
+  );
+  return vsNode('VS_VERSION_INFO', 0, fixed, [vsNode('StringFileInfo', 1, Buffer.alloc(0), [table])]);
+}
+
+function groupIcon(ids) {
+  const buffer = Buffer.alloc(6 + ids.length * 14);
+  buffer.writeUInt16LE(1, 2);
+  buffer.writeUInt16LE(ids.length, 4);
+  ids.forEach((id, index) => buffer.writeUInt16LE(id, 6 + index * 14 + 12));
+  return buffer;
+}
+
+/** A real three-level .rsrc tree: type directory, name directory, language data entry. */
+function resourceSection(entries) {
+  const types = [...new Set(entries.map((entry) => entry.type))].sort((a, b) => a - b);
+  const directorySize = (count) => 16 + count * 8;
+  let cursor = directorySize(types.length);
+  const typeDirectories = types.map((type) => {
+    const members = entries.filter((entry) => entry.type === type);
+    const offset = cursor;
+    cursor += directorySize(members.length);
+    return { members, offset, type };
+  });
+  const members = typeDirectories.flatMap((directory) => directory.members);
+  for (const member of members) {
+    member.languageOffset = cursor;
+    cursor += directorySize(1);
+  }
+  for (const member of members) {
+    member.dataOffset = cursor;
+    cursor += 16;
+  }
+  for (const member of members) {
+    member.payloadOffset = cursor;
+    cursor += pad4(member.data).length;
+  }
+  const section = Buffer.alloc(cursor);
+  const writeDirectory = (offset, children) => {
+    section.writeUInt16LE(children.length, offset + 14);
+    children.forEach(([id, target, isDirectory], index) => {
+      section.writeUInt32LE(id, offset + 16 + index * 8);
+      section.writeUInt32LE(isDirectory ? target + 0x80000000 : target, offset + 20 + index * 8);
+    });
+  };
+  writeDirectory(0, typeDirectories.map((directory) => [directory.type, directory.offset, true]));
+  for (const directory of typeDirectories) {
+    writeDirectory(
+      directory.offset,
+      directory.members.map((member) => [member.id, member.languageOffset, true]),
+    );
+  }
+  for (const member of members) {
+    writeDirectory(member.languageOffset, [[0x0409, member.dataOffset, false]]);
+    section.writeUInt32LE(RSRC_RVA + member.payloadOffset, member.dataOffset);
+    section.writeUInt32LE(member.data.length, member.dataOffset + 4);
+    member.data.copy(section, member.payloadOffset);
+  }
+  return section;
+}
+
+/** A byte-accurate minimal PE32 carrying exactly the resources rcedit embeds. */
+function windowsExecutable(entries, { resourceDirectory = true, directoryCount = 16 } = {}) {
+  const section = resourceSection(entries);
+  const rawSize = section.length + ((512 - (section.length % 512)) % 512);
+  const file = Buffer.alloc(PE_HEADER_SIZE + rawSize);
+  file.writeUInt16LE(0x5a4d, 0);
+  file.writeUInt32LE(0x80, 0x3c);
+  file.write('PE\0\0', 0x80, 'latin1');
+  file.writeUInt16LE(0x014c, 0x84);
+  file.writeUInt16LE(1, 0x86);
+  file.writeUInt16LE(224, 0x94);
+  const optional = 0x98;
+  file.writeUInt16LE(0x10b, optional);
+  file.writeUInt32LE(directoryCount, optional + 92);
+  if (resourceDirectory) {
+    file.writeUInt32LE(RSRC_RVA, optional + 112);
+    file.writeUInt32LE(section.length, optional + 116);
+  }
+  const header = optional + 224;
+  file.write('.rsrc\0\0\0', header, 'latin1');
+  file.writeUInt32LE(section.length, header + 8);
+  file.writeUInt32LE(RSRC_RVA, header + 12);
+  file.writeUInt32LE(rawSize, header + 16);
+  file.writeUInt32LE(PE_HEADER_SIZE, header + 20);
+  section.copy(file, PE_HEADER_SIZE);
+  return file;
+}
+
+const WINDOWS_ICON_ID = 1;
+
+function windowsFixture({
+  productName = 'Orbit Game',
+  fileDescription = 'Orbit Game',
+  peVersion = '1.2.3',
+  iconBytes,
+  groupIconIds = [WINDOWS_ICON_ID],
+  iconId = WINDOWS_ICON_ID,
+  resources: peResources,
+  ...peOptions
+} = {}) {
+  const directory = makeTempDirSync('prd375-windows-');
+  const root = join(directory, 'game');
+  mkdirSync(root);
+  const icon = join(directory, 'authored.png');
+  const engine = join(directory, 'engine.png');
+  writeFileSync(icon, 'authored icon');
+  writeFileSync(engine, 'engine icon');
+  const config = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', icon } };
+  const manifest = {
+    app: {
+      icon: 'com.example.orbit.png',
+      iconSha256: sha256Of('authored icon'),
+      id: 'com.example.orbit',
+      name: 'Orbit Game',
+      version: '1.2.3',
+    },
+    dependencies: [],
+    executable: 'orbit.exe',
+    platform: 'win32-x64',
+    resources: {},
+    schemaVersion: 1,
+    ui: null,
+  };
+  function file(path, contents) {
+    writeFileSync(join(root, path), contents);
+    manifest.resources[path] = { sha256: sha256Of(contents) };
+  }
+  file(
+    'orbit.exe',
+    windowsExecutable(
+      peResources ?? [
+        { data: Buffer.from(iconBytes ?? 'authored icon'), id: iconId, type: 3 },
+        { data: groupIcon(groupIconIds), id: 1, type: 14 },
+        {
+          data: versionResource(peVersion, {
+            FileDescription: fileDescription,
+            ProductName: productName,
+          }),
+          id: 1,
+          type: 16,
+        },
+      ],
+      peOptions,
+    ),
+  );
+  file('com.example.orbit.png', 'authored icon');
+  function inspect() {
+    writeFileSync(join(root, 'threenative-container.json'), JSON.stringify(manifest));
+    return inspectContainerBrand(root, config, { engineIcon: engine });
+  }
+  return { config, engine, icon, inspect, manifest, root };
+}
+
+test('a packaged Windows executable is inspected through its real PE resources', () => {
+  const report = windowsFixture().inspect();
+  assert.equal(report.name.name, 'Orbit Game');
+  assert.equal(report.windows.fileVersion, '1.2.3.0');
+  assert.equal(report.windows.images[0].sha256, sha256Of('authored icon'));
+});
+
+test('a Windows executable with no resource directory fails closed', () => {
+  assert.throws(
+    () => windowsFixture({ resourceDirectory: false }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING/u,
+  );
+});
+
+test('a file that is not a PE image is never accepted as Windows brand evidence', () => {
+  const fixture = windowsFixture();
+  writeFileSync(join(fixture.root, 'orbit.exe'), 'not an executable');
+  fixture.manifest.resources['orbit.exe'] = { sha256: sha256Of('not an executable') };
+  assert.throws(() => fixture.inspect(), /TN_NATIVE_STARTER_CONTAINER_BRAND_UNVERIFIED/u);
+});
+
+test('a PE ProductName that differs from the consumer config fails', () => {
+  assert.throws(
+    () => windowsFixture({ productName: 'Engine Default' }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u,
+  );
+});
+
+test('a stale PE FileDescription is not hidden by a correct ProductName', () => {
+  assert.throws(
+    () => windowsFixture({ fileDescription: 'ThreeNative' }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u,
+  );
+});
+
+test('a PE file version that differs from the container version fails', () => {
+  assert.throws(
+    () => windowsFixture({ peVersion: '9.9.9' }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_WINDOWS_VERSION_MISMATCH/u,
+  );
+});
+
+test('an embedded engine-default PE icon is rejected despite a correct sidecar', () => {
+  assert.throws(
+    () => windowsFixture({ iconBytes: 'engine icon' }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT/u,
+  );
+});
+
+test('a PE icon that is neither the authored art nor the engine default fails', () => {
+  assert.throws(
+    () => windowsFixture({ iconBytes: 'some other icon' }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_ICON_MISMATCH/u,
+  );
+});
+
+test('an RT_GROUP_ICON naming an absent RT_ICON fails closed', () => {
+  assert.throws(
+    () => windowsFixture({ groupIconIds: [7] }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID/u,
+  );
+});
+
+test('a Windows executable with no RT_VERSION resource fails closed', () => {
+  assert.throws(
+    () =>
+      windowsFixture({
+        resources: [
+          { data: Buffer.from('authored icon'), id: 1, type: 3 },
+          { data: groupIcon([1]), id: 1, type: 14 },
+        ],
+      }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING/u,
+  );
+});
+
+test('a Windows executable with no icon resources fails closed', () => {
+  assert.throws(
+    () =>
+      windowsFixture({
+        resources: [
+          {
+            data: versionResource('1.2.3', {
+              FileDescription: 'Orbit Game',
+              ProductName: 'Orbit Game',
+            }),
+            id: 1,
+            type: 16,
+          },
+        ],
+      }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING/u,
+  );
+});
+
+test('the container verifier rejects a mismatched brand before it launches anything', () => {
+  const fixture = reviewBrandFixture();
+  fixture.manifest.app.name = 'Engine Default';
+  fixture.save();
+  assert.throws(
+    () => verifyStarterContainer({ root: fixture.root, config: fixture.config }),
+    /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u,
+  );
+});
+
+test('a matching brand lets the container verifier reach the launch it guards', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  assert.throws(
+    () => verifyStarterContainer({ root: fixture.root, config: fixture.config }),
+    (error) => !/TN_NATIVE_STARTER_CONTAINER_(NAME|ICON|LOADING)_/u.test(error.message),
+  );
+});
+
+test('the verifier CLI inspects the brand of the container it is pointed at', () => {
+  const fixture = reviewBrandFixture();
+  fixture.manifest.app.name = 'Engine Default';
+  fixture.save();
+  const configPath = join(fixture.directory, 'threenative.config.json');
+  writeFileSync(configPath, JSON.stringify(fixture.config));
+  const result = spawnSync(
+    process.execPath,
+    [
+      new URL('../scripts/verify-starter-desktop.mjs', import.meta.url).pathname,
+      '--container',
+      fixture.root,
+      '--config',
+      configPath,
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u);
 });

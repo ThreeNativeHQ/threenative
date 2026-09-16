@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) has a review-corrected inspector export, fixtures and README, but no live container-verifier caller yet (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)); the container launch, OS-launcher inspection and human capture stay blocked on PRD-365 containers (draft PR #224, not on `develop`).
+**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) now has a live caller — `verifyStarterContainer` and its CLI `--config` flag inspect the container's brand before anything launches — and real Windows PE resource inspection replacing the manifest-only false pass (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)). PRD-365's containers landed on `develop` (PR #224, `b66585f08`), so that blocker is gone. What remains is Windows/macOS OS-launcher inspection and human capture on those hosts, and an independent reviewer PASS.
 Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
@@ -109,26 +109,31 @@ pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts
 
 ### Phase 2 — Distributed desktop apps display the developer brand
 
-**Landing split:** `inspectContainerBrand(root, config, options)` is implemented and fixture-covered,
-not yet connected to `verifyStarterDesktop` or its CLI. Review of PR #255 found that the original
-export could accept missing splash evidence, trust Windows manifest identity as PE evidence, and
-misread PRD-365's source-versus-converted-icon hash contract. The corrections below are engine
-verification plumbing; they do not introduce another packager or change the game's appearance.
-PR #224 remains a draft dependency, not merged into `develop`. Its writer does not emit a loading
-record: a configured `bootSplash` must therefore report missing evidence, never a UI-only pass.
-Windows inspection explicitly remains unverified until actual PE resources are inspected. macOS
-source provenance, payload integrity and plist linkage are not proof of converted icon pixels.
-The original author reported a GBM-blocked host; this review sandbox has no pnpm/Vitest/native
-runtime and cannot resolve GitHub from its shell, so no native launch is claimed here either.
+**Landing split:** `inspectContainerBrand(root, config, options)` is now called by
+`verifyStarterContainer` in `packages/runtime-native/scripts/verify-starter-desktop.mjs`, before the
+prerequisite check and the launch, and by that script's CLI through `--config <resolved config
+json>`. Review of PR #255 found that the original export could accept missing splash evidence,
+trust Windows manifest identity as PE evidence, and misread PRD-365's source-versus-converted-icon
+hash contract; all three are corrected. Windows identity is now read out of the packaged
+executable's own resource directory — `RT_GROUP_ICON`/`RT_ICON` and `RT_VERSION`/`VS_FIXEDFILEINFO`,
+parsed with plain `fs` and `Buffer` and no new dependency — so a manifest and a sidecar PNG are no
+longer accepted as evidence. macOS source provenance, payload integrity and plist linkage remain
+proof of provenance, not of converted icon pixels. PRD-365's writer emits no `loading` record, so a
+configured `bootSplash` still reports missing evidence rather than a UI-only pass.
+**Brand inspection is opt-in on the CLI, not default-on**, because the scaffold copies the engine's
+own `template-assets/icon.png` to a starter's `public/icon.png`: a stock, unbranded starter would
+fail `TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT` by design, and turning the check on by
+default would red the existing starter lane rather than prove anything. Without `--config` the gate
+prints `brand NOT inspected`; it never implies the identity was checked.
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
-      Export and fixtures implemented; live container/CLI integration is missing. Historical parent `7bbb2216` reported typecheck/lint/primary-docs green; those workspace gates have not been rerun for this correction.
-- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
-      Historical parent: 29/29 Vitest. Review correction: all 40 branding test bodies pass under an isolated Node 22.16.0 harness (10 retained + 30 new); full Vitest, including the 19 untouched screenshot/CLI/workflow tests, remains unrun. Node syntax checks pass for both changed executable files.
+- [x] Callers wired and building: `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs`, `packages/create-threenative/README.md`
+      `verifyStarterContainer` calls `inspectContainerBrand` after `resolveContainer` and before `assertPlayerPrerequisites`, records the result as `report.brand`, and the CLI reads the consumer config from `--config`. `packages/runtime-native/scripts/inspect-container-brand.mjs` now parses the packaged Windows `.exe`'s PE resource directory. Both READMEs name the `--config` recipe. `pnpm typecheck` exit 0 and `pnpm lint` exit 0 on this candidate (a stale post-merge install and stale `dist` had to be repaired with `pnpm install` + `pnpm build` first; neither is caused by this change).
+- [x] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+      `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-brand.test.mjs tests/starter-desktop.test.mjs`: **2 files, 78 tests passed**, exit 0 (64 before this change, 14 added).
 - [x] Observed red recorded, then restored green
-      Historical test-first red: 10 failed / 19 passed, then 29/29. Review regressions: 25 failed / 2 passed, then 27/27; three further controls failed before correction, then 30/30. Combined branding section: 40/40, exit 0. Record: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`.
+      This change, test-first: **12 failed / 42 passed (54)** in `tests/starter-brand.test.mjs` against the un-integrated inspector, then **78/78** across both files after implementing. Historical test-first red: 10 failed / 19 passed, then 29/29. Review regressions: 25 failed / 2 passed, then 27/27; three further controls failed before correction, then 30/30. Record: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`.
 - [ ] User verification performed on the named platform
       Pending real container/CLI integration, OS-launcher inspection and same-artifact loading/gameplay captures. No native launch or human inspection was performed in this review.
 - [x] Evidence record written: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`
