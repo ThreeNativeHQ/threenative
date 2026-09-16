@@ -10,6 +10,7 @@ import {
   type TextureLoader,
 } from "three";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
+import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
 
 export interface IAssetLoaderOptions {
@@ -788,6 +789,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       cached<T>("model", path, async (url) => {
         if (options.model !== undefined) {
           const value = (await options.model(url)) as T;
+          stampAssetProvenance(value, path);
           await attachCompiledLightmaps(path, value);
           return value;
         }
@@ -865,6 +867,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             "current converter and this stops.";
           console.warn(`TN_ASSETS_MIRRORED_CLIPS_REPAIRED ${path} — ${cause}`);
         }
+        stampAssetProvenance(value, path);
         await attachCompiledLightmaps(path, value);
         return value;
       }),
@@ -919,6 +922,24 @@ function modelRoots(value: unknown): Object3D[] {
   if (!isRecord(value)) return [];
   const roots = [value.scene, ...(Array.isArray(value.scenes) ? value.scenes : [])];
   return roots.filter((root): root is Object3D => root instanceof Object3D);
+}
+
+/**
+ * Stamp the logical path the caller asked for onto the model roots a game adds to the scene.
+ *
+ * The stamp lives on the root and never on its descendants: three's `Object3D.copy` deep-copies
+ * `userData`, so one stamp survives `.clone()` and every skeleton-safe clone an animation helper
+ * makes — a clone keeps its provenance without the game annotating anything by hand. A result that
+ * is a bare `Object3D` is stamped directly; a `Texture` or `AudioBuffer` is no `Object3D` root and
+ * gets nothing. An existing non-empty stamp is never overwritten.
+ */
+function stampAssetProvenance(value: unknown, logicalPath: string): void {
+  for (const root of modelRoots(value)) {
+    const userData = root.userData as Record<string, unknown>;
+    const existing = userData[GEOMETRY_ASSET_KEY];
+    if (typeof existing === "string" && existing !== "") continue;
+    userData[GEOMETRY_ASSET_KEY] = logicalPath;
+  }
 }
 
 function disposeSurface(value: unknown, disposed: IResourceDisposalSets): void {

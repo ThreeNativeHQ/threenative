@@ -13,6 +13,12 @@ import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
 import type { IThreeNativeConfig } from "./config.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "./frame-budget.js";
+import {
+  GeometryCapture,
+  type IGeometryCaptureReport,
+  type IGeometryCaptureRequest,
+  rendererBackendIdentity,
+} from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
@@ -67,6 +73,8 @@ export type PluginCleanup = () => void;
 
 export interface IGameObservationSampleRequest {
   readonly entities?: readonly string[];
+  /** Asks for one armed per-object geometry capture. Absent means no capture is collected. */
+  readonly geometry?: IGeometryCaptureRequest;
   readonly include?: readonly string[];
   readonly label?: string;
   readonly resources?: readonly string[];
@@ -74,7 +82,13 @@ export interface IGameObservationSampleRequest {
 
 export interface IGameObservationContribution {
   readonly capabilities: readonly string[];
-  readonly sample: (request: IGameObservationSampleRequest) => Readonly<Record<string, unknown>>;
+  /**
+   * May answer a promise: an observation that has to wait for the renderer — a geometry capture
+   * waits for one presented world frame — cannot be produced inside the request that asked for it.
+   */
+  readonly sample: (
+    request: IGameObservationSampleRequest,
+  ) => Readonly<Record<string, unknown>> | Promise<Readonly<Record<string, unknown>>>;
 }
 
 export interface IGameRuntimeObservations {
@@ -120,11 +134,21 @@ export interface IGamePluginRuntime {
   readonly startupTimeline?: () => IStartupTimeline;
   /** The renderer-owned bounded pipeline capture, when the renderer has not been opted out. */
   readonly pipelineCensus?: () => IPipelineCensus;
+  /**
+   * Arms one per-object geometry capture and answers its report after the next presented world
+   * frame. Absent on a runtime with no render loop to arm.
+   */
+  readonly geometryCapture?: (request?: IGeometryCaptureRequest) => Promise<IGeometryCaptureReport>;
   readonly step: number;
 }
 
 interface IDevTools {
   snapshot(): EntitySnapshot;
+  /**
+   * Arms one per-object geometry capture for a development overlay. Absent until the game has a
+   * render loop; the overlay treats that as "not ready", never as an empty scene.
+   */
+  geometry?(request?: IGeometryCaptureRequest): Promise<IGeometryCaptureReport>;
 }
 
 type DevToolsHost = Record<string, unknown> & Partial<Record<"__THREENATIVE__", IDevTools>>;
@@ -139,19 +163,34 @@ export interface IGamePlatformSource {
   unmountCanvas(canvas: HTMLCanvasElement): void;
 }
 
-function installDevTools(entities: Registry, host: DevToolsHost | undefined): PluginCleanup {
+function installDevTools(
+  entities: Registry,
+  host: DevToolsHost | undefined,
+  // Late-bound: the capture is constructed with the render loop, after this install runs.
+  geometry: () => GeometryCapture | undefined,
+): PluginCleanup {
   const isDev =
     (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
   if (!isDev || host === undefined) return () => undefined;
   const devTools: IDevTools = {
     ...(host.__THREENATIVE__ as (IDevTools & Record<string, unknown>) | undefined),
+    geometry: async (request) => {
+      const capture = geometry();
+      if (capture === undefined) {
+        return {
+          reason: "TN_GEOMETRY_CAPTURE_NO_LOOP: the game has no running render loop to capture.",
+          status: "unavailable",
+        };
+      }
+      return capture.request(request);
+    },
     snapshot: () => entities.snapshot(),
   };
   host.__THREENATIVE__ = devTools;
   return () => {
     if (host.__THREENATIVE__ !== devTools) return;
     const remaining = Object.fromEntries(
-      Object.entries(devTools).filter(([key]) => key !== "snapshot"),
+      Object.entries(devTools).filter(([key]) => key !== "snapshot" && key !== "geometry"),
     );
     host.__THREENATIVE__ =
       Object.keys(remaining).length === 0 ? undefined : (remaining as unknown as IDevTools);
@@ -539,6 +578,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #beforeRenderSnapshots: Array<Array<() => void>> = [];
   #beforeRenderDepth = 0;
   #frameBudget: FrameBudget | undefined;
+  #geometryCapture: GeometryCapture | undefined;
+  /** Bumped on every scene change, so a row id is stable exactly as long as the scene is. */
+  #sceneGeneration = 0;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
   #pendingStart: Promise<void> | undefined;
@@ -657,6 +699,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
     this.#hasDepthCoupledOutput = false;
+    this.#sceneGeneration += 1;
+    // The objects a pending capture armed are leaving the graph; a report about them would be
+    // about a scene that no longer exists.
+    this.#geometryCapture?.cancel("TN_GEOMETRY_CAPTURE_SCENE_EXIT: the scene changed mid-capture.");
     this.#sceneFrame = undefined;
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
@@ -1109,7 +1155,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           ? undefined
           : window
         : platform.devToolsHost;
-    this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
+    this.#cleanup.push(
+      installDevTools(
+        entities,
+        devToolsHost as DevToolsHost | undefined,
+        () => this.#geometryCapture,
+      ),
+    );
     this.#scene = new SceneType();
     this.#sceneName = bootSceneName;
     // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
@@ -1202,6 +1254,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       frameBudget === undefined
         ? undefined
         : RenderPassBudget.install(renderer.raw as Parameters<typeof RenderPassBudget.install>[0]);
+    // Holds no hook and does no work between requests, so an idle game pays nothing for it.
+    const geometryCapture = new GeometryCapture();
+    this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
@@ -1325,6 +1380,28 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             camera,
             drawingBufferHeight,
           );
+          const capturing = geometryCapture.armed();
+          if (capturing) {
+            // The mirror is what the renderer sees; arming the authored scene would attribute the
+            // frame to objects that were never submitted.
+            geometryCapture.beginFrame({
+              camera,
+              generation: this.#sceneGeneration,
+              root: this.#projection?.root ?? threeScene,
+              tick: gameLoop.tick(),
+              viewportHeight: renderer.surface().drawingBufferHeight,
+              viewportWidth: renderer.surface().drawingBufferWidth,
+              ...(renderPassBudget === undefined
+                ? {}
+                : { activePassKind: () => renderPassBudget.activeKind() }),
+              ...(this.#projection === undefined
+                ? {}
+                : { ownership: this.#projection.describeOwnership() }),
+              ...(rendererBackendIdentity(renderer.raw) === undefined
+                ? {}
+                : { backend: rendererBackendIdentity(renderer.raw) as string }),
+            });
+          }
           renderer.render(this.#projection?.root ?? threeScene, camera);
           this.#cameraCull?.restore();
           this.#projection?.commit();
@@ -1335,6 +1412,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           worldPasses = renderPassBudget?.passes();
           if (worldPasses !== undefined && worldPasses.length > 0)
             frameBudget?.addRenderPasses(worldPasses);
+          // After the passes are read, so the rows reconcile against this frame's own totals.
+          if (capturing) geometryCapture.finishFrame(worldPasses ?? []);
           // Resolve the GPU timestamps every frame, not once per reported window.
           //
           // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
@@ -1439,6 +1518,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         startGates.push({ gate, rejectEntered, resolveEntered });
         return entered;
       },
+      geometryCapture: (request) => geometryCapture.request(request),
       observations: createRuntimeObservations(),
       ...(renderer.pipelineCensus === undefined ? {} : { pipelineCensus: renderer.pipelineCensus }),
       tick: gameLoop.tick,
@@ -1606,6 +1686,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   stop(): void {
     this.#aborted = true;
+    this.#geometryCapture?.cancel("TN_GEOMETRY_CAPTURE_STOPPED: the game stopped mid-capture.");
     this.#teardown();
   }
 

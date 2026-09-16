@@ -337,8 +337,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // into each template's Ownership paragraph so it adds no line to AGENTS.md or its CLAUDE.md mirror
   // (the mirror banner costs two lines, so both must stay under the 100-line cap), and the branch
   // rebased onto origin/develop. All ten trees move together; no other template source changed.
-  "action-rpg": "938b0ed8712ea1af90a8c34ae924cff758ffe6b4e41ab906cb14da267a1a67c8",
-  defense: "a5543a58e85b567ec3788967cab521a3f08ac5a5b6f502a782e947ac6913ccde",
+  // Recomputed 2026-09-16 for the ponytail default: every scaffold gains the `ponytail` skill in
+  // both host adapters, a project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`,
+  // `.claude/hooks/ponytail-context.mjs`) and the lazy-first clause appended to each AGENTS.md
+  // without adding a line, so all ten trees move together. Values are computed from a clean HEAD
+  // checkout (per the warning above), not from a full-suite run racing another lane's uncommitted
+  // template edits; no template source outside AGENTS.md/CLAUDE.md changed.
+  // Recomputed again 2026-09-16 after merging origin/develop: the landed local backlog (#270)
+  // brings scaffold bytes of its own, so the branch's ponytail values no longer describe the
+  // merged tree and all ten move together once more.
+  "action-rpg": "8e9b0b086c2bcc878717c7af7558baa9e3e0b5a54e52cf3733e999a9390893e4",
+  defense: "c7434d8ec9476e84ffe79c362f20a3d09c16335bc7189b651653671121e6783d",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -346,17 +355,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "c50b05654983f31baebdb3d3dd7c0b8b224fc29f11c6c3cd37105fcc6b757263",
-  platformer: "ca4d68687aeb01aa2246ba9c560472c5dd1f570ae30e526074b38d728e830b9a",
-  runner: "ddcd7f9368125f93d2c5cbbd00e05f6ca00b5ab78482bed0eb43733157def2e5",
-  puzzle: "0b10fd209bb1c2fcb631f27166f18276db3bb983654978e37be84c6fce355de7",
-  racing: "d518e7df2ffaacffb227e270b59b89740bb9641620058e2712ff09c815af3fcb",
-  shooter: "a833feaf9451e146fc2f24a0af1710d72aadef08493096709924e2bcbeb86c88",
+  minimal: "c9f5d159e07ebf4ca397d69c2d5f6142cf4cd474aa4166bb1172c73781aa7f24",
+  platformer: "2a42ba08a36094de8493a88478eccb057b995acb961c4eaedf9770d8b001e71e",
+  runner: "88db4ba1b998a5eda841a082be0c54bd3aeb9226f57e4b6e71d268d4d746b75f",
+  puzzle: "bd56aa473fd7793fc71c41658a472367f0738409ed4082efb6952d31181b1e89",
+  racing: "cf861f7af18fc7e576c2c1c352982b53f02feb5b8e655b722fc72a70f20d6a70",
+  shooter: "0f9e5841767e84f44ceacdd382a066f79d4cbd9a84bd84d40da763346495987c",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "969d37fdf6a8ab238ce46b8306ffc9f450ffc3b2cf83a85dfd6affc93671d4cd",
+  starter: "50c79fe36a92e939038d2a9b57d24e85a39c676cc62f6920da8e412a2215211f",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -382,7 +391,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "27ba68d307cca03d71e8b36ec36ac18d43d9182a42bd1b743a07c99e6eece21e",
+  sailing: "f258b442354724c69065c78b4fd2734d898e9cb0762b9a62c31abb9a3400ebb9",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -492,6 +501,11 @@ const STARTER_PATHS = [
   ".mcp.json",
   "AGENTS.md",
   "CLAUDE.md",
+  ".claude/settings.json",
+  ".claude/hooks/ponytail-context.mjs",
+  ".claude/skills/ponytail/SKILL.md",
+  ".agents/skills/ponytail/SKILL.md",
+  ".codex/hooks.json",
   "kit.json",
   "package.json",
   "patches/three@0.185.1.patch",

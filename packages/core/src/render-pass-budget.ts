@@ -149,6 +149,17 @@ export class RenderPassBudget {
     return new RenderPassBudget(target);
   }
 
+  /**
+   * The kind of the innermost render call currently running, or undefined outside one.
+   *
+   * A per-object diagnostic needs the same attribution this class already does: a mesh submitted
+   * inside a shadow render is shadow work, and charging it to the main pass is how a shadow map
+   * disappears from a cost report.
+   */
+  activeKind(): FramePassKind | undefined {
+    return this.#stack[this.#stack.length - 1]?.kind;
+  }
+
   /** Clears the previous frame's passes. Call before the frame's first world render. */
   beginFrame(): void {
     this.#frame.length = 0;

@@ -17,6 +17,7 @@ import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
+import { GEOMETRY_CAPTURE_CAPABILITY } from "./geometry-capture.js";
 import { PIPELINE_CENSUS_CAPABILITY } from "./pipeline-census.js";
 import { readRenderChainObservation } from "./render/chain.js";
 import type { ICtx } from "./scene.js";
@@ -39,6 +40,7 @@ export function playtest<
   let attached: Promise<void> | undefined;
   let startSceneEntered: Promise<void> | undefined;
   let disposePipelineCensus: (() => void) | undefined;
+  let disposeGeometryCapture: (() => void) | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
   // The tick a contact happened on, and the tick a published value changed on, are the two
   // halves of "the door opened because the plate was pressed". Both are drained per tick rather
@@ -123,6 +125,18 @@ export function playtest<
           sample: () => ({ pipelineCensus: pipelineCensus() as unknown as JsonValue }),
         });
       }
+      const geometryCapture = runtime?.geometryCapture;
+      if (runtime !== undefined && geometryCapture !== undefined) {
+        disposeGeometryCapture = runtime.observations.contribute({
+          capabilities: [GEOMETRY_CAPTURE_CAPABILITY],
+          // Nothing is armed, walked or hooked unless this request asked for a capture: the
+          // capability says the runtime can answer, not that every sample pays for one.
+          sample: async (request) =>
+            request.geometry === undefined
+              ? {}
+              : { geometry: (await geometryCapture(request.geometry)) as unknown as JsonValue },
+        });
+      }
       installRuntimeChannels(installation.bridge, runtime);
       // A runner announced itself before the page loaded: it is the one consumer of per-frame
       // render samples, so collection turns on exactly for playtest runs and stays off for
@@ -134,6 +148,8 @@ export function playtest<
       const cleanup = () => {
         disposePipelineCensus?.();
         disposePipelineCensus = undefined;
+        disposeGeometryCapture?.();
+        disposeGeometryCapture = undefined;
         dispose?.();
         dispose = undefined;
         attached = undefined;
@@ -290,14 +306,17 @@ function addRuntimeCapabilities(
   }
   return { ...description, capabilities };
 }
-function addRuntimeObservations(
+async function addRuntimeObservations(
   snapshot: IPlaytestObservationSnapshot,
   request: IPlaytestSampleRequest,
   contributions: readonly IGameObservationContribution[],
-): IPlaytestObservationSnapshot {
+): Promise<IPlaytestObservationSnapshot> {
   const result: Record<string, unknown> = { ...snapshot };
   for (const contribution of contributions) {
-    const slice = contribution.sample(request);
+    // Awaited in order: an observation that waits for a presented frame — a geometry capture —
+    // cannot be produced inside the request that asked for it, and the collision check below has
+    // to see the slices in a stable order.
+    const slice = await contribution.sample(request);
     if (typeof slice !== "object" || slice === null || Array.isArray(slice)) {
       throw new TypeError("A runtime observation contribution must return a top-level object.");
     }

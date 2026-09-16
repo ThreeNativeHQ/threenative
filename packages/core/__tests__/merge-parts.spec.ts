@@ -4,6 +4,8 @@ import {
   BufferGeometry,
   Color,
   ExtrudeGeometry,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
   Matrix4,
   Mesh,
   Shape,
@@ -20,6 +22,25 @@ function extruded(): ExtrudeGeometry {
   profile.lineTo(1, 1);
   profile.lineTo(0, 0);
   return new ExtrudeGeometry(profile, { bevelEnabled: false, depth: 0.5 });
+}
+
+/**
+ * A deliberately authored triangle: non-indexed, one normal, one uv. The normal points along +Y
+ * while the triangle lies in the XY plane, so a face-normal recompute would give every vertex +Z —
+ * which is what makes "was the authored normal kept?" a visible fact rather than a guess.
+ */
+function authoredTriangle(): BufferGeometry {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
+  );
+  geometry.setAttribute(
+    "normal",
+    new BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), 3),
+  );
+  geometry.setAttribute("uv", new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1]), 2));
+  return geometry;
 }
 
 describe("mergeParts", () => {
@@ -154,5 +175,131 @@ describe("mergeParts", () => {
       label: "trim",
     });
     expect(Object.keys(merged.attributes).sort()).toEqual(["normal", "position"]);
+  });
+
+  it("should retain uv and transform the authored normal when preserve asks (PRD-392 AC1)", () => {
+    const geometry = authoredTriangle();
+    const matrix = new Matrix4().makeRotationX(Math.PI / 2).setPosition(5, 0, 0);
+    const merged = mergeParts([{ geometry, matrix }], {
+      label: "authored",
+      preserve: ["uv", "normal"],
+    });
+
+    // The placement matrix moves position and normal only: uv keeps its exact authored values.
+    expect(Array.from(merged.getAttribute("uv").array)).toEqual([0, 0, 1, 0, 0, 1]);
+    // +Y rotated 90 degrees about X is +Z, via the inverse-transpose normal matrix.
+    const normal = merged.getAttribute("normal");
+    for (let i = 0; i < normal.count; i += 1) {
+      expect(normal.getX(i)).toBeCloseTo(0, 6);
+      expect(normal.getY(i)).toBeCloseTo(0, 6);
+      expect(normal.getZ(i)).toBeCloseTo(1, 6);
+    }
+  });
+
+  it("should keep a preserved authored normal, not recompute it (PRD-392 AC1)", () => {
+    const kept = mergeParts([{ geometry: authoredTriangle() }], {
+      label: "kept",
+      preserve: ["normal"],
+    });
+    const keptNormal = kept.getAttribute("normal");
+    expect(keptNormal.getY(0)).toBeCloseTo(1, 6);
+    expect(keptNormal.getZ(0)).toBeCloseTo(0, 6);
+
+    const recomputed = mergeParts([{ geometry: authoredTriangle() }], { label: "recomputed" });
+    expect(recomputed.getAttribute("normal").getZ(0)).toBeCloseTo(1, 6);
+  });
+
+  it("should refuse a listed channel a part does not carry, naming label, part and channel (PRD-392)", () => {
+    const bare = new BufferGeometry();
+    bare.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
+    );
+
+    expect(() =>
+      mergeParts([{ geometry: authoredTriangle() }, { geometry: bare }], {
+        label: "no-uv",
+        preserve: ["uv"],
+      }),
+    ).toThrow(/no-uv.*part 1.*uv/u);
+    expect(() =>
+      mergeParts([{ geometry: bare }], { label: "no-normal", preserve: ["normal"] }),
+    ).toThrow(/no-normal.*part 0.*normal/u);
+  });
+
+  it("should keep the position-only default when preserve is absent or empty (PRD-392 AC1)", () => {
+    const absent = mergeParts([{ geometry: authoredTriangle() }], { label: "absent" });
+    expect(absent.getAttribute("uv")).toBeUndefined();
+    expect(absent.getAttribute("normal")).toBeDefined();
+
+    const empty = mergeParts([{ geometry: authoredTriangle() }], {
+      label: "empty",
+      preserve: [],
+    });
+    expect(empty.getAttribute("uv")).toBeUndefined();
+  });
+
+  it("should keep per-part colour alongside preserved uv and normal (PRD-392)", () => {
+    const tones = [0x8b2f1a, 0x2f8b1a] as const;
+    const parts = tones.map((color) => ({ color, geometry: authoredTriangle() }));
+    const merged = mergeParts(parts, { label: "coloured", preserve: ["uv", "normal"] });
+
+    expect(merged.getAttribute("color").count).toBe(6);
+    expect(merged.getAttribute("uv").count).toBe(6);
+    expect(merged.getAttribute("normal").count).toBe(6);
+    tones.forEach((tone, index) => {
+      expect(merged.getAttribute("color").getX(index * 3)).toBeCloseTo(new Color(tone).r, 6);
+    });
+    expect(Array.from(merged.getAttribute("uv").array)).toEqual([
+      0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+    ]);
+  });
+
+  it("should merge an indexed and a non-indexed part while preserving uv and normal (PRD-392)", () => {
+    const merged = mergeParts([{ geometry: extruded() }, { geometry: new BoxGeometry(1, 1, 1) }], {
+      label: "mixed-preserve",
+      preserve: ["uv", "normal"],
+    });
+
+    expect(merged.index).toBeNull();
+    expect(merged.getAttribute("normal")).toBeDefined();
+    expect(merged.getAttribute("uv").count).toBe(merged.getAttribute("position").count);
+  });
+
+  it("should never mutate the part geometry when preserving channels (PRD-392)", () => {
+    const geometry = authoredTriangle();
+    const normalBefore = Array.from(geometry.getAttribute("normal").array);
+    const uvBefore = Array.from(geometry.getAttribute("uv").array);
+
+    mergeParts([{ geometry, matrix: new Matrix4().makeRotationX(1) }], {
+      label: "no-mutate",
+      preserve: ["uv", "normal"],
+    });
+
+    expect(Array.from(geometry.getAttribute("normal").array)).toEqual(normalBefore);
+    expect(Array.from(geometry.getAttribute("uv").array)).toEqual(uvBefore);
+    expect(Object.keys(geometry.attributes).sort()).toEqual(["normal", "position", "uv"]);
+  });
+
+  it("should preserve uv and normal from an interleaved part without touching its buffer (PRD-392)", () => {
+    const data = new Float32Array([
+      0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+    ]);
+    const buffer = new InterleavedBuffer(data, 8);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new InterleavedBufferAttribute(buffer, 3, 0));
+    geometry.setAttribute("normal", new InterleavedBufferAttribute(buffer, 3, 3));
+    geometry.setAttribute("uv", new InterleavedBufferAttribute(buffer, 2, 6));
+
+    const merged = mergeParts([{ geometry }], {
+      label: "interleaved",
+      preserve: ["uv", "normal"],
+    });
+
+    expect(Array.from(merged.getAttribute("uv").array)).toEqual([0, 0, 1, 0, 0, 1]);
+    expect(merged.getAttribute("normal").getY(0)).toBeCloseTo(1, 6);
+    expect(Array.from(data)).toEqual([
+      0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+    ]);
   });
 });

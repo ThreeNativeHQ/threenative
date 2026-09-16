@@ -22,7 +22,7 @@ const FRAGMENT = `### Before you write a system, ask what already exists
 You have \`engine_search_capabilities\` in your tool list. Call it before writing any entity
 system. When the framework blocks you, write plain Three.js; run \`npx threenative doctor\`
 first. Keep \`playtests/survives.playtest.json\` green. \`@threenative/physics/navigation\`
-carries WASM. Budget real time for the look.
+carries WASM. Budget real time for the look. The \`ponytail\` ladder runs before code.
 `;
 
 const REFERENCE = "# Finding assets\n\nThe full tool loop lives here.\n";

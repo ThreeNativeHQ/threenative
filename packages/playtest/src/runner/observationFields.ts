@@ -4,6 +4,7 @@ export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
   "console",
   "effectLogBefore",
   "framebufferCoverage",
+  "geometry",
   "hud",
   "network",
   "physicsDebugSeries",

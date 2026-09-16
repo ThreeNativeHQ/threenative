@@ -5,13 +5,13 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 ## Ownership
 
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns gameplay and every visible choice in `src/render/`, `src/entities/`,
-`src/scenes/`, and `src/ui/`; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept.
+`src/scenes/`, and `src/ui/`; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. `src/render/hero.ts` merges the hero's primitives into one buffer with `mergeParts`; pass `{ preserve: ["uv", "normal"] }` to keep authored texture coordinates and normals, and prepare any missing channel in the pieces first.
 
 ## Start every change
 
 1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search
    `engine_search_capabilities` for the full request and each concrete mechanic, inspect relevant
-   matches with `engine_capability_detail`, and record a capability or no-match for the plan.
+   matches with `engine_capability_detail`, and record a capability or no-match for the plan. Apply the `ponytail` ladder before writing code; never hand-write what the capability search already installs.
 2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;
@@ -35,7 +35,7 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 - `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets.
 - `.agents/skills/threenative-ui/SKILL.md` / `.claude/skills/threenative-ui/SKILL.md` — native-safe UI.
 - `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
-- Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro.
+- Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above.
 
 ## Commands and map
 
@@ -83,7 +83,7 @@ After changing bounds, field, or resolution, run three fixed seeds and require t
 `src/render/quality.ts` owns `low`, `medium`, `high`; platform selects the boot tier, and `adaptiveQuality.ts` reads `game.ts` frame windows. Fresh GPU time wins, with a named presentation fallback. After startup, two overloaded windows lower quality; five with 20% headroom raise it; cooldown is five seconds. Presentation fallback allows 5% timing jitter (`presentationTolerance`); `overloadBudgetMs` reports its threshold. Vsync-bound presentation alone cannot prove recovery headroom.
 `setupPost` exposes policy options and `targetFps`; `Play` supplies `display.maxFps` and readiness. Pin `{ tier: "low" }`; invalid tiers throw and pinned costs report. The `quality` entity and `TN_QUALITY_TIER` expose decisions; dispose on scene exit.
 The starter's painterly look is generated source (`outline.ts`, `kuwahara.ts`, `watercolor.ts`) reached by `worldEnvironment.ts`; `quality.ts` owns tier, radius, resolution, and strength; `TN_RENDER_CHAIN` names each independently, and a missing stage observation is a failure.
-`input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario with no assertions or missing observations fails; open a real capture after visual changes.
+`input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario with no assertions or missing observations fails; open a real capture after visual changes. When a frame costs more than it should, find the object first: backtick opens the overlay, whose **Geometry** tab captures one frame on **Capture** and ranks the objects that submitted its triangles beside their projected size on screen; an agent gets the same report from `"assert": { "geometry": { "limit": 25 } }` in a scenario, which needs `runtime.geometry`. Those numbers are measured submissions reconciled against the frame's own pass totals, so the remainder the rows do not account for is reported, and what cannot be measured — a packed batch's per-member draws, unknown bounds — says so with a reason instead of reading as zero.
 
 ## One shadow for a big outdoor level
 When one directional light must shadow a whole valley and a 2048² map smudges, set `sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] })` from `@threenative/core`: camera-centred, texel-snapped clip levels, cached until the window moves and shared through Three's shadow slot. Bias, normal bias, intensity, radius, blur samples, map type and filter stay on `sun.shadow`; map sizes come from the options. For movers call `trackCaster(object)` — tracking or untracking refreshes the cached levels once, then movement draws a per-level mover map every frame without invalidating them; call `invalidateAll()` when static geometry changes. `TN_VIRTUAL_SHADOW` reports rendered, mover-map and cached-level work.

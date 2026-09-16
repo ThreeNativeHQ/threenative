@@ -139,8 +139,20 @@ export interface IPlaytestSetupRequest {
   resources?: Array<{ id: string; path?: string; value: JsonValue }>;
 }
 
+/**
+ * One armed per-object geometry capture request. `limit`, `sort` and `timeoutMs` mirror the
+ * runtime collector's own request shape so the runner adds no second vocabulary for it.
+ */
+export interface IPlaytestGeometryCaptureRequest {
+  /** Rows to return, 1 to 500. */
+  readonly limit?: number;
+  readonly sort?: "triangles" | "draws" | "projected";
+  readonly timeoutMs?: number;
+}
+
 export interface IPlaytestSampleRequest {
   entities?: readonly string[];
+  geometry?: IPlaytestGeometryCaptureRequest;
   include?: readonly string[];
   /** Scenario-step label for providers that retain labelled observation series. */
   label?: string;
@@ -482,6 +494,8 @@ export interface IPlaytestObservationSnapshot {
   components?: Record<string, Record<string, JsonValue>>;
   entities?: IPlaytestEntityObservation[];
   gameplay?: IPlaytestGameplayObservation;
+  /** The per-object geometry capture report, present only when the request asked for one. */
+  geometry?: JsonValue;
   physicsDebugSeries?: Array<{ label: string; snapshot: JsonValue; tick: number }>;
   performance?: IPlaytestPerformanceObservation;
   /** Bounded shader/pipeline creation capture supplied by the engine when diagnostics are enabled. */

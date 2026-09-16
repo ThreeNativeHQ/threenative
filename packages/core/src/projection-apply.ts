@@ -21,6 +21,7 @@ import {
   type SpriteMaterial,
 } from "three";
 
+import type { IGeometryOwnership } from "./geometry-capture.js";
 import { MIN_BATCH_MEMBERS, isLight } from "./projection-plan.js";
 import type {
   IProjectionBatchGroup,
@@ -421,6 +422,34 @@ export class ProjectionMirror {
         this.#appendExact(mesh, reason);
       }
     }
+  }
+
+  /**
+   * Who owns each object this mirror hands the renderer, built on demand for a diagnostic.
+   *
+   * The mirror is what the renderer sees, so a per-object cost report reading the authored scene
+   * would attribute the frame to objects that were never submitted. Keyed by the rendered object:
+   * an exact stand-in names its one source, a batch names every source it folded. Nothing is
+   * retained — the map is the caller's, and building it costs one pass over the live entries.
+   */
+  describeOwnership(): Map<Object3D, IGeometryOwnership> {
+    const ownership = new Map<Object3D, IGeometryOwnership>();
+    for (const [source, proxy] of this.#proxies) {
+      ownership.set(proxy, { kind: "exact", sources: [source] });
+    }
+    for (const batch of this.#batches.values()) {
+      ownership.set(batch.mesh, {
+        kind: "instancedBatch",
+        sources: [...batch.instances.keys()],
+      });
+    }
+    for (const batch of this.#materialBatches.values()) {
+      ownership.set(batch.mesh, {
+        kind: "materialBatch",
+        sources: [...batch.instances.keys()],
+      });
+    }
+    return ownership;
   }
 
   /** Drops sources that have left the authored scene, so nothing draws what the game removed. */

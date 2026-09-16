@@ -1,5 +1,6 @@
 import type { Camera, Material, Matrix4, Object3D, Scene } from "three";
 
+import type { IGeometryOwnership } from "./geometry-capture.js";
 import { ProjectionMirror } from "./projection-apply.js";
 import {
   createProjectionScanWorkspace,
@@ -183,6 +184,16 @@ export class SceneRenderProjection {
    * The scene to draw this frame — the mirror when it is faithful, the authored scene when it is
    * not. Callers render whatever this returns and never branch on which one it was.
    */
+  /**
+   * Who owns each object the renderer is handed, for a per-object diagnostic. Empty when the
+   * mirror is off or deoptimized — the authored scene is then what rendered, and every object
+   * already is its own source. Built on demand and retained by nobody.
+   */
+  describeOwnership(): ReadonlyMap<Object3D, IGeometryOwnership> {
+    if (this.#deoptimized || this.#mirror === undefined) return new Map();
+    return this.#mirror.describeOwnership();
+  }
+
   get root(): Scene {
     if (this.#deoptimized || this.#mirror === undefined) return this.#source;
     return this.#mirror.scene;
