@@ -483,4 +483,38 @@ describe("WaveField.heightAt", () => {
       expect(normal.z / normal.y).toBeCloseTo(-dz, 4);
     }
   });
+  // `#evaluateCpu` reads a per-wave amplitude precomputed in the constructor instead of dividing
+  // per wave per call. That is only free if the stored double is the one the divide produced, so
+  // check the height against the original inline expression rather than against itself. No domain
+  // warp here: the warp never touched the amplitude, and leaving it out keeps the oracle the wave
+  // loop alone.
+  it("matches the pre-hoist amplitude expression bit for bit", () => {
+    const field = new WaveField({ waves: options.waves });
+    const stride = field.parameters.length / field.waves.length;
+    const reference = (x: number, z: number, time: number): number => {
+      let height = 0;
+      for (let index = 0; index < field.waves.length; index += 1) {
+        const offset = index * stride;
+        const directionX = field.parameters[offset] as number;
+        const directionZ = field.parameters[offset + 1] as number;
+        const waveNumber = field.parameters[offset + 3] as number;
+        const phase =
+          waveNumber * (directionX * x + directionZ * z) -
+          time * (field.parameters[offset + 4] as number) +
+          (field.parameters[offset + 5] as number);
+        const amplitude =
+          (field.parameters[offset + 2] as number) +
+          (field.parameters[offset + 6] as number) / waveNumber;
+        height += amplitude * Math.sin(phase);
+      }
+      return height;
+    };
+    expect(stride).toBe(8);
+    for (let i = 0; i < 60; i++) {
+      const x = -400 + i * 13.37;
+      const z = 250 - i * 7.91;
+      const t = i * 0.37;
+      expect(field.heightAt(x, z, t)).toBe(reference(x, z, t));
+    }
+  });
 });

@@ -144,6 +144,7 @@ export class WaveField {
   readonly time = uniform(0);
   readonly #waveCount: number;
   readonly #warpCount: number;
+  readonly #amplitude: Float64Array;
 
   constructor(options: IWaveFieldOptions) {
     if (!Array.isArray(options.waves)) throw new Error("WaveField.waves must be an array.");
@@ -237,6 +238,18 @@ export class WaveField {
     this.parameters = parameters;
     this.#waveCount = waves.length;
     this.#warpCount = domainWarp.length;
+    // `amplitude` is `parameters[offset + 2] + parameters[offset + 6] / waveNumber` — the same
+    // value on every sample for the life of the field, yet the scalar evaluator paid a divide per
+    // wave per call, and a floating hull or a whitewater parcel asks thousands of times a frame.
+    // Reading the slots back out of `parameters` rather than recomputing from `wave` keeps the
+    // stored double bit-identical to what the loop used to produce.
+    this.#amplitude = new Float64Array(waves.length);
+    for (let index = 0; index < waves.length; index += 1) {
+      const offset = index * WAVE_STRIDE;
+      this.#amplitude[index] =
+        (parameters[offset + 2] as number) +
+        (parameters[offset + 6] as number) / (parameters[offset + 3] as number);
+    }
   }
 
   /** Update the default graph clock. Explicit sample times remain available for fixed-step code. */
@@ -329,9 +342,7 @@ export class WaveField {
         waveNumber * (directionX * warpedX + directionZ * warpedZ) -
         sampleTime * (this.parameters[offset + 4] as number) +
         (this.parameters[offset + 5] as number);
-      const amplitude =
-        (this.parameters[offset + 2] as number) +
-        (this.parameters[offset + 6] as number) / waveNumber;
+      const amplitude = this.#amplitude[index] as number;
       height += amplitude * Math.sin(phase);
       if (normal === undefined) continue;
       const slope = amplitude * waveNumber * Math.cos(phase);

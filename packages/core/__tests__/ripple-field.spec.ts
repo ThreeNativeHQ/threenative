@@ -278,4 +278,39 @@ describe("RippleField on a non-event", () => {
     expect(f.impulse(f.dx * 5, f.dx * 5, 6, -40)).toBe(true);
     expect(f.version).toBe(1);
   });
+  // `#integrate` computes the breaking-crest gradient magnitude with `Math.sqrt` of the squares
+  // rather than `Math.hypot`, because V8's hypot pays for an overflow-safe scaling pass and ran
+  // 6.4x slower per cell, which made it the largest single cost in the solver. The two are NOT
+  // bit-identical: sqrt-of-squares loses up to 2 ulp when one component is negligible beside the
+  // other. That is licensed here and nowhere else, because this magnitude reaches only `foam` —
+  // never `height` and never `velocity` — so no float, hull pose or height query can observe it.
+  it("computes a gradient magnitude within 2 ulp of Math.hypot across the solver's range", () => {
+    const bits = new DataView(new ArrayBuffer(16));
+    const ulpsApart = (a: number, b: number): number => {
+      bits.setFloat64(0, a);
+      bits.setFloat64(8, b);
+      const left = bits.getBigUint64(0);
+      const right = bits.getBigUint64(8);
+      return Number(left > right ? left - right : right - left);
+    };
+    const values = [0, 1e-8, -1e-8, 1e-6, -1e-6, 0.29, 0.3, 0.31, 1, -1, 9, -9, 50, -50];
+    for (let i = 0; i < 200; i++) values.push(-50 + (i * 100) / 199);
+    let worst = 0;
+    for (const gx of values)
+      for (const gz of values)
+        worst = Math.max(worst, ulpsApart(Math.sqrt(gx * gx + gz * gz), Math.hypot(gx, gz)));
+    expect(worst).toBeLessThanOrEqual(2);
+  });
+
+  it("keeps a struck field finite and its foam inside the unit range", () => {
+    const f = field();
+    expect(f.impulse(0, 0, 6, -40)).toBe(true);
+    run(f, 1);
+    for (const h of f.height) expect(Number.isFinite(h)).toBe(true);
+    for (const c of f.foam) {
+      expect(Number.isFinite(c)).toBe(true);
+      expect(c).toBeGreaterThanOrEqual(0);
+      expect(c).toBeLessThanOrEqual(1);
+    }
+  });
 });
