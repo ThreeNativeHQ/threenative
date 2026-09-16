@@ -17,15 +17,14 @@ describe("navigation is one model with three renderers", () => {
     const labels = navLabels([...primaryNav, ...utilityNav]);
     expect(labels.length).toBeGreaterThan(0);
     for (const label of labels) {
-      // Menu items live behind a click, so only the top-level labels have to be in the markup;
-      // the drawer and the dropdowns read the same list this assertion walks.
+      // Menu items live behind a click; only top-level labels must be in the initial markup.
       if (!primaryNav.concat(utilityNav).some((entry) => entry.label === label)) continue;
       expect(page.includes(label), `the header never renders ${label}`).toBe(true);
     }
   });
 
   it("should keep the primary nav compact while making docs a first-party route", () => {
-    expect(primaryNav).toHaveLength(5);
+    expect(primaryNav).toHaveLength(3);
     const docs = primaryNav.find((entry) => entry.label === "Docs");
     expect(docs?.target).toEqual({ kind: "internal", path: "/docs" });
   });
@@ -38,9 +37,7 @@ describe("navigation is one model with three renderers", () => {
     for (const entry of ALL_ENTRIES) {
       for (const target of [entry.target, ...(entry.items ?? []).map((item) => item.target)]) {
         if (target.kind === "pending") {
-          expect(target.reason.length, `${entry.label} is pending with no reason`).toBeGreaterThan(
-            0,
-          );
+          expect(target.reason.length, `${entry.label} is pending with no reason`).toBeGreaterThan(0);
           continue;
         }
         expect(navHref(target), `${entry.label} has an empty destination`).toBeTruthy();
