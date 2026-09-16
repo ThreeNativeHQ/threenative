@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) now has a live caller — `verifyStarterContainer` and its CLI `--config` flag inspect the container's brand before anything launches — and real Windows PE resource inspection replacing the manifest-only false pass (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)). PRD-365's containers landed on `develop` (PR #224, `b66585f08`), so that blocker is gone. A real linux-x64 container built from a starter branded only in game files passes the shipped CLI end to end (300 frames, brand verified, exit 0) with three negative controls firing on the real artifact. What remains is Windows/macOS OS-launcher inspection and human capture on those hosts, a PRD-365 container `loading` record so a configured `bootSplash` can pass, and an independent reviewer PASS.
+**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) now has a live caller — `verifyStarterContainer` and its CLI `--config` flag inspect the container's brand before anything launches — and real Windows PE resource inspection replacing the manifest-only false pass (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)). PRD-365's containers landed on `develop` (PR #224, `b66585f08`), so that blocker is gone. A real linux-x64 container built from a starter branded only in game files passes the shipped CLI end to end (300 frames, brand verified, exit 0) with three negative controls firing on the real artifact. The loading record and historical Windows/macOS CI metadata inspection are already delivered (see the dated phase notes and acceptance criteria). The 2026-09-16 follow-up below adds fail-closed macOS icon-content inspection to the release verifier; its real Apple-tool execution and fresh independent review remain pending. Windows/macOS acceptance follows the owner's CI-only policy, not a new human-operator requirement. The remaining handoff/capture acceptance boxes stay open.
 Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
@@ -119,8 +119,8 @@ executable's own resource directory — `RT_GROUP_ICON`/`RT_ICON` and `RT_VERSIO
 parsed with plain `fs` and `Buffer` and no new dependency — so a manifest and a sidecar PNG are no
 longer accepted as evidence, and — after independent review — the PE version assertion is anchored
 on the consumer config rather than on a container field the artifact could simply omit. macOS source provenance, payload integrity and plist linkage remain
-proof of provenance, not of converted icon pixels. **Known limitation, carried forward and not
-closed here:** an `.icns` whose payload is arbitrary bytes passes, because a PNG cannot be compared
+proof of provenance, not of converted icon pixels. **Historical limitation (release-verifier
+follow-up below, 2026-09-16):** an `.icns` whose payload is arbitrary bytes passed, because a PNG cannot be compared
 byte-for-byte against the ICNS that `sips`/`iconutil` generate from it — independent review
 confirmed this by passing a file whose whole content was a plain-text string. macOS icon *content*
 stays unverified until a real `sips`/`iconutil` lane exists on a macOS host; only provenance and
@@ -196,6 +196,61 @@ pnpm test:native
 ```
 
 **User verification:** Open the packaged app from its normal OS launcher/file manager, inspect name/icon and loading sequence; record captures and configuration/artifact hashes. Only game files were edited to customize it.
+
+**2026-09-16 follow-up — fail-closed macOS icon content (same phase, five files):**
+
+- [x] Shared release-verifier and CLI reject a plain-text ICNS with self-consistent source/payload hashes before any launch.
+      Reproduced against `develop` `488804465eaf2a0cb0fad99f832d51d2fc6fbd68`: the expected rejection failed with `Missing expected exception` (exit 1); the same probe passed after the change (exit 0). The new bounded suite ran through Node's test runner: **33 passed, 3 macOS-only tests skipped**, exit 0. This is not a claim that Vitest or Apple's tools ran locally.
+- [x] The npm payload includes the validator that the installed verifier imports.
+      `npm pack --ignore-scripts --json` exited 0; the resulting local tarball contains `scripts/inspect-macos-icon.mjs` and the updated `scripts/verify-starter-desktop-base.mjs`. This proves package inclusion, not a public-registry or standalone-consumer acceptance run.
+- [ ] Execute the three real macOS packager/decoder regressions and the current candidate's branded-container CI lane.
+      `tests/macos-icon-content.test.mjs` contains real `packageDesktopContainer` -> archive extraction -> `verifyContainerBrand` cases: matching PNG-derived ICNS, one substituted representation with a rehashed inventory, and an authored ICNS copied without conversion. All three explicitly skip off macOS; no Apple-tool success is claimed from Linux.
+- [ ] Run full-workspace typecheck, lint, test and budget gates on this candidate.
+      The focused Vitest command and workspace commands were attempted here and stopped at `pnpm: command not found` (exit 127). The isolated source snapshot has no installed Vitest/pngjs dependencies and cannot replace these gates.
+- [ ] Obtain a fresh independent review of the icon-content follow-up.
+      The earlier PASS on `3f478b40c` remains credited to that earlier revision only. This change has not received an independent reviewer PASS.
+
+Engine packaging-verification plumbing only; no game artwork, renderer, runtime launch, signing or
+container schema changed. `inspectContainerBrand` remains the low-level metadata/provenance reader.
+The shared `inspectContainer` in `verify-starter-desktop-base.mjs` additionally calls
+`inspectMacosIcon` for a configured macOS icon, so `verifyContainerBrand`, `--brand-only` and the
+pre-launch `verifyStarterContainer` path cannot accept provenance as converted-pixel proof.
+The verifier invokes the OS's `iconutil` to unpack the final ICNS, requires every size/scale the
+existing PNG packager emits, and compares decoded RGBA through the existing `pngjs` dependency
+against the source resized with the packager's own `sips -z` contract. Only RGB hidden beneath zero
+alpha is canonicalized; every visible channel and alpha still match exactly. Authored ICNS files
+must remain byte-identical and still decode. Missing tools, malformed outputs, missing variants,
+unsafe output entries and mismatches fail with named errors. Scratch stays outside the app and is
+removed in `finally`, including failures; inspection does not mutate a signed container.
+
+Compatibility: macOS **content verification** now requires macOS `iconutil`/`sips`, even in
+`--brand-only` mode; no GUI session is needed. A foreign host can still use the low-level metadata
+reader but cannot obtain a release-verifier icon-content pass without those tools. Windows/Linux
+verification and the explicit no-config `brand NOT inspected` route are unchanged. A decoded icon
+is not evidence that Finder/Dock appearance, the loading handoff, or any frame was observed.
+
+Files: NEW `packages/runtime-native/scripts/inspect-macos-icon.mjs`; EDIT
+`packages/runtime-native/scripts/verify-starter-desktop-base.mjs`; EDIT
+`packages/runtime-native/package.json`; NEW
+`packages/runtime-native/tests/macos-icon-content.test.mjs`; EDIT this PRD.
+
+Local evidence provenance: the runtime sources were recovered from retained CI package artifact
+`10464931878`, run `35139919574`, and the baseline blobs were checked against the current repository
+(`verify-starter-desktop-base.mjs`: `d919e093372b20fc82fa922f0d2e15824fc603a6`;
+`inspect-container-brand.mjs`: `96e260f1ab5080442011df05d625d566d9a21343`). The offline test harness
+maps only Vitest's test-registration API to `node:test` and supplies a PNG import guard whose
+read/write methods always throw; it cannot fabricate a successful PNG decode. The 33 executed
+checks cover real caller/CLI rejection, ICNS envelope and command/output failures, cleanup,
+package inclusion, Linux non-regression, and the pure decoded-pixel comparison. The three tests
+that would exercise the real decoder/converters were skipped. `node --check` also passed for both
+changed scripts and the new test. No old CI artifact or old reviewer result is counted as a pass
+for this follow-up.
+
+Required real-host follow-up command (not executed here):
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/macos-icon-content.test.mjs tests/starter-brand.test.mjs tests/starter-desktop.test.mjs
+```
 
 ## Verification contract
 
