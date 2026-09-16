@@ -1,7 +1,7 @@
 export interface IDocsPage {
   readonly path: string;
   readonly label: string;
-  readonly group: "Start" | "Understand" | "Evidence";
+  readonly group: "Start" | "Build" | "Ship" | "Understand" | "Evidence";
   readonly eyebrow: string;
   readonly title: string;
   readonly description: string;
@@ -30,6 +30,46 @@ export const docsPages: readonly IDocsPage[] = [
     summary: "Install, scaffold a project, learn the file layout, then run the first playtest.",
   },
   {
+    path: "/docs/core-concepts",
+    label: "Core concepts",
+    group: "Build",
+    eyebrow: "Build",
+    title: "Core runtime and game lifecycle",
+    description:
+      "Learn how defineGame, scenes, lifecycle methods, input, state and plugins form the portable ThreeNative game entry.",
+    summary: "The small runtime contract that stays the same across browser and native targets.",
+  },
+  {
+    path: "/docs/physics",
+    label: "Physics",
+    group: "Build",
+    eyebrow: "Build",
+    title: "Physics and portability",
+    description:
+      "Use ThreeNative's Godot-shaped Rapier physics nodes while keeping web and native portability boundaries explicit.",
+    summary: "Rigid bodies, characters and collision shapes without leaking backend-specific handles.",
+  },
+  {
+    path: "/docs/playtesting",
+    label: "Playtesting",
+    group: "Ship",
+    eyebrow: "Verify",
+    title: "Playtest the build you actually ship",
+    description:
+      "Drive ThreeNative browser and native builds with schema-versioned playtest scenarios and fail-closed assertions.",
+    summary: "Turn movement, state, visibility and platform behavior into repeatable evidence.",
+  },
+  {
+    path: "/docs/native-runtime",
+    label: "Native runtime",
+    group: "Ship",
+    eyebrow: "Ship",
+    title: "Run the same game entry natively",
+    description:
+      "Understand ThreeNative's optional native host, prebuilt runtime path, platform toolchains and portable entry contract.",
+    summary: "Desktop and mobile builds without replacing your Three.js game source with a second API.",
+  },
+  {
     path: "/docs/comparison",
     label: "Compare engines",
     group: "Understand",
@@ -53,7 +93,7 @@ export const docsPages: readonly IDocsPage[] = [
   },
 ];
 
-export const docsGroups = ["Start", "Understand", "Evidence"] as const;
+export const docsGroups = ["Start", "Build", "Ship", "Understand", "Evidence"] as const;
 
 export function docPageForPath(path: string): IDocsPage | undefined {
   return docsPages.find((page) => page.path === path);
