@@ -29,6 +29,21 @@ cd my-game
 npm install
 ```
 
+## Branding your game
+
+The identity a player sees is yours, and it lives only in generated game files — never in a
+package. Three surfaces carry it:
+
+- `threenative.config.ts` — `app.name`, `app.icon` (and `app.icons` per platform), the desktop
+  `window.title`, and `bootSplash` for the launch background. `app.id` is the reverse-DNS identity
+  the installer and file manager show.
+- `public/` — the images those fields point at. Replacing the scaffold's `public/icon.png` is what
+  stops a packaged app shipping the engine's default icon.
+- `src/render/` — `loading.ts` owns the in-game loading appearance; every file there is generated
+  game source you can rewrite.
+
+`threenative doctor --target desktop` reports which of those a desktop build actually resolves.
+
 The published package declares those Node and pnpm minimums. Its asset pipeline reaches `sharp`
 through `@gltf-transform/functions` → `ndarray-pixels` → `sharp`; `@threenative/core` also brings
 the asset MCP's `sharp` copy. On a machine whose system has an incompatible global libvips, let
