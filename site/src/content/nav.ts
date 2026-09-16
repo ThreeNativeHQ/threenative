@@ -35,7 +35,10 @@ export const primaryNav: readonly INavEntry[] = [
       {
         label: "Templates",
         summary: "Scaffolds with a running game, a HUD, and a playtest scenario.",
-        target: { kind: "external", href: `${REPOSITORY}/blob/main/packages/create-threenative/README.md` },
+        target: {
+          kind: "external",
+          href: `${REPOSITORY}/blob/main/packages/create-threenative/README.md`,
+        },
       },
       {
         label: "Native runtime",
@@ -76,7 +79,10 @@ export const primaryNav: readonly INavEntry[] = [
 export const utilityNav: readonly INavEntry[] = [
   {
     label: "Search the source",
-    target: { kind: "external", href: "https://github.com/search?q=repo%3AThreeNativeHQ%2Fthreenative&type=code" },
+    target: {
+      kind: "external",
+      href: "https://github.com/search?q=repo%3AThreeNativeHQ%2Fthreenative&type=code",
+    },
   },
   { label: "GitHub", target: { kind: "external", href: REPOSITORY } },
   { label: "Get Started", target: { kind: "anchor", hash: "#install" } },
@@ -100,7 +106,10 @@ export const footerNav: readonly INavEntry[] = [
       {
         label: "Capabilities",
         summary: "Every public export, searchable by situation.",
-        target: { kind: "external", href: `${REPOSITORY}/blob/main/packages/create-threenative/capabilities.json` },
+        target: {
+          kind: "external",
+          href: `${REPOSITORY}/blob/main/packages/create-threenative/capabilities.json`,
+        },
       },
     ],
   },
@@ -125,7 +134,10 @@ export function internalNavPaths(entries: readonly INavEntry[]): readonly string
 }
 
 export function navLabels(entries: readonly INavEntry[]): readonly string[] {
-  return entries.flatMap((entry) => [entry.label, ...(entry.items ?? []).map((item) => item.label)]);
+  return entries.flatMap((entry) => [
+    entry.label,
+    ...(entry.items ?? []).map((item) => item.label),
+  ]);
 }
 
 export function unresolvedInternalNavPaths(entries: readonly INavEntry[]): readonly string[] {
