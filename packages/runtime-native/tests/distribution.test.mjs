@@ -1382,11 +1382,23 @@ async function packageSampleRelease(root, overrides = {}) {
   const bundle = join(root, 'game.js');
   writeFileSync(bundle, 'export default { start() {} };\n');
   const fakeRuntime = join(root, 'fake-runtime.mjs');
+  // The release build must ask for a standalone bundle and must NOT ask this runtime to produce an
+  // executable at all: the game goes beside the executable, never appended to it, because anything
+  // that later rewrites the binary (rcedit, signtool, codesign) discards appended data. Asserting
+  // the flag here is what makes removing it a red test rather than a silent Windows regression.
   writeFileSync(
     fakeRuntime,
     '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\n' +
+      'if (!process.argv.includes("--bundle-only")) {\n' +
+      '  console.error("TN_TEST_EXPECTED_BUNDLE_ONLY: release compiled without --bundle-only");\n' +
+      '  process.exit(3);\n' +
+      '}\n' +
       'const index = process.argv.indexOf("--out");\n' +
-      'if (index >= 0) writeFileSync(process.argv[index + 1], "compiled desktop executable");\n',
+      'if (!String(process.argv[index + 1]).endsWith(".bundle")) {\n' +
+      '  console.error("TN_TEST_EXPECTED_BUNDLE_OUT: --out is not a .bundle path");\n' +
+      '  process.exit(4);\n' +
+      '}\n' +
+      'if (index >= 0) writeFileSync(process.argv[index + 1], "compiled game bundle");\n',
   );
   chmodSync(fakeRuntime, 0o755);
   const ui = join(root, 'ui');
@@ -1415,8 +1427,32 @@ async function packageSampleRelease(root, overrides = {}) {
     ui,
     ...overrides,
   });
-  return { archive, config, icon, output };
+  return { archive, config, fakeRuntime, icon, output };
 }
+
+test('a release container ships the game beside a bare runtime, never appended to it', async () => {
+  // The Windows defect this guards: the game was appended to the executable, and rcedit rewriting
+  // the PE for the icon discarded it, so the container launched the runtime CLI. Assert the shape
+  // that makes that impossible - an executable byte-identical to the runtime, plus a recorded
+  // game.bundle beside it - rather than only that the container resolves.
+  const root = makeTempDirSync('threenative-release-sidecar-');
+  roots.push(root);
+  const { archive, fakeRuntime } = await packageSampleRelease(root);
+  const { readdirSync } = await import('node:fs');
+  const unpacked = join(makeTempDirSync('threenative-release-sidecar-unpacked-'), 'here');
+  mkdirSync(unpacked, { recursive: true });
+  execFileSync('tar', ['-xzf', archive, '-C', unpacked]);
+  const container = join(unpacked, readdirSync(unpacked)[0]);
+  const manifest = resolveContainer(container, { platform: 'linux' });
+  assert.equal(manifest.bundle, 'game.bundle');
+  assert.ok(manifest.resources['game.bundle'], 'the game carries an integrity record');
+  assert.deepEqual(
+    readFileSync(join(container, manifest.executable)),
+    readFileSync(fakeRuntime),
+    'the executable is an unmodified runtime copy, so nothing was appended to it',
+  );
+  assert.equal(readFileSync(join(container, 'game.bundle'), 'utf8'), 'compiled game bundle');
+});
 
 test('desktop release mode packages the executable, the UI bundle and the declared dependencies', async () => {
   const root = makeTempDirSync('threenative-desktop-release-');

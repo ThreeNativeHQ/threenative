@@ -124,14 +124,19 @@ for (const platform of ['linux', 'darwin', 'win32']) {
     assert.deepEqual(resolveContainer(root, { platform }), manifest);
   });
 
-  test(`${platform}: a container whose game is missing is refused`, () => {
-    const { root, manifest, manifestPath } = fixture(platform, { icon: true });
+  test(`${platform}: a container whose game file is missing is refused`, () => {
+    const { root, manifest } = fixture(platform, { icon: true });
     rmSync(join(root, manifest.bundle));
-    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_RESOURCE_MISSING|TN_DESKTOP_CONTAINER_/u);
-    // ...and one that drops the record rather than the file is refused too, so neither half of a
-    // tampered pair can pass on its own.
-    const withoutRecord = { ...manifest, bundle: undefined };
-    writeFileSync(manifestPath, JSON.stringify(withoutRecord));
+    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_INCOMPLETE/u);
+  });
+
+  test(`${platform}: a container that keeps the game but drops its record is refused`, () => {
+    // A separate container, so this proves the present-file/absent-record pair is refused on its
+    // own rather than riding on the deletion above.
+    const { root, manifest, manifestPath } = fixture(platform, { icon: true });
+    assert.ok(existsSync(join(root, manifest.bundle)), 'the game file is still present');
+    const { bundle: _dropped, ...withoutBundle } = manifest;
+    writeFileSync(manifestPath, JSON.stringify(withoutBundle));
     assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_MANIFEST_INVALID/u);
   });
 }
