@@ -811,23 +811,28 @@ export function packageDesktopContainer({
         // to .icns and Linux copies the PNG the .desktop entry wants; Windows needs an .ico, built
         // outside the staging directory so it never becomes an unrecorded container resource.
         let windowsIcon = icon;
-        if (!icon.toLowerCase().endsWith('.ico')) {
-          const iconDirectory = mkdtempSync(join(tmpdir(), 'threenative-ico-'));
-          windowsIcon = join(iconDirectory, `${basename(icon, extname(icon))}.ico`);
-          pngToIco(icon, windowsIcon);
+        let iconDirectory;
+        try {
+          if (!icon.toLowerCase().endsWith('.ico')) {
+            iconDirectory = mkdtempSync(join(tmpdir(), 'threenative-ico-'));
+            windowsIcon = join(iconDirectory, `${basename(icon, extname(icon))}.ico`);
+            pngToIco(icon, windowsIcon);
+          }
+          const rcedit = run('rcedit', [
+            stage(paths.executable),
+            '--set-icon', windowsIcon,
+            '--set-file-version', version,
+            '--set-product-version', version,
+            '--set-version-string', 'ProductName', appName,
+            '--set-version-string', 'FileDescription', appName,
+          ], {});
+          if (rcedit.error) {
+            throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'rcedit' is required to embed the executable icon and version (${rcedit.error.message}).`);
+          }
+          if (rcedit.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: rcedit exited ${rcedit.status ?? 'unknown'}.`);
+        } finally {
+          if (iconDirectory) rmSync(iconDirectory, { force: true, recursive: true });
         }
-        const rcedit = run('rcedit', [
-          stage(paths.executable),
-          '--set-icon', windowsIcon,
-          '--set-file-version', version,
-          '--set-product-version', version,
-          '--set-version-string', 'ProductName', appName,
-          '--set-version-string', 'FileDescription', appName,
-        ], {});
-        if (rcedit.error) {
-          throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'rcedit' is required to embed the executable icon and version (${rcedit.error.message}).`);
-        }
-        if (rcedit.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: rcedit exited ${rcedit.status ?? 'unknown'}.`);
         copyFileSync(icon, stage(paths.icon));
         iconRecord = { path: paths.icon, sha256: sha256File(icon) };
         record(paths.icon);
@@ -887,6 +892,14 @@ export function packageDesktopContainer({
     };
     mkdirSync(dirname(stage(paths.manifest)), { recursive: true });
     writeFileSync(stage(paths.manifest), `${JSON.stringify(manifest, null, 2)}\n`);
+
+    // The initial codesign verification predates the manifest write. macOS seals all bundle
+    // resources, so re-check the final tree before archiving or submitting it to Apple. Until
+    // the signed-container manifest cycle is resolved, refuse an invalid release rather than
+    // publishing it with signed: true. Keep unsigned preparation and the integrity records intact.
+    if (platform === 'darwin' && signedArtifact.signed) {
+      signingTool(run, 'codesign', ['--verify', '--strict', '--deep', join(staging, rootFolder)], 'TN_DESKTOP_CODESIGN_FINAL_VERIFY');
+    }
 
     mkdirSync(dirname(archive), { recursive: true });
     // Keep the public destination untouched until the entire release transaction succeeds,
