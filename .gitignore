@@ -178,3 +178,8 @@ __pycache__/
 
 # Local visual-iteration scaffolds and frames (scripts/shot.ts loop). Not part of the repo.
 .tnshots/
+
+# `examples/auto-lod` compiles its `assets/` into `public/` through the same dev watcher a
+# scaffolded project uses. The compiled GLB, manifest and receipt are build output; only the
+# authored `assets/hull.glb` source is tracked.
+examples/auto-lod/public/
