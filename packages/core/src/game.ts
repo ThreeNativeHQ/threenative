@@ -855,6 +855,36 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     });
     this.#projection = projection;
     let projectionSettled = false;
+    /**
+     * Progress is a high-water mark over the measured load state, never a value that can fall.
+     *
+     * The ratio's denominator grows: a request registered after an earlier one settled shrinks
+     * `settled / requested`, and the file-count and byte branches can disagree across the switch
+     * the first weighed manifest entry triggers. Both make the bar jump backwards, which a player
+     * reads as the load restarting. Measured: a second texture requested after the first settled
+     * took the reported value from 0.7 to 0.35.
+     */
+    let reportedProgress = 0;
+    /** What the load state says right now. This may fall; `startup.progress` is what never does. */
+    const measuredProgress = (): number => {
+      if (projectionSettled) return 1;
+      // A registered hold owns the last tenth. Without this the bar sat at 0.9 for the whole
+      // of the game's own tier and then jumped, which is the reading a player calls frozen.
+      if (startupReadiness.frameworkReady) {
+        const held = startupReadiness.holdReport.length;
+        if (held === 0) return 0.9;
+        const settled = held - startupReadiness.pendingHolds.length;
+        return 0.9 + 0.1 * (settled / held);
+      }
+      if (startupReadiness.compileSettled) return 0.9;
+      if (timeline.enteredMs !== undefined) return 0.8;
+      const { requested, requestedBytes, settled, settledBytes } = assets.progress;
+      // Bytes when the manifest knows them, files when it does not. A file count spends the
+      // same travel on a 4 KB icon as on a 710 MB model, which is how a bar reaches 92% and
+      // then stands still for the rest of the download.
+      if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
+      return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
+    };
     let worldRendered = false;
     let loadingFramePresented = false;
     let markProjectionSettled: () => void = () => undefined;
@@ -1033,24 +1063,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         },
         // Honest and monotonic: the asset ratio carries the first 70% while the start scene
         // loads, entering the world is 80%, compile settling 90%, and only readiness is 1.
+        // Monotonicity is enforced rather than assumed — see the high-water mark above.
         get progress() {
-          if (projectionSettled) return 1;
-          // A registered hold owns the last tenth. Without this the bar sat at 0.9 for the whole
-          // of the game's own tier and then jumped, which is the reading a player calls frozen.
-          if (startupReadiness.frameworkReady) {
-            const held = startupReadiness.holdReport.length;
-            if (held === 0) return 0.9;
-            const settled = held - startupReadiness.pendingHolds.length;
-            return 0.9 + 0.1 * (settled / held);
-          }
-          if (startupReadiness.compileSettled) return 0.9;
-          if (timeline.enteredMs !== undefined) return 0.8;
-          const { requested, requestedBytes, settled, settledBytes } = assets.progress;
-          // Bytes when the manifest knows them, files when it does not. A file count spends the
-          // same travel on a 4 KB icon as on a 710 MB model, which is how a bar reaches 92% and
-          // then stands still for the rest of the download.
-          if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
-          return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
+          reportedProgress = Math.max(reportedProgress, measuredProgress());
+          return reportedProgress;
         },
         hold: (label, work, budgetMs) => {
           startupReadiness.hold(label, work, budgetMs);

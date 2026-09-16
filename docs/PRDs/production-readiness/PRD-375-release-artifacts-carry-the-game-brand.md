@@ -213,11 +213,22 @@ The original planning revision ran no implementation gates. Phase 1 retains its 
 
 ## Acceptance criteria
 
-- [ ] App identity, platform icon variants, boot/HTML splash and live loading changes are made solely in consumer config/public assets/src/render.
+**Criterion 5 was reworded by owner decision on 2026-09-15**, because this project has no Windows or
+macOS operator and never will: the owner's ruling is that "windows/mac platform acceptance should be
+done on CI". The original text is preserved immediately below it so the change is auditable. No
+other criterion's wording changed.
+
+- [x] App identity, platform icon variants, boot/HTML splash and live loading changes are made solely in consumer config/public assets/src/render.
+      Not platform-gated — this is a claim about where a change lives. Android (phase 1) and desktop (phase 2) were both branded by editing only `threenative.config.ts` and `public/`; the owner-inspectable Linux container changed those two places and nothing else, and the CI leg brands its scaffold by overwriting one file, `public/icon.png`. Web was delivered by PRD-153 the same way. No engine package carries game-specific brand.
 - [ ] Web and final Android/desktop artifacts show distinct custom branding; SDL window-icon evidence is not substituted for installed-app metadata.
-- [ ] Invalid declared assets and disconnected rendering/resource paths produce observed-red failures.
+      Web (PRD-153), Android (phase 1) and Linux desktop (phase 2) are done. The "not substituted" clause holds by construction: the inspector reads the `.desktop` entry, `Info.plist` and the PE resource directory, and never the runtime SDL window icon. **Open pending the first completed `native-platforms` run** carrying `--brand-only` on the Windows and macOS containers.
+- [x] Invalid declared assets and disconnected rendering/resource paths produce observed-red failures.
+      Phase 1: a non-alpha Android foreground refused by config validation, and disconnected splash staging failing its test. Phase 2: the full red-green above, plus three negative controls on a **real** container — a renamed config, swapped icon bytes, and an engine-default icon redistributed with every hash updated — and `TN_DESKTOP_SPLASH_IMAGE_MISSING` refusing a release whose declared splash is absent.
 - [ ] Loading and playable-frame handoff remain nonblank and responsive within actual safe areas; progress is measured rather than fabricated.
-- [ ] All target captures receive human inspection and same-artifact playback proof; iOS historical status is unchanged.
+      **The progress half is now closed and was a real finding.** `ctx.startup.progress` was documented and commented as "monotonic and honest" and was not monotonic: requesting a second asset after the first settled took the reported value from 0.7 to 0.35, and the file-count-to-byte branch switch could drop it further. It was never fabricated — it is tied to settled/requested bytes or files, with no wall-clock term — so the finding is the false monotonicity claim, not a fake bar. Fixed as an enforced high-water mark over the measured state (`packages/core/src/game.ts`), red-green at `packages/core/__tests__/startup-progress-honesty.spec.ts`. The handoff half: Linux done; macOS pending the CI run; **Windows blocked on [#264](https://github.com/ThreeNativeHQ/threenative/issues/264)** — `rcedit` rewrites the PE after the game payload is appended as an overlay, so the Windows container never launches, and with no launch there is no capture and no handoff evidence. That is a PRD-365 packaging defect, deliberately not fixed here.
+- [ ] Every target capture is retained against the exact candidate SHA and accepted: by human inspection on the platforms this project has an operator for (web, Android, Linux desktop), and on Windows and macOS — which this project verifies only through CI — by the named machine assertions in `inspectStarterScreenshot` (non-blank, above the unrendered-frame colour floor, authored proof asset present and localized by channel margin, bounds fraction and density) together with the retained artifact. Those assertions prove a drawn frame containing the authored asset; **they do not prove the scene looks correct**, and no Windows or macOS capture is claimed to have been seen by a person. Same-artifact playback proof and iOS historical status are unchanged.
+      Linux desktop capture inspected by a person; same-artifact playback proof is satisfied by the artifact path, container hash and capture sha256 recorded in the container report. Open pending the CI captures, and pending [#264](https://github.com/ThreeNativeHQ/threenative/issues/264) for Windows, which can produce no capture at all.
+      **Original text, replaced 2026-09-15 by owner decision:** *"All target captures receive human inspection and same-artifact playback proof; iOS historical status is unchanged."*
 
 ## Prior work retained
 

@@ -660,3 +660,89 @@ the child's exit status, and `--brand-only` is not one of the router's consumer 
 rows execute against the post-merge base file and go red if the hardening is lost, rather than
 passing against a router that no longer owns the parsing. Re-run them after any rebase and confirm
 by test, not by reading.
+
+## Loading progress was not monotonic — found while closing AC4, fixed here
+
+The acceptance criterion asks that loading progress be "measured rather than fabricated". Asked to
+prove it rather than defer it, the answer split in two.
+
+**It is not fabricated.** `ctx.startup.progress` is computed from real load state in
+`packages/core/src/game.ts`: `settledBytes / requestedBytes` when the manifest knows sizes and
+`settled / requested` file counts when it does not, then milestone steps at 0.8 (world entered) and
+0.9 (first-use compilation settled), then registered holds owning the last tenth, then 1 at
+readiness. There is no wall-clock term anywhere in it.
+
+**It was not monotonic, despite claiming to be** — in the API contract (`scene.ts`, "0 to 1,
+monotonic and honest") and in the implementation comment ("Honest and monotonic"). Two independent
+breaks:
+
+1. The denominator grows. A request registered after an earlier one settled shrinks
+   `settled / requested`: measured, a second texture requested after the first settled took the
+   reported value **from 0.7 to 0.35**.
+2. The branch switch. `requestedBytes` is credited a microtask after `requested`, so the first
+   weighed manifest entry flips the calculation from the file-count branch to the byte branch, and
+   the two can disagree — a partially weighed set can read lower than the file ratio it replaced.
+
+A bar that jumps backwards reads to a player as the load restarting, which is the same class of
+dishonest reporting this phase exists to reject; it was simply in the loading screen rather than in
+the brand inspector.
+
+**Fix:** progress is now an enforced high-water mark over the measured state. The measured value is
+computed by `measuredProgress()` and may still fall; what is reported never does. The API contract
+now says monotonicity is enforced rather than assumed, and says why.
+
+### Red then green
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Red | `pnpm exec vitest run packages/core/__tests__/startup-progress-honesty.spec.ts` | **1 failed / 2 passed (3)**, exit 1 — `sample 3 fell from 0.7 to 0.35` |
+| Green | `... startup-progress-honesty.spec.ts startup-timeline.spec.ts startup-readiness.spec.ts startup-ready-bound.spec.ts` | **4 files, 22 passed**, exit 0 |
+| No regression | `pnpm exec vitest run packages/core/__tests__/` | **120 files, 1339 passed**, exit 0 |
+
+The new spec asserts both halves of the criterion, because monotonicity alone cannot catch a
+fabricated source — a wall-clock ramp is perfectly monotonic:
+
+- **never goes backwards** while assets are requested during load (this is the row that was red);
+- **does not move while nothing settles** — four samples taken across real elapsed time with load
+  state frozen must be identical, which is what a timer-backed value fails;
+- a control row showing the checker rejects both shapes, so the assertion is known to discriminate
+  rather than merely passing.
+
+The implementation was not changed to match the test: the test was written to the documented
+contract, the contract was false, and the implementation was corrected to meet it.
+
+## Windows launch blocked by a PRD-365 packaging defect — filed as #264
+
+`rcedit` embeds the icon and version strings into the staged `.exe` **after** the runtime compiler
+appended the game payload as an overlay, so rewriting the PE resource section leaves the binary
+unable to find its payload and it falls back to the runtime CLI. The workflow already documents this
+and skips both Windows launch steps because of it.
+
+Consequence for this PRD: Windows can produce **no** container launch, therefore no capture and no
+loading/playable-frame handoff evidence. Moving acceptance to CI does not resolve it — the artifact
+does not run. Filed as
+[#264](https://github.com/ThreeNativeHQ/threenative/issues/264) against the packager, with the fix
+direction (embed resources before appending the payload, or re-append after `rcedit`) and an
+acceptance list that includes keeping `--brand-only` green so the fix does not trade the icon away
+for the launch. Deliberately **not** fixed here, by owner decision not to widen this phase again.
+
+Windows brand inspection is unaffected and does run: `--brand-only` reads the PE resource directory
+without launching anything.
+
+### No playtest scenario for the progress fix, and why — flagged, not skipped quietly
+
+The repository rule is that a change with runtime behaviour gets a playtest scenario. This one does
+not have a new scenario, deliberately, and the reason is named here rather than left as an omission.
+
+The playtest assertion surface has a `startup` kind
+(`packages/playtest/src/assertion-schema.ts:559`) but it bounds **timings** only — `maxEnteredMs`,
+`maxReadyMs`. It cannot express "this value never decreased across the run". Asserting monotonicity
+through a playtest would mean adding a new assertion kind: schema entry, evaluator, validator and a
+`runtime.*` capability. That is a new public engine surface, on a PRD whose file budget has already
+been widened twice by owner decision, to prove a property the unit spec already proves against the
+**real** runtime — `defineGame` with a real asset loader, a real `Scene.load`, and `game.start()`,
+with nothing mocked but the renderer and canvas.
+
+Recommendation, for the owner rather than for this lane to decide: a `startup.progressMonotonic`
+assertion kind would be worth having, because it is the only way a *game* could catch its own
+loading bar going backwards. It is not created here.
