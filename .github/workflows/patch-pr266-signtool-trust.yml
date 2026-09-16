@@ -1,0 +1,48 @@
+name: Patch PR 266 signtool trust
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/patch-pr266-signtool-trust.yml
+      - .github/workflows/native-platforms.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'prd-365/windows-signtool-proof'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: prd-365/windows-signtool-proof
+          fetch-depth: 0
+      - name: Replace interactive CurrentUser Root import
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin prd-365/windows-signtool-proof
+          git reset --hard origin/prd-365/windows-signtool-proof
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/native-platforms.yml')
+          text = path.read_text()
+          old = "          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\\CurrentUser\\Root | Out-Null\n"
+          new = """          # CurrentUser\\Root opens an interactive Root Certificate Store confirmation on hosted Windows.\n          # Use certutil against the machine Root store instead: the hosted runner is disposable and\n          # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.\n          & certutil.exe -f -addstore Root $cer | Out-Host\n          if ($LASTEXITCODE -ne 0) { throw \"TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate\" }\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one interactive import, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          git rm .github/workflows/patch-pr266-signtool-trust.yml
+          git diff --check
+          git diff -- .github/workflows/native-platforms.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/native-platforms.yml
+          git commit -m 'ci(windows): trust signing proof certificate non-interactively'
+          git push origin HEAD:prd-365/windows-signtool-proof
