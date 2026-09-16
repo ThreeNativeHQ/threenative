@@ -1146,6 +1146,18 @@ jobs:
       # was fixture-tested only. These steps build the real container on the hosted OS, relocate it
       # outside the project and launch it with the installed verifier, so the debug `test:native`
       # above stays exactly as it was.
+      # PRD-375: the scaffold copies the engine's own art to `public/icon.png`, so a stock container
+      # carries the engine icon by construction and the brand inspector correctly refuses it. Author
+      # real art here, the way a developer does, so the release container below carries a game brand
+      # there is something to verify. Only this file changes: identity strings stay as scaffolded,
+      # so every existing assertion in this job reads exactly what it read before.
+      - name: Give the scaffolded starter its own authored icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then root=$(cygpath -u "$RUNNER_TEMP"); fi
+          cp .github/fixtures/prd-375-brand-icon.png "$root/threenative-starter-native/public/icon.png"
       - name: Install and verify the desktop release packaging tools
         shell: bash
         run: |
@@ -1319,6 +1331,34 @@ jobs:
             [ -f "$container/$icon" ] || {
               echo "TN_DESKTOP_IDENTITY_ICON_MISSING: recorded icon $icon is absent from the container." >&2; exit 1; }
           fi
+      # PRD-375: the shipped brand inspector, against the exact packaged artifact. It reads the
+      # .exe's own RT_GROUP_ICON/RT_ICON and RT_VERSION/VS_FIXEDFILEINFO on Windows and the
+      # .icns/Info.plist linkage on macOS, comparing them with the consumer config the build
+      # resolved. It never launches, so unlike the verifier step below it also runs on Windows —
+      # which is the only place a real rcedit-written PE resource section exists.
+      - name: Inspect the release container's game brand
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then root=$(cygpath -u "$RUNNER_TEMP"); fi
+          target="$root/threenative-starter-native"
+          container="$TN_RELEASE_CONTAINER_ROOT"
+          config="$target/.threenative/build/config.json"
+          # node here is win32 node, which reads `/d/a/_temp/...` as a relative path and resolves it
+          # against the drive root. The launch steps never hit this because they skip Windows.
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            container=$(cygpath -w "$container")
+            config=$(cygpath -w "$config")
+            target=$(cygpath -w "$target")
+          fi
+          evidence="packages/runtime-native/artifacts/release-container-${{ matrix.platform }}"
+          mkdir -p "$evidence"
+          node packages/runtime-native/scripts/verify-starter-desktop.mjs \
+            --brand-only \
+            --container "$container" \
+            --config "$config" \
+            --project "$target" | tee "$evidence/brand.txt"
       # Windows packages and carries its identity correctly, but the container's executable cannot
       # launch yet: `rcedit` rewrites the PE to embed the icon after the game payload was appended
       # as an overlay, so the binary falls back to the runtime CLI. PRD-365 records this with its

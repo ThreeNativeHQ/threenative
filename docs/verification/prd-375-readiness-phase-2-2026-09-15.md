@@ -475,3 +475,115 @@ colour and hash back; a colour-only splash round-trips with a null image hash; a
 records `{ bootSplash: null }` rather than omitting the evidence; a recorded splash that disagrees
 with the config is still refused (`LOADING_MISMATCH`); and a declared splash image that is not on
 disk refuses the release.
+
+## The real Linux container, rebuilt with `bootSplash` kept and art a human can look at
+
+The earlier real-container arm had to strip `bootSplash` to go green. With the `loading` record
+emitted, it does not. This is the **current** arm; the stripped-`bootSplash` run recorded further up
+is retained as the historical record of the gate before the writer existed.
+
+The starter was scaffolded from local workspace tarballs and, **only in game files**, given
+`app.id com.example.orbitbrand`, `app.name "Orbit Brand"`, `app.version 1.4.2`, `app.build 3`,
+`app.icon public/brand-icon.png` and `bootSplash { backgroundColor "#0d1b2a", image
+public/brand-splash.png }`. The art is authored, not a placeholder: a 256x256 amber ringed planet on
+deep indigo for the icon (sha256 `48b3782a7fc5731f088eef3ecf17464cfd41a2219a2758d9f21d2da4ab89d907`)
+and a 1024x576 splash carrying the same mark over the configured background with a loading bar
+(sha256 `86b5578f1c389493c3fff843fc103b023ee0ea66b6639883209063b1f8c05ad5`). Both were inspected
+visually in this session. This replaces the 1x1 PNG used in the first run, which was byte-distinct
+but nothing a person could look at.
+
+- container `orbit-brand.tar.gz` sha256 `f93e0953f5d0665e96ab863b6ee108a24a3d5cd0d86e998eb203ec86ea7c743b`
+- the container's own record, read back out of the archive:
+
+  ```json
+  "app": { "id": "com.example.orbitbrand", "name": "Orbit Brand", "version": "1.4.2", "build": 3,
+           "icon": "share/icons/hicolor/256x256/apps/com.example.orbitbrand.png",
+           "iconSha256": "48b3782a7fc5731f088eef3ecf17464cfd41a2219a2758d9f21d2da4ab89d907" },
+  "loading": { "bootSplash": { "backgroundColor": "#0d1b2a",
+                               "imageSha256": "86b5578f1c389493c3fff843fc103b023ee0ea66b6639883209063b1f8c05ad5" } }
+  ```
+
+- `--brand-only` against it, **stock `bootSplash` kept**: exit 0, reporting the icon (payload and
+  source hash both the authored art), the name `Orbit Brand` from the real `.desktop` entry, and the
+  loading record matching the config's colour and splash hash.
+- the full launching gate against the same container, **stock `bootSplash` kept**:
+  `starter desktop gate passed: 300 frames, 21910 colors, 337 asset pixels, brand Orbit Brand verified`,
+  exit 0.
+
+### The command the owner runs to see it
+
+```sh
+cd /home/joao/.cache/prd375-owner
+node <engine>/packages/runtime-native/scripts/verify-starter-desktop.mjs \
+  --brand-only --container unpacked/Orbit-Brand \
+  --config orbit-brand/.threenative/build/config.json --project orbit-brand
+./unpacked/Orbit-Brand/Orbit-Brand --windowed
+```
+
+To see it as the OS launcher shows it, the entry and icon are at their XDG paths inside the
+container and can be installed into the session; that writes into the operator's own
+`~/.local/share`, so it is left as a command to run rather than something this lane did:
+
+```sh
+install -Dm644 unpacked/Orbit-Brand/share/applications/com.example.orbitbrand.desktop \
+  ~/.local/share/applications/com.example.orbitbrand.desktop
+install -Dm644 unpacked/Orbit-Brand/share/icons/hicolor/256x256/apps/com.example.orbitbrand.png \
+  ~/.local/share/icons/hicolor/256x256/apps/com.example.orbitbrand.png
+update-desktop-database ~/.local/share/applications && gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+```
+
+## Windows and macOS: machine evidence from CI, per the owner's platform policy
+
+Owner's policy is that what can be built on Linux is built on Linux, and iOS/Windows go through CI.
+The brand inspector is therefore wired into the **existing** `desktop` matrix job in
+`.github/workflows/native-platforms.yml` — no new job — which already packages a real release
+container on Linux, macOS and Windows.
+
+Two steps were added:
+
+1. **Give the scaffolded starter its own authored icon.** The scaffold copies the engine's own art
+   to `public/icon.png`, so a stock container carries the engine icon by construction and the
+   inspector correctly refuses it. The step overwrites that one file with the same authored icon as
+   the Linux run (`.github/fixtures/prd-375-brand-icon.png`). Identity strings are left exactly as
+   scaffolded, so every pre-existing assertion in that job reads what it read before.
+2. **Inspect the release container's game brand.** Runs `verify-starter-desktop.mjs --brand-only`
+   against `$TN_RELEASE_CONTAINER_ROOT` and the config the build resolved, and tees the evidence
+   into the existing `release-container-<platform>` artifact. It never launches, so unlike the
+   verifier step beside it, **it also runs on Windows** — which is the only place a real
+   rcedit-written PE resource section exists.
+
+Windows path handling is explicit: win32 node reads a git-bash `/d/a/_temp/...` path as relative to
+the drive root, so the step converts with `cygpath -w` first. The existing launch steps never hit
+this because they skip Windows.
+
+**This leg is the first real test of one assumption, and it may go red.** The inspector asserts that
+an embedded `RT_ICON` payload equals the authored PNG byte for byte, on the reasoning that `pngToIco`
+wraps the PNG verbatim and rcedit stores that image data unchanged. That has never run against real
+rcedit output. If CI reds there, the assumption was wrong and the assertion gets **corrected to match
+what rcedit actually writes** — not deleted or softened. `native-platforms` is `required: false` in
+`scripts/ci-change-scope.mjs`, so a red will not block the merge verdict; it is still the only
+Windows and macOS evidence there is, and a red leg is a finding, not an acceptable state.
+
+### Red then green for `--brand-only`
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Red | `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-brand.test.mjs` | **3 failed / 68 passed (71)**, exit 1 |
+| Green | `... tests/starter-brand.test.mjs tests/starter-desktop.test.mjs` | **2 files, 95 passed**, exit 0 |
+
+Four rows: `--brand-only` inspects without launching; it still fails on a mismatched brand; it is
+refused without `--config` rather than reporting nothing to check; and it resolves the container's
+integrity records too, so a file swapped after packaging fails `TN_DESKTOP_CONTAINER_TAMPERED`
+— the short path is not a weaker path.
+
+Both the launching and non-launching routes now go through one `inspectContainer` helper, so they
+cannot drift apart.
+
+### Gates
+
+| Command | Result |
+| --- | --- |
+| the desktop family (6 files) | **209 passed**, exit 0 |
+| `pnpm typecheck` / `pnpm lint` / `pnpm check:docs` | exit 0 / exit 0 / clean |
+| `pnpm budgets` | **budgets ok**, no census drift |
+| `ci-structure`, `ci-needs`, `check-doc-links`, `evidence-budget`, `primary-docs` | **5 files, 153 passed**, exit 0 |

@@ -927,3 +927,55 @@ test('a non-numeric --frames is refused rather than becoming NaN', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /TN_NATIVE_STARTER_CLI_INVALID/u);
 });
+
+// PRD-375: the Windows CI leg packages a real .exe but cannot launch it, so the brand has to be
+// inspectable without a launch — integrity records included, or it is a weaker check than the
+// launching one.
+
+test('--brand-only inspects a container without launching it', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  const configPath = join(fixture.directory, 'config.json');
+  writeFileSync(configPath, JSON.stringify(fixture.config));
+  const result = runVerifier([
+    '--brand-only',
+    '--container',
+    fixture.root,
+    '--config',
+    configPath,
+    '--project',
+    fixture.directory,
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Orbit Game/u);
+});
+
+test('--brand-only still fails on a mismatched brand', () => {
+  const fixture = reviewBrandFixture();
+  fixture.manifest.app.name = 'Engine Default';
+  fixture.save();
+  const configPath = join(fixture.directory, 'config.json');
+  writeFileSync(configPath, JSON.stringify(fixture.config));
+  const result = runVerifier(['--brand-only', '--container', fixture.root, '--config', configPath]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u);
+});
+
+test('--brand-only without --config is refused rather than reporting nothing to check', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  const result = runVerifier(['--brand-only', '--container', fixture.root]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CLI_INVALID/u);
+});
+
+test('--brand-only resolves the container integrity records, not just the brand', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  writeFileSync(join(fixture.root, 'ui/index.html'), '<main>swapped after packaging</main>');
+  const configPath = join(fixture.directory, 'config.json');
+  writeFileSync(configPath, JSON.stringify(fixture.config));
+  const result = runVerifier(['--brand-only', '--container', fixture.root, '--config', configPath]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_DESKTOP_CONTAINER_TAMPERED/u);
+});
