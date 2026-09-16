@@ -4,11 +4,45 @@ prd_contract: v1
 
 # PRD-366 — One installed consumer game proves the supported platform contract
 
-**Status:** PARTIAL — phase 1's scenario, consumer harness step, unit contract and a real browser run are green; a public-registry cohort install still waits on PRD-196. Revised 2026-09-08; phase 1 worked 2026-09-12.
+**Status:** PARTIAL — phase 1's local-tarball browser gameplay proof is recorded below; a public-registry cohort install still waits on PRD-196. Phase 2's cross-target scenario policy was corrected in `d10375e500df5d82cf93fe3487e7d70124f1a157`; the bounded evidence-hardening checkpoint below passes 42 isolated Node regressions, but repository gates, real distributed desktop/Android consumer runs and independent approval remain unverified for this repair. Phase 3 physical Android qualification remains open. Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract and repair worked 2026-09-15.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 lifecycle/proof state, +1 hosted/device integration).
 **Problem:** Isolated engine feature tests and core smoke screenshots do not establish that a developer can build, customize and distribute a playable game using installed packages only.
 
 Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+
+## Phase 2 evidence-hardening checkpoint — 2026-09-15
+
+This bounded three-file checkpoint changes the existing engine consumer verifier, adds
+`packages/runtime-native/tests/starter-consumer-qualification.test.mjs`, and updates this PRD.
+It does not complete the distributed-platform or physical-device qualification phases.
+
+The verifier rejects malformed or contradictory assertion evidence, diagnostics-only reports,
+incomplete process completion, duplicate target rows and substituted scenarios. It invalidates
+old passing rows before reruns, preserves failure logs, binds scenario bytes and checks artifact
+stability across execution. Per-target expected identities allow desktop and Android artifacts
+to have different hashes. Android installs the selected APK, passes its package/activity to the
+installed runner and checks the installed APK hash before and after gameplay.
+
+Fresh verification against `d10375e500df5d82cf93fe3487e7d70124f1a157`: its verifier blob
+`9ac43b2f014189ac56fffb049956bb0d22e1fa94` exactly matches the recovered repair baseline. The same
+42 regressions produced **38 failed / 4 passed** on that source and **42 passed / 0 failed** on
+the repair, using Node 22.16.0 with `node:test`. The test block is the same as the new Vitest file;
+only the unrelated PNG import was isolated, with a stub that throws if used. Runner/ADB results
+were boundary fixtures, including one real subprocess executing a fixture CLI, not a game.
+`node --check` passed for both changed JavaScript files. Uploaded source and test Git blob hashes
+match the tested local files. Existing CLI flags were checked against `packages/playtest/src/runner/config.ts`.
+
+Repository Vitest, typecheck, Biome lint, full tests, budgets, scaffold snapshot and actual
+browser/native/device runs were **not executed** in this sandbox: it has no repository checkout,
+pnpm/Vitest or native toolchain and cannot resolve GitHub/npm for dependency installation. This
+is not an independent reviewer PASS. The historical phase-test counts below are not rerun claims.
+
+The scenario's explicit `noNetworkErrors` field was already removed in `d10375e`: the existing
+target policy retains browser observation and allows reasoned native waivers. This checkpoint
+preserves that newer change. The coupled starter scaffold snapshot still needs verification from
+the complete candidate; no replacement hash is invented. Android workflow staging, real target
+rows, release aggregation, actual desktop session coverage and all phase 3 requirements remain
+open. Phase and acceptance checkboxes are unchanged; this PR must remain draft/PARTIAL.
 
 ## Integration ledger
 
@@ -103,12 +137,17 @@ pnpm test:templates
 
 **Progress:**
 
-- [ ] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
-- [ ] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/scripts/verify-starter-desktop.mjs`, `packages/runtime-native/tests/starter-desktop.test.mjs` (+1 more)
+      Added `verifyStarterConsumerGameplay` and its row contract (`--consumer`), the fixtures, `readConsumerTargetRows`/`consumerTargets` in `scripts/verify-registry-install.ts`, and consumer steps in the `starter-linux` and `desktop` jobs. Existing step names and the smoke guard are unchanged.
+- [x] Required test green: `packages/runtime-native/tests/starter-desktop.test.mjs`
+      31/31 passed 2026-09-15, including both PRD-named rows; `scripts/__tests__/verify-registry-install.spec.ts` 25/25 after the additive `consumerTargets` field.
+- [x] Observed red recorded, then restored green
+      Written first: 10 failed / 19 passed with `TypeError: … is not a function` for the four new exports, then 31/31. The negative controls fail distinctly: substituted native-smoke subject `SCENARIO_MISMATCH`, stale build `ARTIFACT_MISMATCH`, deleted asset/UI `NO_ASSERTIONS`, injected false state assertion `ASSERTION_FAILED`, missing target `ROW_MISSING`.
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-366-readiness-phase-2-<date>.md`
+      Unverified. Desktop launch is environmentally blocked here (host GBM buffer creation on every run) and no desktop host binary is built locally; the final distributed containers are PRD-365 (draft PR #224, not on `develop`). The Android emulator is attached, but a fresh local-tarball starter's `pnpm build --target android` exits 1 at the Android prebuilt fetch (`fetch failed`; the only local manifest points at a stopped `127.0.0.1:8791`), so no APK existed to install and no Android gameplay row was run. Recorded in the phase evidence.
+- [x] Evidence record written: `docs/verification/prd-366-readiness-phase-2-2026-09-15.md`
 - [ ] Independent reviewer returned PASS
+      NEEDS CORRECTION (fresh-eyes review, 2026-09-15). Blocking finding: the phase-1 consumer scenario sets `diagnostics.noNetworkErrors: true`, which the desktop/Android runner refuses with `TN_PLAYTEST_UNSUPPORTED_ON_TARGET`, so the wired workflow steps cannot yield a qualifying row until the scenario becomes cross-target (the harness's documented waiver, outside this phase's five-file budget). The qualifier now names that case `TN_STARTER_CONSUMER_SCENARIO_NOT_CROSS_TARGET`. Secondary findings fixed: expected-identity input plus `--qualify-existing` so a stale row can fail, non-zero-exit contradiction rejected, malformed row file no longer overwritten, Android row records the device's own OS/ABI. Box stays open until the scenario is fixed and a real target run qualifies.
 
 **Files (maximum five):**
 
