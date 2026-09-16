@@ -1,4 +1,6 @@
 import {
+  BufferAttribute,
+  BufferGeometry,
   Group,
   Mesh,
   MeshBasicMaterial,
@@ -66,6 +68,22 @@ function sceneWith(...objects: Object3D[]): Scene {
   for (const object of objects) scene.add(object);
   scene.updateMatrixWorld();
   return scene;
+}
+
+/** A mesh with a writable position buffer and an explicitly computed sphere, placed at `z`. */
+function dynamicMesh(
+  points: number[],
+  z: number,
+): { mesh: Mesh; position: Float32Array; attribute: BufferAttribute } {
+  const geometry = new BufferGeometry();
+  const position = new Float32Array(points);
+  const attribute = new BufferAttribute(position, 3);
+  geometry.setAttribute("position", attribute);
+  geometry.computeBoundingSphere();
+  const mesh = new Mesh(geometry, new MeshBasicMaterial());
+  mesh.position.set(0, 0, z);
+  mesh.updateMatrixWorld();
+  return { mesh, position, attribute };
 }
 
 describe("render camera cull", () => {
@@ -147,6 +165,68 @@ describe("render camera cull", () => {
     alwaysRender(marked, false);
     cull.apply(scene, camera(), 720);
     expect(marked.visible).toBe(false);
+  });
+
+  it("keeps an object that already opted out of frustum culling", () => {
+    // A pooled batch whose geometry bound projects to a fraction of a pixel but which sets
+    // `frustumCulled = false`: the game has told three its bounds cannot be trusted, so a second,
+    // stricter cull does not get to override that standing instruction.
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([-0.5, 0, 0, 0.5, 0, 0]), 3),
+    );
+    geometry.computeBoundingSphere();
+    const batch = new Mesh(geometry, new MeshBasicMaterial());
+    batch.frustumCulled = false;
+    batch.position.set(0, 0, -1_000);
+    batch.updateMatrixWorld();
+    const scene = sceneWith(batch);
+    const cull = new RenderCameraCull();
+
+    cull.apply(scene, camera(), 720);
+
+    expect(batch.visible).toBe(true);
+    expect(cull.report.culled).toBe(0);
+    expect(cull.report.exemptFrustumCulled).toBe(1);
+  });
+
+  it("treats a zero-radius bound as unknown rather than as nothing to draw", () => {
+    // A pooled tracer buffer before its first write: computeBoundingSphere sees every vertex at the
+    // origin and caches radius 0, which projects to 0 px forever. A degenerate radius carries no
+    // size information, so it reads as "no usable bounds", not as "infinitely small".
+    const empty = dynamicMesh([0, 0, 0, 0, 0, 0, 0, 0, 0], -1_000);
+    const scene = sceneWith(empty.mesh);
+    const cull = new RenderCameraCull();
+
+    cull.apply(scene, camera(), 720);
+
+    expect(empty.mesh.geometry.boundingSphere?.radius).toBe(0);
+    expect(empty.mesh.visible).toBe(true);
+    expect(cull.report.culled).toBe(0);
+    expect(cull.report.exemptWithoutBounds).toBe(1);
+  });
+
+  it("recomputes a stale bound after the position buffer changes", () => {
+    const dynamic = dynamicMesh([0, 0, 0, 0.001, 0, 0, 0, 0.001, 0], -1_000);
+    const scene = sceneWith(dynamic.mesh);
+    const cull = new RenderCameraCull();
+
+    cull.apply(scene, camera(), 720);
+    // Tiny and static: the gate is right to skip it.
+    expect(dynamic.mesh.visible).toBe(false);
+    expect(cull.report.culled).toBe(1);
+
+    // The buffer is rewritten as a game's per-frame pool does, without recomputing the sphere.
+    dynamic.position[3] = 100;
+    dynamic.position[7] = 100;
+    dynamic.attribute.needsUpdate = true;
+    cull.apply(scene, camera(), 720);
+
+    // The cached 0.001-radius sphere must not be trusted once the buffer moved.
+    expect(dynamic.mesh.geometry.boundingSphere?.radius).toBeGreaterThan(1);
+    expect(dynamic.mesh.visible).toBe(true);
+    expect(cull.report.culled).toBe(0);
   });
 
   it("keeps an object attached to the render camera", () => {
