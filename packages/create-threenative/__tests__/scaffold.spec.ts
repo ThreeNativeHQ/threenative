@@ -346,7 +346,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "eda3b893c52237ea216fb96ad241b17238a1ff0067eebe72fc0efa35e73b1ec2",
+  // Recomputed 2026-09-15 for PRD-366 phase 2: the scenario drops its explicit
+  // `diagnostics.noNetworkErrors` so the harness's target-aware policy can waive the check on
+  // network-blind native targets, and its restart step now presses the game's own portable `KeyR`
+  // binding instead of Tab/Tab/Enter, which native WebView overlays cannot receive. Scenario bytes
+  // moved and no source did, so the starter tree alone moves again.
+  // Recomputed 2026-09-15 after merging develop (PRD-365): the starter's own `test:native` script
+  // now chains the consumer gameplay row (`verify-starter-desktop.mjs --consumer --target desktop
+  // --project .`) after the container verifier, so `templates/starter/package.json` moved and the
+  // starter tree alone moves again.
+  starter: "3662126fcf623bc5c3522e1423bb416f86794769fc1edebfbd13b6fcf5dacbdc",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.

@@ -43,7 +43,28 @@ export interface IRegistryInstallStep {
   readonly ok: boolean;
 }
 
+/**
+ * PRD-366 phase 2: one qualified consumer gameplay row per distributed target, carried beside the
+ * clean-room steps. Its shape is the runtime-native verifier's `consumer-targets.json`, which is
+ * what actually gates a target; this report threads the rows through so a cohort result names the
+ * OS, architecture and session each claim was made on.
+ */
+export interface IConsumerTargetRow {
+  readonly applicationId: string;
+  readonly architecture: string;
+  readonly artifactHash: string;
+  readonly assertions: number;
+  readonly failures: readonly string[];
+  readonly os: string;
+  readonly osVersion: string;
+  readonly pass: boolean;
+  readonly scenario: string;
+  readonly session: string;
+  readonly target: string;
+}
+
 export interface IRegistryInstallReport {
+  readonly consumerTargets: readonly IConsumerTargetRow[];
   readonly exitCode: 0 | 1;
   readonly managers: readonly RegistryPackageManager[];
   readonly steps: readonly IRegistryInstallStep[];
@@ -462,6 +483,69 @@ function treeContains(root: string, needle: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Read the distributed-target gameplay rows the runtime-native verifier wrote for this consumer.
+ *
+ * Absent means the target lane has not run here (the desktop container lane is PRD-365, not on
+ * develop); a present-but-malformed file is a failure rather than an empty list, because "no rows"
+ * and "unreadable rows" must never read the same.
+ */
+export function readConsumerTargetRows(project: string): readonly IConsumerTargetRow[] {
+  const file = path.join(project, "artifacts", "native", "consumer-targets.json");
+  if (!fs.existsSync(file)) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(
+      `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} is not readable JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!Array.isArray(parsed))
+    throw new Error(`TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} is not a row array.`);
+  return parsed.map((row) => {
+    const record = objectRecord(row);
+    if (record === undefined)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} holds a non-object row.`,
+      );
+    const text = (field: string): string => {
+      const value = record[field];
+      if (typeof value !== "string" || value.length === 0)
+        throw new Error(
+          `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} row field '${field}' is missing.`,
+        );
+      return value;
+    };
+    const assertions = record.assertions;
+    if (typeof assertions !== "number" || !Number.isInteger(assertions) || assertions < 0)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} row field 'assertions' is not a non-negative integer.`,
+      );
+    if (typeof record.pass !== "boolean")
+      throw new Error(
+        `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} row field 'pass' is not a boolean.`,
+      );
+    if (!Array.isArray(record.failures))
+      throw new Error(
+        `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} row field 'failures' is not an array.`,
+      );
+    return {
+      applicationId: text("applicationId"),
+      architecture: text("architecture"),
+      artifactHash: text("artifactHash"),
+      assertions,
+      failures: record.failures.map((failure) => String(failure)),
+      os: text("os"),
+      osVersion: text("osVersion"),
+      pass: record.pass,
+      scenario: text("scenario"),
+      session: text("session"),
+      target: text("target"),
+    };
+  });
+}
+
 export interface IVerifyRegistryInstallOptions {
   /** Where the clean room is created. Must have no workspace above it. */
   readonly parent?: string;
@@ -721,6 +805,7 @@ export function verifyRegistryInstall(
   );
   const mcp = options.mcp ?? realMcpRunner;
   const steps: IRegistryInstallStep[] = [];
+  const consumerTargets = new Map<string, IConsumerTargetRow>();
   try {
     for (const manager of managers) {
       const caseRoot = path.join(parent, manager);
@@ -852,7 +937,14 @@ export function verifyRegistryInstall(
           const output = run(command, script("build:desktop"), project);
           const executable = nativeOutput(project);
           const proof = verifyNativeFrames(project, run);
-          return `${output}\nExecutable: ${executable}\n${proof}`;
+          // The verifier records one qualified gameplay row per distributed target it ran; thread
+          // them through so the cohort result names each target's machine and artifact identity.
+          const rows = readConsumerTargetRows(project);
+          for (const row of rows) consumerTargets.set(row.target, row);
+          const targets = rows
+            .map((row) => `${row.target} (${row.os}/${row.architecture})`)
+            .join(", ");
+          return `${output}\nExecutable: ${executable}\n${proof}${targets.length > 0 ? `\nConsumer targets: ${targets}` : ""}`;
         }),
       );
       steps.push(step(prefix("mcp"), () => mcpStep(project, mcp)));
@@ -860,7 +952,12 @@ export function verifyRegistryInstall(
   } finally {
     fs.rmSync(parent, { force: true, recursive: true });
   }
-  return { exitCode: steps.every((item) => item.ok) ? 0 : 1, managers, steps };
+  return {
+    consumerTargets: [...consumerTargets.values()],
+    exitCode: steps.every((item) => item.ok) ? 0 : 1,
+    managers,
+    steps,
+  };
 }
 
 function main(): void {
