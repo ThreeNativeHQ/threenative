@@ -264,6 +264,7 @@ function reviewBrandFixture(platform = 'linux') {
     resources: {},
     dependencies: [],
     executable: 'orbit',
+    bundle: platform === 'darwin' ? 'Contents/Resources/game.bundle' : 'game.bundle',
     ui: { entry: 'ui/index.html' },
   };
   const manifestPath = join(
@@ -280,6 +281,7 @@ function reviewBrandFixture(platform = 'linux') {
     return target;
   }
   file('orbit', 'executable');
+  file(manifest.bundle, 'prepared game bundle');
   file(iconPath, 'authored icon');
   file('ui/index.html', '<main>Orbit</main>');
   if (platform === 'linux') {

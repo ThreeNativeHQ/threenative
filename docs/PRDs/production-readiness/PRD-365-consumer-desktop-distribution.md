@@ -247,14 +247,18 @@ from this repository keeps its own line with its blocker named underneath rather
   - Same run: the identity step read `CFBundleName` back out of the relocated bundle with `plutil` and required the `.icns` named by `CFBundleIconFile` to exist. The manifest records `Contents/Info.plist`, `Contents/Resources/threenative-starter-native.icns` and the executable at `Contents/MacOS/`, with 30 system prerequisites.
 - [x] windows-x64: `--mode release` produces a ZIP that extracts outside the project with its payload intact.
   - CI run [35034052417](https://github.com/ThreeNativeHQ/threenative/actions/runs/35034052417), `Windows desktop core` on `windows-2025`: built on the host inside the MSVC environment, extracted to a path containing a space with System32's bsdtar, and its integrity records resolved. Archive `threenative-starter-native.zip` sha256 `cee495026f13ee6b6c07fcfe6cf0d3e875f2595f433f341efaeb217ea929aeea`, manifest `win32-x64`/`zip`, 23 system prerequisites, `signed: false`.
-- [ ] windows-x64: the extracted container launches the unchanged starter with its WebView HUD attached.
-  - **Open, with a defect named.** In the run above the container's executable printed the `mystral`
-    CLI usage and `Unknown command or missing arguments` instead of running the game: it no longer
-    recognises its own appended bundle. The likely cause is that `rcedit` rewrites the PE to embed
-    the icon and version strings *after* the game payload has been appended as an overlay, dropping
-    it. macOS and Linux never run `rcedit`, which is why only Windows is affected. Confirming that
-    requires a Windows host, and the fix belongs where the icon is applied to the runtime before the
-    game is compiled into it, not in the container packager. Tracked as the follow-on to this PRD.
+- [x] windows-x64: the extracted container launches the unchanged starter with its WebView HUD attached.
+  - The defect was real and is fixed. `mystral compile` appended the game past the executable's end
+    and the loader finds it only by a `MYSBNDL1` footer at physical EOF, so `rcedit` rewriting the PE
+    for the icon discarded it and the binary fell back to the runtime CLI. The game now ships as
+    `game.bundle` beside the executable, where `findExternalBundle` already searches, so nothing that
+    rewrites the binary can lose it — which also keeps Authenticode and `codesign` from
+    reintroducing it, since both move or seal data the same way.
+  - CI run [35052702093](https://github.com/ThreeNativeHQ/threenative/actions/runs/35052702093),
+    `Windows desktop core` on `windows-2025`: `TN_NATIVE_SMOKE_READY:webgpu`,
+    `TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb`, `TN_UI_OVERLAY:{"attached":true}`,
+    `Rendered 300 frames in 93133ms`, verifier `pass: true`. Manifest `win32-x64` records
+    `bundle: game.bundle` with its integrity hash.
 - [x] windows-x64: the executable carries the authored icon and version strings in its PE resources, embedded by `rcedit`.
   - Same run: the identity step read `ProductName`, `FileDescription` and a non-empty `FileVersion`
     back out of the relocated executable with PowerShell, and required the manifest's recorded icon
@@ -279,9 +283,9 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
   - Same run, `--unshare-net`: `TN_NATIVE_SMOKE_READY:webgpu`, assets loaded, HUD attached, 300 frames, non-blank capture.
 - [x] macOS: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
   - Same run: a second launch of the relocated executable with `PATH=/usr/bin:/bin`, asserting `TN_NATIVE_SMOKE_READY:webgpu` and a completed frame count.
-- [ ] windows-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
-  - Blocked behind the launch box above: the step exists in the lane and is reached, but the
-    container cannot launch at all yet, so a clean-toolchain launch proves nothing.
+- [x] windows-x64: the unpacked container launches with no Node, no engine checkout and no build tools reachable.
+  - Same run: a second launch of the relocated executable with `PATH=/c/Windows/System32`, asserting
+    `TN_NATIVE_SMOKE_READY:webgpu` and a completed frame count.
 - [x] Every claimed OS documents its player-side WebView/library prerequisite, and the Linux one is machine-checked with an actionable failure naming the library and its install step.
   - `packages/runtime-native/README.md` documents WebKitGTK/GTK, WebView2 Evergreen and system WebKit. A missing `libwebkit2gtk-4.1.so.0` refuses with `TN_NATIVE_STARTER_PREREQUISITE_MISSING` and its install step; covered by `tests/starter-desktop.test.mjs`.
 - [ ] The same launch is performed by a consumer installed from the public registry rather than local tarballs.

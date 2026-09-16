@@ -20,6 +20,11 @@ const defaultConfig = { app: { id: 'com.example.orbit', name: 'Orbit Game', vers
 const config = defaultConfig;
 const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 
+/** A stand-in for the runtime's `game.bundle`: the real format is proven by the C++ bundle tests. */
+function authoredBundle() {
+  return Buffer.from('MYSBNDL1 fixture game payload');
+}
+
 /** The smallest byte sequence `pngToIco` accepts: signature, IHDR tag, and a 256x256 size. */
 function authoredPng() {
   const png = Buffer.alloc(40);
@@ -43,9 +48,11 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false, config
   // icon a real project would hand it, so the conversion each one performs is actually exercised.
   const iconPath = join(directory, platform === 'win32' || convertIcon ? 'icon.png' : 'icon.icns');
   const dependency = join(directory, 'dependency');
+  const bundle = join(directory, 'game.bundle');
   writeFileSync(executable, 'original executable');
   writeFileSync(iconPath, iconPath.endsWith('.png') ? authoredPng() : Buffer.from('authored icon'));
   writeFileSync(dependency, 'native dependency');
+  writeFileSync(bundle, authoredBundle());
   mkdirSync(uiDirectory);
   writeFileSync(join(uiDirectory, 'index.html'), '<main>HUD</main>');
   const invocations = [];
@@ -63,7 +70,7 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false, config
     return { status: 0, stdout: '', stderr: '' };
   };
   const packed = packageDesktopContainer({
-    platform, arch: 'x64', executable, config, uiDirectory, uiRenderer: 'web',
+    platform, arch: 'x64', bundle, executable, config, uiDirectory, uiRenderer: 'web',
     dependencies: [{ name: 'sidecar.bin', source: dependency }],
     ...(icon ? { icon: iconPath } : {}), output: join(directory, 'game'), run,
   });
@@ -102,6 +109,39 @@ test('macOS stages Info.plist at the application bundle root, not under Resource
   assert.ok(manifest.resources['Contents/Info.plist']);
   assert.equal(existsSync(join(root, 'Contents/Resources/Contents/Info.plist')), false);
 });
+
+for (const platform of ['linux', 'darwin', 'win32']) {
+  test(`${platform}: the game survives resource editing because it travels beside the executable`, () => {
+    // The defect this replaces: the game was appended to the end of the executable, and rcedit
+    // rewrote the PE to embed the icon, dropping everything past the end of the image. The loader
+    // looks for its footer at physical EOF, found nothing, and the container launched the bare
+    // runtime CLI. Signing would have done the same thing on Windows and macOS.
+    const { root, manifest } = fixture(platform, { icon: true });
+    const expected = platform === 'darwin' ? 'Contents/Resources/game.bundle' : 'game.bundle';
+    assert.equal(manifest.bundle, expected, 'staged where this platform\'s loader searches');
+    assert.ok(manifest.resources[expected], 'the game carries an integrity record');
+    // rcedit really did rewrite the staged executable in the win32 fixture, and the game is intact.
+    assert.deepEqual(readFileSync(join(root, expected)), authoredBundle());
+    assert.equal(manifest.resources[expected].sha256, digest(join(root, expected)));
+    assert.deepEqual(resolveContainer(root, { platform }), manifest);
+  });
+
+  test(`${platform}: a container whose game file is missing is refused`, () => {
+    const { root, manifest } = fixture(platform, { icon: true });
+    rmSync(join(root, manifest.bundle));
+    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_INCOMPLETE/u);
+  });
+
+  test(`${platform}: a container that keeps the game but drops its record is refused`, () => {
+    // A separate container, so this proves the present-file/absent-record pair is refused on its
+    // own rather than riding on the deletion above.
+    const { root, manifest, manifestPath } = fixture(platform, { icon: true });
+    assert.ok(existsSync(join(root, manifest.bundle)), 'the game file is still present');
+    const { bundle: _dropped, ...withoutBundle } = manifest;
+    writeFileSync(manifestPath, JSON.stringify(withoutBundle));
+    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_MANIFEST_INVALID/u);
+  });
+}
 
 test('Windows packaging hands rcedit an .ico, never the authored PNG', () => {
   // The guard the original defect needed: pngToIco being correct is no use if the packager still
@@ -259,10 +299,12 @@ for (const fail of [false, true]) {
     const root = makeTempDirSync('threenative-archive-replacement-');
     const executable = join(root, 'input');
     const output = join(root, 'game.zip');
+    const bundle = join(root, 'game.bundle');
     writeFileSync(executable, 'executable');
+    writeFileSync(bundle, authoredBundle());
     writeFileSync(output, 'previous archive');
     const build = () => packageDesktopContainer({
-      platform: 'darwin', arch: 'x64', executable, output, config,
+      platform: 'darwin', arch: 'x64', bundle, executable, output, config,
       run: (command, args) => {
         assert.equal(command, 'zip');
         if (!fail) assert.equal(existsSync(args[2]), false, 'zip must not update an existing archive');
