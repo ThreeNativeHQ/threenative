@@ -1436,7 +1436,14 @@ jobs:
           # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.
           & certutil.exe -f -addstore Root $cer | Out-Host
           if ($LASTEXITCODE -ne 0) { throw "TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate" }
-          Write-Host "created $($cert.Thumbprint) for CN=$subject"
+          # signtool ships with the Windows SDK and is on PATH only inside a Developer Command
+          # Prompt, the same way dumpbin is. The signing step runs in bash, so put the newest x64
+          # SDK signtool on PATH for the steps that follow rather than entering VsDevCmd there.
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'TN_DESKTOP_SIGNING_PROOF: no signtool.exe found in the Windows SDK' }
+          Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
+          Write-Host "created $($cert.Thumbprint) for CN=$subject; signtool at $($signtool.FullName)"
       - name: Sign the distributed executable through the packager's own adapter
         if: matrix.platform == 'Windows'
         shell: bash
