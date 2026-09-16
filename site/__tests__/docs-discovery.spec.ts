@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { docPageForPath, docsNeighbours, docsPages, searchDocs } from "../src/content/docs.js";
+import {
+  docPageForPath,
+  docsNeighbours,
+  docsPages,
+  searchDocs,
+} from "../src/content/docs.js";
 import { primaryNav } from "../src/content/nav.js";
 
 describe("documentation discovery", () => {
@@ -28,7 +33,8 @@ describe("documentation discovery", () => {
   it("keeps comparisons and benchmarks out of the top-level navbar", () => {
     expect(primaryNav.map((entry) => entry.label)).toEqual(["Product", "Docs", "Community"]);
     expect(primaryNav.find((entry) => entry.label === "Docs")?.target).toEqual({
-      kind: "internal", path: "/docs",
+      kind: "internal",
+      path: "/docs",
     });
   });
 

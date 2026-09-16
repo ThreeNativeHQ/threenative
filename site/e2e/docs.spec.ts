@@ -106,7 +106,11 @@ test.describe("documentation navigation", () => {
     const table = page.getByRole("table");
     await expect(table.getByRole("columnheader")).toHaveCount(6);
     await page.getByLabel("Compare ThreeNative with").selectOption("Unity");
-    await expect(table.getByRole("columnheader")).toHaveText(["Dimension", "ThreeNative", "Unity"]);
+    await expect(table.getByRole("columnheader")).toHaveText([
+      "Dimension",
+      "ThreeNative",
+      "Unity",
+    ]);
     await expect(table.getByRole("rowheader")).toHaveCount(6);
     await expect(table.getByText("Editor + C#", { exact: true })).toBeVisible();
     await page.getByLabel("Compare ThreeNative with").selectOption("all");
