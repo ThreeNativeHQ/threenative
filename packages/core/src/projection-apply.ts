@@ -219,6 +219,18 @@ export class ProjectionMirror {
   /** Exact-lane stand-ins, keyed by the source they mirror. */
   readonly #proxies = new Map<Object3D, Object3D>();
   readonly #lightProxies = new Map<Light, Light>();
+  /**
+   * Each source light's own `shadow.autoUpdate`, captured the frame the mirror took that light's
+   * map offline.
+   *
+   * While the mirror is what draws, the authored scene is not rendered, so the authored light's
+   * shadow map is never sampled: three builds a render's lighting from the scene it is handed,
+   * which holds the clone, not the source. The clone carries its own `LightShadow` and keeps
+   * updating; the source's map is dead work. Three reads `shadow.autoUpdate` per light in
+   * `ShadowNode.updateBefore`, so switching the source's off drops that map without touching the
+   * shadow camera, map size, bias or flags. The exact authored value comes back in `releaseAll`.
+   */
+  readonly #lightShadowAutoUpdate = new Map<Light, boolean>();
   readonly #exact = new Map<ProjectionExactReason, number>();
   readonly #exactLane: IProjectionExactEntry[] = [];
   readonly #extraExactPool: IProjectionExactEntry[] = [];
@@ -479,7 +491,19 @@ export class ProjectionMirror {
       const proxy = this.#lightProxies.get(light) as Light;
       this.scene.remove(proxy);
       this.#lightProxies.delete(light);
+      // A light that leaves the mirror gets its shadow update back now, so a light that returns
+      // later is cloned from a source that still updates rather than from the offline state.
+      this.#restoreLightShadow(light);
     }
+  }
+
+  /** Puts a source light's own shadow-update state back and forgets it. */
+  #restoreLightShadow(light: Light): void {
+    const original = this.#lightShadowAutoUpdate.get(light);
+    if (original === undefined) return;
+    this.#lightShadowAutoUpdate.delete(light);
+    const shadow = (light as Light & { shadow?: { autoUpdate: boolean } }).shadow;
+    if (shadow !== undefined) shadow.autoUpdate = original;
   }
 
   /**
@@ -535,6 +559,17 @@ export class ProjectionMirror {
         pointProxy.distance = point.distance;
         pointProxy.decay = point.decay;
         pointProxy.power = point.power;
+      }
+      // The clone above copied `autoUpdate` before it was switched off, so the drawn light keeps
+      // its shadow. Only the source — whose map nothing samples this frame — is taken offline.
+      const shadow = (light as Light & { shadow?: { autoUpdate: boolean } }).shadow;
+      if (
+        shadow !== undefined &&
+        shadow.autoUpdate === true &&
+        !this.#lightShadowAutoUpdate.has(light)
+      ) {
+        this.#lightShadowAutoUpdate.set(light, shadow.autoUpdate);
+        shadow.autoUpdate = false;
       }
     }
     return undefined;
@@ -993,6 +1028,7 @@ export class ProjectionMirror {
     this.#proxies.clear();
     for (const proxy of this.#lightProxies.values()) this.scene.remove(proxy);
     this.#lightProxies.clear();
+    for (const light of this.#lightShadowAutoUpdate.keys()) this.#restoreLightShadow(light);
     this.#state.clear();
     this.#exact.clear();
     this.#clearExactScratch();

@@ -1,4 +1,5 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
+import type { IRenderPassSample } from "./render-pass-budget.js";
 
 export type AfterPhysicsCallback = (dt: number) => void;
 
@@ -84,6 +85,7 @@ export interface IFixedStepLoopOptions {
 
 export interface IRenderPerformanceMetrics {
   readonly drawCalls?: number;
+  readonly passes?: readonly IRenderPassSample[];
   readonly triangles?: number;
 }
 
@@ -276,6 +278,9 @@ export class FixedStepLoop {
         ...(metrics === undefined || metrics.drawCalls === undefined
           ? {}
           : { drawCalls: metrics.drawCalls }),
+        ...(metrics?.passes === undefined || metrics.passes.length === 0
+          ? {}
+          : { passes: metrics.passes.map((pass) => ({ ...pass })) }),
         ...(phases === undefined ? {} : { phases }),
         ...(metrics === undefined || metrics.triangles === undefined
           ? {}

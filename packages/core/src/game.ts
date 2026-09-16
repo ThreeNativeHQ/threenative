@@ -28,6 +28,8 @@ import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
+import { RenderCameraCull } from "./render-camera-cull.js";
+import { RenderPassBudget } from "./render-pass-budget.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveRendererAlphaAntialiasing,
@@ -521,6 +523,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #initialState: TState;
   #loop: FixedStepLoop | undefined;
   #projection: SceneRenderProjection | undefined;
+  #cameraCull: RenderCameraCull | undefined;
   #cleanup: Array<() => void> = [];
   #computeDriven = new ComputeDrivenRegistry();
   #entities: Registry | undefined;
@@ -669,6 +672,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // scene is cleared, so a scene change cannot leave the next level drawing the last one's
     // props — and released rather than rebuilt, because every source it referenced is about to go.
     this.#projection?.dispose();
+    // Put back anything the cull hid before the outgoing scene is cleared, so a scene change never
+    // leaves an object invisible if the game keeps a reference to it.
+    this.#cameraCull?.restore();
     clearScene(ctx.scene, this.#computeDriven);
     const scene = new SceneType();
     this.#scene = scene;
@@ -851,9 +857,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
     const projection = new SceneRenderProjection(threeScene, {
+      enabled: this.#config.render?.projection !== false,
       velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
     });
     this.#projection = projection;
+    // Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 px,
+    // and measured whether or not the game narrows or declines it. Its decision is per camera, so
+    // a shadow caster and anything attached to the camera are never dropped on the main view alone.
+    const cameraCull = new RenderCameraCull({
+      minimumPixels: this.#config.render?.minimumProjectedPixels,
+    });
+    this.#cameraCull = cameraCull;
     let projectionSettled = false;
     /**
      * Progress is a high-water mark over the measured load state, never a value that can fall.
@@ -1137,7 +1151,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               // the exact lane and whether the renderer agrees with the plan.
               if (projection !== undefined) {
                 console.info(
-                  formatProjectionWindow(projection.report, reported.window, lastWorldDrawCalls),
+                  formatProjectionWindow(
+                    projection.report,
+                    reported.window,
+                    lastWorldDrawCalls,
+                    this.#cameraCull?.report,
+                  ),
                 );
               }
               if (this.#config.frameBudget !== false)
@@ -1165,7 +1184,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // Last, so the engine's own renderer answers this and a game cannot report a
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
-            readGpuMs: () => renderer.gpuFrameMs(),
             readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
             readSurface: () => {
               observeCompilation();
@@ -1177,6 +1195,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             },
           });
     this.#frameBudget = frameBudget;
+    // Per-pass draws and triangles ride the frame budget's window by default. The same property
+    // that makes `info.render` an aggregate — one reset per frame before the world render, and
+    // nested shadow/reflection renders sharing that counter — is what this recorder unwinds.
+    const renderPassBudget =
+      frameBudget === undefined
+        ? undefined
+        : RenderPassBudget.install(renderer.raw as Parameters<typeof RenderPassBudget.install>[0]);
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
@@ -1188,6 +1213,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // a concurrent internal renderer callback can otherwise leave stale work in the first
         // sample after a held playtest start.
         resetRendererPerformanceMetrics(renderer.raw);
+        renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
         // before the render, inside the same frame, so a change the game made this tick reaches
@@ -1236,6 +1262,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const waitingForFirstUse =
           firstWorldPass &&
           (explicitWarmUpPending || (startupCoverActive() && !startupReadiness.compileSettled));
+        let worldPasses: ReturnType<RenderPassBudget["passes"]> | undefined;
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
@@ -1287,10 +1314,27 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             camera,
             renderer.surface().drawingBufferHeight,
           );
+          // Projected-size cull, per render camera, default on. It writes only `object.visible` —
+          // the one per-frame flag the projection's batch key ignores — and restores what it hid
+          // immediately after the draw, so the authored scene is untouched between frames. The
+          // renderer walks the same root the projection is about to draw, so a declined projection
+          // and an active one both get the gate.
+          const drawingBufferHeight = renderer.surface().drawingBufferHeight;
+          this.#cameraCull?.apply(
+            this.#projection?.root ?? threeScene,
+            camera,
+            drawingBufferHeight,
+          );
           renderer.render(this.#projection?.root ?? threeScene, camera);
+          this.#cameraCull?.restore();
           this.#projection?.commit();
           renderer.observeRenderChainFrame?.();
           frameBudget?.addRender(budgetNow() - renderStart);
+          // Read the split before the overlay renders: the overlay is its own draw, not part of the
+          // world pass, and the budget window already accounts for it in its own phase.
+          worldPasses = renderPassBudget?.passes();
+          if (worldPasses !== undefined && worldPasses.length > 0)
+            frameBudget?.addRenderPasses(worldPasses);
           // Resolve the GPU timestamps every frame, not once per reported window.
           //
           // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
@@ -1306,11 +1350,23 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // fire-and-forget and already catch-guarded, which was the original cadence's only
           // stated concern.
           renderer.resolveGpuFrame();
+          // The budget's GPU series is fed every frame, not read once per reported window. A
+          // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
+          // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
+          // resolved frame id so a resolve still in flight is counted stale, not measured twice.
+          const gpuSample = renderer.gpuFrameSample?.();
+          frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;
           }
-          if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
+          if (this.#renderMetricsEnabled) {
+            const metrics = rendererPerformanceMetrics(renderer.raw);
+            worldMetrics =
+              worldPasses === undefined || worldPasses.length === 0
+                ? metrics
+                : { ...metrics, passes: worldPasses.map((pass) => ({ ...pass })) };
+          }
           // Read whether or not the game asked for render metrics: the projection line reports
           // the measured draw count, and a convention's measurement does not switch off with the
           // convention that happens to sit beside it.
@@ -1596,6 +1652,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     if (ctx !== undefined) clearScene(ctx.scene, this.#computeDriven);
+    this.#cameraCull?.dispose();
+    this.#cameraCull = undefined;
     this.#input?.dispose();
     this.#state.stop();
     ctx?.canvasLayer.dispose();
