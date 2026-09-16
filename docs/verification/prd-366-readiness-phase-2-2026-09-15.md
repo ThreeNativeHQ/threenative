@@ -271,6 +271,22 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 # green: Tests  50 passed (50)
 ```
 
+**The reviewer's exact exploit, re-run through the real CLI after the fix.** The runner was
+replaced with one emitting precisely the report the review used, against the real scaffolded
+starter whose scenario declares the full assert block:
+
+```sh
+# runner stdout: {"target":"desktop","pass":true,"diagnostics":[],
+#                 "assertionResults":[{"id":"totally-made-up","pass":true}]}
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs \
+  --consumer --target desktop --project .
+# BEFORE: exit 0 - "consumer gameplay qualified on desktop: 1 assertions, artifact be9526130868"
+# AFTER:  exit 1
+# TN_STARTER_CONSUMER_ASSERTION_FAMILY_MISSING: the 'desktop' run evaluated [totally-made-up]
+#   but the scenario declares 'diagnostics'; a run cannot qualify on assertions the scenario
+#   never declared.
+```
+
 **Proved on the real rows, not only on fixtures.** After re-running desktop, the physical Pixel 8
 and the emulator with the repaired verifier, all three rows carry the identical set
 `diagnostics, movement.axisDelta, resource.state.entityCount.atSteps, resource.state.score.atSteps,
@@ -308,6 +324,16 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 If #255 lands first, this guard must be re-checked for survival across the split.
 
 ## User verification on the named platform — VERIFIED (Linux desktop, physical Pixel 8, Android emulator)
+
+**The strongest single piece of evidence in this PR is that the desktop row reproduces on a second,
+independent machine.** CI run `35054258943` (`native-platforms / Scaffolded starter desktop
+artifact`, job `104662689257`, pass, 6m11s) produced it on a GitHub Ubuntu runner —
+`consumer gameplay qualified on desktop: 5 assertions, artifact 648ca9ff2bef, app
+com.threenative.threenativestarternative` — against the local row's `artifact b0f7d4e28e11, app
+com.threenative.starternative`. Different hardware, different artifact hash, different application
+id (each job scaffolds under its own project name), same scenario and same five assertions. A local
+row alone could be a property of this machine; two agreeing rows are not. Details below under
+"independently reproduced on a GitHub runner".
 
 Executed on this machine on 2026-09-15 against branch commit `4edbf1dc528e946a1e5599379a90a2e749bfee7a`.
 The earlier "environmentally blocked (host GBM buffer creation)" note above is **superseded**: no
@@ -492,11 +518,35 @@ unevaluated `diagnostics` result with `details.reason: 'not-evaluated'` is what
 assertions run — it is the generic pre-assertion failure shape, not a diagnostics-channel gap. The
 real cause was whatever `diagnostics[0]` named, which my row did not retain.
 
-On re-run the same APK on the same device passes, so there is no reproducible defect to report. The
-only measured difference between the two runs is device state: run 1 happened at **15% battery,
-discharging**; run 2 at **74%, charging**. I did **not** isolate that, so it is a correlation and
-nothing more. The honest statement is that one physical run failed once, its recorded cause was
-misattributed, and it has not reproduced — not that an API-37 defect exists.
+**Sample, not a single re-run.** The physical device was run **four** consecutive times after the
+repair, with the app force-stopped between each so every launch was cold:
+
+```
+run 1  exit 0  5 assertions   run 3  exit 0  5 assertions
+run 2  exit 0  5 assertions   run 4  exit 0  5 assertions
+```
+
+4/4 pass, same artifact `3f24116fb41a` each time. So arm64-v8a gameplay is proven **under the
+conditions tested**, and the earlier one-run failure is not reproducible under them.
+
+**The confound is real and was NOT isolated — so the phase-3 item is not dropped.** Between the
+failing run and the passing runs the device state changed in a way this lane did not control: the
+failure happened at **15% battery, discharging, no stay-awake**; all four passes happened at
+**74-82%, on AC, with `stay_on_while_plugged_in=15` set**. That setting and the charger were
+introduced deliberately for the device lane, not as an experiment, which means the variable moved
+between the two observations. Reproducing the failing condition would require draining the phone to
+~15% and disabling stay-awake; that was not done.
+
+The defensible statement, therefore, is narrower than "no defect exists":
+
+- Physical arm64-v8a passes the consumer gameplay scenario 4/4 on a charged, awake Pixel 8.
+- One physical run aborted before assertions on the same APK under low-battery/discharging
+  conditions. Its cause was misattributed by me (see above) and the real `diagnostics[0]` was not
+  retained, so it is **unexplained**, not explained-and-dismissed.
+- **Open for phase 3:** whether a physical device under power pressure aborts before gameplay, and
+  whether the row should retain `diagnostics[0]` so a future abort names itself instead of showing
+  only the generic pre-assertion shape. Four passes under one condition do not close a failure
+  observed under another.
 
 ### Android (emulator, x86_64) — PASS
 
