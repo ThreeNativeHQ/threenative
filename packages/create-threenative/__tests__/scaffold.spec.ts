@@ -323,8 +323,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-15 for the AutoLOD generation-knob fix: the same manifest/reference text
   // now names `maxLevels`, `minTriangles`, `minTrianglesScope`, `minSaving` and `errorTargets` and
   // the measured-benefit gate. All ten trees move together again; no template source changed.
-  "action-rpg": "72857333845441664eb68212dd568b53f348f9568379852a8ab444ef1c3d1bcd",
-  defense: "1c0bb52e81d49303fa817d0ac86ccf6cee55b79746b9b0380beb795cd916e13e",
+  // Recomputed 2026-09-15 for the Midway consolidation: the render-camera cull guidance was folded
+  // into each template's Ownership paragraph so it adds no line to AGENTS.md or its CLAUDE.md mirror
+  // (the mirror banner costs two lines, so both must stay under the 100-line cap), and the branch
+  // rebased onto origin/develop. All ten trees move together; no other template source changed.
+  "action-rpg": "7bbb14453815bbe33d87d0e2f7f4ca0733606b17c7861ac6ed819cac86fae358",
+  defense: "55f38ef0c22c6e0545830c445f7646861fafea4819d767f60cdbe0d056da6843",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -332,17 +336,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "04e894a8437167f68b473f24bc3763d27e462ac715089f8c60824dd08b800f92",
-  platformer: "a18a47e7179c9f44db0bcc10eb816d353cba6289a8fb8b48c79797c81c857932",
-  runner: "f3832772a9c5c3e00d16852d28a2f4079c3400cf1171aaca42ecef96f3fa2c6b",
-  puzzle: "f6e71c53a68aef8f28b9aa645bae069224545012f10a688a80894644903a585a",
-  racing: "d13478f912ef710162cc8b28be0ee3629864c63e342832eea09572cc1148438e",
-  shooter: "f67c22e6700d4358961fe3c9adee87985f01e328d1ace8c7d485f40a6eae781d",
+  minimal: "ada5cb10b1415a7087efad522b0d52a3680060b21cdbeb14ab4f25427fbddebc",
+  platformer: "355ab0084d551ded0e967d03b05ce6418c12f5b2068e1da414f0997cfd6bbf1f",
+  runner: "2dd4346b37577c10bb07430570775aba2b9a294ff3ff5f36e96c5f2872468737",
+  puzzle: "27e870629305952855ef6004625e1169499a245d751feb3e43a6267e1134f8c3",
+  racing: "c363d043629c5647d47a7198870a65a0a7862a1af4705ebb7879885ecf4ed9e9",
+  shooter: "c5191a67433990a58882684611cfc6b013dc6620e6231ac578aeb123a03a9696",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "e1dc7dc6ddd88c2ab76315a679f28ee2ac1e553292b490c4bae6df790be581a1",
+  starter: "eda3b893c52237ea216fb96ad241b17238a1ff0067eebe72fc0efa35e73b1ec2",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -368,7 +372,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "d82ab964fcb608f25505de91a33017593159be9ebe5b2af7b937ec8296eaa13a",
+  sailing: "839469865674419cc04843284ad0e30a87b1ebd71f1bf353977f09b60df237e4",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

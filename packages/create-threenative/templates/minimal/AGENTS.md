@@ -6,14 +6,7 @@ Instructions for the AI agent in this game. This template has no React or Tailwi
 ## Ownership
 
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state store. This repository owns `src/render/`, `src/entities/`, and `src/scenes/`; all are
-ordinary user code, and nothing in `@threenative/*` reads or chooses their appearance.
-
-## Distant objects the camera cannot resolve are not submitted
-
-On by default: an object projecting under **0.5 px** in the render camera is skipped per camera,
-reported in `TN_PROJECTION`. `renderer.minimumProjectedPixels` raises or lowers the threshold
-(`false` disables the cut, not the count); `alwaysRender(object)` exempts an object. Camera-attached
-objects and shadow casters are kept.
+ordinary user code, and nothing in `@threenative/*` reads or chooses their appearance. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept.
 
 ## Start every change
 

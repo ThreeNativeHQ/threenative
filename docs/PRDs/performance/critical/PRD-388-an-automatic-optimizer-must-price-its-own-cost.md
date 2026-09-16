@@ -56,7 +56,7 @@ is introduced. Vocabulary is borrowed from Three.js and WebGPU before inventing.
 | [`renderProjection.ts:78-108`](../../../../packages/core/src/renderProjection.ts) `IRenderProjectionReport`: `sourceRenderables`, `resultDrawCandidates`, `drawsPlanned`, `timings.reconcileMs/lastReconcileMs/maxReconcileMs` | The report **already measures** `reconcileMs` and already says `drawsPlanned` is a plan, not a measurement. Use the measured timings and the renderer's counted draws; stop trusting the prediction. |
 | [`projection-apply.ts:693`](../../../../packages/core/src/projection-apply.ts) (InstancedMesh) and `:772` (BatchedMesh) `frustumCulled = false`; `:770` `perObjectFrustumCulled`; comment at `:692` | A batch is submitted to every pass. That is why the shadow/reflection cameras cannot cull it and why the total draw count rose. Any batching that reports a draw win must account for this. |
 | [`projection-marker.ts`](../../../../packages/core/src/projection-marker.ts) `PROJECTION_MARKER` / window JSON | The honest reporting surface already exists. Extend it; add no second dashboard. |
-| [`docs/midway-adoption-verify/`](../../../midway-adoption-verify/README.md) | The campaign's adopted engine fix and raw evidence are the in-repo record behind these numbers. |
+| Midway campaign capture (outside this repository, RTX 2080, WebGPU) | The adopted engine fix and its raw evidence live with that external game; they are not carried in-repo. |
 
 ### The disable opt-out, and where it actually lives
 

@@ -102,7 +102,11 @@ describe("frame-budget surface reporting", () => {
 
 describe("frame-budget GPU time", () => {
   it("reports the mean of the GPU series the adapter measured", () => {
-    const budget = new FrameBudget({ readSurface: () => PINNED, report: () => {}, reportEvery: 100 });
+    const budget = new FrameBudget({
+      readSurface: () => PINNED,
+      report: () => {},
+      reportEvery: 100,
+    });
     const clock = { now: 0, timestamp: 0 };
     for (let index = 0; index < 4; index += 1) {
       clock.now += 1;

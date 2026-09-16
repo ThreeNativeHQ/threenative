@@ -59,11 +59,7 @@ describe("frame-budget GPU series", () => {
 
   it("counts a reading that has not advanced rather than measuring it twice", () => {
     const budget = gpuBudget();
-    driveGpu(budget, [
-      [10, 5],
-      [99, 5],
-      [undefined],
-    ]);
+    driveGpu(budget, [[10, 5], [99, 5], [undefined]]);
     const window = budget.window();
     // Only frame 5's first read is a measurement; the repeat and the missing read are stale.
     expect(window.gpu?.samples).toBe(1);
@@ -73,11 +69,7 @@ describe("frame-budget GPU series", () => {
 
   it("reports unavailable, not zero, when no frame produced a reading", () => {
     const budget = gpuBudget();
-    driveGpu(budget, [
-      [undefined],
-      [undefined],
-      [undefined],
-    ]);
+    driveGpu(budget, [[undefined], [undefined], [undefined]]);
     const window = budget.window();
     expect(window.gpu).toBeUndefined();
     expect(window.gpuMs).toBeUndefined();
@@ -111,11 +103,7 @@ describe("frame-budget GPU series", () => {
       [20, 2],
       [30, 3],
     ]);
-    driveGpu(withoutGpu, [
-      [undefined],
-      [undefined],
-      [undefined],
-    ]);
+    driveGpu(withoutGpu, [[undefined], [undefined], [undefined]]);
     expect(withGpu.window().phases).toEqual(withoutGpu.window().phases);
     expect(withGpu.window().frames).toBe(withoutGpu.window().frames);
   });
@@ -133,7 +121,9 @@ describe("frame-budget GPU series", () => {
     ]);
     const windows = lines
       .filter((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`))
-      .map((line) => JSON.parse(line.slice(`${FRAME_BUDGET_MARKER}:`.length)) as IFrameBudgetWindow);
+      .map(
+        (line) => JSON.parse(line.slice(`${FRAME_BUDGET_MARKER}:`.length)) as IFrameBudgetWindow,
+      );
     expect(windows).toHaveLength(2);
     expect(windows[0]?.gpu?.mean).toBe(15);
     expect(windows[1]?.gpu?.mean).toBe(150);

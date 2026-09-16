@@ -30,10 +30,9 @@ PRD-390 is the "optimized by default" rule the other four serve: it cites 386 fo
 that makes culling pay, 388 for the self-pricing rule and the opt-out it must not duplicate, and 389 for
 the instrument that must be a series before any cut is justified by it.
 
-The measured evidence behind them lives outside this repository in the Midway campaign capture; the
-in-repo record of the adopted engine fix and its raw evidence is
-[`docs/midway-adoption-verify/`](../../../midway-adoption-verify/README.md). Each PRD states which
-closure gates a single-NVIDIA-GPU, no-mobile-hardware machine can reach and which it cannot.
+The measured evidence behind them lives outside this repository in the Midway campaign capture. Each
+PRD states which closure gates a single-NVIDIA-GPU, no-mobile-hardware machine can reach and which it
+cannot.
 
 ## What the evidence says, in five lines
 
