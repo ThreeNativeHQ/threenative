@@ -347,7 +347,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // network-blind native targets, and its restart step now presses the game's own portable `KeyR`
   // binding instead of Tab/Tab/Enter, which native WebView overlays cannot receive. Scenario bytes
   // moved and no source did, so the starter tree alone moves again.
-  starter: "97f171aabf1323b0cf3c8af6c6e5b56ddffdb5bf1f513c9fd6df38423204ec20",
+  // Recomputed 2026-09-15 after merging develop (PRD-365): the starter's own `test:native` script
+  // now chains the consumer gameplay row (`verify-starter-desktop.mjs --consumer --target desktop
+  // --project .`) after the container verifier, so `templates/starter/package.json` moved and the
+  // starter tree alone moves again.
+  starter: "f9b0ac87d887240dadd19fe59c183801a584ba103968c17b560e95e446b9c14e",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
