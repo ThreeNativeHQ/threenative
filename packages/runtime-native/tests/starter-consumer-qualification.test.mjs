@@ -17,7 +17,8 @@ describe('PRD-366 consumer evidence regressions', () => {
   const hash = (value) => createHash('sha256').update(value).digest('hex');
   const identity = { applicationId, artifactHash: hash('built consumer'), scenario };
   const row = (extra = {}) => ({
-    ...identity, architecture: 'x64', assertions: 2, failures: [], os: 'linux',
+    ...identity, architecture: 'x64', assertionIds: ['movement', 'resources'], assertions: 2,
+    failures: [], os: 'linux',
     osVersion: '6.8', pass: true, session: 'x11', target: 'desktop', ...extra,
   });
   const report = (extra = {}) => ({
@@ -275,5 +276,57 @@ describe('PRD-366 consumer evidence regressions', () => {
         : original(command, args, cwd),
     });
     assert.equal(result.pass, true);
+  });
+  // B4: the row stored only a COUNT, so `5 === 5` passed for any five ids. A run that evaluated
+  // assertions the scenario never declared, or that silently dropped whole declared families,
+  // qualified anyway. The row now carries the ids and they are checked against the scenario.
+  test('a run cannot qualify on assertions the scenario never declared', () => {
+    const f = fixture();
+    assert.throws(() => verifyStarterConsumerGameplay({ ...f.options,
+      runner: () => output({ assertionResults: [{ id: 'totally-made-up', pass: true }] }),
+    }), /ASSERTION_FAMILY_MISSING/u);
+  });
+  test('a run that silently drops a declared assertion family cannot qualify', () => {
+    const f = fixture();
+    writeFileSync(join(f.project, scenario), JSON.stringify({
+      name: 'starter-production-readiness', target: 'web', schemaVersion: 1,
+      steps: [{ kind: 'input', press: 'ArrowUp', holdTicks: 10 }],
+      assert: { movement: { entity: 'player', minDistance: 0.5 }, visibility: [{ entity: 'player' }] },
+    }));
+    assert.throws(() => verifyStarterConsumerGameplay({ ...f.options,
+      runner: () => output({ assertionResults: [{ id: 'movement.axisDelta', pass: true }] }),
+    }), /ASSERTION_FAMILY_MISSING/u);
+  });
+  test('the parsed report reports its assertion ids, sorted and deduplicated', () => {
+    const parsed = parseConsumerPlaytestReport(JSON.stringify(report({
+      assertionResults: [{ id: 'movement.axisDelta', pass: true }, { id: 'diagnostics', pass: true }],
+    })), 'desktop');
+    assert.deepEqual(parsed.assertionIds, ['diagnostics', 'movement.axisDelta']);
+  });
+  test('a row from an older verifier is named as superseded, not as corrupt input', () => {
+    const bad = row(); delete bad.assertionIds;
+    assert.throws(() => qualifyConsumerTargetRow(bad, identity), /ROW_OUTDATED/u);
+  });
+  test('a target row whose assertion ids are not strings is malformed', () => {
+    assert.throws(() => qualifyConsumerTargetRow(row({ assertionIds: ['', 'x'] }), identity),
+      /ROW_MALFORMED/u);
+  });
+  test('a target row whose assertion ids contradict its count is malformed', () => {
+    assert.throws(() => qualifyConsumerTargetRow(row({ assertionIds: ['movement'] }), identity),
+      /ROW_MALFORMED/u);
+  });
+  test('two targets that evaluated different assertion sets cannot both qualify', () => {
+    const desktop = row({ assertionIds: ['movement', 'resources'] });
+    const android = row({ target: 'android', assertionIds: ['movement', 'visibility.player'] });
+    assert.throws(() => assertConsumerTargetRows([desktop, android], {
+      ...identity, targets: ['desktop', 'android'],
+    }), /ASSERTION_SET_MISMATCH/u);
+  });
+  test('two targets that evaluated the same assertion set qualify together', () => {
+    const desktop = row({ assertionIds: ['movement', 'resources'] });
+    const android = row({ target: 'android', assertionIds: ['resources', 'movement'] });
+    assert.equal(assertConsumerTargetRows([desktop, android], {
+      ...identity, targets: ['desktop', 'android'],
+    }).length, 2);
   });
 });

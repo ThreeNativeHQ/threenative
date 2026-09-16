@@ -531,3 +531,19 @@ test('the container flag routes the verifier to the unpacked container', () => {
   assert.doesNotMatch(result.stderr, /TN_NATIVE_STARTER_CONTAINER_MISSING/u);
   assert.match(result.stderr, /TN_DESKTOP_CONTAINER_MANIFEST_MISSING/u);
 });
+
+// Cross-PR merge hazard (PRD-366 / PRD-365 #255): `--container ""` used to be falsy, so the CLI
+// silently dropped the flag and ran the NON-container desktop path, reporting success for a
+// container verification that never happened. #255 fixed this in verify-starter-desktop.mjs; this
+// branch moved that code into verify-starter-desktop-base.mjs, so the guard is re-proved here
+// against the file that actually ships it.
+test('an empty --container value fails closed instead of silently verifying the non-container path', () => {
+  const base = fileURLToPath(new URL('../scripts/verify-starter-desktop-base.mjs', import.meta.url));
+  const directory = makeTempDirSync('starter-desktop-empty-container-');
+  const result = spawnSync(process.execPath, [base, '--container', '', '--project', directory], {
+    cwd: directory,
+    encoding: 'utf8',
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}${result.stderr}`, /TN_DESKTOP_CONTAINER_FLAG_EMPTY/u);
+});

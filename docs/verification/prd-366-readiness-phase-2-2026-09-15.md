@@ -12,12 +12,17 @@ same question of each claimed native target, through the same installed consumer
 (`packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json`),
 and records a per-target row that names the real machine and artifact rather than a hardcoded pass.
 
-1. `packages/runtime-native/scripts/verify-starter-desktop.mjs` — new, clearly named exports
+1. `packages/runtime-native/scripts/verify-starter-consumer.mjs` (NEW; corrected 2026-09-15 —
+   this section used to describe a `--consumer` branch appended to `verify-starter-desktop.mjs`,
+   but what shipped is a split: `verify-starter-desktop.mjs` is now a 31-line router that spawns
+   either this file or `verify-starter-desktop-base.mjs`) — clearly named exports
    `validateConsumerTargetRow`, `qualifyConsumerTargetRow`, `assertConsumerTargetRows`,
    `parseConsumerPlaytestReport`, `describeConsumerSession` and `verifyStarterConsumerGameplay`,
    plus a `--consumer --target <desktop|android> [--project <dir>]` CLI branch appended before the
    existing desktop-smoke guard. A row carries `target`, `os`, `osVersion`, `architecture`,
-   `session`, `scenario`, `applicationId`, `artifactHash`, `pass`, `assertions`, `failures`.
+   `session`, `scenario`, `applicationId`, `artifactHash`, `pass`, `assertions`, `assertionIds`
+   and `failures`. (`assertionIds` was added by the B4 repair below; a row without it is
+   `ROW_OUTDATED`.)
    `TN_STARTER_CONSUMER_*` failures name the actual cause: a foreign scenario
    (`SCENARIO_MISMATCH`), a stale/substituted artifact (`ARTIFACT_MISMATCH`), a different game
    (`APPLICATION_ID_MISMATCH`), a run that evaluated nothing (`NO_ASSERTIONS`), a false assertion
@@ -43,13 +48,23 @@ and records a per-target row that names the real machine and artifact rather tha
 
 ## Required test (green)
 
+Corrected 2026-09-15 (review B1). This section previously cited `tests/starter-desktop.test.mjs` at
+31/31. That file is **unchanged by this PR** and carries none of this work (`grep -c PRD-366` = 0);
+the 31/31 figure does not reproduce. The PRD-named rows live in the new
+`tests/starter-consumer-gameplay.test.mjs`. Re-measured at HEAD on this machine, per file:
+
 ```sh
-pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-desktop.test.mjs
-# Test Files  1 passed (1)
-# Tests      31 passed (31)
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/<file>
+# tests/starter-desktop.test.mjs                  Tests  25 passed (25)
+# tests/starter-consumer-gameplay.test.mjs        Tests  12 passed (12)
+# tests/starter-consumer-qualification.test.mjs   Tests  50 passed (50)
+# all three together                              Tests  87 passed (87)
 ```
 
-The two rows the PRD names are present verbatim:
+`starter-desktop.test.mjs` is 25 rather than its pre-existing 24 because this commit adds one
+control to it, for the cross-PR merge hazard.
+
+The two rows the PRD names are present verbatim, in `tests/starter-consumer-gameplay.test.mjs`:
 
 - `should reject target qualification when the artifact hash / application ID differs from the built consumer`
 - `should reject a missing required gameplay row`
@@ -68,7 +83,7 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
 # TypeError: verifyStarterConsumerGameplay is not a function
 ```
 
-Green (after implementing): 31/31 passed.
+Green (after implementing): 31/31 passed at the time. Superseded — the work moved into the two new consumer test files and the counts were re-measured at HEAD; see "Required test (green)" above.
 
 The PRD's negative controls are modelled at the row-contract level (the fixture lane needs no
 display, device or native build); each fails for its own named cause rather than a generic one:
@@ -197,12 +212,14 @@ pnpm exec vitest run packages/playtest/__tests__/desktop-playtest.spec.ts
 
 pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
   tests/starter-desktop.test.mjs tests/starter-consumer-qualification.test.mjs
-# Test Files 2 passed (2); Tests 73 passed (73)
+# Test Files 2 passed (2); Tests 73 passed (73)   <- superseded; re-measured at HEAD as 87 across three files
 
 pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts
 # Test Files 1 passed (1); Tests 61 passed (61)
 # starter hash recomputed for the moved scenario bytes:
 #   aa783e68daddcb7b54a830056511db80e19ff6faa69d7c641d0b5b947d8b72c2
+#   <- superseded by f9b0ac87d887240dadd19fe59c183801a584ba103968c17b560e95e446b9c14e
+#      after the develop merge moved templates/starter/package.json
 
 pnpm --filter @threenative/playtest run typecheck   # pass
 pnpm --filter create-threenative run typecheck      # pass
@@ -219,7 +236,78 @@ end-to-end native row remains unverified on this machine and the CI lane is the 
 The restart binding is the same keyboard channel the passing `movement.axisDelta` already proved on
 native, but that is a reasoned expectation, not an executed native run.
 
-## User verification on the named platform — VERIFIED (Linux desktop + Android emulator)
+## B4 repair — the row stored a count, so it could be fooled (2026-09-15)
+
+The second review found a real false pass, and it is the most important change in this commit.
+`verify-starter-consumer.mjs` checked only that `assertionResults` was non-empty and not entirely
+`diagnostics`. It never checked **which** assertions ran, and the row stored only a number. Two
+consequences, both exploited against the real CLI:
+
+1. A run could qualify on assertions the scenario never declared. A report of
+   `[{"id":"totally-made-up","pass":true}]` against a project whose scenario declares the full
+   assert block exited 0 with `1 assertions`.
+2. A run that silently dropped whole declared families still qualified. Three of five families
+   producing no result qualified with `assertions: 3` and nothing said so.
+
+This directly undermined the phase's central claim. "Both rows carry 5 real assertions, one game,
+two targets" was verified by `5 === 5` — not by comparing what was actually evaluated.
+
+**Fix.** `parseConsumerPlaytestReport` now returns sorted, deduplicated `assertionIds`; the row
+stores them; every assertion family the scenario declares must be covered by at least one result
+(`ASSERTION_FAMILY_MISSING`); and `assertConsumerTargetRows` requires **identical id sets** across
+targets (`ASSERTION_SET_MISMATCH`). A scenario declaring no recognised family is itself refused, so
+the check cannot be satisfied vacuously. A row written by the previous verifier has no ids and is
+named `ROW_OUTDATED` — superseded evidence to re-run, not corrupt input.
+
+Family coverage is checked per declared family rather than per id because one `resources` block
+yields one result per entry; extra ids are allowed, missing families are not.
+
+**Red first, then green** (`packages/runtime-native`, its own config):
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/starter-consumer-qualification.test.mjs
+# red:   Tests  6 failed | 43 passed (49)
+# green: Tests  50 passed (50)
+```
+
+**Proved on the real rows, not only on fixtures.** After re-running desktop, the physical Pixel 8
+and the emulator with the repaired verifier, all three rows carry the identical set
+`diagnostics, movement.axisDelta, resource.state.entityCount.atSteps, resource.state.score.atSteps,
+visibility.player`. Calling `assertConsumerTargetRows` on the real file qualifies 2 targets;
+perturbing one id on the real android row raises:
+
+```
+TN_STARTER_CONSUMER_ASSERTION_SET_MISMATCH: 'android' evaluated [... something.else] but
+'desktop' evaluated [... visibility.player]
+```
+
+The desktop artifact hash is unchanged across the re-run
+(`b0f7d4e28e115b6a422eec851a2b4525c953c672088482e74d01d97e8b5fd1bf`), so the repair did not move
+the artifact under the evidence.
+
+## Cross-PR merge hazard — `--container ""` (checked, not copied)
+
+`verify-starter-desktop-base.mjs` carried `if (flag === '--container' && value)`. An empty value is
+falsy, so `--container ""` dropped the flag and the CLI ran the **non-container** desktop path and
+exited 0 — a container verification that never happened, reported as success. PR #255 fixed this in
+`verify-starter-desktop.mjs`; this branch moved that code into the base file, so #255's fix would
+land on a file that no longer holds the code path.
+
+Re-proved here against the file that actually ships it, rather than by copying #255's patch. Any
+recognised flag passed with an empty value now exits 1 with a named cause, and `--frames` must be a
+positive integer:
+
+```sh
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/starter-desktop.test.mjs
+# red:   Tests  1 failed | 24 passed (25)   (TN_DESKTOP_CONTAINER_FLAG_EMPTY absent, exit 0)
+# green: Tests  25 passed (25)
+```
+
+If #255 lands first, this guard must be re-checked for survival across the split.
+
+## User verification on the named platform — VERIFIED (Linux desktop, physical Pixel 8, Android emulator)
 
 Executed on this machine on 2026-09-15 against branch commit `4edbf1dc528e946a1e5599379a90a2e749bfee7a`.
 The earlier "environmentally blocked (host GBM buffer creation)" note above is **superseded**: no
@@ -318,7 +406,7 @@ PRD-365's release containers landed on `develop` and are merged into this branch
 produced against the `dist-native/starter-native` executable that `threenative build --target
 desktop` emits, not against a relocated release container. No container consumer row was run here.
 
-### Android (emulator, x86_64) — PASS
+### Android — building the APK (the recorded blocker was stale)
 
 The PRD's recorded Android blocker ("`pnpm build --target android` exits 1 at the Android prebuilt
 fetch with `fetch failed`, so no APK exists") is **stale**. An APK was built and a qualifying
@@ -364,20 +452,55 @@ sha256sum dist-native/starter-native.apk
 `third_party/` was copied from the primary checkout (never symlinked -- `download-deps.mjs`
 `mkdirSync`s that path and a symlink puts the shared cache at risk).
 
-The Android row, from the same `artifacts/native/consumer-targets.json` as the desktop row:
+Both Android rows produced from this APK are recorded in the two sections below. Each row
+records the **device's** own OS and ABI (`getprop`), not the host's — the earlier review
+finding working as intended.
+
+### Android (physical Pixel 8, arm64-v8a) — PASS on re-run; the earlier failure did not reproduce
+
+Corrected 2026-09-15 on two counts, both of which weaken an earlier claim of mine rather than
+strengthen it.
+
+**Run 2 (current evidence).** Device charging, level 74%, 34.6 °C, `Thermal Status: 0`, app
+confirmed dead (`pidof` empty) before the cold launch:
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs \
+  --consumer --target android --device 192.168.1.192:5555 --project .
+# exit 0
+# consumer gameplay qualified on android: 5 assertions, artifact 3f24116fb41a, app com.threenative.starternative
+```
 
 | Field | Value |
 | --- | --- |
-| `target` | `android` |
-| `pass` | `true` |
-| `assertions` | `5` |
-| `failures` | `[]` (empty) |
-| `applicationId` | `com.threenative.starternative` |
+| `pass` / `assertions` / `failures` | `true` / `5` / `[]` |
+| `architecture` | `arm64-v8a` |
+| `osVersion` | `17 (API 37)` |
+| `session` | `android-device` |
 | `artifactHash` | `3f24116fb41a3e890d51fad9eb4834e3715c284cd023cdb96b310f151015f211` |
-| `scenario` / `scenarioHash` | `playtests/production-readiness.playtest.json` / `4edb52f1fb8d6ded…` |
-| `os` / `osVersion` | `android` / `15 (API 35)` |
-| `architecture` | `x86_64` |
-| `session` | `android-emulator` |
+| `assertionIds` | `diagnostics, movement.axisDelta, resource.state.entityCount.atSteps, resource.state.score.atSteps, visibility.player` |
+
+So **arm64-v8a is proven**, and the earlier statement that "the passing Android row is x86_64
+emulator only" no longer holds.
+
+**Run 1 (earlier, failing) — cause corrected, and it did not reproduce.** The first physical attempt
+exited 1 with `TN_STARTER_CONSUMER_NO_ASSERTIONS: assertion 'diagnostics' was not evaluated`,
+`pass: false`, `assertions: 0`. I recorded that as "the diagnostics channel is not evaluated on
+API 37 while it is on API 35" and called it a phase-3 finding. **That was wrong.** A single
+unevaluated `diagnostics` result with `details.reason: 'not-evaluated'` is what
+`failureReport()` (`packages/playtest/src/runner/shared.ts:119-130`) emits for **any** abort before
+assertions run — it is the generic pre-assertion failure shape, not a diagnostics-channel gap. The
+real cause was whatever `diagnostics[0]` named, which my row did not retain.
+
+On re-run the same APK on the same device passes, so there is no reproducible defect to report. The
+only measured difference between the two runs is device state: run 1 happened at **15% battery,
+discharging**; run 2 at **74%, charging**. I did **not** isolate that, so it is a correlation and
+nothing more. The honest statement is that one physical run failed once, its recorded cause was
+misattributed, and it has not reproduced — not that an API-37 defect exists.
+
+### Android (emulator, x86_64) — PASS
+
+Run against `emulator-5556` with the same APK:
 
 ```sh
 node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs \
@@ -386,40 +509,19 @@ node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs
 # consumer gameplay qualified on android: 5 assertions, artifact 3f24116fb41a, app com.threenative.starternative
 ```
 
-Both rows carry the **same `scenarioHash` and the same `applicationId`** with different artifact
-hashes: it is one game, one scenario, two distributed targets. The Android row records the
-**device's** own OS and ABI (`getprop`), not the host's — the reviewer's secondary finding working
-as intended.
+`pass: true`, `assertions: 5`, `failures: []`, `architecture: x86_64`, `osVersion: 15 (API 35)`,
+`session: android-emulator`, and the same five `assertionIds` as desktop and the physical device.
 
-### Android (physical Pixel 8, arm64-v8a) — FAILS CLOSED, real finding
+Both Android rows are real and both are recorded here because `consumer-targets.json` keys rows by
+`target` alone, so the later physical run replaced the emulator row in the file. The file currently
+holds the **physical** row. Per PRD-366's acceptance, an emulator run cannot take physical
+*performance* credit; neither row is a performance claim, and the distinction is kept explicit.
 
-The same APK was also run against the attached physical device. It does **not** pass, and the
-verifier correctly refused to record a passing row rather than reusing the emulator's:
+### Owner platform policy
 
-```sh
-node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs \
-  --consumer --target android --device 192.168.1.192:5555 --project .
-# exit 1
-# TN_STARTER_CONSUMER_NO_ASSERTIONS: assertion 'diagnostics' was not evaluated.
-```
-
-Row written: `pass: false`, `assertions: 0`, `architecture: arm64-v8a`, `osVersion: 17 (API 37)`,
-`session: android-device`, `failures: ["TN_STARTER_CONSUMER_NO_ASSERTIONS: assertion 'diagnostics'
-was not evaluated."]`, same `artifactHash` and `scenarioHash` as the passing emulator row.
-
-Two things this establishes and one it opens:
-
-- The fail-closed contract is real on hardware: a run that evaluated nothing is a failure, not a
-  pass, and it did not silently inherit the emulator's green row.
-- The arm64-v8a ABI is not proven by this evidence. The passing Android row is x86_64 emulator only.
-- **Open:** on Android 17 (API 37) the `diagnostics` assertion is not evaluated at all, while on
-  Android 15 (API 35) it is. That is a device/API-level gap in the diagnostics channel, not a
-  gameplay failure, and it belongs to phase 3's physical qualification rather than to this phase.
-  The emulator row above is what phase 2 asks for ("emulators for Android behavior"); physical
-  hardware is phase 3's requirement and remains open.
-
-The emulator row is the one retained in the project's `consumer-targets.json`; the physical run's
-row was captured separately so the phase-2 emulator evidence was not overwritten by a later run.
+Linux desktop is produced locally; Android uses the emulator or Wi-Fi adb to the Pixel 8 (both were
+used); macOS, Windows and iOS are delegated to the `native-platforms` CI legs by owner decision and
+are not attempted locally or reported as environment-blocked.
 
 ### Devices available on this machine
 
@@ -443,22 +545,60 @@ row-level fixtures rather than real native runs. The reviewer box therefore stay
 
 ## Independently verified quantities
 
-- Red→green fixture lane: exact command above, 10 failed → 31 passed.
-- Registry contract: 25/25 after the additive field.
-- The workflow YAML parses (`python3 -c "import yaml; yaml.safe_load(...)"` → OK); the workflow
-  itself was not executed and is not part of the merge verdict.
+All re-measured at HEAD on this machine for the second review; superseded figures are named as such.
+
+- `starter-desktop.test.mjs` **25**, `starter-consumer-gameplay.test.mjs` **12**,
+  `starter-consumer-qualification.test.mjs` **50**, together **87**. (Supersedes "31/31" and the
+  "73 passed" pair, neither of which reproduces.)
+- B4 red→green: 6 failed / 43 passed → 50 passed. Merge-hazard control: 1 failed / 24 passed → 25.
+- `scripts/__tests__/verify-registry-install.spec.ts` **25**;
+  `packages/create-threenative/__tests__/scaffold.spec.ts` **61** at starter hash `f9b0ac87…`.
+- `pnpm typecheck` exit 0; `pnpm lint` exit 0 (warnings only); `pnpm check:docs` 2130 links across
+  1101 files; prose lane 164/164.
+- Three real consumer rows, all `pass: true` / 5 assertions / 0 failures, all sharing one
+  `scenarioHash` and one `assertionIds` set: desktop (linux x64), physical Pixel 8 (arm64-v8a,
+  API 37), emulator (x86_64, API 35). Cross-target set equality machine-checked; perturbing one id
+  raises `ASSERTION_SET_MISMATCH`.
+- `.github/workflows/native-platforms.yml` is **unchanged by this PR**; the wiring is the starter
+  template's `test:native`. The workflow is not part of the merge verdict.
 
 ## Files changed
 
-- EDIT `packages/runtime-native/scripts/verify-starter-desktop.mjs`
-- EDIT `packages/runtime-native/tests/starter-desktop.test.mjs`
-- EDIT `scripts/verify-registry-install.ts`
-- EDIT `.github/workflows/native-platforms.yml`
-- NEW `docs/verification/prd-366-readiness-phase-2-2026-09-15.md`
+Corrected 2026-09-15 (review B3): this section previously described the pre-refactor shape. It
+listed `.github/workflows/native-platforms.yml` and `packages/runtime-native/tests/starter-desktop.test.mjs`
+as edited — `git diff --stat <merge-base>..HEAD` shows the workflow untouched — and omitted every
+new file that is the actual substance. What ships:
 
-Repair (the section above):
+- NEW `packages/runtime-native/scripts/verify-starter-consumer.mjs` — the consumer row contract:
+  `verifyStarterConsumerGameplay`, `parseConsumerPlaytestReport`, `validateConsumerTargetRow`,
+  `qualifyConsumerTargetRow`, `assertConsumerTargetRows`, `describeConsumerSession`,
+  `declaredConsumerAssertionFamilies`.
+- NEW `packages/runtime-native/scripts/verify-starter-desktop-base.mjs` — PRD-365's desktop and
+  container verifier, moved out of `verify-starter-desktop.mjs`. Byte-for-byte identical to the
+  merge-base file apart from the `parseCliFlags` guard described under "Cross-PR merge hazard".
+- EDIT `packages/runtime-native/scripts/verify-starter-desktop.mjs` — reduced to a 31-line router
+  that spawns whichever of the two files the flags select. **Not** a `--consumer` branch appended to
+  the original, which is what section "What this phase added" §1 used to describe.
+- NEW `packages/runtime-native/tests/starter-consumer-gameplay.test.mjs` — holds both PRD-named rows.
+- NEW `packages/runtime-native/tests/starter-consumer-qualification.test.mjs` — evidence regressions.
+- EDIT `packages/runtime-native/tests/starter-desktop.test.mjs` — one added control, for the
+  cross-PR merge hazard only.
+- EDIT `scripts/verify-registry-install.ts` — `readConsumerTargetRows` + additive `consumerTargets`.
+- EDIT `packages/create-threenative/templates/starter/package.json` — `test:native` chains the
+  consumer row. **This is the entire workflow wiring**; the workflow YAML is unchanged.
+- EDIT `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json`
+  — portable `KeyR` restart, no explicit `noNetworkErrors`.
+- EDIT `packages/playtest/src/runner/desktop.ts` + `packages/playtest/__tests__/desktop-playtest.spec.ts`
+  — platform-library noise is not the game's console error.
+- EDIT `packages/create-threenative/__tests__/scaffold.spec.ts` — starter scaffold hash.
+- EDIT this file and the PRD.
 
-- EDIT `packages/create-threenative/templates/starter/playtests/production-readiness.playtest.json` — portable `KeyR` restart, sampled after re-entry.
-- EDIT `packages/playtest/src/runner/desktop.ts` — ALSA/`[Audio]`/`dbind` platform-library noise is non-error.
-- EDIT `packages/playtest/__tests__/desktop-playtest.spec.ts` — three red→green severity rows.
-- EDIT `packages/create-threenative/__tests__/scaffold.spec.ts` — starter scaffold hash for the moved scenario bytes.
+## Not fixed in this pass (non-blocking review findings)
+
+Recorded so they are not lost: `--qualify-existing` trusts the row file rather than re-running;
+`readConsumerTargetRows` (`scripts/verify-registry-install.ts:493`) never checks `pass`/`assertions`
+and does not affect `exitCode`; rows are keyed by `target` alone, so a device run overwrites an
+emulator run (hit in practice here — both Android rows are recorded in this document because the
+file holds one); `desktop.ts:196` reclassifies the game's own `[Audio] Failed to open audio device`
+to `log` with no override; and the router guard in `verify-starter-desktop.mjs:14` uses a path-string
+compare where both wrapped files use `pathToFileURL`.

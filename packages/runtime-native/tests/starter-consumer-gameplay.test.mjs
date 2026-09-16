@@ -31,6 +31,8 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
       applicationId: builtApplicationId,
       architecture: 'x64',
       artifactHash: builtHash,
+      assertionIds: ['diagnostics', 'movement.axisDelta', 'resource.state.entityCount.atSteps',
+        'resource.state.score.atSteps', 'visibility.player'],
       assertions: 5,
       failures: [],
       os: 'linux',
@@ -138,7 +140,7 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
     assert.throws(
       () =>
         qualifyConsumerTargetRow(
-          consumerRow({ assertions: 0, failures: [], pass: false }),
+          consumerRow({ assertionIds: [], assertions: 0, failures: [], pass: false }),
           builtConsumer,
         ),
       /TN_STARTER_CONSUMER_NO_ASSERTIONS/u,

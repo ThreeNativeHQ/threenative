@@ -337,9 +337,23 @@ function parseCliFlags(argv) {
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
-    if (flag === '--container' && value) options.root = resolve(value);
-    else if (flag === '--frames' && value) options.frames = Number(value);
-    else if (flag === '--project' && value) options.project = resolve(value);
+    // An empty value used to be falsy, so `--container ""` dropped the flag and this CLI ran the
+    // NON-container desktop path and exited 0 -- a container verification that never happened,
+    // reported as success. A flag the caller passed is a flag the caller meant: refuse it empty.
+    if (['--container', '--frames', '--project'].includes(flag) && !value) {
+      const name = flag.slice(2).toUpperCase();
+      console.error(`TN_DESKTOP_${name}_FLAG_EMPTY: ${flag} was passed with no value.`);
+      process.exit(1);
+    }
+    if (flag === '--container') options.root = resolve(value);
+    else if (flag === '--frames') {
+      const frames = Number(value);
+      if (!Number.isSafeInteger(frames) || frames <= 0) {
+        console.error(`TN_DESKTOP_FRAMES_FLAG_INVALID: --frames '${value}' is not a positive integer.`);
+        process.exit(1);
+      }
+      options.frames = frames;
+    } else if (flag === '--project') options.project = resolve(value);
   }
   return options;
 }

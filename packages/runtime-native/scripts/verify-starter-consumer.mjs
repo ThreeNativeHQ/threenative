@@ -19,6 +19,35 @@ function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+/**
+ * A scenario's `assert` key -> the family token every result id for it begins with. The row used to
+ * store only a COUNT, so `5 === 5` qualified a run that evaluated five assertions the scenario never
+ * declared, and a run that silently dropped three of five declared families still qualified with
+ * `assertions: 3` and nothing said so. Coverage is checked per declared family, not per id, because
+ * one `resources` block yields one result per entry; extra families are allowed, missing ones are not.
+ */
+const CONSUMER_ASSERTION_FAMILIES = {
+  diagnostics: 'diagnostics',
+  movement: 'movement',
+  resources: 'resource',
+  visibility: 'visibility',
+};
+
+/** The family token of a result id: everything before the first dot. */
+function consumerAssertionFamily(id) {
+  const dot = id.indexOf('.');
+  return dot === -1 ? id : id.slice(0, dot);
+}
+
+/** The families a scenario's assert block declares, as family tokens. Unknown keys are ignored. */
+export function declaredConsumerAssertionFamilies(scenario) {
+  const block = scenario?.assert;
+  if (typeof block !== 'object' || block === null || Array.isArray(block)) return [];
+  return Object.keys(block)
+    .map((key) => CONSUMER_ASSERTION_FAMILIES[key])
+    .filter((family) => family !== undefined);
+}
+
 /** The session the run executed in, named rather than assumed: a headless Linux host is not X11. */
 export function describeConsumerSession(platform = process.platform, environment = process.env) {
   if (platform === 'android') return 'android';
@@ -76,6 +105,30 @@ export function validateConsumerTargetRow(row) {
     throw consumerError(
       'ROW_MALFORMED',
       "target row field 'failures' must contain non-empty strings.",
+    );
+  }
+  // A row written before assertion ids existed is not malformed input, it is superseded evidence:
+  // it stored only a count, which is exactly what could not be trusted. Name that so an operator
+  // re-runs the target instead of hunting a corrupted file.
+  if (row.assertionIds === undefined) {
+    throw consumerError(
+      'ROW_OUTDATED',
+      `the '${row.target}' row records no assertionIds, so it was written by an older verifier that stored only a count; re-run --consumer for this target.`,
+    );
+  }
+  if (!Array.isArray(row.assertionIds) || row.assertionIds.some((id) => !nonEmptyString(id))) {
+    throw consumerError(
+      'ROW_MALFORMED',
+      "target row field 'assertionIds' must contain non-empty strings.",
+    );
+  }
+  if (new Set(row.assertionIds).size !== row.assertionIds.length) {
+    throw consumerError('ROW_MALFORMED', "target row field 'assertionIds' repeats an id.");
+  }
+  if (row.assertionIds.length !== row.assertions) {
+    throw consumerError(
+      'ROW_MALFORMED',
+      `the '${row.target}' row counts ${row.assertions} assertions but names ${row.assertionIds.length}.`,
     );
   }
   return row;
@@ -158,7 +211,7 @@ export function assertConsumerTargetRows(rows, options) {
     }
     seen.add(row.target);
   }
-  return targets.map((target) => {
+  const qualified = targets.map((target) => {
     const row = validated.find((candidate) => candidate.target === target);
     if (row === undefined) {
       throw consumerError(
@@ -170,9 +223,24 @@ export function assertConsumerTargetRows(rows, options) {
       options?.expectedByTarget === undefined ? options : options.expectedByTarget[target];
     return qualifyConsumerTargetRow(row, expected);
   });
+  // "One game, two targets" is only true if both targets evaluated the SAME assertions. Equal
+  // counts are not that: a target that dropped one family and gained an unrelated id still counts
+  // the same. Compare the id sets, so a degraded target cannot hide behind its sibling's evidence.
+  const [first, ...rest] = qualified;
+  for (const row of rest) {
+    const a = [...first.assertionIds].sort().join(',');
+    const b = [...row.assertionIds].sort().join(',');
+    if (a !== b) {
+      throw consumerError(
+        'ASSERTION_SET_MISMATCH',
+        `'${row.target}' evaluated [${b}] but '${first.target}' evaluated [${a}]; the same scenario must prove the same assertions on every target.`,
+      );
+    }
+  }
+  return qualified;
 }
 
-export function parseConsumerPlaytestReport(stdout, target) {
+export function parseConsumerPlaytestReport(stdout, target, declaredFamilies = []) {
   let parsed;
   try {
     parsed = JSON.parse(stdout);
@@ -227,6 +295,16 @@ export function parseConsumerPlaytestReport(stdout, target) {
   if (parsed.assertionResults.every((result) => result.id === 'diagnostics')) {
     throw consumerError('NO_ASSERTIONS', 'diagnostics alone do not prove consumer gameplay.');
   }
+  const assertionIds = [...new Set(parsed.assertionResults.map((result) => result.id))].sort();
+  const evaluated = new Set(assertionIds.map(consumerAssertionFamily));
+  for (const family of declaredFamilies) {
+    if (!evaluated.has(family)) {
+      throw consumerError(
+        'ASSERTION_FAMILY_MISSING',
+        `the '${target}' run evaluated [${assertionIds.join(', ')}] but the scenario declares '${family}'; a run cannot qualify on assertions the scenario never declared.`,
+      );
+    }
+  }
   for (const diagnostic of rawDiagnostics) {
     if (!['error', 'warning', 'info'].includes(diagnostic.severity)) {
       throw consumerError(
@@ -237,7 +315,8 @@ export function parseConsumerPlaytestReport(stdout, target) {
     if (diagnostic.severity === 'error') failures.push(diagnostic.code);
   }
   return {
-    assertions: parsed.assertionResults.length,
+    assertionIds,
+    assertions: assertionIds.length,
     diagnostics,
     failures,
     pass: parsed.pass && failures.length === 0,
@@ -424,6 +503,21 @@ export function verifyStarterConsumerGameplay(options = {}) {
   const hashFile = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
   const artifactHash = hashFile(artifact);
   const scenarioHash = hashFile(scenarioPath);
+  let declaredFamilies = [];
+  try {
+    declaredFamilies = declaredConsumerAssertionFamilies(JSON.parse(readFileSync(scenarioPath, 'utf8')));
+  } catch (error) {
+    throw consumerError(
+      'SCENARIO_MALFORMED',
+      `the consumer scenario ${scenarioPath} is not readable JSON: ${error instanceof Error ? error.message : String(error)}.`,
+    );
+  }
+  if (declaredFamilies.length === 0) {
+    throw consumerError(
+      'NO_ASSERTIONS',
+      `the consumer scenario ${scenarioPath} declares no recognised assertion family, so no run against it can prove gameplay.`,
+    );
+  }
   const cli = join(
     projectRoot,
     'node_modules',
@@ -462,6 +556,7 @@ export function verifyStarterConsumerGameplay(options = {}) {
     applicationId,
     architecture: options.architecture ?? deviceIdentity?.architecture ?? process.arch,
     artifactHash,
+    assertionIds: [],
     assertions: 0,
     failures: ['consumer run has not completed'],
     os: options.os ?? (android ? 'android' : process.platform),
@@ -521,8 +616,9 @@ export function verifyStarterConsumerGameplay(options = {}) {
         `the '${target}' process did not complete: ${result.error?.message ?? result.signal ?? result.status}.`,
       );
     }
-    const report = parseConsumerPlaytestReport(result.stdout ?? '', target);
+    const report = parseConsumerPlaytestReport(result.stdout ?? '', target, declaredFamilies);
     Object.assign(row, {
+      assertionIds: report.assertionIds,
       assertions: report.assertions,
       failures: report.failures,
       pass: report.pass,
