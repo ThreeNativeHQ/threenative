@@ -53,11 +53,9 @@ function EvidenceTable({
   readonly rows: readonly (readonly (string | number)[])[];
 }) {
   return (
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll numerical evidence without a pointer.
     <section
       aria-label={caption}
       className="my-6 overflow-x-auto rounded-xl border border-tn-border"
-      tabIndex={0}
     >
       <table className="w-full min-w-[560px] text-left text-[13px]">
         <caption className="border-b border-tn-border px-4 py-3 text-left font-medium text-tn-fg">
@@ -166,9 +164,7 @@ export function Benchmarks() {
           plumbing. The record still notes a pending manual Abyss parity run; it does not establish
           equivalent visuals, runtime speed, token cost or human effort.
         </p>
-        <EvidenceLink path={locCensus.source}>
-          Inspect LOC.md and its generated table
-        </EvidenceLink>
+        <EvidenceLink path={locCensus.source}>Inspect LOC.md and its generated table</EvidenceLink>
       </DocSection>
       <DocSection id="programs" title="Whole-town shader program census">
         <p>
@@ -178,7 +174,13 @@ export function Benchmarks() {
         </p>
         <EvidenceTable
           caption="Distinct shader programs · September 9, 2026"
-          headers={["Target", "Original", "Tint uniforms", "Tint + stable names", "Combined reduction"]}
+          headers={[
+            "Target",
+            "Original",
+            "Tint uniforms",
+            "Tint + stable names",
+            "Combined reduction",
+          ]}
           rows={shaderCensus.map((row) => [
             row.target,
             row.original,
@@ -199,9 +201,9 @@ export function Benchmarks() {
       </DocSection>
       <DocSection id="lod" title="AutoLOD: geometry work on a qualified route">
         <p>
-          PRD-377&apos;s September 11, 2026 record describes an opt-in 8,192-triangle source hull tested
-          on an RTX 2080. The near route retains full geometry; the far route chooses a generated
-          level.
+          PRD-377&apos;s September 11, 2026 record describes an opt-in 8,192-triangle source hull
+          tested on an RTX 2080. The near route retains full geometry; the far route chooses a
+          generated level.
         </p>
         <EvidenceTable
           caption="Submitted triangles · opt-in AutoLOD proof"
