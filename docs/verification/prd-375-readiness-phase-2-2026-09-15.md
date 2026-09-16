@@ -746,3 +746,21 @@ with nothing mocked but the renderer and canvas.
 Recommendation, for the owner rather than for this lane to decide: a `startup.progressMonotonic`
 assertion kind would be worth having, because it is the only way a *game* could catch its own
 loading bar going backwards. It is not created here.
+
+### Spec typing, and a cast that was removed rather than kept
+
+The first version of the new spec routed the probe scene through a generic `harness(scene)` helper,
+which needed `scenes: { probe: scene as never }` to compile. `pnpm typecheck` caught the underlying
+errors before the commit (TS2532 on the sample indexing, TS2345 on the scene constructor), but the
+fix left that cast in place. The existing `startup-timeline.spec.ts` casts only the canvas and
+renderer stubs and passes its scene class uncast, and that convention exists for a reason: a cast on
+the scene would stop the spec type-checking the very scene whose behaviour it exists to check.
+
+The helper now provides the renderer and asset stubs only, and each test constructs its game with
+its concrete `Probe` class. Two `as never` casts remain, both on the canvas and renderer stubs, which
+is exactly what the neighbouring spec does.
+
+**Negative control on the cleaned-up spec**, so the tidy-up is not taken on trust: removing the
+high-water clamp from `packages/core/src/game.ts` reproduces the original failure verbatim —
+`sample 3 fell from 0.7 to 0.35` — and restoring it returns 3 passed. The spec still catches the
+defect it was written for.

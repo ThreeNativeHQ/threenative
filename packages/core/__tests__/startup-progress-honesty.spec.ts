@@ -28,26 +28,27 @@ function firstRegression(samples: readonly number[]): string | undefined {
   return undefined;
 }
 
-function harness(scene: new () => Scene): { run: () => Promise<void> } {
+/**
+ * The renderer and canvas stubs every core spec here uses. The scene class is deliberately NOT
+ * routed through this helper: passing it as a generic parameter needs a cast, and a cast would
+ * stop the spec type-checking the very scene whose behaviour it exists to check.
+ */
+function stubRenderer(): { canvas: never; preferWebGPU: false; webgl2Factory: () => never } {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
   Object.defineProperties(canvas, {
     clientHeight: { configurable: true, value: 90 },
     clientWidth: { configurable: true, value: 160 },
     parentElement: { configurable: true, value: null },
   });
-  const game = defineGame({
-    assets: { texture: () => Promise.resolve(new Texture()) },
-    renderer: {
-      canvas: canvas as never,
-      preferWebGPU: false,
-      webgl2Factory: () =>
-        ({ domElement: canvas, render: () => undefined, setSize: () => undefined }) as never,
-    },
-    scenes: { probe: scene as never },
-    start: "probe",
-  });
-  return { run: async () => void (await game.start()) };
+  return {
+    canvas: canvas as never,
+    preferWebGPU: false,
+    webgl2Factory: () =>
+      ({ domElement: canvas, render: () => undefined, setSize: () => undefined }) as never,
+  };
 }
+
+const stubAssets = { texture: () => Promise.resolve(new Texture()) };
 
 describe("startup progress honesty", () => {
   it("should never go backwards when more assets are requested during load", async () => {
@@ -68,7 +69,13 @@ describe("startup progress honesty", () => {
         samples.push(ctx.startup.progress);
       }
     }
-    await harness(Probe).run();
+    const game = defineGame({
+      assets: stubAssets,
+      renderer: stubRenderer(),
+      scenes: { probe: Probe },
+      start: "probe",
+    });
+    await game.start();
     expect(samples.length).toBeGreaterThanOrEqual(5);
     expect(firstRegression(samples)).toBeUndefined();
   });
@@ -87,7 +94,13 @@ describe("startup progress honesty", () => {
         }
       }
     }
-    await harness(Probe).run();
+    const game = defineGame({
+      assets: stubAssets,
+      renderer: stubRenderer(),
+      scenes: { probe: Probe },
+      start: "probe",
+    });
+    await game.start();
     expect(held.length).toBe(4);
     expect(new Set(held).size).toBe(1);
   });
