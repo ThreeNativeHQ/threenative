@@ -48,6 +48,7 @@
     "scripts/check-source-list.mjs",
     "scripts/desktop-distribution.mjs",
     "scripts/device-preflight.mjs",
+    "scripts/inspect-container-brand.mjs",
     "scripts/install-prebuilt.mjs",
     "scripts/package-android.mjs",
     "scripts/package-desktop.mjs",

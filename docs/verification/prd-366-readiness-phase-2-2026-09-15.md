@@ -329,26 +329,61 @@ The desktop artifact hash is unchanged across the re-run
 (`b0f7d4e28e115b6a422eec851a2b4525c953c672088482e74d01d97e8b5fd1bf`), so the repair did not move
 the artifact under the evidence.
 
-## Cross-PR merge hazard — `--container ""` (checked, not copied)
+## Cross-PR merge hazard with PRD-375 — RESOLVED, and proved by mutation (2026-09-16)
 
-`verify-starter-desktop-base.mjs` carried `if (flag === '--container' && value)`. An empty value is
-falsy, so `--container ""` dropped the flag and the CLI ran the **non-container** desktop path and
-exited 0 — a container verification that never happened, reported as success. PR #255 fixed this in
-`verify-starter-desktop.mjs`; this branch moved that code into the base file, so #255's fix would
-land on a file that no longer holds the code path.
+PRD-375 merged to `develop` as `20f5d6191` while this branch was open, and #256 immediately went
+`CONFLICTING`. This is the hazard both lanes tracked all night, and it landed exactly as predicted:
+#255 hardened flag parsing and added `--config`, `--brand-only` and `verifyContainerBrand` **inside**
+`verify-starter-desktop.mjs`, which this branch had turned into a ~31-line spawning router. A naive
+resolution keeping "our" side of that file would have silently deleted #255's hardening and its
+entire brand surface while every test still appeared to pass.
 
-Re-proved here against the file that actually ships it, rather than by copying #255's patch. Any
-recognised flag passed with an empty value now exits 1 with a named cause, and `--frames` must be a
-positive integer:
+**Resolution.** `origin/develop` merged into this branch; the single conflicted file resolved as
+agreed — the router stays thin and re-exports both contracts, and **#255's implementation, brand
+surface and CLI hardening were moved into `verify-starter-desktop-base.mjs`**, the file that now
+ships them. `verifyContainerBrand` re-exports through the router, so `--brand-only` callers resolve
+unchanged, and `--brand-only`/`--config` reach the base file's parser rather than a re-implementation
+in the router.
+
+**#255's parser superseded the guard this branch had written, not the other way round.** The guard
+added here caught empty values and non-positive `--frames`; #255's also rejects unknown flags and
+covers `--config`, so it is strictly stronger. This branch adopted #255's error taxonomy
+(`TN_NATIVE_STARTER_CLI_INVALID`) and **rewrote its own tests to assert the incumbent contract**.
+The earlier `TN_DESKTOP_*_FLAG_EMPTY` codes invented here are gone. No #255 test was adjusted to pass.
+
+**The question that mattered: do #255's brand tests actually execute against the post-merge file?**
+`starter-brand.test.mjs` imports `verifyStarterContainer` from the **router**, which `export *`s from
+the base — so on paper it reaches the merged code. Green alone would not prove that, since a test
+that no longer reaches its subject also passes. Proved by mutation instead:
 
 ```sh
-pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
-  tests/starter-desktop.test.mjs
-# red:   Tests  1 failed | 24 passed (25)   (TN_DESKTOP_CONTAINER_FLAG_EMPTY absent, exit 0)
-# green: Tests  25 passed (25)
+# disable brand inspection in verify-starter-desktop-base.mjs, then:
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-brand.test.mjs
+# Tests  4 failed | 67 passed (71)      <- the mutation is seen
+# restore the file, re-run:
+# Tests  71 passed (71)
 ```
 
-If #255 lands first, this guard must be re-checked for survival across the split.
+#255's tests genuinely exercise the merged base file. The silent-loss shape did not occur.
+
+**Post-merge results** (`packages/runtime-native`, its own config):
+
+| Suite | Result |
+| --- | --- |
+| `starter-desktop.test.mjs` | 32 passed (was 25; the guard rows were rewritten onto #255's contract and extended to `--config`, `--brand-only`, unknown flags and `--frames` coercion) |
+| `starter-consumer-gameplay.test.mjs` | 12 passed |
+| `starter-consumer-qualification.test.mjs` | 51 passed (includes the multi-target `--target desktop,android` CLI rows) |
+| `starter-brand.test.mjs` | 71 passed |
+| `desktop-container.test.mjs` | 37 passed |
+| **all five together** | **203 passed** |
+
+`pnpm typecheck` exit 0, `pnpm lint` exit 0. A router test also asserts that
+`verifyContainerBrand`, `verifyStarterContainer`, `verifyStarterDesktop`,
+`verifyStarterConsumerGameplay` and `assertConsumerTargetRows` all resolve through
+`verify-starter-desktop.mjs`, so a future split cannot drop one silently.
+
+The earlier note here — "if #255 lands first, this guard needs a survival check" — is obsolete. It
+landed, and this is that check.
 
 ## User verification on the named platform — VERIFIED (Linux desktop, physical Pixel 8, Android emulator)
 
