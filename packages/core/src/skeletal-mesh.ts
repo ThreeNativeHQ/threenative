@@ -1,6 +1,7 @@
 import type { AnimationClip, Object3D } from "three";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { AnimationPlayer } from "./animation.js";
+import { rigPreparation } from "./rig-preparation.js";
 import { type INormaliseToMetresOptions, normaliseToMetres } from "./scale.js";
 
 export interface ISkeletalMesh3DOptions {
@@ -23,6 +24,7 @@ export class SkeletalMesh3D extends AnimationPlayer {
       root,
       strideRoot: options.strideRoot ?? root,
       strideSync: options.strideSync,
+      preparation: rigPreparation(options.source),
     });
     if (options.size !== undefined) {
       normaliseToMetres(root, mapSizeToClone(options.source, root, options.size));

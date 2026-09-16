@@ -10,16 +10,6 @@ load through `ctx.assets.model()`, remove it to roll back, and never claim Andro
 web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, and
 `residual`; `defineGame({ frameBudget: false })` silences output, never measurement.
 
-## Reach for the shipped default before you write your own
-
-The engine already prepares transforms, batches and projects the scene, culls per pass, scales
-resolution, cooks assets and warms first use. A per-mesh render hook, a manual
-`updateMatrixWorld(true)`, a hand-rolled instanced batch with map-spanning bounds, or a second
-`scene.environment` copy of a large sky is how a game pays for that twice.
-`agent-docs/performance-basics.md` lists what to leave alone and the abstractions to reach for
-(`InstancedBatch`, `ClusteredBatch`/`ClusteredMesh`, `GPUParticles3D`, `TracerPool3D`,
-`VirtualShadowNode`, `warmUpScene`, `loadAll`, `addInSlices`). Read it before the first profile.
-
 Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. The bounded proof shape is
 `{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12}}}` and its
 fields are defined in `agent-docs/assertion-reference.md#performance`.

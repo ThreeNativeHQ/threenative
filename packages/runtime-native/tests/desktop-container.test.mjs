@@ -1,0 +1,275 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { test } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import {
+  assertContainerIdentity,
+  classifyDependencies,
+  CONTAINER_MANIFEST,
+  containerMetadata,
+  packageDesktopContainer,
+  pngToIco,
+  parseLinkedLibraries,
+  resolveContainer,
+} from '../scripts/desktop-distribution.mjs';
+
+const config = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
+const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+
+/** The smallest byte sequence `pngToIco` accepts: signature, IHDR tag, and a 256x256 size. */
+function authoredPng() {
+  const png = Buffer.alloc(40);
+  png.writeUInt32BE(0x89504e47, 0);
+  png.writeUInt32BE(0x0d0a1a0a, 4);
+  png.writeUInt32BE(13, 8);
+  png.writeUInt32BE(0x49484452, 12);
+  png.writeUInt32BE(256, 16);
+  png.writeUInt32BE(256, 20);
+  return png;
+}
+
+// Exercise the real staging and resolver. Only OS resource tools/archive transport are replaced;
+// these unit cases do not claim a Windows/macOS native launch or signing proof.
+function fixture(platform = 'linux', { icon = false, convertIcon = false } = {}) {
+  const directory = makeTempDirSync('threenative-container-regression-');
+  const executable = join(directory, 'input');
+  const captured = join(directory, 'relocated container');
+  const uiDirectory = join(directory, 'ui');
+  // A Windows game authors a .png or a .ico; an .icns there is not a thing. Give each platform the
+  // icon a real project would hand it, so the conversion each one performs is actually exercised.
+  const iconPath = join(directory, platform === 'win32' || convertIcon ? 'icon.png' : 'icon.icns');
+  const dependency = join(directory, 'dependency');
+  writeFileSync(executable, 'original executable');
+  writeFileSync(iconPath, iconPath.endsWith('.png') ? authoredPng() : Buffer.from('authored icon'));
+  writeFileSync(dependency, 'native dependency');
+  mkdirSync(uiDirectory);
+  writeFileSync(join(uiDirectory, 'index.html'), '<main>HUD</main>');
+  const invocations = [];
+  const run = (command, args, options) => {
+    invocations.push({ args, command });
+    if (command === 'rcedit') writeFileSync(args[0], 'executable with PE resources');
+    else if (command === 'sips') writeFileSync(args.at(-1), 'resized icon');
+    else if (command === 'iconutil') writeFileSync(args.at(-1), 'converted icns');
+    else {
+      assert.ok(command === 'tar' || command === 'zip', `unexpected tool: ${command}`);
+      const staging = command === 'tar' ? args[args.indexOf('-C') + 1] : options.cwd;
+      cpSync(join(staging, args.at(-1)), captured, { recursive: true });
+      writeFileSync(command === 'tar' ? args[1] : args[2], 'archive bytes');
+    }
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const packed = packageDesktopContainer({
+    platform, arch: 'x64', executable, config, uiDirectory, uiRenderer: 'web',
+    dependencies: [{ name: 'sidecar.bin', source: dependency }],
+    ...(icon ? { icon: iconPath } : {}), output: join(directory, 'game'), run,
+  });
+  const manifestPath = join(captured, platform === 'darwin' ? 'Contents/Resources' : '', CONTAINER_MANIFEST);
+  return { ...packed, root: captured, directory, invocations, manifestPath, icon: iconPath };
+}
+
+for (const platform of ['linux', 'darwin', 'win32']) {
+  test(`${platform}: records the final executable in the integrity manifest without an icon`, () => {
+    const { root, manifest } = fixture(platform);
+    assert.equal(manifest.resources[manifest.executable]?.sha256, digest(join(root, manifest.executable)));
+    assert.deepEqual(resolveContainer(root, { platform }), manifest);
+  });
+  test(`${platform}: refuses a missing executable after relocation`, () => {
+    const { root, manifest } = fixture(platform);
+    rmSync(join(root, manifest.executable));
+    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_INCOMPLETE/);
+  });
+  test(`${platform}: refuses executable bytes changed after packaging`, () => {
+    const { root, manifest } = fixture(platform);
+    writeFileSync(join(root, manifest.executable), 'tampered');
+    assert.throws(() => resolveContainer(root, { platform }), /TN_DESKTOP_CONTAINER_TAMPERED/);
+  });
+}
+
+test('Windows hashes the executable after PE resource editing', () => {
+  const { root, manifest } = fixture('win32', { icon: true });
+  assert.equal(readFileSync(join(root, manifest.executable), 'utf8'), 'executable with PE resources');
+  assert.equal(manifest.resources[manifest.executable].sha256, digest(join(root, manifest.executable)));
+  assert.deepEqual(resolveContainer(root, { platform: 'win32' }), manifest);
+});
+
+test('macOS stages Info.plist at the application bundle root, not under Resources', () => {
+  const { root, manifest } = fixture('darwin', { icon: true });
+  assert.ok(existsSync(join(root, 'Contents/Info.plist')));
+  assert.ok(manifest.resources['Contents/Info.plist']);
+  assert.equal(existsSync(join(root, 'Contents/Resources/Contents/Info.plist')), false);
+});
+
+test('Windows packaging hands rcedit an .ico, never the authored PNG', () => {
+  // The guard the original defect needed: pngToIco being correct is no use if the packager still
+  // passes the .png straight through, which is what made rcedit exit 1 and refuse every Windows
+  // release container that declared an app.icon.
+  const { invocations } = fixture('win32', { icon: true });
+  const rcedit = invocations.find((invocation) => invocation.command === 'rcedit');
+  assert.ok(rcedit, 'rcedit runs when an icon is configured');
+  const iconArgument = rcedit.args[rcedit.args.indexOf('--set-icon') + 1];
+  assert.ok(iconArgument.toLowerCase().endsWith('.ico'), `--set-icon got ${iconArgument}`);
+  assert.equal(readFileSync(iconArgument).readUInt16LE(2), 1, 'and it is a real icon file');
+});
+
+test('the Windows icon is a real .ico, because rcedit refuses a bare PNG', () => {
+  // rcedit --set-icon parses the file as a Windows icon. Handing it the authored PNG exits 1 and
+  // refuses the container, which is what every Windows release with an app.icon did.
+  const directory = makeTempDirSync('threenative-ico-');
+  const png = join(directory, 'icon.png');
+  const pixels = authoredPng();
+  writeFileSync(png, pixels);
+  const ico = join(directory, 'icon.ico');
+  pngToIco(png, ico);
+  const written = readFileSync(ico);
+  assert.equal(written.readUInt16LE(0), 0, 'reserved');
+  assert.equal(written.readUInt16LE(2), 1, 'type is icon');
+  assert.equal(written.readUInt16LE(4), 1, 'one image');
+  assert.equal(written.readUInt8(6), 0, '256 is encoded as 0');
+  assert.equal(written.readUInt8(7), 0, '256 is encoded as 0');
+  assert.equal(written.readUInt32LE(14), pixels.length, 'declares the PNG payload size');
+  assert.equal(written.readUInt32LE(18), 22, 'payload starts after the 22-byte header');
+  assert.deepEqual(written.subarray(22), pixels, 'carries the PNG bytes verbatim');
+  assert.throws(() => pngToIco(join(directory, 'icon.ico'), join(directory, 'nope.ico')), /TN_DESKTOP_RESOURCE_FAILED/u);
+});
+
+test('Windows API set contracts are prerequisites, not libraries to copy', () => {
+  // api-ms-win-* and ext-ms-win-* are API Set contract names the Windows loader redirects to a real
+  // implementation. They are never files on disk, so a hardcoded allowlist of real DLL names can
+  // never cover them, and dumpbin reports them for any binary linked against the UCRT.
+  const directory = makeTempDirSync('threenative-apiset-');
+  const support = join(directory, 'game-support.dll');
+  writeFileSync(support, 'a real game dependency');
+  const libraries = [
+    { name: 'api-ms-win-core-synch-l1-2-0.dll' },
+    { name: 'ext-ms-win-ntuser-window-l1-1-0.dll' },
+    { name: 'KERNEL32.dll' },
+    { name: 'game-support.dll', path: support },
+  ];
+  const { bundled, prerequisites } = classifyDependencies(libraries, { platform: 'win32' });
+  assert.deepEqual(prerequisites.map((library) => library.name).sort(), [
+    'KERNEL32.dll', 'api-ms-win-core-synch-l1-2-0.dll', 'ext-ms-win-ntuser-window-l1-1-0.dll',
+  ].sort());
+  assert.deepEqual(bundled.map((library) => library.name), ['game-support.dll']);
+});
+
+test('a Windows DLL the system directory provides is a prerequisite, not a refusal', () => {
+  // dumpbin prints names with no paths, so before this the only Windows DLL that could pass was one
+  // of 24 hardcoded names: VCRUNTIME140.dll and every other redistributable refused the container.
+  // Ask the directory the loader searches instead of enumerating what Microsoft ships.
+  const systemRoot = makeTempDirSync('threenative-systemroot-');
+  mkdirSync(join(systemRoot, 'System32'));
+  writeFileSync(join(systemRoot, 'System32', 'VCRUNTIME140.dll'), 'a redistributable');
+  const libraries = [{ name: 'VCRUNTIME140.dll' }, { name: 'game-physics.dll' }];
+  const { prerequisites } = classifyDependencies([libraries[0]], { platform: 'win32', systemRoot });
+  assert.deepEqual(prerequisites, [{ name: 'VCRUNTIME140.dll' }]);
+  // Still fails closed for a DLL the system does not provide and that has no path to copy.
+  assert.throws(
+    () => classifyDependencies([libraries[1]], { platform: 'win32', systemRoot }),
+    /TN_DESKTOP_DEPENDENCY_UNLOCATABLE/u,
+  );
+});
+
+test('a Windows dependency that is neither a system library nor locatable is still refused', () => {
+  assert.throws(
+    () => classifyDependencies([{ name: 'game-physics.dll' }], { platform: 'win32' }),
+    /TN_DESKTOP_DEPENDENCY_UNLOCATABLE/u,
+  );
+});
+
+test('macOS stages the web UI where the runtime resolves it, under Contents/Resources', () => {
+  // SDL_GetBasePath() returns <App>.app/Contents/Resources/ for a bundled macOS app, and
+  // src/cli/main.cpp resolves a relative ui root against it. Staging the UI beside the executable
+  // in Contents/MacOS instead leaves the release container launching with no HUD at all, which no
+  // fixture caught because nothing asserted the bundle location.
+  const { root, manifest } = fixture('darwin', { icon: true });
+  assert.ok(existsSync(join(root, 'Contents/Resources/ui/index.html')));
+  assert.equal(manifest.ui.directory, 'Contents/Resources/ui');
+  assert.equal(manifest.ui.entry, 'Contents/Resources/ui/index.html');
+  assert.ok(manifest.resources['Contents/Resources/ui/index.html']);
+  assert.equal(existsSync(join(root, 'Contents/MacOS/ui')), false);
+});
+
+test('macOS plist names the icon that was actually staged', () => {
+  const { manifest } = fixture('darwin', { icon: true });
+  const plist = containerMetadata({ platform: 'darwin', config })['Contents/Info.plist'];
+  const iconName = /<key>CFBundleIconFile<\/key><string>(.*?)<\/string>/u.exec(plist)?.[1];
+  assert.equal(`${iconName}.icns`, basename(manifest.app.icon));
+});
+
+test('macOS metadata escapes XML text from authored application identity', () => {
+  const plist = containerMetadata({
+    platform: 'darwin', config: { app: { ...config.app, name: 'R&D <Orbit>' } },
+  })['Contents/Info.plist'];
+  assert.match(plist, /<key>CFBundleName<\/key><string>R&amp;D &lt;Orbit&gt;<\/string>/u);
+  assert.match(plist, /<key>CFBundleDisplayName<\/key><string>R&amp;D &lt;Orbit&gt;<\/string>/u);
+});
+
+test('macOS conversion preserves authored icon identity and separately hashes the converted payload', () => {
+  const { root, manifest, icon } = fixture('darwin', { icon: true, convertIcon: true });
+  assert.notEqual(digest(icon), digest(join(root, manifest.app.icon)));
+  assert.equal(manifest.resources[manifest.app.icon].sha256, digest(join(root, manifest.app.icon)));
+  assert.equal(assertContainerIdentity(manifest, config, { icon }), manifest);
+});
+
+test('Linux dependency inspection retains resolved paths containing spaces', () => {
+  assert.deepEqual(parseLinkedLibraries('  libgame.so => /tmp/My Game/libgame.so (0x00001234)\n', 'linux'), [
+    { name: 'libgame.so', path: '/tmp/My Game/libgame.so' },
+  ]);
+});
+
+test('macOS dependency inspection retains install names containing spaces', () => {
+  assert.deepEqual(parseLinkedLibraries('game:\n  /tmp/My Game/libgame.dylib (compatibility version 1.0.0, current version 1.0.0)\n', 'darwin'), [
+    { name: 'libgame.dylib', path: '/tmp/My Game/libgame.dylib' },
+  ]);
+});
+
+for (const [name, mutate] of [
+  ['empty manifest', () => ({})],
+  ['null manifest', () => null],
+  ['unsupported schema', (manifest) => ({ ...manifest, schemaVersion: 99 })],
+  ['missing resource map', (manifest) => ({ ...manifest, resources: undefined })],
+  ['unrecorded executable', (manifest) => { delete manifest.resources[manifest.executable]; return manifest; }],
+  ['unrecorded UI entry', (manifest) => { delete manifest.resources[manifest.ui.entry]; return manifest; }],
+  ['unrecorded dependency', (manifest) => { delete manifest.resources[manifest.dependencies[0].path]; return manifest; }],
+]) {
+  test(`resolver fails closed for ${name}`, () => {
+    const { root, manifest, manifestPath } = fixture();
+    writeFileSync(manifestPath, JSON.stringify(mutate(manifest)));
+    assert.throws(() => resolveContainer(root), /TN_DESKTOP_CONTAINER_MANIFEST_INVALID/);
+  });
+}
+
+test('resolver rejects a manifest resource symlink escaping the container', () => {
+  const { root, directory, manifest, manifestPath } = fixture();
+  const outside = join(directory, 'outside');
+  mkdirSync(outside);
+  writeFileSync(join(outside, 'payload'), 'outside payload');
+  symlinkSync(outside, join(root, 'escape'), 'junction');
+  manifest.resources['escape/payload'] = { sha256: digest(join(outside, 'payload')) };
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.throws(() => resolveContainer(root), /TN_DESKTOP_CONTAINER_MANIFEST_INVALID/);
+});
+
+for (const fail of [false, true]) {
+  test(`archive replacement ${fail ? 'preserves the previous output on failure' : 'uses a fresh file instead of updating a stale ZIP'}`, () => {
+    const root = makeTempDirSync('threenative-archive-replacement-');
+    const executable = join(root, 'input');
+    const output = join(root, 'game.zip');
+    writeFileSync(executable, 'executable');
+    writeFileSync(output, 'previous archive');
+    const build = () => packageDesktopContainer({
+      platform: 'darwin', arch: 'x64', executable, output, config,
+      run: (command, args) => {
+        assert.equal(command, 'zip');
+        if (!fail) assert.equal(existsSync(args[2]), false, 'zip must not update an existing archive');
+        writeFileSync(args[2], fail ? 'partial archive' : 'fresh archive');
+        return { status: fail ? 1 : 0, stdout: '', stderr: 'archive failure fixture' };
+      },
+    });
+    if (fail) assert.throws(build, /TN_DESKTOP_ARCHIVE_FAILED/);
+    else assert.equal(build().archive, output);
+    assert.equal(readFileSync(output, 'utf8'), fail ? 'previous archive' : 'fresh archive');
+  });
+}

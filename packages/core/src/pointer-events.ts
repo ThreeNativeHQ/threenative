@@ -85,6 +85,11 @@ export class PointerEvents3D implements IPointerEvents3D {
   #draggable = new Set<Object3D>();
   #edgeHits = new Map<number, Intersection | undefined>();
   #pointers = new Map<number, IPointerRecord>();
+  // The active-pointer set is rebuilt every tick; one reused map keeps a busy frame from
+  // allocating a fresh map and its entries each time.
+  // ponytail: one shared scratch map, matching the shared #edgeIds/#edgeHits below. Depth-pool it
+  // if a listener ever drives a nested tick.
+  #active = new Map<number, IPointerState>();
   #edgeIds = new Set<number>();
   #targets: Object3D[] = [];
   #screen = new Vector2();
@@ -165,7 +170,8 @@ export class PointerEvents3D implements IPointerEvents3D {
     this.#edgeIds.clear();
     this.#edgeHits.clear();
     if (this.#targets.length === 0) return;
-    const active = new Map<number, IPointerState>();
+    const active = this.#active;
+    active.clear();
     for (const [id, pointer] of pointers) active.set(id, pointer);
     const hasEdges = edges !== undefined && edges.size !== 0;
     if (!hasEdges && active.size === 0 && primary !== undefined) {
