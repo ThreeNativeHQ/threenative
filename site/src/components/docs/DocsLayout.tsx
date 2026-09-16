@@ -62,9 +62,7 @@ function Pager({ path }: { readonly path: string }) {
           <span className="text-[12px] uppercase tracking-[0.16em] text-tn-fg-subtle">
             Previous
           </span>
-          <span className="mt-1 block text-[15px] font-medium text-tn-fg">
-            ← {previous.label}
-          </span>
+          <span className="mt-1 block text-[15px] font-medium text-tn-fg">← {previous.label}</span>
         </a>
       ) : (
         <span />
@@ -94,10 +92,7 @@ export function DocsLayout({ path, toc = EMPTY_TOC, sourceHref, children }: IDoc
       className={`mx-auto grid w-full max-w-[1536px] gap-8 px-5 py-8 lg:grid-cols-[210px_minmax(0,1fr)] lg:gap-10 lg:px-8 lg:py-10 ${toc.length ? "xl:grid-cols-[210px_minmax(0,1fr)_190px]" : ""} xl:gap-12 2xl:px-[68px]`}
     >
       <aside className="min-w-0 lg:sticky lg:top-[96px] lg:max-h-[calc(100dvh_-_120px)] lg:self-start lg:overflow-y-auto">
-        <a
-          className="sr-only rounded-md p-2 text-tn-accent focus:not-sr-only"
-          href="#docs-content"
-        >
+        <a className="sr-only rounded-md p-2 text-tn-accent focus:not-sr-only" href="#docs-content">
           Skip to documentation content
         </a>
         <DocsSearch />
@@ -199,11 +194,9 @@ export function DocCodeBlock({
         </span>
         <CopyButton label={label} text={code} />
       </div>
-      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: code samples need keyboard access to horizontal scrolling. */}
       <pre
         aria-label={`${label} code sample`}
         className="overflow-x-auto p-4 font-mono text-[13px] leading-6 text-[#d8dee9]"
-        tabIndex={0}
       >
         <code>{code}</code>
       </pre>
@@ -211,7 +204,10 @@ export function DocCodeBlock({
   );
 }
 
-export function DocCallout({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+export function DocCallout({
+  title,
+  children,
+}: { readonly title: string; readonly children: ReactNode }) {
   return (
     <aside className="my-7 rounded-xl border border-tn-accent/20 bg-tn-accent/[0.055] p-5">
       <p className="text-[13px] font-semibold text-tn-accent">{title}</p>
