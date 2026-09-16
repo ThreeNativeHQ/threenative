@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  docPageForPath,
-  docsNeighbours,
-  docsPages,
-  searchDocs,
-} from "../src/content/docs.js";
+import { docPageForPath, docsNeighbours, docsPages, searchDocs } from "../src/content/docs.js";
 import { primaryNav } from "../src/content/nav.js";
 
 describe("documentation discovery", () => {
