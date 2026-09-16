@@ -1431,7 +1431,11 @@ jobs:
           # this user only, on this throwaway runner.
           $cer = Join-Path $env:RUNNER_TEMP 'tn-signing-proof.cer'
           Export-Certificate -Cert $cert -FilePath $cer | Out-Null
-          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          # CurrentUser\Root opens an interactive Root Certificate Store confirmation on hosted Windows.
+          # Use certutil against the machine Root store instead: the hosted runner is disposable and
+          # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.
+          & certutil.exe -f -addstore Root $cer | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate" }
           Write-Host "created $($cert.Thumbprint) for CN=$subject"
       - name: Sign the distributed executable through the packager's own adapter
         if: matrix.platform == 'Windows'
