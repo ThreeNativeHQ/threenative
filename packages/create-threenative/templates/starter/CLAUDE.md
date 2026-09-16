@@ -7,9 +7,7 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 ## Ownership
 
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns gameplay and every visible choice in `src/render/`, `src/entities/`,
-`src/scenes/`, and `src/ui/`; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept.
-
-`src/render/hero.ts` merges the hero's primitives into one buffer with `mergeParts`; pass `{ preserve: ["uv", "normal"] }` to keep authored texture coordinates and normals, and prepare any missing channel in the pieces first.
+`src/scenes/`, and `src/ui/`; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. `src/render/hero.ts` merges the hero's primitives into one buffer with `mergeParts`; pass `{ preserve: ["uv", "normal"] }` to keep authored texture coordinates and normals, and prepare any missing channel in the pieces first.
 
 ## Start every change
 

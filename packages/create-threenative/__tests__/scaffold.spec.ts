@@ -365,7 +365,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "d8dc5d4bbfa3ccbb6bde4237e9f43e9645ff407035b838459f8ce3901663c3be",
+  starter: "50c79fe36a92e939038d2a9b57d24e85a39c676cc62f6920da8e412a2215211f",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
