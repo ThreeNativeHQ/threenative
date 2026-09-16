@@ -26,7 +26,9 @@ export const lodCensus = [
 
 function ratio(measured: number, baseline: number): number {
   if (!Number.isFinite(measured) || measured < 0 || !Number.isFinite(baseline) || baseline <= 0) {
-    throw new Error("TN_SITE_BENCHMARK_VALUE: finite non-negative observation and positive baseline required.");
+    throw new Error(
+      "TN_SITE_BENCHMARK_VALUE: finite non-negative observation and positive baseline required.",
+    );
   }
   const result = measured / baseline;
   if (!Number.isFinite(result)) throw new Error("TN_SITE_BENCHMARK_VALUE: ratio overflow.");
