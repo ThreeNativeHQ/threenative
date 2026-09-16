@@ -32,6 +32,19 @@ import {
   ensureGradleWrapper,
   prepareAndroidPrebuilts,
 } from '../scripts/package-android.mjs';
+import {
+  assertContainerIdentity,
+  assertNotaryEvidence,
+  containerMetadata,
+  desktopContainerFormat,
+  extractContainer,
+  notarizeArchive,
+  packageDesktopContainer,
+  parseLinkedLibraries,
+  resolveContainer,
+  signDesktopArtifact,
+} from '../scripts/desktop-distribution.mjs';
+import { desktopSigningFromEnvironment } from '../scripts/package-desktop.mjs';
 
 /** Serves a set of named payloads over loopback and hands back a fixture `prebuilt-lock.json`. */
 async function serveFixtureRelease(root, contents) {
@@ -1351,3 +1364,422 @@ test('macOS is built but unpublished, and says so instead of 404ing', () => {
   assert.ok(readRelease(manifestPath, 'linux-x64').sha256);
   assert.ok(readRelease(manifestPath, 'android-arm64-v8a-runtime-v8').sha256);
 });
+
+// PRD-365 phase 1. Release mode wraps the compiler's raw executable in one complete, relocatable
+// container per native host; debug mode keeps the raw binary. Dependencies are injected here
+// because a hermetic fixture executable links nothing; the real path discovers them from the
+// produced binary with the host's own tool (ldd/otool/dumpbin).
+async function packageSampleRelease(root, overrides = {}) {
+  const { packageDesktop } = await import('../scripts/package-desktop.mjs');
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const fakeRuntime = join(root, 'fake-runtime.mjs');
+  writeFileSync(
+    fakeRuntime,
+    '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\n' +
+      'const index = process.argv.indexOf("--out");\n' +
+      'if (index >= 0) writeFileSync(process.argv[index + 1], "compiled desktop executable");\n',
+  );
+  chmodSync(fakeRuntime, 0o755);
+  const ui = join(root, 'ui');
+  mkdirSync(join(ui, 'assets'), { recursive: true });
+  writeFileSync(join(ui, 'index.html'), '<!doctype html><title>sample</title>');
+  writeFileSync(join(ui, 'assets', 'app.js'), 'console.log(1);\n');
+  const icon = join(root, 'icon.png');
+  writeFileSync(icon, 'custom-icon-bytes');
+  const dependency = join(root, 'libsample.so');
+  writeFileSync(dependency, 'shared-library-bytes');
+  const config = {
+    app: { build: 7, icon, id: 'com.example.sample', name: 'Sample Game', version: '1.2.3' },
+    ui: { renderer: 'web' },
+  };
+  const configPath = join(root, 'config.json');
+  writeFileSync(configPath, JSON.stringify(config));
+  const output = join(root, 'dist-native', 'sample');
+  const archive = await packageDesktop({
+    bundle,
+    config: configPath,
+    dependencies: [{ name: 'libsample.so', source: dependency }],
+    mode: 'release',
+    output,
+    prerequisites: [{ name: 'libc.so.6' }],
+    runtime: fakeRuntime,
+    ui,
+    ...overrides,
+  });
+  return { archive, config, icon, output };
+}
+
+test('desktop release mode packages the executable, the UI bundle and the declared dependencies', async () => {
+  const root = makeTempDirSync('threenative-desktop-release-');
+  roots.push(root);
+  const { archive, config, icon, output } = await packageSampleRelease(root);
+  assert.equal(archive, `${output}.tar.gz`);
+  assert.equal(existsSync(output), false, 'release mode must not leave a raw executable claiming to be the artifact');
+
+  const moved = join(makeTempDirSync('threenative-desktop-moved with spaces-'), 'relocated');
+  roots.push(join(moved, '..'));
+  const containerRoot = extractContainer(archive, moved, { platform: 'linux' });
+  const manifest = resolveContainer(containerRoot, { platform: 'linux' });
+  assert.equal(manifest.app.id, 'com.example.sample');
+  assert.equal(manifest.app.name, 'Sample Game');
+  assert.equal(manifest.app.version, '1.2.3');
+  assert.equal(manifest.platform, `${process.platform}-${process.arch}`);
+  assert.equal(manifest.ui.entry, 'ui/index.html');
+  assert.deepEqual(manifest.dependencies.map((entry) => entry.name), ['libsample.so']);
+  assert.ok(manifest.prerequisites.some((entry) => entry.name === 'libc.so.6'));
+  assert.ok(existsSync(join(containerRoot, 'ui', 'index.html')));
+  assert.ok(existsSync(join(containerRoot, 'ui', 'assets', 'app.js')));
+  assert.ok(existsSync(join(containerRoot, 'lib', 'libsample.so')));
+  assert.match(
+    readFileSync(join(containerRoot, 'share', 'applications', 'com.example.sample.desktop'), 'utf8'),
+    /Exec=Sample-Game/u,
+  );
+  assertContainerIdentity(manifest, config, { icon });
+}, 60_000);
+
+test('a relocated container missing its UI entry or a native dependency is rejected, and a tampered one is too', async () => {
+  const root = makeTempDirSync('threenative-desktop-relocation-');
+  roots.push(root);
+  const { archive } = await packageSampleRelease(root);
+  const extractedRoot = makeTempDirSync('threenative-desktop-extract-');
+  roots.push(extractedRoot);
+  const containerRoot = extractContainer(archive, join(extractedRoot, 'moved'), { platform: 'linux' });
+  // Green first, so the refusals below are the edits and not the fixture.
+  assert.doesNotThrow(() => resolveContainer(containerRoot, { platform: 'linux' }));
+
+  const entry = join(containerRoot, 'ui', 'index.html');
+  const entryBytes = readFileSync(entry);
+  rmSync(entry);
+  assert.throws(
+    () => resolveContainer(containerRoot, { platform: 'linux' }),
+    /TN_DESKTOP_CONTAINER_INCOMPLETE.*ui\/index\.html/u,
+  );
+  writeFileSync(entry, entryBytes);
+  assert.doesNotThrow(() => resolveContainer(containerRoot, { platform: 'linux' }));
+
+  const dependency = join(containerRoot, 'lib', 'libsample.so');
+  const dependencyBytes = readFileSync(dependency);
+  rmSync(dependency);
+  assert.throws(
+    () => resolveContainer(containerRoot, { platform: 'linux' }),
+    /TN_DESKTOP_CONTAINER_INCOMPLETE.*libsample\.so/u,
+  );
+  writeFileSync(dependency, 'tampered');
+  assert.throws(
+    () => resolveContainer(containerRoot, { platform: 'linux' }),
+    /TN_DESKTOP_CONTAINER_TAMPERED.*libsample\.so/u,
+  );
+  writeFileSync(dependency, dependencyBytes);
+  assert.doesNotThrow(() => resolveContainer(containerRoot, { platform: 'linux' }));
+}, 60_000);
+
+test('a container manifest cannot name a resource outside the container root', async () => {
+  const root = makeTempDirSync('threenative-desktop-escape-');
+  roots.push(root);
+  const { archive } = await packageSampleRelease(root);
+  const extractedRoot = makeTempDirSync('threenative-desktop-escape-out-');
+  roots.push(extractedRoot);
+  const containerRoot = extractContainer(archive, join(extractedRoot, 'out'), { platform: 'linux' });
+  const manifestPath = join(containerRoot, 'threenative-container.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  // Data inside the artifact, so a `../` resource must not walk the verifier out of the container.
+  manifest.resources['../../escape.txt'] = { sha256: sha256(Buffer.from('outside')) };
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  assert.throws(
+    () => resolveContainer(containerRoot, { platform: 'linux' }),
+    /TN_DESKTOP_CONTAINER_MANIFEST_INVALID.*escapes the container root/u,
+  );
+}, 60_000);
+
+test('a container that kept the generic icon instead of the configured one fails the brand check', () => {
+  const root = makeTempDirSync('threenative-desktop-brand-');
+  roots.push(root);
+  const icon = join(root, 'icon.png');
+  writeFileSync(icon, 'game-owned-icon');
+  const config = { app: { build: 3, icon, id: 'com.acme.racer', name: 'Acme Racer', version: '2.0.1' } };
+  const manifest = {
+    app: {
+      build: 3,
+      // The shape a fallback to the engine's generic icon produces: identity right, bytes not.
+      iconSha256: sha256(Buffer.from('generic-engine-icon')),
+      id: 'com.acme.racer',
+      name: 'Acme Racer',
+      version: '2.0.1',
+    },
+  };
+  assert.throws(
+    () => assertContainerIdentity(manifest, config, { icon }),
+    /TN_DESKTOP_BRAND_MISMATCH/u,
+  );
+  manifest.app.iconSha256 = sha256(readFileSync(icon));
+  assert.doesNotThrow(() => assertContainerIdentity(manifest, config, { icon }));
+  manifest.app.version = '0.0.0';
+  assert.throws(() => assertContainerIdentity(manifest, config, { icon }), /app\.version/u);
+});
+
+test('each desktop platform states its own container format and OS identity', () => {
+  assert.equal(desktopContainerFormat('linux'), 'tar.gz');
+  assert.equal(desktopContainerFormat('darwin'), 'zip');
+  assert.equal(desktopContainerFormat('win32'), 'zip');
+  assert.throws(() => desktopContainerFormat('aix'), /TN_DESKTOP_CONTAINER_UNSUPPORTED/u);
+  const config = { app: { id: 'com.acme.racer', name: 'Acme Racer', version: '2.0.1', build: 4 } };
+  const desktop = containerMetadata({ config, platform: 'linux' })['share/applications/com.acme.racer.desktop'];
+  assert.match(desktop, /Exec=Acme-Racer/u);
+  assert.match(desktop, /Icon=com\.acme\.racer/u);
+  assert.doesNotMatch(desktop, /\/home\/|\/build\//u, 'a .desktop entry must refer to installed names, never build paths');
+  const plist = containerMetadata({ config, platform: 'darwin' })['Contents/Info.plist'];
+  assert.match(plist, /<key>CFBundleIdentifier<\/key><string>com\.acme\.racer<\/string>/u);
+  assert.match(plist, /<key>CFBundleShortVersionString<\/key><string>2\.0\.1<\/string>/u);
+  assert.match(plist, /<key>CFBundleVersion<\/key><string>4<\/string>/u);
+  assert.match(plist, /<key>CFBundleIconFile<\/key><string>Acme-Racer<\/string>/u);
+  assert.deepEqual(containerMetadata({ config, platform: 'win32' }), {});
+});
+
+test('the dependency census reads each host tool and never silently drops an unresolved library', () => {
+  const linux = parseLinkedLibraries(
+    '\tlinux-vdso.so.1 (0x00007ffd)\n' +
+      '\tlibsample.so => /opt/game/libsample.so (0x00007f)\n' +
+      '\tlibc.so.6 => /usr/lib/libc.so.6 (0x00007f)\n' +
+      '\tlibgone.so => not found\n',
+    'linux',
+  );
+  assert.deepEqual(
+    linux.filter((entry) => !entry.missing),
+    [
+      { name: 'libsample.so', path: '/opt/game/libsample.so' },
+      { name: 'libc.so.6', path: '/usr/lib/libc.so.6' },
+    ],
+  );
+  assert.ok(linux.some((entry) => entry.missing && entry.name === 'libgone.so'));
+  assert.deepEqual(
+    parseLinkedLibraries(
+      'build/sample:\n' +
+        '\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n' +
+        '\t@rpath/libfoo.dylib (compatibility version 1.0.0)\n',
+      'darwin',
+    ),
+    [
+      { name: 'libSystem.B.dylib', path: '/usr/lib/libSystem.B.dylib' },
+      { name: 'libfoo.dylib', path: '@rpath/libfoo.dylib' },
+    ],
+  );
+  assert.deepEqual(
+    parseLinkedLibraries('    KERNEL32.dll\n    v8.dll\n', 'win32').map((entry) => entry.name),
+    ['KERNEL32.dll', 'v8.dll'],
+  );
+});
+
+// PRD-365 phase 3: signing is OS tooling with injectable transport, and a release that only claims
+// to be signed must be refused. Real credentialed signing is verified by PRD-060, not here.
+test('a signed desktop release is refused when the signing tool fails', () => {
+  const directory = makeTempDirSync('threenative-sign-failure-');
+  const executable = join(directory, 'input');
+  const output = join(directory, 'game');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push(command);
+    if (command === 'codesign') return { error: undefined, status: 1, stdout: '', stderr: 'no identity found' };
+    throw new Error(`unexpected tool ${command}`);
+  };
+  assert.throws(
+    () =>
+      packageDesktopContainer({
+        arch: 'x64',
+        config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
+        executable,
+        output,
+        platform: 'darwin',
+        run,
+        signing: { identity: 'Developer ID Application: Example (TEAM)' },
+      }),
+    /TN_DESKTOP_CODESIGN_FAILED/u,
+  );
+  assert.ok(calls.includes('codesign'));
+  assert.equal(existsSync(`${output}.zip`), false, 'a failed signature must not leave an archive');
+});
+
+test('notarization evidence for a different artifact is refused', () => {
+  const artifact = 'a'.repeat(64);
+  assert.throws(
+    () =>
+      assertNotaryEvidence({
+        artifactSha256: artifact,
+        evidence: { artifactSha256: 'b'.repeat(64), id: 'stale-run', status: 'Accepted' },
+      }),
+    /TN_DESKTOP_NOTARY_MISMATCH/u,
+  );
+  assert.throws(
+    () => assertNotaryEvidence({ artifactSha256: artifact, evidence: { artifactSha256: artifact, status: 'Invalid' } }),
+    /TN_DESKTOP_NOTARY_FAILED/u,
+  );
+  assert.deepEqual(
+    assertNotaryEvidence({
+      artifactSha256: artifact,
+      evidence: { artifactSha256: artifact, id: 'ok', status: 'Accepted' },
+    }),
+    { artifactSha256: artifact, id: 'ok', status: 'Accepted' },
+  );
+});
+
+test('a notarization rejection from notarytool refuses the release', () => {
+  const directory = makeTempDirSync('threenative-notary-reject-');
+  const archive = join(directory, 'game.zip');
+  writeFileSync(archive, 'archive bytes');
+  assert.throws(
+    () =>
+      notarizeArchive({
+        archive,
+        run: (command, args) => {
+          assert.equal(command, 'xcrun');
+          assert.deepEqual(args.slice(0, 2), ['notarytool', 'submit']);
+          return { error: undefined, status: 0, stdout: JSON.stringify({ id: 'run-1', status: 'Invalid' }), stderr: '' };
+        },
+        signing: { keychainProfile: 'tn-notary' },
+      }),
+    /TN_DESKTOP_NOTARY_FAILED/u,
+  );
+});
+
+test('unsigned preparation proceeds and is named unsigned when no signing inputs are given', () => {
+  const directory = makeTempDirSync('threenative-unsigned-');
+  const executable = join(directory, 'input');
+  writeFileSync(executable, 'executable');
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.unsigned', name: 'Unsigned Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'linux',
+    run: (command, args) => {
+      assert.equal(command, 'tar');
+      writeFileSync(args[1], 'archive bytes');
+      return { error: undefined, status: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.equal(result.signed, false);
+  assert.equal(result.manifest.signed, false);
+});
+
+test('missing signing credentials stay PENDING while unsigned preparation proceeds', () => {
+  // No request and no inputs: unsigned release, no signing object.
+  assert.equal(desktopSigningFromEnvironment({}), undefined);
+  // A request without credentials is PENDING for signing; the artifact is never mislabelled signed.
+  assert.deepEqual(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN: '1' }), { requested: true });
+  const directory = makeTempDirSync('threenative-signing-pending-');
+  const target = join(directory, 'game');
+  writeFileSync(target, 'executable');
+  assert.throws(
+    () => signDesktopArtifact({ platform: 'darwin', signing: { requested: true }, target }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_MISSING/u,
+  );
+  assert.throws(
+    () => signDesktopArtifact({ platform: 'win32', signing: { requested: true }, target }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_MISSING/u,
+  );
+  // A Windows certificate configured on a non-Windows host still leaves Linux unsigned.
+  assert.equal(
+    desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_CERTIFICATE: '/keys/game.pfx' }).certificate,
+    '/keys/game.pfx',
+  );
+});
+
+// A successful credentialed path: codesign/verify must run and the manifest must name the scheme.
+// This is a fixture transport, not a real signature; it exists to catch a success path that throws
+// after signing (the `.app` directory has no file hash).
+test('a successful macOS signature records the signing scheme', () => {
+  const directory = makeTempDirSync('threenative-sign-success-');
+  const executable = join(directory, 'input');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push(`${command} ${args[0] ?? ''}`);
+    if (command === 'codesign') return { status: 0, stdout: '', stderr: '' };
+    if (command === 'zip') {
+      writeFileSync(args[2], 'archive bytes');
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected tool ${command}`);
+  };
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'darwin',
+    run,
+    signing: { identity: 'Developer ID Application: Example (TEAM)' },
+  });
+  assert.equal(result.signed, true);
+  assert.equal(result.manifest.signed, true);
+  assert.equal(result.manifest.signingScheme, 'codesign');
+  assert.ok(calls.some((call) => call === 'codesign --force'));
+  assert.ok(calls.some((call) => call === 'codesign --verify'));
+});
+
+test('a successful Windows signature records the signing scheme', () => {
+  const directory = makeTempDirSync('threenative-sign-win-');
+  const executable = join(directory, 'input.exe');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push(`${command} ${args[0] ?? ''}`);
+    if (command === 'signtool') return { status: 0, stdout: '', stderr: '' };
+    if (command === 'zip') {
+      writeFileSync(args[2], 'archive bytes');
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected tool ${command}`);
+  };
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.win', name: 'Win Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'win32',
+    run,
+    signing: { certificate: '/keys/game.pfx', timestampUrl: 'http://timestamp.example' },
+  });
+  assert.equal(result.signed, true);
+  assert.equal(result.manifest.signed, true);
+  assert.equal(result.manifest.signingScheme, 'signtool');
+  assert.ok(calls.includes('signtool sign'));
+  assert.ok(calls.includes('signtool verify'));
+});
+
+test('macOS notarization staples and re-archives the signed bundle', () => {
+  const directory = makeTempDirSync('threenative-notary-success-');
+  const executable = join(directory, 'input');
+  writeFileSync(executable, 'executable');
+  const calls = [];
+  let archiveWrites = 0;
+  const run = (command, args) => {
+    calls.push(`${command} ${args[0] ?? ''}`);
+    if (command === 'codesign') return { status: 0, stdout: '', stderr: '' };
+    if (command === 'zip') {
+      writeFileSync(args[2], 'archive bytes');
+      archiveWrites += 1;
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (command === 'xcrun' && args[0] === 'notarytool') {
+      return { status: 0, stdout: JSON.stringify({ id: 'notary-1', status: 'Accepted' }), stderr: '' };
+    }
+    if (command === 'xcrun' && args[0] === 'stapler') return { status: 0, stdout: '', stderr: '' };
+    throw new Error(`unexpected tool ${command} ${args.join(' ')}`);
+  };
+  const result = packageDesktopContainer({
+    arch: 'x64',
+    config: { app: { id: 'com.example.notary', name: 'Notary Game' } },
+    executable,
+    output: join(directory, 'game'),
+    platform: 'darwin',
+    run,
+    signing: { identity: 'Developer ID Application: Example (TEAM)', keychainProfile: 'tn-notary', notarize: true },
+  });
+  assert.equal(result.signed, true);
+  assert.ok(calls.includes('xcrun notarytool'));
+  assert.ok(calls.includes('xcrun stapler'));
+  assert.equal(archiveWrites, 2, 'the stapled bundle is archived again');
+});
+
