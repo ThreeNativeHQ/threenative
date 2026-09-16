@@ -37,7 +37,9 @@ describe("navigation is one model with three renderers", () => {
     for (const entry of ALL_ENTRIES) {
       for (const target of [entry.target, ...(entry.items ?? []).map((item) => item.target)]) {
         if (target.kind === "pending") {
-          expect(target.reason.length, `${entry.label} is pending with no reason`).toBeGreaterThan(0);
+          expect(target.reason.length, `${entry.label} is pending with no reason`).toBeGreaterThan(
+            0,
+          );
           continue;
         }
         expect(navHref(target), `${entry.label} has an empty destination`).toBeTruthy();
