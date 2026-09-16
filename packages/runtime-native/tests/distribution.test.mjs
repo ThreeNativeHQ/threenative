@@ -46,6 +46,14 @@ import {
 } from '../scripts/desktop-distribution.mjs';
 import { desktopSigningFromEnvironment } from '../scripts/package-desktop.mjs';
 
+/** A stand-in for the runtime's `game.bundle`; the real format is proven by the C++ bundle tests. */
+function stageBundle(directory) {
+  const bundle = join(directory, 'game.bundle');
+  writeFileSync(bundle, Buffer.from('MYSBNDL1 fixture game payload'));
+  return bundle;
+}
+
+
 /** Serves a set of named payloads over loopback and hands back a fixture `prebuilt-lock.json`. */
 async function serveFixtureRelease(root, contents) {
   const server = createServer((request, response) => {
@@ -1585,7 +1593,7 @@ test('a signed desktop release is refused when the signing tool fails', () => {
   };
   assert.throws(
     () =>
-      packageDesktopContainer({
+      packageDesktopContainer({ bundle: stageBundle(directory),
         arch: 'x64',
         config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
         executable,
@@ -1646,7 +1654,7 @@ test('unsigned preparation proceeds and is named unsigned when no signing inputs
   const directory = makeTempDirSync('threenative-unsigned-');
   const executable = join(directory, 'input');
   writeFileSync(executable, 'executable');
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.unsigned', name: 'Unsigned Game' } },
     executable,
@@ -1702,7 +1710,7 @@ test('a successful macOS signature records the signing scheme', () => {
     }
     throw new Error(`unexpected tool ${command}`);
   };
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.signed', name: 'Signed Game' } },
     executable,
@@ -1732,7 +1740,7 @@ test('a successful Windows signature records the signing scheme', () => {
     }
     throw new Error(`unexpected tool ${command}`);
   };
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.win', name: 'Win Game' } },
     executable,
@@ -1768,7 +1776,7 @@ test('macOS notarization staples and re-archives the signed bundle', () => {
     if (command === 'xcrun' && args[0] === 'stapler') return { status: 0, stdout: '', stderr: '' };
     throw new Error(`unexpected tool ${command} ${args.join(' ')}`);
   };
-  const result = packageDesktopContainer({
+  const result = packageDesktopContainer({ bundle: stageBundle(directory),
     arch: 'x64',
     config: { app: { id: 'com.example.notary', name: 'Notary Game' } },
     executable,

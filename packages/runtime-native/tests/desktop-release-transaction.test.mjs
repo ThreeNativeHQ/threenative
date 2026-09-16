@@ -6,6 +6,14 @@ import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { notarizeArchive, packageDesktopContainer } from '../scripts/desktop-distribution.mjs';
 
+/** A stand-in for the runtime's `game.bundle`; the real format is proven by the C++ bundle tests. */
+function stageBundle(directory) {
+  const bundle = join(directory, 'game.bundle');
+  writeFileSync(bundle, Buffer.from('MYSBNDL1 fixture game payload'));
+  return bundle;
+}
+
+
 const config = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
 const ok = { status: 0, stdout: '', stderr: '' };
 const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -17,7 +25,7 @@ function fixture(runTest) {
   try {
     const executable = join(root, 'input');
     writeFileSync(executable, 'unsigned executable');
-    runTest({ executable, root, output: join(root, 'game.zip') });
+    runTest({ bundle: stageBundle(root), executable, root, output: join(root, 'game.zip') });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -26,7 +34,7 @@ function fixture(runTest) {
 for (const previous of [false, true]) {
   for (const failure of ['notary', 'staple', 'final archive']) {
     test(`macOS ${failure} failure ${previous ? 'preserves the previous artifact' : 'leaves no release artifact'}`, () => {
-      fixture(({ executable, root, output }) => {
+      fixture(({ bundle, executable, root, output }) => {
         if (previous) writeFileSync(output, 'previous verified release');
         let archives = 0;
         const run = (command, args) => {
@@ -41,20 +49,25 @@ for (const previous of [false, true]) {
           if (command === 'xcrun' && args[0] === 'stapler' && failure === 'staple') return { ...ok, status: 1 };
           return ok;
         };
-        assert.throws(() => packageDesktopContainer({
+        assert.throws(() => packageDesktopContainer({ bundle,
           platform: 'darwin', arch: 'x64', config, executable, output, run,
           signing: { identity: 'fixture identity', keychainProfile: 'fixture profile', notarize: true },
         }), /TN_DESKTOP_(?:NOTARY|ARCHIVE)/u);
         assert.equal(existsSync(output), previous);
         if (previous) assert.equal(readFileSync(output, 'utf8'), 'previous verified release');
-        assert.deepEqual(readdirSync(root).sort(), previous ? ['game.zip', 'input'] : ['input']);
+        // `game.bundle` and `input` are the release inputs; the assertion is that no release
+        // artifact is left behind, so only `game.zip` is conditional.
+        assert.deepEqual(
+          readdirSync(root).sort(),
+          previous ? ['game.bundle', 'game.zip', 'input'] : ['game.bundle', 'input'],
+        );
       });
     });
   }
 }
 
 test('macOS notarization does not publish the candidate before every stage succeeds', () => {
-  fixture(({ executable, output }) => {
+  fixture(({ bundle, executable, output }) => {
     writeFileSync(output, 'previous verified release');
     let archives = 0;
     let submittedHash;
@@ -73,7 +86,7 @@ test('macOS notarization does not publish the candidate before every stage succe
       }
       return ok;
     };
-    const packed = packageDesktopContainer({
+    const packed = packageDesktopContainer({ bundle,
       platform: 'darwin', arch: 'x64', config, executable, output, run,
       signing: { identity: 'fixture identity', keychainProfile: 'fixture profile', notarize: true },
     });
@@ -97,7 +110,7 @@ test('notary evidence refuses archive bytes replaced while submitting', () => {
 });
 
 test('macOS iconutil receives a .iconset directory with the complete Retina icon family', () => {
-  fixture(({ executable, root, output }) => {
+  fixture(({ bundle, executable, root, output }) => {
     const icon = join(root, 'authored.png');
     writeFileSync(icon, 'authored icon');
     let iconset;
@@ -115,7 +128,7 @@ test('macOS iconutil receives a .iconset directory with the complete Retina icon
       if (command === 'zip') writeFileSync(args[2], 'archive');
       return ok;
     };
-    packageDesktopContainer({ platform: 'darwin', arch: 'x64', config, executable, icon, output, run });
+    packageDesktopContainer({ bundle, platform: 'darwin', arch: 'x64', config, executable, icon, output, run });
     assert.equal(existsSync(dirname(iconset)), false);
   });
 });

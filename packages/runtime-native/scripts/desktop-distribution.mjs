@@ -328,6 +328,9 @@ function layout(platform, { appName, executableName, iconName }) {
   const slug = containerSlug(appName);
   if (platform === 'linux') {
     return {
+      // `findExternalBundle` looks beside the executable on Linux and Windows, and in
+      // Contents/Resources for a macOS .app. Stage it where the loader already searches.
+      bundle: 'game.bundle',
       executable: slug,
       icon: `share/icons/hicolor/256x256/apps/${iconName}.png`,
       manifest: CONTAINER_MANIFEST,
@@ -336,6 +339,7 @@ function layout(platform, { appName, executableName, iconName }) {
   }
   if (platform === 'darwin') {
     return {
+      bundle: 'Contents/Resources/game.bundle',
       executable: `Contents/MacOS/${slug}`,
       icon: `Contents/Resources/${slug}.icns`,
       manifest: `Contents/Resources/${CONTAINER_MANIFEST}`,
@@ -346,6 +350,7 @@ function layout(platform, { appName, executableName, iconName }) {
     };
   }
   return {
+    bundle: 'game.bundle',
     executable: executableName,
     icon: `${iconName}.png`,
     manifest: CONTAINER_MANIFEST,
@@ -509,6 +514,9 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
   }
   const required = [
     manifest.executable,
+    // Without the bundle the executable is a bare runtime that prints CLI usage instead of the
+    // game, which is exactly the failure a released container must never reach a player with.
+    manifest.bundle,
     ...manifest.dependencies.map((dependency) => dependency?.path),
     ...(manifest.ui === null ? [] : [manifest.ui.entry]),
     ...(manifest.app?.icon === undefined ? [] : [manifest.app.icon]),
@@ -669,6 +677,7 @@ export function notarizeArchive({ archive, signing, run = exec } = {}) {
 export function packageDesktopContainer({
   platform = process.platform,
   arch = process.arch,
+  bundle,
   executable,
   executableName,
   uiDirectory,
@@ -711,6 +720,13 @@ export function packageDesktopContainer({
     mkdirSync(dirname(stage(paths.executable)), { recursive: true });
     copyFileSync(executable, stage(paths.executable));
     if (platform !== 'win32') chmodSync(stage(paths.executable), 0o755);
+
+    // The game travels beside the executable, never appended to it: rcedit and the signing tools
+    // rewrite the binary, and anything past the end of the image does not survive that.
+    assertFile(bundle, 'game bundle');
+    mkdirSync(dirname(stage(paths.bundle)), { recursive: true });
+    copyFileSync(bundle, stage(paths.bundle));
+    record(paths.bundle);
 
     let ui = null;
     if (uiRenderer === 'web') {
@@ -806,6 +822,7 @@ export function packageDesktopContainer({
         build: app.build ?? 1,
         ...(iconRecord === undefined ? {} : { icon: iconRecord.path, iconSha256: iconRecord.sha256 }),
       },
+      bundle: paths.bundle,
       dependencies: bundled,
       executable: paths.executable,
       format,

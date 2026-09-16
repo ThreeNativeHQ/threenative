@@ -158,7 +158,9 @@ async function packageDesktopRelease(options, runtime) {
     // the OS keychain. Without them, release stays an unsigned-but-complete container.
     const signing = desktopSigningFromEnvironment();
     const rawOutput = join(staging, containerSlug(basename(options.output)));
-    const executable = compileDesktopArtifact({ ...options, output: rawOutput }, runtime);
+    const { bundle, executable } = compileDesktopArtifact({ ...options, output: rawOutput }, runtime, {
+      sidecar: true,
+    });
     const uiRenderer = config.ui?.renderer === 'web' ? 'web' : 'native';
     const uiDirectory = uiRenderer === 'web' ? join(dirname(executable), 'ui') : undefined;
     const discovered = options.dependencies === undefined
@@ -169,6 +171,7 @@ async function packageDesktopRelease(options, runtime) {
     const icon = config.app?.icon === undefined ? undefined : resolve(config.app.icon);
     const result = packageDesktopContainer({
       arch: process.arch,
+      bundle,
       config,
       dependencies: discovered.bundled,
       executable,
@@ -188,11 +191,24 @@ async function packageDesktopRelease(options, runtime) {
   }
 }
 
-function compileDesktopArtifact(options, runtime) {
+/**
+ * Build the desktop artifact.
+ *
+ * Debug appends the game to a copy of the runtime, which is one self-contained file. Release takes
+ * `sidecar`, which writes the game to `game.bundle` and leaves the executable a bare runtime copy:
+ * anything that rewrites the executable afterwards - rcedit embedding the icon, `signtool` adding
+ * the certificate table, `codesign` sealing a bundle - moves or discards data appended past the
+ * end of the image, and the loader finds its footer only at physical EOF. Keeping the game beside
+ * the executable instead of inside it is what makes release resource-editing and signing safe.
+ */
+function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
   const output = process.platform === 'win32' && !options.output.endsWith('.exe')
     ? `${options.output}.exe`
     : options.output;
   mkdirSync(dirname(output), { recursive: true });
+  // Named `game.bundle` because that is what the runtime's own `findExternalBundle` looks for
+  // beside the executable; the container places it where each platform's loader searches.
+  const bundle = join(dirname(output), 'game.bundle');
   const staging = mkdtempSync(join(tmpdir(), 'threenative-desktop-'));
   try {
     const stagedEntry = stageDesktopFiles(
@@ -220,18 +236,27 @@ function compileDesktopArtifact(options, runtime) {
       '--include',
       staging,
       '--out',
-      output,
+      sidecar ? bundle : output,
     ];
+    // `--bundle-only` writes the bundle alone and copies no executable, so the runtime copy below
+    // carries no appended payload for a later PE or Mach-O rewrite to lose.
+    if (sidecar) args.push('--bundle-only');
     const result = spawnSync(runtime, args, { encoding: 'utf8', stdio: 'inherit' });
     if (result.error) throw result.error;
     if (result.status !== 0)
       throw new Error(`Runtime packager exited with code ${result.status ?? 'unknown'}.`);
+    if (sidecar) {
+      if (!existsSync(bundle)) {
+        throw new Error(`TN_DESKTOP_BUNDLE_MISSING: the runtime packager wrote no bundle at ${bundle}.`);
+      }
+      copyFileSync(runtime, output);
+    }
   } finally {
     rmSync(staging, { force: true, recursive: true });
   }
   if (process.platform !== 'win32') chmodSync(output, 0o755);
   console.log(`ThreeNative desktop artifact: ${output}`);
-  return output;
+  return sidecar ? { bundle, executable: output } : output;
 }
 
 /**
