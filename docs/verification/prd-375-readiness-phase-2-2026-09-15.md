@@ -404,11 +404,14 @@ family **6 files, 193 passed**, exit 0; `pnpm typecheck` and `pnpm lint` exit 0.
 
 `parseCliFlags` matched `flag === '--config' && value`, so a trailing `--config` or an empty shell
 expansion dropped the flag and the run passed printing `brand NOT inspected`. Announced, so not a
-false green — but a typo quietly disabled the whole check. The same shape was worse on
-`--container`: an empty `$TN_RELEASE_CONTAINER_ROOT`, which is exactly how the two
-`native-platforms.yml` jobs pass it, would have **silently downgraded the run to the
-developer-artifact path** and judged a different binary than the one under test, while still
-printing a pass.
+false green — but a typo quietly disabled the whole check. The same shape was worse on `--container`, and that one was **not
+hypothetical — it was a live false green in production CI**. Both `native-platforms.yml` jobs
+invoke the verifier as `--container "$TN_RELEASE_CONTAINER_ROOT"`; if that variable had ever been
+empty — an earlier step failing to export it, a rename, a shell quoting change — the flag was
+dropped, the run fell through to `verifyStarterDesktop`, and the job **judged the developer
+artifact in `dist-native/` instead of the release container it claimed to verify, and printed a
+pass**. Nothing announced the substitution. The only thing standing between that path and a green
+job reporting on the wrong binary was the variable never happening to be empty.
 
 Every flag is now recognized or refused, and every value must be present and non-blank:
 `TN_NATIVE_STARTER_CLI_INVALID` for an unknown flag, a missing or empty value, or a `--frames`
@@ -436,10 +439,18 @@ also named as a known limitation in the PRD.
 Five further malformed-PE shapes — truncation at `0x100` and `0x200`, an out-of-section resource
 RVA, `NumberOfSections = 65535`, and `e_lfanew = 0xfffffff0` — all failed closed with named codes.
 
-The verdict on `7bb0df3a6` was **NEEDS CORRECTION**. Findings 1, 2 and 3 were corrected in
-`16fd1593d`, finding 5 here; finding 4 above is this lane's own, and finding 6 is disclosed and
-unchanged by design. No reviewer PASS is claimed for the corrected head; a re-review is the next
-step, and the phase's reviewer box stays open.
+The verdict on `7bb0df3a6` was **NEEDS CORRECTION**, on finding 1 alone. Findings 1, 2 and 3 were
+corrected in `16fd1593d`, finding 5 here; finding 6 is disclosed and unchanged by design.
+
+**Provenance settled by the reviewer's follow-up:** finding 4 (`FileDescription`) is a genuinely
+distinct defect this lane found, not the reviewer's unaccounted-for third — its own `windowsFixture`
+always wrote both `ProductName` and `FileDescription`, so its probe set structurally could not have
+reached it. The reviewer's third silent pass is the darwin `.icns` case recorded as finding 6, which
+is pre-existing (the same bypass exists at `0b90ec812`, so this phase neither introduced nor widened
+it) and stays disclosed rather than fixed. Nothing from the review is now unaccounted for.
+
+No reviewer PASS is claimed for the corrected head; a re-review is the next step, and the phase's
+reviewer box stays open.
 
 ## The container now records its loading sequence — owner decision, 2026-09-15
 
