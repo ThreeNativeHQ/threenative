@@ -6,9 +6,22 @@
 // reconstructed, and the authored GLB is never overwritten.
 
 import { createHash } from "node:crypto";
-import type { Document, Node as GltfNode, Material, Mesh, Primitive } from "@gltf-transform/core";
-import { joinPrimitives } from "@gltf-transform/functions";
+import type {
+  Document,
+  Node as GltfNode,
+  Material,
+  Mesh,
+  Primitive,
+  Scene,
+} from "@gltf-transform/core";
+import {
+  compactPrimitive,
+  joinPrimitives,
+  listNodeScenes,
+  transformPrimitive,
+} from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
+import { Matrix4 } from "three";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
 import {
   type DiscreteLodSkipReason,
@@ -716,20 +729,73 @@ interface IJoinedBuild {
   readonly metadata: readonly IJoinedRungMetadata[];
 }
 
+/** A sibling mesh node eligible for a joined rung, under one container. */
+interface IJoinMember {
+  readonly animated: boolean;
+  readonly mesh: Mesh;
+  readonly node: GltfNode;
+  readonly skinned: boolean;
+}
+
+const IDENTITY_MATRIX = new Matrix4();
+
 /**
- * The opt-in join (PRD-377 §4.4 extension). Groups each mesh's eligible primitives by material and
- * attribute layout and merges each group into one primitive — `joinPrimitives` already refuses
- * incompatible groups, so a join can never cross a material. Skinned, morph-target and animated
- * nodes are refused before grouping; the detached far mesh never replaces the authored one, so
- * LOD0, node identity, picking and per-node visibility are untouched.
+ * True when `node` or any ancestor strictly below `container` is animation-targeted. The container
+ * itself may move: the rung is baked in container space and rides along with it.
+ */
+function movableUnder(
+  node: GltfNode,
+  container: GltfNode | Scene,
+  animated: ReadonlySet<GltfNode>,
+): boolean {
+  let current: GltfNode | null = node;
+  while (current !== null && (current as unknown) !== container) {
+    if (animated.has(current)) return true;
+    current = current.getParentNode();
+  }
+  return false;
+}
+
+/** The local-to-`container` transform of `node`, composed from the local matrices on the path. */
+function relativeMatrix(node: GltfNode, container: GltfNode | Scene): Matrix4 {
+  const matrix = new Matrix4();
+  let current: GltfNode | null = node;
+  while (current !== null && (current as unknown) !== container) {
+    matrix.premultiply(new Matrix4().fromArray(current.getMatrix()));
+    current = current.getParentNode();
+  }
+  return matrix;
+}
+
+/** A copy of `primitive` with `matrix` baked into its vertex streams, leaving the authored one alone. */
+function isolateTransformed(primitive: Primitive, matrix: Matrix4): Primitive {
+  // `compactPrimitive` rewrites its input in place; clone first so the authored LOD0 keeps its own
+  // accessors and only the detached copy is compacted and transformed.
+  const isolated = primitive.clone();
+  compactPrimitive(isolated);
+  transformPrimitive(
+    isolated,
+    matrix.elements as unknown as Parameters<typeof transformPrimitive>[1],
+  );
+  return isolated;
+}
+
+/**
+ * The opt-in join (PRD-377 §4.4 extension). Groups every eligible primitive under one shared
+ * container by material and attribute layout and merges each group into one primitive — across
+ * sibling meshes, not just within one. `joinPrimitives` already refuses incompatible groups, so a
+ * join can never cross a material; the sibling's transform-relative-to-container is baked into its
+ * vertices first, and the detached far mesh never replaces the authored one, so LOD0, node identity,
+ * picking and per-node visibility are untouched.
  *
- * Only meshes where a group actually collapses two or more primitives get a rung: a mesh already at
- * one primitive per material gains nothing and is left alone. Returns `null` when nothing joined.
+ * Only a site where a group actually collapses two or more primitives gets a rung: single-primitive
+ * material groups gain nothing and are left alone when nothing collapses. Structural refusals are per
+ * member — an animated, skinned, morphed or node-instanced part is left authored and a site that
+ * loses enough members collapses nothing. Returns `null` when nothing joined.
  */
 async function buildJoinedRungs(
   document: Document,
   policy: IResolvedLodPolicy,
-  flags: Map<Mesh, IMeshFlags>,
   reason: (reason: DiscreteLodSkipReason) => void,
 ): Promise<IJoinedBuild | null> {
   const root = document.getRoot();
@@ -737,47 +803,106 @@ async function buildJoinedRungs(
   const materials = new Map<Material, number>();
   for (const material of root.listMaterials()) materials.set(material, materials.size);
 
+  const animated = animatedNodes(document);
+  const nodes = reachableNodes(document);
+  // A mesh referenced by more than one node is instanced by the node graph: its local transform is
+  // not single-valued, so it is left authored rather than guessed about.
+  const meshRefs = new Map<Mesh, number>();
+  for (const node of nodes) {
+    const mesh = node.getMesh();
+    if (mesh !== null) meshRefs.set(mesh, (meshRefs.get(mesh) ?? 0) + 1);
+  }
+  // A leaf mesh node has no mesh anywhere below it: nested mesh nodes are skipped so a rung never
+  // overlaps a rung deeper in the graph and a primitive belongs to exactly one site.
+  const hasMeshBelow = new Set<GltfNode>();
+  const markMeshBelow = (node: GltfNode): boolean => {
+    let found = false;
+    for (const child of node.listChildren()) {
+      if (child.getMesh() !== null || markMeshBelow(child)) {
+        found = true;
+        break;
+      }
+    }
+    if (found) hasMeshBelow.add(node);
+    return found;
+  };
+  for (const node of nodes) if (node.getMesh() !== null) markMeshBelow(node);
+
+  const sites = new Map<object, { container: GltfNode | Scene; members: IJoinMember[] }>();
+  for (const node of nodes) {
+    const mesh = node.getMesh();
+    if (mesh === null || hasMeshBelow.has(node)) continue;
+    if ((meshRefs.get(mesh) ?? 0) > 1) {
+      reason("boundary-unsafe");
+      continue;
+    }
+    const container =
+      node.getParentNode() ?? (listNodeScenes(node)[0] as Scene | undefined) ?? null;
+    if (container === null) continue;
+    const site = sites.get(container) ?? { container, members: [] };
+    site.members.push({
+      animated: movableUnder(node, container, animated),
+      mesh,
+      node,
+      skinned: node.getSkin() !== null,
+    });
+    sites.set(container, site);
+  }
+
   const rungs: IModelLodJoinedRungSummary[] = [];
   const metadata: IJoinedRungMetadata[] = [];
+  const usedNames = new Set<string>();
   let unnamed = 0;
 
-  for (const mesh of root.listMeshes()) {
-    const state = flags.get(mesh) ?? { animated: false, authoredLod: false, skinned: false };
-    if (state.skinned) {
-      reason("deforming");
-      continue;
-    }
-    if (state.animated) {
-      reason("animated");
-      continue;
-    }
+  for (const site of sites.values()) {
+    const { container } = site;
     const grouped = new Map<
       string,
       { primitives: Primitive[]; sources: IModelLodJoinedSource[]; trianglesBefore: number }
     >();
-    mesh.listPrimitives().forEach((primitive, index) => {
-      const eligibility = classifyJoinCandidate(primitive, {
-        alreadyCooked: primitive.getExtension(TN_DISCRETE_LOD) !== null,
-        animated: false,
-        skinned: false,
-        virtualOwned: primitive.getExtension(TN_VIRTUAL_GEOMETRY) !== null,
-      });
-      if (!eligibility.eligible) {
-        if (eligibility.reason !== undefined) reason(eligibility.reason);
-        return;
+    for (const member of site.members) {
+      if (member.animated) {
+        reason("animated");
+        continue;
       }
-      const key = joinGroupKey(primitive, materials);
-      const entry = grouped.get(key) ?? { primitives: [], sources: [], trianglesBefore: 0 };
-      entry.primitives.push(primitive);
-      entry.sources.push({ mesh: mesh.getName(), primitive: index });
-      entry.trianglesBefore += primitiveTriangleCount(primitive);
-      grouped.set(key, entry);
-    });
+      if (member.skinned || member.mesh.listPrimitives().some((p) => p.listTargets().length > 0)) {
+        reason("deforming");
+        continue;
+      }
+      const transform = relativeMatrix(member.node, container);
+      const identity = transform.equals(IDENTITY_MATRIX);
+      member.mesh.listPrimitives().forEach((primitive, index) => {
+        const eligibility = classifyJoinCandidate(primitive, {
+          alreadyCooked: primitive.getExtension(TN_DISCRETE_LOD) !== null,
+          animated: false,
+          skinned: false,
+          virtualOwned: primitive.getExtension(TN_VIRTUAL_GEOMETRY) !== null,
+        });
+        if (!eligibility.eligible) {
+          if (eligibility.reason !== undefined) reason(eligibility.reason);
+          return;
+        }
+        const joined = identity ? primitive : isolateTransformed(primitive, transform);
+        const key = joinGroupKey(primitive, materials);
+        const entry = grouped.get(key) ?? { primitives: [], sources: [], trianglesBefore: 0 };
+        entry.primitives.push(joined);
+        entry.sources.push({ mesh: member.mesh.getName(), primitive: index });
+        entry.trianglesBefore += primitiveTriangleCount(primitive);
+        grouped.set(key, entry);
+      });
+    }
     if (![...grouped.values()].some((entry) => entry.primitives.length >= 2)) continue;
 
-    const baseName = mesh.getName() === "" ? `mesh${String(unnamed)}` : mesh.getName();
-    unnamed += 1;
-    const farName = `${baseName}__lod_join`;
+    const meshNames = [...new Set(site.members.map((member) => member.mesh))];
+    const single = meshNames.length === 1 ? (meshNames[0] as Mesh) : null;
+    const baseName =
+      (single !== null ? single.getName() : container.getName()) || `mesh${String(unnamed)}`;
+    let farName = `${baseName}__lod_join`;
+    while (usedNames.has(farName)) {
+      unnamed += 1;
+      farName = `${baseName}${String(unnamed)}__lod_join`;
+    }
+    usedNames.add(farName);
     const farMesh = document.createMesh(farName);
     const groups: IModelLodJoinedGroup[] = [];
     let rungTriangles = 0;
@@ -848,6 +973,7 @@ async function buildJoinedRungs(
       draws: rung.draws,
       error: rung.error,
       mesh: farName,
+      meshes: [...new Set(groups.flatMap((group) => group.sources.map((source) => source.mesh)))],
       primitives: rung.primitives,
       sources: groups.flatMap((group) =>
         group.sources.map((source) => `${source.mesh}#${String(source.primitive)}`),
@@ -902,7 +1028,7 @@ export async function generateDiscreteLod(
   // Join before the discrete chains attach: a joined rung must see the authored primitives, not the
   // cooked ones, and it shares none of the per-primitive `TN_discrete_lod` payloads.
   const joined = joinRequested
-    ? await buildJoinedRungs(document, policy, flags, (reason) => reasons.add(reason))
+    ? await buildJoinedRungs(document, policy, (reason) => reasons.add(reason))
     : null;
   // The whole-asset total, computed once: the default floor scope compares every primitive against
   // it so a model split into many small primitives is measured by the asset, not the split.

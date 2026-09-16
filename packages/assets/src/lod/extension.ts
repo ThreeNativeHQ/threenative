@@ -71,6 +71,12 @@ export interface IJoinedRungMetadata {
    */
   readonly error: number;
   readonly mesh: string;
+  /**
+   * The distinct source mesh names the rung collapsed. A within-mesh join lists one; a join across
+   * sibling meshes lists every mesh whose primitives were merged, which is where the draw collapse
+   * actually came from (PRD-377 §4.4).
+   */
+  readonly meshes: readonly string[];
   readonly primitives: number;
   readonly sources: readonly string[];
   readonly triangles: number;
