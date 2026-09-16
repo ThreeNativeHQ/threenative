@@ -1415,6 +1415,77 @@ jobs:
           PATH="$clean_path" "$executable" --windowed --screenshot "$RUNNER_TEMP/clean-player.png" --frames 300 2>&1 | tee "$log"
           grep -q 'TN_NATIVE_SMOKE_READY:webgpu' "$log"
           grep -qE 'Rendered [0-9]+ frames' "$log"
+      # The signtool path was only ever exercised through an injected transport, because a publicly
+      # trusted code-signing certificate does not exist for this repository. A certificate generated
+      # on the runner and trusted for this session proves the real tool, on a real Windows host,
+      # against the real distributed executable. It does NOT prove public trust: Authenticode against
+      # a CA-issued certificate stays with PRD-060, and the artifact this produces is thrown away.
+      - name: Create a self-signed code-signing certificate for the proof
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $subject = 'ThreeNative CI Signing Proof'
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=$subject" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
+          # `signtool verify /pa` requires a trusted chain, so the self-signed root is trusted for
+          # this user only, on this throwaway runner.
+          $cer = Join-Path $env:RUNNER_TEMP 'tn-signing-proof.cer'
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          # CurrentUser\Root opens an interactive Root Certificate Store confirmation on hosted Windows.
+          # Use certutil against the machine Root store instead: the hosted runner is disposable and
+          # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.
+          & certutil.exe -f -addstore Root $cer | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate" }
+          # signtool ships with the Windows SDK and is on PATH only inside a Developer Command
+          # Prompt, the same way dumpbin is. The signing step runs in bash, so put the newest x64
+          # SDK signtool on PATH for the steps that follow rather than entering VsDevCmd there.
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'TN_DESKTOP_SIGNING_PROOF: no signtool.exe found in the Windows SDK' }
+          Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
+          Write-Host "created $($cert.Thumbprint) for CN=$subject; signtool at $($signtool.FullName)"
+      - name: Sign the distributed executable through the packager's own adapter
+        if: matrix.platform == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(cygpath -u "$RUNNER_TEMP")
+          project="$root/threenative-starter-native"
+          target="$root/signed-proof.exe"
+          executable=$(find "$TN_RELEASE_CONTAINER_ROOT" -maxdepth 1 -name '*.exe' -type f -print)
+          [ -n "$executable" ] || { echo "TN_DESKTOP_SIGNING_PROOF: no executable in the container" >&2; exit 1; }
+          cp "$executable" "$target"
+          # signDesktopArtifact itself, from the installed package - the code under test, not a
+          # hand-rolled signtool call that could pass while the adapter is broken. The script lives
+          # in the project and imports by relative path: a bare specifier would depend on the
+          # package's exports map, and NODE_PATH does not apply to ES modules at all.
+          cat > "$project/sign-proof.mjs" <<'PROOF'
+          import { signDesktopArtifact } from './node_modules/@threenative/runtime-native/scripts/desktop-distribution.mjs';
+          const result = signDesktopArtifact({
+            platform: 'win32',
+            signing: { subject: process.env.TN_SIGN_SUBJECT },
+            target: process.env.TN_SIGN_TARGET,
+          });
+          if (result.scheme !== 'signtool' || result.signed !== true) {
+            throw new Error(`TN_DESKTOP_SIGNING_PROOF: adapter reported ${JSON.stringify(result)}`);
+          }
+          console.log(`TN_DESKTOP_SIGNING_PROOF_SCHEME:${result.scheme}`);
+          PROOF
+          cd "$project"
+          TN_SIGN_SUBJECT='ThreeNative CI Signing Proof' TN_SIGN_TARGET="$(cygpath -w "$target")" \
+            node sign-proof.mjs 2>&1 | tee "$root/sign-proof.log"
+          grep -q 'TN_DESKTOP_SIGNING_PROOF_SCHEME:signtool' "$root/sign-proof.log"
+      - name: Read the signature back off the artifact
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Independent of the adapter that wrote it: Windows itself is asked whether this is signed.
+          $target = Join-Path $env:RUNNER_TEMP 'signed-proof.exe'
+          $sig = Get-AuthenticodeSignature -FilePath $target
+          Write-Host "status=$($sig.Status) signer=$($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "TN_DESKTOP_SIGNING_PROOF: signature status $($sig.Status)" }
+          if ($sig.SignerCertificate.Subject -notlike '*ThreeNative CI Signing Proof*') { throw 'TN_DESKTOP_SIGNING_PROOF: unexpected signer' }
       - name: Upload the desktop release container evidence
         if: always()
         uses: actions/upload-artifact@v7

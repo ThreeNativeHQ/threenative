@@ -670,11 +670,18 @@ export function signDesktopArtifact({ platform = process.platform, target, signi
     return { scheme: 'codesign', signed: true };
   }
   if (platform === 'win32') {
-    if (!signing?.certificate) {
-      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: Windows signing needs a code-signing certificate; unsigned preparation can proceed without signing.');
+    if (signing?.certificate && signing?.subject) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS: Windows signing takes a certificate file or a store subject, not both; one of them would be silently ignored.');
+    }
+    if (!signing?.certificate && !signing?.subject) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: Windows signing needs a code-signing certificate file or a certificate store subject; unsigned preparation can proceed without signing.');
     }
     const timestamp = signing.timestampUrl ? ['/tr', signing.timestampUrl, '/td', 'sha256'] : [];
-    signingTool(run, 'signtool', ['sign', '/fd', 'sha256', ...timestamp, '/f', signing.certificate, target], 'TN_DESKTOP_SIGNTOOL');
+    // `/f` reads a PFX and takes a `/p` password this contract deliberately does not carry, so it
+    // only ever works for a password-less file - which is not what a CA issues. `/n` signs from the
+    // Windows certificate store, keeping the private key in the OS keychain as the README promises.
+    const credential = signing.subject ? ['/n', signing.subject] : ['/f', signing.certificate];
+    signingTool(run, 'signtool', ['sign', '/fd', 'sha256', ...timestamp, ...credential, target], 'TN_DESKTOP_SIGNTOOL');
     signingTool(run, 'signtool', ['verify', '/pa', target], 'TN_DESKTOP_SIGNTOOL_VERIFY');
     return { artifactSha256: sha256File(target), scheme: 'signtool', signed: true };
   }
@@ -804,23 +811,28 @@ export function packageDesktopContainer({
         // to .icns and Linux copies the PNG the .desktop entry wants; Windows needs an .ico, built
         // outside the staging directory so it never becomes an unrecorded container resource.
         let windowsIcon = icon;
-        if (!icon.toLowerCase().endsWith('.ico')) {
-          const iconDirectory = mkdtempSync(join(tmpdir(), 'threenative-ico-'));
-          windowsIcon = join(iconDirectory, `${basename(icon, extname(icon))}.ico`);
-          pngToIco(icon, windowsIcon);
+        let iconDirectory;
+        try {
+          if (!icon.toLowerCase().endsWith('.ico')) {
+            iconDirectory = mkdtempSync(join(tmpdir(), 'threenative-ico-'));
+            windowsIcon = join(iconDirectory, `${basename(icon, extname(icon))}.ico`);
+            pngToIco(icon, windowsIcon);
+          }
+          const rcedit = run('rcedit', [
+            stage(paths.executable),
+            '--set-icon', windowsIcon,
+            '--set-file-version', version,
+            '--set-product-version', version,
+            '--set-version-string', 'ProductName', appName,
+            '--set-version-string', 'FileDescription', appName,
+          ], {});
+          if (rcedit.error) {
+            throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'rcedit' is required to embed the executable icon and version (${rcedit.error.message}).`);
+          }
+          if (rcedit.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: rcedit exited ${rcedit.status ?? 'unknown'}.`);
+        } finally {
+          if (iconDirectory) rmSync(iconDirectory, { force: true, recursive: true });
         }
-        const rcedit = run('rcedit', [
-          stage(paths.executable),
-          '--set-icon', windowsIcon,
-          '--set-file-version', version,
-          '--set-product-version', version,
-          '--set-version-string', 'ProductName', appName,
-          '--set-version-string', 'FileDescription', appName,
-        ], {});
-        if (rcedit.error) {
-          throw new Error(`TN_DESKTOP_RESOURCE_TOOL_MISSING: 'rcedit' is required to embed the executable icon and version (${rcedit.error.message}).`);
-        }
-        if (rcedit.status !== 0) throw new Error(`TN_DESKTOP_RESOURCE_FAILED: rcedit exited ${rcedit.status ?? 'unknown'}.`);
         copyFileSync(icon, stage(paths.icon));
         iconRecord = { path: paths.icon, sha256: sha256File(icon) };
         record(paths.icon);
@@ -880,6 +892,14 @@ export function packageDesktopContainer({
     };
     mkdirSync(dirname(stage(paths.manifest)), { recursive: true });
     writeFileSync(stage(paths.manifest), `${JSON.stringify(manifest, null, 2)}\n`);
+
+    // The initial codesign verification predates the manifest write. macOS seals all bundle
+    // resources, so re-check the final tree before archiving or submitting it to Apple. Until
+    // the signed-container manifest cycle is resolved, refuse an invalid release rather than
+    // publishing it with signed: true. Keep unsigned preparation and the integrity records intact.
+    if (platform === 'darwin' && signedArtifact.signed) {
+      signingTool(run, 'codesign', ['--verify', '--strict', '--deep', join(staging, rootFolder)], 'TN_DESKTOP_CODESIGN_FINAL_VERIFY');
+    }
 
     mkdirSync(dirname(archive), { recursive: true });
     // Keep the public destination untouched until the entire release transaction succeeds,

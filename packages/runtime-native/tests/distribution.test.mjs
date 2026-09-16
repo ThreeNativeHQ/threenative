@@ -1774,6 +1774,98 @@ test('a successful macOS signature records the signing scheme', () => {
   assert.ok(calls.some((call) => call === 'codesign --verify'));
 });
 
+test('Windows signing can use a certificate store subject, which is what a CA-issued key needs', () => {
+  // `signtool sign /f <pfx>` is the only form the packager offered, and it is passed no `/p`, so it
+  // can only consume a password-less PFX. A CA does not issue one of those. `/n <subject>` signs
+  // from the Windows certificate store, which is also what the README promises: the private key
+  // stays in the OS keychain and never reaches the build config.
+  const directory = makeTempDirSync('threenative-sign-subject-');
+  const target = join(directory, 'game.exe');
+  writeFileSync(target, 'executable');
+  const calls = [];
+  const run = (command, args) => {
+    calls.push({ args, command });
+    return { status: 0, stdout: '', stderr: '' };
+  };
+  const result = signDesktopArtifact({
+    platform: 'win32',
+    run,
+    signing: { subject: 'Example Publisher Ltd' },
+    target,
+  });
+  assert.equal(result.scheme, 'signtool');
+  assert.equal(result.signed, true);
+  const sign = calls.find((call) => call.args[0] === 'sign');
+  assert.ok(sign.args.includes('/n'), `sign must use /n, got: ${sign.args.join(' ')}`);
+  assert.equal(sign.args[sign.args.indexOf('/n') + 1], 'Example Publisher Ltd');
+  assert.equal(sign.args.includes('/f'), false, 'a store subject must not also pass a PFX path');
+  assert.ok(calls.some((call) => call.args[0] === 'verify' && call.args.includes('/pa')));
+});
+
+test('Windows signing still passes the certificate file when no subject is given', () => {
+  // The mirror of the /n case. Without it, deleting the `/f` arguments leaves signtool to auto-select
+  // a certificate and every test stays green, so the path this PR must not break is unguarded.
+  const directory = makeTempDirSync('threenative-sign-pfx-');
+  const target = join(directory, 'game.exe');
+  const certificate = join(directory, 'publisher.pfx');
+  writeFileSync(target, 'executable');
+  writeFileSync(certificate, 'pfx bytes');
+  const calls = [];
+  const result = signDesktopArtifact({
+    platform: 'win32',
+    run: (command, args) => { calls.push({ args, command }); return { status: 0, stdout: '', stderr: '' }; },
+    signing: { certificate, timestampUrl: 'http://timestamp.example/rfc3161' },
+    target,
+  });
+  assert.equal(result.scheme, 'signtool');
+  const sign = calls.find((call) => call.args[0] === 'sign');
+  assert.equal(sign.args[sign.args.indexOf('/f') + 1], certificate, `got: ${sign.args.join(' ')}`);
+  assert.equal(sign.args.includes('/n'), false, 'a certificate file must not also pass a store subject');
+  assert.equal(sign.args[sign.args.indexOf('/tr') + 1], 'http://timestamp.example/rfc3161');
+});
+
+test('a blank signing variable reads as absent, not as a request to sign', () => {
+  // A CI job writing `SUBJECT: ${{ secrets.WIN_SIGN_SUBJECT }}` with the secret unset passes the
+  // empty string. Treating that as a signing request turns a release that produced an unsigned
+  // container into a hard failure.
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_SUBJECT: '' }), undefined);
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_CERTIFICATE: '   ' }), undefined);
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_CODESIGN_IDENTITY: '' }), undefined);
+  assert.equal(desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_NOTARY_PROFILE: '' }), undefined);
+});
+
+test('both Windows credential variables set is refused before a release is built', () => {
+  // The same clash inside signDesktopArtifact costs a full compile and staging first.
+  assert.throws(
+    () => desktopSigningFromEnvironment({
+      THREENATIVE_DESKTOP_SIGN_CERTIFICATE: 'C:/keys/publisher.pfx',
+      THREENATIVE_DESKTOP_SIGN_SUBJECT: 'Example Publisher Ltd',
+    }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS/u,
+  );
+});
+
+test('Windows signing refuses a certificate file and a store subject together', () => {
+  // Silently preferring one would sign with a key the author did not choose.
+  const directory = makeTempDirSync('threenative-sign-ambiguous-');
+  const target = join(directory, 'game.exe');
+  writeFileSync(target, 'executable');
+  assert.throws(
+    () => signDesktopArtifact({
+      platform: 'win32',
+      run: () => ({ status: 0, stdout: '', stderr: '' }),
+      signing: { certificate: join(directory, 'publisher.pfx'), subject: 'Example Publisher Ltd' },
+      target,
+    }),
+    /TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS/u,
+  );
+});
+
+test('desktopSigningFromEnvironment carries a store subject on its own', () => {
+  const signing = desktopSigningFromEnvironment({ THREENATIVE_DESKTOP_SIGN_SUBJECT: 'Example Publisher Ltd' });
+  assert.equal(signing?.subject, 'Example Publisher Ltd');
+});
+
 test('a successful Windows signature records the signing scheme', () => {
   const directory = makeTempDirSync('threenative-sign-win-');
   const executable = join(directory, 'input.exe');

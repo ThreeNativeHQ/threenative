@@ -57,7 +57,16 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false, config
   writeFileSync(join(uiDirectory, 'index.html'), '<main>HUD</main>');
   const invocations = [];
   const run = (command, args, options) => {
-    invocations.push({ args, command });
+    // Capture the icon bytes at call time: packaging deletes its temporary .ico once rcedit
+    // succeeds, so reading the path afterwards proves nothing about what rcedit was handed.
+    const iconIndex = args.indexOf('--set-icon');
+    invocations.push({
+      args,
+      command,
+      ...(iconIndex >= 0 && existsSync(args[iconIndex + 1])
+        ? { iconBytes: readFileSync(args[iconIndex + 1]) }
+        : {}),
+    });
     if (command === 'rcedit') writeFileSync(args[0], 'executable with PE resources');
     else if (command === 'sips') writeFileSync(args.at(-1), 'resized icon');
     else if (command === 'iconutil') writeFileSync(args.at(-1), 'converted icns');
@@ -152,7 +161,8 @@ test('Windows packaging hands rcedit an .ico, never the authored PNG', () => {
   assert.ok(rcedit, 'rcedit runs when an icon is configured');
   const iconArgument = rcedit.args[rcedit.args.indexOf('--set-icon') + 1];
   assert.ok(iconArgument.toLowerCase().endsWith('.ico'), `--set-icon got ${iconArgument}`);
-  assert.equal(readFileSync(iconArgument).readUInt16LE(2), 1, 'and it is a real icon file');
+  assert.ok(rcedit.iconBytes, 'the icon existed when rcedit was invoked');
+  assert.equal(rcedit.iconBytes.readUInt16LE(2), 1, 'and it is a real icon file');
 });
 
 test('the Windows icon is a real .ico, because rcedit refuses a bare PNG', () => {
