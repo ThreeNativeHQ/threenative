@@ -14,7 +14,16 @@ describe("prerendered documentation evidence", () => {
   });
   it("publishes the failed gates alongside reductions with immutable evidence links", async () => {
     const page = await prerenderedPage("/docs/benchmarks");
-    for (const text of ["Tint uniforms", "Tint + stable names", "16,500.797697", "8,000", "AC-charging", "Not measured", "VOID", "Partial qualification"]) {
+    for (const text of [
+      "Tint uniforms",
+      "Tint + stable names",
+      "16,500.797697",
+      "8,000",
+      "AC-charging",
+      "Not measured",
+      "VOID",
+      "Partial qualification",
+    ]) {
       expect(page).toContain(text);
     }
     expect(page).toContain(`/blob/${EVIDENCE_REF}/docs/benchmark/LOC.md`);
