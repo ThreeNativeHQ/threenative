@@ -4,9 +4,15 @@ test.describe("documentation navigation", () => {
   test("moves through docs and preserves the home install anchor", async ({ page }) => {
     await page.setViewportSize({ height: 900, width: 1440 });
     await page.goto("/");
-    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { exact: true, name: "Docs" }).click();
+    await page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { exact: true, name: "Docs" })
+      .click();
     await expect(page).toHaveURL(/\/docs\/?$/u);
-    await page.getByRole("navigation", { name: "Documentation", exact: true }).getByRole("link", { exact: true, name: "Physics" }).click();
+    await page
+      .getByRole("navigation", { name: "Documentation", exact: true })
+      .getByRole("link", { exact: true, name: "Physics" })
+      .click();
     await expect(page.getByRole("heading", { level: 1, name: "Physics and portability" })).toBeVisible();
     await page.locator("header").getByRole("link", { exact: true, name: "Get Started" }).click();
     await expect(page).toHaveURL(/\/#install$/u);
@@ -21,9 +27,13 @@ test.describe("documentation navigation", () => {
     await menu.locator("summary").click();
     await menu.getByRole("link", { exact: true, name: "Benchmarks" }).click();
     await expect(page).toHaveURL(/\/docs\/benchmarks\/?$/u);
-    await expect(page.getByRole("heading", { level: 1, name: "ThreeNative benchmarks and verification" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "ThreeNative benchmarks and verification" }),
+    ).toBeVisible();
     await expect(page.getByTestId("mobile-nav-toggle")).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(
+      true,
+    );
   });
 
   test("searches locally and follows the first result with Enter", async ({ page }) => {
@@ -34,7 +44,9 @@ test.describe("documentation navigation", () => {
     const input = dialog.getByRole("searchbox");
     await expect(input).toBeFocused();
     await input.fill("UNREAL engine");
-    await expect(dialog.getByRole("navigation", { name: "Search results" }).getByRole("link")).toHaveCount(1);
+    await expect(
+      dialog.getByRole("navigation", { name: "Search results" }).getByRole("link"),
+    ).toHaveCount(1);
     await input.press("Enter");
     await expect(page).toHaveURL(/\/docs\/comparison\/?$/u);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Unreal Engine");
@@ -61,11 +73,15 @@ test.describe("documentation navigation", () => {
     await page.getByRole("button", { name: /^Search docs/u }).click();
     for (let index = 0; index < 15; index++) {
       await page.keyboard.press("Tab");
-      expect(await page.locator("dialog").evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+      expect(
+        await page.locator("dialog").evaluate((dialog) => dialog.contains(document.activeElement)),
+      ).toBe(true);
     }
     for (let index = 0; index < 15; index++) {
       await page.keyboard.press("Shift+Tab");
-      expect(await page.locator("dialog").evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+      expect(
+        await page.locator("dialog").evaluate((dialog) => dialog.contains(document.activeElement)),
+      ).toBe(true);
     }
     await page.keyboard.press("Escape");
   });
@@ -76,7 +92,9 @@ test.describe("documentation navigation", () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("searchbox").fill("physics");
     await dialog.getByRole("searchbox").press("ArrowDown");
-    await expect(dialog.getByRole("navigation", { name: "Search results" }).getByRole("link").first()).toBeFocused();
+    await expect(
+      dialog.getByRole("navigation", { name: "Search results" }).getByRole("link").first(),
+    ).toBeFocused();
   });
 
   test("offers a two-engine view without removing the full comparison", async ({ page }) => {
@@ -96,7 +114,9 @@ test.describe("documentation navigation", () => {
       await page.setViewportSize({ height: 844, width });
       for (const path of ["/docs/comparison", "/docs/benchmarks"]) {
         await page.goto(path);
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(
+          true,
+        );
       }
     }
   });
@@ -106,7 +126,11 @@ test.describe("documentation navigation", () => {
     await page.goto("/docs/comparison");
     await page.locator("#table h2 a").click();
     await expect(page).toHaveURL(/#table$/u);
-    await expect(page.getByRole("navigation", { name: "On this page", exact: true }).getByRole("link", { name: "Side-by-side", exact: true })).toHaveAttribute("aria-current", "location");
+    await expect(
+      page
+        .getByRole("navigation", { name: "On this page", exact: true })
+        .getByRole("link", { name: "Side-by-side", exact: true }),
+    ).toHaveAttribute("aria-current", "location");
   });
 });
 
@@ -114,7 +138,7 @@ test.describe("documentation without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
   test("prerenders comparisons and keeps native mobile navigation usable", async ({ page }) => {
     await page.setViewportSize({ height: 844, width: 390 });
-    await page.goto("/docs/comparison");
+    await page.goto("/docs/comparison/");
     await expect(page.getByRole("table").getByRole("columnheader")).toHaveCount(6);
     const menu = page.getByTestId("mobile-docs-navigation");
     await menu.locator("summary").click();
