@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) now has a live caller — `verifyStarterContainer` and its CLI `--config` flag inspect the container's brand before anything launches — and real Windows PE resource inspection replacing the manifest-only false pass (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)). PRD-365's containers landed on `develop` (PR #224, `b66585f08`), so that blocker is gone. What remains is Windows/macOS OS-launcher inspection and human capture on those hosts, and an independent reviewer PASS.
+**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) now has a live caller — `verifyStarterContainer` and its CLI `--config` flag inspect the container's brand before anything launches — and real Windows PE resource inspection replacing the manifest-only false pass (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)). PRD-365's containers landed on `develop` (PR #224, `b66585f08`), so that blocker is gone. A real linux-x64 container built from a starter branded only in game files passes the shipped CLI end to end (300 frames, brand verified, exit 0) with three negative controls firing on the real artifact. What remains is Windows/macOS OS-launcher inspection and human capture on those hosts, a PRD-365 container `loading` record so a configured `bootSplash` can pass, and an independent reviewer PASS.
 Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
@@ -119,7 +119,12 @@ executable's own resource directory — `RT_GROUP_ICON`/`RT_ICON` and `RT_VERSIO
 parsed with plain `fs` and `Buffer` and no new dependency — so a manifest and a sidecar PNG are no
 longer accepted as evidence. macOS source provenance, payload integrity and plist linkage remain
 proof of provenance, not of converted icon pixels. PRD-365's writer emits no `loading` record, so a
-configured `bootSplash` still reports missing evidence rather than a UI-only pass.
+configured `bootSplash` still reports missing evidence rather than a UI-only pass — and the real
+container run confirmed the consequence: `TN_NATIVE_STARTER_CONTAINER_LOADING_MISSING` fires on any
+container built from the scaffolded starter's own config, which declares `bootSplash` by default.
+Emitting that record is container-writer work in `desktop-distribution.mjs` and belongs to PRD-365,
+not to this phase's file budget; it is named here as the remaining gap rather than silently widened
+into.
 **Brand inspection is opt-in on the CLI, not default-on**, because the scaffold copies the engine's
 own `template-assets/icon.png` to a starter's `public/icon.png`: a stock, unbranded starter would
 fail `TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT` by design, and turning the check on by
@@ -135,7 +140,7 @@ prints `brand NOT inspected`; it never implies the identity was checked.
 - [x] Observed red recorded, then restored green
       This change, test-first: **12 failed / 42 passed (54)** in `tests/starter-brand.test.mjs` against the un-integrated inspector, then **78/78** across both files after implementing. Historical test-first red: 10 failed / 19 passed, then 29/29. Review regressions: 25 failed / 2 passed, then 27/27; three further controls failed before correction, then 30/30. Record: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`.
 - [ ] User verification performed on the named platform
-      Pending real container/CLI integration, OS-launcher inspection and same-artifact loading/gameplay captures. No native launch or human inspection was performed in this review.
+      **linux-x64 done, Windows and macOS not executed.** A real PRD-365 container was built from a starter branded only in game files (`orbit-brand.tar.gz` sha256 `1da75994…`) and the shipped CLI passed on it end to end: `starter desktop gate passed: 300 frames, 21910 colors, 337 asset pixels, brand Orbit Brand verified`, exit 0, with a non-blank 1280x720 capture (`e099b09d…`) inspected as the drawn starter scene. The real `.desktop` launcher entry is `desktop-file-validate`-clean and names `Orbit Brand`; three negative controls fire on the real artifact, the name control in 0.17 s, before any launch. Left open because two of the three named platforms are entirely unexecuted — no Windows or macOS host was used, so PE and `.icns`/`Info.plist` behavior stays fixture-backed — because nothing was opened from a real GUI file manager or launcher session, and because the authored icon used was a 1x1 PNG: byte-distinct, not a visual icon inspection.
 - [x] Evidence record written: `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`
 - [ ] Independent reviewer returned PASS
       Review findings corrected with local regressions, but no separate independent reviewer PASS was obtained; the container and visual acceptance remain unverified.

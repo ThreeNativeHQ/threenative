@@ -179,3 +179,149 @@ function makeTempDirSync(prefix) { return mkdtempSync(join(${JSON.stringify(dir)
 }
 JS
 ```
+
+## Live caller, real Windows PE inspection and a real container — 2026-09-15 (candidate `2b94a243473b295ed41ab8fb759bd371267182d1`)
+
+**What changed since the section above.** PRD-365 landed on `develop` (PR #224, `b66585f08`), so
+its desktop release containers exist and the "blocked on PRD-365" items are no longer blocked. This
+pass closed the two gates that section left open: the inspector had no live caller, and Windows
+identity was trusted from the application manifest, which was a false pass.
+
+- `verifyStarterContainer` in `packages/runtime-native/scripts/verify-starter-desktop.mjs` now calls
+  `inspectContainerBrand` after `resolveContainer` and **before** `assertPlayerPrerequisites` and the
+  launch, records the result as `report.brand`, and its CLI reads the consumer config from
+  `--config <resolved config json>` — the `.threenative/build/config.json` the build already writes.
+  Without `--config` the gate prints `brand NOT inspected`; it never implies the identity was checked.
+- `inspect-container-brand.mjs` parses the packaged Windows `.exe` itself: DOS/COFF/PE headers, the
+  section table, RVA→file-offset mapping, the three-level `.rsrc` tree, `RT_GROUP_ICON`/`RT_ICON`
+  and `RT_VERSION`/`VS_FIXEDFILEINFO` plus its `StringFileInfo` table. Plain `fs` + `Buffer`, no new
+  dependency. The manifest-only Windows acceptance is gone.
+
+### Red then green
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Baseline before the change | `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-brand.test.mjs tests/starter-desktop.test.mjs` | **2 files, 64 passed**, exit 0 |
+| Red, tests first (14 added) | `... tests/starter-brand.test.mjs` | **12 failed / 42 passed (54)**, exit 1 |
+| Green, after implementing | `... tests/starter-brand.test.mjs tests/starter-desktop.test.mjs` | **2 files, 78 passed**, exit 0 |
+
+The 14 new rows: three for the live caller (the verifier rejects a mismatched brand before it
+launches anything; a matching brand reaches the launch it guards; the CLI inspects the container it
+is pointed at, spawned as a real process and asserted on exit code and stderr), and eleven for
+Windows PE inspection (a packaged `.exe` inspected through its real resources; no resource
+directory; not a PE image at all; a differing `ProductName`; a stale `FileDescription` behind a
+correct `ProductName`; a differing PE file version; an embedded engine-default icon; an embedded
+icon that is neither the authored art nor the engine default; an `RT_GROUP_ICON` naming an absent
+`RT_ICON`; no `RT_VERSION`; no icon resources).
+
+**The Windows rows are backed by a byte-accurate PE32 fixture this change constructs, not by a real
+Windows build.** No Windows host was used, `rcedit` was not run, and nothing here claims that
+rcedit's output matches the fixture's layout. The fixture writes the structures the inspector reads
+and nothing else.
+
+### Workspace gates
+
+| Command | Result |
+| --- | --- |
+| `pnpm typecheck` | **exit 0** |
+| `pnpm lint` | **exit 0** (745 repo-wide warnings, pre-existing style). On the touched files: three `noExcessiveCognitiveComplexity` warnings in `inspect-container-brand.mjs` (one pre-existing, two added by the PE parser) and one pre-existing `noDelete` in the test. No errors. |
+| `pnpm check:docs` | **pass** — 2130 links across 1101 Markdown files |
+
+`pnpm typecheck` first failed on `examples/auto-lod` for two reasons that predate this change and
+are worktree state, not the diff: the post-merge install was stale (no `node_modules` for the new
+example) and `dist` was stale for the `assets.lod` config type. `pnpm install` then `pnpm build`
+repaired both; the diff was not touched.
+
+### A real PRD-365 container, linux-x64, 2026-09-15
+
+The starter was scaffolded from local workspace tarballs (`packageLocalFramework` +
+`createProject({ template: "starter", install: true })`) into `orbit-brand`, and **only game files
+were edited** to brand it: `threenative.config.ts` got `app.id com.example.orbitbrand`,
+`app.name "Orbit Brand"`, `app.version 1.4.2`, `app.build 3`, `app.icon public/brand-icon.png`, and
+`public/brand-icon.png` was authored as art distinct from the scaffold's `public/icon.png`
+(`c414cd0e…` vs the engine default `e6284520…`).
+
+```sh
+THREENATIVE_RUNTIME_BINARY=<checkout host binary> pnpm exec threenative build --target desktop --mode release
+# ThreeNative desktop container (unsigned): dist-native/orbit-brand.tar.gz
+```
+
+- container `orbit-brand.tar.gz` sha256 `1da759941c9724983d69a0ebe6e845a5e2fb6a825014f31f08f8a85d6e6c8ada`,
+  root folder `Orbit-Brand/`, `schemaVersion 1`, `platform linux-x64`, `signed false`, 145 recorded
+  player prerequisites.
+- **the new CLI path, end to end, on that container:**
+
+  ```sh
+  node packages/runtime-native/scripts/verify-starter-desktop.mjs     --container unpacked/Orbit-Brand --config config.json --project orbit-brand
+  # starter desktop gate passed: 300 frames, 21910 colors, 337 asset pixels, brand Orbit Brand verified
+  ```
+
+  exit 0. The container launched under the verifier's own `xvfb.sh`, logged
+  `TN_NATIVE_SMOKE_READY:webgpu`, `TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb` and
+  `Rendered 300 frames in 3017ms`-class completion, and captured a non-blank 1280x720 frame
+  (sha256 `e099b09d3e0fde636b62c2321116d599df4aef1cd9bf9a725fc924361d7006f3`, 21 910 distinct
+  colours, 524 magenta / 337 cyan proof pixels). **The capture was inspected by a human-equivalent
+  visual read in this session**: an island scene over water with the checkerboard pennant visible;
+  it is the starter, drawn, not a loading state.
+- brand evidence recorded in `artifacts/native/starter-container-report.json`: icon
+  `share/icons/hicolor/256x256/apps/com.example.orbitbrand.png` with payload and source sha256 both
+  `c414cd0e…` (the authored art), name `Orbit Brand` read from
+  `share/applications/com.example.orbitbrand.desktop`, UI entry `ui/index.html`.
+- the real launcher entry, and `desktop-file-validate` on it: **clean**.
+
+  ```
+  [Desktop Entry]
+  Type=Application
+  Name=Orbit Brand
+  Exec=Orbit-Brand
+  TryExec=Orbit-Brand
+  Icon=com.example.orbitbrand
+  Terminal=false
+  Categories=Game;
+  StartupNotify=true
+  ```
+
+### Negative controls on the real container (not fixtures)
+
+| Control | Result |
+| --- | --- |
+| Config renames the game, container not rebuilt | `TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH: the linux launcher names 'Orbit Brand', config says 'Wrong Name'` — and through the CLI it exits 1 in **0.17 s**, i.e. before any launch |
+| Embedded icon bytes swapped for the engine default, manifest hashes untouched | `TN_NATIVE_STARTER_CONTAINER_TAMPERED` |
+| Engine-default icon redistributed with every hash updated to match | `TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT` |
+
+### Found by the real run: a configured `bootSplash` cannot pass today
+
+Running the CLI against the container with the **stock** resolved config failed closed:
+
+```
+TN_NATIVE_STARTER_CONTAINER_LOADING_MISSING: the configured splash has no container declaration.
+```
+
+This is the behavior this PRD specified — a UI entry must never stand in for a configured splash —
+and it is correct, but it means the brand gate cannot pass on any container built from a config that
+declares `bootSplash`, which the scaffolded starter's config does by default. PRD-365's
+`packageDesktopContainer` writes no `loading` record into `threenative-container.json`. Emitting one
+is container-writer work that belongs to PRD-365, not to this phase's five-file budget, so it is
+**not** done here and is named as the remaining gap. The real-container evidence above was therefore
+produced with the same container and the same config minus `bootSplash`; both arms are recorded.
+
+### Brand inspection is opt-in, deliberately
+
+The scaffold copies the engine's own `packages/create-threenative/template-assets/icon.png` to a
+starter's `public/icon.png`. A stock, unbranded starter container therefore fails
+`TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT` by design. Turning `--config` on by default would
+red the existing starter lane rather than prove anything, so the CLI requires the flag and says
+`brand NOT inspected` when it is absent.
+
+### Still not executed
+
+- **Windows and macOS hosts.** No Windows or macOS machine was used. Windows PE inspection is
+  fixture-backed; macOS `.icns` conversion, `Info.plist` linkage and Finder appearance are
+  fixture-backed. Neither claims a real packaged artifact on those platforms.
+- **Opening the app from a real GUI file manager or launcher session.** The `.desktop` entry and the
+  icon were inspected at their XDG paths and validated, and the app was launched from the verifier;
+  nothing was installed into the operator's desktop environment, so no Finder/Explorer/GNOME-Shell
+  appearance is claimed.
+- **Icon appearance.** The authored icon used for the real run is a 1x1 PNG: byte-distinct from the
+  engine default, which is what the inspector asserts, but not a visual icon inspection.
+- **An independent reviewer PASS**, and the acceptance criteria that depend on Windows/macOS.
