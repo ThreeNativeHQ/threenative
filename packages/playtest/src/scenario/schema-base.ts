@@ -1,4 +1,4 @@
-import type { PlaytestFramePassKind, PlaytestFramePhase } from "../protocol.js";
+import type { IPlaytestGeometryCaptureRequest, PlaytestFramePassKind, PlaytestFramePhase } from "../protocol.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -520,6 +520,12 @@ export interface IPlaytestScenarioAssertions {
   deviceMetrics?: IPlaytestDeviceMetricsAssertion;
   diagnostics?: IPlaytestDiagnosticsAssertion;
   framebufferCoverage?: IPlaytestFramebufferCoverageAssertion;
+  /**
+   * Arms one per-object geometry capture and reports it as the `geometry` observation. This is a
+   * request rather than a comparison: it bounds nothing, and the report is read from
+   * `observations.geometry`, exactly as `pipelineCensus` is read from `observations.pipelineCensus`.
+   */
+  geometry?: IPlaytestGeometryCaptureRequest;
   hud?: IPlaytestPathAssertion[];
   movement?: IPlaytestMovementAssertion;
   occluded?: IPlaytestOccludedAssertion[];

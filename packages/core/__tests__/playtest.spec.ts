@@ -68,6 +68,7 @@ describe("playtest plugin", () => {
         "runtime.audio",
         "runtime.world",
         "runtime.pipelineCensus",
+        "runtime.geometry",
       ]);
     } finally {
       game.stop();
@@ -118,6 +119,7 @@ describe("playtest plugin", () => {
         "runtime.world",
         "runtime.components",
         "runtime.pipelineCensus",
+        "runtime.geometry",
       ]);
       expect(unknownPlaytestCapabilities(description.capabilities)).toEqual([]);
       const request = { label: "after-step" } as IPlaytestSampleRequest & { label: string };
@@ -307,6 +309,7 @@ describe("playtest plugin", () => {
         "runtime.audio",
         "runtime.world",
         "runtime.pipelineCensus",
+        "runtime.geometry",
       ];
 
       expect(description.capabilities).toEqual(expected);

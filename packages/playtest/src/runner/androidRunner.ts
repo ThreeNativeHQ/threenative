@@ -257,6 +257,8 @@ async function runDevicePlaytestInternal(
       ...(scenario.assert?.sceneNodes === undefined
         ? {}
         : { sceneNodes: scenario.assert.sceneNodes.map(({ select }) => select) }),
+      // One armed capture per sample; absent means the bridge does no geometry work at all.
+      ...(scenario.assert?.geometry === undefined ? {} : { geometry: scenario.assert.geometry }),
     } as const;
     const before = await bridge.sample(sampleRequest);
     const pathEntity = scenario.assert?.movement?.pathLength === undefined

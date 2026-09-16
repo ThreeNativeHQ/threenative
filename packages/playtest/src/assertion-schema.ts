@@ -643,6 +643,11 @@ export function requiredPlaytestCapabilities(
   if (scenario.steps.some((step) => step.kind === "aimAt")) {
     required.add("entity.setup");
   }
+  // The geometry request carries no registry entry, so its capability requirement is added here;
+  // without it a bridge that never armed a capture would answer with no observation, silently.
+  if (scenario.assert?.geometry !== undefined) {
+    required.add("runtime.geometry");
+  }
   if (scenario.artifacts?.screenshots !== false) {
     required.add("browser.screenshot");
   }

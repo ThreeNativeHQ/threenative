@@ -418,6 +418,23 @@ export type {
   IFramePhaseSample,
 } from "./frame-budget.js";
 export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
+export {
+  GEOMETRY_CAPTURE_DEFAULT_LIMIT,
+  GEOMETRY_CAPTURE_MAX_LIMIT,
+  GEOMETRY_CAPTURE_SORTS,
+  GEOMETRY_CAPTURE_TIMEOUT_MS,
+  GEOMETRY_CAPTURE_WALK_CAP,
+  GEOMETRY_ASSET_KEY,
+} from "./geometry-capture.js";
+export type {
+  GeometryCaptureSort,
+  IGeometryCaptureAsset,
+  IGeometryCaptureMesh,
+  IGeometryCapturePass,
+  IGeometryCaptureReport,
+  IGeometryCaptureRequest,
+  IGeometryCaptureRow,
+} from "./geometry-capture.js";
 /**
  * Register work that reads a body or camera after physics has moved it and before this frame draws.
  * The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
