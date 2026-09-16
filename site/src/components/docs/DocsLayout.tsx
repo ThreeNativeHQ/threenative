@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { docsGroups, docsNeighbours, docsPages, docPageForPath } from "../../content/docs.js";
+import { docPageForPath, docsGroups, docsNeighbours, docsPages } from "../../content/docs.js";
 import { CopyButton } from "../code/CopyButton.js";
 
 export interface IDocsTocItem {
@@ -82,16 +82,22 @@ function Pager({ path }: { readonly path: string }) {
       aria-label="Documentation pagination"
       className="mt-16 grid gap-3 border-t border-tn-border pt-8 sm:grid-cols-2"
     >
-      {previous === undefined ? <span /> : (
+      {previous === undefined ? (
+        <span />
+      ) : (
         <a
           className="rounded-xl border border-tn-border bg-tn-surface/60 p-4 transition-colors hover:border-white/20"
           href={previous.path}
         >
-          <span className="text-[12px] uppercase tracking-[0.16em] text-tn-fg-subtle">Previous</span>
+          <span className="text-[12px] uppercase tracking-[0.16em] text-tn-fg-subtle">
+            Previous
+          </span>
           <span className="mt-1 block text-[15px] font-medium text-tn-fg">← {previous.label}</span>
         </a>
       )}
-      {next === undefined ? <span /> : (
+      {next === undefined ? (
+        <span />
+      ) : (
         <a
           className="rounded-xl border border-tn-border bg-tn-surface/60 p-4 text-right transition-colors hover:border-white/20"
           href={next.path}
@@ -121,7 +127,9 @@ export function DocsLayout({ path, toc = [], sourceHref, children }: IDocsLayout
         <article className="min-w-0 flex-1 pb-16">
           <div className="mx-auto max-w-[820px] xl:mx-0">
             <div className="mb-4 flex items-center gap-2 text-[13px] text-tn-fg-subtle">
-              <a className="transition-colors hover:text-tn-fg" href="/docs">Docs</a>
+              <a className="transition-colors hover:text-tn-fg" href="/docs">
+                Docs
+              </a>
               <span aria-hidden="true">/</span>
               <span>{page.label}</span>
             </div>
@@ -175,11 +183,16 @@ export function DocsLayout({ path, toc = [], sourceHref, children }: IDocsLayout
   );
 }
 
-export function DocCodeBlock({ code, label = "code" }: { readonly code: string; readonly label?: string }) {
+export function DocCodeBlock({
+  code,
+  label = "code",
+}: { readonly code: string; readonly label?: string }) {
   return (
     <div className="my-6 overflow-hidden rounded-xl border border-tn-border bg-[#07090c]">
       <div className="flex items-center justify-between border-b border-tn-border px-4 py-2.5">
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-tn-fg-subtle">{label}</span>
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-tn-fg-subtle">
+          {label}
+        </span>
         <CopyButton label={label} text={code} />
       </div>
       <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-6 text-[#d8dee9]">
@@ -189,7 +202,10 @@ export function DocCodeBlock({ code, label = "code" }: { readonly code: string; 
   );
 }
 
-export function DocCallout({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+export function DocCallout({
+  title,
+  children,
+}: { readonly title: string; readonly children: ReactNode }) {
   return (
     <aside className="my-7 rounded-xl border border-tn-accent/20 bg-tn-accent/[0.055] p-5">
       <p className="text-[13px] font-semibold text-tn-accent">{title}</p>
@@ -198,9 +214,16 @@ export function DocCallout({ title, children }: { readonly title: string; readon
   );
 }
 
-export function DocSection({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
+export function DocSection({
+  id,
+  title,
+  children,
+}: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
   return (
-    <section className="scroll-mt-28 border-t border-tn-border/80 py-9 first:border-t-0 first:pt-0" id={id}>
+    <section
+      className="scroll-mt-28 border-t border-tn-border/80 py-9 first:border-t-0 first:pt-0"
+      id={id}
+    >
       <h2 className="mb-4 text-[26px] font-semibold tracking-[-0.02em] text-tn-fg">{title}</h2>
       {children}
     </section>

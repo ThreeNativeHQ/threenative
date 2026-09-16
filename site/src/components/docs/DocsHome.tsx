@@ -1,4 +1,4 @@
-import { DocsLayout, DocCodeBlock, DocSection } from "./DocsLayout.js";
+import { DocCodeBlock, DocSection, DocsLayout } from "./DocsLayout.js";
 
 const QUICKSTART = `pnpm create threenative my-game
 cd my-game
@@ -39,9 +39,9 @@ export function DocsHome() {
     >
       <DocSection id="start" title="Start in four commands">
         <p>
-          ThreeNative keeps the entry path intentionally small: create a project, install it and
-          run the Vite development server. The generated project already includes a game loop,
-          physics wiring, a React HUD and a playtest scenario.
+          ThreeNative keeps the entry path intentionally small: create a project, install it and run
+          the Vite development server. The generated project already includes a game loop, physics
+          wiring, a React HUD and a playtest scenario.
         </p>
         <DocCodeBlock code={QUICKSTART} label="terminal" />
         <p>
@@ -77,8 +77,8 @@ export function DocsHome() {
 
       <DocSection id="mental-model" title="The mental model">
         <p>
-          ThreeNative is not a replacement rendering API. Your scene is still a Three.js scene,
-          your renderer is still the Three.js WebGPU renderer, and visual code stays in the game
+          ThreeNative is not a replacement rendering API. Your scene is still a Three.js scene, your
+          renderer is still the Three.js WebGPU renderer, and visual code stays in the game
           repository. ThreeNative owns the repetitive game and platform layer around that code.
         </p>
         <div className="mt-6 grid gap-3 sm:grid-cols-2">

@@ -1,8 +1,12 @@
-import { DocCallout, DocsLayout, DocSection } from "./DocsLayout.js";
+import { DocCallout, DocSection, DocsLayout } from "./DocsLayout.js";
 
 const REPO = "https://github.com/ThreeNativeHQ/threenative";
 
-function Metric({ value, label, note }: { readonly value: string; readonly label: string; readonly note: string }) {
+function Metric({
+  value,
+  label,
+  note,
+}: { readonly value: string; readonly label: string; readonly note: string }) {
   return (
     <div className="rounded-xl border border-tn-border bg-tn-surface/45 p-5">
       <p className="text-[30px] font-semibold tracking-[-0.03em] text-tn-fg">{value}</p>
@@ -52,10 +56,10 @@ export function Benchmarks() {
 
       <DocSection id="loc" title="Abyss source census">
         <p>
-          The checked-in Abyss fixture compares a ThreeNative implementation with its frozen
-          vanilla Three.js control after both are formatted with the repository&apos;s Biome config.
-          The game logic is counted separately from framework plumbing so the framework can be
-          judged on the layer it is actually trying to remove.
+          The checked-in Abyss fixture compares a ThreeNative implementation with its frozen vanilla
+          Three.js control after both are formatted with the repository&apos;s Biome config. The
+          game logic is counted separately from framework plumbing so the framework can be judged on
+          the layer it is actually trying to remove.
         </p>
         <div className="my-6 overflow-x-auto rounded-xl border border-tn-border">
           <table className="w-full min-w-[620px] text-left text-[13px]">
@@ -163,7 +167,9 @@ export function Benchmarks() {
           model runs, equal proof, blind scores and authoritative usage events were not collected.
         </p>
         <div className="my-6 rounded-xl border border-amber-300/20 bg-amber-300/[0.055] p-5">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-amber-200">VOID</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-amber-200">
+            VOID
+          </p>
           <p className="mt-2 text-[14px] leading-6 text-tn-fg-muted">
             No quality winner, cost winner or productivity multiplier is published from that run.
             The harness exists; the experiment still needs the required external repeats.

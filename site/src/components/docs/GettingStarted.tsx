@@ -1,4 +1,4 @@
-import { DocCallout, DocCodeBlock, DocsLayout, DocSection } from "./DocsLayout.js";
+import { DocCallout, DocCodeBlock, DocSection, DocsLayout } from "./DocsLayout.js";
 
 const INSTALL = `pnpm create threenative my-game
 cd my-game
@@ -62,7 +62,10 @@ export function GettingStarted() {
           {[
             ["src/game.ts", "Portable game entry: plugins, scenes, input and renderer config."],
             ["src/scenes/", "Gameplay scenes with load, enter and update lifecycle methods."],
-            ["src/render/", "Lighting, materials and post-processing that decide how the frame looks."],
+            [
+              "src/render/",
+              "Lighting, materials and post-processing that decide how the frame looks.",
+            ],
             ["src/state.ts", "Game-owned state shared with systems and the React HUD."],
             ["threenative.config.ts", "Renderer, asset and platform configuration."],
             ["playtests/", "Scenarios that drive the real build and assert observable behaviour."],

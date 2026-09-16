@@ -37,7 +37,8 @@ export const docsPages: readonly IDocsPage[] = [
     title: "ThreeNative vs Three.js, Godot, Unity and Unreal Engine",
     description:
       "Compare ThreeNative with Three.js, Godot, Unity and Unreal Engine across authoring model, game systems, rendering control and deployment approach.",
-    summary: "A constraint-by-constraint comparison, without pretending one engine fits every team.",
+    summary:
+      "A constraint-by-constraint comparison, without pretending one engine fits every team.",
   },
   {
     path: "/docs/benchmarks",
@@ -47,7 +48,8 @@ export const docsPages: readonly IDocsPage[] = [
     title: "ThreeNative benchmarks and verification",
     description:
       "Inspect ThreeNative benchmark results, runtime measurements and intentionally unscored experiments with links back to the retained repository evidence.",
-    summary: "Published measurements, their scope, and the experiments that are still deliberately unscored.",
+    summary:
+      "Published measurements, their scope, and the experiments that are still deliberately unscored.",
   },
 ];
 

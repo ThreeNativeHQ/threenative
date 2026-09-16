@@ -7,7 +7,9 @@ export function DocsPreview() {
       <div className="mx-auto w-full max-w-[1536px] px-5 py-20 lg:px-[68px] lg:py-24">
         <div className="grid gap-8 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
           <div>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-tn-accent">Docs</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-tn-accent">
+              Docs
+            </p>
             <h2 className="mt-4 max-w-[520px] text-[34px] font-semibold leading-[1.08] tracking-[-0.03em] text-tn-fg lg:text-[42px]">
               Understand the stack before you commit to it.
             </h2>

@@ -1,4 +1,4 @@
-import { DocCallout, DocsLayout, DocSection } from "./DocsLayout.js";
+import { DocCallout, DocSection, DocsLayout } from "./DocsLayout.js";
 
 const ENGINES = ["ThreeNative", "Three.js", "Godot", "Unity", "Unreal Engine"] as const;
 
@@ -86,9 +86,9 @@ export function Comparison() {
           model, then add repeatable game systems, verification and a native host around it.
         </p>
         <DocCallout title="This is a tradeoff table, not a winner table">
-          A team that wants Unreal&apos;s editor, Unity&apos;s ecosystem or Godot&apos;s integrated scene
-          workflow should use those strengths. ThreeNative is useful when preserving direct Three.js
-          source and a web-first TypeScript workflow is itself a requirement.
+          A team that wants Unreal&apos;s editor, Unity&apos;s ecosystem or Godot&apos;s integrated
+          scene workflow should use those strengths. ThreeNative is useful when preserving direct
+          Three.js source and a web-first TypeScript workflow is itself a requirement.
         </DocCallout>
       </DocSection>
 
@@ -143,14 +143,20 @@ export function Comparison() {
             "You value generated code you can edit or delete over engine-owned visual state hidden behind an editor workflow.",
           ].map((item) => (
             <li className="flex gap-3" key={item}>
-              <span aria-hidden="true" className="mt-[10px] h-1.5 w-1.5 shrink-0 rounded-full bg-tn-accent" />
+              <span
+                aria-hidden="true"
+                className="mt-[10px] h-1.5 w-1.5 shrink-0 rounded-full bg-tn-accent"
+              />
               <span>{item}</span>
             </li>
           ))}
         </ul>
       </DocSection>
 
-      <DocSection id="choose-other" title="Choose something else when its strengths are the requirement">
+      <DocSection
+        id="choose-other"
+        title="Choose something else when its strengths are the requirement"
+      >
         <div className="grid gap-4 sm:grid-cols-2">
           {[
             [
