@@ -132,11 +132,9 @@ export function Comparison() {
           Choose one alternative for a focused view. The full table scrolls horizontally on smaller
           screens.
         </p>
-        {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll this wide comparison region. */}
         <section
           aria-label="Engine comparison table"
           className="overflow-x-auto rounded-xl border border-tn-border"
-          tabIndex={0}
         >
           <table
             className={`w-full border-collapse text-left text-[13px] leading-5 ${selected === "all" ? "min-w-[980px]" : "min-w-[580px]"}`}
@@ -207,8 +205,8 @@ export function Comparison() {
             the alpha runtime on your actual target devices.
           </li>
           <li>
-            You want control of generated visual source rather than adopting another engine&apos;s scene
-            and asset model.
+            You want control of generated visual source rather than adopting another engine&apos;s
+            scene and asset model.
           </li>
         </ul>
         <p className="mt-5 text-[14px]">
