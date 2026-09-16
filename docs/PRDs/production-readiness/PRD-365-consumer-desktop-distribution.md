@@ -295,8 +295,8 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
 
 - [x] Unsigned preparation records `signed: false`, names itself unsigned in the release log, and never claims signed readiness.
   - The produced Linux manifest carries `"signed": false`; `tests/distribution.test.mjs` covers the unsigned-preparation and missing-credentials rows.
-- [ ] windows-x64: the `signtool` path signs the distributed executable and verifies it on a real Windows host.
-  - The adapter is implemented and unit-tested through injected transport. Until PR #265 it could not have used a real credential at all: `sign /f <pfx>` was passed no `/p` and the contract carried no password, so only a password-less PFX worked, which no certificate authority issues. `THREENATIVE_DESKTOP_SIGN_SUBJECT` now signs with `/n` from the Windows certificate store, so the private key stays there, and setting both inputs is refused rather than silently resolved. A real-host run with a real certificate remains PRD-060.
+- [x] windows-x64: the `signtool` path signs the distributed executable and verifies it on a real Windows host.
+  - CI run [35130296569](https://github.com/ThreeNativeHQ/threenative/actions/runs/35130296569), `Windows desktop core` on `windows-2025`: a certificate generated on the runner and anchored with `certutil`, then `signDesktopArtifact` itself signing the container's own executable through `signtool /n` — `TN_DESKTOP_SIGNING_PROOF_SCHEME:signtool`. `Get-AuthenticodeSignature` read the result back independently of the code that wrote it: `status=Valid signer=CN=ThreeNative CI Signing Proof`. The certificate is self-signed and the artifact is discarded, so this proves the adapter, the tool and the host, not public trust.
 - [ ] windows-x64: the artifact is signed with a publicly trusted Authenticode certificate.
   - Blocked: no code-signing certificate exists for this repository; signing is per developer, per game. Delegated to PRD-060.
 - [ ] macOS: the artifact is notarized by Apple, stapled, and assessed with `spctl` on a real macOS host.
