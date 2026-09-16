@@ -19,6 +19,13 @@ describe("the prerendered site", () => {
     }
   });
 
+  it("should publish the docs hub and its first public guides", () => {
+    const expected = ["/docs", "/docs/getting-started", "/docs/comparison", "/docs/benchmarks"];
+    for (const path of expected) {
+      expect(routes.some((route) => route.path === path), `${path} is missing`).toBe(true);
+    }
+  });
+
   it("should ship the hero headline and subhead in prerendered HTML", async () => {
     const page = await prerenderedPage("/");
     expect(page).toContain(claimText("hero-headline"));
