@@ -1377,27 +1377,33 @@ test('macOS is built but unpublished, and says so instead of 404ing', () => {
 // container per native host; debug mode keeps the raw binary. Dependencies are injected here
 // because a hermetic fixture executable links nothing; the real path discovers them from the
 // produced binary with the host's own tool (ldd/otool/dumpbin).
+/**
+ * Does this file end in the runtime's appended-bundle footer?
+ *
+ * `src/vfs/embedded_bundle.cpp` reads the last `kFooterSize` bytes and requires `MYSBNDL1`. A
+ * release executable must not carry one: that is what rcedit and the signing tools destroy.
+ */
+function hasBundleFooter(path) {
+  const bytes = readFileSync(path);
+  const magic = Buffer.from('MYSBNDL1', 'ascii');
+  const footer = magic.length + 4 + 4 + 8;
+  if (bytes.length < footer) return false;
+  return bytes.subarray(bytes.length - footer, bytes.length - footer + magic.length).equals(magic);
+}
+
 async function packageSampleRelease(root, overrides = {}) {
   const { packageDesktop } = await import('../scripts/package-desktop.mjs');
   const bundle = join(root, 'game.js');
   writeFileSync(bundle, 'export default { start() {} };\n');
   const fakeRuntime = join(root, 'fake-runtime.mjs');
-  // The release build must ask for a standalone bundle and must NOT ask this runtime to produce an
-  // executable at all: the game goes beside the executable, never appended to it, because anything
-  // that later rewrites the binary (rcedit, signtool, codesign) discards appended data. Asserting
-  // the flag here is what makes removing it a red test rather than a silent Windows regression.
+  // Record the argv rather than failing inside the runtime: a missing flag would otherwise surface
+  // as "Runtime packager exited with code 1", which is true and tells nobody which flag went.
+  const argvLog = join(root, 'runtime-argv.json');
   writeFileSync(
     fakeRuntime,
     '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\n' +
-      'if (!process.argv.includes("--bundle-only")) {\n' +
-      '  console.error("TN_TEST_EXPECTED_BUNDLE_ONLY: release compiled without --bundle-only");\n' +
-      '  process.exit(3);\n' +
-      '}\n' +
+      `writeFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2)));\n` +
       'const index = process.argv.indexOf("--out");\n' +
-      'if (!String(process.argv[index + 1]).endsWith(".bundle")) {\n' +
-      '  console.error("TN_TEST_EXPECTED_BUNDLE_OUT: --out is not a .bundle path");\n' +
-      '  process.exit(4);\n' +
-      '}\n' +
       'if (index >= 0) writeFileSync(process.argv[index + 1], "compiled game bundle");\n',
   );
   chmodSync(fakeRuntime, 0o755);
@@ -1427,7 +1433,7 @@ async function packageSampleRelease(root, overrides = {}) {
     ui,
     ...overrides,
   });
-  return { archive, config, fakeRuntime, icon, output };
+  return { archive, argvLog, config, fakeRuntime, icon, output };
 }
 
 test('a release container ships the game beside a bare runtime, never appended to it', async () => {
@@ -1437,7 +1443,13 @@ test('a release container ships the game beside a bare runtime, never appended t
   // game.bundle beside it - rather than only that the container resolves.
   const root = makeTempDirSync('threenative-release-sidecar-');
   roots.push(root);
-  const { archive, fakeRuntime } = await packageSampleRelease(root);
+  const { archive, argvLog } = await packageSampleRelease(root);
+  const argv = JSON.parse(readFileSync(argvLog, 'utf8'));
+  assert.ok(argv.includes('--bundle-only'), `release must compile with --bundle-only, got: ${argv.join(' ')}`);
+  assert.ok(
+    String(argv[argv.indexOf('--out') + 1]).endsWith('.bundle'),
+    `--out must name a .bundle path, got: ${argv.join(' ')}`,
+  );
   const { readdirSync } = await import('node:fs');
   const unpacked = join(makeTempDirSync('threenative-release-sidecar-unpacked-'), 'here');
   mkdirSync(unpacked, { recursive: true });
@@ -1446,11 +1458,11 @@ test('a release container ships the game beside a bare runtime, never appended t
   const manifest = resolveContainer(container, { platform: 'linux' });
   assert.equal(manifest.bundle, 'game.bundle');
   assert.ok(manifest.resources['game.bundle'], 'the game carries an integrity record');
-  assert.deepEqual(
-    readFileSync(join(container, manifest.executable)),
-    readFileSync(fakeRuntime),
-    'the executable is an unmodified runtime copy, so nothing was appended to it',
-  );
+  // The invariant the loader actually reads, rather than byte-equality with the runtime: that is an
+  // accident of today's implementation and would break the day the executable is stripped or signed,
+  // going red for the wrong reason. src/vfs/embedded_bundle.cpp looks for MYSBNDL1 in the last 24
+  // bytes of the executable; it must not be there, and the game must be beside it instead.
+  assert.equal(hasBundleFooter(join(container, manifest.executable)), false, 'nothing is appended to the executable');
   assert.equal(readFileSync(join(container, 'game.bundle'), 'utf8'), 'compiled game bundle');
 });
 
