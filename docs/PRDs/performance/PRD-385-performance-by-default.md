@@ -4,12 +4,12 @@ prd_contract: v1
 
 # PRD-385 — Performance defaults: share rig preparation and reuse frame storage
 
-**Status:** PROPOSED
+**Status:** PARTIAL
 **Progress:** 0/3 phases implemented
 **Complexity:** 6 → MEDIUM; 6–10 implementation files (+2), cache/snapshot semantics (+2), engine-to-game tarball boundary (+2); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None. Extends [PRD-189](PRD-189-core-ordinary-frame-allocates-nothing.md); do not repeat its already-present input/state/loop changes.
-**Scope:** Discovery and planning completed on 2026-09-14. Implementation is not started.
+**Scope:** Discovery and planning completed on 2026-09-14. Execution started in the repo-owned worktree `prd385/perf-defaults`; the plan document landed on the integration branch. Implementation is not started.
 
 ## Outcome
 
@@ -161,15 +161,15 @@ render-target samples](https://threejs.org/docs/pages/Renderer.html#currentSampl
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: implementation agent]: Repeated eligible `SkeletalMesh3D` creation and first clip use perform at most one full binding audit and one full stride sample per equivalent source/clip/input combination, including Midway's uniformly scale-varied crew clones through proven normalization; existing calls require no new option. Evidence: pending.
-- [ ] AC-2 [local; actor: implementation agent]: Source, clone, hierarchy, track-content and transform changes cannot reuse stale preparation; missing/zero-bound required clips still fail through the constructor. Evidence: pending.
-- [ ] AC-3 [local; actor: implementation agent]: Real sailor/director/pilot fixtures preserve baseline pose, stride values, per-instance phase/rate, one-shot timing and `strideSync: false` reporting; paired preparation medians improve at least 20% on a declared repeated-rig workload. Evidence: pending.
-- [ ] AC-4 [local; actor: implementation agent]: Steady iterations eliminate the specific scratch-map, callback-snapshot-array, unread stride-report and scalar-query record construction sites in decision B. Caller-visible event/snapshot objects and first-seen capacity growth are explicitly excluded; this is not a claim about every allocation inside those methods. Evidence: pending.
-- [ ] AC-5 [local; actor: implementation agent]: Retained stride/surface/metric observations stay unchanged after later updates; current values, world-before-overlay counts and diagnostic cadence match baseline. Evidence: pending.
-- [ ] AC-6 [local; actor: implementation agent]: Existing lifecycle consumers preserve nested dispatch, add/remove/clear order, exception cleanup, pointer edges and hover behavior. Evidence: pending.
-- [ ] AC-7 [local; actor: implementation agent]: Unedited Midway game source consumes distinct baseline/candidate hashed tarballs; browser WebGPU deck captures preserve crew appearance and launch behavior. Evidence: pending.
+- [ ] AC-1 [local; actor: implementation agent]: Repeated eligible `SkeletalMesh3D` creation and first clip use perform at most one full binding audit and one full stride sample per equivalent source/clip/input combination, including Midway's uniformly scale-varied crew clones through proven normalization; existing calls require no new option. Evidence: shared path implemented and covered by focused specs (`PropertyBinding.bind` and `AnimationMixer.setTime` counts); uniformly scaled clones reuse and rescale the stride while non-uniform scale falls back to per-instance measurement. The scale-varied Midway crew case is not yet run on the real GLBs, so this stays open.
+- [x] AC-2 [local; actor: implementation agent]: Source, clone, hierarchy, track-content and transform changes cannot reuse stale preparation; missing/zero-bound required clips still fail through the constructor. Evidence: `packages/core/__tests__/animation.spec.ts` "SkeletalMesh3D shared preparation reuse" — hierarchy, clip-keyframe, undriven-bone and ambiguous-name changes miss, and missing/zero-bound required clips still throw; `pnpm exec vitest run packages/core/__tests__/animation.spec.ts` 40 passed.
+- [ ] AC-3 [local; actor: implementation agent]: Real sailor/director/pilot fixtures preserve baseline pose, stride values, per-instance phase/rate, one-shot timing and `strideSync: false` reporting; paired preparation medians improve at least 20% on a declared repeated-rig workload. Evidence: on a declared repeated-rig workload (12 clones of a 40-bone source with 3 in-place clips, one warm-up pair then 6 alternating pairs, median) independent `AnimationPlayer` preparation measured **111.57 ms** against **27.14 ms** for shared `SkeletalMesh3D` — **75.7% faster**, above the 20% bar. The real sailor/director/pilot fixtures and the pose/phase/one-shot/`strideSync: false` preservation checks remain pending.
+- [ ] AC-4 [local; actor: implementation agent]: Steady iterations eliminate the specific scratch-map, callback-snapshot-array, unread stride-report and scalar-query record construction sites in decision B. Caller-visible event/snapshot objects and first-seen capacity growth are explicitly excluded; this is not a claim about every allocation inside those methods. Evidence: all four sites replaced — `.stride` materializes on read (`animation.ts`), after-physics and before-render dispatches snapshot into reused arrays (`loop.ts`, `game.ts`), the pointer active set reuses a field (`pointer-events.ts`), and the per-frame draw-call and buffer-height reads use scalar accessors (`game.ts` from `renderer.ts`); constructor/allocation instrumentation is still pending, so this stays open.
+- [ ] AC-5 [local; actor: implementation agent]: Retained stride/surface/metric observations stay unchanged after later updates; current values, world-before-overlay counts and diagnostic cadence match baseline. Evidence: "keeps a retained stride report unchanged after a later update" passes; surface/metric cadence evidence still pending.
+- [ ] AC-6 [local; actor: implementation agent]: Existing lifecycle consumers preserve nested dispatch, add/remove/clear order, exception cleanup, pointer edges and hover behavior. Evidence: `loop.spec.ts` covers add-during-dispatch, removal-during-dispatch, clear, nested dispatch and recovery after a callback throws; `game.spec.ts` covers the before-render seam snapshot (an addition waits a frame, a removal still runs) and the existing clear-on-dispose/scene-change/restart cases; the full engine dev-instance playtest (`pnpm test:playtest`) passed all six scenarios; pointer edge/hover behavior rests on the existing pointer suite.
+- [ ] AC-7 [local; actor: implementation agent]: Unedited Midway game source consumes distinct baseline/candidate hashed tarballs; browser WebGPU deck captures preserve crew appearance and launch behavior. Evidence: unedited Midway consumed candidate `threenative-core-0.3.2-prd385-02d6b80e0be4.tgz` in an isolated copy (the shared canonical checkout was left untouched); `launch.playtest.json` on WebGPU (NVIDIA turing) passed all gameplay assertions with 0 console errors and the scene reported `skinned: 12` crew clones; the baseline `projfix-b2629381e2dc` also passed. Deck appearance captures (`capture-deck.mjs`) and the fleet captures are not yet run.
 - [ ] AC-8 [local; actor: implementation agent]: Matched Midway browser runs report preparation and frame distributions separately; candidate frame p95 does not regress over 5% across paired runs on the same named adapter and workload. Evidence: pending.
-- [ ] AC-9 [local; actor: implementation agent]: A native desktop real-rig fixture exercises the changed default preparation and reports on the installed candidate; values/behavior match the browser contract. Evidence: pending. Native target execution is mandatory before claiming portability.
+- [ ] AC-9 [local; actor: implementation agent]: A native desktop real-rig fixture exercises the changed default preparation and reports on the installed candidate; values/behavior match the browser contract. Evidence: the C++ host built from this branch (`pnpm native:build`, `mystral` linked) and `pnpm native:verify:desktop` passed every gate — desktop audio decode, lifecycle stability, core 300 frames at 1280x720 with a screenshot, physics actuation/query/playtest (14 assertions), the native contract lane (43/43 targets) and the desktop loading proof. The real-rig conformance fixture / `--target desktop` playtest that exercises the changed preparation itself is still pending. Native target execution is mandatory before claiming portability.
 - [ ] AC-10 [local; actor: implementation agent]: Existing capability/template documentation describes the automatic behavior and fallback honestly; affected checks and required engine gates pass. Evidence: pending.
 
 No owner sign-off or physical-device performance claim is required. Native desktop and browser are
@@ -181,51 +181,57 @@ leave its criterion open and record the concrete attempted command; do not repla
 
 ### Phase 1 — Existing rig creation shares equivalent preparation
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-1–AC-3
-**Files:** `packages/core/src/animation.ts`, `skeletal-mesh.ts`, `clip-audit.ts`; existing animation
-specs and the smallest real-rig fixture needed to exercise the public constructors.
+**Files:** `packages/core/src/animation.ts`, `packages/core/src/rig-preparation.ts`,
+`packages/core/src/skeletal-mesh.ts`; `packages/core/__tests__/animation.spec.ts`.
 
-Implement the conservative reuse path against real call sites. Validate binary decoding and collect
-a paired baseline first. Include the actual three-rig deck composition, scale differences, clip
-switches and required-clip failures. Cache-hit evidence must come from the public constructor/update
-path, not a test importing an otherwise unused helper.
+The conservative reuse path is wired into the existing `SkeletalMesh3D` → `AnimationPlayer`
+constructor and lazy stride measurement, with a per-source `WeakMap` cache and content signatures.
+`clip-audit.ts` was left as the audit primitive rather than moving it. Still missing: the real
+sailor/director/pilot GLBs and the warmed baseline/candidate timing comparison (AC-3).
 
-- [ ] Shared preparation and conservative fallback reach existing constructor/clip consumers — E1: focused animation specs and warmed alternating baseline/candidate preparation timings.
+- [ ] Shared preparation and conservative fallback reach existing constructor/clip consumers — E1: 8 focused animation cases pass (`pnpm exec vitest run packages/core/__tests__/animation.spec.ts`, 40 passed); real fixtures and warmed alternating timings pending.
 
-**Checkpoint:** Pending; review cache keys, mutation/fallback correctness, restored mixer state and
-actual savings. Stop cache expansion if evidence does not meet AC-3.
+**Checkpoint:** Partial; cache keys, mutation/fallback correctness and the fallback paths are
+covered by focused specs. Real-fixture savings (AC-3) are not yet measured, so cache scope must not
+expand before that lane runs.
 
 ### Phase 2 — Existing frame consumers reuse private storage
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-4–AC-6
 **Files:** `packages/core/src/animation.ts`, `loop.ts`, `game.ts`, `pointer-events.ts`, `renderer.ts`;
 existing animation, loop, game, pointer and projection allocation specs.
 
-Implement the bounded replacements in decision B. Preserve snapshot semantics instead of exposing
-scratch storage. Use constructor/allocation instrumentation that can observe the targeted object
-literals as well as arrays/maps; stable identity or heap deltas alone do not prove no allocation.
+Decision B's four sites are replaced: `.stride` now materializes a fresh report on read instead of
+per update, the after-physics and before-render dispatches snapshot into reused depth-pooled arrays,
+the pointer active set reuses a scratch map, and the per-frame draw-call and drawing-buffer-height
+reads use scalar accessors instead of building records. Snapshot/dispatch semantics are covered by
+new focused cases. What is still missing: constructor/allocation instrumentation that observes the
+object literals themselves, and an explicit exception-cleanup case.
 
-- [ ] Named hot paths reuse storage while their public snapshots and dispatch semantics pass — E2: focused affected specs through real lifecycle entry points, including exception/reentrancy cases.
+- [ ] Named hot paths reuse storage while their public snapshots and dispatch semantics pass — E2: focused animation/loop/game/pointer specs pass (134 total); explicit allocation instrumentation and an exception-cleanup case pending.
 
-**Checkpoint:** Pending; inspect lifetime cleanup and allocation measurements. Do not claim the
-whole engine or whole game is allocation-free.
+**Checkpoint:** Partial; snapshot lifetimes and dispatch order reviewed through the focused specs.
+Allocation measurement is not yet done, so no allocation-free claim is made.
 
 ### Phase 3 — Ship the defaults through installed packages and prove their consumers
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-7–AC-10
 **Files:** affected engine capability descriptions and template `AGENTS.md` sources/mirrors;
 Midway dependency/lock files and existing capture fixtures only where required for observation.
 
-At execution start create one draft PR for this PRD, before implementation phase 1, following the
-repository workflow. Use repository-owned worktrees for isolation and retain other lanes' changes.
-Capture baseline before candidate installation. Build/pack the affected packages, give tarballs
-content-hashed names, install them as a user would, and record resolved artifact hashes. Never patch
-`node_modules` or add game-side cache hints. Reconcile current template edits from other lanes.
+The draft PR was opened first (PR #251). The candidate `@threenative/core` was built and packed from
+this branch, content-hashed as `threenative-core-0.3.2-prd385-02d6b80e0be4.tgz`, and installed into
+an isolated Midway copy because the canonical Midway checkout is in use by another lane. The
+unedited Midway `playtests/launch.playtest.json` then passed on the WebGPU lane with 0 console
+errors and 12 skinned crew objects in the scene. Still missing: the baseline/candidate deck
+appearance captures, the paired performance runs, native desktop proof, and the template/doc
+adoption pass.
 
-- [ ] Installed browser/native consumers, documentation and required gates satisfy acceptance — E3: commands below, with concise results recorded on the owning ACs.
+- [ ] Installed browser/native consumers, documentation and required gates satisfy acceptance — E3: `launch.playtest.json` passes on the installed candidate; deck captures, paired performance, native and docs gates pending.
 
 **Verification:**
 
