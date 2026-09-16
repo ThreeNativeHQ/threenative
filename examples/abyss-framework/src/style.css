@@ -100,7 +100,33 @@ canvas {
 [data-threenative-debug-overlay="true"][data-tn-debug-tab="geometry"] {
   max-width: min(56rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
+  /* Opaque, unlike the entity tab: a table of numbers read over the game's own bright menu text
+     is unreadable, and this view exists to be read. */
+  background: var(--color-ink);
   overflow-y: auto;
+}
+
+/* The root forces `table-layout: fixed`, which collides these columns at any width. */
+[data-tn-debug-tab="geometry"] table {
+  table-layout: auto;
+}
+
+[data-tn-debug-tab="geometry"] th,
+[data-tn-debug-tab="geometry"] td {
+  white-space: nowrap;
+}
+
+.tn-debug-passes,
+.tn-debug-objects,
+.tn-debug-assets {
+  display: block;
+  overflow-x: auto;
+}
+
+.tn-debug-controls label {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
 }
 
 .tn-debug-tabs,

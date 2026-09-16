@@ -70,7 +70,20 @@ function rank(
   });
 }
 
+/**
+ * The dev-only gate, and the reason the view below is a separate component.
+ *
+ * `isDev` folds to `false` in a production build, so this returns null before any hook runs and
+ * `DebugOverlayView` becomes unreachable — the bundler then drops the whole view, and with it every
+ * reference to the devtools global. A guard placed after the hooks keeps those references alive
+ * instead, which `scripts/check-core-boundary.ts` rejects: the overlay must not ship in a game.
+ */
 export function DebugOverlay() {
+  if (!isDev) return null;
+  return <DebugOverlayView />;
+}
+
+function DebugOverlayView() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"entities" | "geometry">("entities");
   const [snapshot, setSnapshot] = useState<DebugSnapshot>({});
@@ -86,7 +99,7 @@ export function DebugOverlay() {
   const [copied, setCopied] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!isDev || typeof window === "undefined") return undefined;
+    if (typeof window === "undefined") return undefined;
     const hostWindow = window;
     const toggle = (event: KeyboardEvent) => {
       if (event.key === "`") setOpen((visible) => !visible);
@@ -132,7 +145,7 @@ export function DebugOverlay() {
   );
   const selectedRow = rows.find((row) => row.id === selected);
 
-  if (!isDev || !open) return null;
+  if (!open) return null;
   const entityRows = Object.entries(snapshot).flatMap(([entity, fields]) =>
     Object.entries(fields).map(([key, value]) => ({ entity, key, value })),
   );

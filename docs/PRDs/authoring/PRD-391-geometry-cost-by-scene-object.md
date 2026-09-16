@@ -4,7 +4,7 @@
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** Engine authoring / diagnostics
 **Depends on:** None; reuse the inspected scene observation, LOD and frame-budget implementations
-**Progress:** 2/4 phases; 4/8 phase boxes; phases 1-2 landed and verified
+**Progress:** 3/4 phases; 9/11 phase boxes; 7/8 acceptance criteria; phases 1-3 landed and verified, phase 4 partial (`prd:75%`)
 **Date:** 2026-09-16
 **Scope:** On-demand geometry inspection, a Geometry tab in the existing browser debug overlay,
 and the same structured observation for authoring agents on browser and desktop native.
@@ -131,14 +131,14 @@ verified. No speculative owner or shared gate is required to create or implement
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: implementation agent; browser WebGPU]: Capturing the representative scene yields per-pass submitted geometry whose attributed rows plus unattributed bucket equal renderer totals, with correct direct-mesh/instance/range/group accounting. — Evidence: pending E1/E3.
+- [x] AC-1 [local; actor: implementation agent; browser WebGPU]: Capturing the representative scene yields per-pass submitted geometry whose attributed rows plus unattributed bucket equal renderer totals, with correct direct-mesh/instance/range/group accounting. — Evidence: E1 green for direct, instanced, draw-range and material-group accounting; E3 browser run reconciles exactly (9 + 12 = 21 draws, 3,844 + 180,010 = 183,854 triangles). Note honestly: on that fixture most of the frame is submitted where `onBeforeRender` does not observe it, and the report says so in the unattributed bucket rather than implying the nine rows are the whole frame.
 - [x] AC-2 [local; actor: implementation agent]: Object and asset aggregation preserves clone identity, LOD choice and batch ownership; shared resources and alternate LODs are not double counted. — Evidence: E1 green (`geometry-capture.spec.ts` batch-ownership and asset-grouping cases, 16/16).
-- [ ] AC-3 [local; actor: implementation agent]: Camera-size estimates and availability labels survive perspective/orthographic, clipping and hidden/offscreen/shadow-only cases without claiming occlusion or gameplay importance. — Evidence: pending E1/E2.
+- [x] AC-3 [local; actor: implementation agent]: Camera-size estimates and availability labels survive perspective/orthographic, clipping and hidden/offscreen/shadow-only cases without claiming occlusion or gameplay importance. — Evidence: E1 green (near versus far, orthographic, camera-inside-bounds returning a conservative viewport-sized estimate, unknown bounds excluded from the small filter, shadow-pass attribution, not-submitted rows); E2 shows finite projected pixels under the fixture's orthographic camera and the "bounds unavailable" path in the real browser. The panel states in the view itself that the filter is a diagnostic, not a recommendation.
 - [x] AC-4 [local; actor: implementation agent]: Top rows are ranked over the inspected scope; request limits, incomplete scans, missing attribution, expired captures and unknown values are explicitly reported rather than silently accepted as complete. — Evidence: E1 green (ranking-before-slicing, unknown-cost ordering, malformed-request and no-frame-timeout cases).
-- [ ] AC-5 [local; actor: implementation agent; browser UI]: Through the mounted DebugOverlay, Capture → sort/group → expand/select → Copy JSON exposes the captured result and correct outline without changing gameplay; visual inspection confirms readability and keyboard use. — Evidence: pending E2/E3.
-- [ ] AC-6 [local; actor: implementation agent]: A real playtest sample request advertises and invokes `runtime.geometry`, returns the same report contract as the overlay, and preserves existing entity/scene observations. — Evidence: pending E1/E3.
-- [ ] AC-7 [local; actor: implementation agent]: Without a capture request there is no added scene traversal, draw instrumentation or periodic geometry capture; cancellation and disposal remove capture state/hooks and release object references. — Evidence: pending E1/E3.
-- [ ] AC-8 [local; actor: implementation agent; desktop native]: The same portable scenario reaches the geometry sample path and proves direct/instanced triangle attribution and explicit unsupported values through the native transport. — Evidence: pending E4; must remain open if the host cannot run it.
+- [x] AC-5 [local; actor: implementation agent; browser UI]: Through the mounted DebugOverlay, Capture → sort/group → expand/select → Copy JSON exposes the captured result and correct outline without changing gameplay; visual inspection confirms readability and keyboard use. — Evidence: E2 green (19/19 unit, 2/2 browser on nvidia/turing) plus screenshots inspected at 1440x900 and 420x800. Controls are real labelled elements reached by role; the overlay root stays `pointer-events: none` so it cannot eat a click meant for the game.
+- [x] AC-6 [local; actor: implementation agent]: A real playtest sample request advertises and invokes `runtime.geometry`, returns the same report contract as the overlay, and preserves existing entity/scene observations. — Evidence: E1 real-bridge case in `packages/core/__tests__/playtest.spec.ts` (capability advertised, no `geometry` key when unasked, entities unchanged either way) and E3's runner run returning the same contract. A real browser run also found a real bug here: the report crossed the transport with `frame: undefined` and `assertJsonSafe` failed the run closed; every optional field is now omitted, guarded by a JSON round-trip case.
+- [ ] AC-7 [local; actor: implementation agent]: Without a capture request there is no added scene traversal, draw instrumentation or periodic geometry capture; cancellation and disposal remove capture state/hooks and release object references. — Evidence: E1 green for the whole behaviour (no own `onBeforeRender` before arming, present during the frame, deleted after, a game's own callback handed back by identity, records dropped, scene change and `stop()` cancelling). Left open for E3's remaining half: the capture-off/on run comparison through the performance harness, reporting idle frame impact, has not been executed.
+- [x] AC-8 [local; actor: implementation agent; desktop native]: The same portable scenario reaches the geometry sample path and proves direct/instanced triangle attribution and explicit unsupported values through the native transport. — Evidence: E4 green, see P4-2a. The lane is not blocked on this machine after all: an earlier note recorded desktop playtests as GBM-blocked here, and the untouched control scenario launched the host, opened a window and rendered.
 
 ## Integration Ledger
 
@@ -196,7 +196,7 @@ submitted object is reported `notSubmitted` with `draws: 0`.
 
 ### Phase 3 — Present the Geometry view
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **ACs:** AC-5/6
 **Files:** Existing `ui/src/DebugOverlay.tsx`, `ui/__tests__/overlay.spec.tsx`,
 `examples/abyss-framework/src/style.css`, `examples/abyss-framework/tests/viewport.playtest.ts`;
@@ -206,23 +206,33 @@ Implement the five field groups, explicit capture/refresh, object/asset toggle, 
 expandable rows, selected bounds and Copy JSON. Use the existing development-host installation and
 cleanup; do not attach the geometry capture to the overlay's existing 100 ms entity poll.
 
-- [ ] P3-1: The mounted overlay completes the specified keyboard-accessible workflow against the same report the bridge returns.
-- [ ] P3-2: Generated authoring instructions explain how to mount/open/request the feature, and E2 proves the styled view and selection behavior in the real browser.
+- [x] P3-1: The mounted overlay completes the specified keyboard-accessible workflow against the same report the bridge returns. — `packages/ui/__tests__/overlay.spec.tsx` 19/19 (10 of them new), including a negative control: asserting that a row with unknown bounds survives the small-on-screen filter fails, as it must. Every control is a real `button`/`select`/`input`/`fieldset` with a label, reached in the browser test by role. The capture never rides the 100 ms entity poll — the mock is called 0 times on opening the tab and once per press.
+- [x] P3-2: Generated authoring instructions explain how to mount/open/request the feature, and E2 proves the styled view and selection behavior in the real browser. — `templates/starter/AGENTS.md` (and its generated mirror) says backtick → Geometry → Capture, the scenario form, and how to read the reconciliation; `DebugOverlay`'s manifest entry gains the two situations an agent would search. E2: `examples/abyss-framework/tests/viewport.playtest.ts` 2/2 on adapter nvidia/turing — tab, capture, real rows, pass table, selection outline, grouping, sorting, Copy JSON. Screenshots inspected at 1440x900 and 420x800; the first inspection found the panel unreadable over the game's own menu text and the threshold control unspaced, both fixed in the game's CSS before this box was ticked.
 
-**Verification:** E2. **Checkpoint:** pending; inspect the captured UI, not only DOM assertions.
+**Verification:** E2 — green. **Checkpoint:** the captured UI was inspected, not only asserted, and
+the inspection changed the CSS. `pnpm budgets` then caught a real regression the DOM tests could
+not: hooks running before the dev-only guard kept the devtools global reachable, so the overlay
+survived into the production bundle. The gate is `scripts/check-core-boundary.ts`; the fix splits
+the gate from the view so a production build drops it entirely.
 
 ### Phase 4 — Prove the complete workflow
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-1/5/6/7/8 and final reconciliation
 **Files:** Extend existing portable browser/native playtest fixtures, add a focused geometry
 scenario, and use Midway's existing capture tooling for the representative integration run.
 
-- [ ] P4-1: E3 proves the diagnostic on Midway and the representative fixture; required engine checks and capability/template checks pass, with concise results on the owning ACs.
-- [ ] P4-2: E4 proves the portable collector through desktop-native sample transport; all AC evidence and review findings are reconciled before closure.
+- [x] P4-1a: A focused geometry scenario proves the diagnostic on the in-repo representative fixture. — `examples/abyss-framework/playtests/geometry-capture.playtest.json` through the real runner, exit 0, `geometry.observed` pass, `status: captured`, 9 of 9 rows, tick 67, WebGPUBackend, 1280x720. Reconciliation is exact: 9 + 12 = 21 draws and 3,844 + 180,010 = 183,854 triangles.
+- [x] P4-1b: Required engine checks and capability/template checks pass. — `pnpm typecheck` Done; `pnpm lint` exit 0 (764 pre-existing warnings, no errors); `pnpm test` green in every package except `packages/runtime-native`, whose 21 failures are the missing native build in this checkout (`packages/runtime-native/build/` does not exist here) in files this change does not touch at all; `pnpm exec vitest run packages/core/__tests__ packages/ui/__tests__ packages/playtest/__tests__` 2603/2603; `pnpm budgets` exit 0; `pnpm check:docs` 2,195 links across 1,112 files; `pnpm capabilities:sync` and `pnpm sync:agents` clean.
+- [ ] P4-1c: E3 proves the diagnostic on Midway from the deck and distant-fleet views.
+  Not run. Midway is a sandbox game outside this repository and would need its own tarball install and capture lane; the representative-fixture half of E3 is proved above, and the merged-draw-versus-submitted-triangles reading it was meant to demonstrate is covered by the batch-ownership case in E1.
+- [x] P4-2a: E4 proves the portable collector through the desktop-native sample transport. — `examples/native-smoke/playtests/geometry-capture-desktop.playtest.json` on the real C++ host (`packages/runtime-native/build/tn-linux/mystral`, built 2026-09-09 in the primary checkout; this change is JS-only) with a bundle rebuilt from this tree: `geometry.observed` pass, `status: captured`, backend WebGPUBackend, 4 of 4 rows, direct-mesh attribution correct at 12 triangles per box, reconciliation exact (2 + 1 = 3 draws, 24 + 1 = 25 triangles). The run's overall verdict is red only on the `diagnostics` policy, from the fixture's own `[Audio] decodeAudioData received an empty or non-ArrayBuffer argument` — the untouched `loading-screen-desktop` control on the same host and bundle reports the identical error, so it is not this change.
+- [ ] P4-2b: All AC evidence and review findings are reconciled before closure.
+  AC-7's capture-off/on frame-impact comparison is not run, and no independent review has happened yet.
 
-**Verification:** E3/E4. **Checkpoint:** pending; one final independent review of unresolved or
-changed risks, reusing prior evidence rather than rerunning equivalent checks.
+**Verification:** E3 partial (representative fixture green, Midway not run); E4 green.
+**Checkpoint:** pending; one final independent review of unresolved or changed risks, reusing prior
+evidence rather than rerunning equivalent checks.
 
 ## Verification Strategy
 
