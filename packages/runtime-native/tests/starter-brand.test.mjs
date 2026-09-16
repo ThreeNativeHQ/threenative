@@ -851,3 +851,17 @@ test('a truncated PE fails with a named cause, not an unnamed RangeError', () =>
   fixture.manifest.resources['orbit.exe'] = { sha256: sha256Of(truncated) };
   assert.throws(() => fixture.inspect(), /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID/u);
 });
+
+test('an executable with no FileDescription cannot pass on ProductName alone', () => {
+  assert.throws(
+    () =>
+      windowsFixture({
+        resources: [
+          { data: Buffer.from('authored icon'), id: 1, type: 3 },
+          { data: groupIcon([1]), id: 1, type: 14 },
+          { data: versionResource('1.2.3', { ProductName: 'Orbit Game' }), id: 1, type: 16 },
+        ],
+      }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING/u,
+  );
+});

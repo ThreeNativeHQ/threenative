@@ -386,5 +386,21 @@ directory.`
 | `pnpm lint` | **exit 0** (746 repo-wide warnings; on the touched files three `noExcessiveCognitiveComplexity` and one pre-existing `noDelete`, no errors) |
 | the real linux-x64 container re-inspected with the corrected code | still passes: name `Orbit Brand` from `share/applications/com.example.orbitbrand.desktop` |
 
+### 4 — a missing `FileDescription` passed on `ProductName` alone (found by this lane, not the reviewer)
+
+Sweeping the same file for the shape the reviewer named turned up one more.
+`windowsLauncherName` returned `displayName: windows.strings.FileDescription` unconditionally, and
+`inspectContainerName` compares it only `if (found.displayName !== undefined)`. An `.exe` whose
+`RT_VERSION` carries `ProductName` but no `FileDescription` therefore **passed on one name while the
+second went unexamined** — the same self-retiring shape, and the exact mirror of the macOS
+`CFBundleDisplayName` row this phase already refuses. `packageDesktopContainer` writes both strings
+in one `rcedit` call, so an absent `FileDescription` is a name that was never embedded, not an
+optional field. Both are now required, each naming the missing key.
+
+Red: **1 failed / 59 passed (60)**, exit 1. Green: **2 files, 84 passed**, exit 0; the desktop
+family **6 files, 193 passed**, exit 0; `pnpm typecheck` and `pnpm lint` exit 0.
+
 The verdict on `7bb0df3a6` was **NEEDS CORRECTION**. No reviewer PASS is claimed for the corrected
-head; a re-review is the next step, and the phase's reviewer box stays open.
+head; a re-review is the next step, and the phase's reviewer box stays open. The reviewer also
+reported a further finding it had counted but not itemised; if it is not finding 4 above, it is
+still outstanding and this record does not claim otherwise.

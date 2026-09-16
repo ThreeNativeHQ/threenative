@@ -440,13 +440,18 @@ function assertWindowsVersion(windows, manifest, config) {
 }
 
 function windowsLauncherName(windows) {
-  const name = windows.strings.ProductName;
-  if (name === undefined) {
-    throw new Error(
-      'TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING: the packaged .exe declares no ProductName for Explorer to show.',
-    );
+  // Both names are required, not just the one that happens to be present: the packager writes
+  // ProductName and FileDescription together, so an absent FileDescription is a name that was
+  // never embedded — and treating it as "nothing to compare" is the same self-retiring shape the
+  // review found in the version check, letting a stale second name ride along unexamined.
+  for (const key of ['ProductName', 'FileDescription']) {
+    if (typeof windows.strings[key] !== 'string' || windows.strings[key].length === 0) {
+      throw new Error(
+        `TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING: the packaged .exe declares no ${key} for Explorer to show.`,
+      );
+    }
   }
-  return { displayName: windows.strings.FileDescription, name, source: windows.source };
+  return { displayName: windows.strings.FileDescription, name: windows.strings.ProductName, source: windows.source };
 }
 
 function inspectContainerIcon(containerRoot, manifest, config, options, windows) {
