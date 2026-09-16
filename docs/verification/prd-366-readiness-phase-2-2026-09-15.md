@@ -299,6 +299,19 @@ Scope of this row: **Linux x64 desktop only.** macOS and Windows desktop rows ar
 `desktop` matrix job through the same `test:native` script and are not executed on this machine;
 they are named, not claimed.
 
+### Desktop (Linux x64) — independently reproduced on a GitHub runner
+
+The same row was produced a second time, on different hardware, by CI run `35054258943`
+(`native-platforms / Scaffolded starter desktop artifact`, job `104662689257`, pass, 6m11s):
+
+```
+starter desktop gate passed: 300 frames, 21296 colors, 306 asset pixels
+consumer gameplay qualified on desktop: 5 assertions, artifact 648ca9ff2bef, app com.threenative.threenativestarternative
+```
+
+Same scenario, same assertion count, different machine, different artifact hash and application id
+(the CI job scaffolds under its own project name). Two independent desktop executions agree.
+
 ### Desktop containers — still BLOCKED (unchanged)
 
 PRD-365's release containers landed on `develop` and are merged into this branch, but this row was
