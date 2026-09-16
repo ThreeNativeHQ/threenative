@@ -219,7 +219,7 @@ end-to-end native row remains unverified on this machine and the CI lane is the 
 The restart binding is the same keyboard channel the passing `movement.axisDelta` already proved on
 native, but that is a reasoned expectation, not an executed native run.
 
-## User verification on the named platform — DESKTOP VERIFIED (Linux), Android open
+## User verification on the named platform — VERIFIED (Linux desktop + Android emulator)
 
 Executed on this machine on 2026-09-15 against branch commit `4edbf1dc528e946a1e5599379a90a2e749bfee7a`.
 The earlier "environmentally blocked (host GBM buffer creation)" note above is **superseded**: no
@@ -305,47 +305,114 @@ PRD-365's release containers landed on `develop` and are merged into this branch
 produced against the `dist-native/starter-native` executable that `threenative build --target
 desktop` emits, not against a relocated release container. No container consumer row was run here.
 
-### Android — OPEN, with the blocker corrected
+### Android (emulator, x86_64) — PASS
 
-The PRD's recorded Android blocker ("`fetch failed` at the Android prebuilt fetch, no APK exists")
-is **partly stale**. Two corrections, both executed here:
-
-1. The packager prints an actionable escape hatch for exactly this case, so a published install
-   without a prebuilt is not the end of the road:
-   `THREENATIVE_RUNTIME_SOURCE=<runtime-native> pnpm exec threenative build --target android --allow-source-build`.
-   Run against this candidate it gets past the fetch and fails with a different, actionable error:
-
-   ```sh
-   THREENATIVE_RUNTIME_SOURCE=<worktree>/packages/runtime-native \
-     pnpm exec threenative build --target android --allow-source-build
-   # ✓ built in 468ms   (native game bundle)
-   # ✓ built in 492ms   (UI)
-   # Android source checkout at <...>/packages/runtime-native is missing SDL3-3.2.30.aar.
-   # Provision the maintainer dependencies with node scripts/download-deps.mjs --android
-   # from the runtime checkout, then retry --allow-source-build.
-   # node exited with code 1.
-   ```
-
-2. The device lane is live, not absent: `adb devices -l` reports `emulator-5554`
-   (`sdk_gphone16k_x86_64`), `emulator-5556` (`sdk_gphone64_x86_64`) and a physical
-   `192.168.1.192:5555` (`Pixel_8`, `shiba`).
-
-Provisioning the maintainer dependencies then exposed a third, real gate:
+The PRD's recorded Android blocker ("`pnpm build --target android` exits 1 at the Android prebuilt
+fetch with `fetch failed`, so no APK exists") is **stale**. An APK was built and a qualifying
+Android consumer row was produced here. Three gates stood between the recorded state and the row,
+each with an actionable message that named its own fix:
 
 ```sh
+# 1. The packager's documented escape hatch gets past the prebuilt fetch.
+THREENATIVE_RUNTIME_SOURCE=<worktree>/packages/runtime-native \
+  pnpm exec threenative build --target android --allow-source-build
+# -> "Android source checkout ... is missing SDL3-3.2.30.aar. Provision the maintainer
+#     dependencies with node scripts/download-deps.mjs --android"
+
+# 2. Provisioning them: five of six succeed, v8-android names the NDK it needs.
 node packages/runtime-native/scripts/download-deps.mjs --android
-# sdl3: OK  wgpu-android: OK  sdl3-android: OK  quiche-android: OK  webp-source: OK
-# v8-android: FAILED
-# Failed to provision v8-android: Android V8 requires NDK 28.2.13676358; install it with
-#   sdkmanager "ndk;28.2.13676358" and select that NDK with ANDROID_NDK_HOME
+# sdl3 OK, wgpu-android OK, sdl3-android OK, quiche-android OK, webp-source OK
+# v8-android FAILED: "Android V8 requires NDK 28.2.13676358 ... select that NDK with
+#   ANDROID_NDK_HOME"
+
+# 3. That NDK is installed here, and selecting it does let v8-android proceed -- but it has no
+#    usable prebuilt payload and falls through to compiling V8 from Chromium source (3519 ninja
+#    steps, ~3.5 h at the observed rate). Stopped at step ~1800 and rolled back to QuickJS, which
+#    `android/app/build.gradle.kts` documents as exactly this escape.
 ```
 
-That NDK is installed here, and re-running with `ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358`
-does proceed — but `v8-android` has no usable prebuilt payload and provisioning falls through to
-compiling V8 from Chromium source (3519 ninja steps). **No Android consumer row was produced in
-this session**, so the Android half of this box stays open and is credited to nothing. The
-correction that matters for the next attempt: the blocker is the `v8-android` payload, not
-`fetch failed` and not a missing device.
+The QuickJS rollback builds the APK:
+
+```sh
+export ANDROID_HOME=/home/joao/Android/Sdk
+export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk          # JDK 17; JDK 26 fails Gradle
+export THREENATIVE_RUNTIME_SOURCE=<worktree>/packages/runtime-native
+export THREENATIVE_GRADLE_ARGS="-PthreenativeJsEngine=quickjs"
+pnpm exec threenative build --target android --allow-source-build
+# BUILD SUCCESSFUL in 2m 34s; 39 actionable tasks
+# 16 KB ok: lib/arm64-v8a/libSDL3.so, lib/arm64-v8a/libmystral-runtime.so,
+#           lib/x86_64/libSDL3.so, lib/x86_64/libmystral-runtime.so
+# ThreeNative Android APK: dist-native/starter-native.apk (47,585,025 bytes)
+sha256sum dist-native/starter-native.apk
+#   3f24116fb41a3e890d51fad9eb4834e3715c284cd023cdb96b310f151015f211
+```
+
+`third_party/` was copied from the primary checkout (never symlinked -- `download-deps.mjs`
+`mkdirSync`s that path and a symlink puts the shared cache at risk).
+
+The Android row, from the same `artifacts/native/consumer-targets.json` as the desktop row:
+
+| Field | Value |
+| --- | --- |
+| `target` | `android` |
+| `pass` | `true` |
+| `assertions` | `5` |
+| `failures` | `[]` (empty) |
+| `applicationId` | `com.threenative.starternative` |
+| `artifactHash` | `3f24116fb41a3e890d51fad9eb4834e3715c284cd023cdb96b310f151015f211` |
+| `scenario` / `scenarioHash` | `playtests/production-readiness.playtest.json` / `4edb52f1fb8d6ded…` |
+| `os` / `osVersion` | `android` / `15 (API 35)` |
+| `architecture` | `x86_64` |
+| `session` | `android-emulator` |
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs \
+  --consumer --target android --device emulator-5556 --project .
+# exit 0
+# consumer gameplay qualified on android: 5 assertions, artifact 3f24116fb41a, app com.threenative.starternative
+```
+
+Both rows carry the **same `scenarioHash` and the same `applicationId`** with different artifact
+hashes: it is one game, one scenario, two distributed targets. The Android row records the
+**device's** own OS and ABI (`getprop`), not the host's — the reviewer's secondary finding working
+as intended.
+
+### Android (physical Pixel 8, arm64-v8a) — FAILS CLOSED, real finding
+
+The same APK was also run against the attached physical device. It does **not** pass, and the
+verifier correctly refused to record a passing row rather than reusing the emulator's:
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs \
+  --consumer --target android --device 192.168.1.192:5555 --project .
+# exit 1
+# TN_STARTER_CONSUMER_NO_ASSERTIONS: assertion 'diagnostics' was not evaluated.
+```
+
+Row written: `pass: false`, `assertions: 0`, `architecture: arm64-v8a`, `osVersion: 17 (API 37)`,
+`session: android-device`, `failures: ["TN_STARTER_CONSUMER_NO_ASSERTIONS: assertion 'diagnostics'
+was not evaluated."]`, same `artifactHash` and `scenarioHash` as the passing emulator row.
+
+Two things this establishes and one it opens:
+
+- The fail-closed contract is real on hardware: a run that evaluated nothing is a failure, not a
+  pass, and it did not silently inherit the emulator's green row.
+- The arm64-v8a ABI is not proven by this evidence. The passing Android row is x86_64 emulator only.
+- **Open:** on Android 17 (API 37) the `diagnostics` assertion is not evaluated at all, while on
+  Android 15 (API 35) it is. That is a device/API-level gap in the diagnostics channel, not a
+  gameplay failure, and it belongs to phase 3's physical qualification rather than to this phase.
+  The emulator row above is what phase 2 asks for ("emulators for Android behavior"); physical
+  hardware is phase 3's requirement and remains open.
+
+The emulator row is the one retained in the project's `consumer-targets.json`; the physical run's
+row was captured separately so the phase-2 emulator evidence was not overwritten by a later run.
+
+### Devices available on this machine
+
+`adb devices -l`: `emulator-5554` (`sdk_gphone16k_x86_64`), `emulator-5556`
+(`sdk_gphone64_x86_64`), `192.168.1.192:5555` (`Pixel_8`, `shiba`). The lane is live; the PRD's
+"no APK existed to install" note no longer holds.
 
 ## Independent reviewer — NEEDS CORRECTION
 
