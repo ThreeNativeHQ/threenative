@@ -21,6 +21,7 @@ import {
 } from "three";
 import { acceleratedRaycast } from "three-mesh-bvh";
 import { describe, expect, it, vi } from "vitest";
+import { DiscreteLodPlugin, TN_DISCRETE_LOD, updateModelLods } from "../src/model-lod.js";
 import { ScenePicker } from "../src/picking.js";
 import { type IViewportSize, Viewport } from "../src/viewport.js";
 
@@ -391,5 +392,63 @@ describe("ScenePicker", () => {
       /cannot be combined/u,
     );
     expect(() => picker.raycast({ direction: new Vector3(0, 0, -1) })).toThrow(/requires origin/u);
+  });
+
+  it("picks the authored LOD0 surface while the camera draws a coarser level", async () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3),
+    );
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    geometry.computeBoundingSphere();
+    const managed = new Mesh(geometry, new MeshBasicMaterial());
+    managed.name = "picked";
+
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser({
+      associations: new Map([[managed, { meshes: 0, primitives: 0 }]]),
+      getDependency: async () => ({ array: Uint32Array.from([0, 1, 2]) }),
+      json: {
+        meshes: [
+          {
+            primitives: [
+              {
+                extensions: {
+                  [TN_DISCRETE_LOD]: {
+                    absoluteErrors: [0.05],
+                    counts: [1],
+                    errors: [0.05],
+                    indices: [0],
+                    lod0Triangles: 2,
+                    schemaVersion: 1,
+                    sharedVertexBuffers: true,
+                    strategy: "discrete",
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    } as never);
+    await plugin.afterRoot({ scene: managed });
+    expect(plugin.attach(managed, { hysteresis: 0.15, maxPixelError: 1 })).toBe(1);
+
+    const { picker, root } = scenePicker(managed);
+    // Far from the picker's own camera, the controller draws the one-triangle level.
+    const far = new PerspectiveCamera(60, 1, 0.1, 1000);
+    far.position.set(0, 0, 100);
+    far.updateMatrixWorld(true);
+    updateModelLods(root, far, 1080);
+    expect(managed.geometry.index?.count).toBe(3);
+
+    // A ray through the upper-left triangle: LOD0 has it, the drawn level does not.
+    const hit = picker.raycast({
+      direction: new Vector3(0, 0, -1),
+      origin: new Vector3(-0.5, 0.5, 5),
+    });
+    expect(hit?.object).toBe(managed);
+    expect(hit?.distance).toBeCloseTo(5, 5);
   });
 });
