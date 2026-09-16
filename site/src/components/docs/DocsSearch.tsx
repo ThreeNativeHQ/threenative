@@ -53,7 +53,7 @@ export function DocsSearch() {
           if (event.key !== "Tab") return;
           const controls = Array.from(
             event.currentTarget.querySelectorAll<HTMLElement>(
-              'a[href], button:not([disabled]), input:not([disabled])',
+              "a[href], button:not([disabled]), input:not([disabled])",
             ),
           ).filter((control) => control.getClientRects().length > 0);
           const first = controls[0];
