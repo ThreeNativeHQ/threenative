@@ -109,6 +109,10 @@ export interface IStartupStatus {
    * 0 to 1, monotonic and honest: the loader's settled/requested ratio carries the first 0.7
    * while the start scene loads, 0.8 once the world is entered, 0.9 once first-use compilation
    * settled, 1 when `whenReady()` resolves.
+   *
+   * Monotonic is enforced, not assumed: this is a high-water mark over the measured load state,
+   * because that state can fall — requesting an asset after an earlier one settled shrinks the
+   * ratio, and a bar that jumps backwards reads to a player as the load restarting.
    */
   readonly progress: number;
   /** When each milestone happened; members appear as they are reached. */
