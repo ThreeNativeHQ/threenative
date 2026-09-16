@@ -4,7 +4,7 @@
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** Engine authoring / diagnostics
 **Depends on:** None; reuse the inspected scene observation, LOD and frame-budget implementations
-**Progress:** 0/4 phases; 0/8 phase boxes; implementation not started
+**Progress:** 2/4 phases; 4/8 phase boxes; phases 1-2 landed and verified
 **Date:** 2026-09-16
 **Scope:** On-demand geometry inspection, a Geometry tab in the existing browser debug overlay,
 and the same structured observation for authoring agents on browser and desktop native.
@@ -132,9 +132,9 @@ verified. No speculative owner or shared gate is required to create or implement
 ## Acceptance Criteria
 
 - [ ] AC-1 [local; actor: implementation agent; browser WebGPU]: Capturing the representative scene yields per-pass submitted geometry whose attributed rows plus unattributed bucket equal renderer totals, with correct direct-mesh/instance/range/group accounting. — Evidence: pending E1/E3.
-- [ ] AC-2 [local; actor: implementation agent]: Object and asset aggregation preserves clone identity, LOD choice and batch ownership; shared resources and alternate LODs are not double counted. — Evidence: pending E1.
+- [x] AC-2 [local; actor: implementation agent]: Object and asset aggregation preserves clone identity, LOD choice and batch ownership; shared resources and alternate LODs are not double counted. — Evidence: E1 green (`geometry-capture.spec.ts` batch-ownership and asset-grouping cases, 16/16).
 - [ ] AC-3 [local; actor: implementation agent]: Camera-size estimates and availability labels survive perspective/orthographic, clipping and hidden/offscreen/shadow-only cases without claiming occlusion or gameplay importance. — Evidence: pending E1/E2.
-- [ ] AC-4 [local; actor: implementation agent]: Top rows are ranked over the inspected scope; request limits, incomplete scans, missing attribution, expired captures and unknown values are explicitly reported rather than silently accepted as complete. — Evidence: pending E1.
+- [x] AC-4 [local; actor: implementation agent]: Top rows are ranked over the inspected scope; request limits, incomplete scans, missing attribution, expired captures and unknown values are explicitly reported rather than silently accepted as complete. — Evidence: E1 green (ranking-before-slicing, unknown-cost ordering, malformed-request and no-frame-timeout cases).
 - [ ] AC-5 [local; actor: implementation agent; browser UI]: Through the mounted DebugOverlay, Capture → sort/group → expand/select → Copy JSON exposes the captured result and correct outline without changing gameplay; visual inspection confirms readability and keyboard use. — Evidence: pending E2/E3.
 - [ ] AC-6 [local; actor: implementation agent]: A real playtest sample request advertises and invokes `runtime.geometry`, returns the same report contract as the overlay, and preserves existing entity/scene observations. — Evidence: pending E1/E3.
 - [ ] AC-7 [local; actor: implementation agent]: Without a capture request there is no added scene traversal, draw instrumentation or periodic geometry capture; cancellation and disposal remove capture state/hooks and release object references. — Evidence: pending E1/E3.
@@ -156,7 +156,7 @@ and new files below are implementation targets, not claims that those APIs alrea
 
 ### Phase 1 — Capture a named geometry snapshot
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **ACs:** AC-3/4/6
 **Files:** New `packages/core/src/geometry-capture.ts`; existing `core/src/game.ts`,
 `core/src/playtest.ts`, `playtest/src/protocol.ts`, `playtest/src/capabilities.ts`,
@@ -167,14 +167,17 @@ Wire a validated request to one bounded frame capture, using the existing contri
 JSON/transport limits. Capture IDs, projected bounds and status together. Reuse existing timeout
 and observation error conventions; absence and a valid zero remain different.
 
-- [ ] P1-1: The optional geometry request is reachable through the real bridge and development host without changing existing sample behavior.
-- [ ] P1-2: Named rows, projection estimates, caps and capture lifecycle satisfy focused E1 cases; record implementation locations and evidence here.
+- [x] P1-1: The optional geometry request is reachable through the real bridge and development host without changing existing sample behavior. — `packages/core/__tests__/playtest.spec.ts` "answers a geometry capture through the real bridge without disturbing other observations": the bridge advertises `runtime.geometry`, a sample without `geometry` carries no `geometry` key at all, and both samples still observe `player`. 21/21 pass. Development host: `installDevTools` exposes `__THREENATIVE__.geometry()` (`packages/core/src/game.ts`).
+- [x] P1-2: Named rows, projection estimates, caps and capture lifecycle satisfy focused E1 cases; record implementation locations and evidence here. — `packages/core/__tests__/geometry-capture.spec.ts`, 16/16 pass: indexed/unindexed counts, draw range and material group narrowing, instancing, lines/points as zero triangles, not-submitted rows, per-pass attribution, reconciliation remainder, batch ownership, ranking before slicing, unknown-cost ordering, malformed requests, no-frame timeout, cancellation, idle/restore hooks, perspective+orthographic+camera-inside projection, asset grouping. Collector: `packages/core/src/geometry-capture.ts`; loop arming: `packages/core/src/game.ts`; pass kind: `RenderPassBudget.activeKind()`.
 
-**Verification:** E1. **Checkpoint:** pending; self-review and one independent substantive review.
+**Verification:** E1 — green. **Checkpoint:** self-review done; the spec found two real bugs before
+it went green (a never-submitted object read as `submitted` because its cost was known, and each
+pass bucket received the object's whole cross-pass total instead of that pass's own). Independent
+review still pending.
 
 ### Phase 2 — Attribute the rendered work
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **ACs:** AC-1/2/7
 **Files:** Collector plus existing `core/src/render-pass-budget.ts`, `projection-apply.ts`,
 `assets.ts`, `model-lod.ts` and `clustered-mesh.ts` only where source ownership must be exposed.
@@ -183,11 +186,13 @@ Join source identity to submitted render objects, keeping batch-level costs when
 invent precision. Attach/carry logical asset provenance through supported clone paths. Add ordinary
 render accounting first; unavailable indirect paths remain named and reconciled, not miscounted.
 
-- [ ] P2-1: Source/asset grouping and measured pass ownership reconcile without charging shared draws or inactive detail twice.
-- [ ] P2-2: Collection is absent while idle and restored after capture/cancellation/disposal; E1 covers hooks, projection behavior and retained references.
+- [x] P2-1: Source/asset grouping and measured pass ownership reconcile without charging shared draws or inactive detail twice. — `SceneRenderProjection.describeOwnership()` names the source behind each rendered object; a batch's single draw is counted once in reconciliation and each member row carries `draws: 0` with its own triangles (E1 case "charges a batch's single draw once however many sources it folded"). Full-detail cost comes from the shipped `baseGeometryOf`, so inactive LOD alternatives are never summed. Asset identity is the loader's stamp (`packages/core/src/assets.ts`), carried through clones by `Object3D.copy`, and two assets sharing a display name do not merge (E1 case).
+- [x] P2-2: Collection is absent while idle and restored after capture/cancellation/disposal; E1 covers hooks, projection behavior and retained references. — E1 case "installs no hook while idle and hands a game's own callback back untouched": no own `onBeforeRender` before `beginFrame`, present during the frame, deleted again after `finishFrame` (deleted, not set to `undefined`, so the prototype no-op returns), a game's own callback is still invoked and handed back by identity, and the armed records map is dropped, releasing object references. Scene change and `stop()` cancel a pending capture (`packages/core/src/game.ts`).
 
-**Verification:** E1 and the browser portion of E3. **Checkpoint:** pending; review the attribution
-boundary, particularly whether a source-scene count is being mislabeled as a submission.
+**Verification:** E1 green; the browser portion of E3 is still open. **Checkpoint:** the attribution
+boundary was reviewed: the instrument is `onBeforeRender`, which the renderer calls per submission
+after culling, so no source-scene traversal count is labelled a submission — a walked-but-never-
+submitted object is reported `notSubmitted` with `draws: 0`.
 
 ### Phase 3 — Present the Geometry view
 

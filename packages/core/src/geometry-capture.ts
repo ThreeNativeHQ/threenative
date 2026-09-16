@@ -363,7 +363,7 @@ function rowRootOf(object: Object3D, root: Object3D): Object3D {
     if (node.parent === root) candidate = node;
     node = node.parent;
   }
-  return node === root ? candidate : candidate;
+  return candidate;
 }
 
 const sphereScratch = new Sphere();
@@ -716,6 +716,18 @@ function meshDraftsOf(armed: IArmedFrame): IMeshDraft[] {
   return drafts;
 }
 
+/**
+ * What one draft contributed to one pass.
+ *
+ * An ordinary object's per-pass triangles are the ones that pass measured. A batch member owns no
+ * pass record of its own — the batch does — so its own geometry is what it contributed to each
+ * pass the batch was drawn in, and never the batch's whole total.
+ */
+function passTrianglesOf(draft: IMeshDraft, cost: { readonly triangles: number }): number {
+  if (draft.batchOwner === undefined) return cost.triangles;
+  return draft.triangles ?? 0;
+}
+
 function sum(values: readonly (number | undefined)[]): number | undefined {
   let total = 0;
   let any = false;
@@ -827,11 +839,14 @@ function rowOf(
   for (const member of members) {
     const source = member.source;
     const rendered = source as unknown as IRenderedLike;
+    let memberTriangles: number | undefined;
     for (const [kind, cost] of member.record.byPass) {
       const into = submissions[kind] ?? { draws: 0, triangles: 0 };
       // A batch member owns no draw of its own; the batch row below carries it.
       into.draws += member.batchOwner === undefined ? cost.draws : 0;
-      into.triangles += member.triangles ?? 0;
+      const contributed = member.triangles === undefined ? 0 : passTrianglesOf(member, cost);
+      into.triangles += contributed;
+      if (member.triangles !== undefined) memberTriangles = (memberTriangles ?? 0) + contributed;
       submissions[kind] = into;
     }
     for (const reason of member.record.unavailable) unavailable.add(reason);
@@ -841,7 +856,7 @@ function rowOf(
     if (rendered.isInstancedMesh === true) {
       instances = (instances ?? 0) + Math.max(0, rendered.count ?? 0);
     }
-    if (member.triangles !== undefined) submitted = (submitted ?? 0) + member.triangles;
+    if (memberTriangles !== undefined) submitted = (submitted ?? 0) + memberTriangles;
     if (member.trianglesSource === "batchMembers") trianglesSource = "batchMembers";
     const geometry = rendered.geometry;
     const own = geometryTriangles(geometry);
@@ -878,7 +893,7 @@ function rowOf(
           kind,
           {
             draws: member.batchOwner === undefined ? cost.draws : 0,
-            triangles: member.triangles ?? 0,
+            triangles: member.triangles === undefined ? 0 : passTrianglesOf(member, cost),
           },
         ]),
       ),
@@ -887,8 +902,8 @@ function rowOf(
       ...(member.batchOwner === undefined ? {} : { batchOwner: member.batchOwner }),
       ...(own === undefined ? {} : { selectedDetailTriangles: own }),
       ...(base === undefined ? {} : { fullDetailTriangles: base }),
-      ...(member.triangles === undefined ? {} : { submittedTriangles: member.triangles }),
-      ...(member.triangles === undefined ? {} : { trianglesSource: member.trianglesSource }),
+      ...(memberTriangles === undefined ? {} : { submittedTriangles: memberTriangles }),
+      ...(memberTriangles === undefined ? {} : { trianglesSource: member.trianglesSource }),
       ...(rendered.isInstancedMesh === true ? { instances: Math.max(0, rendered.count ?? 0) } : {}),
       ...(member.record.unavailable.size === 0
         ? {}
@@ -921,7 +936,9 @@ function rowOf(
     path: nodePath(root, armed.root),
     submissions,
     type: root.type,
-    visibility: draws > 0 || submitted !== undefined ? "submitted" : "notSubmitted",
+    // Submission is a draw the renderer made, never a cost that happens to be known. A hidden
+    // mesh's triangle buffer is still countable; it was not drawn.
+    visibility: members.some((member) => member.record.draws > 0) ? "submitted" : "notSubmitted",
     ...(batch === undefined ? {} : { batch }),
     ...(assetOf(root) === undefined ? {} : { asset: assetOf(root) as string }),
     ...(full === undefined ? {} : { fullDetailTriangles: full }),
@@ -1050,7 +1067,7 @@ function reconcile(
       const into = attributed.get(kind) ?? { draws: 0, triangles: 0 };
       // A record's own draws are counted once however many sources it folded.
       if (!seen.has(draft.record)) into.draws += cost.draws;
-      into.triangles += draft.triangles ?? 0;
+      into.triangles += draft.triangles === undefined ? 0 : passTrianglesOf(draft, cost);
       attributed.set(kind, into);
     }
     seen.add(draft.record);
