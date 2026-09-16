@@ -318,9 +318,16 @@ export class RippleField {
         flowZ[k] = clamp(((flowZ[k] as number) - 9.81 * gz * dt) / (1 + 0.65 * dt), -9, 9);
         // A crest that is both steep and collapsing is a crest that is breaking, and a breaking
         // crest is white. Calm swell never satisfies both and so never invents foam.
+        // `Math.sqrt` of the squares, not `Math.hypot`: V8's hypot pays for an overflow-safe
+        // scaling pass this loop can never need, and it ran 6.4x slower per cell, which made it the
+        // single largest cost in the whole solver. The two are not bit-identical — sqrt-of-squares
+        // loses up to 2 ulp when one component is negligible beside the other — and that is
+        // licensed only because this magnitude reaches `foam` alone, never `height` or `velocity`,
+        // so no float, hull pose or height query can observe it. `__tests__` pins the 2-ulp bound.
         const breaking =
           lap < 0
-            ? Math.max(0, Math.hypot(gx, gz) - 0.3) * Math.min(3, Math.abs(v[k] as number))
+            ? Math.max(0, Math.sqrt(gx * gx + gz * gz) - 0.3) *
+              Math.min(3, Math.abs(v[k] as number))
             : 0;
         if (breaking > 0) foam[k] = clamp((foam[k] as number) + breaking * dt * 0.55, 0, 1);
       }
