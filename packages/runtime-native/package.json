@@ -46,6 +46,7 @@
     "scripts/bundle.mjs",
     "scripts/check-android-16kb-alignment.mjs",
     "scripts/check-source-list.mjs",
+    "scripts/desktop-distribution.mjs",
     "scripts/device-preflight.mjs",
     "scripts/install-prebuilt.mjs",
     "scripts/package-android.mjs",
@@ -55,6 +56,8 @@
     "scripts/production-evidence.mjs",
     "scripts/profile-production.mjs",
     "scripts/qualify-physical-mobile.mjs",
+    "scripts/verify-starter-consumer.mjs",
+    "scripts/verify-starter-desktop-base.mjs",
     "scripts/verify-starter-desktop.mjs",
     "scripts/xvfb.sh"
   ],

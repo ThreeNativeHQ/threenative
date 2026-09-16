@@ -1,20 +1,19 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
-import { describe, test } from 'vitest';
+import { test } from 'vitest';
 
 import {
   analyzeStarterLog,
-  assertConsumerTargetRows,
+  assertPlayerPrerequisites,
   inspectStarterScreenshot,
-  parseConsumerPlaytestReport,
-  qualifyConsumerTargetRow,
-  verifyStarterConsumerGameplay,
+  verifyStarterContainer,
 } from '../scripts/verify-starter-desktop.mjs';
 
 const PROOF_ASSET = new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url);
@@ -403,276 +402,132 @@ test('starter verifier executes through a pnpm-style symlink', () => {
   assert.match(result.stderr, /TN_NATIVE_STARTER_ARTIFACT_MISSING/u);
 });
 
-// PRD-366 phase 2. Phase 1 proved the installed starter plays in a browser; these fixtures prove
-// the qualification of the *same* consumer scenario on a distributed target fails closed for the
-// exact cause — a foreign subject, a stale artifact, an absent gameplay row, a run that evaluated
-// nothing — rather than accepting a hardcoded pass.
-describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () => {
-  const scenario = 'playtests/production-readiness.playtest.json';
-  const builtHash = 'a'.repeat(64);
-  const builtApplicationId = 'com.threenative.my-game';
-  const builtConsumer = {
-    applicationId: builtApplicationId,
-    artifactHash: builtHash,
-    scenario: scenario,
-    targets: ['desktop', 'android'],
-  };
-
-  function consumerRow(overrides = {}) {
-    return {
-      applicationId: builtApplicationId,
-      architecture: 'x64',
-      artifactHash: builtHash,
-      assertions: 5,
-      failures: [],
-      os: 'linux',
-      osVersion: '6.8.0',
-      pass: true,
-      scenario: scenario,
-      session: 'x11',
-      target: 'desktop',
-      ...overrides,
-    };
-  }
-
-  test('should reject target qualification when the artifact hash / application ID differs from the built consumer', () => {
-    assert.throws(
-      () => qualifyConsumerTargetRow(consumerRow({ artifactHash: 'b'.repeat(64) }), builtConsumer),
-      /TN_STARTER_CONSUMER_ARTIFACT_MISMATCH/u,
-    );
-    assert.throws(
-      () =>
-        qualifyConsumerTargetRow(consumerRow({ applicationId: 'com.other.game' }), builtConsumer),
-      /TN_STARTER_CONSUMER_APPLICATION_ID_MISMATCH/u,
-    );
+// PRD-365 phase 2: a player machine provides the system WebView runtime; the container records it
+// as a prerequisite and ships none of it. The verifier must name the missing library and its
+// install step, not leak the dynamic loader's bare "not found".
+test('a missing player-side WebView runtime is named with its install step', () => {
+  const run = () => ({
+    status: 0,
+    stderr: '',
+    stdout: 'linux-vdso.so.1 (0x00007fff)\n\tlibwebkit2gtk-4.1.so.0 => not found\n',
   });
+  const manifest = { prerequisites: [{ name: 'libwebkit2gtk-4.1.so.0' }] };
+  assert.throws(
+    () => assertPlayerPrerequisites(manifest, '/opt/game/starter', { platform: 'linux', run }),
+    (error) =>
+      /TN_NATIVE_STARTER_PREREQUISITE_MISSING/u.test(error.message) &&
+      /libwebkit2gtk-4\.1\.so\.0/u.test(error.message) &&
+      /WebKitGTK 4\.1 runtime/u.test(error.message),
+  );
+});
 
-  test('should reject a missing required gameplay row', () => {
-    assert.throws(
-      () => assertConsumerTargetRows([consumerRow({ target: 'desktop' })], builtConsumer),
-      /TN_STARTER_CONSUMER_ROW_MISSING.*'android'/u,
-    );
-    assert.throws(
-      () => assertConsumerTargetRows([], builtConsumer),
-      /TN_STARTER_CONSUMER_ROW_MISSING.*'desktop'/u,
-    );
+test('an unrecorded missing library still fails with the generic install step', () => {
+  // The manifest decides which libraries get the specific WebView/WebKit hint; a library the
+  // container did not record is still a failure, just without that tailored install command.
+  const run = () => ({ status: 0, stderr: '', stdout: '\tlibmystery.so.1 => not found\n' });
+  assert.throws(
+    () => assertPlayerPrerequisites({ prerequisites: [] }, '/opt/game/starter', { platform: 'linux', run }),
+    (error) =>
+      /TN_NATIVE_STARTER_PREREQUISITE_MISSING/u.test(error.message) &&
+      /libmystery\.so\.1/u.test(error.message) &&
+      !/WebKitGTK/u.test(error.message),
+  );
+});
+
+test('a resolvable player-side WebView runtime passes the prerequisite check', () => {
+  const run = () => ({
+    status: 0,
+    stderr: '',
+    stdout: '\tlibwebkit2gtk-4.1.so.0 => /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 (0x00007f2a00000000)\n',
   });
+  assert.deepEqual(
+    assertPlayerPrerequisites(
+      { prerequisites: [{ name: 'libwebkit2gtk-4.1.so.0' }] },
+      '/opt/game/starter',
+      { platform: 'linux', run },
+    ),
+    [],
+  );
+});
 
-  test('accepts a matching row for every required target', () => {
-    const qualified = assertConsumerTargetRows(
+// PRD-365 phase 2: the verifier inspects and launches the release container from wherever the
+// player unpacked it, without developer tools on PATH. The fake executable stands in for the
+// packaged game; the relocation and the container manifest are real.
+test.runIf(process.platform === 'linux')(
+  'a relocated release container launches without developer tools',
+  () => {
+    const root = makeTempDirSync('starter-container-test-');
+    const project = makeTempDirSync('starter-container-project-');
+    const expectedScreenshot = join(root, 'expected.png');
+    const proof = PNG.sync.read(readFileSync(PROOF_ASSET));
+    writeFileSync(expectedScreenshot, PNG.sync.write(proof));
+    const executable = join(root, 'starter');
+    writeFileSync(
+      executable,
       [
-        consumerRow(),
-        consumerRow({
-          architecture: 'arm64',
-          os: 'android',
-          osVersion: 'android',
-          session: 'android-emulator',
-          target: 'android',
-        }),
-      ],
-      builtConsumer,
+        '#!/bin/sh',
+        'set -eu',
+        'screenshot=',
+        'while [ "$#" -gt 0 ]; do',
+        '  case "$1" in',
+        '    --screenshot) screenshot="$2"; shift 2 ;;',
+        '    *) shift ;;',
+        '  esac',
+        'done',
+        'cp "$TN_TEST_SCREENSHOT" "$screenshot"',
+        "printf '%s\\n' 'TN_NATIVE_SMOKE_READY:webgpu' 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb' 'TN_NATIVE_SMOKE_300_FRAMES:300' 'Rendered 300 frames in 1ms'",
+        '',
+      ].join('\n'),
     );
-    assert.deepEqual(
-      qualified.map((row) => row.target),
-      ['desktop', 'android'],
-    );
-  });
-
-  test('rejects a substituted native-smoke artifact for its own scenario cause', () => {
-    assert.throws(
-      () =>
-        qualifyConsumerTargetRow(
-          consumerRow({ scenario: 'playtests/native-smoke.playtest.json' }),
-          builtConsumer,
-        ),
-      /TN_STARTER_CONSUMER_SCENARIO_MISMATCH/u,
-    );
-  });
-
-  test('rejects a stale starter build by its artifact hash, not a generic failure', () => {
-    assert.throws(
-      () =>
-        qualifyConsumerTargetRow(consumerRow({ artifactHash: 'c'.repeat(64) }), builtConsumer),
-      /TN_STARTER_CONSUMER_ARTIFACT_MISMATCH/u,
-    );
-  });
-
-  test('names a scenario the target cannot evaluate instead of a generic gameplay failure', () => {
-    // The shared browser scenario asserts noNetworkErrors; a device target has no network
-    // observer and refuses it with TN_PLAYTEST_UNSUPPORTED_ON_TARGET. That is a scenario/target
-    // mismatch, and it must not surface as "the game failed" or as zero assertions.
-    assert.throws(
-      () =>
-        parseConsumerPlaytestReport(
-          JSON.stringify({
-            assertionResults: [{ id: 'diagnostics', pass: false }],
-            diagnostics: [
-              { code: 'TN_PLAYTEST_UNSUPPORTED_ON_TARGET', detail: 'network assertions' },
-            ],
-            pass: false,
-            target: 'desktop',
-          }),
-          'desktop',
-        ),
-      /TN_STARTER_CONSUMER_SCENARIO_NOT_CROSS_TARGET/u,
-    );
-  });
-
-  test('rejects a persisted row recorded against a different built consumer', () => {
-    assert.throws(
-      () =>
-        assertConsumerTargetRows([consumerRow({ artifactHash: 'd'.repeat(64) })], {
-          ...builtConsumer,
-          targets: ['desktop'],
-        }),
-      /TN_STARTER_CONSUMER_ARTIFACT_MISMATCH/u,
-    );
-  });
-
-  test('rejects a run that reached the app but evaluated no assertions (deleted asset/UI folder)', () => {
-    assert.throws(
-      () =>
-        qualifyConsumerTargetRow(
-          consumerRow({ assertions: 0, failures: [], pass: false }),
-          builtConsumer,
-        ),
-      /TN_STARTER_CONSUMER_NO_ASSERTIONS/u,
-    );
-  });
-
-  test('rejects an injected false state assertion as an assertion failure', () => {
-    assert.throws(
-      () =>
-        qualifyConsumerTargetRow(
-          consumerRow({ failures: ['resource state.score expected 1, observed 0'], pass: false }),
-          builtConsumer,
-        ),
-      /TN_STARTER_CONSUMER_ASSERTION_FAILED/u,
-    );
-  });
-
-  test('rejects a malformed row rather than reading it as a pass', () => {
-    assert.throws(
-      () => qualifyConsumerTargetRow({ target: 'desktop' }, builtConsumer),
-      /TN_STARTER_CONSUMER_ROW_MALFORMED/u,
-    );
-  });
-
-  test('parses the installed runner report and names an empty assertion set', () => {
-    const report = parseConsumerPlaytestReport(
-      JSON.stringify({
-        assertionResults: [
-          { id: 'movement', pass: true },
-          { id: 'resources', pass: true },
-        ],
-        pass: true,
-        target: 'desktop',
-      }),
-      'desktop',
-    );
-    assert.equal(report.assertions, 2);
-    assert.equal(report.pass, true);
-    assert.throws(
-      () =>
-        parseConsumerPlaytestReport(
-          JSON.stringify({ assertionResults: [], pass: true, target: 'desktop' }),
-          'desktop',
-        ),
-      /TN_STARTER_CONSUMER_NO_ASSERTIONS/u,
-    );
-    assert.throws(
-      () => parseConsumerPlaytestReport('not json', 'desktop'),
-      /TN_STARTER_CONSUMER_ROW_MALFORMED/u,
-    );
-  });
-
-  test('records a desktop consumer row through the injected runner without a display', () => {
-    const project = makeTempDirSync('starter-consumer-gameplay-');
-    const executableName = process.platform === 'win32' ? 'my-game.exe' : 'my-game';
-    mkdirSync(join(project, 'dist-native'), { recursive: true });
-    const artifact = join(project, 'dist-native', executableName);
-    writeFileSync(artifact, 'built consumer');
-    writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'my-game' }));
+    chmodSync(executable, 0o755);
+    const digest = createHash('sha256').update(readFileSync(executable)).digest('hex');
     writeFileSync(
-      join(project, 'threenative.config.ts'),
-      'export default { app: { id: "com.threenative.my-game" } };\n',
+      join(root, 'threenative-container.json'),
+      `${JSON.stringify(
+        {
+          app: { id: 'com.example.starter', name: 'Starter', version: '1.0.0', build: 1 },
+          dependencies: [],
+          executable: 'starter',
+          format: 'tar.gz',
+          platform: 'linux-x64',
+          prerequisites: [],
+          resources: { starter: { sha256: digest } },
+          schemaVersion: 1,
+          ui: null,
+        },
+        null,
+        2,
+      )}\n`,
     );
-    mkdirSync(join(project, 'playtests'), { recursive: true });
-    writeFileSync(
-      join(project, scenario),
-      JSON.stringify({ assert: { movement: { entity: 'player' } }, steps: [] }),
-    );
-    const runner = join(
+    const report = verifyStarterContainer({
+      env: { PATH: '/usr/bin:/bin', TN_TEST_SCREENSHOT: expectedScreenshot },
       project,
-      'node_modules',
-      '@threenative',
-      'playtest',
-      'dist',
-      'runner',
-      'cli.js',
-    );
-    mkdirSync(join(runner, '..'), { recursive: true });
-    writeFileSync(runner, '// installed consumer runner');
-
-    const calls = [];
-    const { expected, row } = verifyStarterConsumerGameplay({
-      applicationId: builtApplicationId,
-      project,
-      runner: (command, args, cwd) => {
-        calls.push([command, ...args]);
-        return {
-          status: 0,
-          stderr: '',
-          stdout: JSON.stringify({
-            assertionResults: [
-              { id: 'movement', pass: true },
-              { id: 'resources', pass: true },
-            ],
-            pass: true,
-            target: 'desktop',
-          }),
-        };
-      },
-      target: 'desktop',
+      root,
+      // `ldd` on the shell-script stand-in is not a real ELF program; the seam returns a clean
+      // census, which is the host's job to provide for a real binary.
+      run: () => ({ status: 0, stderr: '', stdout: 'linux-vdso.so.1 (0x00007fff)\n' }),
     });
+    assert.equal(report.pass, true);
+    assert.equal(report.frames, 300);
+  },
+);
 
-    assert.equal(row.target, 'desktop');
-    assert.equal(row.assertions, 2);
-    assert.equal(row.session.length > 0, true);
-    assert.equal(row.os, process.platform);
-    assert.equal(expected.artifactHash, row.artifactHash);
-    assert.match(calls[0].join(' '), /--target desktop/u);
-    assert.match(calls[0].join(' '), /--executable/u);
-    const recorded = JSON.parse(
-      readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
-    );
-    assert.equal(recorded[0].applicationId, builtApplicationId);
-    assert.equal(recorded[0].artifactHash, row.artifactHash);
-
-    // A caller that supplies the built consumer's identity independently turns a stale or
-    // substituted row into ARTIFACT_MISMATCH instead of a pass.
-    assert.throws(
-      () =>
-        verifyStarterConsumerGameplay({
-          applicationId: builtApplicationId,
-          expected: {
-            applicationId: builtApplicationId,
-            artifactHash: 'e'.repeat(64),
-            scenario: scenario,
-          },
-          project,
-          runner: () => ({
-            status: 0,
-            stderr: '',
-            stdout: JSON.stringify({
-              assertionResults: [{ id: 'movement', pass: true }],
-              pass: true,
-              target: 'desktop',
-            }),
-          }),
-          target: 'desktop',
-        }),
-      /TN_STARTER_CONSUMER_ARTIFACT_MISMATCH/u,
-    );
+test('the container flag routes the verifier to the unpacked container', () => {
+  // `--container` must populate the resolver's root, or the CLI route silently throws the
+  // raw-artifact guard. An empty directory reaches the container resolver, which names the missing
+  // manifest — proving the flag is wired.
+  const directory = makeTempDirSync('starter-container-cli-');
+  const entrypoint = join(directory, 'verify-starter-desktop.mjs');
+  symlinkSync(
+    fileURLToPath(new URL('../scripts/verify-starter-desktop.mjs', import.meta.url)),
+    entrypoint,
+  );
+  writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'starter' }));
+  const result = spawnSync(process.execPath, [entrypoint, '--container', directory], {
+    cwd: directory,
+    encoding: 'utf8',
   });
+  assert.equal(result.status, 1);
+  assert.doesNotMatch(result.stderr, /TN_NATIVE_STARTER_CONTAINER_MISSING/u);
+  assert.match(result.stderr, /TN_DESKTOP_CONTAINER_MANIFEST_MISSING/u);
 });

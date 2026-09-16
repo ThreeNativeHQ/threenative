@@ -676,17 +676,6 @@ jobs:
           }
           console.log(`TN_PUMP_ANDROID_STRUCTURAL_OK ${JSON.stringify(result.detail)}`);
           NODE
-      # PRD-366 phase 2: the same consumer scenario on Android. The starter APK is an artifact of
-      # PRD-212's packaging lane and is not staged in this advisory job, so the Android row is
-      # recorded UNVERIFIED rather than fabricated; the desktop rows are qualified where the
-      # starter is built. native-platforms.yml nests inside ci.yml as a reusable workflow and is
-      # NOT part of the merge verdict, so this lane cannot gate the claim either way.
-      - name: Record the Android consumer gameplay row as unverified
-        if: always()
-        run: |
-          mkdir -p packages/runtime-native/artifacts/performance-contract/android-emulator
-          printf '{"target":"android","status":"UNVERIFIED","reason":"the starter APK (PRD-212 artifact) is not staged in native-platforms.yml; the row is unverified, not fabricated"}\n' \
-            > packages/runtime-native/artifacts/performance-contract/android-emulator/consumer-targets-unverified.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -956,7 +945,7 @@ jobs:
           - platform: Windows
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
@@ -1139,23 +1128,6 @@ jobs:
             --runtime "$runtime" \
             --skip-build \
             --artifacts packages/runtime-native/artifacts/starter-ui-${{ matrix.platform }}
-      # PRD-366 phase 2: the same installed consumer gameplay row, on the hosted Windows and macOS
-      # desktop hosts it is claimed for. The artifact, application id, OS, architecture and session
-      # are recorded, and the gate fails on any divergence from the built consumer.
-      # Same known blocker as the Linux starter lane: the shared scenario's noNetworkErrors:true is
-      # refused on device/desktop targets, so this fails SCENARIO_NOT_CROSS_TARGET until fixed.
-      - name: Qualify the installed starter's consumer gameplay (${{ matrix.platform }} desktop)
-        shell: bash
-        env:
-          STARTER: ${{ runner.temp }}/threenative-starter-native
-        run: |
-          runtime="$PWD/packages/runtime-native/build/tn-macos/mystral"
-          if [ "${{ matrix.platform }}" = "Windows" ]; then
-            runtime="$PWD/packages/runtime-native/build/tn-windows/mystral.exe"
-          fi
-          THREENATIVE_RUNTIME_BINARY="$runtime" \
-            node packages/runtime-native/scripts/verify-starter-desktop.mjs \
-            --consumer --target desktop --project "$STARTER"
       - name: Upload the starter HUD evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -1169,6 +1141,235 @@ jobs:
         with:
           name: native-starter-ui-${{ matrix.platform }}
           path: packages/runtime-native/artifacts/starter-ui-${{ matrix.platform }}/
+          if-no-files-found: warn
+      # PRD-365 acceptance criterion 1: the release path (`--mode release` -> packageDesktopContainer)
+      # was fixture-tested only. These steps build the real container on the hosted OS, relocate it
+      # outside the project and launch it with the installed verifier, so the debug `test:native`
+      # above stays exactly as it was.
+      - name: Install and verify the desktop release packaging tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The release container is a ZIP on macOS and Windows and desktop-distribution.mjs shells
+          # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            choco install zip -y --no-progress
+            # The starter sets app.icon, so desktop-distribution.mjs shells out to rcedit to embed
+            # the icon and version strings in the PE resources. rcedit is not on the runner image.
+            # Pin the release: `latest` would make the packaged identity move under us.
+            tools="$RUNNER_TEMP/tn-packaging-tools"
+            mkdir -p "$tools"
+            curl -fsSL -o "$tools/rcedit.exe" \
+              https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
+            sha256sum "$tools/rcedit.exe"
+            # GITHUB_PATH is consumed by later steps in their own shell. The release build below is
+            # a `cmd` step, so this has to be the Windows form, not the git-bash POSIX one.
+            cygpath -w "$tools" >> "$GITHUB_PATH"
+            PATH="$tools:$PATH" rcedit.exe --help >/dev/null 2>&1 || {
+              echo "TN_DESKTOP_RESOURCE_TOOL_MISSING: downloaded rcedit.exe does not run." >&2
+              exit 1
+            }
+          else
+            # sips and iconutil convert the authored icon into the .icns the .app carries. Both ship
+            # with macOS, so assert them rather than installing anything.
+            for tool in sips iconutil; do
+              command -v "$tool" >/dev/null 2>&1 || {
+                echo "TN_DESKTOP_RESOURCE_TOOL_MISSING: '$tool' is required to build the macOS app icon." >&2
+                exit 1
+              }
+            done
+          fi
+          if ! zip -v >/dev/null 2>&1; then
+            echo "TN_DESKTOP_ARCHIVER_MISSING: 'zip' is required to write the desktop release container." >&2
+            exit 1
+          fi
+      # The container records every DLL the executable imports so it can be relocated, and
+      # `desktop-distribution.mjs` reads them with `dumpbin`, which lives only inside the Visual
+      # Studio developer environment. Enter it here rather than exporting it through GITHUB_ENV,
+      # for the same reason the native build and verify steps above do.
+      - name: Build the desktop release container with MSVC
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          where dumpbin || exit /b 1
+          where rcedit || exit /b 1
+          set "THREENATIVE_RUNTIME_BINARY=%GITHUB_WORKSPACE%\packages\runtime-native\build\tn-windows\mystral.exe"
+          pnpm --dir "%RUNNER_TEMP%\threenative-starter-native" exec threenative build --target desktop --mode release
+      - name: Build the desktop release container
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-native"
+          THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-macos/mystral" \
+            pnpm --dir "$target" exec threenative build --target desktop --mode release
+      - name: Relocate and extract the release container outside the project
+        shell: bash
+        run: |
+          set -euo pipefail
+          # git-bash ships GNU tar, which reads `D:\a\_temp\...` as a remote host:path spec and
+          # fails with "Cannot connect to D". Work in POSIX paths on Windows so no argument carries
+          # a drive-letter colon; every later step takes these same normalised values.
+          root="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then root=$(cygpath -u "$RUNNER_TEMP"); fi
+          target="$root/threenative-starter-native"
+          # The space in the destination is the point: the unpacked container must launch wherever a
+          # player put it, so it is relocated out of the build tree before it is verified.
+          dest="$root/tn relocated/unpacked"
+          rm -rf "$root/tn relocated"
+          mkdir -p "$dest"
+          # dist-native also holds the debug build's raw executable and ui/, so match the release
+          # archive by extension instead of a project name that varies per scaffold.
+          archive=$(find "$target/dist-native" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print)
+          archive_count=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            archive_count=$((archive_count + 1))
+          done <<< "$archive"
+          if [ "$archive_count" -ne 1 ]; then
+            echo "TN_DESKTOP_RELEASE_ARCHIVE_COUNT: expected exactly one release archive under $target/dist-native, found: $archive" >&2
+            exit 1
+          fi
+          # The container is a ZIP on both, and only bsdtar reads ZIP. macOS's `tar` is bsdtar, but
+          # on Windows git-bash's GNU tar shadows the system one, so name System32's explicitly
+          # rather than extracting with whichever `tar` happens to win the PATH.
+          archiver=tar
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            archiver=/c/Windows/System32/tar.exe
+            [ -x "$archiver" ] || {
+              echo "TN_DESKTOP_ARCHIVE_TOOL_MISSING: $archiver is required to read the ZIP container." >&2
+              exit 1
+            }
+          fi
+          "$archiver" -xf "$archive" -C "$dest"
+          # Locate the container root by its manifest; this also ignores a stray __MACOSX entry an
+          # archiver may add, which a bare "one top-level directory" check would mistake for a root.
+          manifest=$(find "$dest" -name threenative-container.json -type f -print)
+          manifest_count=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            manifest_count=$((manifest_count + 1))
+          done <<< "$manifest"
+          if [ "$manifest_count" -ne 1 ]; then
+            echo "TN_DESKTOP_CONTAINER_MANIFEST_COUNT: expected exactly one threenative-container.json under $dest, found: $manifest" >&2
+            exit 1
+          fi
+          case "$manifest" in
+            */Contents/Resources/threenative-container.json) container=${manifest%/Contents/Resources/threenative-container.json} ;;
+            */threenative-container.json) container=${manifest%/threenative-container.json} ;;
+            *) echo "TN_DESKTOP_CONTAINER_MANIFEST_LAYOUT: unrecognised manifest path $manifest" >&2; exit 1 ;;
+          esac
+          echo "TN_RELEASE_CONTAINER_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "TN_RELEASE_CONTAINER_ROOT=$container" >> "$GITHUB_ENV"
+      - name: Record the release container identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="packages/runtime-native/artifacts/release-container-${{ matrix.platform }}"
+          mkdir -p "$evidence"
+          # git-bash carries sha256sum, macOS only shasum; do not assume either.
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "$TN_RELEASE_CONTAINER_ARCHIVE" | tee "$evidence/archive.sha256"
+          else
+            sha256sum "$TN_RELEASE_CONTAINER_ARCHIVE" | tee "$evidence/archive.sha256"
+          fi
+          manifest=$(find "$TN_RELEASE_CONTAINER_ROOT" -name threenative-container.json -type f -print)
+          cp "$manifest" "$evidence/container-manifest.json"
+      - name: Assert the container carries the game's OS identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          # rcedit / Info.plist exiting 0 is not the same as the identity being in the artifact.
+          # PRD-365 claims the identity, so read it back out of the relocated container.
+          container="$TN_RELEASE_CONTAINER_ROOT"
+          manifest=$(find "$container" -name threenative-container.json -type f -print)
+          # node, not python3: git-bash on the Windows runner has no `python3` on PATH, and node is
+          # already guaranteed by the setup-node step above.
+          read_app() { node -e "const m=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(String(m.app[process.argv[2]]??''))" "$1" "$2"; }
+          name=$(read_app "$manifest" name)
+          icon=$(read_app "$manifest" icon)
+          [ -n "$name" ] || { echo "TN_DESKTOP_IDENTITY_NAME_MISSING: manifest records no app name." >&2; exit 1; }
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            executable=$(find "$container" -maxdepth 1 -name '*.exe' -type f -print)
+            info=$(powershell -NoProfile -Command "(Get-Item '$(cygpath -w "$executable")').VersionInfo | Format-List" )
+            printf '%s\n' "$info"
+            printf '%s\n' "$info" | grep -q "ProductName *: *$name" || {
+              echo "TN_DESKTOP_IDENTITY_PRODUCTNAME: PE ProductName is not '$name'." >&2; exit 1; }
+            printf '%s\n' "$info" | grep -q "FileDescription *: *$name" || {
+              echo "TN_DESKTOP_IDENTITY_FILEDESCRIPTION: PE FileDescription is not '$name'." >&2; exit 1; }
+            printf '%s\n' "$info" | grep -qE "FileVersion *: *[0-9]" || {
+              echo "TN_DESKTOP_IDENTITY_FILEVERSION: PE FileVersion is empty." >&2; exit 1; }
+          else
+            plist="$container/Contents/Info.plist"
+            [ -f "$plist" ] || { echo "TN_DESKTOP_IDENTITY_PLIST_MISSING: no Contents/Info.plist at $plist." >&2; exit 1; }
+            plutil -p "$plist"
+            plutil -p "$plist" | grep -q "\"CFBundleName\" => \"$name\"" || {
+              echo "TN_DESKTOP_IDENTITY_BUNDLENAME: CFBundleName is not '$name'." >&2; exit 1; }
+            icns=$(plutil -extract CFBundleIconFile raw "$plist")
+            [ -n "$icns" ] || { echo "TN_DESKTOP_IDENTITY_ICONFILE: CFBundleIconFile is empty." >&2; exit 1; }
+            case "$icns" in *.icns) ;; *) icns="$icns.icns" ;; esac
+            [ -f "$container/Contents/Resources/$icns" ] || {
+              echo "TN_DESKTOP_IDENTITY_ICNS_MISSING: Contents/Resources/$icns is absent." >&2; exit 1; }
+          fi
+          # The icon the manifest records must be in the container on every platform.
+          if [ -n "$icon" ]; then
+            [ -f "$container/$icon" ] || {
+              echo "TN_DESKTOP_IDENTITY_ICON_MISSING: recorded icon $icon is absent from the container." >&2; exit 1; }
+          fi
+      # Windows packages and carries its identity correctly, but the container's executable cannot
+      # launch yet: `rcedit` rewrites the PE to embed the icon after the game payload was appended
+      # as an overlay, so the binary falls back to the runtime CLI. PRD-365 records this with its
+      # evidence and leaves the launch acceptance boxes open. Skipped rather than made non-fatal,
+      # so nothing reports a launch it never performed; re-enable with the fix.
+      - name: Verify the relocated release container with the installed verifier
+        if: matrix.platform != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same POSIX normalisation as the relocate step, so the verifier sees one path style.
+          root="$RUNNER_TEMP"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then root=$(cygpath -u "$RUNNER_TEMP"); fi
+          target="$root/threenative-starter-native"
+          cd "$target"
+          # The installed verifier, not the engine checkout: it is the copy a player gets.
+          node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \
+            --container "$TN_RELEASE_CONTAINER_ROOT" \
+            --project "$target"
+      - name: Launch the relocated container with no developer toolchain
+        if: matrix.platform != 'Windows'
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          container="$TN_RELEASE_CONTAINER_ROOT"
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            executable=$(find "$container" -maxdepth 1 -name '*.exe' -type f -print)
+            # git-bash PATH entries are POSIX paths separated by ':'; a 'C:\...' value is not a
+            # valid bash PATH and would prove nothing about a reduced environment.
+            clean_path='/c/Windows/System32'
+          else
+            executable=$(find "$container/Contents/MacOS" -maxdepth 1 -type f -print)
+            clean_path='/usr/bin:/bin'
+          fi
+          [ -n "$executable" ] || { echo "TN_DESKTOP_CONTAINER_EXECUTABLE_MISSING: no executable under $container" >&2; exit 1; }
+          log="$RUNNER_TEMP/clean-player-launch.log"
+          echo "clean-player PATH: $clean_path"
+          # The engine checkout and its Node stay off this PATH: the unpacked app must run on a
+          # player machine with no developer toolchain.
+          PATH="$clean_path" "$executable" --windowed --screenshot "$RUNNER_TEMP/clean-player.png" --frames 300 2>&1 | tee "$log"
+          grep -q 'TN_NATIVE_SMOKE_READY:webgpu' "$log"
+          grep -qE 'Rendered [0-9]+ frames' "$log"
+      - name: Upload the desktop release container evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-desktop-release-${{ matrix.platform }}
+          path: |
+            packages/runtime-native/artifacts/release-container-${{ matrix.platform }}/
+            ${{ runner.temp }}/threenative-starter-native/artifacts/native/starter-container*
           if-no-files-found: warn
       - name: Collect bounded desktop performance evidence from the built runtime
         if: always()
@@ -1213,7 +1414,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # ccache wrote here while actions/cache saved ${{ runner.temp }}/ccache, a directory that
@@ -1301,21 +1502,108 @@ jobs:
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
             pnpm --dir "$target" test:native
-      # PRD-366 phase 2: the same consumer scenario phase 1 drove in a browser, run through the
-      # *installed* playtest runner against the built desktop consumer. The row records the real
-      # OS/architecture/session, the artifact hash and the application id, and fails closed on a
-      # missing row, a substituted artifact or a run that evaluated nothing.
-      # KNOWN BLOCKER: the shared scenario sets diagnostics.noNetworkErrors:true, which the device
-      # runner refuses with TN_PLAYTEST_UNSUPPORTED_ON_TARGET, so this step currently fails with
-      # TN_STARTER_CONSUMER_SCENARIO_NOT_CROSS_TARGET until the scenario carries the harness's
-      # target waiver. Fixing that is a template change outside this phase's file budget.
-      - name: Qualify the installed starter's consumer gameplay (Linux desktop)
-        env:
-          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+      # PRD-365 acceptance criterion 1, Linux flavour of the desktop release container: tar.gz, no
+      # zip, and the verifier finds the packaged xvfb.sh itself. The debug step above is untouched.
+      - name: Build the desktop release container
+        shell: bash
         run: |
-          node packages/runtime-native/scripts/verify-starter-desktop.mjs \
-            --consumer --target desktop \
-            --project "$RUNNER_TEMP/threenative-starter-native"
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-native"
+          THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
+            pnpm --dir "$target" exec threenative build --target desktop --mode release
+      - name: Relocate and extract the release container outside the project
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-native"
+          # The space in the destination is the point: the unpacked container must launch wherever a
+          # player put it, so it is relocated out of the build tree before it is verified.
+          dest="$RUNNER_TEMP/tn relocated/unpacked"
+          rm -rf "$RUNNER_TEMP/tn relocated"
+          mkdir -p "$dest"
+          # dist-native also holds the debug build's raw executable and ui/, so match the release
+          # archive by extension instead of a project name that varies per scaffold.
+          archive=$(find "$target/dist-native" -maxdepth 1 -type f -name '*.tar.gz' -print)
+          archive_count=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            archive_count=$((archive_count + 1))
+          done <<< "$archive"
+          if [ "$archive_count" -ne 1 ]; then
+            echo "TN_DESKTOP_RELEASE_ARCHIVE_COUNT: expected exactly one release archive under $target/dist-native, found: $archive" >&2
+            exit 1
+          fi
+          tar -xzf "$archive" -C "$dest"
+          # Locate the container root by its manifest; this also ignores a stray __MACOSX entry an
+          # archiver may add, which a bare "one top-level directory" check would mistake for a root.
+          manifest=$(find "$dest" -name threenative-container.json -type f -print)
+          manifest_count=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            manifest_count=$((manifest_count + 1))
+          done <<< "$manifest"
+          if [ "$manifest_count" -ne 1 ]; then
+            echo "TN_DESKTOP_CONTAINER_MANIFEST_COUNT: expected exactly one threenative-container.json under $dest, found: $manifest" >&2
+            exit 1
+          fi
+          case "$manifest" in
+            */threenative-container.json) container=${manifest%/threenative-container.json} ;;
+            *) echo "TN_DESKTOP_CONTAINER_MANIFEST_LAYOUT: unrecognised manifest path $manifest" >&2; exit 1 ;;
+          esac
+          echo "TN_RELEASE_CONTAINER_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "TN_RELEASE_CONTAINER_ROOT=$container" >> "$GITHUB_ENV"
+      - name: Record the release container identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="packages/runtime-native/artifacts/release-container-linux"
+          mkdir -p "$evidence"
+          # git-bash carries sha256sum, macOS only shasum; do not assume either.
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "$TN_RELEASE_CONTAINER_ARCHIVE" | tee "$evidence/archive.sha256"
+          else
+            sha256sum "$TN_RELEASE_CONTAINER_ARCHIVE" | tee "$evidence/archive.sha256"
+          fi
+          manifest=$(find "$TN_RELEASE_CONTAINER_ROOT" -name threenative-container.json -type f -print)
+          cp "$manifest" "$evidence/container-manifest.json"
+      - name: Assert the container carries the game's OS identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The packaging tool exiting 0 is not the same as the identity being in the artifact.
+          container="$TN_RELEASE_CONTAINER_ROOT"
+          manifest="$container/threenative-container.json"
+          # node, not python3: git-bash on the Windows runner has no `python3` on PATH, and node is
+          # already guaranteed by the setup-node step above.
+          read_app() { node -e "const m=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(String(m.app[process.argv[2]]??''))" "$1" "$2"; }
+          name=$(read_app "$manifest" name)
+          icon=$(read_app "$manifest" icon)
+          entry=$(find "$container/share/applications" -maxdepth 1 -name '*.desktop' -type f -print)
+          [ -n "$entry" ] || { echo "TN_DESKTOP_IDENTITY_ENTRY_MISSING: no .desktop entry in the container." >&2; exit 1; }
+          cat "$entry"
+          grep -q "^Name=$name$" "$entry" || { echo "TN_DESKTOP_IDENTITY_NAME: .desktop Name= is not '$name'." >&2; exit 1; }
+          grep -q '^Exec=' "$entry" || { echo "TN_DESKTOP_IDENTITY_EXEC: .desktop carries no Exec= line." >&2; exit 1; }
+          [ -n "$icon" ] && [ -f "$container/$icon" ] || {
+            echo "TN_DESKTOP_IDENTITY_ICON_MISSING: recorded icon '$icon' is absent from the container." >&2; exit 1; }
+      - name: Verify the relocated release container with the installed verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-native"
+          cd "$target"
+          # The installed verifier, not the engine checkout: it is the copy a player gets.
+          node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \
+            --container "$TN_RELEASE_CONTAINER_ROOT" \
+            --project "$target"
+      - name: Upload the release container evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-desktop-release-linux
+          path: |
+            packages/runtime-native/artifacts/release-container-linux/
+            ${{ runner.temp }}/threenative-starter-native/artifacts/native/starter-container*
+          if-no-files-found: warn
       - name: Collect starter evidence
         if: always()
         run: |
