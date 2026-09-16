@@ -360,6 +360,9 @@ function layout(platform, { appName, executableName, iconName }) {
   const slug = containerSlug(appName);
   if (platform === 'linux') {
     return {
+      // `findExternalBundle` looks beside the executable on Linux and Windows, and in
+      // Contents/Resources for a macOS .app. Stage it where the loader already searches.
+      bundle: 'game.bundle',
       executable: slug,
       icon: `share/icons/hicolor/256x256/apps/${iconName}.png`,
       manifest: CONTAINER_MANIFEST,
@@ -368,6 +371,7 @@ function layout(platform, { appName, executableName, iconName }) {
   }
   if (platform === 'darwin') {
     return {
+      bundle: 'Contents/Resources/game.bundle',
       executable: `Contents/MacOS/${slug}`,
       icon: `Contents/Resources/${slug}.icns`,
       manifest: `Contents/Resources/${CONTAINER_MANIFEST}`,
@@ -378,6 +382,7 @@ function layout(platform, { appName, executableName, iconName }) {
     };
   }
   return {
+    bundle: 'game.bundle',
     executable: executableName,
     icon: `${iconName}.png`,
     manifest: CONTAINER_MANIFEST,
@@ -539,8 +544,19 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
     (manifest.ui !== null && (!manifest.ui || typeof manifest.ui !== 'object' || Array.isArray(manifest.ui)))) {
     throw new Error('TN_DESKTOP_CONTAINER_MANIFEST_INVALID: unsupported schema or missing payload inventory.');
   }
+  // Without the bundle the executable is a bare runtime that prints CLI usage instead of the game,
+  // which is exactly the failure a released container must never reach a player with. Name that
+  // case rather than letting it fall through as a required resource called 'undefined': a container
+  // built before the game moved beside the executable has no `bundle` at all.
+  if (typeof manifest.bundle !== 'string' || !manifest.bundle) {
+    throw new Error(
+      'TN_DESKTOP_CONTAINER_MANIFEST_INVALID: the manifest names no game bundle, so this container ' +
+        'predates the sidecar layout and its executable would launch the runtime CLI. Rebuild it.',
+    );
+  }
   const required = [
     manifest.executable,
+    manifest.bundle,
     ...manifest.dependencies.map((dependency) => dependency?.path),
     ...(manifest.ui === null ? [] : [manifest.ui.entry]),
     ...(manifest.app?.icon === undefined ? [] : [manifest.app.icon]),
@@ -701,6 +717,7 @@ export function notarizeArchive({ archive, signing, run = exec } = {}) {
 export function packageDesktopContainer({
   platform = process.platform,
   arch = process.arch,
+  bundle,
   executable,
   executableName,
   uiDirectory,
@@ -734,6 +751,9 @@ export function packageDesktopContainer({
   const rootFolder = containerRootFolder(platform, appName);
   const archive = containerArchivePath(resolve(output), platform);
   const paths = layout(platform, { appName, executableName: executableName2, iconName });
+  // The game is as required as the executable: a container without it launches a bare runtime that
+  // prints CLI usage. Check it with the other preconditions, before anything is staged.
+  assertFile(bundle, 'game bundle');
   const staging = mkdtempSync(join(tmpdir(), 'threenative-container-'));
   const resources = {};
   const stage = (relativePath) => join(staging, rootFolder, relativePath);
@@ -744,6 +764,12 @@ export function packageDesktopContainer({
     mkdirSync(dirname(stage(paths.executable)), { recursive: true });
     copyFileSync(executable, stage(paths.executable));
     if (platform !== 'win32') chmodSync(stage(paths.executable), 0o755);
+
+    // The game travels beside the executable, never appended to it: rcedit and the signing tools
+    // rewrite the binary, and anything past the end of the image does not survive that.
+    mkdirSync(dirname(stage(paths.bundle)), { recursive: true });
+    copyFileSync(bundle, stage(paths.bundle));
+    record(paths.bundle);
 
     let ui = null;
     if (uiRenderer === 'web') {
@@ -839,6 +865,7 @@ export function packageDesktopContainer({
         build: app.build ?? 1,
         ...(iconRecord === undefined ? {} : { icon: iconRecord.path, iconSha256: iconRecord.sha256 }),
       },
+      bundle: paths.bundle,
       dependencies: bundled,
       executable: paths.executable,
       format,

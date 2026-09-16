@@ -481,17 +481,23 @@ test.runIf(process.platform === 'linux')(
     );
     chmodSync(executable, 0o755);
     const digest = createHash('sha256').update(readFileSync(executable)).digest('hex');
+    // The game travels beside the executable, so a container without it is refused: a bare runtime
+    // prints CLI usage instead of the game.
+    const bundle = join(root, 'game.bundle');
+    writeFileSync(bundle, Buffer.from('MYSBNDL1 fixture game payload'));
+    const bundleDigest = createHash('sha256').update(readFileSync(bundle)).digest('hex');
     writeFileSync(
       join(root, 'threenative-container.json'),
       `${JSON.stringify(
         {
           app: { id: 'com.example.starter', name: 'Starter', version: '1.0.0', build: 1 },
+          bundle: 'game.bundle',
           dependencies: [],
           executable: 'starter',
           format: 'tar.gz',
           platform: 'linux-x64',
           prerequisites: [],
-          resources: { starter: { sha256: digest } },
+          resources: { 'game.bundle': { sha256: bundleDigest }, starter: { sha256: digest } },
           schemaVersion: 1,
           ui: null,
         },
