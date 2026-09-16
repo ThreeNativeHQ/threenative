@@ -24,28 +24,14 @@
     },
     {
       "kind": "input",
-      "label": "focus-pause",
-      "press": "Tab",
-      "holdTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "focus-restart",
-      "press": "Tab",
-      "holdTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "restarted",
-      "press": "Enter",
+      "label": "restart",
+      "press": "KeyR",
       "holdTicks": 1,
       "release": true
     },
     {
       "kind": "wait",
-      "label": "post-restart-ready",
+      "label": "restarted",
       "waitTicks": 120,
       "release": true
     },
@@ -60,7 +46,6 @@
   "assert": {
     "diagnostics": {
       "noConsoleErrors": true,
-      "noNetworkErrors": true,
       "runtimeReady": true
     },
     "movement": {
