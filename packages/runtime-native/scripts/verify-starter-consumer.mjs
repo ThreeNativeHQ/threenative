@@ -113,7 +113,7 @@ export function validateConsumerTargetRow(row) {
   if (row.assertionIds === undefined) {
     throw consumerError(
       'ROW_OUTDATED',
-      `the '${row.target}' row records no assertionIds, so it was written by an older verifier that stored only a count; re-run --consumer for this target.`,
+      `the '${row.target}' row records no assertionIds, so it was written by an older verifier that stored only a count. Delete artifacts/native/consumer-targets.json, then re-run --consumer: the row file is validated before it is rewritten, so re-running alone cannot clear it.`,
     );
   }
   if (!Array.isArray(row.assertionIds) || row.assertionIds.some((id) => !nonEmptyString(id))) {
@@ -656,33 +656,58 @@ function optionValue(name, fallback) {
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     if (process.argv.includes('--qualify-existing')) {
-      const target = optionValue('--target', 'desktop');
-      if (!CONSUMER_REQUIRED_TARGETS.includes(target)) {
-        throw consumerError('TARGET_UNSUPPORTED', `unsupported distributed target '${target}'.`);
+      // `--target desktop,android` qualifies both in ONE call, which is the only way the
+      // cross-target assertion-set check can fire. With a single target it never runs, and
+      // "one game, one scenario, the same assertions everywhere" would rest on a human
+      // comparing two rows by eye.
+      const targets = optionValue('--target', 'desktop')
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      for (const target of targets) {
+        if (!CONSUMER_REQUIRED_TARGETS.includes(target)) {
+          throw consumerError('TARGET_UNSUPPORTED', `unsupported distributed target '${target}'.`);
+        }
+      }
+      if (new Set(targets).size !== targets.length) {
+        throw consumerError('ROW_DUPLICATE', `--target names the same target twice: ${targets.join(',')}.`);
+      }
+      const artifactOverride = optionValue('--artifact', undefined);
+      if (artifactOverride !== undefined && targets.length > 1) {
+        throw consumerError(
+          'TARGET_UNSUPPORTED',
+          '--artifact names one file, so it cannot be used with more than one --target.',
+        );
       }
       const project = resolve(optionValue('--project', process.cwd()));
       const applicationId = optionValue('--application-id', undefined) ?? readConsumerApplicationId(project);
-      const artifact = resolve(
-        project,
-        optionValue('--artifact', undefined) ?? discoverConsumerArtifact(project, target),
-      );
-      const artifactHash = createHash('sha256').update(readFileSync(artifact)).digest('hex');
+      const scenarioHash = createHash('sha256')
+        .update(readFileSync(join(project, CONSUMER_GAMEPLAY_SCENARIO)))
+        .digest('hex');
+      const expectedByTarget = {};
+      const described = [];
+      for (const target of targets) {
+        const artifact = resolve(
+          project,
+          artifactOverride ?? discoverConsumerArtifact(project, target),
+        );
+        const artifactHash = createHash('sha256').update(readFileSync(artifact)).digest('hex');
+        expectedByTarget[target] = {
+          applicationId,
+          artifactHash,
+          scenario: CONSUMER_GAMEPLAY_SCENARIO,
+          scenarioHash,
+        };
+        described.push(`${target} ${artifactHash.slice(0, 12)}`);
+      }
       const file = join(project, 'artifacts', 'native', 'consumer-targets.json');
       if (!existsSync(file)) {
         throw consumerError('ROW_MISSING', `${file} is absent; run --consumer first.`);
       }
       const rows = JSON.parse(readFileSync(file, 'utf8'));
-      assertConsumerTargetRows(rows, {
-        applicationId,
-        artifactHash,
-        scenario: CONSUMER_GAMEPLAY_SCENARIO,
-        scenarioHash: createHash('sha256')
-          .update(readFileSync(join(project, CONSUMER_GAMEPLAY_SCENARIO)))
-          .digest('hex'),
-        targets: [target],
-      });
+      assertConsumerTargetRows(rows, { expectedByTarget, targets });
       console.log(
-        `existing ${target} consumer row matches the built consumer ${artifactHash.slice(0, 12)}`,
+        `existing consumer rows match the built consumer: ${described.join(', ')}${targets.length > 1 ? ' (identical assertion sets)' : ''}`,
       );
       process.exit(0);
     }

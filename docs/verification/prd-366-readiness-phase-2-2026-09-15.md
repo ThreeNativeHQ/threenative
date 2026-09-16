@@ -287,6 +287,33 @@ node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs
 #   never declared.
 ```
 
+**The cross-target check is now wired, because otherwise it never executed.** Every caller passed a
+single target, so `ASSERTION_SET_MISMATCH` was unreachable in production and "one game, one
+scenario, the same assertions on every target" rested on a human comparing rows by eye — a check
+that never runs, which is the same false-pass family one level up. `--qualify-existing` now accepts
+`--target desktop,android` and qualifies both in one call, building a per-target expected identity.
+Run against the real two-row file:
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs \
+  --qualify-existing --target desktop,android --project .
+# exit 0
+# existing consumer rows match the built consumer: desktop b0f7d4e28e11, android 3f24116fb41a (identical assertion sets)
+
+# red control: replace one android id with visibility.q, re-run
+# exit 1
+# TN_STARTER_CONSUMER_ASSERTION_SET_MISMATCH: 'android' evaluated [... visibility.q] but
+#   'desktop' evaluated [... visibility.player]; the same scenario must prove the same
+#   assertions on every target.
+```
+
+**Precisely what is and is not automatic.** The gate is reachable and proved, and a CLI test covers
+both directions. But **no shipped script invokes it with two targets**: the starter's `test:native`
+runs `--consumer --target desktop`, and each Android run is a separate invocation. So cross-target
+equality is verified by *a wired, tested command that was executed here*, not by a gate that fires
+on its own in CI. Making it automatic needs a caller that knows when every required target has been
+recorded, which is a phase-3 question, not a tonight one.
+
 **Proved on the real rows, not only on fixtures.** After re-running desktop, the physical Pixel 8
 and the emulator with the repaired verifier, all three rows carry the identical set
 `diagnostics, movement.axisDelta, resource.state.entityCount.atSteps, resource.state.score.atSteps,
@@ -703,12 +730,25 @@ qualification. *Alternative rejected:* minting a new PRD number for it — the o
 cannot be confirmed free tonight, and phase 3 is the natural owner; split it out if it grows past
 that.
 
-**Silent hole the moment the scenario grows:** only four assertion families are mapped in
-`CONSUMER_ASSERTION_FAMILIES` (`diagnostics`, `movement`, `resources`, `visibility`). A scenario
-declaring any other family — `components`, say — has it **silently ignored** by the coverage check,
-exiting 0 with the family dropped. Harmless for the shipped starter, whose scenario declares exactly
-those four keys and all are recognised. It becomes a real hole as soon as a scenario declares a
-fifth. The fix is to refuse an unrecognised declared key rather than skip it.
+### Two latent traps — inert today, false-pass the moment one thing changes
+
+Both are properties of the B4 coverage check. Neither can fire against the shipped starter. Both
+become real false-pass paths on a specific, foreseeable change, so they are written with that
+trigger named rather than as generic future work.
+
+1. **Per-family coverage accepts a bogus id inside a declared family.** Coverage asks whether some
+   result id begins with each declared family token, not whether the id is one the scenario could
+   produce. `visibility.q` satisfies `visibility`. **Inert today** because the starter's five ids are
+   the real ones and the row now names them, so a reader sees the substitution. **False-pass the
+   moment** a runner emits a plausible-looking id in the right family — the coverage check would
+   pass it. Note the cross-target check *does* catch this when two targets are compared in one call
+   (the red control above uses exactly `visibility.q`), so the trap is narrowest for a single target.
+2. **`CONSUMER_ASSERTION_FAMILIES` maps only four families** (`diagnostics`, `movement`, `resources`,
+   `visibility`); any other declared key is **silently ignored**, exiting 0 with the family dropped.
+   **Inert today** because the starter's scenario declares exactly those four and all are recognised.
+   **False-pass the moment** a scenario declares a fifth — `components`, say — because the check
+   would then confirm coverage of everything it understands while quietly not requiring the new one.
+   The fix is to refuse an unrecognised declared key rather than skip it.
 
 Also recorded so they are not lost: `--qualify-existing` trusts the row file rather than re-running;
 `readConsumerTargetRows` (`scripts/verify-registry-install.ts:493`) never checks `pass`/`assertions`

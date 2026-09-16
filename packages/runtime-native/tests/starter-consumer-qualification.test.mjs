@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import {
@@ -328,5 +330,33 @@ describe('PRD-366 consumer evidence regressions', () => {
     assert.equal(assertConsumerTargetRows([desktop, android], {
       ...identity, targets: ['desktop', 'android'],
     }).length, 2);
+  });
+  // The cross-target check is only load-bearing if a caller actually passes two targets in one
+  // call. `--qualify-existing --target desktop,android` is that caller; with a single target the
+  // comparison never runs and identity would rest on a human reading two rows.
+  test('--qualify-existing accepts several targets so the cross-target check can fire', () => {
+    const f = fixture();
+    const apk = join(f.project, 'dist-native', 'consumer.apk');
+    writeFileSync(apk, 'built consumer');
+    const scenarioHash = hash(readFileSync(join(f.project, scenario)));
+    const rows = [
+      row({ assertionIds: ['movement', 'resources'], scenarioHash }),
+      row({ target: 'android', architecture: 'arm64-v8a', artifactHash: hash('built consumer'),
+        assertionIds: ['resources', 'movement'], os: 'android', osVersion: '15 (API 35)',
+        session: 'android-emulator', scenarioHash }),
+    ];
+    mkdirSync(join(f.project, 'artifacts', 'native'), { recursive: true });
+    writeFileSync(f.rowsFile, JSON.stringify(rows));
+    const cli = fileURLToPath(new URL('../scripts/verify-starter-desktop.mjs', import.meta.url));
+    const args = ['--qualify-existing', '--target', 'desktop,android', '--project', f.project];
+    const green = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+    assert.equal(green.status, 0, `${green.stdout}${green.stderr}`);
+    assert.match(green.stdout, /identical assertion sets/u);
+
+    rows[1].assertionIds = ['movement', 'visibility.q'];
+    writeFileSync(f.rowsFile, JSON.stringify(rows));
+    const red = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+    assert.notEqual(red.status, 0);
+    assert.match(`${red.stdout}${red.stderr}`, /ASSERTION_SET_MISMATCH/u);
   });
 });
