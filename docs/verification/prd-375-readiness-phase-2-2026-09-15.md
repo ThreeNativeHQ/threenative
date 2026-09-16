@@ -400,7 +400,43 @@ optional field. Both are now required, each naming the missing key.
 Red: **1 failed / 59 passed (60)**, exit 1. Green: **2 files, 84 passed**, exit 0; the desktop
 family **6 files, 193 passed**, exit 0; `pnpm typecheck` and `pnpm lint` exit 0.
 
-The verdict on `7bb0df3a6` was **NEEDS CORRECTION**. No reviewer PASS is claimed for the corrected
-head; a re-review is the next step, and the phase's reviewer box stays open. The reviewer also
-reported a further finding it had counted but not itemised; if it is not finding 4 above, it is
-still outstanding and this record does not claim otherwise.
+### 5 — a `--config` that silently evaluated to nothing turned the brand check off
+
+`parseCliFlags` matched `flag === '--config' && value`, so a trailing `--config` or an empty shell
+expansion dropped the flag and the run passed printing `brand NOT inspected`. Announced, so not a
+false green — but a typo quietly disabled the whole check. The same shape was worse on
+`--container`: an empty `$TN_RELEASE_CONTAINER_ROOT`, which is exactly how the two
+`native-platforms.yml` jobs pass it, would have **silently downgraded the run to the
+developer-artifact path** and judged a different binary than the one under test, while still
+printing a pass.
+
+Every flag is now recognized or refused, and every value must be present and non-blank:
+`TN_NATIVE_STARTER_CLI_INVALID` for an unknown flag, a missing or empty value, or a `--frames`
+that is not a positive whole number (it previously became `NaN`). `--container` and `--project`,
+the only flags any existing caller passes, are unaffected — verified against the real container
+with the CI's exact flag shape.
+
+Red: **5 failed / 62 passed (67)**, exit 1. Green: **2 files, 91 passed**, exit 0.
+
+### 6 — macOS `.icns` payload content stays unverified (pre-existing, phase 1, deliberately not fixed)
+
+The reviewer passed an `.icns` whose entire contents were the literal string
+`TOTAL GARBAGE, NOT AN ICNS, NOT DERIVED FROM THE AUTHORED PNG` and it passed, through the
+`!manifest.platform.startsWith('darwin-')` bypass. This is by design and predates this phase:
+`app.iconSha256` means source-icon identity and `resources[app.icon].sha256` means final payload
+integrity, and a PNG cannot be compared byte-for-byte against the ICNS `sips`/`iconutil` generate
+from it. The existing test that writes `'converted ICNS payload'` and asserts success enshrines
+exactly that contract. **This proves provenance and integrity, not conversion correctness or Finder
+pixels** — macOS icon content is unverified until a real `sips`/`iconutil` lane exists on a macOS
+host. The reviewer judged it disclosed rather than overclaimed; it is left unchanged and is now
+also named as a known limitation in the PRD.
+
+### Reviewer probes that came back clean
+
+Five further malformed-PE shapes — truncation at `0x100` and `0x200`, an out-of-section resource
+RVA, `NumberOfSections = 65535`, and `e_lfanew = 0xfffffff0` — all failed closed with named codes.
+
+The verdict on `7bb0df3a6` was **NEEDS CORRECTION**. Findings 1, 2 and 3 were corrected in
+`16fd1593d`, finding 5 here; finding 4 above is this lane's own, and finding 6 is disclosed and
+unchanged by design. No reviewer PASS is claimed for the corrected head; a re-review is the next
+step, and the phase's reviewer box stays open.

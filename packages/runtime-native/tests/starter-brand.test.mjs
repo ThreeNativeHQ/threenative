@@ -865,3 +865,65 @@ test('an executable with no FileDescription cannot pass on ProductName alone', (
     /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING/u,
   );
 });
+
+// Review findings 3 and 4: a malformed input must name a TN_* cause, and a mistyped or empty
+// flag value must not quietly turn a check off.
+
+const VERIFIER = new URL('../scripts/verify-starter-desktop.mjs', import.meta.url).pathname;
+
+function runVerifier(args) {
+  return spawnSync(process.execPath, [VERIFIER, ...args], { encoding: 'utf8' });
+}
+
+for (const size of [0x9a, 0xa0]) {
+  test(`a PE truncated to ${size} bytes names a cause rather than an offset RangeError`, () => {
+    const fixture = windowsFixture();
+    const executable = join(fixture.root, 'orbit.exe');
+    const truncated = readFileSync(executable).subarray(0, size);
+    writeFileSync(executable, truncated);
+    fixture.manifest.resources['orbit.exe'] = { sha256: sha256Of(truncated) };
+    assert.throws(() => fixture.inspect(), (error) => {
+      assert.doesNotMatch(error.message, /out of range|ERR_OUT_OF_RANGE/u);
+      return /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID/u.test(error.message);
+    });
+  });
+}
+
+test('a --config with no value is an error, not a silently skipped brand check', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  const result = runVerifier(['--container', fixture.root, '--config']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CLI_INVALID/u);
+  assert.doesNotMatch(result.stdout, /brand NOT inspected/u);
+});
+
+test('an empty --config expansion is an error, not a silently skipped brand check', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  const result = runVerifier(['--container', fixture.root, '--config', '']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CLI_INVALID/u);
+});
+
+test('an empty --container expansion cannot downgrade the run to the developer artifact', () => {
+  const result = runVerifier(['--container', '', '--project', makeTempDirSync('starter-cli-')]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CLI_INVALID/u);
+});
+
+test('a mistyped flag is refused rather than ignored', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  const result = runVerifier(['--container', fixture.root, '--confg', 'whatever']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CLI_INVALID/u);
+});
+
+test('a non-numeric --frames is refused rather than becoming NaN', () => {
+  const fixture = reviewBrandFixture();
+  fixture.save();
+  const result = runVerifier(['--container', fixture.root, '--frames', 'abc']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_NATIVE_STARTER_CLI_INVALID/u);
+});

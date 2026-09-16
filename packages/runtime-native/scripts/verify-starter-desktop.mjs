@@ -348,15 +348,42 @@ function readBrandConfig(path) {
   }
 }
 
+const CLI_FLAGS = ['--container', '--config', '--frames', '--project'];
+
+function frameCount(value) {
+  const frames = Number(value);
+  if (!Number.isInteger(frames) || frames <= 0) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CLI_INVALID: --frames needs a positive whole number, not '${value}'.`,
+    );
+  }
+  return frames;
+}
+
+/**
+ * Every flag is recognized and every value is present, or the run stops.
+ *
+ * A flag that silently does nothing turns a check off without saying so: `--config $EMPTY` drops
+ * brand inspection, `--container $EMPTY` quietly runs the developer-artifact path against a
+ * different binary than the one under test, and a mistyped flag does either without a word.
+ */
 function parseCliFlags(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
-    if (flag === '--container' && value) options.root = resolve(value);
-    else if (flag === '--config' && value) options.config = readBrandConfig(resolve(value));
-    else if (flag === '--frames' && value) options.frames = Number(value);
-    else if (flag === '--project' && value) options.project = resolve(value);
+    if (!CLI_FLAGS.includes(flag)) {
+      throw new Error(
+        `TN_NATIVE_STARTER_CLI_INVALID: unknown flag '${flag}'. Supported: ${CLI_FLAGS.join(', ')}.`,
+      );
+    }
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(`TN_NATIVE_STARTER_CLI_INVALID: ${flag} needs a value.`);
+    }
+    if (flag === '--container') options.root = resolve(value);
+    else if (flag === '--config') options.config = readBrandConfig(resolve(value));
+    else if (flag === '--frames') options.frames = frameCount(value);
+    else options.project = resolve(value);
   }
   return options;
 }
