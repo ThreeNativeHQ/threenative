@@ -17,7 +17,9 @@ test.describe("documentation navigation", () => {
     const docsNav = page.getByRole("navigation", { name: "Documentation" });
     await docsNav.getByRole("link", { exact: true, name: "Physics" }).click();
     await expect(page).toHaveURL(/\/docs\/physics$/u);
-    await expect(page.getByRole("heading", { level: 1, name: "Physics and portability" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Physics and portability" }),
+    ).toBeVisible();
 
     await page.locator("header").getByRole("link", { exact: true, name: "Get Started" }).click();
     await expect(page).toHaveURL(/\/#install$/u);
