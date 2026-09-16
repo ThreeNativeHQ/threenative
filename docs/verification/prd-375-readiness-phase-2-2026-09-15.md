@@ -619,3 +619,44 @@ The reviewer verified that `5e00d3324..9dbe51a05` is genuinely documentation-onl
 the 5 files / 153 passed recorded above, not a disagreement), `check:docs` 2130 links across 1101
 files exit 0, and Biome with 0 errors. It did **not** run `pnpm typecheck`, `pnpm budgets` or the
 census check, so those three remain this lane's own unreplicated results.
+
+## Independent reviewer: PASS on `3f478b40c`
+
+Verdict **PASS**, scoped to phase-2 **code correctness only**. The diff is two `.md` files and no
+code; the corrected wording was accurate on every point checked; and the reviewer re-ran the
+falsification itself under `bash` rather than accepting the correction — `m=$(find "" …)` under
+`set -euo pipefail` exits 1 and `REACHED` never prints — so the reachability finding holds under the
+right instrument. No blocking findings.
+
+The PASS does **not** cover platform acceptance. The user-verification checkpoint stays open until
+the Windows and macOS `native-platforms` legs actually run for a candidate, and until the owner has
+looked at the Linux container.
+
+## Merge hazard: PR #256 relocates the file this lane hardened
+
+**Nothing is wrong today and nothing in this branch needs changing.** This is a warning for whoever
+merges second.
+
+PR #256 (`prd-366/consumer-gameplay-native`) splits `verify-starter-desktop.mjs` into a **router**
+that re-exports `verify-starter-desktop-base.mjs` and `verify-starter-consumer.mjs` and spawns one of
+them, moving all CLI parsing into the base file. Verified directly against
+`origin/prd-366/consumer-gameplay-native`:
+
+- `verify-starter-desktop-base.mjs:340` carries `if (flag === '--container' && value)` — **the exact
+  defect this lane fixed, preserved verbatim**, along with the unguarded `Number(value)` for
+  `--frames` at `:341`.
+- that file has no `--config` and no `--brand-only`, so a naive merge silently loses **all** of this
+  phase's CLI surface: strict flag validation, the brand inspection the CI legs invoke, and
+  `verifyContainerBrand`.
+
+Whoever merges second must move this phase's CLI hardening into
+`packages/runtime-native/scripts/verify-starter-desktop-base.mjs` rather than leaving it in the
+router, and re-export `verifyContainerBrand` alongside it.
+
+**The existing tests do catch this, and that was checked rather than assumed.** The CLI-hygiene rows
+in `tests/starter-brand.test.mjs` spawn `verify-starter-desktop.mjs` as a real process and assert on
+its exit code and stderr. After #256 that path is the router, which forwards `argv` and propagates
+the child's exit status, and `--brand-only` is not one of the router's consumer triggers — so those
+rows execute against the post-merge base file and go red if the hardening is lost, rather than
+passing against a router that no longer owns the parsing. Re-run them after any rebase and confirm
+by test, not by reading.
