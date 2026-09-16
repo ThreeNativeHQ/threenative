@@ -421,6 +421,28 @@ describe("threenative-engine-mcp", () => {
     );
   });
 
+  /**
+   * The batching situation an author actually describes when a model arrives as many static pieces:
+   * they do not know it is called `mergeParts`, they say "merge these meshes into one while keeping
+   * the UVs and the normals that were authored". Before the situations named those words the search
+   * answered with `lightmapPass` and `createThreeGeometry` and the author hand-wrote the merge.
+   *
+   * The original miss was a focused `mechanic` query, so that scope is asserted directly; `request`
+   * is the same body over the complete-request scope so both surfaces stay covered.
+   */
+  it.each(["mechanic", "request"] as const)(
+    "finds mergeParts for a static-mesh batching request in %s scope",
+    (scope) => {
+      const results = searchResults(
+        "Merge multiple static Three.js meshes into one mesh per material while preserving texture UV coordinates and authored normals and baking object transforms",
+        workspaceManifest,
+        scope,
+      );
+
+      expect(results.map((result) => result.symbol)).toContain("mergeParts");
+    },
+  );
+
   it("finds the joint and pointer capabilities a physics-puzzle request names outright", () => {
     const results = searchResults(
       "a physics puzzle room where the player drags crates with the mouse, swings a hinged pendulum weight on a joint to knock a ball loose, and wins when the ball rolls into a goal zone on the floor",

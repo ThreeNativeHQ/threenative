@@ -239,28 +239,38 @@ export type {
   IInstancedPlacement,
 } from "./instanced-batch.js";
 /**
- * Merge pieces a game authored out of primitives into one buffer, keeping each piece's own colour.
+ * Merge pieces a game authored out of primitives into one buffer, keeping each piece's own look.
  *
  * `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that
- * never move relative to each other — a building, a ship, a character built from boxes. Two things
- * go wrong every time and neither is about how any of it looks. `mergeGeometries` hands back
- * `null` on mismatched inputs instead of throwing, and the usual mismatch is invisible: one
- * `ExtrudeGeometry` is non-indexed while every other primitive is indexed, so the merge fails at
- * the first piece and the scene never loads. And a merged buffer draws with one surface, so
- * per-piece colour is gone unless every piece carries a flat `color` attribute written before the
- * merge. Both are mechanical. Geometry, placement, colour and the surface it draws with all stay
- * the game's.
+ * never move relative to each other — a building, a ship, a character built from boxes, or the
+ * static parts of an imported glTF model. Two things go wrong every time and neither is about how
+ * any of it looks. `mergeGeometries` hands back `null` on mismatched inputs instead of throwing,
+ * and the usual mismatch is invisible: one `ExtrudeGeometry` is non-indexed while every other
+ * primitive is indexed, so the merge fails at the first piece and the scene never loads. And a
+ * merged buffer draws with one surface, so per-piece colour is gone unless every piece carries a
+ * flat `color` attribute written before the merge. Both are mechanical. By default every part is
+ * stripped to position and the normals are recomputed from the merged buffer; pass `preserve` to
+ * keep authored normals and texture UVs while baking each part's object transform. Geometry,
+ * placement, colour and the surface it draws with all stay the game's.
  *
  * @situation bake a building, ship or character authored out of primitives into one draw call
+ * @situation merge multiple static Three.js meshes into one mesh per material
+ * @situation consolidate the static parts of an imported glTF model into one buffer
+ * @situation preserve texture UV coordinates and authored normals while baking object transforms
  * @situation merge many small geometries and keep each piece's own colour
  * @situation stop mergeGeometries from silently returning null on an extruded shape
- * @constraint every part is de-indexed and stripped to position, so UVs and authored normals do not survive; normals are recomputed from the merged buffer
+ * @constraint every part is de-indexed; without preserve it is stripped to position and normals are recomputed from the merged buffer
+ * @constraint preserve keeps the listed channels, transforming position and normal by the part's placement matrix while UV values are retained unchanged
+ * @constraint a part that does not carry a listed preserve channel throws naming the label, the part and the channel
  * @constraint either every part names a color or none does, and a mix throws
  * @constraint an empty part list throws, and a merge three.js refuses throws naming the label
  * @override color is per part and optional; without it no colour attribute is written and the surface alone decides
+ * @override preserve is optional and empty by default: position-only merge with recomputed normals, exactly as before
  * @example const wall = new Mesh(mergeParts(pieces, { label: "gatehouse" }), stone);
  * // pieces are meshes, or { geometry, matrix, color } when the colour is per piece:
  * const banner = mergeParts([{ color: 0x8b2f1a, geometry: cloth, matrix: placement }], { label: "banner" });
+ * // keep a model's texture UVs and authored normals while baking its transforms:
+ * const hull = mergeParts(hullParts, { label: "hull", preserve: ["uv", "normal"] });
  */
 export { mergeParts } from "./merge-parts.js";
 export type { IMergePart, IMergePartsOptions } from "./merge-parts.js";
