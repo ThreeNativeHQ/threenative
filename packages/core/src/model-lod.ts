@@ -4,8 +4,8 @@ import {
   BufferGeometry,
   type Camera,
   Group,
-  type Matrix4,
-  Mesh,
+  Matrix4,
+  type Mesh,
   Object3D,
   Sphere,
   Vector3,
@@ -291,15 +291,25 @@ class ModelLod {
   readonly #chain: ILodChain;
   readonly #policy: IAppliedLod;
   readonly #rung: JoinedRung | undefined;
+  /** Only the authority drives selection and activation; every other member merely reports hidden. */
+  readonly #authority: boolean;
   #current = 0;
-  /** The container a joined rung was last activated under, so removal can reverse it. */
+  /** The join container, resolved once from the rung and the instance graph. */
   #container: Object3D | null = null;
+  #containerResolved = false;
 
-  constructor(mesh: Mesh, chain: ILodChain, policy: IAppliedLod, rung?: JoinedRung) {
+  constructor(
+    mesh: Mesh,
+    chain: ILodChain,
+    policy: IAppliedLod,
+    rung?: JoinedRung,
+    authority = false,
+  ) {
     this.#mesh = mesh;
     this.#chain = chain;
     this.#policy = policy;
     this.#rung = rung;
+    this.#authority = authority;
   }
 
   get index(): number {
@@ -312,46 +322,17 @@ class ModelLod {
   }
 
   get triangles(): number {
-    // With a joined rung active, the authored primitive draws nothing and the proxy draws the
+    // With a joined rung active, the authored primitives draw nothing and the proxy draws the
     // collapse: the authority reports the rung's triangles, every hidden sibling reports zero.
-    const container = this.#mesh.parent;
-    if (container !== null) {
-      const active = activeJoins.get(container);
-      if (active !== undefined) return this.#rung === active ? active.triangles : 0;
-    }
+    const rung = this.#rung;
+    if (rung?.isHidden(this.#mesh)) return this.#authority ? rung.triangles : 0;
     return drawTriangles(this.#chain.levels[this.#current] as BufferGeometry);
   }
 
   update(camera: Camera, viewportHeight: number): void {
-    const container = this.#mesh.parent;
     const rung = this.#rung;
-    if (rung !== undefined && container !== null) {
-      this.#container = container;
-      // The rung replaces the whole mesh, so its bounds — not one primitive's — set the depth.
-      const world = worldSphere(rung.sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
-      const { depth, degenerate } = conservativeViewDepth(
-        camera,
-        world.center,
-        world.radius,
-        (camera as ILodCameraLike).near ?? 0,
-      );
-      const errors = [...this.#chain.errors, rung.error];
-      const joinedIndex = this.#chain.errors.length;
-      const view: ILodView = { camera, degenerate, depth, viewportHeight };
-      const index = selectLodLevel(
-        errors,
-        this.#current,
-        this.#policy.maxPixelError,
-        this.#policy.hysteresis,
-        [view],
-      );
-      if (index === joinedIndex) rung.activate(container);
-      else rung.deactivate(container);
-      if (index !== this.#current) {
-        this.#current = index;
-        if (index !== joinedIndex)
-          this.#mesh.geometry = this.#chain.levels[index] as BufferGeometry;
-      }
+    if (rung !== undefined && this.#authority) {
+      this.#updateJoined(rung, camera, viewportHeight);
       return;
     }
     const world = worldSphere(this.#chain.sphere, this.#mesh, undefined, this.#mesh.matrixWorld);
@@ -374,9 +355,55 @@ class ModelLod {
     this.#mesh.geometry = this.#chain.levels[index] as BufferGeometry;
   }
 
+  /**
+   * The join selection. The rung replaces every member, so its bounds set the depth and the
+   * instance's container supplies the world transform the rung geometry was baked against.
+   */
+  #updateJoined(rung: JoinedRung, camera: Camera, viewportHeight: number): void {
+    if (!this.#containerResolved) {
+      this.#container = rung.findContainer(this.#mesh);
+      this.#containerResolved = true;
+    }
+    const container = this.#container;
+    if (container === null) return;
+    const world = worldSphere(rung.sphere, container, undefined, container.matrixWorld);
+    const { depth, degenerate } = conservativeViewDepth(
+      camera,
+      world.center,
+      world.radius,
+      (camera as ILodCameraLike).near ?? 0,
+    );
+    const errors = [...this.#chain.errors, rung.error];
+    const joinedIndex = this.#chain.errors.length;
+    const view: ILodView = { camera, degenerate, depth, viewportHeight };
+    const index = selectLodLevel(
+      errors,
+      this.#current,
+      this.#policy.maxPixelError,
+      this.#policy.hysteresis,
+      [view],
+    );
+    if (index === joinedIndex) {
+      if (rung.activate(container)) {
+        this.#current = index;
+        return;
+      }
+      // The rung was refused at runtime (a member moved since load, or the graph no longer carries
+      // every member): show the authored geometry rather than a proxy over stale transforms.
+      this.#current = 0;
+      this.#mesh.geometry = this.#chain.levels[0] as BufferGeometry;
+      return;
+    }
+    rung.deactivate(container);
+    if (index !== this.#current) {
+      this.#current = index;
+      this.#mesh.geometry = this.#chain.levels[index] as BufferGeometry;
+    }
+  }
+
   /** Reverses an active joined rung when the mesh is removed from the graph. */
   release(): void {
-    if (this.#rung !== undefined && this.#container !== null)
+    if (this.#rung !== undefined && this.#authority && this.#container !== null)
       this.#rung.deactivate(this.#container);
   }
 }
@@ -429,19 +456,57 @@ function isDeforming(mesh: Mesh): boolean {
   );
 }
 
-/** True when the mesh, or any ancestor up to and including `container`, is animation-targeted. */
+/**
+ * True when the mesh, or any ancestor strictly below `container`, is animation-targeted.
+ *
+ * The container itself is allowed to move: a rung baked in container space rides rigidly with it, so
+ * animating the model root does not invalidate the join. Only a member that moves independently —
+ * directly, or through an ancestor between it and the container — does.
+ */
 function isAnimatedInContainer(
   mesh: Mesh,
   container: Object3D,
   animated: WeakSet<object>,
 ): boolean {
   let current: Object3D | null = mesh;
-  while (current !== null) {
+  while (current !== null && current !== container) {
     if (animated.has(current)) return true;
-    if (current === container) break;
     current = current.parent;
   }
   return false;
+}
+
+/** The composed local transform of `node` relative to `container`, without touching world matrices. */
+function relativeLocalMatrix(node: Object3D, container: Object3D): Matrix4 {
+  const matrix = new Matrix4();
+  let current: Object3D | null = node;
+  while (current !== null && current !== container) {
+    current.updateMatrix();
+    matrix.premultiply(current.matrix);
+    current = current.parent;
+  }
+  return matrix;
+}
+
+/** True when `node` is `ancestor` or sits below it. */
+function isWithin(node: Object3D, ancestor: Object3D): boolean {
+  let current: Object3D | null = node;
+  while (current !== null) {
+    if (current === ancestor) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+/** The nearest common ancestor of every member, or `null` when they share no graph. */
+function lowestCommonAncestor(members: readonly Object3D[]): Object3D | null {
+  if (members.length === 0) return null;
+  let ancestor: Object3D | null = (members[0] as Object3D).parent;
+  while (ancestor !== null) {
+    if (members.every((member) => isWithin(member, ancestor as Object3D))) return ancestor;
+    ancestor = ancestor.parent;
+  }
+  return null;
 }
 
 /** Narrows the artifact's joined-rung record, failing closed on a malformed one. */
@@ -466,12 +531,10 @@ interface IJoinActivation {
   readonly restored: readonly { readonly mesh: Mesh; readonly visible: boolean }[];
 }
 
-/** The active joined rung for a container, so a hidden authored sibling knows it draws nothing now. */
-const activeJoins = new WeakMap<Object3D, JoinedRung>();
-
 /**
  * One mesh's joined far rung: many authored primitives collapsed to one object, one draw per
- * material.
+ * material — whether those primitives were within one mesh or across sibling meshes under a shared
+ * container.
  *
  * Selecting it is a draw-topology change, not a geometry pointer swap. The authored primitives stay
  * in the graph — same identities, transforms, render order and picking — and are hidden while one
@@ -488,11 +551,17 @@ class JoinedRung {
   readonly sphere: Sphere;
   readonly #prototype: Object3D;
   readonly #geometries: Set<BufferGeometry>;
+  readonly #memberCount: number;
   readonly #activations = new WeakMap<Object3D, IJoinActivation>();
+  /** The authored local transform of every source member, for the runtime-moved-sibling guard. */
+  readonly #baselines = new WeakMap<object, Matrix4>();
+  /** Members currently hidden by an activation, so a sibling knows it submits no draw this frame. */
+  readonly #hidden = new WeakSet<object>();
 
   constructor(options: {
     readonly def: IJoinedRungDef;
     readonly geometries: ReadonlySet<BufferGeometry>;
+    readonly memberCount: number;
     readonly prototype: Object3D;
     readonly sphere: Sphere;
   }) {
@@ -503,15 +572,68 @@ class JoinedRung {
     this.error = options.def.error;
     this.#prototype = options.prototype;
     this.#geometries = new Set(options.geometries);
+    this.#memberCount = options.memberCount;
     this.sphere = options.sphere;
   }
 
-  isActive(container: Object3D): boolean {
-    return this.#activations.has(container);
+  /** True when a mesh is one of the members hidden by an active activation of this rung. */
+  isHidden(mesh: Mesh): boolean {
+    return this.#hidden.has(mesh);
+  }
+
+  /**
+   * The nearest ancestor whose subtree contains every member of this rung — the container the rung
+   * was baked against. Geometry identity, not node identity, so a clone resolves its own container.
+   */
+  findContainer(mesh: Mesh): Object3D | null {
+    let ancestor: Object3D | null = mesh.parent;
+    while (ancestor !== null) {
+      let found = 0;
+      ancestor.traverse((node) => {
+        const candidate = node as Partial<Mesh>;
+        if (
+          candidate.isMesh === true &&
+          candidate.geometry !== undefined &&
+          this.#geometries.has(candidate.geometry)
+        )
+          found += 1;
+      });
+      if (found >= this.#memberCount) return ancestor;
+      ancestor = ancestor.parent;
+    }
+    return null;
+  }
+
+  /** Snapshots each source member's authored local transform at load, before any game script runs. */
+  captureBaselines(container: Object3D, members: readonly Mesh[]): void {
+    for (const member of members)
+      this.#baselines.set(member, relativeLocalMatrix(member, container));
   }
 
   activate(container: Object3D): boolean {
-    if (this.#activations.has(container)) return false;
+    const members: Mesh[] = [];
+    container.traverse((node) => {
+      const mesh = node as Mesh;
+      if (mesh.isMesh === true && this.#geometries.has(mesh.geometry)) members.push(mesh);
+    });
+    if (members.length < this.#memberCount) return false;
+    // The honest risk of joining siblings: their relative transforms are baked into the rung, so a
+    // node a script moves independently must be refused. A source member with a baseline that no
+    // longer matches its authored local transform is exactly that. (A clone is baselined on its
+    // first activation, so movement before that first selection is the one case this cannot see.)
+    for (const member of members) {
+      const current = relativeLocalMatrix(member, container);
+      const baseline = this.#baselines.get(member);
+      if (baseline === undefined) this.#baselines.set(member, current);
+      else if (!baseline.equals(current)) {
+        console.error(
+          `TN_DISCRETE_LOD_JOIN_INVALID: '${this.name}' cannot be shown as one unit; a source node moved after load.`,
+        );
+        if (this.#activations.has(container)) this.deactivate(container);
+        return false;
+      }
+    }
+    if (this.#activations.has(container)) return true;
     const proxy = this.#prototype.clone(true);
     proxy.name = `${this.name}__instance`;
     proxy.visible = true;
@@ -522,14 +644,13 @@ class JoinedRung {
       if ((node as Partial<Mesh>).isMesh === true) node.raycast = () => undefined;
     });
     const restored: { mesh: Mesh; visible: boolean }[] = [];
-    for (const child of container.children) {
-      if (child instanceof Mesh && this.#geometries.has(child.geometry))
-        restored.push({ mesh: child, visible: child.visible });
+    for (const member of members) restored.push({ mesh: member, visible: member.visible });
+    for (const { mesh } of restored) {
+      mesh.visible = false;
+      this.#hidden.add(mesh);
     }
-    for (const { mesh } of restored) mesh.visible = false;
     container.add(proxy);
     this.#activations.set(container, { proxy, restored });
-    activeJoins.set(container, this);
     // The LOD path's diagnostic: the selection fact and the draw collapse it bought, once per join.
     console.info(
       `TN_DISCRETE_LOD_JOINED ${this.name}: ${String(this.primitives)} primitive(s) collapsed to ${String(this.draws)} draw(s)`,
@@ -540,10 +661,12 @@ class JoinedRung {
   deactivate(container: Object3D): boolean {
     const activation = this.#activations.get(container);
     if (activation === undefined) return false;
-    for (const { mesh, visible } of activation.restored) mesh.visible = visible;
+    for (const { mesh, visible } of activation.restored) {
+      mesh.visible = visible;
+      this.#hidden.delete(mesh);
+    }
     activation.proxy.removeFromParent();
     this.#activations.delete(container);
-    if (activeJoins.get(container) === this) activeJoins.delete(container);
     return true;
   }
 }
@@ -552,8 +675,10 @@ class JoinedRung {
 interface IRegisteredChain {
   readonly chain: ILodChain;
   readonly policy: IAppliedLod;
-  /** Present only on a joined rung's authority primitive, so a clone resolves to the same rung. */
+  /** Present on every member of a joined rung, so a clone resolves to the same rung. */
   readonly joined?: JoinedRung;
+  /** True on the one member that drives selection and activation for the rung. */
+  readonly authority?: boolean;
 }
 
 /**
@@ -588,7 +713,13 @@ function controllerFor(mesh: Mesh): ModelLod | undefined {
   if (existing !== undefined) return existing;
   const registered = chains.get(mesh.geometry);
   if (registered === undefined) return undefined;
-  const controller = new ModelLod(mesh, registered.chain, registered.policy, registered.joined);
+  const controller = new ModelLod(
+    mesh,
+    registered.chain,
+    registered.policy,
+    registered.joined,
+    registered.authority === true,
+  );
   controllers.set(mesh, controller);
   return controller;
 }
@@ -734,13 +865,13 @@ export class DiscreteLodPlugin {
   }
 
   /**
-   * Resolves each loaded joined rung to its authored primitives and registers it on the authority's
-   * chain — and only there. A clone shares that geometry, so it adopts the same rung; the rung's own
-   * per-container state keeps two instances independent.
+   * Resolves each loaded joined rung to its authored primitives and registers it on every member's
+   * chain, marking one as the authority. A clone shares those geometries, so it adopts the same rung
+   * with its own authority; the rung's per-container state keeps two instances independent.
    *
-   * Refusal is the honest default: a rung whose sources are not all present, not siblings under one
-   * container, or skinned, morphed or animated is dropped rather than half-joined. The bake already
-   * made that call; the runtime re-checks because the loaded graph, not the bake, is what it hides.
+   * Refusal is the honest default: a rung whose sources are not all present, share no container, or
+   * are skinned, morphed or animated is dropped rather than half-joined. The bake already made that
+   * call; the runtime re-checks because the loaded graph, not the bake, is what it hides.
    */
   #registerJoinedRungs(applied: IAppliedLod): void {
     const parser = this.#parser;
@@ -775,16 +906,13 @@ export class DiscreteLodPlugin {
         }
         members.push(mesh);
       }
-      const container = members[0]?.parent ?? null;
+      const container = lowestCommonAncestor(members);
       const refused =
         missing ||
         members.length < 2 ||
         container === null ||
         members.some(
-          (member) =>
-            member.parent !== container ||
-            isDeforming(member) ||
-            isAnimatedInContainer(member, container, animated),
+          (member) => isDeforming(member) || isAnimatedInContainer(member, container, animated),
         );
       if (refused) {
         console.error(
@@ -816,18 +944,34 @@ export class DiscreteLodPlugin {
       const box = new Box3().setFromObject(prototype);
       const sphere = new Sphere();
       box.getBoundingSphere(sphere);
-      const rung = new JoinedRung({ def, geometries, prototype, sphere });
+      const rung = new JoinedRung({
+        def,
+        geometries,
+        memberCount: members.length,
+        prototype,
+        sphere,
+      });
+      rung.captureBaselines(container, members);
       const authority = members[0] as Mesh;
-      const registered = chains.get(authority.geometry);
-      if (registered === undefined) continue;
-      const withJoined: IRegisteredChain = {
-        chain: registered.chain,
-        joined: rung,
-        policy: registered.policy,
-      };
-      for (const geometry of registered.chain.levels) chains.set(geometry, withJoined);
-      // The authority's controller was built before the rung was known; give it the rung now.
-      controllers.set(authority, new ModelLod(authority, registered.chain, applied, rung));
+      for (const member of members) {
+        const registered = chains.get(member.geometry);
+        if (registered === undefined) continue;
+        const withJoined: IRegisteredChain = {
+          authority: member === authority,
+          chain: registered.chain,
+          joined: rung,
+          policy: registered.policy,
+        };
+        // Every level, not just the base: a clone made after a selection already swapped a member to
+        // a coarser level carries that derived geometry, and must still resolve to this rung.
+        for (const geometry of registered.chain.levels) chains.set(geometry, withJoined);
+        // Members that were already managed (a discrete chain) were built before the rung was known;
+        // rebuild them with the rung and the authority mark.
+        controllers.set(
+          member,
+          new ModelLod(member, registered.chain, applied, rung, member === authority),
+        );
+      }
     }
   }
 }
