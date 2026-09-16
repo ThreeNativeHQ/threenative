@@ -296,7 +296,7 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
 - [x] Unsigned preparation records `signed: false`, names itself unsigned in the release log, and never claims signed readiness.
   - The produced Linux manifest carries `"signed": false`; `tests/distribution.test.mjs` covers the unsigned-preparation and missing-credentials rows.
 - [ ] windows-x64: the `signtool` path signs the distributed executable and verifies it on a real Windows host.
-  - The adapter is implemented and unit-tested through injected transport, and now signs from the Windows certificate store by subject so a CA-issued key never leaves it. A real-host run is PRD-060.
+  - The adapter is implemented and unit-tested through injected transport. Until PR #265 it could not have used a real credential at all: `sign /f <pfx>` was passed no `/p` and the contract carried no password, so only a password-less PFX worked, which no certificate authority issues. `THREENATIVE_DESKTOP_SIGN_SUBJECT` now signs with `/n` from the Windows certificate store, so the private key stays there, and setting both inputs is refused rather than silently resolved. A real-host run with a real certificate remains PRD-060.
 - [ ] windows-x64: the artifact is signed with a publicly trusted Authenticode certificate.
   - Blocked: no code-signing certificate exists for this repository; signing is per developer, per game. Delegated to PRD-060.
 - [ ] macOS: the artifact is notarized by Apple, stapled, and assessed with `spctl` on a real macOS host.
