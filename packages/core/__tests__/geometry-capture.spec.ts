@@ -363,6 +363,36 @@ describe("GeometryCapture", () => {
     expect(unknownRow?.unavailable).toContain("TN_GEOMETRY_NO_POSITION_COUNT");
   });
 
+  it("answers a report that survives the JSON transport with no undefined values", async () => {
+    const scene = new Scene();
+    const mesh = namedMesh("subject", 6);
+    scene.add(mesh);
+
+    const collector = new GeometryCapture();
+    const pending = collector.request();
+    scene.updateMatrixWorld(true);
+    collector.beginFrame({
+      backend: "WebGPUBackend",
+      camera: defaultCamera(),
+      generation: 1,
+      root: scene,
+      tick: 42,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+    });
+    submitOnce(mesh);
+    collector.finishFrame([{ draws: 1, kind: "main", triangles: 6 }]);
+    const report = await pending;
+
+    // The playtest transport fails closed on any key whose value is not JSON, and an explicit
+    // `undefined` is exactly that. A round trip loses those keys, so equality proves there are
+    // none: this took a real browser run down before the report omitted them instead.
+    expect(JSON.parse(JSON.stringify(report))).toEqual(report);
+    expect(report.frame).toBeUndefined();
+    expect(report.tick).toBe(42);
+    expect(report.backend).toBe("WebGPUBackend");
+  });
+
   it("throws on a malformed request instead of choosing a scope the caller did not ask for", () => {
     const collector = new GeometryCapture();
     expect(() => collector.request({ limit: 0 })).toThrow(/TN_GEOMETRY_CAPTURE_LIMIT/u);

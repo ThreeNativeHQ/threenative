@@ -4303,13 +4303,14 @@ const model = new UEFormatLoader(manager).parse(data);
 
 ### `DebugOverlay`
 
-`function` — Show framework diagnostics while developing a game.
+`function` — Show framework diagnostics while developing a game. Backtick opens it; the Entities tab lists registered entity fields, and the Geometry tab captures one frame and ranks the objects that submitted its triangles beside their projected size on screen.
 
 ```ts
 export function DebugOverlay() { … }
 ```
 
-- **Use when:** display runtime and playtest diagnostics in a React HUD · inspect a game without changing its scene
+- **Use when:** display runtime and playtest diagnostics in a React HUD · inspect a game without changing its scene · find out which scene object is submitting the frame's triangles · tell a cheap foreground character from an expensive distant prop
+- **Constraints:** the Geometry tab captures only on an explicit press; nothing is collected while idle · per-object numbers are measured submissions reconciled against the frame's own pass totals, and the remainder is reported rather than hidden
 
 ```ts
 <DebugOverlay />

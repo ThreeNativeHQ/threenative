@@ -766,14 +766,17 @@ function buildReport(
   const asset = assetRowsOf(rows);
   const passRows = reconcile(passes, drafts);
 
+  // Every optional field is omitted rather than set to `undefined`: this report crosses the
+  // playtest transport, which fails closed on a key whose value is not JSON — an explicit
+  // `frame: undefined` took a real browser run down before it was a conditional spread.
   return {
     assets: asset,
-    backend: armed.backend,
     camera: cameraOf(armed.camera),
     capturedAtMs: now(),
     durationMs: now() - pending.requestedAtMs,
-    frame: armed.frame,
     generation: armed.generation,
+    ...(armed.backend === undefined ? {} : { backend: armed.backend }),
+    ...(armed.frame === undefined ? {} : { frame: armed.frame }),
     inspectedNodes: Math.min(armed.inspected, GEOMETRY_CAPTURE_WALK_CAP),
     inspectionComplete: armed.complete,
     limit: pending.limit,
@@ -785,8 +788,8 @@ function buildReport(
     rowsTruncated: rows.length > pending.limit,
     sort: pending.sort,
     status: "captured",
-    tick: armed.tick,
     viewport: { height: armed.viewportHeight, width: armed.viewportWidth },
+    ...(armed.tick === undefined ? {} : { tick: armed.tick }),
   };
 }
 

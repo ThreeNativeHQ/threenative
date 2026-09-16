@@ -94,3 +94,128 @@ canvas {
   overflow-wrap: anywhere;
   word-break: break-all;
 }
+
+/* The debug overlay's Geometry view. The overlay root stays `pointer-events: none` so it never
+   eats a click meant for the game; every control below opts itself back in. */
+[data-threenative-debug-overlay="true"][data-tn-debug-tab="geometry"] {
+  max-width: min(56rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.tn-debug-tabs,
+.tn-debug-controls,
+.tn-debug-action,
+.tn-debug-expand,
+.tn-debug-select,
+.tn-debug-json,
+.tn-debug-tab {
+  pointer-events: auto;
+}
+
+.tn-debug-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.tn-debug-tab,
+.tn-debug-action {
+  padding: 0.125rem 0.5rem;
+  background: var(--color-hull);
+  border: 1px solid var(--color-line);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.tn-debug-tab[aria-selected="true"] {
+  border-color: var(--color-lume);
+  color: var(--color-lume-bright);
+}
+
+.tn-debug-action[disabled] {
+  color: var(--color-dim);
+  cursor: default;
+}
+
+.tn-debug-tab:focus-visible,
+.tn-debug-action:focus-visible,
+.tn-debug-expand:focus-visible,
+.tn-debug-select:focus-visible,
+[data-threenative-debug-overlay="true"] :focus-visible {
+  outline: 2px solid var(--color-lamp);
+  outline-offset: 1px;
+}
+
+.tn-debug-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+  padding: 0;
+  border: 0;
+}
+
+.tn-debug-controls legend,
+.tn-debug-note {
+  color: var(--color-dim);
+  margin: 0.25rem 0;
+}
+
+.tn-debug-warn {
+  color: var(--color-lamp);
+  margin: 0.25rem 0;
+}
+
+.tn-debug-expand,
+.tn-debug-select {
+  background: none;
+  border: 0;
+  color: var(--color-lume);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0 0.25rem 0 0;
+  cursor: pointer;
+}
+
+.tn-debug-select[aria-pressed="true"] {
+  color: var(--color-lamp);
+  text-decoration: underline;
+}
+
+.tn-debug-unavailable {
+  display: block;
+  color: var(--color-dim);
+}
+
+.tn-debug-mesh td:first-child {
+  padding-left: 1rem;
+  color: var(--color-text);
+}
+
+.tn-debug-json {
+  width: 100%;
+  background: var(--color-ink);
+  border: 1px solid var(--color-line);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* The selected row's captured projected bounds. An estimate drawn over the canvas, never a mask,
+   and never interactive. */
+.tn-debug-outline-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 49;
+}
+
+.tn-debug-outline {
+  position: absolute;
+  border: 1px solid var(--color-lamp);
+  box-shadow: 0 0 0 1px rgb(4 8 13 / 60%);
+}
