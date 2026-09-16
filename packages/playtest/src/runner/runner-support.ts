@@ -267,6 +267,11 @@ export function buildReport(
       ...(afterSnapshot?.pipelineCensus === undefined && beforeSnapshot?.pipelineCensus === undefined
         ? {}
         : { pipelineCensus: afterSnapshot?.pipelineCensus ?? beforeSnapshot?.pipelineCensus }),
+      // Like the pipeline census: a report about the frame it was requested on, kept whole. The
+      // last sample wins, because a capture describes the world as the run left it.
+      ...(afterSnapshot?.geometry === undefined && beforeSnapshot?.geometry === undefined
+        ? {}
+        : { geometry: afterSnapshot?.geometry ?? beforeSnapshot?.geometry }),
       ...(afterSnapshot?.renderChain === undefined && beforeSnapshot?.renderChain === undefined
         ? {}
         : { renderChain: afterSnapshot?.renderChain ?? beforeSnapshot?.renderChain }),
