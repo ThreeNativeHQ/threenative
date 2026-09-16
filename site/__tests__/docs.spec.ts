@@ -20,6 +20,25 @@ describe("public documentation", () => {
     expect(page).toContain("LOC.md");
   });
 
+  it("should teach the shipped core, physics, playtest and native contracts", async () => {
+    const expectations = [
+      ["/docs/core-concepts", ["defineGame", "fixed-step", "load", "enter", "update"]],
+      [
+        "/docs/physics",
+        ["RigidBody3D", "Area3D", "CharacterBody3D", "CollisionShape3D", "raw"],
+      ],
+      ["/docs/playtesting", ["assertions fail closed", "--target desktop", "doctor"]],
+      ["/docs/native-runtime", ["portable game entry", "build:desktop", "No WebView"]],
+    ] as const;
+
+    for (const [path, terms] of expectations) {
+      const page = await prerenderedPage(path);
+      for (const term of terms) {
+        expect(page, `${path} is missing ${term}`).toContain(term);
+      }
+    }
+  });
+
   it("should expose docs discovery from the home page without adding another top-level nav item", async () => {
     const page = await prerenderedPage("/");
     expect(page).toContain('href="/docs/getting-started"');

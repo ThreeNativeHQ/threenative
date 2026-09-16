@@ -19,8 +19,17 @@ describe("the prerendered site", () => {
     }
   });
 
-  it("should publish the docs hub and its first public guides", () => {
-    const expected = ["/docs", "/docs/getting-started", "/docs/comparison", "/docs/benchmarks"];
+  it("should publish the docs hub and public manual", () => {
+    const expected = [
+      "/docs",
+      "/docs/getting-started",
+      "/docs/core-concepts",
+      "/docs/physics",
+      "/docs/playtesting",
+      "/docs/native-runtime",
+      "/docs/comparison",
+      "/docs/benchmarks",
+    ];
     for (const path of expected) {
       expect(
         routes.some((route) => route.path === path),
