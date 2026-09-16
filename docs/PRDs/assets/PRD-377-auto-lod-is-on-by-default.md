@@ -153,16 +153,23 @@ changes nothing by default and is declared honestly rather than smuggled in.
 Built as **`assets.lod.generation.join`**, default **`false`**, reachable globally and per asset
 through the same `overrides` map as every other generation knob:
 
-- **What it does.** When enabled, each mesh's eligible primitives are grouped by material *and*
-  attribute layout and merged into one primitive per group (the already-installed `gltf-transform`
-  `join`), so the far rung draws once per material group instead of once per authored primitive.
-  Joined geometry is reduced by the existing discrete chain when one is configured, so `join` plus
-  `errorTargets` gives a far rung with both fewer draws and fewer triangles.
+- **What it does.** When enabled, the eligible primitives of every **sibling mesh under one shared
+  container** are grouped by material *and* attribute layout and merged into one primitive per group
+  (the already-installed `gltf-transform` `join`), so the far rung draws once per material group
+  instead of once per authored primitive. This is what makes it useful on a real asset: the measured
+  Midway hulls ship **one primitive per mesh** (`akagi` 146/146, `hornet` 94/94, `pt59` 40/40), so a
+  within-mesh-only join collapsed nothing. Each sibling's transform relative to the container is
+  baked into its merged vertices, so a carrier's 146 draws become the handful of its material
+  groups. Joined geometry is reduced by the existing discrete chain when one is configured, so
+  `join` plus `errorTargets` gives a far rung with both fewer draws and fewer triangles.
 - **Bounded by construction.** A group never mixes materials — `join` itself refuses incompatible
   groups, and the caller is offered no switch to cross that boundary. Skinned, morph-target and
-  animated nodes are refused before grouping. The join stays inside one mesh, so node identity,
-  per-node transforms, per-node visibility and picking are untouched; the authored primitives remain
-  LOD0 and the joined rung is an additional, scene-unreferenced far mesh.
+  animated **members** are left authored (a site that loses enough of them collapses nothing), a
+  mesh instanced by more than one node is refused because its local transform is not single-valued,
+  and a nested mesh node is skipped so a primitive belongs to exactly one site. The container's own
+  animation is allowed: the rung is baked in container space and rides rigidly with it. Node
+  identity, per-node visibility and picking are untouched; the authored primitives remain LOD0 and
+  the joined rung is an additional, scene-unreferenced far mesh.
 - **Default off, proved.** With no option, or with `join: false`, the cook is byte-identical to
   today; `join` is part of the generation cache fingerprint so a stale bake cannot be served.
 - **Reported honestly.** The artifact metadata and the cook report name the far mesh, how many
@@ -180,9 +187,18 @@ replaced, so node identity, transforms, render order and authored per-node visib
 byte-for-byte on the way back. Picking stays on the authored primitives: the framework picker
 skips the proxy (`isLodJoinProxy`), and the authored meshes remain raycastable because a ray test
 does not honour `visible`. The runtime re-checks what it is about to hide — every source present,
-all direct siblings under one container, none skinned or morphed, and none targeted by an animation
-channel — and refuses the rung with `TN_DISCRETE_LOD_JOIN_INVALID` otherwise rather than
-half-joining. The selection fact and the draw collapse are named once per activation in
+all members sharing one container, none skinned or morphed, and none targeted by an animation
+channel **strictly below that container** — and refuses the rung with `TN_DISCRETE_LOD_JOIN_INVALID`
+otherwise rather than half-joining.
+
+Joining siblings bakes their relative transforms into the rung, so the honest ceiling is a model
+whose sub-meshes move independently at runtime. Animation, a skin and a morph target are detected at
+bake and at load; **script movement is detected at runtime**: every source member's authored local
+transform relative to the container is snapshotted at load, and a member that no longer matches is
+refused with `TN_DISCRETE_LOD_JOIN_INVALID` before any proxy is shown. The blind spot is a clone
+created after load: it is baselined on its first far selection, so an individual clone member a
+script moves before that first selection is not seen — which is why the whole feature stays opt-in.
+The selection fact and the draw collapse are named once per activation in
 `TN_DISCRETE_LOD_JOINED`. What is **not** wired: a dedicated coarser shadow rung (shadow and
 reflection passes share the main selection, the same conservative shared choice the discrete path
 already made), and the join proxy uses the loaded far mesh's own materials, so a per-node material
@@ -298,9 +314,18 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       collapses to one draw per material (3, not 300) with LOD0 still 300 primitives; absent or
       `false` is byte-identical; skinned/morph/animated refused; a per-asset override joins one asset
       only; the artifact metadata and the compiler manifest carry the draws, the collapsed primitive
-      count and the `mesh#primitive` sources. Tests: `lod-generation.spec.ts` (32/32), join line in
+      count and the `mesh#primitive` sources. Tests: `lod-generation.spec.ts` (36/36), join line in
       `report.spec.ts`, `lod-config.spec.ts` (25/25). §4.4 declares it an owner-authorised extension
       beyond §2's exclusion; runtime selection of the rung is not wired.
+- [x] The join spans sibling meshes under one shared container, not just primitives inside one mesh.
+      Evidence: `lod-generation.spec.ts` "joins sibling meshes under a shared parent into one draw per
+      material" — 146 one-primitive meshes over 3 materials (the measured Midway shape, where the
+      within-mesh join produced nothing) collapse to 3 draws / 146 primitives with each sibling's
+      part-node transform baked into the merged vertices, LOD0 untouched; the artifact records the
+      distinct source `meshes`. A multi-primitive mesh keeps its exact prior far mesh and draws, the
+      animated sibling set is refused, and absent/`false` stays byte-identical. Runtime: the sibling
+      container is the common ancestor, members are hidden wherever they sit in that subtree, and a
+      member a script moves since load is refused (`model-lod-join.spec.ts`).
 - [ ] Cache invalidation and atomic hot reload pass their integration tests.
       Partial: the generation fingerprint and pass cache key exclude runtime/preset, and a spec
       asserts a runtime-only edit neither rebakes nor changes the key. A cache hit now re-resolves
@@ -334,14 +359,16 @@ Keep these boxes current in the implementation PR. They remain open in this spec
       primitives while the joined rung is drawn" adds the joined case: the runtime proxy is skipped
       and the hit is an authored member.
 - [x] The opt-in joined rung is selected at runtime inside the one authority. Evidence:
-      `model-lod-join.spec.ts` (9/9) — a model with a joined rung selects it beyond the budget and
+      `model-lod-join.spec.ts` (14/14) — a model with a joined rung selects it beyond the budget and
       its submitted triangles fall to the rung's, the switch is logged once as
       `TN_DISCRETE_LOD_JOINED` naming the primitive→draw collapse, reverting on a close camera
       restores authored visibility/render order/transform and removes the proxy, an
       animation-targeted or skinned/morphed mesh never joins, a clone behaves like its source, two
       instances at different distances choose independently, and a cook with no `join` is
-      unchanged. The rung's absolute error is written by the cook and read back (asserted in
-      `lod-generation.spec.ts`), and `picking.ts` skips the proxy.
+      unchanged. A rung spanning sibling meshes selects and reverts the same way with picking kept on
+      the authored members, and a part node moved after load is refused with
+      `TN_DISCRETE_LOD_JOIN_INVALID`. The rung's absolute error is written by the cook and read back
+      (asserted in `lod-generation.spec.ts`), and `picking.ts` skips the proxy.
 - [x] Instance isolation and shared-resource lifetime tests pass. Evidence:
       `model-lod-runtime.spec.ts` "isolates two instances that share one base geometry" — each builds
       its own derived level, swapping one leaves the other and the shared base untouched, and

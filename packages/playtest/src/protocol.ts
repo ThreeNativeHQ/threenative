@@ -440,6 +440,22 @@ export type PlaytestFramePhase = (typeof PLAYTEST_FRAME_BUDGET_PHASES)[number];
  */
 export type PlaytestFramePhaseSample = Partial<Record<PlaytestFramePhase, number>>;
 
+/**
+ * The named render-pass kinds a budget can bound. Deliberately the same closed set the engine's
+ * `RenderPassBudget` emits, spelled out here rather than imported: this package must run against
+ * plain Three.js with zero ThreeNative dependency, exactly as it does for the phase names.
+ */
+export const PLAYTEST_FRAME_PASS_KINDS = ["main", "shadow", "reflection", "nested"] as const;
+
+export type PlaytestFramePassKind = (typeof PLAYTEST_FRAME_PASS_KINDS)[number];
+
+/** One render pass's own submissions, attributed to the innermost active render call. */
+export interface IPlaytestFramePassSample {
+  readonly draws: number;
+  readonly kind: PlaytestFramePassKind;
+  readonly triangles: number;
+}
+
 export interface IPlaytestRuntimeDiagnosticsSample {
   drawCalls?: number;
   frameMs: number;
@@ -448,6 +464,11 @@ export interface IPlaytestRuntimeDiagnosticsSample {
    * frame budget. Absent for a plain Three.js bridge.
    */
   phases?: PlaytestFramePhaseSample;
+  /**
+   * Draw calls and triangles per render pass, so a shadow or reflection pass is bounded rather
+   * than folded into the whole-frame draw count. Absent when the producer measures no split.
+   */
+  passes?: readonly IPlaytestFramePassSample[];
   triangles?: number;
 }
 

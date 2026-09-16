@@ -367,10 +367,40 @@ export { updateModelLods } from "./model-lod.js";
  */
 export { baseGeometryOf } from "./model-lod.js";
 /**
- * Read where the frame's milliseconds went, per presented frame, on any platform.
+ * Keep an object drawn even when the render camera cannot resolve it.
+ *
+ * The engine's projected-size gate is on by default: an object whose world bounding sphere
+ * projects to fewer than 0.5 raster pixels in the camera about to render it is not submitted, per
+ * camera. Mark the player's own cockpit, a nameplate, a quest marker, or anything a game never
+ * wants to pop out of the frame. `alwaysRender(object, false)` removes the marker. Camera-attached
+ * objects and shadow casters are already kept, and the number of marked objects is reported beside
+ * the cull in the `TN_PROJECTION` window rather than hidden. The threshold itself is
+ * `renderer.minimumProjectedPixels` — a larger number cuts more aggressively, `false` leaves
+ * every object drawn while still measuring.
+ *
+ * @situation keep a small object drawn when the engine would skip it as too far to resolve
+ * @situation stop my cockpit, marker or player model popping out at distance
+ * @situation a tiny object disappeared at range and I need it always visible
+ * @situation widen or narrow the projected-size cull with a named threshold
+ * @constraint the marker is per object and is reported as `exemptMarked` in the projection window
+ * @constraint `renderer.minimumProjectedPixels: false` leaves the scene drawn and keeps the measurement on
+ * @override renderer.minimumProjectedPixels sets the projected-pixel threshold, default 0.5
+ * @example import { alwaysRender } from "@threenative/core";
+ * alwaysRender(ctx.camera.children[0]); // a camera-attached cockpit stays drawn
+ */
+export { alwaysRender } from "./render-camera-cull.js";
+/**
+ * Read where the frame's milliseconds went, per presented frame, on any platform; each
+ * `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and
+ * triangles each render pass submitted.
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay
+ * @situation tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp
+ * @situation split a frame's draw calls and triangles per render pass (main, shadow, reflection)
+ * @situation tell a shadow or reflection pass's cost from the main colour pass
  * @constraint on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
+ * @constraint per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main
+ * @constraint GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
  * @example defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
  */
 export {
@@ -382,10 +412,12 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
+  IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
+export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 /**
  * Register work that reads a body or camera after physics has moved it and before this frame draws.
  * The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
@@ -679,11 +711,13 @@ export type {
  * @situation know how deep the water is under a pixel without a second render pass
  * @situation stop a water surface repeating in visible bands or stripes
  * @situation keep a crowd of small actors out of the water's reflection so the frame can afford it
+ * @situation stop the water reflection redrawing the whole world every frame
  * @constraint it draws nothing; the game supplies the mesh, the material and every colour
  * @constraint the material must be transparent so the frame beneath it is already drawn
  * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
  * @constraint one reflection is a second draw of the world; resolutionScale is its pixels only
  * @constraint on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice
+ * @constraint reflection.refreshInterval is in presented frames; 1 is every frame, and the default
  * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
  * @example const REFLECTED = 1; // the layer the big silhouettes sit on
  * const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });

@@ -46,6 +46,22 @@ export interface IWaterReflectionOptions {
    * through to the pass, and a game that omits it gets the whole world reflected as before.
    */
   readonly layers?: number;
+  /**
+   * How often the mirrored pass redraws, in presented frames.
+   *
+   * The reflection is a second render of the world and on a crowded sea it is the largest single
+   * item in the frame. It is also low-frequency: a swell, a hull and a wake read the same whether
+   * the mirror was taken this frame or two frames ago, and at speed the eye cannot hold a reflected
+   * silhouette still enough to notice it lag. `2` redraws every second frame and samples the
+   * previous frame's target in between, halving the pass's cost; a higher number halves it again.
+   *
+   * Omit it — or pass `1` — and the pass redraws every frame, which is the shipping behaviour and
+   * the default. The trade is temporal: while the camera moves, the reflection is up to
+   * `refreshInterval - 1` frames behind the scene it mirrors. Fast camera motion can make a
+   * reflected edge shimmer, and a moving object's reflection trails it. A still camera sees none of
+   * that, so name it only where the measured pass dominates the frame.
+   */
+  readonly refreshInterval?: number;
 }
 
 export interface IWaterSurfaceOptions {
@@ -64,11 +80,12 @@ export interface IWaterSurfaceOptions {
 
 /**
  * The pass three hangs off the node `reflector()` returns. Its virtual cameras are the only place a
- * layer mask can be applied, and three's published types stop at the texture node, so the one field
- * this file needs is named here rather than cast at each use.
+ * layer mask can be applied, and `updateBefore` is the whole second render, so those are the two
+ * seams this file needs named rather than cast at each use.
  */
 interface IReflectorPass {
   getVirtualCamera(camera: Camera): Camera;
+  updateBefore(frame: unknown): void;
 }
 interface IReflectorWithPass {
   _reflectorBaseNode: IReflectorPass;
@@ -134,6 +151,7 @@ export class WaterSurface3D {
     if (this.maxThickness <= 0) throw new Error("WaterSurface3D.maxThickness must be positive.");
     const reflection = options.reflection;
     if (reflection === undefined) {
+      this.reflectionRefreshInterval = 1;
       this.target = undefined;
       return;
     }
@@ -142,12 +160,19 @@ export class WaterSurface3D {
     const resolutionScale = finite("reflection.resolutionScale", reflection.resolutionScale);
     if (resolutionScale <= 0 || resolutionScale > 1)
       throw new Error("WaterSurface3D.reflection.resolutionScale must be within (0, 1].");
+    const refreshInterval = reflection.refreshInterval ?? 1;
+    if (!Number.isInteger(refreshInterval) || refreshInterval < 1)
+      throw new Error("WaterSurface3D.reflection.refreshInterval must be a positive integer.");
     const node = reflector({
       bounces: reflection.bounces === true,
       generateMipmaps: false,
       resolutionScale,
     });
     this.reflectionLayers = reflection.layers;
+    this.reflectionRefreshInterval = refreshInterval;
+    // `reflector()` returns the texture node; the pass itself — and the virtual cameras and render
+    // it owns — live on the reflector base node hanging off it.
+    const pass = (node as unknown as IReflectorWithPass)._reflectorBaseNode; // quality-allow: three 0.185 does not type `_reflectorBaseNode` on the reflector node it returns
     if (reflection.layers !== undefined) {
       const mask = reflection.layers;
       if (!Number.isInteger(mask) || mask < 0)
@@ -156,14 +181,25 @@ export class WaterSurface3D {
       // constructor seam for it and no list to walk afterwards, so the mask is applied where every
       // such camera is born. A camera three has already handed out is caught too, because the same
       // call returns it.
-      // `reflector()` returns the texture node; the pass itself — and the virtual cameras it mints —
-      // live on the reflector base node hanging off it.
-      const pass = (node as unknown as IReflectorWithPass)._reflectorBaseNode; // quality-allow: three 0.185 does not type `_reflectorBaseNode` on the reflector node it returns
       const mint = pass.getVirtualCamera.bind(pass);
       pass.getVirtualCamera = (camera: Camera): Camera => {
         const virtual = mint(camera);
         virtual.layers.mask = mask;
         return virtual;
+      };
+    }
+    if (refreshInterval > 1) {
+      // Every frame the pass redraws the world into its target and binds the result. The render is
+      // the expensive part; the binding is not. Skipping the whole `updateBefore` on the frames
+      // between leaves the previous frame's texture bound and the render target intact, so the
+      // material samples the last mirror rather than an empty one. `refreshInterval` counts calls,
+      // which is the presented-frame count for a surface built without `bounces` — that is the
+      // default, and the node only updates once per frame for it.
+      const render = pass.updateBefore.bind(pass);
+      let calls = 0;
+      pass.updateBefore = (frame: unknown): void => {
+        if (calls % refreshInterval === 0) render(frame);
+        calls += 1;
       };
     }
     this.#reflector = node;
@@ -191,6 +227,9 @@ export class WaterSurface3D {
 
   /** What the mirrored pass draws, as the mask the game supplied. Undefined means everything. */
   readonly reflectionLayers: number | undefined;
+
+  /** How often the mirrored pass redraws, in presented frames. `1` is every frame, the default. */
+  readonly reflectionRefreshInterval: number;
 
   /** The world-space height of the surface, in metres. */
   get level(): number {
