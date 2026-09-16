@@ -135,10 +135,15 @@ requests signing; without either, release stays unsigned.
 | `THREENATIVE_DESKTOP_SIGN` | `1`/`true` requests a signed release; macOS/Windows without the matching inputs fail as PENDING. |
 | `THREENATIVE_DESKTOP_CODESIGN_IDENTITY` | macOS `codesign` Developer ID identity. |
 | `THREENATIVE_DESKTOP_NOTARY_PROFILE` | macOS `notarytool` keychain profile; enables notarization and stapling. |
-| `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` | Windows code-signing certificate (`.pfx`). |
+| `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` | Windows code-signing certificate (`.pfx`), password-less. |
+| `THREENATIVE_DESKTOP_SIGN_SUBJECT` | Windows certificate-store subject name; the private key stays in the store. |
 | `THREENATIVE_DESKTOP_TIMESTAMP_URL` | Windows Authenticode timestamp server. |
 
-Windows `signtool` signs then verifies the executable. macOS `codesign` signs and verifies the
+Windows `signtool` signs then verifies the executable. Prefer
+`THREENATIVE_DESKTOP_SIGN_SUBJECT`: it signs with `/n` from the Windows certificate store, so the
+private key never leaves it. `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` uses `/f` and is passed no
+password, so it only works for a password-less `.pfx` — not what a certificate authority issues.
+Setting both is refused rather than silently resolved. macOS `codesign` signs and verifies the
 bundle, `notarytool` notarizes the archive and `stapler` staples the ticket; a notarization Apple did
 not accept is refused, and an evidence record whose artifact hash is not the produced artifact is
 rejected. Linux has no Authenticode or notarization, so it proceeds unsigned with integrity metadata

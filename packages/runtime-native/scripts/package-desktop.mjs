@@ -63,15 +63,18 @@ export function desktopSigningFromEnvironment(env = process.env) {
   const requested = env.THREENATIVE_DESKTOP_SIGN === '1' || env.THREENATIVE_DESKTOP_SIGN === 'true';
   const identity = env.THREENATIVE_DESKTOP_CODESIGN_IDENTITY;
   const certificate = env.THREENATIVE_DESKTOP_SIGN_CERTIFICATE;
+  const subject = env.THREENATIVE_DESKTOP_SIGN_SUBJECT;
   const keychainProfile = env.THREENATIVE_DESKTOP_NOTARY_PROFILE;
   const timestampUrl = env.THREENATIVE_DESKTOP_TIMESTAMP_URL;
-  if (!requested && identity === undefined && certificate === undefined && keychainProfile === undefined) {
+  if (!requested && identity === undefined && certificate === undefined && subject === undefined &&
+    keychainProfile === undefined) {
     return undefined;
   }
   return {
     ...(requested ? { requested: true } : {}),
     ...(identity === undefined ? {} : { identity }),
     ...(certificate === undefined ? {} : { certificate }),
+    ...(subject === undefined ? {} : { subject }),
     ...(timestampUrl === undefined ? {} : { timestampUrl }),
     ...(keychainProfile === undefined ? {} : { keychainProfile, notarize: true }),
   };

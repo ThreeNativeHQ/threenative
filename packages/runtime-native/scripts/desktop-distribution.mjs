@@ -638,11 +638,18 @@ export function signDesktopArtifact({ platform = process.platform, target, signi
     return { scheme: 'codesign', signed: true };
   }
   if (platform === 'win32') {
-    if (!signing?.certificate) {
-      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: Windows signing needs a code-signing certificate; unsigned preparation can proceed without signing.');
+    if (signing?.certificate && signing?.subject) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS: Windows signing takes a certificate file or a store subject, not both; one of them would be silently ignored.');
+    }
+    if (!signing?.certificate && !signing?.subject) {
+      throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: Windows signing needs a code-signing certificate file or a certificate store subject; unsigned preparation can proceed without signing.');
     }
     const timestamp = signing.timestampUrl ? ['/tr', signing.timestampUrl, '/td', 'sha256'] : [];
-    signingTool(run, 'signtool', ['sign', '/fd', 'sha256', ...timestamp, '/f', signing.certificate, target], 'TN_DESKTOP_SIGNTOOL');
+    // `/f` reads a PFX and takes a `/p` password this contract deliberately does not carry, so it
+    // only ever works for a password-less file - which is not what a CA issues. `/n` signs from the
+    // Windows certificate store, keeping the private key in the OS keychain as the README promises.
+    const credential = signing.subject ? ['/n', signing.subject] : ['/f', signing.certificate];
+    signingTool(run, 'signtool', ['sign', '/fd', 'sha256', ...timestamp, ...credential, target], 'TN_DESKTOP_SIGNTOOL');
     signingTool(run, 'signtool', ['verify', '/pa', target], 'TN_DESKTOP_SIGNTOOL_VERIFY');
     return { artifactSha256: sha256File(target), scheme: 'signtool', signed: true };
   }
