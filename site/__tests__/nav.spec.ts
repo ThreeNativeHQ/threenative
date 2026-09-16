@@ -24,6 +24,12 @@ describe("navigation is one model with three renderers", () => {
     }
   });
 
+  it("should keep the primary nav compact while making docs a first-party route", () => {
+    expect(primaryNav).toHaveLength(5);
+    const docs = primaryNav.find((entry) => entry.label === "Docs");
+    expect(docs?.target).toEqual({ kind: "internal", path: "/docs" });
+  });
+
   it("should never link a nav entry to a route that does not prerender", () => {
     expect(unresolvedInternalNavPaths(ALL_ENTRIES)).toEqual([]);
   });
