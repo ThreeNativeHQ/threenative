@@ -806,3 +806,30 @@ What this upgrades:
 The `cygpath -w` path conversion held too — win32 node received Windows-form paths and resolved the
 container, config and project correctly. That code path had never been exercised, because every
 pre-existing step passing paths to node skips Windows.
+
+### AC5 re-checked against run 35055978321: the captures it would need do not exist yet
+
+Checked rather than assumed, because the reworded criterion turns on a **capture** existing and
+being retained, not on the brand inspection passing. Both are false for that run:
+
+| Platform | `Verify the relocated release container with the installed verifier` | Capture |
+| --- | --- | --- |
+| macOS | **success** | produced by `inspectStarterScreenshot`, then **discarded** |
+| Windows | **skipped** | none, and none possible |
+
+- **Windows produces no capture at all.** The verifier and clean-player launch steps are skipped by
+  `if: matrix.platform != 'Windows'` because of
+  [#264](https://github.com/ThreeNativeHQ/threenative/issues/264) — the container never launches, so
+  nothing draws and nothing can be captured. `--brand-only` deliberately never launches either, which
+  is why Windows has brand evidence without capture evidence. AC5's Windows half is blocked on #264
+  exactly as AC4's handoff half is.
+- **macOS produced a capture and lost it.** The verifier writes `starter-container.png` into
+  `$RUNNER_TEMP/threenative-starter-native/artifacts/native/`, which the `native-starter-<platform>`
+  upload step has already passed by in step order. The step that retains it,
+  *Collect the release container's capture and report*, is `076b954e9` — held back while
+  35055978321 ran, so it was not in that run.
+
+So AC5 stays open. Its macOS half becomes satisfiable on the first run carrying `076b954e9`
+(35059792538 on `443175e65` is the first), and its Windows half stays impossible until #264 is
+fixed. The brand evidence from 35055978321 is unaffected and stands; it simply is not capture
+evidence, and the two must not be conflated because both are green.
