@@ -11,7 +11,7 @@
     "build:desktop": "threenative build --target desktop",
     "build:android": "threenative build --target android",
     "build:ios": "threenative build --target ios",
-    "test:native": "pnpm build:desktop && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs",
+    "test:native": "pnpm build:desktop && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --consumer --target desktop --project .",
     "pretest": "playwright install chromium",
     "test": "vite build && threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm dev --host 127.0.0.1 --port $PORT --strictPort\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"

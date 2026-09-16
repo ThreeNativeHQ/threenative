@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, write
 import { basename, join } from 'node:path';
 import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
+import { inspectContainerBrand } from '../scripts/inspect-container-brand.mjs';
 import {
   assertContainerIdentity,
   classifyDependencies,
@@ -15,7 +16,8 @@ import {
   resolveContainer,
 } from '../scripts/desktop-distribution.mjs';
 
-const config = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
+const defaultConfig = { app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 } };
+const config = defaultConfig;
 const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 
 /** A stand-in for the runtime's `game.bundle`: the real format is proven by the C++ bundle tests. */
@@ -37,7 +39,7 @@ function authoredPng() {
 
 // Exercise the real staging and resolver. Only OS resource tools/archive transport are replaced;
 // these unit cases do not claim a Windows/macOS native launch or signing proof.
-function fixture(platform = 'linux', { icon = false, convertIcon = false } = {}) {
+function fixture(platform = 'linux', { icon = false, convertIcon = false, config = defaultConfig } = {}) {
   const directory = makeTempDirSync('threenative-container-regression-');
   const executable = join(directory, 'input');
   const captured = join(directory, 'relocated container');
@@ -315,3 +317,67 @@ for (const fail of [false, true]) {
     assert.equal(readFileSync(output, 'utf8'), fail ? 'previous archive' : 'fresh archive');
   });
 }
+
+// PRD-375: the container must record the loading sequence the consumer config declares, or the
+// brand inspector has nothing to read back and every stock-derived project fails LOADING_MISSING.
+// This is the producer and the consumer in one test on purpose: each side alone proved nothing.
+function brandedFixture({ bootSplash } = {}) {
+  const directory = makeTempDirSync('threenative-loading-');
+  const engineIcon = join(directory, 'engine.png');
+  writeFileSync(engineIcon, 'engine default icon');
+  const branded = {
+    app: { id: 'com.example.orbit', name: 'Orbit Game', version: '1.2.3', build: 7 },
+    ui: { renderer: 'web' },
+    ...(bootSplash === undefined ? {} : { bootSplash }),
+  };
+  const packed = fixture('linux', { config: branded, convertIcon: true, icon: true });
+  branded.app.icon = packed.icon;
+  return { ...packed, branded, engineIcon };
+}
+
+test('a configured bootSplash is recorded, and the brand inspector reads it back', () => {
+  const directory = makeTempDirSync('threenative-splash-');
+  const image = join(directory, 'splash.png');
+  writeFileSync(image, authoredPng());
+  const { root, manifest, branded, engineIcon } = brandedFixture({
+    bootSplash: { backgroundColor: '#0d1b2a', image },
+  });
+  assert.deepEqual(manifest.loading, {
+    bootSplash: { backgroundColor: '#0d1b2a', imageSha256: digest(image) },
+  });
+  const evidence = inspectContainerBrand(root, branded, { engineIcon });
+  assert.equal(evidence.loading.bootSplash.backgroundColor, '#0d1b2a');
+  assert.equal(evidence.loading.bootSplash.imageSha256, digest(image));
+});
+
+test('a colour-only bootSplash round-trips with a null image hash', () => {
+  const { root, manifest, branded, engineIcon } = brandedFixture({
+    bootSplash: { backgroundColor: '#0d1b2a' },
+  });
+  assert.deepEqual(manifest.loading, { bootSplash: { backgroundColor: '#0d1b2a', imageSha256: null } });
+  assert.equal(
+    inspectContainerBrand(root, branded, { engineIcon }).loading.bootSplash.imageSha256,
+    null,
+  );
+});
+
+test('a game with no bootSplash records that, rather than omitting the evidence', () => {
+  const { root, manifest, branded, engineIcon } = brandedFixture();
+  assert.deepEqual(manifest.loading, { bootSplash: null });
+  assert.equal(inspectContainerBrand(root, branded, { engineIcon }).loading.bootSplash, null);
+});
+
+test('a recorded splash that does not match the config is still refused', () => {
+  const { root, branded, engineIcon } = brandedFixture({ bootSplash: { backgroundColor: '#0d1b2a' } });
+  assert.throws(
+    () => inspectContainerBrand(root, { ...branded, bootSplash: { backgroundColor: '#ffffff' } }, { engineIcon }),
+    /TN_NATIVE_STARTER_CONTAINER_LOADING_MISMATCH/u,
+  );
+});
+
+test('a declared splash image that is not on disk refuses the release', () => {
+  assert.throws(
+    () => brandedFixture({ bootSplash: { image: join(makeTempDirSync('absent-'), 'missing.png') } }),
+    /TN_DESKTOP_SPLASH_IMAGE_MISSING/u,
+  );
+});

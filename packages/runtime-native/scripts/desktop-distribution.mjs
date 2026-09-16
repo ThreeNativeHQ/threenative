@@ -267,6 +267,38 @@ export function classifyDependencies(
   return { bundled, prerequisites };
 }
 
+/**
+ * The loading sequence the consumer config declared, recorded so a distributed container can be
+ * checked against the config that built it.
+ *
+ * The splash is drawn by the game's own generated `src/render/loading.ts` from assets already
+ * inside the bundle, so this records identity rather than a second copy: the authored colour and
+ * the authored image's hash. A game with no `bootSplash` records that it has none — writing
+ * nothing would leave a consumer unable to tell "no splash configured" from "evidence missing",
+ * which is the difference between a pass and a false pass.
+ */
+export function containerLoading(config) {
+  const bootSplash = config?.bootSplash;
+  if (bootSplash === undefined || bootSplash === null) return { bootSplash: null };
+  let imageSha256 = null;
+  if (bootSplash.image !== undefined) {
+    if (!bootSplash.image || !existsSync(bootSplash.image) || !statSync(bootSplash.image).isFile()) {
+      throw new Error(
+        `TN_DESKTOP_SPLASH_IMAGE_MISSING: bootSplash.image does not exist: ${bootSplash.image ?? '(not provided)'}`,
+      );
+    }
+    imageSha256 = sha256File(bootSplash.image);
+  }
+  return {
+    bootSplash: {
+      ...(bootSplash.backgroundColor === undefined
+        ? {}
+        : { backgroundColor: bootSplash.backgroundColor }),
+      imageSha256,
+    },
+  };
+}
+
 export function containerMetadata({ platform = process.platform, config }) {
   const app = config?.app ?? {};
   const id = app.id ?? 'com.threenative.game';
@@ -711,6 +743,7 @@ export function packageDesktopContainer({
     throw new Error(`TN_UI_BUNDLE_UNEXPECTED: a UI bundle was staged for a game whose ui.renderer is '${uiRenderer}'.`);
   }
   const app = config?.app ?? {};
+  const loading = containerLoading(config);
   const appName = app.name ?? 'ThreeNative';
   const slug = containerSlug(appName);
   const executableName2 = executableName ?? (platform === 'win32' ? `${slug}.exe` : slug);
@@ -836,6 +869,7 @@ export function packageDesktopContainer({
       dependencies: bundled,
       executable: paths.executable,
       format,
+      loading,
       platform: key,
       prerequisites,
       resources,

@@ -101,6 +101,11 @@ test.each([
   { stream: "stderr", text: 'Gtk-Message: 19:38:01.131: Failed to load module "appmenu-gtk-module"', type: "log" },
   { stream: "stderr", text: "MESA-EGL: warning: DRI3 error: Could not get DRI3 device", type: "warning" },
   { stream: "stderr", text: "** (wildwood:4179462): WARNING **: 19:38:01.260: AT-SPI: Could not obtain desktop path or name", type: "warning" },
+  // A hosted headless runner has no sound card or accessibility bus. ALSA and AT-SPI name the
+  // host, not the game, so they must not be counted as the game's console errors (PRD-366).
+  { stream: "stderr", text: "ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default", type: "log" },
+  { stream: "stderr", text: "[Audio] Failed to open audio device: ALSA: Couldn't open audio device: No such file or directory", type: "log" },
+  { stream: "stderr", text: "(threenative-starter-native:14620): dbind-WARNING **: 22:57:49.500: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files", type: "warning" },
   { stream: "stderr", text: "Warning: startup gate never opened within 30s; capturing anyway.", type: "warning" },
   { stream: "stderr", text: "MESA-EGL: error: context creation failed", type: "error" },
   { stream: "stderr", text: "GPU validation error: warning branch has invalid bindings", type: "error" },
