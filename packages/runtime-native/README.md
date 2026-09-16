@@ -144,8 +144,15 @@ rather than failing the release.
 Windows `signtool` signs then verifies the executable. Prefer
 `THREENATIVE_DESKTOP_SIGN_SUBJECT`: it signs with `/n`, so the private key never leaves the store.
 `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` uses `/f` and is passed no password, so it only works for a
-password-less `.pfx` — not what a certificate authority issues. Setting both is refused rather than
-silently resolved.
+password-less `.pfx`. Setting both is refused rather than silently resolved.
+
+**There is deliberately no password variable.** Since the CA/Browser Forum tightened its code-signing
+requirements in 2023, a publicly trusted code-signing key has to be generated and held on certified
+hardware — a token, an HSM, or a cloud signing service — so a certificate authority does not hand
+over a `.pfx` for you to protect with a password in the first place. Adding `/p` would carry a
+secret through the build environment to serve a case that modern issuance does not produce. The
+store subject is the supported route; the `/f` form remains for a self-signed or internally issued
+password-less file.
 
 Two things about `/n` that decide whether a build machine can sign at all. It searches the
 **`CurrentUser\My`** store only — a certificate imported into `LocalMachine` is not found, and
