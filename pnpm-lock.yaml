@@ -209,6 +209,34 @@ importers:
         specifier: 2.3.3
         version: 2.3.3(rollup@4.62.4)(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
 
+  examples/auto-lod:
+    dependencies:
+      '@threenative/assets':
+        specifier: workspace:*
+        version: link:../../packages/assets
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=86a47b2f8f81143e129c465307891f79d61fa2d794620069be42e4fc3ee6db8c)
+    devDependencies:
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
+
   examples/engine-load-test:
     dependencies:
       '@threenative/playtest':
