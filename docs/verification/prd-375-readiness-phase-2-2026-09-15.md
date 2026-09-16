@@ -325,3 +325,66 @@ red the existing starter lane rather than prove anything, so the CLI requires th
 - **Icon appearance.** The authored icon used for the real run is a 1x1 PNG: byte-distinct from the
   engine default, which is what the inspector asserts, but not a visual icon inspection.
 - **An independent reviewer PASS**, and the acceptance criteria that depend on Windows/macOS.
+
+## Independent review of `7bb0df3a6` — NEEDS CORRECTION, three findings, all fixed
+
+An independent reviewer reproduced the red-green above exactly (12 failed / 42 passed, the twelve
+being the twelve new rows; then 78 passed) and confirmed by a live CLI run against a real container
+that the brand is judged before the launch — `NAME_MISMATCH` fired before `ldd` ran. It then found
+three checks that **retire themselves when the artifact under test omits or duplicates the evidence
+they read**, which is the false-pass shape this phase exists to close. All three are the reviewer's
+findings, not this lane's; they are recorded here with that provenance.
+
+### Red then green, from the reviewer's own inputs
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Red, the reviewer's repros written as tests first | `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/starter-brand.test.mjs` | **4 failed / 55 passed (59)**, exit 1 — including the reviewer's exact `RangeError [ERR_OUT_OF_RANGE]: ... It must be >= 0 and <= 156. Received 244` |
+| Green, after the three fixes | `... tests/starter-brand.test.mjs tests/starter-desktop.test.mjs` | **2 files, 83 passed**, exit 0 |
+
+Five rows were added; four were red. The fifth — a container version that disagrees with the
+consumer config — already passed through the existing manifest-anchored comparison and is kept as a
+corroborating row, not counted as a red.
+
+### 1 (blocking) — a manifest that omits `app.version` retired the PE version check
+
+`inspectWindowsResources` read `manifest.app.version` and compared only `if (typeof declared ===
+'string')`. Deleting that field from a `win32-x64` container whose `.exe` declares file version
+9.9.9 against a config declaring 1.2.3 **returned success**; so did `app.version: 1`. The assertion
+was anchored on the artifact under test, in a field `readContainerManifest` never required, so the
+artifact could switch off the check against itself — while every sibling check in the same file
+fails closed on exactly that shape.
+
+Fixed by lifting the comparison into `assertWindowsVersion(windows, manifest, config)`, called from
+`inspectContainerBrand` where the consumer config is in hand. A missing or non-string
+`manifest.app.version` is now `TN_NATIVE_STARTER_CONTAINER_MANIFEST_INVALID`, and when the config
+declares a version the container's version must equal it before the PE file version is compared at
+all — so the assertion is anchored on the author's config, not only on the artifact.
+
+### 2 — only the first `RT_GROUP_ICON` was inspected
+
+`groupIconIds(groups[0].data)` left every later group unexamined, and `resourceLeaves` returns tree
+order rather than the lowest id Explorer actually draws. An `.exe` carrying group 1 (authored art)
+and group 2 (the engine default) returned success. `groups.length > 1` is now
+`TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID` as ambiguous; rcedit writes exactly one.
+
+### 3 — a truncated PE crashed with an unnamed `RangeError`
+
+The data-directory count was read at `optional + 92` before the `directoriesOffset + 24 >
+buffer.length` bounds check, so a `.exe` truncated to 0xA0 bytes raised a bare `RangeError` instead
+of failing closed with a cause. The bound is now taken before the read and names the file:
+`TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID: <path> is truncated before its resource data
+directory.`
+
+### Gates after the corrections
+
+| Command | Result |
+| --- | --- |
+| `... tests/starter-brand.test.mjs tests/starter-desktop.test.mjs` | **2 files, 83 passed**, exit 0 |
+| the desktop family (`desktop-container`, `desktop-release-transaction`, `distribution`, `starter-brand`, `starter-desktop`, `desktop-core-gate`) | **6 files, 192 passed**, exit 0 |
+| `pnpm typecheck` | **exit 0** |
+| `pnpm lint` | **exit 0** (746 repo-wide warnings; on the touched files three `noExcessiveCognitiveComplexity` and one pre-existing `noDelete`, no errors) |
+| the real linux-x64 container re-inspected with the corrected code | still passes: name `Orbit Brand` from `share/applications/com.example.orbitbrand.desktop` |
+
+The verdict on `7bb0df3a6` was **NEEDS CORRECTION**. No reviewer PASS is claimed for the corrected
+head; a re-review is the next step, and the phase's reviewer box stays open.

@@ -798,3 +798,56 @@ test('the verifier CLI inspects the brand of the container it is pointed at', ()
   assert.equal(result.status, 1);
   assert.match(result.stderr, /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u);
 });
+
+// Independent review of 7bb0df3a6 found these three: each is a check that retires itself when the
+// artifact under test omits or duplicates the evidence it reads, instead of failing closed.
+
+test('a container manifest that omits app.version cannot retire the PE version check', () => {
+  const fixture = windowsFixture({ peVersion: '9.9.9' });
+  fixture.manifest.app.version = undefined;
+  assert.throws(() => fixture.inspect(), /TN_NATIVE_STARTER_CONTAINER_MANIFEST_INVALID/u);
+});
+
+test('a non-string app.version cannot retire the PE version check', () => {
+  const fixture = windowsFixture({ peVersion: '9.9.9' });
+  fixture.manifest.app.version = 1;
+  assert.throws(() => fixture.inspect(), /TN_NATIVE_STARTER_CONTAINER_MANIFEST_INVALID/u);
+});
+
+test('a container version that disagrees with the consumer config fails', () => {
+  const fixture = windowsFixture();
+  fixture.manifest.app.version = '9.9.9';
+  assert.throws(() => fixture.inspect(), /TN_NATIVE_STARTER_CONTAINER_WINDOWS_VERSION_MISMATCH/u);
+});
+
+test('a second RT_GROUP_ICON cannot hide behind the first', () => {
+  assert.throws(
+    () =>
+      windowsFixture({
+        resources: [
+          { data: Buffer.from('authored icon'), id: 1, type: 3 },
+          { data: Buffer.from('engine icon'), id: 2, type: 3 },
+          { data: groupIcon([1]), id: 1, type: 14 },
+          { data: groupIcon([2]), id: 2, type: 14 },
+          {
+            data: versionResource('1.2.3', {
+              FileDescription: 'Orbit Game',
+              ProductName: 'Orbit Game',
+            }),
+            id: 1,
+            type: 16,
+          },
+        ],
+      }).inspect(),
+    /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID/u,
+  );
+});
+
+test('a truncated PE fails with a named cause, not an unnamed RangeError', () => {
+  const fixture = windowsFixture();
+  const executable = join(fixture.root, 'orbit.exe');
+  const truncated = readFileSync(executable).subarray(0, 0xa0);
+  writeFileSync(executable, truncated);
+  fixture.manifest.resources['orbit.exe'] = { sha256: sha256Of(truncated) };
+  assert.throws(() => fixture.inspect(), /TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID/u);
+});

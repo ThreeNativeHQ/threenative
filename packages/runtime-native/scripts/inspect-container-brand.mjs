@@ -184,8 +184,15 @@ function parsePeImage(path) {
     );
   }
   const directoriesOffset = optional + (magic === 0x20b ? 112 : 96);
-  const directoryCount = buffer.readUInt32LE(optional + (magic === 0x20b ? 108 : 92));
-  if (directoryCount < 3 || directoriesOffset + 24 > buffer.length) {
+  const countOffset = optional + (magic === 0x20b ? 108 : 92);
+  // Bound the read before taking it: a truncated .exe must name its cause, not raise a bare
+  // RangeError from deep inside the parser.
+  if (countOffset + 4 > buffer.length || directoriesOffset + 24 > buffer.length) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID: ${path} is truncated before its resource data directory.`,
+    );
+  }
+  if (buffer.readUInt32LE(countOffset) < 3) {
     throw new Error(
       'TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING: the packaged .exe has no resource data directory.',
     );
@@ -384,6 +391,13 @@ function inspectWindowsResources(containerRoot, manifest) {
       'TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_MISSING: the packaged .exe carries no RT_GROUP_ICON, so no launcher icon is embedded.',
     );
   }
+  // Inspecting the first of several groups leaves the rest unexamined, and which one Explorer
+  // draws is the lowest id, not the tree order this walk returns. rcedit writes exactly one.
+  if (groups.length > 1) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_WINDOWS_RESOURCES_INVALID: the packaged .exe carries ${groups.length} RT_GROUP_ICON resources, so which icon it shows is ambiguous.`,
+    );
+  }
   const icons = new Map(resourceLeaves(image, RT_ICON).map((leaf) => [leaf.id, leaf.data]));
   const images = groupIconIds(groups[0].data).map((id) => {
     const data = icons.get(id);
@@ -395,13 +409,34 @@ function inspectWindowsResources(containerRoot, manifest) {
     return { id, sha256: sha256Buffer(data) };
   });
   const { fileVersion, strings } = parseVersionResource(version[0].data);
+  return { fileVersion, images, source: manifest.executable, strings };
+}
+
+/**
+ * The version Explorer reports, against the version the author configured.
+ *
+ * Anchoring this on the container's own `app.version` alone let a manifest retire the assertion
+ * against itself by omitting the field, which is the shape every sibling check here refuses.
+ */
+function assertWindowsVersion(windows, manifest, config) {
   const declared = manifest.app.version;
-  if (typeof declared === 'string' && fileVersion !== `${declared}.0.0.0`.split('.').slice(0, 4).join('.')) {
+  if (typeof declared !== 'string' || declared.length === 0) {
     throw new Error(
-      `TN_NATIVE_STARTER_CONTAINER_WINDOWS_VERSION_MISMATCH: the .exe reports file version ${fileVersion}, the container says ${declared}.`,
+      'TN_NATIVE_STARTER_CONTAINER_MANIFEST_INVALID: a Windows container declares no application version to check its PE resources against.',
     );
   }
-  return { fileVersion, images, source: manifest.executable, strings };
+  const authored = config.app?.version;
+  if (typeof authored === 'string' && authored !== declared) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_WINDOWS_VERSION_MISMATCH: the container says version ${declared}, config says ${authored}.`,
+    );
+  }
+  const expected = `${declared}.0.0.0`.split('.').slice(0, 4).join('.');
+  if (windows.fileVersion !== expected) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CONTAINER_WINDOWS_VERSION_MISMATCH: the .exe reports file version ${windows.fileVersion}, the container says ${declared}.`,
+    );
+  }
 }
 
 function windowsLauncherName(windows) {
@@ -690,6 +725,7 @@ export function inspectContainerBrand(root, config, options = {}) {
   const manifest = readContainerManifest(containerRoot);
   const platform = manifest.platform.split('-')[0];
   const windows = platform === 'win32' ? inspectWindowsResources(containerRoot, manifest) : undefined;
+  if (windows !== undefined) assertWindowsVersion(windows, manifest, config);
   const evidence = {
     icon: inspectContainerIcon(containerRoot, manifest, config, options, windows),
     name: inspectContainerName(containerRoot, manifest, config, platform, windows),
