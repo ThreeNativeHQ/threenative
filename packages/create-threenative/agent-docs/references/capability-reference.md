@@ -319,6 +319,23 @@ const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind })
 model.step(1 / 60, { turn: -1, pitch: 0.4 });
 ```
 
+### `alwaysRender`
+
+`function` — Keep an object drawn even when the render camera cannot resolve it. The engine's projected-size gate is on by default: an object whose world bounding sphere projects to fewer than 0.5 raster pixels in the camera about to render it is not submitted, per camera. Mark the player's own cockpit, a nameplate, a quest marker, or anything a game never wants to pop out of the frame. `alwaysRender(object, false)` removes the marker. Camera-attached objects and shadow casters are already kept, and the number of marked objects is reported beside the cull in the `TN_PROJECTION` window rather than hidden. The threshold itself is `renderer.minimumProjectedPixels` — a larger number cuts more aggressively, `false` leaves every object drawn while still measuring.
+
+```ts
+export function alwaysRender(object: Object3D, enabled = true): void { … }
+```
+
+- **Use when:** keep a small object drawn when the engine would skip it as too far to resolve · stop my cockpit, marker or player model popping out at distance · a tiny object disappeared at range and I need it always visible · widen or narrow the projected-size cull with a named threshold
+- **Constraints:** the marker is per object and is reported as `exemptMarked` in the projection window · `renderer.minimumProjectedPixels: false` leaves the scene drawn and keeps the measurement on · the marker is per object and survives scene rebuilds only as long as the object does · disabling the gate (`renderer.minimumProjectedPixels: false`) keeps its measurement on
+- **Overrides:** renderer.minimumProjectedPixels sets the projected-pixel threshold, default 0.5
+
+```ts
+import { alwaysRender } from "@threenative/core";
+alwaysRender(ctx.camera.children[0]); // a camera-attached cockpit stays drawn
+```
+
 ### `AnimationPlayer`
 
 `class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
@@ -790,14 +807,14 @@ field.splat({ x: 0.5, y: 0.5 }, { x: 0.2, y: 0 }, 1);
 
 ### `FrameBudget`
 
-`class` — Read where the frame's milliseconds went, per presented frame, on any platform.
+`class` — Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and triangles each render pass submitted.
 
 ```ts
 export class FrameBudget { … }
 ```
 
-- **Use when:** find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay
-- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
+- **Use when:** find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay · tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp · split a frame's draw calls and triangles per render pass (main, shadow, reflection) · tell a shadow or reflection pass's cost from the main colour pass
+- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement · per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main · GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
 
 ```ts
 defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
@@ -1702,8 +1719,8 @@ await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) })
 export class WaterSurface3D { … }
 ```
 
-- **Use when:** reflect the sky and the shoreline in a lake, pond or river · see the bed through the water and have the shallows fade at the shore · know how deep the water is under a pixel without a second render pass · stop a water surface repeating in visible bands or stripes · keep a crowd of small actors out of the water's reflection so the frame can afford it
-- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world; resolutionScale is its pixels only · on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice · the mirror plane is level, from level alone; do not parent target to a scaled mesh
+- **Use when:** reflect the sky and the shoreline in a lake, pond or river · see the bed through the water and have the shallows fade at the shore · know how deep the water is under a pixel without a second render pass · stop a water surface repeating in visible bands or stripes · keep a crowd of small actors out of the water's reflection so the frame can afford it · stop the water reflection redrawing the whole world every frame
+- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world; resolutionScale is its pixels only · on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice · reflection.refreshInterval is in presented frames; 1 is every frame, and the default · the mirror plane is level, from level alone; do not parent target to a scaled mesh
 
 ```ts
 const REFLECTED = 1; // the layer the big silhouettes sit on
@@ -4371,6 +4388,39 @@ export function useUiState<TState extends object>(): TState | undefined;
 
 ```ts
 const score = useUiState<GameState, number>((state) => state.score);
+```
+
+## `src/game.ts`
+
+### `renderer.minimumProjectedPixels`
+
+`function` — Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 projected pixel; an object below it is skipped per render camera. Raise the number to cull more, set `false` to leave every object drawn — the count of what was skipped still reports in `TN_PROJECTION`.
+
+```ts
+renderer.minimumProjectedPixels?: number | false
+```
+
+- **Use when:** my frame is slow with many distant objects · draw count is high but the screen is mostly empty · far away models, aircraft, boats or props cost draw calls but are specks · a large roster or fleet drops the frame rate while barely visible · stop submitting objects smaller than a pixel to the camera · cull by how big something looks to the camera rather than how far it is from the player · tune how aggressively distant objects are skipped · a small object I need disappeared at range
+- **Constraints:** Unset is the shipping behaviour: the gate runs at 0.5 px. A game that wants the cut a shipped title tuned names 2; `false` leaves every object drawn. · The decision reads the render camera's projection and viewport, not the player's distance — a camera far from the player still culls its own specks. · It writes only `object.visible`, which the projection's batch key ignores; `castShadow`, `layers` and `frustumCulled` are never flipped, because that churns batch grouping. · Shadow casters and objects attached to the render camera are never dropped on the main view alone. Exempt any other object with `alwaysRender`. · Turning the gate off with `false` does not turn its measurement off: `TN_PROJECTION` still reports considered and skipped counts as `cull`.
+- **Overrides:** alwaysRender(object) keeps one object drawn whatever the render camera resolves · renderer.minimumProjectedPixels: false leaves the scene drawn and keeps the measurement on
+
+```ts
+renderer: { minimumProjectedPixels: 2 } // in threenative.config.ts
+```
+
+### `renderer.projection`
+
+`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.
+
+```ts
+renderer.projection?: boolean
+```
+
+- **Use when:** the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer
+- **Constraints:** Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it. · An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame. · TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.
+
+```ts
+renderer: { projection: false } // in threenative.config.ts
 ```
 
 ## `src/render/worldEnvironment.ts`

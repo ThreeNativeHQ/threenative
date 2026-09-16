@@ -1,5 +1,5 @@
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
-import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
+import { PLAYTEST_FRAME_BUDGET_PHASES, PLAYTEST_FRAME_PASS_KINDS } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
@@ -294,10 +294,12 @@ export function validateDeviceMetricsAssertion(value: unknown, scenarioPath: str
 
 export function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxPassDrawCalls", "maxPassTriangles", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
   return {
     ...present("maxDrawCalls", optionalNonNegativeNumber(record, "maxDrawCalls", scenarioPath, objectPath)),
     ...present("maxFrameMsP95", optionalNonNegativeNumber(record, "maxFrameMsP95", scenarioPath, objectPath)),
+    ...present("maxPassDrawCalls", validatePassBudget(record.maxPassDrawCalls, scenarioPath, `${objectPath}.maxPassDrawCalls`)),
+    ...present("maxPassTriangles", validatePassBudget(record.maxPassTriangles, scenarioPath, `${objectPath}.maxPassTriangles`)),
     ...present("maxPhaseMsP95", validatePhaseBudget(record.maxPhaseMsP95, scenarioPath, `${objectPath}.maxPhaseMsP95`)),
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
     ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
@@ -472,7 +474,31 @@ export function validateStartupAssertion(
 }
 
 /** Re-exported so a scenario author and the protocol never disagree about the phase names. */
-export { PLAYTEST_FRAME_BUDGET_PHASES };
+export { PLAYTEST_FRAME_BUDGET_PHASES, PLAYTEST_FRAME_PASS_KINDS };
+
+/**
+ * A per-pass budget is the same shape as a per-phase one: a non-empty map of known kinds to
+ * non-negative ceilings. An unknown pass kind throws rather than evaluating no bound.
+ */
+function validatePassBudget(value: unknown, scenarioPath: string, objectPath: string): Readonly<Record<string, number>> | undefined {
+  if (value === undefined) return undefined;
+  const record = requireRecord(value, scenarioPath, objectPath);
+  const entries = Object.entries(record);
+  if (entries.length === 0)
+    throw invalidScenario(scenarioPath, `${objectPath} must name at least one render pass.`);
+  const budget: Record<string, number> = {};
+  for (const [pass, ceiling] of entries) {
+    if (!(PLAYTEST_FRAME_PASS_KINDS as readonly string[]).includes(pass))
+      throw invalidScenario(
+        scenarioPath,
+        `${objectPath}.${pass} is not a render pass. Expected one of: ${PLAYTEST_FRAME_PASS_KINDS.join(", ")}.`,
+      );
+    if (typeof ceiling !== "number" || !Number.isFinite(ceiling) || ceiling < 0)
+      throw invalidScenario(scenarioPath, `${objectPath}.${pass} must be a non-negative number of draw calls or triangles.`);
+    budget[pass] = ceiling;
+  }
+  return budget;
+}
 
 function validatePhaseBudget(value: unknown, scenarioPath: string, objectPath: string): Readonly<Record<string, number>> | undefined {
   if (value === undefined) return undefined;

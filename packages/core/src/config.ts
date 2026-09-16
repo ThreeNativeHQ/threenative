@@ -355,6 +355,28 @@ export interface IThreeNativeConfig {
      */
     readonly alphaAntialiasing?: boolean;
     /**
+     * Whether the engine may render an internal mirror of the scene to collapse repeated draws.
+     *
+     * On by default, which is the shipping behaviour and is what an unset option means. The mirror
+     * is opportunistic and correctness-preserving, but it pays a reconciliation cost per frame, so
+     * a game that has measured it as a loss — a scene whose draw count falls without its frame time
+     * following — can decline it with `false`. An opted-out game builds no mirror and runs no
+     * eligibility scan, so the opt-out costs nothing rather than declining each frame; the authored
+     * scene is what renders. The `TN_RENDER_PROJECTION` marker still reports it, with its own
+     * reason code rather than one of the measured declines.
+     */
+    readonly projection?: boolean;
+    /**
+     * Projected diameter, in raster pixels, below which the engine does not submit an object to
+     * the render camera. On by default at a conservative **0.5 px**: an object under half a pixel
+     * cannot light a whole pixel of the frame, so only unresolvable geometry is removed. Set a
+     * larger number for a tuned cut — a shipped game's ladder chose 2 px — or `false` to leave
+     * every object drawn. The measurement still runs with `false`; `TN_PROJECTION` reports how many
+     * objects were considered and skipped. Exempt a single object with `alwaysRender` from
+     * `@threenative/core`; the player's camera-attached objects and shadow casters are already kept.
+     */
+    readonly minimumProjectedPixels?: number | false;
+    /**
      * Android-only rendering overrides selected by the engine.
      *
      * `antialias` belongs here beside `resolutionScale` because they spend the same budget: a

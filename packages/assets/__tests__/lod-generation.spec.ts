@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Document, type GLTF, Logger, NodeIO } from "@gltf-transform/core";
+import { Document, type GLTF, type Node as GltfNode, Logger, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { TorusKnotGeometry } from "three";
@@ -236,6 +236,74 @@ async function joinCarrierGlb(
       .setTargetNode(node)
       .setSampler(sampler);
     animation.addSampler(sampler).addChannel(channel);
+  }
+  return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+}
+
+/**
+ * The real Midway shape: one primitive per mesh, one mesh per sibling node under a shared parent, a
+ * handful of materials. There is no multi-primitive mesh, so the within-mesh join had nothing to
+ * collapse. The node carries the offset, as a Blender export writes it, so a cross-sibling join must
+ * bake that transform into the rung or the merged geometry lands on top of itself.
+ */
+async function siblingCarrierGlb(
+  siblings: number,
+  materials: number,
+  options: { tubular?: number; radial?: number; animatedSiblings?: boolean } = {},
+): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const root = document.createNode("carrier");
+  scene.addChild(root);
+  const tubular = options.tubular ?? 30;
+  const radial = options.radial ?? 20;
+  const geometry = new TorusKnotGeometry(1, 0.35, tubular, radial);
+  const position = Float32Array.from(geometry.attributes.position?.array ?? []);
+  const normal = Float32Array.from(geometry.attributes.normal?.array ?? []);
+  const indices = Uint32Array.from(geometry.index?.array ?? []);
+  const palette = Array.from({ length: materials }, (_, index) =>
+    document
+      .createMaterial(`mat${index}`)
+      .setBaseColorFactor([(index + 1) / (materials + 1), 0.5, 0.25, 1]),
+  );
+  const children: GltfNode[] = [];
+  for (let index = 0; index < siblings; index += 1) {
+    // A hair of per-part geometry keeps `dedup` from collapsing the 146 meshes into one instanced
+    // mesh: the real assets are distinct geometry, not one mesh placed 146 times.
+    const partPosition = Float32Array.from(position);
+    for (let vertex = 2; vertex < partPosition.length; vertex += 3)
+      partPosition[vertex] = (partPosition[vertex] as number) + index * 0.001;
+    const primitive = document
+      .createPrimitive()
+      .setAttribute("POSITION", accessor(document, buffer, "VEC3", partPosition))
+      .setAttribute("NORMAL", accessor(document, buffer, "VEC3", Float32Array.from(normal)))
+      .setIndices(accessor(document, buffer, "SCALAR", Uint32Array.from(indices)))
+      .setMaterial(palette[index % materials] ?? null);
+    const node = document
+      .createNode(`part${index}`)
+      .setMesh(document.createMesh(`part${index}`).addPrimitive(primitive))
+      .setTranslation([(index % 20) * 0.02, Math.floor(index / 20) * 0.02, 0]);
+    root.addChild(node);
+    children.push(node);
+  }
+  if (options.animatedSiblings === true) {
+    const input = accessor(document, buffer, "SCALAR", new Float32Array([0, 1]));
+    const output = accessor(document, buffer, "VEC3", new Float32Array([0, 0, 0, 1, 0, 0]));
+    for (const [index, target] of children.entries()) {
+      const animation = document.createAnimation(`spin${index}`);
+      const sampler = document
+        .createAnimationSampler()
+        .setInput(input)
+        .setOutput(output)
+        .setInterpolation("LINEAR");
+      const channel = document
+        .createAnimationChannel()
+        .setTargetPath("translation")
+        .setTargetNode(target)
+        .setSampler(sampler);
+      animation.addSampler(sampler).addChannel(channel);
+    }
   }
   return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
 }
@@ -990,4 +1058,66 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
     ) as { extensions?: Record<string, { joined?: { error?: number }[] }> };
     expect(json.extensions?.[TN_DISCRETE_LOD]?.joined?.[0]?.error).toBeCloseTo(error, 10);
   }, 180_000);
+
+  it("joins sibling meshes under a shared parent into one draw per material", async () => {
+    // The measured Midway shape: 146 meshes, one primitive each, a handful of materials. There is
+    // no multi-primitive mesh anywhere, so the within-mesh join produced nothing at all.
+    const input = await siblingCarrierGlb(146, 3);
+    const result = await modelPass({
+      lod: { generation: { maxLevels: 1, join: true } },
+      virtual: "none",
+    }).apply(input, "carrier.glb");
+    if (Buffer.isBuffer(result)) throw new Error("unchanged");
+    const summary = result.entry?.lod as IModelLodSummary;
+    expect(summary.join).toBe(true);
+    expect(summary.joined?.draws).toBe(3);
+    expect(summary.joined?.primitives).toBe(146);
+    expect(summary.joined?.groups.map((group) => group.primitives)).toEqual([49, 49, 48]);
+
+    const root = (await readWithLod(result.buffer)).getRoot();
+    const far = root.listMeshes().find((mesh) => mesh.getName() === "carrier__lod_join");
+    expect(far?.listPrimitives()).toHaveLength(3);
+    // Every authored sibling is still there and still LOD0: the far rung is an extra mesh.
+    expect(root.listMeshes().filter((mesh) => mesh.getName().startsWith("part"))).toHaveLength(146);
+    // The artifact records which source meshes the rung collapsed, not just a summary count.
+    const extension = root
+      .listExtensionsUsed()
+      .find((entry) => entry.extensionName === TN_DISCRETE_LOD) as TNDiscreteLod | undefined;
+    const record = extension?.getMetadata()?.joined?.[0];
+    expect(record).toMatchObject({ draws: 3, primitives: 146 });
+    expect(record?.sources).toHaveLength(146);
+    expect(record?.meshes).toHaveLength(146);
+  }, 300_000);
+
+  it("refuses a sibling set whose meshes all move under animation", async () => {
+    const summary = await cook(
+      await siblingCarrierGlb(4, 1, { animatedSiblings: true, tubular: 8, radial: 6 }),
+      { lod: { generation: { maxLevels: 1, join: true } }, virtual: "none" },
+    );
+    expect(summary.joined).toBeUndefined();
+    expect(summary.reasons).toContain("animated");
+  }, 120_000);
+
+  it("keeps a multi-primitive mesh behaving exactly as before", async () => {
+    // The within-mesh path is the subset of the sibling path: one mesh, many primitives, no node
+    // transform between container and mesh. Its far mesh and draws must not move.
+    const input = await joinCarrierGlb(12, 3, { tubular: 8, radial: 6 });
+    const result = await modelPass({
+      lod: { generation: { maxLevels: 1, join: true } },
+      virtual: "none",
+    }).apply(input, "carrier.glb");
+    if (Buffer.isBuffer(result)) throw new Error("unchanged");
+    const summary = result.entry?.lod as IModelLodSummary;
+    expect(summary.joined?.draws).toBe(3);
+    expect(summary.joined?.primitives).toBe(12);
+    const root = (await readWithLod(result.buffer)).getRoot();
+    const far = root.listMeshes().find((mesh) => mesh.getName() === "carrier__lod_join");
+    expect(far?.listPrimitives()).toHaveLength(3);
+    expect(
+      root
+        .listMeshes()
+        .find((mesh) => mesh.getName() === "carrier")
+        ?.listPrimitives(),
+    ).toHaveLength(12);
+  }, 120_000);
 });

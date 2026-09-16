@@ -143,6 +143,70 @@ function fixture(options: IFixtureOptions = {}): IFixture {
   return { container, members, parser: { associations, getDependency, json } };
 }
 
+interface ISiblingFixture extends IFixture {
+  /** The per-part node between the meshes and the shared root: the transform a script would move. */
+  readonly parts: readonly [Group, Group];
+}
+
+/**
+ * The real shape the join could not touch: one primitive per mesh, each mesh under its own part
+ * node, both part nodes under one shared root. The meshes are siblings by container, not by parent.
+ */
+function siblingFixture(options: { readonly animatedPart?: boolean } = {}): ISiblingFixture {
+  const root = new Group();
+  root.name = "carrier";
+  const parts: [Group, Group] = [new Group(), new Group()];
+  parts[0].name = "part0";
+  parts[1].name = "part1";
+  parts[0].position.set(1, 0, 0);
+  parts[1].position.set(-1, 0, 0);
+  const members: [Mesh, Mesh] = [
+    new Mesh(baseGeometry(), undefined),
+    new Mesh(baseGeometry(), undefined),
+  ];
+  parts[0].add(members[0]);
+  parts[1].add(members[1]);
+  root.add(parts[0], parts[1]);
+
+  const associations = new Map<object, Record<string, number>>();
+  associations.set(root, { nodes: 0 });
+  parts.forEach((part, index) => associations.set(part, { nodes: index + 1 }));
+  members.forEach((member, index) =>
+    associations.set(member, { meshes: index, nodes: index + 1, primitives: 0 }),
+  );
+
+  const rung = [
+    {
+      draws: 2,
+      error: 0.05,
+      mesh: "carrier__lod_join",
+      primitives: 2,
+      sources: ["part0#0", "part1#0"],
+      triangles: 2,
+    },
+  ];
+  const json = {
+    animations:
+      options.animatedPart === true ? [{ channels: [{ target: { node: 1 } }] }] : undefined,
+    extensions: { [TN_DISCRETE_LOD]: { joined: rung } },
+    meshes: [
+      { name: "part0", primitives: [{ extensions: { [TN_DISCRETE_LOD]: definition() } }] },
+      { name: "part1", primitives: [{ extensions: { [TN_DISCRETE_LOD]: definition() } }] },
+      { name: "carrier__lod_join", primitives: [{}, {}] },
+    ],
+  };
+  const getDependency = async (type: string, index: number) => {
+    if (type === "mesh") return prototype();
+    return { array: Uint32Array.from(LEVEL_INDICES[index] ?? []) };
+  };
+  return {
+    container: root,
+    members,
+    parts,
+    parser: { associations, getDependency, json },
+  };
+}
+
 async function attached(
   target: IFixture,
   options: { readonly policy?: { hysteresis: number; maxPixelError: number } } = {},
@@ -168,7 +232,9 @@ function nearCamera(): PerspectiveCamera {
 }
 
 function proxies(container: Group): Group[] {
-  return container.children.filter((child): child is Group => child instanceof Group);
+  return container.children.filter(
+    (child): child is Group => child instanceof Group && isLodJoinProxy(child),
+  );
 }
 
 afterEach(() => {
@@ -348,5 +414,81 @@ describe("joined far rung runtime selection", () => {
     expect(proxies(target.container)).toHaveLength(0);
     expect(target.members[0].visible).toBe(true);
     expect(target.members[0].geometry.index?.count).toBe(LEVEL_ONE_TRIANGLES * 3);
+  });
+
+  it("selects a rung that spans sibling meshes and reverts to them exactly", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const target = siblingFixture();
+    expect(await attached(target)).toBe(2);
+    target.members[1].renderOrder = 4;
+    target.members[1].visible = false;
+
+    const scene = new Scene();
+    scene.add(target.container);
+    expect(updateModelLods(scene, farCamera(), 1080)).toBe(2);
+    // Both authored meshes, under their own part nodes, are hidden and one proxy draws them.
+    expect(target.members.every((member) => member.visible === false)).toBe(true);
+    const proxy = proxies(target.container);
+    expect(proxy).toHaveLength(1);
+    expect(proxy[0]?.parent).toBe(target.container);
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("TN_DISCRETE_LOD_JOINED"));
+
+    updateModelLods(scene, nearCamera(), 1080);
+    expect(proxies(target.container)).toHaveLength(0);
+    // Authored visibility, render order and the part-node transforms are untouched.
+    expect(target.members[0].visible).toBe(true);
+    expect(target.members[1].visible).toBe(false);
+    expect(target.parts[0].position.toArray()).toEqual([1, 0, 0]);
+    expect(target.parts[1].position.toArray()).toEqual([-1, 0, 0]);
+    expect(target.members[1].renderOrder).toBe(4);
+  });
+
+  it("refuses a sibling rung once a script moves one of its part nodes", async () => {
+    const target = siblingFixture();
+    await attached(target);
+    // The baseline is captured at load; this is the movement the bake cannot see.
+    target.parts[0].position.x += 7;
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const scene = new Scene();
+    scene.add(target.container);
+
+    updateModelLods(scene, farCamera(), 1080);
+    expect(proxies(target.container)).toHaveLength(0);
+    expect(target.members.every((member) => member.visible === true)).toBe(true);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("moved after load"));
+  });
+
+  it("refuses a sibling rung whose moving part is animation-targeted", async () => {
+    const target = siblingFixture({ animatedPart: true });
+    await attached(target);
+    const scene = new Scene();
+    scene.add(target.container);
+    updateModelLods(scene, farCamera(), 1080);
+    expect(proxies(target.container)).toHaveLength(0);
+    expect(target.members.every((member) => member.visible === true)).toBe(true);
+  });
+
+  it("keeps picking on the authored sibling meshes while the rung is drawn", async () => {
+    const target = siblingFixture();
+    await attached(target);
+    const scene = new Scene();
+    scene.add(target.container);
+    updateModelLods(scene, farCamera(), 1080);
+    const proxy = proxies(target.container)[0];
+    expect(proxy).toBeDefined();
+    expect(isLodJoinProxy(proxy as Group)).toBe(true);
+
+    const picker = new ScenePicker({
+      camera: farCamera(),
+      pointer: () => new Vector2(0, 0),
+      scene,
+      viewport: { size: { height: 720, width: 1280 } } as never,
+    });
+    const hit = picker.raycast({
+      direction: new Vector3(0, -0.01, -1).normalize(),
+      origin: new Vector3(1, 1, 100),
+    });
+    expect(hit).toBeDefined();
+    expect(target.members).toContain(hit?.object);
   });
 });
