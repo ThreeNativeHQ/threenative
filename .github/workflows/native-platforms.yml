@@ -1378,6 +1378,23 @@ jobs:
           node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \
             --container "$TN_RELEASE_CONTAINER_ROOT" \
             --project "$target"
+      # The verifier writes its capture and report into the project, which the starter upload above
+      # already passed by. Collect them into the release-container evidence so the frame is
+      # retrievable and attributable to this exact candidate, not produced and then discarded.
+      - name: Collect the release container's capture and report
+        if: always() && matrix.platform != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP"
+          target="$root/threenative-starter-native"
+          evidence="packages/runtime-native/artifacts/release-container-${{ matrix.platform }}"
+          mkdir -p "$evidence"
+          for name in starter-container.png starter-container.log starter-container-report.json; do
+            [ -f "$target/artifacts/native/$name" ] && cp "$target/artifacts/native/$name" "$evidence/$name"
+          done
+          echo "${{ github.sha }}" > "$evidence/candidate.sha"
+          ls -l "$evidence"
       - name: Launch the relocated container with no developer toolchain
         if: matrix.platform != 'Windows'
         shell: bash
