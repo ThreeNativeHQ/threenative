@@ -61,14 +61,23 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
  */
 export function desktopSigningFromEnvironment(env = process.env) {
   const requested = env.THREENATIVE_DESKTOP_SIGN === '1' || env.THREENATIVE_DESKTOP_SIGN === 'true';
-  const identity = env.THREENATIVE_DESKTOP_CODESIGN_IDENTITY;
-  const certificate = env.THREENATIVE_DESKTOP_SIGN_CERTIFICATE;
-  const subject = env.THREENATIVE_DESKTOP_SIGN_SUBJECT;
-  const keychainProfile = env.THREENATIVE_DESKTOP_NOTARY_PROFILE;
-  const timestampUrl = env.THREENATIVE_DESKTOP_TIMESTAMP_URL;
+  // A CI job writing `SUBJECT: ${{ secrets.WIN_SIGN_SUBJECT }}` with the secret unset hands us the
+  // empty string, not undefined. Treating that as "signing requested" turns a release that used to
+  // produce an unsigned container into a hard failure, so blank reads the same as absent.
+  const set = (value) => (typeof value === 'string' && value.trim() !== '' ? value : undefined);
+  const identity = set(env.THREENATIVE_DESKTOP_CODESIGN_IDENTITY);
+  const certificate = set(env.THREENATIVE_DESKTOP_SIGN_CERTIFICATE);
+  const subject = set(env.THREENATIVE_DESKTOP_SIGN_SUBJECT);
+  const keychainProfile = set(env.THREENATIVE_DESKTOP_NOTARY_PROFILE);
+  const timestampUrl = set(env.THREENATIVE_DESKTOP_TIMESTAMP_URL);
   if (!requested && identity === undefined && certificate === undefined && subject === undefined &&
     keychainProfile === undefined) {
     return undefined;
+  }
+  // Knowable here, so refuse here: the same clash inside signDesktopArtifact costs a whole release
+  // build first. That check stays as well, because `signing` can be passed in directly.
+  if (certificate !== undefined && subject !== undefined) {
+    throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS: THREENATIVE_DESKTOP_SIGN_CERTIFICATE and THREENATIVE_DESKTOP_SIGN_SUBJECT are both set; one of them would be silently ignored.');
   }
   return {
     ...(requested ? { requested: true } : {}),

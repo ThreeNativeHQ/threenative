@@ -127,8 +127,10 @@ identity it claims. The icon tools are required only when `app.icon` is configur
 
 A release container is complete but unsigned. Non-secret inputs come from the build environment,
 while the private key and the notarytool password stay in the OS keychain and are never written into
-the container. Setting `THREENATIVE_DESKTOP_SIGN=1` or providing an identity/certificate/profile
-requests signing; without either, release stays unsigned.
+the container. Setting `THREENATIVE_DESKTOP_SIGN=1`, or providing an identity, certificate, store subject or
+notary profile, requests signing; with none of them, release stays unsigned. A variable set to
+an empty or blank value counts as absent, so an unset CI secret leaves an unsigned container
+rather than failing the release.
 
 | Variable | Meaning |
 | --- | --- |
@@ -140,10 +142,18 @@ requests signing; without either, release stays unsigned.
 | `THREENATIVE_DESKTOP_TIMESTAMP_URL` | Windows Authenticode timestamp server. |
 
 Windows `signtool` signs then verifies the executable. Prefer
-`THREENATIVE_DESKTOP_SIGN_SUBJECT`: it signs with `/n` from the Windows certificate store, so the
-private key never leaves it. `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` uses `/f` and is passed no
-password, so it only works for a password-less `.pfx` — not what a certificate authority issues.
-Setting both is refused rather than silently resolved. macOS `codesign` signs and verifies the
+`THREENATIVE_DESKTOP_SIGN_SUBJECT`: it signs with `/n`, so the private key never leaves the store.
+`THREENATIVE_DESKTOP_SIGN_CERTIFICATE` uses `/f` and is passed no password, so it only works for a
+password-less `.pfx` — not what a certificate authority issues. Setting both is refused rather than
+silently resolved.
+
+Two things about `/n` that decide whether a build machine can sign at all. It searches the
+**`CurrentUser\My`** store only — a certificate imported into `LocalMachine` is not found, and
+signtool reports `No certificates were found that met all the given criteria`. And the subject is
+matched as a **substring**, so a value that hits several certificates lets signtool pick among them;
+give a subject specific enough to match one. The machine store (`/sm`) and cloud or HSM signing
+(`/csp` with `/kc`, or `/dlib` for Azure Trusted Signing and similar) are not reachable through this
+contract. macOS `codesign` signs and verifies the
 bundle, `notarytool` notarizes the archive and `stapler` staples the ticket; a notarization Apple did
 not accept is refused, and an evidence record whose artifact hash is not the produced artifact is
 rejected. Linux has no Authenticode or notarization, so it proceeds unsigned with integrity metadata
