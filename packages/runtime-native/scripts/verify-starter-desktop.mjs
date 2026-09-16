@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
 import { parseLinkedLibraries, resolveContainer } from './desktop-distribution.mjs';
+import { inspectContainerBrand } from './inspect-container-brand.mjs';
 
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
@@ -261,7 +262,7 @@ function launchStarterExecutable(executable, { env = process.env, frames, logPat
 }
 
 // The raw debug artifact and the installed release container are judged by the same markers.
-function judgeStarterRun({ artifact, frames, log, logPath, reportPath, screenshot }) {
+function judgeStarterRun({ artifact, brand, frames, log, logPath, reportPath, screenshot }) {
   const failures = analyzeStarterLog(log, frames);
   if (failures.length > 0) throw new Error(`TN_NATIVE_STARTER_LOG_FAILED:\n${failures.join('\n')}`);
   // Windows (DWM) and macOS (Quartz) always composite, so the default starter's WebView HUD must
@@ -276,6 +277,7 @@ function judgeStarterRun({ artifact, frames, log, logPath, reportPath, screensho
   const image = inspectStarterScreenshot(screenshot);
   const report = {
     artifact,
+    brand,
     completedAt: new Date().toISOString(),
     frames,
     image,
@@ -314,13 +316,47 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
  * launch and reported with its install step, and the container's own integrity records are
  * resolved first, so a tampered or incomplete payload never reaches the launch.
  */
-export function verifyStarterContainer({ root, frames = 300, project = process.cwd(), env, run } = {}) {
+/**
+ * Resolve what the container records and what brand it carries, without running anything.
+ *
+ * Brand is judged before anything launches: a container that carries the wrong identity must not
+ * be rescued by a green frame, and its failure names the surface, not the launch.
+ */
+function inspectContainer(containerRoot, config, projectRoot) {
+  const manifest = resolveContainer(containerRoot);
+  const brand =
+    config === undefined
+      ? null
+      : inspectContainerBrand(containerRoot, config, { project: projectRoot });
+  return { brand, manifest };
+}
+
+/**
+ * Inspect a distributed container's brand on a host that cannot launch it.
+ *
+ * The Windows CI leg packages a real `.exe` with real PE resources but has no interactive desktop
+ * to run it on, and a macOS `.app` can be inspected from anywhere. Integrity records are resolved
+ * first either way, so this is not a weaker check than the launching path — only a shorter one.
+ */
+export function verifyContainerBrand({ root, config, project = process.cwd() } = {}) {
+  if (!root) {
+    throw new Error('TN_NATIVE_STARTER_CONTAINER_MISSING: pass --container <unpacked directory>.');
+  }
+  if (config === undefined) {
+    throw new Error(
+      'TN_NATIVE_STARTER_CLI_INVALID: --brand-only needs --config <resolved config json>.',
+    );
+  }
+  return inspectContainer(resolve(root), config, resolve(project)).brand;
+}
+
+export function verifyStarterContainer({ root, config, frames = 300, project = process.cwd(), env, run } = {}) {
   if (!root) {
     throw new Error('TN_NATIVE_STARTER_CONTAINER_MISSING: pass --container <unpacked directory>.');
   }
   const projectRoot = resolve(project);
   const containerRoot = resolve(root);
-  const manifest = resolveContainer(containerRoot);
+  const { brand, manifest } = inspectContainer(containerRoot, config, projectRoot);
   const executable = join(containerRoot, manifest.executable);
   assertPlayerPrerequisites(manifest, executable, { run });
   const artifactDirectory = join(projectRoot, 'artifacts', 'native');
@@ -329,17 +365,63 @@ export function verifyStarterContainer({ root, frames = 300, project = process.c
   const reportPath = join(artifactDirectory, 'starter-container-report.json');
   mkdirSync(artifactDirectory, { recursive: true });
   const log = launchStarterExecutable(executable, { env, frames, logPath, project: projectRoot, screenshot });
-  return judgeStarterRun({ artifact: executable, frames, log, logPath, reportPath, screenshot });
+  return judgeStarterRun({ artifact: executable, brand, frames, log, logPath, reportPath, screenshot });
 }
 
+/** The consumer config the container is judged against, read as the resolved JSON the packager takes. */
+function readBrandConfig(path) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `TN_NATIVE_STARTER_BRAND_CONFIG_INVALID: ${path} is not readable JSON (${error instanceof Error ? error.message : String(error)}).`,
+    );
+  }
+}
+
+const CLI_VALUE_FLAGS = ['--container', '--config', '--frames', '--project'];
+const CLI_BOOLEAN_FLAGS = ['--brand-only'];
+
+function frameCount(value) {
+  const frames = Number(value);
+  if (!Number.isInteger(frames) || frames <= 0) {
+    throw new Error(
+      `TN_NATIVE_STARTER_CLI_INVALID: --frames needs a positive whole number, not '${value}'.`,
+    );
+  }
+  return frames;
+}
+
+/**
+ * Every flag is recognized and every value is present, or the run stops.
+ *
+ * A flag that silently does nothing turns a check off without saying so: `--config $EMPTY` drops
+ * brand inspection, `--container $EMPTY` quietly runs the developer-artifact path against a
+ * different binary than the one under test, and a mistyped flag does either without a word.
+ */
 function parseCliFlags(argv) {
   const options = {};
-  for (let index = 0; index < argv.length; index += 2) {
+  for (let index = 0; index < argv.length; ) {
     const flag = argv[index];
+    if (CLI_BOOLEAN_FLAGS.includes(flag)) {
+      options.brandOnly = true;
+      index += 1;
+      continue;
+    }
+    if (!CLI_VALUE_FLAGS.includes(flag)) {
+      throw new Error(
+        `TN_NATIVE_STARTER_CLI_INVALID: unknown flag '${flag}'. Supported: ${[...CLI_VALUE_FLAGS, ...CLI_BOOLEAN_FLAGS].join(', ')}.`,
+      );
+    }
     const value = argv[index + 1];
-    if (flag === '--container' && value) options.root = resolve(value);
-    else if (flag === '--frames' && value) options.frames = Number(value);
-    else if (flag === '--project' && value) options.project = resolve(value);
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(`TN_NATIVE_STARTER_CLI_INVALID: ${flag} needs a value.`);
+    }
+    if (flag === '--container') options.root = resolve(value);
+    else if (flag === '--config') options.config = readBrandConfig(resolve(value));
+    else if (flag === '--frames') options.frames = frameCount(value);
+    else options.project = resolve(value);
+    index += 2;
   }
   return options;
 }
@@ -347,8 +429,18 @@ function parseCliFlags(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     const options = parseCliFlags(process.argv.slice(2));
+    if (options.brandOnly) {
+      const brand = verifyContainerBrand(options);
+      console.log(
+        `container brand verified: ${brand.name?.name ?? '(no configured name)'}\n${JSON.stringify(brand, null, 2)}`,
+      );
+      process.exit(0);
+    }
     const report = options.root ? verifyStarterContainer(options) : verifyStarterDesktop(options);
-    console.log(`starter desktop gate passed: ${report.frames} frames, ${report.image.colors} colors, ${report.image.cyanAssetPixels} asset pixels`);
+    const brand = report.brand === undefined || report.brand === null
+      ? 'brand NOT inspected (pass --config <resolved config json>)'
+      : `brand ${report.brand.name?.name ?? 'unnamed'} verified`;
+    console.log(`starter desktop gate passed: ${report.frames} frames, ${report.image.colors} colors, ${report.image.cyanAssetPixels} asset pixels, ${brand}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

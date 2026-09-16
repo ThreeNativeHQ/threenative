@@ -120,7 +120,12 @@ identity it claims. The icon tools are required only when `app.icon` is configur
 
 1. Build: `pnpm exec threenative build --target desktop --mode release`.
 2. Verify on a player image with no Node and no engine checkout:
-   `verify-starter-desktop.mjs --container <unpacked-directory>`.
+   `verify-starter-desktop.mjs --container <unpacked-directory> --config <project>/.threenative/build/config.json`.
+   `--config` points the verifier at the resolved consumer config the build already wrote, and the
+   container's launcher name, embedded icon and declared loading sequence are then inspected before
+   anything launches — on Windows by reading the executable's own `RT_GROUP_ICON`/`RT_ICON` and
+   `RT_VERSION` resources, not the manifest beside it. Without `--config` the gate says
+   `brand NOT inspected` rather than implying the identity was checked.
 3. Sign where the store requires it (below), then hand the archive to your installer or store depot.
 
 ### Signing and store/depot handoff
