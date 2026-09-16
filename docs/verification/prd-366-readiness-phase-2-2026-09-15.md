@@ -529,24 +529,42 @@ run 2  exit 0  5 assertions   run 4  exit 0  5 assertions
 4/4 pass, same artifact `3f24116fb41a` each time. So arm64-v8a gameplay is proven **under the
 conditions tested**, and the earlier one-run failure is not reproducible under them.
 
-**The confound is real and was NOT isolated — so the phase-3 item is not dropped.** Between the
-failing run and the passing runs the device state changed in a way this lane did not control: the
-failure happened at **15% battery, discharging, no stay-awake**; all four passes happened at
-**74-82%, on AC, with `stay_on_while_plugged_in=15` set**. That setting and the charger were
-introduced deliberately for the device lane, not as an experiment, which means the variable moved
-between the two observations. Reproducing the failing condition would require draining the phone to
-~15% and disabling stay-awake; that was not done.
+**The confound is an operator intervention on the machine under test, and it was NOT isolated — so
+the prior failure is not retired.** Between the failing run and the passing runs the device state
+did not merely drift: **the lane coordinator plugged the Pixel into AC and set
+`stay_on_while_plugged_in=15` to hold the screen awake, at the owner's request.** That is a
+deliberate change to the machine under test, made by a person, between the two observations — not
+an independent variable that happened to move. Stated precisely: the failure happened at **15%
+battery, discharging, screen not held awake**; all four passes happened at **74-82%, on AC, with
+`stay_on_while_plugged_in=15` set**. Reproducing the failing condition would require draining the
+phone to ~15% and restoring `stayon false`; that was not done, so the intervention and the outcome
+change are confounded and neither can be credited over the other.
 
-The defensible statement, therefore, is narrower than "no defect exists":
+An earlier draft of this paragraph said the "only measured difference between the two runs is device
+state". That was **false as written** — it omitted that a person changed that state on purpose — and
+it is corrected here rather than footnoted, because this is the paragraph a reader uses to weigh the
+whole hardware claim.
 
-- Physical arm64-v8a passes the consumer gameplay scenario 4/4 on a charged, awake Pixel 8.
-- One physical run aborted before assertions on the same APK under low-battery/discharging
-  conditions. Its cause was misattributed by me (see above) and the real `diagnostics[0]` was not
-  retained, so it is **unexplained**, not explained-and-dismissed.
-- **Open for phase 3:** whether a physical device under power pressure aborts before gameplay, and
-  whether the row should retain `diagnostics[0]` so a future abort names itself instead of showing
-  only the generic pre-assertion shape. Four passes under one condition do not close a failure
-  observed under another.
+**The claim this evidence supports** is therefore narrower than "no defect exists", and narrower
+than "arm64-v8a is proven" full stop:
+
+> Physical arm64-v8a is **proven across four runs, with a named unexplained prior failure.**
+
+Unpacked:
+
+- Physical arm64-v8a passes the consumer gameplay scenario **4/4** on a charged, awake Pixel 8,
+  cold-launched each time.
+- One physical run aborted **before assertions ran** on the same APK under low-battery/discharging
+  conditions. Its cause was misattributed by me (see above) and the real `diagnostics[0]` was never
+  retained, so it is **unexplained**. A run that aborted on the very target now being claimed is
+  evidence of something even while unexplained; it is not "no evidence in either direction", and it
+  is not dismissed by later passes under a changed and partly intervened-upon device state.
+- **Survives as a phase-3 observation, not retired:** *physical arm64 aborted before assertions
+  once; cause unisolated, did not reproduce across four subsequent runs under changed and partly
+  intervened-upon device state.* The open questions it carries: whether a physical device under
+  power pressure aborts before gameplay, and whether the consumer row should retain
+  `diagnostics[0]` so a future abort names itself instead of showing only `failureReport()`'s
+  generic pre-assertion shape.
 
 ### Android (emulator, x86_64) — PASS
 
@@ -643,12 +661,57 @@ new file that is the actual substance. What ships:
 - EDIT `packages/create-threenative/__tests__/scaffold.spec.ts` — starter scaffold hash.
 - EDIT this file and the PRD.
 
+## Full runtime-native suite — the reds here are environmental, named so the claim is checkable
+
+`pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts` on this
+machine at HEAD: **Test Files 4 failed | 112 passed (116); Tests 8 failed | 1204 passed | 23
+skipped (1235).** The four files, all of the standing "contract binary is not built" class —
+`pnpm native:build` builds `mystral` but not the contract-test targets, so an absent executable is
+reported as a failure rather than a silent pass:
+
+| File | Failed | Cause |
+| --- | --- | --- |
+| `tests/rg11b10-renderable.test.mjs` | 2 | `build/tn-linux{,-quickjs}/threenative-rg11b10-renderable-test is not built` |
+| `tests/timestamp-query.test.mjs` | 2 | same class, timestamp-query target |
+| `tests/crash-handler-policy.test.mjs` | 1 | same class |
+| `tests/runtime-next-contract.test.mjs` | 3 | same class (`tn-linux-quickjs`, Canvas2D lane) |
+
+`grep -l verify-starter` over all four returns **nothing**, so none imports anything this branch
+changed — the attribution is checkable rather than asserted.
+
+**My count differs from the reviewer's (4 files / 8 tests here vs 7 files / 21 reported), and the
+difference is itself informative.** Two of its seven were its own worktree's unbuilt
+`packages/playtest/dist`, which is built here. A `tests/webtransport/webtransport.test.ts` failure
+also appeared in one earlier full run here (1 of 36, after 92.8 s) and did not recur in this one, so
+that one is a flake rather than a standing red. Counts of this suite are worktree-dependent; only
+the per-file causes above are stable.
+
+**Precision on the CI half of this claim:** `test-native` passed on CI in run `35054258943`
+(job `104662199850`, 7m30s) against `97637e6f9`. It has **not** re-run to completion on the current
+HEAD — successive pushes cancelled the runs in between, and the run for the latest commit is queued
+at the time of writing. So "CI builds these targets and they pass" is verified for `97637e6f9`, not
+yet for HEAD.
+
 ## Not fixed in this pass (non-blocking review findings)
 
-Recorded so they are not lost: `--qualify-existing` trusts the row file rather than re-running;
+**Promoted to a named phase-3 follow-up, because it lost data in practice rather than in theory:**
+consumer rows are keyed by `target` alone, so the physical Pixel run **overwrote** the emulator row
+in `consumer-targets.json`. Both Android rows survive only because they are written out in this
+document by hand. A target that can be reached by more than one device needs the device identity in
+the key. Recorded as an open item under PRD-366 phase 3, which already owns physical-device
+qualification. *Alternative rejected:* minting a new PRD number for it — the owner is AFK, a number
+cannot be confirmed free tonight, and phase 3 is the natural owner; split it out if it grows past
+that.
+
+**Silent hole the moment the scenario grows:** only four assertion families are mapped in
+`CONSUMER_ASSERTION_FAMILIES` (`diagnostics`, `movement`, `resources`, `visibility`). A scenario
+declaring any other family — `components`, say — has it **silently ignored** by the coverage check,
+exiting 0 with the family dropped. Harmless for the shipped starter, whose scenario declares exactly
+those four keys and all are recognised. It becomes a real hole as soon as a scenario declares a
+fifth. The fix is to refuse an unrecognised declared key rather than skip it.
+
+Also recorded so they are not lost: `--qualify-existing` trusts the row file rather than re-running;
 `readConsumerTargetRows` (`scripts/verify-registry-install.ts:493`) never checks `pass`/`assertions`
-and does not affect `exitCode`; rows are keyed by `target` alone, so a device run overwrites an
-emulator run (hit in practice here — both Android rows are recorded in this document because the
-file holds one); `desktop.ts:196` reclassifies the game's own `[Audio] Failed to open audio device`
-to `log` with no override; and the router guard in `verify-starter-desktop.mjs:14` uses a path-string
-compare where both wrapped files use `pathToFileURL`.
+and does not affect `exitCode`; `desktop.ts:196` reclassifies the game's own `[Audio] Failed to open
+audio device` to `log` with no override; and the router guard in `verify-starter-desktop.mjs:14`
+uses a path-string compare where both wrapped files use `pathToFileURL`.
