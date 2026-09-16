@@ -337,8 +337,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // into each template's Ownership paragraph so it adds no line to AGENTS.md or its CLAUDE.md mirror
   // (the mirror banner costs two lines, so both must stay under the 100-line cap), and the branch
   // rebased onto origin/develop. All ten trees move together; no other template source changed.
-  "action-rpg": "d58f89388beaa82a660ba7d2729301fe9377bda397255fe70bde6223fbd36df3",
-  defense: "c45691b24f4a0f5c7b74a21bf98c0f452fe58258b570eeb78228c0ae8798ac92",
+  "action-rpg": "938b0ed8712ea1af90a8c34ae924cff758ffe6b4e41ab906cb14da267a1a67c8",
+  defense: "a5543a58e85b567ec3788967cab521a3f08ac5a5b6f502a782e947ac6913ccde",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -346,17 +346,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "f2c809f02d8affc02bc54f5dfddcd4e0902997166d8c83db67760711d97bc4ac",
-  platformer: "56b1fe3a46d7d2ee60fe9b3b5aef382439560930ed6430f7f1a66aea7f1ef0a2",
-  runner: "c294143639312ae4c63f63c0236c650afcbba6b905d8ed636221fe9a5ee458ff",
-  puzzle: "b3a7b0a33a0f15d8391e1585b28ea26339ce7982ed6b6eadad4f0a9e73e31fa8",
-  racing: "2874d07685ee094634955790c58c000dbd15bef6c06e92aed52b2209256df542",
-  shooter: "eac90b2605bb99fa1062a56d344847100ea56843ab7949a333fc2cfb3dee56ab",
+  minimal: "c50b05654983f31baebdb3d3dd7c0b8b224fc29f11c6c3cd37105fcc6b757263",
+  platformer: "ca4d68687aeb01aa2246ba9c560472c5dd1f570ae30e526074b38d728e830b9a",
+  runner: "ddcd7f9368125f93d2c5cbbd00e05f6ca00b5ab78482bed0eb43733157def2e5",
+  puzzle: "0b10fd209bb1c2fcb631f27166f18276db3bb983654978e37be84c6fce355de7",
+  racing: "d518e7df2ffaacffb227e270b59b89740bb9641620058e2712ff09c815af3fcb",
+  shooter: "a833feaf9451e146fc2f24a0af1710d72aadef08493096709924e2bcbeb86c88",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "185995aaadcbc21f464417d2f8a7b6370f6d1a4e9facf17dad683173fc25b637",
+  starter: "969d37fdf6a8ab238ce46b8306ffc9f450ffc3b2cf83a85dfd6affc93671d4cd",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -382,7 +382,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "d0c3d805e9c52cd48cff5f1eae5b1945fadd42718e6e7ac5bc3c11be3632170f",
+  sailing: "27ba68d307cca03d71e8b36ec36ac18d43d9182a42bd1b743a07c99e6eece21e",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
