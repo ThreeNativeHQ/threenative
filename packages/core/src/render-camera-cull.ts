@@ -11,10 +11,14 @@ import { isRenderable } from "./projection-plan.js";
  * knows the render camera, the object's world bounds and the drawing-buffer height, so it can take
  * that draw without the game discovering the rule by hand.
  *
- * The rule is deliberately narrow. An object is skipped only when its **world bounding sphere**
- * projects to fewer pixels than {@link DEFAULT_MINIMUM_PROJECTED_PIXELS} *in the camera about to
- * render it*, and only when nothing offers a reason to keep it (see {@link alwaysRender},
- * shadow casting, and camera-attached objects). The one flag it writes is `Object3D.visible`,
+ * The rule is deliberately narrow, and it never acts on a bound it cannot trust. An object is
+ * skipped only when its **world bounding sphere** projects to fewer pixels than
+ * {@link DEFAULT_MINIMUM_PROJECTED_PIXELS} *in the camera about to render it*, and only when
+ * nothing offers a reason to keep it: {@link alwaysRender}, a shadow caster, a camera-attached
+ * object, an object that already set `frustumCulled = false`, or a bound that is absent,
+ * degenerate (a zero or non-finite radius is not a size) or stale (the position buffer was
+ * rewritten after the sphere was computed — a changed buffer is recomputed, never trusted). The
+ * one flag it writes is `Object3D.visible`,
  * which three reads after batch grouping; `castShadow`, `layers` and `frustumCulled` are never
  * touched, because flipping those per frame churns the projection's batch key and can make the
  * whole scene decline.
@@ -48,6 +52,8 @@ interface ICullable {
   geometry?: {
     boundingSphere?: IBoundingSphereLike | null;
     computeBoundingSphere?: () => void;
+    /** Three bumps `version` whenever the buffer is re-uploaded; it is how a stale bound is told. */
+    attributes?: { position?: { version?: number } };
   };
 }
 
@@ -86,6 +92,8 @@ export interface IRenderCameraCullReport {
   readonly exemptMarked: number;
   readonly exemptShadowCasters: number;
   readonly exemptWithoutBounds: number;
+  /** Objects that already set `frustumCulled = false`, and so never had trustworthy bounds. */
+  readonly exemptFrustumCulled: number;
 }
 
 /**
@@ -123,6 +131,8 @@ export class RenderCameraCull {
   readonly #projectionScreen = new Matrix4();
   readonly #hidden: Object3D[] = [];
   readonly #visitor: (object: Object3D) => void;
+  /** Last position-buffer version seen per geometry, so a rewritten dynamic bound is recomputed. */
+  readonly #positionVersions = new WeakMap<object, number>();
   #hiddenCount = 0;
   #camera: Camera | undefined;
   #cameraX = 0;
@@ -136,6 +146,7 @@ export class RenderCameraCull {
   #exemptMarked = 0;
   #exemptShadowCasters = 0;
   #exemptWithoutBounds = 0;
+  #exemptFrustumCulled = 0;
 
   constructor(options: IRenderCameraCullOptions = {}) {
     const requested = options.minimumPixels ?? DEFAULT_MINIMUM_PROJECTED_PIXELS;
@@ -161,6 +172,7 @@ export class RenderCameraCull {
       exemptMarked: this.#exemptMarked,
       exemptShadowCasters: this.#exemptShadowCasters,
       exemptWithoutBounds: this.#exemptWithoutBounds,
+      exemptFrustumCulled: this.#exemptFrustumCulled,
     };
   }
 
@@ -180,6 +192,7 @@ export class RenderCameraCull {
     this.#exemptMarked = 0;
     this.#exemptShadowCasters = 0;
     this.#exemptWithoutBounds = 0;
+    this.#exemptFrustumCulled = 0;
     this.#cameraResolved = true;
     this.#camera = undefined;
     // The walk runs whether or not the gate is enabled: turning the convention off must not turn
@@ -239,14 +252,24 @@ export class RenderCameraCull {
       this.#exemptMarked += 1;
       return;
     }
+    // `frustumCulled = false` is the game's standing instruction that its bounds cannot be
+    // trusted — the pooled tracer, particle and whitewater batches set it for exactly that
+    // reason. A second, stricter cull does not get to override the opt-out.
+    if (object.frustumCulled === false) {
+      this.#exemptFrustumCulled += 1;
+      return;
+    }
     // A shadow can be cast from far outside the main view, so a caster off the main camera is
     // never dropped on the main camera's projection alone. This is the most-permissive
     // multi-camera rule the engine can apply: the per-light shadow cameras are three's own and not
     // cheaply enumerable here, so where the gate cannot know, it keeps the caster. A caster the
     // main camera *can* see is ordinary geometry — its shadow is in view with it, and a
     // sub-resolution object casts a sub-resolution shadow.
-    const sphere = boundsOf(object);
-    if (sphere === undefined) {
+    const sphere = boundsOf(object, this.#positionVersions);
+    // A zero or non-finite radius is not a size: a point has no projected diameter, and a pooled
+    // buffer whose first compute saw it empty caches exactly that. Read it as "no usable bounds"
+    // and keep the object, never as "infinitely small" and delete it.
+    if (sphere === undefined || !(Number.isFinite(sphere.radius) && sphere.radius > 0)) {
       this.#exemptWithoutBounds += 1;
       return;
     }
@@ -283,13 +306,25 @@ export class RenderCameraCull {
   }
 }
 
-function boundsOf(object: Object3D): IBoundingSphereLike | undefined {
+function boundsOf(
+  object: Object3D,
+  versions: WeakMap<object, number>,
+): IBoundingSphereLike | undefined {
   const cullable = object as unknown as ICullable;
+  // An `InstancedMesh` carries its own instance-aware bound; the geometry one is not it.
   if (cullable.boundingSphere != null) return cullable.boundingSphere;
   const geometry = cullable.geometry;
   if (geometry === undefined) return undefined;
-  if (geometry.boundingSphere == null && typeof geometry.computeBoundingSphere === "function") {
-    geometry.computeBoundingSphere();
+  const version = geometry.attributes?.position?.version;
+  const known = versions.get(geometry);
+  if (geometry.boundingSphere == null) {
+    geometry.computeBoundingSphere?.();
+  } else if (version !== undefined && known !== undefined && known !== version) {
+    // The buffer was rewritten under a cached sphere, which is now a stale size that *looks*
+    // valid. Recompute rather than trust it. Only a changed buffer pays this, so a static scene
+    // computes once and a dynamic one pays only where its bounds are actually consulted.
+    geometry.computeBoundingSphere?.();
   }
+  if (version !== undefined) versions.set(geometry, version);
   return geometry.boundingSphere ?? undefined;
 }

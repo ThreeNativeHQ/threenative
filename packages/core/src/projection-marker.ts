@@ -48,6 +48,7 @@ export interface IProjectionWindowJson {
     readonly exemptMarked: number;
     readonly exemptShadowCasters: number;
     readonly exemptWithoutBounds: number;
+    readonly exemptFrustumCulled: number;
   };
   readonly window: number;
 }
@@ -94,6 +95,7 @@ export function formatProjectionWindow(
             exemptMarked: cull.exemptMarked,
             exemptShadowCasters: cull.exemptShadowCasters,
             exemptWithoutBounds: cull.exemptWithoutBounds,
+            exemptFrustumCulled: cull.exemptFrustumCulled,
           },
         }),
     drawsPlanned: report.drawsPlanned,
