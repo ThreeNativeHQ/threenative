@@ -128,9 +128,11 @@ payload integrity are claimed. PRD-365's writer emits no `loading` record, so a
 configured `bootSplash` still reports missing evidence rather than a UI-only pass — and the real
 container run confirmed the consequence: `TN_NATIVE_STARTER_CONTAINER_LOADING_MISSING` fires on any
 container built from the scaffolded starter's own config, which declares `bootSplash` by default.
-Emitting that record is container-writer work in `desktop-distribution.mjs` and belongs to PRD-365,
-not to this phase's file budget; it is named here as the remaining gap rather than silently widened
-into.
+Emitting that record is container-writer work in `desktop-distribution.mjs`; on the owner's
+2026-09-15 decision it is now done here under an explicitly widened file budget, so
+`packageDesktopContainer` records `loading.bootSplash` as the authored colour plus the authored
+image's hash, and records `{ bootSplash: null }` for a game that configures none — writing nothing
+would leave a consumer unable to tell "no splash configured" from "evidence missing".
 **Brand inspection is opt-in on the CLI, not default-on**, because the scaffold copies the engine's
 own `template-assets/icon.png` to a starter's `public/icon.png`: a stock, unbranded starter would
 fail `TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT` by design, and turning the check on by
@@ -158,8 +160,19 @@ now fail. Relative authored assets resolve against `options.project`. Loading an
 both run; UI existence cannot substitute for a configured splash. Existing fixtures now use the
 producer's `{ sha256 }` inventory shape. No screenshot/runtime launch behavior was changed.
 
-**Files (maximum five):**
+**Owner decision, 2026-09-15 — the file budget is widened for one file.** The gate as specified was
+unreachable: `templates/starter/threenative.config.ts` sets `bootSplash`, and neither
+`package-desktop.mjs` nor `desktop-distribution.mjs` contained a single occurrence of `loading`, so
+every container derived from the stock template failed `TN_NATIVE_STARTER_CONTAINER_LOADING_MISSING`
+and the real-container run had to strip `bootSplash` to go green — the check protected approximately
+no real project. The owner chose to emit the record here rather than open a separate PR against
+PRD-365's surface, which has landed on `develop` and is now just develop code. `EDIT
+packages/runtime-native/scripts/desktop-distribution.mjs` is therefore a sixth file in this phase by
+explicit decision, not scope creep.
 
+**Files (maximum five, plus one by the owner decision above):**
+
+- EDIT `packages/runtime-native/scripts/desktop-distribution.mjs` — record the configured loading sequence in the container manifest (owner-approved sixth file).
 - EDIT `packages/runtime-native/scripts/verify-starter-desktop.mjs` — launch packaged app and inspect configured brand evidence.
 - EDIT `packages/runtime-native/tests/starter-desktop.test.mjs` — wrong-resource and missing-brand controls.
 - EDIT `packages/create-threenative/README.md` — point users to game-owned branding surfaces.

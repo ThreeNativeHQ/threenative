@@ -440,3 +440,38 @@ The verdict on `7bb0df3a6` was **NEEDS CORRECTION**. Findings 1, 2 and 3 were co
 `16fd1593d`, finding 5 here; finding 4 above is this lane's own, and finding 6 is disclosed and
 unchanged by design. No reviewer PASS is claimed for the corrected head; a re-review is the next
 step, and the phase's reviewer box stays open.
+
+## The container now records its loading sequence — owner decision, 2026-09-15
+
+The gate as shipped above was unreachable for real projects. `templates/starter/threenative.config.ts`
+sets `bootSplash`, and a grep of both `package-desktop.mjs` and `desktop-distribution.mjs` found
+**zero** occurrences of `loading`, so every container derived from the stock template failed
+`TN_NATIVE_STARTER_CONTAINER_LOADING_MISSING` — which is exactly why the real-container arm recorded
+earlier had to strip `bootSplash` to go green. The owner widened this phase's file budget by one file
+to fix it here rather than in a separate PR against PRD-365's now-landed surface.
+
+`desktop-distribution.mjs` owns the manifest write (`packageDesktopContainer`, the `writeFileSync` at
+`stage(paths.manifest)`); `package-desktop.mjs` only passes the config through. The new
+`containerLoading(config)` records the authored `backgroundColor` and the authored image's sha256,
+and records `{ bootSplash: null }` when the game configures none. It resolves before any staging, so
+a declared-but-absent splash refuses the release with `TN_DESKTOP_SPLASH_IMAGE_MISSING` rather than
+producing an archive.
+
+The splash is drawn by the game's own generated `src/render/loading.ts` from assets already inside
+the bundle, so the record is identity, not a second copy of the image.
+
+### Red then green — producer and consumer in one test
+
+Written against `tests/desktop-container.test.mjs` deliberately as a **seam** test: each side alone
+proved nothing before, which is how the mismatch survived.
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Red | `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/desktop-container.test.mjs` | **5 failed / 32 passed (37)**, exit 1 |
+| Green | the desktop family (6 files) | **205 passed**, exit 0 |
+
+The five rows: a configured `bootSplash` with an image is recorded and the inspector reads the same
+colour and hash back; a colour-only splash round-trips with a null image hash; a game with no splash
+records `{ bootSplash: null }` rather than omitting the evidence; a recorded splash that disagrees
+with the config is still refused (`LOADING_MISMATCH`); and a declared splash image that is not on
+disk refuses the release.
