@@ -66,7 +66,7 @@ export const primaryNav: readonly INavEntry[] = [
   },
   {
     label: "Docs",
-    target: { kind: "external", href: `${REPOSITORY}/tree/main/docs` },
+    target: { kind: "internal", path: "/docs" },
   },
   {
     label: "Community",
@@ -146,7 +146,7 @@ export const footerNav: readonly INavEntry[] = [
 ];
 
 export function navHref(target: NavTarget): string | undefined {
-  if (target.kind === "anchor") return target.hash;
+  if (target.kind === "anchor") return `/${target.hash}`;
   if (target.kind === "external") return target.href;
   if (target.kind === "internal") return target.path;
   return undefined;
