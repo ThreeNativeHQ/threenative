@@ -82,6 +82,14 @@ same run put the transport's own phases side by side:
 | plan off | 33.06 / 32.90 / 32.66 | 0.002 | 0.079 / 0.087 / 0.079 | 29.6 / 29.5 / 29.3 |
 | plan on | 33.33 / 33.38 / 33.49 | 0.081 / 0.081 / 0.084 | 0.204 / 0.207 / 0.185 | 29.6 / 29.7 / 29.9 |
 
+The same scene at 320×180 is pinned to the presentation cap instead: period p50 16.67 ms with a
+JavaScript budget of 1.7–1.9 ms per frame (period mean minus the sum of the host segments), of which
+the recorder is ~0.3 ms — about 17% of the JS and 2% of the frame, which is why the arms stay inside
+the spread here too. Uncapping that lane needs `maxFps` embedded in the bundle: `mystral compile`
+bundles the entry alone, and both the compiled and the loose run against a hand-written
+`.threenative/config.json` still booted with `Presentation cap: 60 fps`, so the lane could not be
+uncapped here.
+
 The plan arm's drain costs 0.08 ms (building the patch and folding it back into the plan) and its
 replay costs 0.08–0.12 ms more than the v2 replay, which is a 2.5× on that phase and larger than the
 patch application can explain: it is the one number here worth chasing if activation is ever
