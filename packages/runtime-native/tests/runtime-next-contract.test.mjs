@@ -56,7 +56,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'audio-source-properties.js': 'e631cdd093d660c0ada6f9cf23e0627a2bd1f16d22d8c003c52d7f86419d29ef',
   'audio-gain-param.js': 'd12e77670eaafe552e90d9fcc78a95d51f872922880bb95b8d51e1bad23b9723',
   'audio-panner-properties.js': '347b79924b271915fce4259f5cd1ca48ce334d59d76b18730014bd1670cf1cea',
-  'canvas2d-properties.js': '90614cfd7e7c44c885e7bd719b5404ed544adee78b4b2758d4e6e494feeb0e71',
+  'canvas2d-properties.js': 'e9bd1ff7562fca7cb16ec1c57ffb05aee9dbead65e1d38cebb9d2d710af5bdf7',
 };
 
 const RUNTIME_SCRIPT_LOADERS = {
@@ -299,6 +299,63 @@ test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap',
   assert.doesNotMatch(audio, /engine->evalScript\(\s*"/u, 'Web Audio constructor still owns an inline JavaScript string');
   assert.doesNotMatch(canvas, /const char\*\s+setupPropertyInterceptors\s*=\s*R"/u, 'Canvas2D bindings still own a raw JavaScript string');
   assert.match(runtime, /__tnOnloadCallback/u, 'onload trigger must receive the callback through the host bridge');
+});
+
+/**
+ * The hash above says the script changed on purpose. It cannot say the change works, and this one
+ * is a seam: every property the script defines calls a `__native*` name the C++ bindings must
+ * register, and a script that delegates to a name nobody installed throws inside a 2D context the
+ * game never sees fail — the shape that rendered a white cockpit on native. So run the script the
+ * way the runtime does and check both sides of the seam.
+ */
+test('the Canvas2D property script delegates to bindings the native side registers', () => {
+  const calls = [];
+  const native = (name, value) => calls.push([name, value]);
+  // Mutable so a read can be proven to observe restored native state, not a JavaScript shadow.
+  let lineJoin = 'round';
+  const dashSegments = { 0: 5, 1: 3, length: 2 };
+  const ctx = {
+    __nativeGetLineCap: () => 'butt',
+    __nativeSetLineCap: (value) => native('lineCap', value),
+    __nativeGetLineJoin: () => lineJoin,
+    __nativeSetLineJoin: (value) => { native('lineJoin', value); lineJoin = value; },
+    // The binding returns a host array-like, not a JS Array. Copying it is the whole job: the spec
+    // says getLineDash hands back a copy, and Three's dashed materials call .slice() on it.
+    __nativeGetLineDash: () => dashSegments,
+    __nativeSetFillStyle: (value) => native('fillStyle', value),
+    __nativeSetStrokeStyle: (value) => native('strokeStyle', value),
+    __nativeSetLineWidth: (value) => native('lineWidth', value),
+    __nativeSetGlobalAlpha: (value) => native('globalAlpha', value),
+    __nativeSetFont: (value) => native('font', value),
+    __nativeSetTextAlign: (value) => native('textAlign', value),
+    __nativeSetTextBaseline: (value) => native('textBaseline', value),
+  };
+  runInNewContext(read('src/runtime-scripts/canvas2d-properties.js'), { __canvas2dContextTemp: ctx });
+
+  assert.equal(ctx.lineJoin, 'round', 'the getter must read the native value, not a shadow copy');
+  ctx.lineJoin = 'bevel';
+  assert.deepEqual(calls.at(-1), ['lineJoin', 'bevel']);
+  lineJoin = 'miter';
+  assert.equal(ctx.lineJoin, 'miter', 'a read observes restored native state, not a JavaScript shadow');
+
+  const dash = ctx.getLineDash();
+  assert.ok(Array.isArray(dash), 'getLineDash must return a real Array');
+  // Array.from re-homes it: the script builds the copy inside the runtime's realm, the way the
+  // real engine does, and a cross-realm Array is not deep-strict-equal to one made out here.
+  assert.deepEqual(Array.from(dash), [5, 3]);
+  dash[0] = 99;
+  dash.push(99);
+  const second = ctx.getLineDash();
+  assert.notEqual(dash, second, 'each call must hand back a fresh array');
+  assert.deepEqual(Array.from(second), [5, 3], 'the returned pattern is a copy');
+  assert.deepEqual(dashSegments, { 0: 5, 1: 3, length: 2 }, 'the native segments are not mutated');
+
+  // Every name the script reaches for must exist on the C++ side. `setLineDash`, `clip` and
+  // `createRadialGradient` are methods the bindings install directly; the game calls them by name.
+  const bindings = readCpp('src/canvas/canvas2d_bindings');
+  for (const name of [...new Set([...read('src/runtime-scripts/canvas2d-properties.js').matchAll(/__native\w+/gu)].map((match) => match[0])), 'setLineDash', 'clip', 'createRadialGradient']) {
+    assert.match(bindings, new RegExp(`"${name}"`, 'u'), `${name} is not registered by canvas2d_bindings`);
+  }
 });
 
 test('WebTransport stream writes wait for native capacity and retain their input', async () => {

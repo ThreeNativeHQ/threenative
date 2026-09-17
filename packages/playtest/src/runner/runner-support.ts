@@ -136,6 +136,7 @@ export async function provideRunDisplay(): Promise<IProvidedDisplay> {
   const provided = await provideDisplay();
   writeCaptureState({
     captureDisplay: {
+      ...(provided.compositor === undefined ? {} : { compositor: provided.compositor }),
       ...(provided.display === undefined ? {} : { display: provided.display }),
       ...(provided.strategy.kind === "private-xvfb" ? { screen: provided.strategy.screen } : {}),
       strategy: provided.strategy.kind,

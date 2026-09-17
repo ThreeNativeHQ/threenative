@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
@@ -10,6 +10,7 @@ import {
   classifyDependencies,
   CONTAINER_MANIFEST,
   containerMetadata,
+  extractContainer,
   packageDesktopContainer,
   pngToIco,
   parseLinkedLibraries,
@@ -325,6 +326,79 @@ for (const fail of [false, true]) {
     if (fail) assert.throws(build, /TN_DESKTOP_ARCHIVE_FAILED/);
     else assert.equal(build().archive, output);
     assert.equal(readFileSync(output, 'utf8'), fail ? 'previous archive' : 'fresh archive');
+  });
+}
+
+/**
+ * The real tools, in both directions, on the format `zip` cannot always write.
+ *
+ * Every other archiver test injects `run`, so none of them proved that a container the fallback
+ * wrote actually unpacks, nor that the launcher is still executable once it does — the bit a
+ * player needs and the one a zip writer that ignores Unix modes silently drops.
+ */
+test.skipIf(process.platform === 'win32')(
+  'a zip container round-trips through the installed tools with its executable bit intact',
+  () => {
+    const root = makeTempDirSync('threenative-archive-roundtrip-');
+    const executable = join(root, 'input');
+    const output = join(root, 'game.zip');
+    const bundle = join(root, 'game.bundle');
+    writeFileSync(executable, '#!/bin/sh\nexit 0\n');
+    writeFileSync(bundle, authoredBundle());
+    // No injected `run`: the packager reaches for whatever this host actually has installed.
+    const built = packageDesktopContainer({
+      platform: 'darwin', arch: 'x64', bundle, executable, output, config,
+    });
+    assert.equal(readFileSync(built.archive).subarray(0, 2).toString('latin1'), 'PK');
+    const containerRoot = extractContainer(built.archive, join(root, 'unpacked'), { platform: 'darwin' });
+    const manifest = resolveContainer(containerRoot, { platform: 'darwin' });
+    const launcher = join(containerRoot, manifest.executable);
+    assert.ok(existsSync(launcher));
+    assert.ok(
+      (statSync(launcher).mode & 0o111) !== 0,
+      'a container whose launcher lost its executable bit cannot be started by the player',
+    );
+  },
+);
+
+/**
+ * `zip` is absent from a stock Arch install and has never existed on Windows, where `tar` is
+ * libarchive. A packaging host with any of the archivers must still produce a release — and one
+ * whose archiver wrote the wrong format must not ship it under a .zip name, which is what GNU tar
+ * answering to the same name would otherwise do.
+ */
+for (const installed of ['bsdtar', 'tar']) {
+  test(`a missing zip falls through to ${installed}, and only a real zip ships`, () => {
+    const root = makeTempDirSync('threenative-archive-fallback-');
+    const executable = join(root, 'input');
+    const output = join(root, 'game.zip');
+    const bundle = join(root, 'game.bundle');
+    writeFileSync(executable, 'executable');
+    writeFileSync(bundle, authoredBundle());
+    const attempted = [];
+    const build = () => packageDesktopContainer({
+      platform: 'darwin', arch: 'x64', bundle, executable, output, config,
+      run: (command, args) => {
+        attempted.push(command);
+        if (command !== installed) return { error: new Error(`spawnSync ${command} ENOENT`), status: null, stderr: '' };
+        // libarchive writes the zip its suffix promises. GNU tar answers to the same name and
+        // compresses by suffix, so an unknown one leaves a gzip wearing a .zip extension.
+        writeFileSync(
+          args[args.indexOf('-f') + 1],
+          Buffer.from(installed === 'bsdtar' ? 'PK\u0003\u0004zip payload' : '\u001f\u008bgzip payload', 'latin1'),
+        );
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    });
+    if (installed === 'bsdtar') {
+      assert.equal(build().archive, output);
+      assert.deepEqual(attempted, ['zip', 'bsdtar']);
+      assert.equal(readFileSync(output).subarray(0, 2).toString('latin1'), 'PK');
+    } else {
+      assert.throws(build, /TN_DESKTOP_ARCHIVE_TOOL_MISSING.*'tar' ran but wrote no zip archive/u);
+      assert.deepEqual(attempted, ['zip', 'bsdtar', 'tar']);
+      assert.equal(existsSync(output), false, 'a mislabelled archive must never reach the output');
+    }
   });
 }
 
