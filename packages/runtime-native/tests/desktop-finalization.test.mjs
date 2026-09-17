@@ -46,8 +46,14 @@ function files(root) {
   return result;
 }
 
+/**
+ * The real archiver boundary. `zip` is the first choice and is absent from stock Arch and from
+ * Windows entirely, so this asserts the tool is one of the archivers the packager knows how to
+ * drive rather than one specific name, and lets the fallback chain run for real.
+ */
+const ARCHIVERS = ["bsdtar", "tar", "zip"];
 function archive(command, args, options) {
-  assert.equal(command, "zip", `unexpected tool: ${command}`);
+  assert.ok(ARCHIVERS.includes(command), `unexpected tool: ${command}`);
   return spawnSync(command, args, { encoding: "utf8", ...options });
 }
 

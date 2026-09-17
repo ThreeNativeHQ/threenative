@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..885bab4ebec95277444c520fff5ea94b775f7221 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a18392c88f865 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18500,7 +18500,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -136,10 +136,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..885bab4ebec95277444c520fff5ea94b
 +			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
++
++			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
  
 -				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
-+			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
-+
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
  
  					renderObject.dispose();
@@ -231,7 +231,23 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..885bab4ebec95277444c520fff5ea94b
  
  			} else {
  
-@@ -83814,6 +83870,14 @@ class WebGPUBackend extends Backend {
+@@ -80329,9 +80385,12 @@ ${ flowData.code }
+ 				const textureNode = uniform.node;
+ 				const texture = textureNode.value;
+ 
+-				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+-				// Also textureGather always need sampler.
+-				const needsSampler = texture.isCubeTexture === true || ( this.isUnfilterable( texture ) === false && textureNode.isStorageTextureNode !== true ) || textureNode.gatherNode !== null;
++				// The bind group layout freezes sampler inclusion once, in getUniformFromNode
++				// (nodeData.uniformGPU). Re-deriving it here from live texture filter state can
++				// disagree with that layout and shift every later binding index.
++				const nodeData = this.getDataFromNode( textureNode, shaderStage, this.globalCache );
++				const uniformGPU = nodeData.uniformGPU;
++				const needsSampler = Array.isArray( uniformGPU ) && uniformGPU[ 0 ].isSampler === true && uniformGPU[ 0 ].isSampledTexture !== true;
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -83814,6 +83873,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -246,7 +262,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..885bab4ebec95277444c520fff5ea94b
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +83990,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +83993,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -559,7 +575,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..37b5e0be09967e8acbd38e570b71eb20
  			if ( adapter === null ) {
  
 diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
-index be07536301cd47ef2544e4a54f6abe17407f52af..6144b98ddeb5d53c5cf280bb51401385a4427547 100644
+index be07536301cd47ef2544e4a54f6abe17407f52af..3b064a25a73fb35bcaed653794bda420bb004dec 100644
 --- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
 +++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
 @@ -1323,7 +1323,8 @@ class WGSLNodeBuilder extends NodeBuilder {
@@ -571,4 +587,20 @@ index be07536301cd47ef2544e4a54f6abe17407f52af..6144b98ddeb5d53c5cf280bb51401385
 +				// allocation id changes otherwise identical shader source for every buffer.
  
  			} else {
+ 
+@@ -2066,9 +2067,12 @@ ${ flowData.code }
+ 				const textureNode = uniform.node;
+ 				const texture = textureNode.value;
+ 
+-				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+-				// Also textureGather always need sampler.
+-				const needsSampler = texture.isCubeTexture === true || ( this.isUnfilterable( texture ) === false && textureNode.isStorageTextureNode !== true ) || textureNode.gatherNode !== null;
++				// The bind group layout freezes sampler inclusion once, in getUniformFromNode
++				// (nodeData.uniformGPU). Re-deriving it here from live texture filter state can
++				// disagree with that layout and shift every later binding index.
++				const nodeData = this.getDataFromNode( textureNode, shaderStage, this.globalCache );
++				const uniformGPU = nodeData.uniformGPU;
++				const needsSampler = Array.isArray( uniformGPU ) && uniformGPU[ 0 ].isSampler === true && uniformGPU[ 0 ].isSampledTexture !== true;
+ 
+ 				if ( needsSampler ) {
  
