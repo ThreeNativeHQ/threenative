@@ -372,7 +372,7 @@ const projectScratch = new Vector3();
 
 /** The world bounding sphere of one rendered object, or undefined when it has no measurable bounds. */
 function objectSphere(object: Object3D, into: Sphere): boolean {
-  const geometry = (object as unknown as IRenderedLike).geometry;
+  const geometry = (object as IRenderedLike).geometry;
   if (geometry === undefined) return false;
   if (geometry.boundingSphere === undefined || geometry.boundingSphere === null) {
     geometry.computeBoundingSphere?.();
@@ -418,7 +418,7 @@ function projectedSize(
   viewportHeight: number,
 ): { readonly pixels: number; readonly distance: number } | undefined {
   if (!(viewportHeight > 0)) return undefined;
-  const like = camera as unknown as ICameraLike;
+  const like = camera as ICameraLike;
   const near = like.near ?? 0.1;
   const distance = centreScratch
     .copy(sphere.center)
@@ -517,7 +517,7 @@ export class GeometryCapture {
           status: "unavailable",
         });
       }, timeoutMs);
-      (pending.timer as unknown as { unref?: () => void }).unref?.();
+      pending.timer.unref?.();
       this.#pending = pending;
     });
   }
@@ -544,7 +544,7 @@ export class GeometryCapture {
     this.#armed = armed;
     frame.root.traverse((object) => {
       if (!armed.complete) return;
-      const rendered = object as unknown as IRenderedLike;
+      const rendered = object as IRenderedLike;
       if (rendered.geometry === undefined && rendered.isBatchedMesh !== true) return;
       armed.inspected += 1;
       if (armed.inspected > GEOMETRY_CAPTURE_WALK_CAP) {
@@ -580,7 +580,7 @@ export class GeometryCapture {
   }
 
   #hook(armed: IArmedFrame, object: Object3D): void {
-    const rendered = object as unknown as IRenderedLike;
+    const rendered = object as IRenderedLike;
     const own = Object.hasOwn(object, "onBeforeRender")
       ? (rendered.onBeforeRender as RenderCallback | undefined)
       : undefined;
@@ -645,6 +645,7 @@ export class GeometryCapture {
       if (rendered.onBeforeRender !== instrumented) return;
       // Deleted, not set to undefined: three calls `object.onBeforeRender(...)` unconditionally,
       // so an own `undefined` shadows the prototype's no-op and throws on the next frame.
+      // quality-allow: delete is the restoration, not a leak; an own `undefined` would shadow the prototype no-op and throw
       // biome-ignore lint/performance/noDelete: restoring the prototype lookup is the point.
       if (own === undefined) delete rendered.onBeforeRender;
       else rendered.onBeforeRender = own;
@@ -701,7 +702,7 @@ function meshDraftsOf(armed: IArmedFrame): IMeshDraft[] {
     const owner = displayName(record.object);
     const members = ownership.sources.length;
     for (const source of ownership.sources) {
-      const geometry = (source as unknown as IRenderedLike).geometry;
+      const geometry = (source as IRenderedLike).geometry;
       const own = geometryTriangles(geometry);
       drafts.push({
         batchOwner: owner,
@@ -841,7 +842,7 @@ function rowOf(
 
   for (const member of members) {
     const source = member.source;
-    const rendered = source as unknown as IRenderedLike;
+    const rendered = source as IRenderedLike;
     let memberTriangles: number | undefined;
     for (const [kind, cost] of member.record.byPass) {
       const into = submissions[kind] ?? { draws: 0, triangles: 0 };
@@ -977,8 +978,8 @@ function rowOf(
 function baseTriangles(rendered: IRenderedLike): number | undefined {
   if (rendered.geometry === undefined) return undefined;
   try {
-    const base = baseGeometryOf(rendered as unknown as Parameters<typeof baseGeometryOf>[0]);
-    return geometryTriangles(base as unknown as IGeometryLike);
+    const base = baseGeometryOf(rendered as Parameters<typeof baseGeometryOf>[0]);
+    return geometryTriangles(base as IGeometryLike);
   } catch {
     return undefined;
   }
@@ -987,21 +988,21 @@ function baseTriangles(rendered: IRenderedLike): number | undefined {
 /** The capture camera's frustum, or undefined when the camera cannot be projected. */
 function frustumOf(camera: Camera): Frustum | undefined {
   const matrix = new Matrix4();
-  const projection = (camera as unknown as { projectionMatrix?: Matrix4 }).projectionMatrix;
+  const projection = camera.projectionMatrix;
   if (projection === undefined) return undefined;
   matrix.multiplyMatrices(projection, camera.matrixWorldInverse);
   return new Frustum().setFromProjectionMatrix(matrix);
 }
 
 function lodOf(object: Object3D): IGeometryCaptureRow["lod"] {
-  const rendered = object as unknown as IRenderedLike;
+  const rendered = object as IRenderedLike;
   if (rendered.isLOD !== true) return undefined;
   const levels = rendered.levels?.length;
   return levels === undefined ? undefined : { levels };
 }
 
 function cameraOf(camera: Camera): NonNullable<IGeometryCaptureReport["camera"]> {
-  const like = camera as unknown as ICameraLike;
+  const like = camera as ICameraLike;
   const position = camera.getWorldPosition(new Vector3());
   return {
     position: [position.x, position.y, position.z],

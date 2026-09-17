@@ -365,9 +365,8 @@ struct Canvas2DContext::Impl {
         paint.setStrokeJoin(currentState.lineJoin == "round" ? SkPaint::kRound_Join :
                             currentState.lineJoin == "bevel" ? SkPaint::kBevel_Join : SkPaint::kMiter_Join);
         if (!currentState.lineDash.empty()) {
-            // The spec doubles an odd-length pattern so it always alternates on/off.
-            std::vector<SkScalar> intervals(currentState.lineDash.begin(), currentState.lineDash.end());
-            if (intervals.size() % 2 == 1) intervals.insert(intervals.end(), intervals.begin(), intervals.end());
+            // setLineDash already doubled an odd-length pattern, so this list alternates on/off.
+            const std::vector<SkScalar> intervals(currentState.lineDash.begin(), currentState.lineDash.end());
             paint.setPathEffect(SkDashPathEffect::Make({intervals.data(), intervals.size()}, 0.0f));
         }
         Color c = parseColor(currentState.strokeStyle);
@@ -532,6 +531,11 @@ void Canvas2DContext::setLineDash(const std::vector<float>& segments) {
     // A negative or non-finite entry makes the whole call a no-op, as the spec requires.
     for (const float segment : segments) if (!std::isfinite(segment) || segment < 0) return;
     impl_->currentState.lineDash = segments;
+    // An odd-length pattern is concatenated with itself so it always alternates on and off, and
+    // the doubled list is also what reads back: setLineDash({5}) gives getLineDash() {5, 5}, the
+    // way a browser does. Doubling here rather than at stroke time keeps the two the same list.
+    if (segments.size() % 2 == 1)
+        impl_->currentState.lineDash.insert(impl_->currentState.lineDash.end(), segments.begin(), segments.end());
 }
 
 std::vector<float> Canvas2DContext::getLineDash() const {

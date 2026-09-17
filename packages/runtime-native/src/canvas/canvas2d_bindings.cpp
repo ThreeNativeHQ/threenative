@@ -763,13 +763,36 @@ js::JSValueHandle createCanvas2DContext(
 
     engine->setProperty(jsCtx, "setLineDash",
         engine->newFunction("setLineDash", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.empty()) return engine->newUndefined();
+            // `ctx.setLineDash(5)` is a plain game typo, and a number has no `length`: reading one
+            // gives NaN, which used to cast to a size_t near 2^63 and push floats until the host
+            // died. A browser throws a TypeError on a non-sequence, so this does.
+            //
+            // Any object with a numeric `length` stays accepted, as it always was -- a plain
+            // array-like and a Float32Array both are. What is new is the range check before the
+            // conversion: `length` must be a non-negative integer no larger than 2^32 - 1
+            // (ECMAScript's maximum Array length). Outside that range `static_cast<size_t>` is
+            // undefined, which is the actual bug (e.g. {length: 1e300}); inside it the conversion
+            // and the uint32_t index are both defined. This fixes the conversion only: a legitimate
+            // very large Array, or a Proxy that lies about its length within the range, still costs
+            // work proportional to the length it reports, exactly as iterating such an object would
+            // in a browser. A Set (no `length`) remains unsupported, as it always was.
+            const double reported =
+                engine->isObject(args[0]) ? engine->toNumber(engine->getProperty(args[0], "length")) : NAN;
+            if (!std::isfinite(reported) || reported < 0.0 || reported > 4294967295.0
+                || std::floor(reported) != reported) {
+                engine->throwException("TypeError: setLineDash expects a sequence of numbers");
+                return engine->newUndefined();
+            }
+            const size_t length = static_cast<size_t>(reported);
             std::vector<float> segments;
-            if (!args.empty()) {
-                const auto length = static_cast<size_t>(engine->toNumber(engine->getProperty(args[0], "length")));
-                for (size_t i = 0; i < length; ++i) {
-                    segments.push_back(static_cast<float>(
-                        engine->toNumber(engine->getProperty(args[0], std::to_string(i).c_str()))));
-                }
+            for (size_t i = 0; i < length; ++i) {
+                const double value =
+                    engine->toNumber(engine->getPropertyIndex(args[0], static_cast<uint32_t>(i)));
+                // The list is all or nothing, as the spec has it: an entry that is missing,
+                // negative or not finite leaves the previous pattern in place.
+                if (!std::isfinite(value) || value < 0) return engine->newUndefined();
+                segments.push_back(static_cast<float>(value));
             }
             ctxPtr->setLineDash(segments);
             return engine->newUndefined();

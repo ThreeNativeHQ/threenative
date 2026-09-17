@@ -33,7 +33,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, posix, extname } from 'node:path';
 
@@ -65,23 +65,20 @@ import { join, posix, extname } from 'node:path';
  */
 const PROBE_CACHE = new Map();
 
-/** The packaged runtime executable inside an installed prebuilt, or undefined when there is none. */
-function prebuiltExecutable(runtimeRoot) {
+/**
+ * The packaged runtime executable inside an installed prebuilt, for the host running this build.
+ *
+ * Keyed by the host, never by "whichever prebuilt directory is listed first". An installed release
+ * can carry several keys at once, and only the host's own can be executed: asking a win32-x64
+ * binary on Linux answers nothing, and asking a desktop binary about Android answers the wrong
+ * question confidently. `package-desktop.mjs` refuses any key but the host's, so this is the
+ * binary that will run the game.
+ */
+function prebuiltExecutable(runtimeRoot, key = `${process.platform}-${process.arch}`) {
   if (!runtimeRoot) return undefined;
-  const prebuilt = join(runtimeRoot, 'prebuilt');
-  let keys = [];
-  try {
-    keys = readdirSync(prebuilt, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return undefined;
-  }
-  for (const key of keys) {
-    for (const name of ['threenative-runtime', 'threenative-runtime.exe', 'mystral', 'mystral.exe']) {
-      const candidate = join(prebuilt, key, name);
-      if (existsSync(candidate)) return candidate;
-    }
+  for (const name of ['threenative-runtime', 'threenative-runtime.exe', 'mystral', 'mystral.exe']) {
+    const candidate = join(runtimeRoot, 'prebuilt', key, name);
+    if (existsSync(candidate)) return candidate;
   }
   return undefined;
 }
@@ -93,12 +90,13 @@ function prebuiltExecutable(runtimeRoot) {
  * then keeps its existing refusal, so a probe that cannot run never *grants* support.
  */
 export function probePrebuiltDecoders(runtimeRoot, options = {}) {
-  const executable = options.executable ?? prebuiltExecutable(runtimeRoot);
-  if (executable === undefined) return undefined;
+  const executable = options.executable ?? prebuiltExecutable(runtimeRoot, options.key);
+  if (executable === undefined || !existsSync(executable)) return undefined;
   if (PROBE_CACHE.has(executable)) return PROBE_CACHE.get(executable);
   let answer;
+  let directory;
   try {
-    const directory = mkdtempSync(join(tmpdir(), 'tn-decoder-probe-'));
+    directory = mkdtempSync(join(tmpdir(), 'tn-decoder-probe-'));
     const script = join(directory, 'probe.js');
     writeFileSync(
       script,
@@ -112,11 +110,20 @@ export function probePrebuiltDecoders(runtimeRoot, options = {}) {
       // A probe must never inherit a display: it is a question about the binary, not about X.
       env: { ...process.env, DISPLAY: undefined, WAYLAND_DISPLAY: undefined },
     });
-    const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
-    const line = /TN_DECODERS:(\{.*?\})/u.exec(output);
-    if (line !== null) answer = { webp: JSON.parse(line[1]).webp === true, executable };
+    // A run that failed to spawn, crashed, timed out or was killed answers nothing. A decoder
+    // line salvaged from a failed run is not the binary's verdict, and reading one as an answer
+    // would let a broken probe grant support the runtime does not have.
+    if (run.error === undefined && run.status === 0) {
+      const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
+      const line = /TN_DECODERS:(\{.*?\})/u.exec(output);
+      if (line !== null) answer = { webp: JSON.parse(line[1]).webp === true, executable };
+    }
   } catch {
     answer = undefined;
+  } finally {
+    // The probe script is a temporary file, not an artifact: leaving one per build behind fills
+    // the packaging host's temp directory over a session of repeated builds.
+    if (directory !== undefined) rmSync(directory, { force: true, recursive: true });
   }
   PROBE_CACHE.set(executable, answer);
   return answer;
@@ -125,23 +132,17 @@ export function probePrebuiltDecoders(runtimeRoot, options = {}) {
 /** Mirrors the ANDROID branch of the libwebp block in CMakeLists.txt. */
 export function deriveAndroidWebpSupport(runtimeSource) {
   if (!runtimeSource || !existsSync(join(runtimeSource, 'CMakeLists.txt'))) {
-    // No source checkout: this is an installed release, so ask the shipped binary itself rather
-    // than refusing what it may well decode.
-    const probed = probePrebuiltDecoders(runtimeSource);
-    if (probed !== undefined) {
-      return {
-        supported: probed.webp,
-        reason: probed.webp
-          ? `${probed.executable} answers the @loaders.gl WebP test with YES, so this release was built with libwebp`
-          : `${probed.executable} answers the @loaders.gl WebP test with NO, so this release was built without libwebp`,
-      };
-    }
+    // Deliberately no probe here. The desktop branch asks the binary that will run the game; the
+    // Android runtime is an arm64 payload this host cannot execute, so the only executable a probe
+    // could reach is the host's desktop build — a different CMake configuration answering a
+    // different question. Granting Android WebP from it would be the same stale claim this file
+    // exists to prevent, arrived at by a longer route. Unknown stays unknown.
     return {
       supported: false,
       reason:
         `${runtimeSource || '(no runtime root)'} is not a runtime source checkout, a prebuilt ` +
-        'Android release does not declare which decoders it was built with, and its runtime could ' +
-        'not be probed',
+        'Android release does not declare which decoders it was built with, and no host binary ' +
+        'can answer for it',
     };
   }
   const sourceRoot = join(runtimeSource, 'third_party', 'webp-source');
@@ -180,17 +181,40 @@ export function deriveAndroidWebpSupport(runtimeSource) {
  * `third_party/webp/libwebp-*` with both a library and headers, which is what CMake's
  * `WEBP_LIBRARY AND WEBP_INCLUDE_DIR` requires before it defines `MYSTRAL_HAS_WEBP`.
  */
-export function deriveDesktopWebpSupport(runtimeSource) {
+export function deriveDesktopWebpSupport(runtimeSource, runtimeExecutable = undefined) {
+  // A selected runtime outranks anything a directory listing suggests, source checkout or not: it
+  // is the binary this container ships and the one that will decode the player's textures. A
+  // checkout can hold libwebp sources downloaded *after* that binary was built — `download-deps
+  // --only webp` then a repackage is a normal sequence — and reading the directory would grant
+  // WebP for a runtime compiled without MYSTRAL_HAS_WEBP, turning a build-time refusal into a
+  // texture that fails at play.
+  if (runtimeExecutable !== undefined) {
+    const probed = probePrebuiltDecoders(runtimeSource, { executable: runtimeExecutable });
+    if (probed !== undefined) {
+      return {
+        supported: probed.webp,
+        reason: `${probed.executable} answers the @loaders.gl WebP decode test with ` +
+          `${probed.webp ? 'YES' : 'NO'}`,
+      };
+    }
+    // Fail closed. A probe that could not run has granted nothing, and falling back to the source
+    // tree here would grant support from files this binary may never have been compiled against.
+    return {
+      supported: false,
+      reason:
+        `${runtimeExecutable} is the runtime selected for this build and could not answer the ` +
+        '@loaders.gl WebP decode test, so nothing can claim WebP support on its behalf',
+    };
+  }
   if (!runtimeSource || !existsSync(join(runtimeSource, 'CMakeLists.txt'))) {
-    // No source checkout: this is an installed release, so ask the shipped binary itself rather
-    // than refusing what it may well decode.
+    // No source checkout and no selected runtime: this is an installed release, so ask the host's
+    // own prebuilt rather than refusing what it may well decode.
     const probed = probePrebuiltDecoders(runtimeSource);
     if (probed !== undefined) {
       return {
         supported: probed.webp,
-        reason: probed.webp
-          ? `${probed.executable} answers the @loaders.gl WebP test with YES, so this release was built with libwebp`
-          : `${probed.executable} answers the @loaders.gl WebP test with NO, so this release was built without libwebp`,
+        reason: `${probed.executable} answers the @loaders.gl WebP decode test with ` +
+          `${probed.webp ? 'YES' : 'NO'}`,
       };
     }
     return {

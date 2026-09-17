@@ -1,12 +1,12 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
-import { probePrebuiltDecoders } from '../scripts/asset-preflight.mjs';
+import { deriveDesktopWebpSupport, probePrebuiltDecoders } from '../scripts/asset-preflight.mjs';
 import { packageDesktop, stageDesktopFiles } from '../scripts/package-desktop.mjs';
 import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
@@ -279,11 +279,62 @@ test('desktop packaging uses THREENATIVE_RUNTIME_SOURCE for decoder preflight', 
  * this probe existed the answer was a flat "unsupported", which rejected the WebP-packed GLBs the
  * documented `gltf-transform webp` pipeline produces — from a runtime that decodes them fine.
  */
-test('a prebuilt release is asked what it decodes instead of being assumed decoder-less', () => {
-  const root = makeTempDirSync('tn-prebuilt-probe');
-  const executable = join(root, 'prebuilt', 'linux-x64', 'threenative-runtime');
-  mkdirSync(join(root, 'prebuilt', 'linux-x64'), { recursive: true });
+/**
+ * A source checkout says what CMake *could* build; the selected runtime says what it *did*. Those
+ * disagree after `download-deps.mjs --only webp` lands libwebp beside a binary that was compiled
+ * before it — a normal sequence — and reading the directory then grants WebP for a runtime without
+ * MYSTRAL_HAS_WEBP, moving a build-time refusal to a texture that fails in front of the player.
+ *
+ * These are real spawns of a real executable, not an injected `spawn`: they are also the only
+ * check that a binary answering `TN_DECODERS` on stdout is parsed the way the probe expects.
+ */
+test.skipIf(process.platform === 'win32')('the selected runtime outranks the source tree, in both directions', () => {
+  const checkout = makeTempDirSync('tn-desktop-webp-authority-');
+  writeFileSync(join(checkout, 'CMakeLists.txt'), 'project(mystral)\n');
+  const answering = (webp) => {
+    const executable = join(makeTempDirSync('tn-desktop-webp-runtime-'), 'threenative-runtime');
+    writeFileSync(executable, `#!/bin/sh\necho 'TN_DECODERS:{"webp":${webp}}'\n`);
+    chmodSync(executable, 0o755);
+    return executable;
+  };
+
+  // A checkout CMake would define MYSTRAL_HAS_WEBP from, and a binary that was built before it.
+  const prebuilt = join(checkout, 'third_party', 'webp', 'libwebp-1.5.0');
+  mkdirSync(join(prebuilt, 'include'), { recursive: true });
+  mkdirSync(join(prebuilt, 'lib'), { recursive: true });
+  writeFileSync(join(prebuilt, 'lib', 'libwebp.a'), '');
+  assert.equal(deriveDesktopWebpSupport(checkout).supported, true, 'the fixture must be a green source tree');
+  const refused = deriveDesktopWebpSupport(checkout, answering('false'));
+  assert.equal(refused.supported, false, 'the binary that will decode the texture has the last word');
+  assert.match(refused.reason, /answers the @loaders\.gl WebP decode test with NO/u);
+
+  // And the other way: a binary with libwebp is not refused because the sources were cleaned.
+  rmSync(join(checkout, 'third_party'), { force: true, recursive: true });
+  assert.equal(deriveDesktopWebpSupport(checkout).supported, false, 'the fixture must be a red source tree');
+  assert.equal(deriveDesktopWebpSupport(checkout, answering('true')).supported, true);
+
+  // A selected runtime that cannot answer fails closed. Falling back to the source tree here would
+  // grant support from files this binary may never have been compiled against.
+  const silent = deriveDesktopWebpSupport(checkout, join(checkout, 'no-such-runtime'));
+  assert.equal(silent.supported, false);
+  assert.match(silent.reason, /could not answer the @loaders\.gl WebP decode test/u);
+  rmSync(checkout, { force: true, recursive: true });
+});
+
+/** The only prebuilt this host can execute, and the only one whose answer applies to it. */
+const hostKey = `${process.platform}-${process.arch}`;
+
+/** An installed release carrying a runtime for `key`, with no source checkout to derive from. */
+function makeInstalledRelease(prefix, key = hostKey, name = 'threenative-runtime') {
+  const root = makeTempDirSync(prefix);
+  mkdirSync(join(root, 'prebuilt', key), { recursive: true });
+  const executable = join(root, 'prebuilt', key, name);
   writeFileSync(executable, '');
+  return { executable, root };
+}
+
+test('a prebuilt release is asked what it decodes instead of being assumed decoder-less', () => {
+  const { executable, root } = makeInstalledRelease('tn-prebuilt-probe');
   const calls = [];
   const spawn = (command, args) => {
     calls.push({ args, command });
@@ -294,13 +345,14 @@ test('a prebuilt release is asked what it decodes instead of being assumed decod
   assert.equal(calls[0].command, executable);
   // A probe must never need a display: it is a question about the binary, not about X.
   assert.ok(calls[0].args.includes('--no-sdl'));
+  // The probe script is a temporary file. One leaked directory per build fills a packaging host's
+  // temp over a session, and the first version leaked one on every call including the cached ones.
+  assert.equal(existsSync(dirname(calls[0].args[1])), false);
   rmSync(root, { force: true, recursive: true });
 });
 
 test('a prebuilt release that answers NO is still refused, with the binary named', () => {
-  const root = makeTempDirSync('tn-prebuilt-probe-no');
-  mkdirSync(join(root, 'prebuilt', 'linux-x64'), { recursive: true });
-  writeFileSync(join(root, 'prebuilt', 'linux-x64', 'threenative-runtime'), '');
+  const { root } = makeInstalledRelease('tn-prebuilt-probe-no');
   const spawn = () => ({ status: 0, stdout: 'TN_DECODERS:{"webp":false}\n' });
   assert.equal(probePrebuiltDecoders(root, { spawn })?.webp, false);
   rmSync(root, { force: true, recursive: true });
@@ -310,10 +362,45 @@ test('a prebuilt release that answers NO is still refused, with the binary named
 test('an unprobeable runtime root yields no answer at all', () => {
   const root = makeTempDirSync('tn-prebuilt-probe-missing');
   assert.equal(probePrebuiltDecoders(root), undefined);
-  const withBinary = makeTempDirSync('tn-prebuilt-probe-silent');
-  mkdirSync(join(withBinary, 'prebuilt', 'linux-x64'), { recursive: true });
-  writeFileSync(join(withBinary, 'prebuilt', 'linux-x64', 'threenative-runtime'), '');
-  assert.equal(probePrebuiltDecoders(withBinary, { spawn: () => ({ status: 1, stdout: '' }) }), undefined);
+  const silent = makeInstalledRelease('tn-prebuilt-probe-silent');
+  assert.equal(probePrebuiltDecoders(silent.root, { spawn: () => ({ status: 1, stdout: '' }) }), undefined);
+  // A run that crashed after printing is not a verdict: the binary that exits non-zero has not
+  // answered the question, and reading its line anyway grants support from a broken probe.
+  const crashed = makeInstalledRelease('tn-prebuilt-probe-crashed');
+  assert.equal(
+    probePrebuiltDecoders(crashed.root, {
+      spawn: () => ({ status: 139, stdout: 'TN_DECODERS:{"webp":true}\n' }),
+    }),
+    undefined,
+  );
+  // And a spawn that never started answers nothing either, whatever it left on stdout.
+  const unstartable = makeInstalledRelease('tn-prebuilt-probe-enoent');
+  assert.equal(
+    probePrebuiltDecoders(unstartable.root, {
+      spawn: () => ({ error: new Error('spawnSync ENOENT'), status: null, stdout: 'TN_DECODERS:{"webp":true}\n' }),
+    }),
+    undefined,
+  );
+  for (const directory of [root, silent.root, crashed.root, unstartable.root]) {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+/**
+ * An installed release can carry several prebuilt keys at once. Picking whichever directory the
+ * filesystem listed first asked a Windows or Android payload a question only the host binary can
+ * answer — and on a non-host key the spawn fails, which the caller reads as "no WebP" and refuses
+ * assets the real runtime decodes.
+ */
+test('only the host prebuilt is probed; a foreign-platform payload answers nothing', () => {
+  const foreign = hostKey === 'win32-x64' ? 'linux-x64' : 'win32-x64';
+  const { root } = makeInstalledRelease('tn-prebuilt-probe-foreign', foreign, 'threenative-runtime.exe');
+  let spawned = 0;
+  const spawn = () => {
+    spawned += 1;
+    return { status: 0, stdout: 'TN_DECODERS:{"webp":true}\n' };
+  };
+  assert.equal(probePrebuiltDecoders(root, { spawn }), undefined);
+  assert.equal(spawned, 0, 'a foreign-platform binary must not be executed at all');
   rmSync(root, { force: true, recursive: true });
-  rmSync(withBinary, { force: true, recursive: true });
 });

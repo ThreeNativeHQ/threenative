@@ -62,6 +62,77 @@ describe("scripts/xvfb.sh", () => {
 });
 
 /**
+ * Both copies of the wrapper must hand out a display something can actually composite on. A bare
+ * Xvfb has COMPOSITE off and no compositing manager, and the desktop runtime refuses to attach its
+ * UI overlay to such a display -- the fix once landed in the packaged copy alone, so the check runs
+ * against every copy rather than the one that happened to be edited.
+ */
+describe.each([
+  ["scripts/xvfb.sh", path.join(REPO, "scripts", "xvfb.sh")],
+  [
+    "packages/runtime-native/scripts/xvfb.sh",
+    path.join(REPO, "packages", "runtime-native", "scripts", "xvfb.sh"),
+  ],
+])("%s composites", (_name, script) => {
+  /** A PATH whose `Xvfb` and compositor are recorders, so a test can read what the wrapper ran. */
+  function displaySandbox(options: { readonly compositor: boolean }): {
+    bin: string;
+    xvfbArgs: string;
+    compositorArgs: string;
+  } {
+    const { bin } = sandbox("Linux");
+    const xvfbArgs = path.join(bin, "..", "xvfb-args");
+    const compositorArgs = path.join(bin, "..", "compositor-args");
+    // Reports display :91 on fd 3 the way the real server does, then stays alive to be killed.
+    fs.writeFileSync(
+      path.join(bin, "Xvfb"),
+      `#!/bin/sh\necho "$@" > ${xvfbArgs}\necho 91 >&3\nexec sleep 30\n`,
+      { mode: 0o755 },
+    );
+    if (options.compositor) {
+      // Slow on purpose: a real compositor takes a moment to own _NET_WM_CM_S0, and a command
+      // that starts first sees a display with no compositing manager.
+      fs.writeFileSync(
+        path.join(bin, "xcompmgr"),
+        `#!/bin/sh\nsleep 0.1\necho "$DISPLAY $@" > ${compositorArgs}\nexec sleep 30\n`,
+        { mode: 0o755 },
+      );
+    }
+    return { bin, xvfbArgs, compositorArgs };
+  }
+
+  function runScript(bin: string, args: readonly string[]): { status: number; stderr: string } {
+    const result = spawnSync("/bin/sh", [script, ...args], {
+      env: { PATH: bin, HOME: os.tmpdir() },
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    return { status: result.status ?? -1, stderr: result.stderr ?? "" };
+  }
+
+  it("enables COMPOSITE and SHAPE and has the compositor up before the command runs", () => {
+    const { bin, xvfbArgs, compositorArgs } = displaySandbox({ compositor: true });
+    // The command passes only if the compositor reached its display first.
+    const result = runScript(bin, ["/bin/sh", "-c", `test -f ${compositorArgs}`]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(fs.readFileSync(xvfbArgs, "utf8")).toMatch(
+      /\+extension COMPOSITE(?=.*\+extension SHAPE)/su,
+    );
+    // `-n` is plain blending: xcompmgr's shadows and fades would alter the pixels a gate asserts on.
+    expect(fs.readFileSync(compositorArgs, "utf8").trim()).toBe(":91 -n");
+  });
+
+  it("still runs the command on a host where no compositor is installed", () => {
+    const { bin, compositorArgs } = displaySandbox({ compositor: false });
+    const result = runScript(bin, ["/bin/sh", "-c", "exit 7"]);
+
+    expect(result.status).toBe(7);
+    expect(fs.existsSync(compositorArgs)).toBe(false);
+  });
+});
+
+/**
  * Every root script that opens a window must run on a display the operator does not own. The
  * playtest runner provisions its own private Xvfb since the capture-environment change, but these
  * scripts drive Playwright, the visual gate and the conformance runner directly, so the wrapper is
