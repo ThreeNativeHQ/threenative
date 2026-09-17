@@ -1,4 +1,4 @@
-name: PRD-312 Porffor explicit native-mode confirmation
+name: PRD-312 confirmed Porffor native outputs
 
 on:
   push:
@@ -43,7 +43,6 @@ jobs:
         run: |
           set -euo pipefail
           OUT="$RUNNER_TEMP/aot312-results"
-          mkdir -p "$OUT"
           probe() {
             local label="$1" limit="$2"; shift 2
             printf '\n=== %s ===\n' "$label"
@@ -72,9 +71,9 @@ jobs:
           console.log('PROXY_GET_TRAP_OK:42');
           JS
           cat > "$OUT/names.js" <<'JS'
-          const uint = (x) => x;
-          const select = (x) => x;
-          console.log(uint(42), select(7));
+          var uint = { value: 42 };
+          var select = { value: 7 };
+          console.log(uint.value, select.value);
           JS
           node "$OUT/control.js"
           node "$OUT/proxy.js"
@@ -88,7 +87,7 @@ jobs:
           test -x "$PORF"
           probe help 30s "$PORF" --help
           for name in control proxy names game; do
-            if probe "$name-native-compile" 300s "$PORF" native "$OUT/$name.js" "$OUT/$name-native"; then
+            if probe "$name-native-compile" 300s "$PORF" native "$OUT/$name.js" -o "$OUT/$name-native"; then
               if test -x "$OUT/$name-native"; then
                 probe "$name-native-run" 30s "$OUT/$name-native" || true
               else
@@ -96,25 +95,14 @@ jobs:
               fi
             fi
           done
-          # Preserve only explicit public source files needed to update the existing research record.
-          mkdir -p "$OUT/source"
-          for p in \
-            docs/PRDs/architecture/PRD-312-the-shermes-spike-is-timeboxed-and-closed.md \
-            docs/architecture/NATIVE-PERF-BOTTLENECKS.md \
-            docs/architecture/NATIVE-RENDER-TRANSPORT.md \
-            docs/architecture/FUTURE-ARCHITECTURE-DIRECTION.md \
-            docs/verification/runtime-perf-state.md; do
-            cp "$p" "$OUT/source/$(basename "$p")"
-            git hash-object "$p"
-          done
-          pnpm prd:progress docs/PRDs/architecture/PRD-312-the-shermes-spike-is-timeboxed-and-closed.md | tee "$OUT/prd-progress-before.txt"
-          grep -n 'new Proxy' "$OUT/game.js" | head -8 || true
+          cp "$PORF" "$OUT/porf-alpha-6"
+          "$PORF" --version | tee "$OUT/version.txt"
           cat "$OUT/status.tsv"
       - name: Retain raw diagnostic output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prd-312-porffor-confirmation
+          name: prd-312-porffor-native-output
           path: ${{ runner.temp }}/aot312-results/*
           retention-days: 7
           if-no-files-found: warn
