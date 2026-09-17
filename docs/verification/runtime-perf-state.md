@@ -10,6 +10,62 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Compiled frame plan transport (v3) — native compiled frame plans — 2026-09-17
+
+**The default-off v3 transport costs the JS recorder 43% less per frame and carries 94.8% fewer bytes
+on a draw-heavy frame, 39% less and 99.5% fewer on a 20000-draw frame. It is the recorder's work, not
+the packet, that pays: a frame whose records did not move is not re-encoded at all.**
+
+Method: `node packages/runtime-native/scripts/measure-frame-plan-transport.mjs --frames=120`
+(branch `perf/compiled-frame-plans-20260917`), Node 20.19.6, AMD 5900X. A CPU-only microbenchmark of
+the transport against a device and queue that record nothing: no GPU, no renderer, no game, and no
+frame-rate claim. The scene is one render pass with `--draws` repeated setPipeline / setBindGroup /
+setVertexBuffer / setIndexBuffer / drawIndexed groups and `--uploads` uniform buffers rewritten whole
+every frame; medians over 120 frames after a 5-frame warmup. `v2` is the stream every shipped frame
+sends today, `v3` the capture-then-patch plan.
+
+| scene | v2 total ms | v3 total ms | CPU | v2 packet | v3 packet | bytes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2000 draws, 64 × 256 B uploads (default) | 0.902 | 0.518 | −43% | 338,120 | 17,432 | −94.8% |
+| 20000 draws, 64 × 256 B uploads | 9.672 | 5.297 | −45% | 3,218,120 | 17,432 | −99.5% |
+| 200 draws, 32 × 64 KiB uploads, all new | 0.628 | 0.792 | +26% | 2,130,120 | 2,130,128 | 0% |
+
+`total` is encode plus drain JavaScript per frame. Three mechanisms carry the win:
+
+1. **Per-frame wire ids.** Encoder, render pass, compute pass and command buffer ids restart every
+   frame in plan mode, so a record that did not move is the same bytes as last frame's — before
+   this, one pass id moved and invalidated every record inside the pass. A stale holder from an
+   earlier frame is refused by name (`stale render pass from an earlier frame`) instead of naming
+   whatever object inherited its id. Resource ids stay monotonic, assigned once at creation.
+2. **A value check at the call site.** Each reusable record compares the values that decide its
+   bytes — pass, pipeline, bind group, counts, offsets — against the ones the retained plan was
+   recorded from, in one allocation-free call. Equal means the plan already holds the record, so
+   nothing is encoded and nothing is sent: 10,004 of 10,069 records in the default scene are reused
+   on a steady frame. Only the 64 uniform uploads are written, and the word diff drops those too
+   when their payload is unchanged.
+3. **A layout check that fails towards a capture.** A record whose opcode or length does not match
+   the plan's at that index, a frame whose record count moved, a host that reports a dropped plan,
+   a partial drain: each of those sends the whole frame instead of a patch. A frame that rewrote
+   more than half of itself does the same, because patching it would touch those bytes three times
+   over while a capture touches them once.
+
+The third row is the shape this transport is worst at, and it is bounded: when the changed bytes
+*are* the payload there is nothing to elide, so the cost is one assembly pass over the frame and the
+byte count does not move. The guard in (3) is what keeps that row at +26% instead of the +260% the
+same scene cost before it existed. A frame like that is 2 MB of fresh upload per frame, which is
+bandwidth the GPU is going to spend regardless; the draw-heavy rows are where games live.
+
+The default path pays for the plan check it does not use: `frame-op-stream.js` at `main` measures
+0.79–0.82 ms and with the plan call sites present 0.89–0.94 ms on the same scene, +8% of the
+recorder's own frame (≈7.5 ns per record for the `planMode` branch), which is under 1% of a 16 ms
+frame. Plan mode is off unless `TN_FRAME_PLANS=1` sets `host.compiledFramePlans`.
+
+Proven separately from this measurement: `frame op stream replay contract passed` runs the same
+recorder through the real C++ decoder, asserts one capture then patched frames, reads a patched
+upload back off the GPU as `[3,4,5,6]`, and rejects thirteen malformed v3 packets without entering a
+backend call; `tests/frame-plan-transport.test.mjs` proves a patched plan is byte-identical to the
+frame it replaces, and that a frame in which nothing moved carries a 24-byte packet with no entries.
+
 ## PRD-217 desktop WebView overlay on/off — 2026-09-12
 
 **Uncapped throughput on a software-composited Xvfb lane: the overlay costs ~12–15% frame time here.

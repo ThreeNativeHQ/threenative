@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 #include <sstream>
 #include <string>
@@ -429,12 +430,275 @@ void runContract(bool disableStreamControl) {
     state->profiling.frameOpStreamDrain = {};
 }
 
+// Drives real frames until the page's own frame counter passes `frames`.
+void awaitFrames(mystral::Runtime* runtime, mystral::js::Engine* engine, int frames) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (std::chrono::steady_clock::now() < deadline) {
+        runtime->pollEvents();
+        engine->processMicrotasks();
+        mystral::js::JSValueGuard count(*engine, engine->getGlobalProperty("__tnPlanFrames"));
+        if (!engine->isUndefined(count.get()) && engine->toNumber(count.get()) >= frames) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    expect(false, "timed out awaiting frame " + std::to_string(frames));
+}
+
+// Hands the host one packet built by the test and replays it, expecting the packet to be accepted
+// and to produce exactly `order`.
+void expectAccepted(mystral::webgpu::BindingsState* state, const std::string& expression,
+                    const std::vector<std::string>& order, const std::string& what) {
+    auto* engine = state->engine;
+    state->profiling.frameOpStreamLastOrder.clear();
+    state->profiling.frameOpStreamDrain =
+        engine->evalScriptWithResult(expression.c_str(), "tn-plan-packet.js");
+    mystral::webgpu::endDawnFrame(state);
+    const std::string exception = engine->hasException() ? engine->getException() : "";
+    expect(exception.empty(), what + ": " + exception);
+    if (state->profiling.frameOpStreamLastOrder != order) {
+        std::cerr << what << " observed order:";
+        for (const auto& op : state->profiling.frameOpStreamLastOrder) std::cerr << " " << op;
+        std::cerr << std::endl;
+    }
+    expect(state->profiling.frameOpStreamLastOrder == order, what + ": operation order");
+}
+
+// Compiled frame plans (v3 transport) against a real device: the production recorder captures one
+// frame and patches the next, the patch reaches the GPU, every malformed packet fails closed
+// without entering a backend call, and a capture re-establishes the plan afterwards.
+void runPlanContract() {
+    setenv("TN_FRAME_PLANS", "1", 1);
+    mystral::RuntimeConfig config;
+    config.width = 1;
+    config.height = 1;
+    config.noSdl = true;
+    const auto runtime = mystral::Runtime::create(config);
+    if (!runtime || !runtime->getWebGPUBindingsState()) {
+        expect(false, "headless runtime with WebGPU bindings created for the plan contract");
+        return;
+    }
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
+    auto* engine = state->engine;
+    state->profiling.captureFrameOpStreamTrace = true;
+
+    const std::vector<std::string> sceneOrder = {"writeBuffer", "createCommandEncoder",
+                                                 "copyBufferToBuffer", "beginRenderPass",
+                                                 "render.end", "finish", "submit"};
+    expect(engine->evalScript(
+        R"JS((async () => {
+          const adapter = await navigator.gpu.requestAdapter();
+          const device = await adapter.requestDevice();
+          const src = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+          const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+          const target = device.createTexture({
+            size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          });
+          const view = target.createView();
+          globalThis.__tnPlanSrc = src;
+          globalThis.__tnPlanDst = dst;
+          globalThis.__tnPlanTick = 0;
+          globalThis.__tnPlanFrames = 0;
+          globalThis.__tnPlanPaused = false;
+          globalThis.__tnPlanStop = false;
+          const step = () => {
+            if (globalThis.__tnPlanStop) return;
+            requestAnimationFrame(step);
+            if (globalThis.__tnPlanPaused) return;
+            // One scene, identical in structure every frame: what moves is the uniform payload and
+            // the wire ids a frame allocates for its own encoder, pass and command buffer.
+            const tick = ++globalThis.__tnPlanTick;
+            device.queue.writeBuffer(src, 0, new Uint32Array([tick, tick + 1, tick + 2, tick + 3]));
+            const encoder = device.createCommandEncoder();
+            encoder.copyBufferToBuffer(src, 0, dst, 0, 16);
+            const pass = encoder.beginRenderPass({colorAttachments: [{
+              view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1],
+            }]});
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+            globalThis.__tnPlanFrames += 1;
+            if (globalThis.__tnPlanFrames === 3) globalThis.__tnPlanPaused = true;
+          };
+          requestAnimationFrame(step);
+        })().catch((error) => { globalThis.__tnPlanError = String(error) + " | " + error.stack; }))JS",
+        "tn-plan-scene.js"),
+        "plan scene evaluated");
+    awaitFrames(runtime.get(), engine, 3);
+
+    expect(state->framePlan.valid, "three identical frames left a retained plan");
+    expect(state->framePlan.captures == 1, "the first frame was the only capture: " +
+                                               std::to_string(state->framePlan.captures));
+    expect(state->framePlan.patches >= 2,
+           "the frames that followed patched the plan: " + std::to_string(state->framePlan.patches));
+    expect(state->framePlan.patchBytes / state->framePlan.patches <
+               state->framePlan.captureBytes / state->framePlan.captures,
+           "a patched frame carries fewer bytes than a captured one");
+    expect(state->framePlan.sequence == 3, "the plan's sequence counts every packet");
+    expect(state->framePlan.records.size() == state->framePlan.opCount,
+           "the retained plan compiled one record per operation");
+    bool ascending = true;
+    for (size_t i = 1; i != state->framePlan.records.size(); ++i)
+        ascending = ascending && state->framePlan.records[i].offset > state->framePlan.records[i - 1].offset;
+    expect(ascending, "compiled record boundaries are strictly ascending");
+    expect(state->profiling.frameOpStreamLastOrder == sceneOrder,
+           "the patched frame replayed the whole plan in order");
+    expect(state->profiling.frameOpStreamLastOpCount == sceneOrder.size(),
+           "the patched frame replayed every operation exactly once");
+    expect(static_cast<uint32_t>(state->framePlan.records.size()) == state->framePlan.opCount,
+           "the compiled layout covers the whole plan");
+
+    // The third frame's uniform payload left through a patch. Reading the destination buffer back
+    // is the one observation that cannot be satisfied by a plan that was parsed but not applied.
+    expect(engine->evalScript(R"JS((() => {
+      requestAnimationFrame(async () => {
+        try {
+          await globalThis.__tnPlanDst.mapAsync(GPUMapMode.READ, 0, 16);
+          globalThis.__tnPlanReadback = Array.from(new Uint32Array(globalThis.__tnPlanDst.getMappedRange(0, 16)));
+          globalThis.__tnPlanDst.unmap();
+        } catch (error) {
+          globalThis.__tnPlanReadbackError = String(error);
+        } finally {
+          globalThis.__tnPlanDone = true;
+        }
+      });
+    })())JS", "tn-plan-readback.js"), "plan readback requested");
+    awaitFlag(runtime.get(), engine, "__tnPlanDone");
+    expect(engine->isUndefined(engine->getGlobalProperty("__tnPlanReadbackError")),
+           "plan readback completed without an error");
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+               "JSON.stringify(__tnPlanReadback) === '[3,4,5,6]'", "tn-plan-readback-check.js")),
+           "the patched upload reached the buffer: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "JSON.stringify(__tnPlanReadback)", "tn-plan-readback-value.js")));
+
+    state->profiling.frameOpStreamNativeCallObserver = observeFrameReplayBackendEntry;
+    frameReplayBackendEntries = 0;
+
+    // Packet-level cases run against packets the test builds by hand, so each one can be checked
+    // on its own without guessing what the recorder would have sent. A capture packet is an empty
+    // command buffer: encoder 900, finished into command buffer 901, submitted.
+    auto capturePacket = [](int sequence) {
+        std::ostringstream out;
+        out << "() => { const b = new ArrayBuffer(72); const v = new DataView(b);"
+               " v.setUint32(0, 0x544e4652, true); v.setUint32(4, 3, true); v.setUint32(8, 72, true);"
+               " v.setUint32(12, 1, true); v.setUint32(16, "
+            << sequence
+            << ", true); v.setUint32(20, 3, true);"
+               " v.setUint32(24, 2, true); v.setUint32(28, 16, true); v.setUint32(32, 900, true);"
+               " v.setUint32(40, 28, true); v.setUint32(44, 16, true); v.setUint32(48, 900, true);"
+               " v.setUint32(52, 901, true);"
+               " v.setUint32(56, 29, true); v.setUint32(60, 16, true); v.setUint32(64, 1, true);"
+               " v.setUint32(68, 901, true); return b; }";
+        return out.str();
+    };
+    auto patchPacket = [](int sequence, const std::string& entries, int trailing = 0) {
+        std::ostringstream out;
+        out << "() => { const entries = " << entries
+            << "; const size = 24 + " << trailing
+            << " + entries.reduce((n, e) => n + 8 + e.runs.reduce((m, r) => m + 8 + r.words.length * 4, 0), 0);"
+               " const b = new ArrayBuffer(size); const v = new DataView(b);"
+               " v.setUint32(0, 0x544e4652, true); v.setUint32(4, 3, true); v.setUint32(8, size, true);"
+               " v.setUint32(12, 2, true); v.setUint32(16, "
+            << sequence
+            << ", true); v.setUint32(20, entries.length, true);"
+               " let at = 24;"
+               " for (const entry of entries) { v.setUint32(at, entry.index, true);"
+               " v.setUint32(at + 4, entry.runs.length, true); at += 8;"
+               " for (const run of entry.runs) { v.setUint32(at, run.offset, true);"
+               " v.setUint32(at + 4, run.words.length * 4, true); at += 8;"
+               " new Uint32Array(b, at, run.words.length).set(run.words); at += run.words.length * 4; } }"
+               " return b; }";
+        return out.str();
+    };
+    const std::vector<std::string> emptyFrameOrder = {"createCommandEncoder", "finish", "submit"};
+    // A patch that writes the same words back is accepted, applies, and replays the plan whole.
+    expectAccepted(state, capturePacket(40), emptyFrameOrder, "a hand-built capture is retained");
+    expectAccepted(state, patchPacket(41, "[{index:2,runs:[{offset:8,words:[1,901]}]}]"),
+                   emptyFrameOrder, "a patch of unchanged words applies and replays");
+
+    // A rejection drops the plan, so every structural case is judged against a capture it sets up
+    // itself rather than against whatever the case before it left behind.
+    int caseSequence = 50;
+    auto rejected = [&](const std::string& entries, const char* expected, const char* what,
+                        int trailing = 0) {
+        expectAccepted(state, capturePacket(caseSequence), emptyFrameOrder, std::string(what) + " setup");
+        expectMalformed(state, patchPacket(caseSequence + 1, entries, trailing), expected, what);
+        caseSequence += 1;
+    };
+    auto rejectedSequence = [&](int offset, const std::string& entries, const char* expected,
+                                const char* what) {
+        expectAccepted(state, capturePacket(caseSequence), emptyFrameOrder, std::string(what) + " setup");
+        expectMalformed(state, patchPacket(caseSequence + offset, entries), expected, what);
+        caseSequence += 1;
+    };
+    auto rejectedPacket = [&](const std::string& packet, const char* expected, const char* what) {
+        expectAccepted(state, capturePacket(caseSequence), emptyFrameOrder, std::string(what) + " setup");
+        expectMalformed(state, packet, expected, what);
+        caseSequence += 1;
+    };
+    rejectedPacket("() => { const b = new ArrayBuffer(32); const v = new DataView(b);"
+                   " v.setUint32(0, 0x544e4652, true); v.setUint32(4, 3, true); v.setUint32(8, 32, true);"
+                   " v.setUint32(12, 99, true); v.setUint32(16, 1, true); v.setUint32(20, 0, true); return b; }",
+                   "unsupported frame plan mode", "native parser rejects an unknown plan mode");
+    rejectedPacket("() => { const b = new ArrayBuffer(24); const v = new DataView(b);"
+                   " v.setUint32(0, 0x544e4652, true); v.setUint32(4, 3, true); v.setUint32(8, 24, true);"
+                   " v.setUint32(12, 1, true); v.setUint32(16, 1, true); v.setUint32(20, 0, true); return b; }",
+                   "malformed capture record layout", "native parser rejects a capture with no records");
+    {
+        // A capture that names more bytes than the retained frame may hold. The bound is checked
+        // before the body, so nothing walks a 32 MiB packet of zeros.
+        std::ostringstream oversized;
+        oversized << "() => { const b = new ArrayBuffer("
+                  << (mystral::webgpu::FramePlanState::maxBytes + 32)
+                  << "); const v = new DataView(b); v.setUint32(0, 0x544e4652, true); v.setUint32(4, 3, true);"
+                     " v.setUint32(8, b.byteLength, true); v.setUint32(12, 1, true); v.setUint32(16, 1, true);"
+                     " v.setUint32(20, 1, true); return b; }";
+        rejectedPacket(oversized.str(), "capture exceeds the retained frame bound",
+                       "native parser rejects a capture past the retained-frame bound");
+    }
+    rejected("[{index:9,runs:[{offset:8,words:[0,0]}]}]", "frame plan patch index out of range",
+             "native parser rejects a patch index past the plan");
+    rejected("[{index:2,runs:[{offset:8,words:[0,0]}]},{index:2,runs:[{offset:8,words:[0,0]}]}]",
+             "frame plan patch indices out of order",
+             "native parser rejects two entries for one record");
+    rejected("[{index:2,runs:[{offset:0,words:[0,0]}]}]",
+             "frame plan patch touches the record header", "native parser rejects a patch of a record header");
+    rejected("[{index:2,runs:[{offset:8,words:[0]}]}]",
+             "frame plan patch run is not a whole 8-byte word",
+             "native parser rejects a patch run that is not a whole word");
+    rejected("[{index:2,runs:[{offset:8,words:[0,0,0,0]}]}]",
+             "frame plan patch run leaves its record", "native parser rejects a run that leaves its record");
+    rejected("[{index:2,runs:[{offset:8,words:[0,0]},{offset:8,words:[0,0]}]}]",
+             "frame plan patch runs overlap", "native parser rejects overlapping runs in one entry");
+    rejected("[{index:2,runs:[]}]", "frame plan patch entry carries no runs",
+             "native parser rejects an entry that carries no runs");
+    rejected("[{index:2,runs:[{offset:8,words:[0,0]}]}]", "frame plan patch length mismatch",
+             "native parser rejects a patch with unread trailing bytes", 8);
+    rejectedSequence(9, "[{index:2,runs:[{offset:8,words:[0,0]}]}]", "stale frame plan sequence",
+                     "native parser rejects a patch from a sequence it never sent");
+    // The last rejection dropped the plan, so this one has nothing to patch — the state a recovery
+    // has to survive. A capture and a patch after it prove the plan comes back.
+    expectMalformed(state, patchPacket(1, "[{index:2,runs:[{offset:8,words:[0,0]}]}]"),
+                    "patch sent without a retained plan", "native parser rejects a patch with no plan");
+    expectAccepted(state, capturePacket(60), emptyFrameOrder, "a capture recovers the plan");
+    expectAccepted(state, patchPacket(61, "[{index:1,runs:[{offset:8,words:[900,901]}]}]"),
+                   emptyFrameOrder, "a patch applies again after recovery");
+    expect(state->framePlan.valid && state->framePlan.sequence == 61,
+           "the recovered plan is retained and sequenced");
+
+    state->profiling.frameOpStreamNativeCallObserver = nullptr;
+    state->profiling.frameOpStreamDrain = {};
+    unsetenv("TN_FRAME_PLANS");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     const bool disableStreamControl =
         argc > 1 && std::string(argv[1]) == "disabled-stream-control";
     runContract(disableStreamControl);
+    // Compiled frame plans run after the default contract, and only then: the recorder reads the
+    // flag when the device is created, so a plan-enabled runtime would change what the assertions
+    // above are looking at.
+    if (!disableStreamControl) runPlanContract();
     if (failures != 0) {
         if (disableStreamControl) {
             std::cerr << "RED observed: disabled frame stream rejected" << std::endl;

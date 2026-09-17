@@ -37,6 +37,7 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <limits>
@@ -2037,6 +2038,14 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         const auto host = state->engine->newObject();
                         state->engine->setProperty(host, "device", device);
                         state->engine->setProperty(host, "queue", queue);
+                        // Compiled frame plans (v3 transport) stay off unless the host asks for
+                        // them by name. The recorder reads this one flag and otherwise writes the
+                        // v2 stream it has always written, so an unset variable costs nothing.
+                        if (const char* plans = std::getenv("TN_FRAME_PLANS")) {
+                            if (plans[0] == '1' && plans[1] == '\0') {
+                                state->engine->setProperty(host, "compiledFramePlans", state->engine->newBoolean(true));
+                            }
+                        }
                         const auto drain = state->engine->call(
                             installer, state->engine->newUndefined(), {host});
                         if (!drain.ptr || state->engine->isNull(drain) || state->engine->hasException()) {
@@ -2845,7 +2854,13 @@ void endDawnFrame(BindingsState* state) {
 #if TN_ANDROID_JS_PROFILE
         const uint64_t drainStartCpuNs = readRenderThreadCpuNs();
 #endif
-        const auto frame = state->engine->call(state->profiling.frameOpStreamDrain, state->engine->newUndefined(), {});
+        // The frame boundary passes no `partial` and hands the recorder the retained-plan epoch:
+        // it patches only while the plan it holds is still the one native has, and recaptures the
+        // moment that stops being true. One number per frame is the whole recovery protocol.
+        const auto frame = state->engine->call(
+            state->profiling.frameOpStreamDrain, state->engine->newUndefined(),
+            {state->engine->newUndefined(),
+             state->engine->newNumber(static_cast<double>(state->framePlan.epoch))});
         const uint64_t drainNs = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - drainBegin)
                 .count());
