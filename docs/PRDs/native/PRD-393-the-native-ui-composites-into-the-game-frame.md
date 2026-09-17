@@ -225,6 +225,14 @@ measures this against `TN_FRAME_BUDGET` rather than assuming it.
       0.05 ms ablated, which is the first upload of a 1280×720 texture. If this criterion is ever
       restated as a worst-frame bound rather than a p95, the composite arm exceeds 2.0 ms there and
       the fix is the damage-region upload the PRD lists as the first mitigation.
+
+      **The same phase on real hardware, which the Xvfb lane cannot speak for.** One ordinary
+      windowed launch on this workstation's own KDE Wayland session (XWayland, real RTX 2080),
+      300-frame window: **`ui` p50 0.03 ms, p95 0.31 ms, mean 0.05 ms at 54.8 fps**, with the GPU
+      reporting 2.36 ms p50 and 1.06 M + 918 k + 522 k triangles across the main, shadow and
+      reflection passes. `TN_UI_COMPOSITE` for that run reads **4 uploads and 1548 skips** — the page
+      changed four times in 1552 frames and the texture was re-uploaded exactly four times, which is
+      the skip path doing its job rather than a claim about it.
 - [x] AC-7 [local; actor: agent]: A game with `ui: { renderer: "native" }` still starts and renders
       with no web engine initialised at all — no regression for games that never asked for a web UI.
       — **Met.** `examples/auto-lod` (`ui: { renderer: "native" }`) built for desktop and run on a
@@ -252,7 +260,11 @@ measures this against `TN_FRAME_BUDGET` rather than assuming it.
       with no nested X server and no wrapper script. This is the acceptance the whole PRD exists
       for and no `local` result substitutes for it. — **Awaiting João.** The wrapper script it names
       is deleted, and the `local` lanes above ran on a private `Xvfb`; the session this criterion is
-      about has not been driven by an agent.
+      about has not been driven by an agent. **A local observation, not a substitute:** one ordinary
+      windowed launch on that session showed the loading screen and then the interactive briefing,
+      captured from the game window with the page's own `#ECEDDF` ink and `#E8D7B6` gold present and
+      the world behind them, with no nested X server and no wrapper script — the wrapper is deleted.
+      João's own run is still the acceptance.
 
 ## Integration Ledger
 
