@@ -4,19 +4,31 @@
  * GtkOffscreenWindow + WebKitWebView + webkit_web_view_get_snapshot (async completion) ->
  * cairo ARGB32 surface read back on the CPU.
  *
- * usage: probe-gtk-offscreen <seconds>
+ * usage: probe-gtk-offscreen <seconds> [png path]
  *
  *   gcc -O2 -o probe-gtk-offscreen probe-gtk-offscreen.c \
  *     $(pkg-config --cflags --libs webkit2gtk-4.1 gtk+-3.0)
  *   sh scripts/xvfb.sh env LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
- *     ./probe-gtk-offscreen 6
+ *     ./probe-gtk-offscreen 6 /tmp/probe-gtk.png
  *
  * Runs under a private Xvfb with no compositing manager. WEBKIT_DISABLE_COMPOSITING_MODE=1
  * is required because GDK cannot create a GL context on a bare Xvfb ("The current backend
  * does not support OpenGL"), so this measures WebKit's software/cairo offscreen path.
+ *
+ * Two modes, because the two answers differ and both matter:
+ *
+ *   - default: a private Xvfb, WEBKIT_DISABLE_COMPOSITING_MODE=1, software GL. This is the
+ *     gate's lane — headless, no compositor, no GPU.
+ *   - TN_GTK_COMPOSITING=1: leave accelerated compositing alone and run on the real session.
+ *     That is the lane a player is on, and it is the one where `get_snapshot` has to keep
+ *     working once WebKit draws through its threaded compositor.
+ *
+ * The first completed snapshot is written as a PNG, so the evidence is an image a reader can
+ * look at rather than a set of numbers this program chose to print.
  */
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
+#include <cairo.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +57,7 @@ static gsize g_copy_size = 0;
 static guint8 g_last_anim = 255; static int g_distinct = 0;
 static guint64 g_deadline_us = 0;
 static int g_seconds = 5;
+static const char *g_png_path = NULL;
 static GMainLoop *g_loop;
 
 static gboolean check_deadline(gpointer user_data) {
@@ -79,6 +92,11 @@ static void snapshot_done(GObject *source, GAsyncResult *result, gpointer user_d
             g_copy = malloc(g_copy_size);
             if (g_copy) memcpy(g_copy, data, g_copy_size);
             g_got = 1;
+            if (g_png_path) {
+                cairo_status_t written = cairo_surface_write_to_png(surface, g_png_path);
+                printf("TN_GTK:{\"png\":\"%s\",\"written\":%s}\n", g_png_path,
+                       written == CAIRO_STATUS_SUCCESS ? "true" : "false");
+            }
         }
         {
             const guint8 *q = data + (gsize)320 * stride + 320 * 4;
@@ -111,6 +129,7 @@ static void load_changed(WebKitWebView *view, WebKitLoadEvent event, gpointer us
 
 int main(int argc, char **argv) {
     g_seconds = argc > 1 ? atoi(argv[1]) : 5;
+    g_png_path = argc > 2 ? argv[2] : getenv("TN_GTK_PNG");
     gtk_init(&argc, &argv);
 
     GtkWidget *offscreen = gtk_offscreen_window_new();
@@ -120,8 +139,17 @@ int main(int argc, char **argv) {
     gtk_container_add(GTK_CONTAINER(offscreen), GTK_WIDGET(g_view));
     gtk_widget_show_all(offscreen);
 
-    printf("TN_GTK:{\"webkit\":\"%u.%u.%u\"}\n", webkit_get_major_version(),
-           webkit_get_minor_version(), webkit_get_micro_version());
+    WebKitSettings *settings = webkit_web_view_get_settings(g_view);
+    /* Self-contained rather than depending on the runner to remember an env var. */
+    if (!getenv("TN_GTK_COMPOSITING"))
+        webkit_settings_set_hardware_acceleration_policy(
+            settings, WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER);
+    printf("TN_GTK:{\"webkit\":\"%u.%u.%u\",\"compositing\":\"%s\"}\n",
+           webkit_get_major_version(), webkit_get_minor_version(), webkit_get_micro_version(),
+           webkit_settings_get_hardware_acceleration_policy(settings) ==
+                   WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER
+               ? "software"
+               : "accelerated");
 
     g_signal_connect(g_view, "load-changed", G_CALLBACK(load_changed), NULL);
     webkit_web_view_load_html(g_view, PAGE, "file:///");

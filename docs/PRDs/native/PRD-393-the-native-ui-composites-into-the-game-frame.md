@@ -1,6 +1,8 @@
 # PRD-393 — The native UI composites into the game's own frame
 
-**Status:** PARTIAL — Phase 1 done (backend: WPE WebKit); phases 2–6 open
+**Status:** COMPLETE except two stated gaps — AC-5's diagnostics assertion (a pre-existing,
+separately-owned WebGPU validation error, evidence below) and AC-9 (Windows/macOS unrun on this
+host). Phases 1–6 are done; AC-10 is João's to run.
 **POST-DEVICE-EVALUATION-REQUIRED**
 **Complexity:** 10 (HIGH); risk override: none — the score already lands HIGH
 **Owner:** unassigned
@@ -132,42 +134,123 @@ measures this against `TN_FRAME_BUDGET` rather than assuming it.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: agent]: On a display with **no compositing manager at all**
+- [x] AC-1 [local; actor: agent]: On a display with **no compositing manager at all**
       (`Xvfb` without `xcompmgr`), launching `sandbox/midway-open-pacific` shows the briefing UI in
       the game's own frame — captured from the game window, not the root. The current build cannot
-      do this: the overlay refuses to attach without a compositor. — Evidence: pending.
-- [ ] AC-2 [local; actor: agent]: The game process creates **no override-redirect top-level
+      do this: the overlay refuses to attach without a compositor. — **Met.** Captured with
+      `import -window <game window>` on `Xvfb :93` (no `xcompmgr` anywhere): the 1280×720 window
+      holds the carrier deck *and* the briefing in one image, with the page's own `--ink` at
+      `#ECEDDF` and `--gold` at `#E8D7B6`, and `TN_UI_HIT_REGIONS` publishing the six controls the
+      briefing shows. Log: `TN_UI_OVERLAY:{"attached":true}` with no compositor refusal. Re-captured
+      on the final binary: the same frame, `#ECEDDF` ink and `#E8D7B6` gold present.
+- [x] AC-2 [local; actor: agent]: The game process creates **no override-redirect top-level
       window** on Linux. Asserted by walking the X tree for the game's pid and finding only the SDL
-      window. — Evidence: pending.
-- [ ] AC-3 [local; actor: agent]: The loading screen is visible in **10 consecutive launches** of
+      window. — **Met.** The root has exactly three children for the game's X client: the SDL game
+      window (1280×720 at +0+0, `IsViewable`, *not* override-redirect, `pid` = the game) and two
+      unmapped SDL helpers (10×10 `InputOnly`, 1×1 `InputOutput`) that both exist *before* the
+      overlay attaches at ~725 ms — i.e. they are SDL's, not the overlay's, and neither is a
+      top-level anyone can see. Zero override-redirect windows belong to the game's process tree.
+      The depth-32 override-redirect top-level the old overlay created is gone with `argb.rs`.
+      Re-walked on the final binary with the same result.
+- [x] AC-3 [local; actor: agent]: The loading screen is visible in **10 consecutive launches** of
       `sandbox/midway-open-pacific`, sampled from the game window before `first_playable`, with the
       `#loading` markup's own background colour present in every one. Today this is ~2 in 3. —
-      Evidence: pending.
-- [ ] AC-4 [local; actor: agent]: Web-view frames keep advancing while the game loop is blocked —
+      **Met, 10/10.** Every launch sampled from the game window 8 s in: 916 624 pixels of
+      `#102a37` (the `#loading` background, and the `bootSplash` colour) **plus 2 776 pixels of
+      `.load-title`'s own `#ECEDDF`** — the second is what rules out "the X window happens to be the
+      boot-splash colour". `first_frame` landed at 3.81–5.53 s in all ten; `first_playable` (~39 s
+      on this host) was asserted *not* reached in every one, because each run was stopped at 8 s.
+      A finer sweep shows no black frame anywhere: `#102a37` at 1 s, 2 s, 3 s, then `#102a37` plus
+      the page's gold and ink from ~4 s. Re-run on the final binary after the in-page `<select>`
+      work landed, with the same result.
+- [x] AC-4 [local; actor: agent]: Web-view frames keep advancing while the game loop is blocked —
       assert the mailbox's frame counter increases across a deliberate ≥2 s stall in the game
       thread. This is the defect that starved the page to three turns in thirty-eight seconds. —
-      Evidence: pending.
+      **Met.** `the_mailbox_advances_while_the_reader_is_blocked` in `offscreen.rs`: a publisher
+      thread publishes every 5 ms while the reading thread sleeps 2 s, and the test asserts the
+      counter passed 20 across the stall and that exactly one frame is retained (latest wins). In
+      the live game: `TN_UI_COMPOSITE` reports `counter:504` at ~45 s of a launch whose
+      `first_frame` was at 4 166 ms and which presented a handful of frames across those 45 s. The
+      pre-change baseline is not re-measured — that feeding path is deleted — and the measurement
+      that motivated the phase (three turns in thirty-eight seconds) is recorded above instead of
+      being re-derived.
 - [ ] AC-5 [local; actor: agent]: `native-playtests/ui-parity.playtest.json` passes with **zero**
       runtime diagnostics on the artifact built from this PRD, including the dropdown, the command
       overlay and the map — the same scenario that caught the `CreateBindGroup` regression. —
-      Evidence: pending.
-- [ ] AC-6 [local; actor: agent]: UI compositing costs **≤ 2.0 ms/frame at p95** on the hero scene
+      **NOT MET, and not by this change.** Every step and every resource assertion passes:
+      `choose-torpedo` (`ui.loadout.id === "torpedo"`), `take-deck` (`ui.screens.flight`),
+      `open-command` (`ui.overlay === "command-overlay"`), `order-cover`
+      (`hud.battle.command === "cover"`), `open-map`/`close-map` (`hud.mapOpen` true → false), with
+      all five presses routed to the page (`TN_UI_POINTER_ROUTE … "hit":true`). The `diagnostics`
+      assertion is red on **one** WebGPU validation error (four console lines): a 1×1
+      non-multisampled `Depth24Plus` texture bound against a layout expecting `multisampled: 1`. It
+      is **not** produced by this PRD, measured four ways: (a) with the UI composite ablated
+      (`TN_ABLATE_UI_COMPOSITE=ON` — overlay attached, page publishing regions, every step driven,
+      **no upload and no quad drawn at all**) the same four lines appear; (b) the *unmodified*
+      engine (`prebuilt/linux-x64/threenative-runtime`, packed into the same game) produces the same
+      three bind-group lines on the same scenario; (c) it survives `alphaAntialiasing: false` as
+      well as `true`, so it is not the MSAA path the config selects; (d) it is intermittent, and it
+      does not stop the game rendering — 453 presented frames and complete captures in the runs that
+      show it, and the previous session's own `ui-parity` console for this game has zero. Its shape
+      is three.js's own bind-group layout asking for a multisampled depth texture and binding a 1×1
+      `Depth24Plus` placeholder, at the frame the pipeline warmup completes (`present:8`,
+      `requested:54 emitted:54`), which is a renderer resource-ordering fault this PRD does not
+      touch. It is recorded here as a separate, pre-existing defect with its repro rather than
+      absorbed into this one. The scenario's driver also needed a real fix, which is the pointer
+      latch described in Phase 4.
+- [x] AC-6 [local; actor: agent]: UI compositing costs **≤ 2.0 ms/frame at p95** on the hero scene
       at 1280×720, measured as a named phase in `TN_FRAME_BUDGET` over ≥300 frames, interleaved
       against a build with the UI quad disabled (this host drifts wider than small effects, so
-      alternate the pairs). — Evidence: pending.
-- [ ] AC-7 [local; actor: agent]: A game with `ui: { renderer: "native" }` still starts and renders
+      alternate the pairs). — **Met: 0.10 ms p95 against 0.00 ms ablated, a delta of +0.10 ms.**
+      Three interleaved pairs, each arm on its own private display, each run 300-frame windows:
+
+      | run | arm | ui p50 | ui p95 | ui worst window p95 | ui worst single frame |
+      |---|---|---|---|---|---|
+      | on-1 | composite | 0.04 | 0.05 | 0.51 | 11.84 |
+      | off-1 | ablated | 0.00 | 0.00 | 0.00 | 0.01 |
+      | on-2 | composite | 0.04 | 0.19 | 0.19 | 4.58 |
+      | off-2 | ablated | 0.00 | 0.00 | 0.00 | 0.01 |
+      | on-3 | composite | 0.04 | 0.07 | 0.64 | 3.73 |
+      | off-3 | ablated | 0.00 | 0.00 | 0.00 | 0.05 |
+
+      All three pairs have the same sign (+0.05, +0.19, +0.07), and the ablated arm reads exactly
+      0.00 in all six windows — the phase is measuring the composite and nothing else. **Two
+      caveats a reader must carry.** First, this lane rasterises in software: the frame is ~60 ms
+      (`present` p95 73–89 ms) at ~15 fps, so the composite is ~0.1% of it and this is not a
+      sensitive instrument for small costs on real hardware — what it establishes is that the
+      composite is far inside the budget, not that 0.1 ms is its cost on a GPU. Second, **p95 hides
+      a first-use spike**: single frames reach 11.84 / 4.58 / 3.73 ms on the composite arm against
+      0.05 ms ablated, which is the first upload of a 1280×720 texture. If this criterion is ever
+      restated as a worst-frame bound rather than a p95, the composite arm exceeds 2.0 ms there and
+      the fix is the damage-region upload the PRD lists as the first mitigation.
+- [x] AC-7 [local; actor: agent]: A game with `ui: { renderer: "native" }` still starts and renders
       with no web engine initialised at all — no regression for games that never asked for a web UI.
-      — Evidence: pending.
-- [ ] AC-8 [local; actor: agent]: The X11 overlay implementation is **deleted**, not left beside the
+      — **Met.** `examples/auto-lod` (`ui: { renderer: "native" }`) built for desktop and run on a
+      private display: **1038 presented frames**, `TN_UI_OVERLAY` count **0**, `TN_UI_COMPOSITE` count
+      **0**, no child processes, and **0** WebKit processes on the machine descended from it. The
+      `ui` phase is a real zero rather than an absent phase, and `__tnUiCompositeMs` answers 0 while
+      no overlay exists.
+- [x] AC-8 [local; actor: agent]: The X11 overlay implementation is **deleted**, not left beside the
       new path: no `Placement::Overlay`, no `tn_ui_overlay_pump` call from the frame loop, and
       `sandbox/midway-open-pacific/tools/run-native.sh` removed with its reason recorded. —
-      Evidence: pending.
+      **Met.** `argb.rs` and `bin/probe.rs` are deleted; `grep -rn "Placement::|ensure_compositor|
+      SelfCompositor|compositor_present"` over the crate and the runtime returns nothing;
+      `tn_ui_overlay_pump` survives only in `desktop.rs` (Windows/macOS) and is called only under
+      `#if defined(_WIN32) || defined(__APPLE__)`, never from the frame loop, where the `ui` phase
+      is now the compositor; `tools/run-native.sh` is removed with its reason in Phase 5.
 - [ ] AC-9 [local; actor: agent]: Windows and macOS builds are unchanged by this PRD — their UI
-      paths still compile and their existing native gates pass. — Evidence: pending.
+      paths still compile and their existing native gates pass. — **UNRUN on this host.** The claim
+      rests on inspection, not on a build: `desktop.rs` is untouched, the crate's Windows/macOS
+      dependency tables are untouched, every new declaration in the C++ seam is Linux-only
+      (`__linux__ && !__ANDROID__` for the mailbox and keyboard entry points, with the frame and
+      keyboard accessors returning false elsewhere), and the composite compiles to a no-op without a
+      WebGPU backend. A reader should treat this as unverified.
 - [ ] AC-10 [owner; actor: João]: On João's own KDE Wayland session, an ordinary launch of the
       packaged `midway-open-pacific` shows the loading screen and then the interactive briefing,
       with no nested X server and no wrapper script. This is the acceptance the whole PRD exists
-      for and no `local` result substitutes for it. — Evidence: pending.
+      for and no `local` result substitutes for it. — **Awaiting João.** The wrapper script it names
+      is deleted, and the `local` lanes above ran on a private `Xvfb`; the session this criterion is
+      about has not been driven by an agent.
 
 ## Integration Ledger
 
@@ -176,13 +259,16 @@ measures this against `TN_FRAME_BUDGET` rather than assuming it.
 | Web UI presented to the player on Linux | Game launch → `attachDesktopUiOverlay` call site `packages/runtime-native/src/cli/main.cpp:1168` → new offscreen backend → UI quad before `presentPendingSurface()` (`packages/runtime-native/src/webgpu/bindings.cpp:2892`) | **Replaces** the X11 override-redirect overlay in `native/ui-overlay/src/argb.rs`; that path is deleted for Linux (AC-8) | AC-1, AC-2, AC-8 |
 | Web-view servicing | Own continuously-serviced thread/process | **Replaces** `platform::pumpUiOverlay()` from the frame loop (`packages/runtime-native/src/runtime.cpp:1294`); the game loop only takes the latest mailbox frame | AC-4 |
 | Pointer input into the page | Existing `uiOverlayInjectPointer` / `TN_UI_HIT_REGIONS` contract, unchanged signature | Re-pointed at the offscreen view; hit regions still published by the page | AC-5 |
+| A `<select>`'s list | A press on a `<select>` in any game's native UI → `NATIVE_SELECT_SCRIPT` (injected at document start by the overlay crate) → rows marked `data-tn-interactive` → the host's own routing | **Replaces** the native popup the deleted overlay window used to host. The project styles `[data-tn-native-select]`; the host owns only geometry | `native-playtests/native-select.playtest.json`: opening the list publishes four new regions and picking one sets `ui.assignment.id` to `recon` |
+| Keyboard into the page | `uiOverlayInjectKey` + `key_injection_script`, gated by `uiOverlayKeyboardCaptured`, which the page reports over its private `tnKeyFocus` channel | New: keys reach the page only while the page holds focus, so a listbox or a text field works and every other key stays the game's | The select scenario drives the list by pointer; the focus rule is what keeps `KeyQ` in `ui-parity` reaching the game |
 | Loading screen visibility | `ctx.startup` cover → UI quad composited while startup is held | **Replaces** the `framework:ui-ready` hold added in `packages/core/src/game.ts` during investigation, which cannot work: `ui-ready` proves script execution, not presentation. Remove it in Phase 6. | AC-3 |
 | `bootSplash.backgroundColor` on desktop | `applyEmbeddedBootSplash()` in `packages/runtime-native/src/platform/window.cpp` | Keep — independently correct and already verified on screen. Extend to the held-startup clear colour so the gap after it is not `gray(0)`. | AC-3 |
 
 ## Execution Phases
 
 #### Phase 1: Pick the backend on evidence
-**Status:** DONE — backend chosen: **WPE WebKit** (rejected: webkit2gtk-offscreen)
+**Status:** DONE — backend chosen: **webkit2gtk-4.1 offscreen**. WPE WebKit was chosen first and then
+**reversed on measurement**; the reversal and its evidence are below.
 **ACs:** none directly — this phase de-risks AC-1 and AC-4
 **Files:** `packages/runtime-native/native/ui-overlay/src/bin/probe-wpe.c` and
 `probe-gtk-offscreen.c` (throwaway probes beside the crate's existing `bin/probe.rs`; each carries
@@ -208,42 +294,68 @@ phase existed to catch.
   matching the page's rAF) — the rest re-read an unchanged surface. Completion is the async
   `webkit_web_view_get_snapshot` callback **per request**: pull-only, no autonomous frame emission,
   and no damage regions (full-surface snapshots).
-**Decision:** WPE WebKit. Both meet the CPU-frame/completion/headless bar at identical bytes/frame
-and ~60 fresh fps, so the pick turns on the phase-2 shape: WPE is push-with-completion (a completed
-frame arrives whether or not the game loop is looking, which is exactly the mailbox AC-4 needs),
-runs with **no display server**, and WebKit passes damage to the view for Phase 3's damaged-region
-upload. webkit2gtk-offscreen is rejected despite its zero dependency cost: its frames are pull-only
-snapshots that each force a full render, it needs an X server, and offscreen GTK is not a supported
-embedding path upstream — the same murky accelerated-compositing area suspected in defect 1.
-**Named fallback:** webkit2gtk-offscreen stays viable if bundling WPE is rejected; it delivers the
-same pixels and bytes at ~60 fresh frames/s with `wry` and no new dependency.
-**Caveat / obstacle:** the WPE CPU frames were obtained through the surfaceless path
-(`LIBGL_ALWAYS_SOFTWARE=1`, so `wpe_display_get_drm_device()` is null). With a DRM device the
-headless display emits DMA-BUF buffers and CPU readback fails on this host's NVIDIA proprietary
-driver (`gbm_bo_map failed`, reproduced directly with `libgbm`); Phase 3's DMA-BUF import path
-remains unverified here.
+**Decision: webkit2gtk-4.1 offscreen.** WPE WebKit was the first pick and is the better engine for
+this job on paper. It was reversed on measurement, because it cannot deliver a CPU-readable frame on
+the machine AC-10 is about, and because the product cannot ship it:
+
+1. **No frames at all on a real GPU session.** Re-run on this host with the DRM device present
+   (`probe-wpe 5`, no `LIBGL_ALWAYS_SOFTWARE`), WPE reports `frame:false` with **frames:0** and every
+   `buffer-rendered` failure is `import_to_pixels failed: Failed to import buffer to pixels buffer:
+   gbm_bo_map failed`. The identical binary with `LIBGL_ALWAYS_SOFTWARE=1` returns
+   `frame:true, shm:true, rects_ok:true, 296 frames / 4.69 s = 63.1 fps`. So the only way WPE hands
+   over pixels on this host is a **process-wide `LIBGL_ALWAYS_SOFTWARE=1`**, and a runtime cannot set
+   that: it would force software GL on the game's own renderer too. The alternative — importing the
+   DMA-BUF into WebGPU — is a Dawn-only path this runtime does not currently expose, and is not
+   something to bet an acceptance criterion on.
+2. **The product cannot ship it.** The distribution `libWPEWebKit` hardcodes `/usr/lib/wpe-webkit-2.0`
+   as the location of its own web process, so running it unprivileged needed that string **patched
+   out of the shipped binary** plus a `/tmp/wpe` symlink pointing at an extracted prefix. A product
+   does not ship a patched distribution library.
+3. **Cost.** WPE is 130 MB of new payload (`libWPEWebKit-2.0.so.1.9.10` is 128 MB) plus 2.5 MB of
+   helper executables, and ~30 licences. webkit2gtk adds **nothing**: the Linux desktop `mystral`
+   built here already `ldd`-links `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0`,
+   `libgtk-3.so.0` and `libsoup-3.0.so.0` because `wry` pulls webkit2gtk on Linux today.
+
+What WPE is genuinely better at is recorded and not disputed: it pushes frames on the page's own
+cadence with a `buffer-rendered` completion instead of being pulled, and it is the only candidate that
+runs with no display server at all. **Named fallback: WPE**, if the CPU cost of the GTK path ever
+proves fatal. It is not taken now because a fallback that cannot produce a pixel on the target machine
+is not a fallback.
+
+**What the GTK path costs, named as a constraint.** The web view must run with
+`WebKitSettings:hardware-acceleration-policy = NEVER`. Left accelerated, WebKit **aborts the process**
+on a `GtkOffscreenWindow` — `probe-gtk-offscreen` under `TN_GTK_COMPOSITING=1` exits **134 (SIGABRT)**
+with `GDK is not able to create a GL context: The current backend does not support OpenGL`, because an
+offscreen window has no `GdkWindow` to host a GL surface. With the policy set, the same binary passes
+on this host's real session in **all three** GDK backend modes (default, `x11`, `wayland`):
+`rects_ok:true` and 493.1 / 457.5 / 458.8 snapshots per second at 1280×720. So the UI rasterizes on
+the CPU inside the web process — that is the measured cost Phase 3's budget has to carry, and the
+reason Phase 2's snapshot cadence is demand-driven rather than a fixed rate.
+
 **Licence and bundled-library obligations:** wpewebkit is **LGPL-2.1-only / LGPL-2.1-or-later** plus
 bundled AFL-2.0/GPL/Apache-2.0/BSD/MIT/MPL-1.1/MPL-2.0/OFL-1.1 files (Arch `license` field), installed
 138.6 MiB, `libWPEWebKit-2.0.so` 128 MiB, 112 shared objects via `ldd`; `libwpe` and
 `wpebackend-fdo` are **BSD-2-Clause**. webkit2gtk-4.1 carries the same WebKit source set and is
-already installed (90 MiB `.so`, 143 `ldd` objects) as a `wry` dependency. WPE must be bundled or
-declared a prerequisite in Phase 5; its LGPL requires the licence text and relink option to ship.
+already installed (90 MiB `.so`, 143 `ldd` objects) as a `wry` dependency, and the Linux desktop build
+already links it, so the chosen backend adds **no** new library, no new licence and no new obligation.
 **Checkpoint:** Phase 1 complete — both probes built and run, numbers above recorded from the
 actual runs, decision and rejected option recorded, licence/bundled-library obligations recorded.
-- [x] WPE candidate probed, numbers recorded — 63.2 fps, 3 686 400 B/frame, SHM ARGB8888,
-      `buffer-rendered` completion, no X server (`probe-wpe.c`)
+- [x] WPE candidate probed, numbers recorded — 63.2 fps / 3 686 400 B/frame / SHM ARGB8888 /
+      `buffer-rendered` completion / no X server **with `LIBGL_ALWAYS_SOFTWARE=1`**, and **zero
+      frames** without it on the real session (`probe-wpe.c`)
 - [x] webkit2gtk-offscreen candidate probed, numbers recorded — 475.3 snapshot/s (374 content
-      changes in 6 s), 3 686 400 B/frame, pull-only completion, Xvfb required
-      (`probe-gtk-offscreen.c`)
-- [x] decision recorded in this PRD with the rejected option and the reason — WPE chosen;
-      webkit2gtk-offscreen rejected (pull-only snapshot, needs X, no damage, unsupported path)
+      changes in 6 s) under Xvfb, 493.1 snapshot/s on the real session in default/`x11`/`wayland`
+      backend modes, 3 686 400 B/frame, pull-only completion (`probe-gtk-offscreen.c`)
+- [x] decision recorded in this PRD with the rejected option and the reason — **webkit2gtk-offscreen
+      chosen, WPE rejected** (no CPU frames on a real GPU session without a process-wide software-GL
+      override; needs a patched distribution library; 130 MB and ~30 licences)
 - [x] licence and bundled-library obligations recorded — WPE LGPL-2.1 + bundled set, libwpe/
-      wpebackend-fdo BSD-2-Clause; webkit2gtk already present
+      wpebackend-fdo BSD-2-Clause; webkit2gtk already present and already linked by this build
 
 #### Phase 2: Frame transport off the game loop
-**Status:** NOT STARTED
+**Status:** DONE
 **ACs:** AC-4
-**Files:** `packages/runtime-native/native/ui-overlay/src/` (new backend module + `abi.rs` surface),
+**Files:** `packages/runtime-native/native/ui-overlay/src/offscreen.rs` (new), `src/abi.rs`,
 `packages/runtime-native/src/platform/ui_overlay.cpp`
 **Implementation:** Run the web engine on its own continuously-serviced thread or process. Publish
 completed frames into a mailbox holding at most one buffer plus a monotonic frame counter; the game
@@ -253,14 +365,44 @@ queue semantics (`queueUiMessage`/`takeUiMessage`) so the bridge contract is unt
 **Verification:** E1 — a test stalls the game thread ≥2 s and asserts the mailbox counter advanced
 and exactly one buffer is retained. Negative control: the same assertion against a mailbox fed from
 the frame loop MUST fail, which is the pre-change baseline.
-**Checkpoint:** pending
-- [ ] backend serviced off the game loop
-- [ ] mailbox holds one frame, latest wins, counter monotonic
-- [ ] stall test green; baseline red observed
-- [ ] no GTK/WebKit call reachable from the JS thread (inspected, not assumed)
+
+**What shipped.** `offscreen.rs` owns one thread (`tn-ui-web`) that runs GDK's main loop, and the
+game thread never enters it. The mailbox is `Mutex<Option<Frame>>` with an `AtomicU64` counter and
+`Arc<Vec<u8>>` pixels, so publishing is a pointer swap and the game copies nothing; the web view's
+own buffer recycling means a still page allocates nothing at all. The snapshot cadence is
+demand-driven — 16 ms while the page is changing, doubling to a 250 ms floor once it has not — which
+is what keeps CPU rasterisation off the game's back and is why the phase measures 0.3 ms rather than
+a full-page copy.
+
+**Evidence.** `cargo test --release --lib` in `native/ui-overlay` — 15 tests, including
+`the_mailbox_advances_while_the_reader_is_blocked` (a producer thread publishes every 5 ms while the
+reading thread sleeps 2 s; the counter must pass 20 and exactly one frame must be retained,
+latest-wins) and `the_mailbox_keeps_one_frame_and_counts_every_publication`. In the live game the
+same property is visible end to end: `TN_UI_COMPOSITE` reports `counter:504` after ~45 s of a
+Midway launch whose own `first_frame` was at 4.17 s and which presented a handful of frames in
+between, i.e. the web view produced 504 frames while the game loop was mostly blocked.
+
+**Baseline red was not re-measured.** The pre-change wiring is deleted, so the negative control the
+PRD asks for cannot be run against it; what stands in its place is the measurement that motivated
+the phase, recorded in this PRD: three feedings in thirty-eight seconds. The new wiring's stall test
+is green, and the counter's behaviour across a stall is directly observable in every launch.
+
+**No GTK/WebKit call is reachable from the JS thread**: the crate's only GTK entry points are
+`gtk::init`, the offscreen window, the web view and its signals, and every one of them is called
+inside `web_thread` (inspected; `grep -n 'gtk::\|webkit2gtk::' src/*.rs` shows the game-side ABI in
+`abi.rs` names none of them).
+
+**Checkpoint:** done
+- [x] backend serviced off the game loop — `offscreen::spawn` owns `tn-ui-web`; `pumpUiOverlay()`
+      only drains the inbound queue on Linux
+- [x] mailbox holds one frame, latest wins, counter monotonic — unit tests plus `TN_UI_COMPOSITE`'s
+      `counter`/`uploadedCounter`
+- [x] stall test green; baseline red not re-measured (the pre-change feeding path is deleted) —
+      stated rather than assumed
+- [x] no GTK/WebKit call reachable from the JS thread (inspected, not assumed)
 
 #### Phase 3: Composite the UI into the frame
-**Status:** NOT STARTED
+**Status:** DONE
 **ACs:** AC-1, AC-6
 **Files:** `packages/runtime-native/src/webgpu/` (new UI composite unit beside
 `bindings_canvas2d_composite.cpp`), `packages/runtime-native/src/webgpu/bindings_presentation.cpp`
@@ -273,14 +415,37 @@ already.
 **Verification:** E1 — launch under `Xvfb` with **no** compositing manager, capture the game window,
 assert the briefing's known UI pixels are present (AC-1). E2 — interleaved frame-budget pairs with
 the quad enabled/disabled, 3 pairs, ≥300 frames each, p95 delta ≤ 2.0 ms (AC-6).
-**Checkpoint:** pending
-- [ ] UI pixels present in the game's own frame with no compositor running
-- [ ] unchanged frames skip the upload (asserted, not assumed)
-- [ ] `ui` frame-budget phase reported separately from `overlay`
-- [ ] p95 cost within AC-6, interleaved measurement
+
+**What shipped.** `bindings_ui_composite.cpp` uploads the mailbox frame with `wgpuQueueWriteTexture`
+and draws one premultiplied quad into `presentation.currentTextureView` — the frame's own colour
+target, which is the swapchain image on a direct surface and the linear intermediate when the sRGB
+presentation bridge is on — immediately before `presentPendingSurface()`. The upload is skipped
+entirely when the page's counter has not moved. The blob is cairo `ARGB32` premultiplied, which on a
+little-endian host is `B,G,R,A` = `BGRA8Unorm`, so no swizzle is involved.
+
+**One colour-space mistake, found and fixed by looking at the pixels.** The first version wrote
+linear premultiplied in both presentation modes, on the assumption that whatever the target is, it
+encodes. On this host the surface is plain `bgra8unorm` (no sRGB), so nothing encodes and the page's
+`#eceddf` ink arrived on screen as `#d6d8bc` — `srgb_to_linear(#eceddf)` to the byte. The shader now
+encodes when the frame target is a non-sRGB surface and stays linear when the hardware or the bridge
+will do it; the same capture then read `#ECEDDF` exactly.
+
+**Checkpoint:** done
+- [x] UI pixels present in the game's own frame with no compositor running — captured from the game
+      window on a private `Xvfb` with no `xcompmgr`; `#ECEDDF` ink and `#E8D7B6` gold present, and
+      the whole briefing legible over the carrier deck in one frame
+- [x] unchanged frames skip the upload (asserted, not assumed) — `TN_UI_COMPOSITE` reports
+      `uploads` and `skipped` separately; a still briefing measures ~15 skipped/s against ~1
+      upload/s
+- [x] `ui` frame-budget phase reported separately from `overlay` — `ui` is its own segment in
+      `TN_HOST_GAP` and its own phase in `TN_FRAME_BUDGET` (`FRAME_BUDGET_PHASES` gained `"ui"`,
+      `addUi`, and a `__tnUiCompositeMs` host global), with `overlay` untouched
+- [x] p95 cost within AC-6, interleaved measurement — 0.10 ms against 0.00 ablated, +0.10 ms
+      delta, three interleaved pairs; AC-6 carries the table and two caveats
 
 #### Phase 4: Input, hit regions and popups
-**Status:** NOT STARTED
+**Status:** DONE — one box open: `ui-parity` passes every step, its diagnostics assertion is red on
+a pre-existing fault (AC-5)
 **ACs:** AC-5
 **Files:** `packages/runtime-native/src/platform/ui_overlay.cpp`,
 `packages/runtime-native/native/ui-overlay/src/`
@@ -292,13 +457,67 @@ and document the native-popup answer: with no overlay window, a bare `<select>` 
 **Verification:** E1 — `native-playtests/ui-parity.playtest.json`, which already exercises the
 loadout buttons, the assignment dropdown, the command overlay and the map, with zero runtime
 diagnostics.
-**Checkpoint:** pending
-- [ ] pointer and keyboard reach the page through the existing contract
-- [ ] `ui-parity` green with zero diagnostics
-- [ ] popup behaviour decided, implemented and documented in the template docs
+
+**What shipped.** One authority decides which side a pointer event belongs to —
+`platform::uiOverlayRoutePointer` — because there are two callers that must not be able to
+disagree: the OS event loop (`window.cpp`, real presses) and the playtest bridge
+(`runtime.cpp`, synthetic ones). It owns the gesture latch and the last position, and both callers
+now go through it.
+
+**The bug that fix exposed, and why it mattered.** A release arrived with no position at all
+(`clientX=0, clientY=0`), so the old rule — hit-test every event and hand over only if it lands
+inside a published rectangle — dropped the `pointerup` of a press the page was already holding. The
+loadout button never activated, and the scenario's first interaction timed out with
+`last observation "bomb"`. A gesture now completes on the control that received its press, wherever
+the release is reported, which is what a window system does and what the injected `click` depends
+on. Measured before and after: `pointerup … "hit":false` → `"hit":true` on all four presses, and
+`choose-torpedo`, `take-deck`, `open-command`, `order-cover`, `open-map`, `close-map` all pass.
+
+**Keyboard: the game's, until the page holds it.** A rectangle says where a press landed; it says
+nothing about who should receive `ArrowUp`. The overlay this replaces never took keyboard focus
+either (`WM_HINTS input=false`, set deliberately), and every key in this repository's games and
+templates is the game's — movement, `KeyQ` for the command overlay, `M`/`P`/`Escape`. Routing keys
+by hit region would swallow exactly those, including the `KeyQ` step `ui-parity` asserts. So the
+rule is the page's own focus and nothing else: while a focused input, textarea, select or open list
+is in the page, keys are forwarded to it; otherwise they are the game's. See the popup answer below
+for the consumer that made this more than a mechanism waiting for one.
+
+**The popup answer: the host draws the list in the page, and the project styles it.** With the UI
+composited into the game's own frame there is no view for WebKit's native `<select>` menu to open
+into, and the host's synthetic presses are untrusted DOM events, which a browser never uses to open
+a native popup — so a bare `<select>` could neither show its list nor be operated. The overlay this
+replaced *did* serve that control (it was a real window with a real popup), so deleting the window
+without replacing this would have quietly broken every game with a dropdown. The host therefore
+injects `NATIVE_SELECT_SCRIPT` at document start, in the crate, so every Linux game gets it and no
+game has to know: a press on a `<select>` opens a list under the control, each row marks itself
+`data-tn-interactive` so the host's own routing can reach it, and choosing a row sets
+`select.value` and dispatches `input` + `change` — a listener written for the browser's popup runs
+unchanged.
+
+It owns no appearance, the same division as `DebugOverlay`: the list is `[data-tn-native-select]`
+and its rows `[data-tn-native-select-option]`, and the project gives them a look. What the host
+does set is geometry — where the list sits and that it scrolls — because an unpositioned list is not
+an unstyled control, it is a broken one. The starter template's `AGENTS.md` names both selectors in
+the line that already tells a game to mark its touch targets, and `packages/ui/AGENTS.md` states the
+same where the HUD's author reads it.
+
+**Keyboard, finally, has a consumer.** The list is a listbox and has to be operable with arrows and
+Enter, which needs keys in the page — so the host now forwards keys to the page while, and only
+while, the page holds the keyboard: it reports focus (input, textarea, select, or the open list)
+over a private `tnKeyFocus` channel, and `uiOverlayKeyboardCaptured` is what the game loop asks
+before it forwards. Every other key is still the game's, which is what keeps `W` as throttle and
+`KeyQ` as the command overlay.
+
+**Checkpoint:** done, except the `ui-parity` diagnostics assertion — see AC-5.
+- [x] pointer and keyboard reach the page through the existing contract — one shared pointer seam
+      with a gesture latch, and keys forwarded to the page while it holds the keyboard
+- [ ] `ui-parity` green with zero diagnostics — every step and resource assertion passes;
+      the diagnostics assertion is red on an intermittent, pre-existing WebGPU validation error
+      that the unmodified engine also produces (AC-5 below)
+- [x] popup behaviour decided, implemented and documented in the template docs
 
 #### Phase 5: Delete the X11 overlay and ship the dependency
-**Status:** NOT STARTED
+**Status:** DONE — one box open: Windows/macOS (AC-9) are unrun on this host and stated as such
 **ACs:** AC-2, AC-7, AC-8, AC-9
 **Files:** `packages/runtime-native/native/ui-overlay/src/argb.rs` (delete the overlay window path),
 `packages/runtime-native/src/runtime.cpp` (remove the frame-loop pump),
@@ -312,14 +531,41 @@ supports. Leave the Windows and macOS child-window paths alone.
 (AC-2). E2 — a `ui.renderer: "native"` fixture starts and renders with no web engine initialised
 (AC-7). E3 — Windows and macOS builds compile and their existing native gates pass (AC-9). E4 —
 `grep` proves the deleted symbols are gone, and no code path re-enables them (AC-8).
-**Checkpoint:** pending
-- [ ] no override-redirect window in the X tree
-- [ ] `ui.renderer: "native"` unaffected, no web engine started
-- [ ] Windows and macOS unchanged and green
-- [ ] overlay code deleted; `run-native.sh` removed with its reason recorded
+
+**What shipped.** `argb.rs` (1506 lines), `bin/probe.rs`, the `[[bin]]` target, and the crate's
+`x11-dl`/`gdkx11`/`libloading` dependencies are gone; `Placement`, the self-compositor, the
+compositing-manager probe and the frame-loop pump with them. `tn_ui_overlay_pump` survives only for
+Windows and macOS, declared and called under `#if defined(_WIN32) || defined(__APPLE__)`, because
+those two still attach a child view and still need their service point. `tools/run-native.sh` is
+deleted from the sandbox game.
+
+**No new dependency to ship.** Phase 1's analysis decided this: webkit2gtk-4.1 is already linked by
+every Linux desktop build of this runtime, so the chosen backend adds no library, no licence and no
+installer work. Nothing was added to `package-desktop.mjs`'s dependency discovery because nothing
+new needs discovering.
+
+**The wrapper's reason, recorded as AC-8 asks.** `sandbox/midway-open-pacific/tools/run-native.sh`
+started a nested `Xephyr` display and an `xcompmgr` inside it before launching the game, because the
+runtime's X11 overlay window was created, mapped and left empty on a KDE Wayland session and needed
+a compositor it could drive. There is no overlay window any more and nothing for a compositor to
+blend, so the wrapper has nothing left to do: `pnpm build:desktop` and
+`dist-native/midway-open-pacific` is the launch.
+
+**Checkpoint:** done for E1, E2 and E4; E3 is unrun and stated as such.
+- [x] no override-redirect window in the X tree — 3 windows for the game's X client on a private
+      `Xvfb`: the SDL game window (1280×720, viewable, not override-redirect) and two unmapped SDL
+      helpers (a 10×10 `InputOnly`, a 1×1 `InputOutput`), both of which exist *before* the overlay
+      attaches at ~725 ms and neither of which is a top-level anything can see. Zero override-redirect
+      windows belong to the game's process tree.
+- [x] `ui.renderer: "native"` unaffected, no web engine started — see AC-7
+- [ ] Windows and macOS unchanged and green — **unrun**: this host cannot compile either target, so
+      the claim is made on inspection only (their `desktop.rs` path is untouched, their dependency
+      table is untouched, and every new Linux-only declaration is behind
+      `__linux__ && !__ANDROID__`). A reader should treat this box as unverified.
+- [x] overlay code deleted; `run-native.sh` removed with its reason recorded
 
 #### Phase 6: The loading screen is deterministic
-**Status:** NOT STARTED
+**Status:** DONE
 **ACs:** AC-3
 **Files:** `packages/core/src/game.ts`, `packages/runtime-native/src/platform/window.cpp`
 **Implementation:** Remove the `framework:ui-ready` hold — it waits on script execution, not
@@ -330,10 +576,27 @@ rather than `#102a37` for four seconds and then `gray(0)`.
 **Verification:** E1 — 10 consecutive launches, each sampled from the game window before
 `first_playable`, asserting the `#loading` background colour is present in all 10 (AC-3). A single
 green run is explicitly not sufficient here: the defect being closed is a 1-in-3 race.
-**Checkpoint:** pending
-- [ ] `framework:ui-ready` hold removed
-- [ ] held-startup clear colour is the game's `bootSplash` colour, no black gap
-- [ ] 10/10 launches show the loading screen
+
+**The hold is gone, and the clear colour turned out not to be needed.** The `framework:ui-ready`
+hold was an uncommitted investigation change, not something at HEAD; it is not in the tree and no
+replacement was written, because once the UI is composited into the game's own frame the cover and
+the world share one swapchain and the race it guarded cannot occur. `applyEmbeddedBootSplash()`
+(committed) already paints the window with the game's own `bootSplash.backgroundColor` at creation,
+and the black gap the ledger asked to close no longer exists to close: sampled every second from
+launch, the window is `#102a37` at 1 s, 2 s and 3 s, and from ~4 s it is `#102a37` **plus the page's
+own gold and ink** — the first presented frame already carries the loading screen. No black or grey
+frame was observed at any sample. Extending the held-startup clear colour would have added code for
+a gap that measurement says is not there, so it was not added.
+
+**Checkpoint:** done
+- [x] `framework:ui-ready` hold removed — it was never committed; the tree has no hold and no
+      replacement
+- [x] held-startup clear colour is the game's `bootSplash` colour, no black gap — measured: no
+      black or grey frame at any sample, and the boot-splash colour is on screen from creation
+- [x] 10/10 launches show the loading screen — 916 624 pixels of `#102a37` **and** 2 776 pixels of
+      the loading title's own `--ink` in every one of ten consecutive launches, sampled 8 s in with
+      `first_frame` at 3.81–5.53 s and `first_playable` not yet reached (it lands at ~39 s here, and
+      every run was asserted not to have reached it)
 
 ## Out of scope
 

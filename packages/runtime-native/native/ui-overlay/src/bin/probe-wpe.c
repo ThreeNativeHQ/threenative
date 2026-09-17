@@ -31,6 +31,8 @@
 #include <wpe/webkit.h>
 #include <wpe/headless/wpe-headless.h>
 
+#include <cairo.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -118,6 +120,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "display connect failed: %s\n", error ? error->message : "?");
         return 2;
     }
+    /* Which buffer class we are about to be handed, and why. A non-null DRM device means the
+     * display will emit DMA-BUF, whose CPU readback is the thing that has to work or not. */
+    printf("TN_WPE:{\"libgl_always_software\":%s}\n",
+           getenv("LIBGL_ALWAYS_SOFTWARE") ? "true" : "false");
 
     WebKitWebView *web_view = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW,
         "display", display, "settings", webkit_settings_new(), NULL));
@@ -208,17 +214,18 @@ int main(int argc, char **argv) {
     /* One PNG of the captured frame for the report. */
     const char *out = getenv("TN_WPE_PNG");
     if (out) {
-        FILE *f = fopen(out, "wb");
-        if (f) {
-            /* minimal PPM instead of PNG: no encoder needed, convert with ImageMagick */
-            fprintf(f, "P6\n%d %d\n255\n", buf_w, buf_h);
-            for (int y = 0; y < buf_h; y++) for (int x = 0; x < buf_w; x++) {
-                const guint8 *q = p + (gsize)y * buf_stride + x * 4;
-                fputc(q[2], f); fputc(q[1], f); fputc(q[0], f);
-            }
-            fclose(f);
-            printf("TN_WPE:{\"wrote\":\"%s\"}\n", out);
-        }
+        /* WPEBufferSHM is ARGB8888 little-endian — B,G,R,A in memory — which is exactly
+         * CAIRO_FORMAT_ARGB32 on a little-endian host, so the buffer maps onto a cairo surface
+         * without a swizzle and cairo writes the PNG. */
+        cairo_surface_t *surface = cairo_image_surface_create_for_data(
+            copy_pixels, CAIRO_FORMAT_ARGB32, buf_w, buf_h, buf_stride);
+        cairo_status_t status = cairo_surface_status(surface);
+        cairo_status_t written = status == CAIRO_STATUS_SUCCESS
+                                     ? cairo_surface_write_to_png(surface, out)
+                                     : status;
+        printf("TN_WPE:{\"png\":\"%s\",\"written\":%s}\n", out,
+               written == CAIRO_STATUS_SUCCESS ? "true" : "false");
+        cairo_surface_destroy(surface);
     }
     return 0;
 }
