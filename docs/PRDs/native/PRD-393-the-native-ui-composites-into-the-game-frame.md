@@ -196,10 +196,45 @@ measures this against `TN_FRAME_BUDGET` rather than assuming it.
       show it, and the previous session's own `ui-parity` console for this game has zero. Its shape
       is three.js's own bind-group layout asking for a multisampled depth texture and binding a 1×1
       `Depth24Plus` placeholder, at the frame the pipeline warmup completes (`present:8`,
-      `requested:54 emitted:54`), which is a renderer resource-ordering fault this PRD does not
-      touch. It is recorded here as a separate, pre-existing defect with its repro rather than
-      absorbed into this one. The scenario's driver also needed a real fix, which is the pointer
+      `requested:54 emitted:54`). The scenario's driver also needed a real fix, which is the pointer
       latch described in Phase 4.
+
+      **Root cause, traced into three, and why the one-line fix is not free.** In three 0.185.1
+      `WebGPUTextureUtils.getTextureSampleData()` answers a depth texture's sample count from the
+      *ambient* render target when the texture has no render target of its own:
+
+      ```js
+      } else if ( texture.isDepthTexture && ! texture.renderTarget ) {
+          const renderTarget = renderer.getRenderTarget();
+          samples = renderTarget ? renderTarget.samples : renderer.currentSamples;
+      }
+      ```
+
+      `_createLayoutEntries()` turns that into `texture.multisampled = true` for a bind group's
+      layout, and `createBindingsLayout()` then **freezes** it on the bind group (`bindingsData.layout`
+      is returned unchanged on every later call). `ViewportTextureNode.updateReference()` meanwhile
+      re-points the same binding every frame at whichever target is current, so the texture the group
+      is built against is not the texture the layout was derived from. Three's own shared viewport
+      depth buffer — `_sharedDepthbuffer = new DepthTexture()`, which is **1×1** and has no render
+      target, and which `viewportDepthTexture()` binds whenever the current target has no depth
+      attachment — is exactly such a texture. `packages/core/src/water-surface.ts` reads the scene
+      depth through that node, which is why this game and not a game without water shows it.
+
+      A one-line patch (`samples = 1` for a depth texture that owns no render target) **does remove
+      the error** — measured, 0 occurrences against 1 in every unpatched run — and it is *correct*:
+      the texture in question is a single-sample view, and a depth texture that really is attached to
+      an MSAA target takes the other branch. It was **reverted anyway**, because it is not free:
+      `first_playable` on this game moved from **33.0 / 34.8 s unpatched to 48.0 / 51.3 / 49.5 s
+      patched**, three consecutive runs against two, and reverting it restored 36.1 s. Changing that
+      flag changes the bind group layout hash, hence the pipeline layout and every pipeline that
+      names it, and this game's startup is dominated by pipeline compiles. A second variant that left
+      the WGSL declaration's ambient read alone and changed only the layout cost the same 48.0 s, so
+      the price is the layout change itself rather than a shader-source recompile.
+
+      So the defect is real, its mechanism is now exact, and the fix needs the pipeline-cache and
+      warmup interaction understood before it lands. It is handed over here rather than absorbed:
+      it does not affect what a player sees (55 fps, correct pixels, one validation line at
+      startup), and shipping it blind would cost this game fifteen seconds of launch.
 - [x] AC-6 [local; actor: agent]: UI compositing costs **≤ 2.0 ms/frame at p95** on the hero scene
       at 1280×720, measured as a named phase in `TN_FRAME_BUDGET` over ≥300 frames, interleaved
       against a build with the UI quad disabled (this host drifts wider than small effects, so
