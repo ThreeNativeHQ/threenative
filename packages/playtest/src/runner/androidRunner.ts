@@ -279,6 +279,10 @@ async function runDevicePlaytestInternal(
     // native WebView receives the complete gesture; the host exposes no position to read back.
     let pointerX = 0;
     let pointerY = 0;
+    // A buttons-0 move clears the mask but does not close the native gesture — only an explicit
+    // `up` does. Track the open gesture separately from the button mask so a step that clears to
+    // zero *and* asks for release still emits its close at the last point.
+    let pointerHeld = false;
     for (const [index, step] of scenario.steps.entries()) {
       await throwIfAborted(target);
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
@@ -330,6 +334,7 @@ async function runDevicePlaytestInternal(
         if (step.pointerPosition !== undefined) {
           const previousPointerButtons = pointerButtons;
           pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
+          if (pointerButtons !== 0) pointerHeld = true;
           pointerX = step.pointerPosition.x * scenario.viewport.width;
           pointerY = step.pointerPosition.y * scenario.viewport.height;
           await transport.call("input.pointer", {
@@ -412,8 +417,12 @@ async function runDevicePlaytestInternal(
           if (capturesAnonymousMovement) afterStep = await bridge.sample(sampleRequest);
         }
       }
-      if (pointerButtons !== 0 && step.release) {
+      // A pure `wait` advance never tears down a gesture it did not declare; its `release:true` is
+      // the schema default, and the held aim has to survive the settles between its press and its
+      // explicit release. Any other step closes the open gesture it carried or inherited.
+      if (pointerHeld && step.release && step.kind !== "wait") {
         pointerButtons = 0;
+        pointerHeld = false;
         await transport.call("input.pointer", { buttons: 0, type: "up", x: pointerX, y: pointerY });
       }
       if (step.pointers !== undefined && step.release) {
