@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-312 — The `shermes` AOT spike is timeboxed, answered, and closed either way
 
-**Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only.
+**Status:** PARTIAL — compatibility screening executed 2026-09-16 in PR #274. Static Hermes
+compiles the unchanged bundle; Porffor alpha-6 fails. Rendering performance is unmeasured.
+Originally filed 2026-08-31 against `2e014460`.
 
 **Outcome:** the one idea that could stop iOS's no-JIT rule being permanent stops being an
 unowned sentence in two architecture documents. Within a **fixed five-day timebox**, this repository
@@ -18,6 +20,112 @@ and the branch is closed — pursued with a PRD, or graveyarded with the measure
 **Complexity: 5 → MEDIUM mode.** +2 (new toolchain integration from scratch), +1 (external
 toolchain with no pinned release), +1 (multi-package: `runtime-native` and the bench harness),
 +1 (an answer that may be "no", which must land as firmly as a "yes").
+
+---
+
+## Executed screening — 2026-09-16 (America/Vancouver), PR #274
+
+**Reached:** Q1's source build and semantic smoke controls; Q2's compilation prerequisite.
+**Not reached:** Q2's matched rendering/performance comparison or Q3's ARM64/iOS embedding.
+The PRD remains **PARTIAL**, not accepted or graveyarded for Static Hermes. This is a
+compatibility result, not an FPS result. The original plan below is retained with unrun items open.
+
+[PR and posted results](https://github.com/ThreeNativeHQ/threenative/pull/274).
+[Static Hermes run](https://github.com/ThreeNativeHQ/threenative/actions/runs/35192075779)
+and [authoritative Porffor rerun](https://github.com/ThreeNativeHQ/threenative/actions/runs/35192841200).
+Both used GitHub-hosted Ubuntu 24.04 x86-64 runners, not the project's device runners.
+The local shell could not resolve `github.com`; the remote executions, rather than that local
+limitation, supply the results. No runtime, game, dependency manifest or benchmark arm changed.
+
+### Pins and actual input
+
+| Input | Identity |
+| --- | --- |
+| ThreeNative / `develop` | `d292da4225186e6ec395be551d49c7a26a1770be` |
+| Static Hermes / `static_h` | `4947871513667919bf2fe225134af3e3a1a3772c` |
+| Porffor | `alpha-6`, `038f415e08efc5f87a6bfcb05a18824caa3a14f6` |
+| Porffor Linux x64 release archive SHA-256 | `eb0ea557fc9fbcbaf16d81d9090b6fcf5010ede444dc151b94f7c528e1328b82` |
+| Build tools | Node 22.22.0, pnpm 10.25.0, Clang 18.1.3 |
+| Unmodified native benchmark bundle | 2,607,872 bytes; SHA-256 `2d338290b792489c42ea8d95056f5b28929f50d5ab3eacda7985ce303a0d1005` |
+
+The actual build is `examples/engine-load-test/vite.config.ts`'s native mode, not a replacement
+microbenchmark or the consumer bundler. Its compile-time settings were `frames=600`, `warmup=120`,
+`repeats=3`, `ladder=256,1024,4096,16384`, `modes=L1,L2`. These configure the bundle; **the frame
+ladder did not execute**. Every compiler run's bundle hash matches. Node's syntax check passes.
+
+### Observed results
+
+| Probe | Static Hermes | Porffor alpha-6 |
+| --- | --- | --- |
+| Toolchain | Source build succeeds; configure 13 s, build 471 s with two build workers | SHA-256-verified prebuilt binary runs and reports the pinned version |
+| `Float32Array([1,2,3])` sum control | Compile 0, run 0; `AOT_CONTROL_OK:6` | Compile 0, run 0; same marker |
+| Proxy `get` trap returns 42 over target value 1 | Compile 0, run 0; `PROXY_GET_TRAP_OK:42` | Compile 0, run **1**; `PROXY_GET_TRAP_BROKEN:1` |
+| Unmodified native game bundle | Compile **0**, 88 s; produces x86-64 ELF | Compile **1**; generated C collides with glibc `uint` and `select` declarations |
+| Game execution without ThreeNative host APIs | `ENGINE_LOAD_TEST_FAILED Error: TN_BENCH_NO_CANVAS` | Not reached; no game executable |
+
+Times above are compiler/build wall time, **not frame time**. Static Hermes and interpreted Hermes
+both reach the missing-canvas marker. Local Node 22.16.0 does too. These processes exit 0 despite
+that marker: a zero exit is not successful rendering. No frame was rendered by an AOT arm.
+
+The Hermes game executable is **9,452,776 bytes**, unstripped, dynamically linked to
+`libshermes_console.so` and `libhermesvm.so`. That excludes those libraries and ThreeNative's host;
+it is not a total deployment/APK size. Executable SHA-256:
+`bb262ade6a568f31dc711e2b3eab2a93106b9cca1584278f73fdbb81f677c142`.
+Compiler warnings name host globals including GPU usage constants, timers and `performance`;
+compilation succeeds, but those globals still need the real host integration.
+
+**Porffor's failures are independently reproducible.** The real bundle uses Proxy at lines 28195,
+28265 and 28452. A three-line reproducer using `var uint = { value: 42 };`,
+`var select = { value: 7 };`, and `console.log(uint.value, select.value);` produces the same C-name
+collisions, while Node prints `42 7`. The Proxy control and this reproducer are pasted on the PR.
+An earlier arrow-function-only naming probe did not reproduce the collision; it is not counted
+as evidence of the failure.
+
+**Harness correction:** this release's bundled help requires `porf native input.js -o output`.
+The website's positional-output forms did not retain the requested path in our executions.
+The first run's `*-compile` labels included transient execution and its subsequent missing-file
+exit 127 was a harness invocation issue, not a compiler defect. The final rerun explicitly uses
+`-o`, checks the executable exists and separates compile from run; only that rerun supplies the
+Porffor table above. Its green workflow means diagnostics were collected, not all probes passed.
+
+### Reproduction and evidence retention
+
+The exact scripts remain in commit history even after the temporary workflow is removed:
+
+```sh
+# Run these in a disposable checkout/scratch directory, not the shipped runtime tree.
+git show d2c8c69521b4db12507c743c935d5cda46461804:.github/workflows/prd-312-aot-spike.yml
+git show dfa7d834e69ab24f2c0752d3698a5d419cdbb319:.github/workflows/prd-312-aot-spike.yml
+```
+
+The first defines the pinned source build and `shermes -O game.js -o game-shermes`; the second
+contains the corrected Porffor invocation, semantic controls, exact native bundle build and
+input hashes. Their compile/run timeouts bound experiments and are not performance gates.
+Raw artifact ZIPs were downloaded and independently hash-checked:
+
+| Artifact | ID | ZIP SHA-256 |
+| --- | --- | --- |
+| `prd-312-shermes` | `10484183972` | `83c2ac06ef05bc5284068439d2c500911c251bce963d41f7ac021f3936226aa5` |
+| `prd-312-porffor-native-output` | `10484597517` | `b3159624de754040b21fe9b192e752d6abf5afe573a1abe0da962f2860acad01` |
+
+Actions artifacts have seven-day retention; the findings and reproduction commands above and
+on the PR are the durable record. No compiler binary, generated game or experimental workflow
+belongs in the final diff. Routine results are kept here and on the PR under the current
+`docs/PRDs/AGENTS.md` evidence rule, not in a new standalone performance report.
+
+### Decision and remaining gate
+
+**Porffor alpha-6: do not integrate.** Fixing generated-C names alone does not fix the independently
+failing Proxy semantics. Re-screen a newer upstream pin after both issues are corrected.
+**Static Hermes: retain as a candidate, do not ship.** Compiling the full unchanged bundle and
+passing two semantic controls is useful evidence, but not full Three.js compatibility or a speedup.
+
+The next meaningful experiment needs an isolated `mystral::js::Engine` adapter, real
+canvas/WebGPU/timer/microtask bindings and a compiled-unit entry path, then the existing
+`pnpm bench:engines` ladder against a matched baseline. No fake AOT arm or mock-renderer timing
+was added. The >=2 ms/frame or clear throughput-win threshold is unchanged. Real rendering,
+V8/JSC frame comparisons, peak memory, startup-to-first-frame and ARM64/iOS remain unmeasured.
+Standalone ES-module loading was not tested by the classic-script smoke controls.
 
 ---
 
@@ -104,10 +212,10 @@ flowchart LR
 
 - [ ] Measure with `pnpm bench:engines`, not a bespoke timer. A new harness would produce a number
       incomparable with every engine number already recorded, and comparability is the entire point.
-- [ ] The subject is the **existing untyped game bundle**, not a typed microbenchmark. A typed
+- [x] The subject is the **existing untyped game bundle**, not a typed microbenchmark. A typed
       benchmark would answer a question this framework does not have — the toy proof this
       repository's rules forbid.
-- [ ] The threshold is stated **before** the measurement: the standing bar is ≥ 2 ms of frame time,
+- [x] The threshold is stated **before** the measurement: the standing bar is ≥ 2 ms of frame time,
       or an unambiguous throughput win on the ladder. Five levers have already died against that
       bar; this one gets the same bar, chosen in advance.
 - [ ] Everything built during the spike lives in a worktree or a scratch path and is deleted or
@@ -189,10 +297,10 @@ beside the answer.
 
 **Implementation:**
 
-- [ ] Build `shermes` at an explicit commit. Record the commit, the host toolchain, and the build
+- [x] Build `shermes` at an explicit commit. Record the commit, the host toolchain, and the build
       time. "Latest" is not a pin.
 - [ ] Compile and run a trivial ES module. Paste the output.
-- [ ] Never symlink anything into `packages/runtime-native/third_party/` — the dependency downloader
+- [x] Never symlink anything into `packages/runtime-native/third_party/` — the dependency downloader
       creates that path and a symlink there has previously endangered the real dependency cache.
 - [ ] Day-2 stop: if the toolchain cannot be pinned or cannot run a hello-world, close and write the
       record. That is a complete, successful outcome for this PRD.
@@ -217,7 +325,7 @@ output.
 
 **Implementation:**
 
-- [ ] Subject: the **existing** engine-load-test bundle — untyped ordinary Three.js game code. Not a
+- [x] Subject: the **existing** engine-load-test bundle — untyped ordinary Three.js game code. Not a
       typed microbenchmark, not a hand-written hot loop.
 - [ ] Same `--frames`, `--warmup`, `--repeats`, `--ladder` and `--modes` as the interpreted arm.
       Different settings between arms makes the comparison meaningless.
