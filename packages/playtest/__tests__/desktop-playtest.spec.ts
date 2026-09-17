@@ -17,6 +17,7 @@ import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../
 import { DesktopPlaytestDriver, LocalDeviceMailbox } from "../src/runner/desktop.js";
 import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
+import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
 
@@ -100,6 +101,12 @@ test("desktop CLI routing selects the shared desktop runner", async () => {
 test.each([
   { stream: "stderr", text: 'Gtk-Message: 19:38:01.131: Failed to load module "appmenu-gtk-module"', type: "log" },
   { stream: "stderr", text: "MESA-EGL: warning: DRI3 error: Could not get DRI3 device", type: "warning" },
+  // The Mesa EGL loader is a different channel from MESA-EGL; on a DRI3-less headless runner it
+  // prints these two lines to stderr, and the CI starter consumer counted them as unclassified
+  // errors. The explicit warning prefix keeps them warnings, while a genuine libEGL failure below
+  // still has no warning prefix and stays an error.
+  { stream: "stderr", text: "libEGL warning: DRI3 error: Could not get DRI3 device", type: "warning" },
+  { stream: "stderr", text: "libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering", type: "warning" },
   { stream: "stderr", text: "** (wildwood:4179462): WARNING **: 19:38:01.260: AT-SPI: Could not obtain desktop path or name", type: "warning" },
   // A hosted headless runner has no sound card or accessibility bus. ALSA and AT-SPI name the
   // host, not the game, so they must not be counted as the game's console errors (PRD-366).
@@ -108,6 +115,7 @@ test.each([
   { stream: "stderr", text: "(threenative-starter-native:14620): dbind-WARNING **: 22:57:49.500: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files", type: "warning" },
   { stream: "stderr", text: "Warning: startup gate never opened within 30s; capturing anyway.", type: "warning" },
   { stream: "stderr", text: "MESA-EGL: error: context creation failed", type: "error" },
+  { stream: "stderr", text: "libEGL error: eglInitialize failed", type: "error" },
   { stream: "stderr", text: "GPU validation error: warning branch has invalid bindings", type: "error" },
   { stream: "stderr", text: "unclassified native failure", type: "error" },
   { stream: "stdout", text: "[error] Native game startup failed", type: "error" },
@@ -124,6 +132,30 @@ test.each([
     await expect.poll(() => driver.isAlive()).toBe(false);
     // Both newline-delimited and trailing partial output retain the complete observation.
     expect(await driver.captureConsole()).toEqual([{ text, type }, { text, type }]);
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("a classified native warning is recorded but is not a runtime error", async () => {
+  const warning = "libEGL warning: DRI3 error: Could not get DRI3 device";
+  const fatal = "unclassified native failure";
+  const root = await makeTempDir("playtest-desktop-warning-");
+  const driver = new DesktopPlaytestDriver({
+    executable: process.execPath,
+    mailboxRoot: root,
+    args: ["-e", `process.stderr.write(${JSON.stringify(warning)} + "\\n" + ${JSON.stringify(fatal)} + "\\n");`],
+  });
+  try {
+    await driver.prepare("unused");
+    await expect.poll(() => driver.isAlive()).toBe(false);
+    const entries = await driver.captureConsole();
+    // The warning is visible in the captured stderr, typed as a warning, and only the genuine
+    // unclassified native failure is promoted into the runtime errors.
+    expect(entries).toEqual([{ text: warning, type: "warning" }, { text: fatal, type: "error" }]);
+    const { recentRuntimeErrors } = normalizedRuntimeDiagnostics(undefined, undefined as never, entries);
+    expect(recentRuntimeErrors).toEqual([{ text: fatal, type: "error" }]);
   } finally {
     await driver.stop();
     await rm(root, { force: true, recursive: true });

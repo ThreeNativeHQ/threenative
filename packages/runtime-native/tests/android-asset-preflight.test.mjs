@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, test } from 'vitest';
@@ -235,6 +235,28 @@ test('desktop WebP support is derived from the prebuilt drop CMake actually link
   assert.equal(install.supported, false);
   assert.match(install.reason, /not a runtime source checkout/);
 });
+
+/**
+ * The desktop derivation asks the binary that will run the game what it decodes. Android cannot:
+ * its runtime is an arm64 payload inside an APK, and the only executable a host probe can reach is
+ * the desktop build — a different CMake configuration answering a different question. A probe that
+ * answered YES here would grant Android WebP from a binary that will never run the game, which is
+ * the stale claim in a longer coat.
+ */
+test.skipIf(process.platform === 'win32')(
+  'an installed release never grants Android WebP from a host binary',
+  () => {
+    const installed = makeAssets();
+    const key = `${process.platform}-${process.arch}`;
+    mkdirSync(join(installed, 'prebuilt', key), { recursive: true });
+    const executable = join(installed, 'prebuilt', key, 'threenative-runtime');
+    writeFileSync(executable, '#!/bin/sh\necho \'TN_DECODERS:{"webp":true}\'\n');
+    chmodSync(executable, 0o755);
+    const derived = deriveAndroidWebpSupport(installed);
+    assert.equal(derived.supported, false);
+    assert.match(derived.reason, /no host binary can answer for it/u);
+  },
+);
 
 test('WebP support is derived from the runtime the build ships with, not declared', () => {
   // The claim this replaces — "the android runtime is built without libwebp" — had been false

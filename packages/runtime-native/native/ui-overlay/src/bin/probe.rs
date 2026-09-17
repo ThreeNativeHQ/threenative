@@ -300,36 +300,61 @@ fn main() {
         &format!("published interactive rects: {regions}"),
     );
 
-    // The desktop half of the input model. The page's one island is the button at 75-95% across
-    // and 40-60% down, so a pointer inside it must land on the overlay and a pointer anywhere else
-    // must land on the game — decided by the X server, not by anything this probe forwards.
-    let island = [0.75f32, 0.40, 0.20, 0.20];
+    // The desktop half of the input model. A pointer inside a published island must land on the
+    // overlay and a pointer anywhere else must land on the game — decided by the X server, not by
+    // anything this probe forwards.
+    //
+    // Deliberately **not Y-sorted, and overlapping**. The page publishes islands in DOM order, and
+    // `XShapeCombineRectangles` answers `BadMatch` for a list that does not satisfy the ordering it
+    // declares (`VerifyRectOrder` in `Xext/shape.c` returns before a region is built). Declaring a
+    // sorted ordering here — `YSorted`, `YXSorted` or `YXBanded` — made a real game whose islands
+    // are not in Y order kill the host through GDK's fatal error handler, so this list is the
+    // regression: it must be accepted, and each island must route to the overlay.
+    let islands: [[f32; 4]; 3] = [
+        [0.75, 0.40, 0.20, 0.20],
+        [0.10, 0.62, 0.30, 0.22],
+        [0.55, 0.35, 0.30, 0.35],
+    ];
+    let mut flat = Vec::with_capacity(islands.len() * 4);
+    for island in islands {
+        flat.extend_from_slice(&island);
+    }
     // The named mutation: publish no input shape at all. The overlay then takes every pointer
     // event over the whole game, which is the failure this protocol exists to prevent.
     let published = if env::var("TN_SPIKE_NO_INPUT_SHAPE").is_ok() {
         Ok(())
     } else {
-        container.set_input_regions(&island)
+        container.set_input_regions(&flat)
     };
     match published {
         Ok(()) => {
-            let inside = argb::window_under_pointer(1088, 360).unwrap_or(0);
-            let outside = argb::window_under_pointer(400, 600).unwrap_or(0);
+            let mut routed = 0;
+            for island in islands {
+                let x = ((island[0] + island[2] / 2.0) * 1280.0) as i32;
+                let y = ((island[1] + island[3] / 2.0) * 720.0) as i32;
+                let under = argb::window_under_pointer(x, y).unwrap_or(0);
+                if under == container.x11_window {
+                    routed += 1;
+                }
+            }
             report(
-                "click-on-an-island-hits-the-ui",
-                inside == container.x11_window,
-                &format!("window under 1088,360 is {inside:#x}; the overlay is {:#x}", container.x11_window),
+                "click-on-every-island-hits-the-ui",
+                routed == islands.len(),
+                &format!("{routed}/{} unsorted overlapping islands routed to the overlay", islands.len()),
             );
+            let outside = argb::window_under_pointer(60, 690).unwrap_or(0);
             report(
                 "click-elsewhere-hits-the-game",
                 outside == parent,
-                &format!("window under 400,600 is {outside:#x}; the game is {parent:#x}"),
+                &format!("window under 60,690 is {outside:#x}; the game is {parent:#x}"),
             );
         }
         Err(error) => {
-            report("click-on-an-island-hits-the-ui", false, &error);
+            report("click-on-every-island-hits-the-ui", false, &error);
             report("click-elsewhere-hits-the-game", false, &error);
         }
     }
+    // With the old sorted ordering the X server rejects the shape (`BadMatch`, request 129) and
+    // GDK's fatal error handler exits the process here: a non-zero exit is the red signal.
     println!("TN_SPIKE_DONE");
 }

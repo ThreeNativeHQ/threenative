@@ -13,17 +13,18 @@
  * Each test names which leg of that triangle it pins.
  */
 
-import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
+
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const depsScript = readFileSync(join(root, 'scripts/download-deps.mjs'), 'utf8');
 const cmakeLists = readFileSync(join(root, 'CMakeLists.txt'), 'utf8');
 const preflight = readFileSync(join(root, 'scripts/asset-preflight.mjs'), 'utf8');
-/** Comments record why the stale claim was wrong; the guard below must read code, not prose. */
-const preflightCode = preflight.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 function androidDeps() {
   const match = depsScript.match(/const androidDeps = \[([^\]]*)\]/);
@@ -94,16 +95,27 @@ test('the Android failure hint names the command that fixes it', () => {
   }
 });
 
-test('asset-preflight derives WebP support from the build rather than declaring it', () => {
+test('asset-preflight derives WebP support from the build rather than declaring it', async () => {
   // Leg 3, and the reason this test file names three legs. The preflight used to refuse every
   // WebP texture with "the android runtime is built without libwebp", a sentence that had been
   // false since 62fac4d5 added webp-source to androidDeps. Legs 1 and 2 above were pinned and
   // leg 3 was not, so the build changed and the claim about the build did not.
-  if (/built without libwebp/.test(preflightCode)) {
-    throw new Error(
-      'asset-preflight.mjs hardcodes "built without libwebp" again; it must derive support from ' +
-        'the runtime source facts CMake reads, through deriveAndroidWebpSupport',
-    );
+  //
+  // That was pinned by banning the sentence from the source, which pins only the sentence: a
+  // reworded hardcode passes it and an honest rewording fails it. Read the answer instead — it
+  // has to move when the build moves.
+  const { deriveAndroidWebpSupport } = await import('../scripts/asset-preflight.mjs');
+  const checkout = makeTempDirSync('tn-webp-leg3-');
+  try {
+    writeFileSync(join(checkout, 'CMakeLists.txt'), 'project(mystral)\n');
+    assert.equal(deriveAndroidWebpSupport(checkout).supported, false);
+    // Exactly what `download-deps.mjs --only webp-source` leaves behind and CMake then globs.
+    const tree = join(checkout, 'third_party', 'webp-source', 'libwebp-1.5.0');
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(join(tree, 'CMakeLists.txt'), 'project(libwebp)\n');
+    assert.equal(deriveAndroidWebpSupport(checkout).supported, true);
+  } finally {
+    rmSync(checkout, { force: true, recursive: true });
   }
   if (!/export function deriveAndroidWebpSupport/.test(preflight)) {
     throw new Error('asset-preflight.mjs no longer exports deriveAndroidWebpSupport');

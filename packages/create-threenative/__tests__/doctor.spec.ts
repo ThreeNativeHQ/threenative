@@ -161,7 +161,11 @@ describe("threenative doctor", () => {
       detail: expect.stringContaining("no compositing manager is running"),
       status: "fail",
     });
-    expect(formatDoctorReport(report)).toContain("Start a compositing manager");
+    // Naming them is the difference between a blocker and a fix: these are the three the
+    // repository's own private displays start, so a reader can install one and move on.
+    expect(formatDoctorReport(report)).toContain(
+      "Start a compositing manager (xcompmgr -n, picom or compton",
+    );
   });
 
   it("reports a Wayland/Xwayland session as supported and a Wayland one without Xwayland as blocked", () => {
