@@ -1,4 +1,4 @@
-name: PRD-312 isolated AOT compatibility experiment
+name: PRD-312 Porffor explicit native-mode confirmation
 
 on:
   push:
@@ -8,22 +8,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: prd-312-aot-spike
+  group: prd-312-porffor-confirmation
   cancel-in-progress: false
 
 jobs:
   experiment:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        compiler: [porffor, shermes]
+    timeout-minutes: 10
     env:
       CI: "true"
       NODE_ENV: production
-      COMPILER: ${{ matrix.compiler }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,93 +48,73 @@ jobs:
             local label="$1" limit="$2"; shift 2
             printf '\n=== %s ===\n' "$label"
             printf '%q ' "$@"; printf '\n'
-            local started rc
-            started=$(date +%s)
+            local rc
             set +e
             timeout --kill-after=10s "$limit" "$@" >"$OUT/$label.log" 2>&1
             rc=$?
             set -e
-            printf '%s\t%s\t%s\n' "$label" "$rc" "$(( $(date +%s) - started ))" | tee -a "$OUT/status.tsv"
-            head -100 "$OUT/$label.log"
+            printf '%s\t%s\n' "$label" "$rc" | tee -a "$OUT/status.tsv"
+            head -80 "$OUT/$label.log"
             return "$rc"
           }
-          # Diagnostic control, never the workload or an FPS benchmark.
           cat > "$OUT/control.js" <<'JS'
-          const output = typeof print === 'function' ? print : console.log;
           const values = new Float32Array([1, 2, 3]);
           let total = 0;
           for (let i = 0; i < values.length; i++) total += values[i];
           if (total !== 6) throw new Error('incorrect typed array result');
-          output('AOT_CONTROL_OK:6');
+          console.log('AOT_CONTROL_OK:6');
           JS
-          # TSL uses Proxy traps: a no-op Proxy constructor must not pass.
           cat > "$OUT/proxy.js" <<'JS'
-          const output = typeof print === 'function' ? print : console.log;
           const proxy = new Proxy({ x: 1 }, {
             get(target, key) { return key === 'x' ? 42 : target[key]; }
           });
           if (proxy.x !== 42) throw new Error('PROXY_GET_TRAP_BROKEN:' + proxy.x);
-          output('PROXY_GET_TRAP_OK:42');
+          console.log('PROXY_GET_TRAP_OK:42');
           JS
-          node --version | tee "$OUT/node-version.txt"
-          uname -a | tee "$OUT/host.txt"
-          clang --version | head -1 | tee "$OUT/clang-version.txt"
-          printf 'threenative\t%s\nhermes\t%s\nporffor\t%s\n' \
-            d292da4225186e6ec395be551d49c7a26a1770be \
-            4947871513667919bf2fe225134af3e3a1a3772c \
-            038f415e08efc5f87a6bfcb05a18824caa3a14f6 > "$OUT/pins.tsv"
-          probe node-control 30s node "$OUT/control.js"
-          probe node-proxy 30s node "$OUT/proxy.js"
-          if [[ "$COMPILER" == porffor ]]; then
-            TOOL="$RUNNER_TEMP/porffor"
-            mkdir -p "$TOOL"
-            curl --fail --location --retry 2 --max-time 120 https://github.com/CanadaHonk/porffor/releases/download/alpha-6/porffor-linux-x64.tar.gz -o "$TOOL/release.tar.gz"
-            echo "eb0ea557fc9fbcbaf16d81d9090b6fcf5010ede444dc151b94f7c528e1328b82  $TOOL/release.tar.gz" | sha256sum --check
-            tar -xzf "$TOOL/release.tar.gz" -C "$TOOL"
-            PORF=$(find "$TOOL" -type f -name porf -print -quit)
-            test -n "$PORF"
-            chmod +x "$PORF"
-            probe porffor-version 30s "$PORF" --version
-            if probe porffor-control-compile 120s "$PORF" "$OUT/control.js" "$OUT/control-porffor"; then
-              probe porffor-control-run 30s "$OUT/control-porffor" || true
+          cat > "$OUT/names.js" <<'JS'
+          const uint = (x) => x;
+          const select = (x) => x;
+          console.log(uint(42), select(7));
+          JS
+          node "$OUT/control.js"
+          node "$OUT/proxy.js"
+          node "$OUT/names.js"
+          TOOL="$RUNNER_TEMP/porffor"
+          mkdir -p "$TOOL"
+          curl --fail --location --retry 2 --max-time 120 https://github.com/CanadaHonk/porffor/releases/download/alpha-6/porffor-linux-x64.tar.gz -o "$TOOL/release.tar.gz"
+          echo "eb0ea557fc9fbcbaf16d81d9090b6fcf5010ede444dc151b94f7c528e1328b82  $TOOL/release.tar.gz" | sha256sum --check
+          tar -xzf "$TOOL/release.tar.gz" -C "$TOOL"
+          PORF="$TOOL/porf"
+          test -x "$PORF"
+          probe help 30s "$PORF" --help
+          for name in control proxy names game; do
+            if probe "$name-native-compile" 300s "$PORF" native "$OUT/$name.js" "$OUT/$name-native"; then
+              if test -x "$OUT/$name-native"; then
+                probe "$name-native-run" 30s "$OUT/$name-native" || true
+              else
+                printf '%s\tMISSING_OUTPUT\n' "$name" | tee -a "$OUT/status.tsv"
+              fi
             fi
-            if probe porffor-proxy-compile 120s "$PORF" "$OUT/proxy.js" "$OUT/proxy-porffor"; then
-              probe porffor-proxy-run 30s "$OUT/proxy-porffor" || true
-            fi
-            if probe porffor-game-compile 300s "$PORF" "$OUT/game.js" "$OUT/game-porffor"; then
-              probe porffor-game-no-host 30s "$OUT/game-porffor" || true
-            fi
-          else
-            SRC="$RUNNER_TEMP/hermes-src"
-            BUILD="$RUNNER_TEMP/hermes-build"
-            git init "$SRC"
-            git -C "$SRC" remote add origin https://github.com/facebook/hermes.git
-            git -C "$SRC" fetch --depth=1 origin 4947871513667919bf2fe225134af3e3a1a3772c
-            git -C "$SRC" checkout --detach FETCH_HEAD
-            test "$(git -C "$SRC" rev-parse HEAD)" = 4947871513667919bf2fe225134af3e3a1a3772c
-            probe shermes-configure 120s cmake -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DHERMES_ENABLE_WERROR=OFF
-            probe shermes-build 1200s cmake --build "$BUILD" --target shermes shermes-dep hermes --parallel 2
-            SH="$BUILD/bin/shermes"
-            probe shermes-version 30s "$SH" --version
-            if probe shermes-control-compile 120s "$SH" -O "$OUT/control.js" -o "$OUT/control-shermes"; then
-              probe shermes-control-run 30s "$OUT/control-shermes" || true
-            fi
-            if probe shermes-proxy-compile 120s "$SH" -O "$OUT/proxy.js" -o "$OUT/proxy-shermes"; then
-              probe shermes-proxy-run 30s "$OUT/proxy-shermes" || true
-            fi
-            if probe shermes-game-compile 300s "$SH" -O "$OUT/game.js" -o "$OUT/game-shermes"; then
-              probe shermes-game-no-host 30s "$OUT/game-shermes" || true
-            fi
-            probe hermes-game-no-host 30s "$BUILD/bin/hermes" "$OUT/game.js" || true
-          fi
-          printf '\n=== STATUS (exit code, elapsed whole seconds; NOT frame time) ===\n'
+          done
+          # Preserve only explicit public source files needed to update the existing research record.
+          mkdir -p "$OUT/source"
+          for p in \
+            docs/PRDs/architecture/PRD-312-the-shermes-spike-is-timeboxed-and-closed.md \
+            docs/architecture/NATIVE-PERF-BOTTLENECKS.md \
+            docs/architecture/NATIVE-RENDER-TRANSPORT.md \
+            docs/architecture/FUTURE-ARCHITECTURE-DIRECTION.md \
+            docs/verification/runtime-perf-state.md; do
+            cp "$p" "$OUT/source/$(basename "$p")"
+            git hash-object "$p"
+          done
+          pnpm prd:progress docs/PRDs/architecture/PRD-312-the-shermes-spike-is-timeboxed-and-closed.md | tee "$OUT/prd-progress-before.txt"
+          grep -n 'new Proxy' "$OUT/game.js" | head -8 || true
           cat "$OUT/status.tsv"
-          printf '\nGPU/host adapter absent: no FPS or frame-time conclusion is permitted.\n'
       - name: Retain raw diagnostic output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prd-312-${{ matrix.compiler }}
+          name: prd-312-porffor-confirmation
           path: ${{ runner.temp }}/aot312-results/*
           retention-days: 7
           if-no-files-found: warn
