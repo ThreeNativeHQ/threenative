@@ -181,6 +181,16 @@ export async function provideDisplay(options: IProvideDisplayOptions = {}): Prom
     "3",
     "-nolisten",
     "tcp",
+    // COMPOSITE and SHAPE are what a compositing manager needs before it can blend anything, and
+    // the native desktop runtime refuses to attach its UI overlay to a display without one. Xvfb
+    // does not enable them by default, so every native UI run on a private display reported
+    // `TN_UI_OVERLAY:{"attached":false,"reason":"no compositing manager is running"}` — including
+    // the starter template's own shipped native-playtests/react-hud scenario, which failed out of
+    // the box on a freshly scaffolded project. A browser run does not care either way.
+    "+extension",
+    "COMPOSITE",
+    "+extension",
+    "SHAPE",
     "-screen",
     "0",
     strategy.screen,
