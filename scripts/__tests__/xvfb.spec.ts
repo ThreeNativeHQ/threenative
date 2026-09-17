@@ -123,6 +123,13 @@ describe.each([
     expect(fs.readFileSync(compositorArgs, "utf8").trim()).toBe(":91 -n");
   });
 
+  it("keeps expected Mesa warnings out of strict headless diagnostics without hiding fatal EGL errors", () => {
+    const { bin } = displaySandbox({ compositor: true });
+    const result = runScript(bin, ["/bin/sh", "-c", 'test "$EGL_LOG_LEVEL" = fatal']);
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("still runs the command on a host where no compositor is installed", () => {
     const { bin, compositorArgs } = displaySandbox({ compositor: false });
     const result = runScript(bin, ["/bin/sh", "-c", "exit 7"]);
