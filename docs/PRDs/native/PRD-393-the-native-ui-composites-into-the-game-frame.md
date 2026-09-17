@@ -1,8 +1,10 @@
 # PRD-393 — The native UI composites into the game's own frame
 
-**Status:** COMPLETE except two stated gaps — AC-5's diagnostics assertion (a pre-existing,
-separately-owned WebGPU validation error, evidence below) and AC-9 (Windows/macOS unrun on this
-host). Phases 1–6 are done; AC-10 is João's to run.
+**Status:** Phases 1–6 DONE. Seven of ten acceptance criteria met with evidence; three are not, and
+each is stated with its reason rather than left implied: **AC-5**'s diagnostics assertion, red on a
+pre-existing three.js fault whose root cause is traced below and whose one-line fix was measured and
+reverted because it costs Midway ~15 s of launch; **AC-9**, unrun because this host cannot build
+Windows or macOS; **AC-10**, which is João's to run and which no local result substitutes for.
 **POST-DEVICE-EVALUATION-REQUIRED**
 **Complexity:** 10 (HIGH); risk override: none — the score already lands HIGH
 **Owner:** unassigned
