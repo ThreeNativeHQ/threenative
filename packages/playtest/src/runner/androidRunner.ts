@@ -275,6 +275,10 @@ async function runDevicePlaytestInternal(
     const heldKeys = new Set<string>();
     let pointerButtons = 0;
     let pointerCount = 0;
+    // Last viewport-pixel point the native host was told about. Release at the last point so the
+    // native WebView receives the complete gesture; the host exposes no position to read back.
+    let pointerX = 0;
+    let pointerY = 0;
     for (const [index, step] of scenario.steps.entries()) {
       await throwIfAborted(target);
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
@@ -326,11 +330,13 @@ async function runDevicePlaytestInternal(
         if (step.pointerPosition !== undefined) {
           const previousPointerButtons = pointerButtons;
           pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
+          pointerX = step.pointerPosition.x * scenario.viewport.width;
+          pointerY = step.pointerPosition.y * scenario.viewport.height;
           await transport.call("input.pointer", {
             buttons: pointerButtons,
             type: pointerButtons === 0 ? "move" : previousPointerButtons === 0 ? "down" : "move",
-            x: step.pointerPosition.x * scenario.viewport.width,
-            y: step.pointerPosition.y * scenario.viewport.height,
+            x: pointerX,
+            y: pointerY,
           });
         }
         if (step.pointers !== undefined) {
@@ -406,9 +412,9 @@ async function runDevicePlaytestInternal(
           if (capturesAnonymousMovement) afterStep = await bridge.sample(sampleRequest);
         }
       }
-      if (step.pointerPosition?.buttons !== undefined && step.release) {
+      if (pointerButtons !== 0 && step.release) {
         pointerButtons = 0;
-        await transport.call("input.pointer", { buttons: 0, type: "up", x: 0, y: 0 });
+        await transport.call("input.pointer", { buttons: 0, type: "up", x: pointerX, y: pointerY });
       }
       if (step.pointers !== undefined && step.release) {
         await setDevicePointers(target, transport, [], scenario.viewport);

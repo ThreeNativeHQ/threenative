@@ -343,6 +343,139 @@ test("buttoned native pointer movement presses before moving and releases", asyn
   }
 });
 
+test("native pointer release lands on the pressed point in the same step", async () => {
+  const moving = movingBridge({ clearHeldAfterAdvance: true });
+  const events: Array<{ buttons: number; type: string; x: number; y: number }> = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: () => undefined,
+      pointer: (type, x, y, buttons) => {
+        events.push({ buttons, type, x, y });
+        moving.setHeld(type === "pointerdown" || type === "pointermove");
+      },
+    },
+  };
+  try {
+    const result = await runDevice(
+      { diagnostics: deviceDiagnosticsOptOut },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [{ holdFrames: 1, pointerPosition: { buttons: 1, x: 0.338, y: 0.538 }, release: true }],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(events.map(({ type }) => type)).toEqual(["pointerdown", "pointerup"]);
+    expect(events[1]).toEqual({ buttons: 0, type: "pointerup", x: 0.338 * 640, y: 0.538 * 360 });
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("native pointer held across steps releases on the last moved point", async () => {
+  const moving = movingBridge({ clearHeldAfterAdvance: true });
+  const events: Array<{ buttons: number; type: string; x: number; y: number }> = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: () => undefined,
+      pointer: (type, x, y, buttons) => {
+        events.push({ buttons, type, x, y });
+        moving.setHeld(type === "pointerdown" || type === "pointermove");
+      },
+    },
+  };
+  try {
+    const result = await runDevice(
+      { diagnostics: deviceDiagnosticsOptOut },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [
+        { holdFrames: 1, pointerPosition: { buttons: 1, x: 0.25, y: 0.5 }, release: false },
+        { holdFrames: 1, pointerPosition: { buttons: 1, x: 0.75, y: 0.5 }, release: true },
+      ],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(events.map(({ type }) => type)).toEqual(["pointerdown", "pointermove", "pointerup"]);
+    expect(events[2]).toEqual({ buttons: 0, type: "pointerup", x: 0.75 * 640, y: 0.5 * 360 });
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("native pointer held without a repeated position releases at the saved point", async () => {
+  const moving = movingBridge({ clearHeldAfterAdvance: true });
+  const events: Array<{ buttons: number; type: string; x: number; y: number }> = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: () => undefined,
+      pointer: (type, x, y, buttons) => {
+        events.push({ buttons, type, x, y });
+        moving.setHeld(type === "pointerdown" || type === "pointermove");
+      },
+    },
+  };
+  try {
+    const result = await runDevice(
+      { diagnostics: deviceDiagnosticsOptOut },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [
+        { holdFrames: 1, pointerPosition: { buttons: 1, x: 0.25, y: 0.5 }, release: false },
+        { waitFrames: 1, release: true },
+      ],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(events.map(({ type }) => type)).toEqual(["pointerdown", "pointerup"]);
+    expect(events[1]).toEqual({ buttons: 0, type: "pointerup", x: 0.25 * 640, y: 0.5 * 360 });
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("a release step with no pointer sends no pointer event", async () => {
+  const moving = movingBridge({ clearHeldAfterAdvance: true });
+  const events: Array<{ buttons: number; type: string; x: number; y: number }> = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      keyboard: () => undefined,
+      pointer: (type, x, y, buttons) => {
+        events.push({ buttons, type, x, y });
+        moving.setHeld(type === "pointerdown" || type === "pointermove");
+      },
+    },
+  };
+  try {
+    const result = await runDevice(
+      { diagnostics: deviceDiagnosticsOptOut },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [{ waitFrames: 1, release: true }],
+      null,
+    );
+
+    expect(result.pass).toBe(true);
+    expect(events).toEqual([]);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
 test("one device scenario reaches the same semantic evaluator and passes", async () => {
   const { bridge, setHeld } = movingBridge();
   const host = globalThis as typeof globalThis & INativeHost;
