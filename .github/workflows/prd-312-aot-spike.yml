@@ -1,108 +1,49 @@
-name: PRD-312 confirmed Porffor native outputs
-
+name: PRD-312 validate final research diff
 on:
   push:
     branches: [spike/prd-312-aot-2026-09-16]
-
 permissions:
   contents: read
-
-concurrency:
-  group: prd-312-porffor-confirmation
-  cancel-in-progress: false
-
 jobs:
-  experiment:
+  docs:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      CI: "true"
-      NODE_ENV: production
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: d292da4225186e6ec395be551d49c7a26a1770be
           persist-credentials: false
+          fetch-depth: 6
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.0
-      - name: Build the existing native benchmark bundle without rewriting game source
+      - name: Validate the tree with the temporary workflow removed
         shell: bash
         run: |
           set -euo pipefail
+          OUT="$RUNNER_TEMP/aot312-docs"
+          mkdir -p "$OUT"
           npm install --global pnpm@10.25.0 --ignore-scripts
           pnpm install --frozen-lockfile --ignore-scripts --prod=false
-          TN_BENCH_TARGET=native TN_BENCH_PLATFORM=desktop TN_BENCH_FRAMES=600 TN_BENCH_WARMUP=120 TN_BENCH_REPEATS=3 TN_BENCH_LADDER=256,1024,4096,16384 TN_BENCH_MODES=L1,L2 pnpm --filter threenative-engine-load-test exec vite build
-          mkdir -p "$RUNNER_TEMP/aot312-results"
-          cp examples/engine-load-test/dist/engine-load-test-desktop.js "$RUNNER_TEMP/aot312-results/game.js"
-          sha256sum "$RUNNER_TEMP/aot312-results/game.js" | tee "$RUNNER_TEMP/aot312-results/bundle.sha256"
-          wc -c "$RUNNER_TEMP/aot312-results/game.js"
-          node --check "$RUNNER_TEMP/aot312-results/game.js"
-      - name: Run pinned compiler and semantic controls (not a frame benchmark)
-        shell: bash
-        run: |
-          set -euo pipefail
-          OUT="$RUNNER_TEMP/aot312-results"
-          probe() {
-            local label="$1" limit="$2"; shift 2
-            printf '\n=== %s ===\n' "$label"
-            printf '%q ' "$@"; printf '\n'
-            local rc
-            set +e
-            timeout --kill-after=10s "$limit" "$@" >"$OUT/$label.log" 2>&1
-            rc=$?
-            set -e
-            printf '%s\t%s\n' "$label" "$rc" | tee -a "$OUT/status.tsv"
-            head -80 "$OUT/$label.log"
-            return "$rc"
-          }
-          cat > "$OUT/control.js" <<'JS'
-          const values = new Float32Array([1, 2, 3]);
-          let total = 0;
-          for (let i = 0; i < values.length; i++) total += values[i];
-          if (total !== 6) throw new Error('incorrect typed array result');
-          console.log('AOT_CONTROL_OK:6');
-          JS
-          cat > "$OUT/proxy.js" <<'JS'
-          const proxy = new Proxy({ x: 1 }, {
-            get(target, key) { return key === 'x' ? 42 : target[key]; }
-          });
-          if (proxy.x !== 42) throw new Error('PROXY_GET_TRAP_BROKEN:' + proxy.x);
-          console.log('PROXY_GET_TRAP_OK:42');
-          JS
-          cat > "$OUT/names.js" <<'JS'
-          var uint = { value: 42 };
-          var select = { value: 7 };
-          console.log(uint.value, select.value);
-          JS
-          node "$OUT/control.js"
-          node "$OUT/proxy.js"
-          node "$OUT/names.js"
-          TOOL="$RUNNER_TEMP/porffor"
-          mkdir -p "$TOOL"
-          curl --fail --location --retry 2 --max-time 120 https://github.com/CanadaHonk/porffor/releases/download/alpha-6/porffor-linux-x64.tar.gz -o "$TOOL/release.tar.gz"
-          echo "eb0ea557fc9fbcbaf16d81d9090b6fcf5010ede444dc151b94f7c528e1328b82  $TOOL/release.tar.gz" | sha256sum --check
-          tar -xzf "$TOOL/release.tar.gz" -C "$TOOL"
-          PORF="$TOOL/porf"
-          test -x "$PORF"
-          probe help 30s "$PORF" --help
-          for name in control proxy names game; do
-            if probe "$name-native-compile" 300s "$PORF" native "$OUT/$name.js" -o "$OUT/$name-native"; then
-              if test -x "$OUT/$name-native"; then
-                probe "$name-native-run" 30s "$OUT/$name-native" || true
-              else
-                printf '%s\tMISSING_OUTPUT\n' "$name" | tee -a "$OUT/status.tsv"
-              fi
-            fi
-          done
-          cp "$PORF" "$OUT/porf-alpha-6"
-          "$PORF" --version | tee "$OUT/version.txt"
-          cat "$OUT/status.tsv"
-      - name: Retain raw diagnostic output
+          rm -- .github/workflows/prd-312-aot-spike.yml
+          git add -u -- .github/workflows/prd-312-aot-spike.yml
+          git write-tree | tee "$OUT/final-tree.txt"
+          git diff --check d292da4225186e6ec395be551d49c7a26a1770be
+          git diff --name-only d292da4225186e6ec395be551d49c7a26a1770be | tee "$OUT/changed-paths.txt"
+          test "$(cat "$OUT/changed-paths.txt")" = docs/PRDs/architecture/PRD-312-the-shermes-spike-is-timeboxed-and-closed.md
+          set +e
+          timeout 180s pnpm check:docs > "$OUT/check-docs.log" 2>&1
+          DOCS=$?
+          timeout 180s pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/evidence-budget.spec.ts scripts/__tests__/evidence-citations.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$OUT/docs-tests.log" 2>&1
+          TESTS=$?
+          set -e
+          pnpm prd:progress docs/PRDs/architecture/PRD-312-the-shermes-spike-is-timeboxed-and-closed.md | tee "$OUT/prd-progress.txt"
+          printf 'check-docs\t%s\ndocs-tests\t%s\n' "$DOCS" "$TESTS" | tee "$OUT/status.tsv"
+          tail -100 "$OUT/check-docs.log"
+          tail -100 "$OUT/docs-tests.log"
+          test "$DOCS" = 0 && test "$TESTS" = 0
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: prd-312-porffor-native-output
-          path: ${{ runner.temp }}/aot312-results/*
+          name: prd-312-final-docs-checks
+          path: ${{ runner.temp }}/aot312-docs/*
           retention-days: 7
-          if-no-files-found: warn
