@@ -145,8 +145,11 @@ The temporary adapter and header excerpt are not repository changes.
   Six interleaved pairs of `mystral run examples/native-smoke/dist/native-smoke.js --frames 300` on
   Xvfb: plan off 10116/10318/10175/10184/9860/9855 ms, plan on
   10065/10283/9967/10170/9906/9919 ms — **1.3% faster by median, inside the ±1.5% spread of the runs
-  themselves**, and the +2.6% loss recorded before the capture copy was removed is gone. Recorded in
-  `docs/verification/runtime-perf-state.md`.
+  themselves**, and the +2.6% loss recorded before the capture copy was removed is gone. Metered
+  runs of the same scene put `present` at 29.4 ms of a 33 ms period, which is why no frame-level
+  result is available here; they also show the plan arm's drain at +0.08 ms and its replay at
+  +0.08–0.12 ms (2.5× on that phase, larger than the patch application explains — worth chasing if
+  activation is pursued). Recorded in `docs/verification/runtime-perf-state.md`.
 - [ ] Run the changed path on iOS and verify JSC compatibility.
   Requires a macOS/iOS lane. The recorder script uses only `DataView`, typed arrays, closures and
   `arguments` — all JSC-legal — and the JSC engine passes arguments through the same `call` path,

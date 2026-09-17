@@ -73,9 +73,20 @@ default scene, not a game.
 | plan off | 10116, 10318, 10175, 10184, 9860, 9855 | 10,146 | 33.8 ms |
 | plan on | 10065, 10283, 9967, 10170, 9906, 9919 | 10,016 | 33.4 ms |
 
-That scene renders 300 frames in ~10 s on this GPU, so the frame is bound by present and draw work
-rather than by the recorder: the −41% the transport takes off the recorder's own frame buys nothing
-here, and the +8% the plan check adds to it costs nothing measurable either. Screenshots from the
+`TN_HOST_GAP` explains why no frame-level result is available on this lane: `present` is 29.4 ms of
+the 33 ms period (89%), so the frame is the display, not the recorder. Three metered pairs of the
+same run put the transport's own phases side by side:
+
+| arm | periodP50 | frameDrain | frameReplay | present |
+| --- | --- | --- | --- | --- |
+| plan off | 33.06 / 32.90 / 32.66 | 0.002 | 0.079 / 0.087 / 0.079 | 29.6 / 29.5 / 29.3 |
+| plan on | 33.33 / 33.38 / 33.49 | 0.081 / 0.081 / 0.084 | 0.204 / 0.207 / 0.185 | 29.6 / 29.7 / 29.9 |
+
+The plan arm's drain costs 0.08 ms (building the patch and folding it back into the plan) and its
+replay costs 0.08–0.12 ms more than the v2 replay, which is a 2.5× on that phase and larger than the
+patch application can explain: it is the one number here worth chasing if activation is ever
+pursued, and it is not chased in this increment. Against the ~0.35 ms the recorder stops spending
+per frame, the lane lands inside its own ±1.5% spread either way. Screenshots from the
 two arms are not comparable — the scene animates, and every run differs from every other, arms
 included — so visual equivalence rests on the contract's pixel readback and the byte-equality tests
 below, not on these images.
