@@ -161,8 +161,10 @@ measures this against `TN_FRAME_BUDGET` rather than assuming it.
       boot-splash colour". `first_frame` landed at 3.81–5.53 s in all ten; `first_playable` (~39 s
       on this host) was asserted *not* reached in every one, because each run was stopped at 8 s.
       A finer sweep shows no black frame anywhere: `#102a37` at 1 s, 2 s, 3 s, then `#102a37` plus
-      the page's gold and ink from ~4 s. Re-run on the final binary after the in-page `<select>`
-      work landed, with the same result.
+      the page's gold and ink from ~4 s. **Re-run on the final binary** after the in-page `<select>`
+      work landed, 10/10 again: 916 624 pixels of `#102a37` and 2 776 pixels of the title's ink in
+      every one, `first_frame` at 3.64–3.76 s — tighter than the first sweep, because nothing else
+      was competing for the machine.
 - [x] AC-4 [local; actor: agent]: Web-view frames keep advancing while the game loop is blocked —
       assert the mailbox's frame counter increases across a deliberate ≥2 s stall in the game
       thread. This is the defect that starved the page to three turns in thirty-eight seconds. —
@@ -587,6 +589,14 @@ launch, the window is `#102a37` at 1 s, 2 s and 3 s, and from ~4 s it is `#102a3
 own gold and ink** — the first presented frame already carries the loading screen. No black or grey
 frame was observed at any sample. Extending the held-startup clear colour would have added code for
 a gap that measurement says is not there, so it was not added.
+
+**One gate moved backwards and is reported rather than hidden.** Regenerating the native coverage
+report — which `pnpm budgets` requires whenever native sources change — shows `src/platform/` at
+**72.05%** (879 of 1220 instrumented lines) against 82.13% before. The new input routing in
+`platform/window.cpp` is not exercised by the ctest suite, because it needs a real window and real
+events; what covers it is the playtest lane (`ui-parity`'s five presses, `native-select`'s two),
+which is the same division the rest of the platform layer already lives with. No coverage threshold
+failed — `pnpm budgets` is green.
 
 **Checkpoint:** done
 - [x] `framework:ui-ready` hold removed — it was never committed; the tree has no hold and no
