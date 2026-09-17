@@ -93,7 +93,8 @@ for (const [name, mutate] of [
 }
 
 test('a preconverted authored ICNS cannot be replaced by a different ICNS', () => temporary((directory) => {
-  const icon = join(directory, 'game.icns'), source = join(directory, 'source.icns');
+  const icon = join(directory, 'game.icns');
+  const source = join(directory, 'source.icns');
   const bytes = icnsEnvelope(); writeFileSync(icon, bytes); bytes[16] = 2; writeFileSync(source, bytes);
   assert.throws(() => inspectMacosIcon(icon, source), /TN_NATIVE_STARTER_CONTAINER_ICON_MISMATCH/u);
 }));
@@ -135,7 +136,8 @@ for (const [name, message, action] of [
 }
 
 test('a converted PNG must retain every packager size and scale', () => temporary((directory) => {
-  const icon = join(directory, 'game.icns'), source = join(directory, 'source.png');
+  const icon = join(directory, 'game.icns');
+  const source = join(directory, 'source.png');
   writeFileSync(icon, icnsEnvelope()); writeFileSync(source, 'authored PNG');
   const run = (_command, args) => {
     mkdirSync(args[3]);
@@ -189,7 +191,8 @@ function nativeFixture(directory) {
     data.set([x * 4, y * 4, (x ^ y) * 4, 255], offset);
   }
   writeFileSync(source, PNG.sync.write({ width: 64, height: 64, data }));
-  const executable = join(directory, 'fixture-runtime'), bundle = join(directory, 'fixture.bundle');
+  const executable = join(directory, 'fixture-runtime');
+  const bundle = join(directory, 'fixture.bundle');
   writeFileSync(executable, 'not launched'); writeFileSync(bundle, 'not launched');
   const config = { app: { id: 'com.example.orbit', name: 'Orbit Proof', version: '1.2.3', icon: source } };
   const built = packageDesktopContainer({ platform: 'darwin', arch: process.arch, executable, bundle, config, icon: source, output: join(directory, 'release.zip') });
@@ -205,7 +208,8 @@ function nativeFixture(directory) {
 }
 
 test.skipIf(process.platform !== 'darwin')('real packager ICNS passes decoded-pixel inspection without changing the app', () => temporary((directory) => {
-  const f = nativeFixture(directory), before = readFileSync(f.icon);
+  const f = nativeFixture(directory);
+  const before = readFileSync(f.icon);
   const brand = verifyContainerBrand({ root: f.root, config: f.config, project: directory });
   assert.equal(brand.icon.macos.method, 'iconutil-decoded-rgba');
   assert.equal(brand.icon.macos.representations.length, NAMES.length);
@@ -213,7 +217,8 @@ test.skipIf(process.platform !== 'darwin')('real packager ICNS passes decoded-pi
 }));
 
 test.skipIf(process.platform !== 'darwin')('real ICNS with one substituted size fails despite rehashed inventory', () => temporary((directory) => {
-  const f = nativeFixture(directory), decoded = join(directory, 'tampered.iconset');
+  const f = nativeFixture(directory);
+  const decoded = join(directory, 'tampered.iconset');
   tool('iconutil', ['-c', 'iconset', '-o', decoded, f.icon]);
   const size = join(decoded, 'icon_16x16.png');
   const png = PNG.sync.read(readFileSync(size)); png.data.fill(255);
@@ -223,7 +228,8 @@ test.skipIf(process.platform !== 'darwin')('real ICNS with one substituted size 
 }));
 
 test.skipIf(process.platform !== 'darwin')('a real authored ICNS is decoded even when copied without conversion', () => temporary((directory) => {
-  const f = nativeFixture(directory), authored = join(directory, 'authored.icns');
+  const f = nativeFixture(directory);
+  const authored = join(directory, 'authored.icns');
   copyFileSync(f.icon, authored); f.config.app.icon = authored;
   f.built.manifest.app.iconSha256 = hash(readFileSync(authored)); f.save();
   const brand = verifyContainerBrand({ root: f.root, config: f.config, project: directory });
@@ -257,3 +263,54 @@ test('Linux brand-only verification does not require Apple tools', () => tempora
   assert.equal(report.name.name, 'Orbit');
   assert.equal(report.icon.macos, undefined);
 }));
+
+
+for (const substituted of [false, true]) {
+  test(`ICNS round-trip reference ${substituted ? 'rejects a visible pixel change' : 'accepts converter-normalized artwork'}`, () => temporary((directory) => {
+    const icon = join(directory, 'game.icns');
+    const source = join(directory, 'source.png');
+    writeFileSync(icon, icnsEnvelope());
+    writeFileSync(source, 'authored fixture: command boundary only');
+    const calls = [];
+    const writeRepresentation = (path, pixels, red) => {
+      const data = Buffer.alloc(pixels * pixels * 4);
+      for (let offset = 0; offset < data.length; offset += 4) data.set([red, 71, 101, 255], offset);
+      writeFileSync(path, PNG.sync.write({ width: pixels, height: pixels, data }));
+    };
+    const run = (command, args) => {
+      calls.push({ command, args });
+      if (command === 'sips') {
+        assert.equal(args[3], source, 'derive reference from authored input, never the packaged icon');
+        writeRepresentation(args[5], Number(args[1]), 41);
+      } else if (command === 'iconutil' && args[1] === 'icns') {
+        assert.notEqual(args[2], icon, 'the reference must not be copied from the artifact under test');
+        writeFileSync(args[4], icnsEnvelope());
+      } else if (command === 'iconutil' && args[1] === 'iconset') {
+        const output = args[3];
+        mkdirSync(output);
+        for (const name of NAMES) {
+          const match = /^icon_(\d+)x\1(@2x)?\.png$/u.exec(name);
+          const pixels = Number(match[1]) * (match[2] ? 2 : 1);
+          // Model deterministic OS conversion, not image correctness. The real-Mac tests below
+          // exercise Apple's converters; here the actual comparison must use their output.
+          const red = substituted && args[4] === icon && name === NAMES[0] ? 39 : 40;
+          writeRepresentation(join(output, name), pixels, red);
+        }
+      } else {
+        assert.fail(`unexpected tool ${command} ${args.join(' ')}`);
+      }
+      return { status: 0 };
+    };
+    if (substituted) {
+      assert.throws(() => inspectMacosIcon(icon, source, { run }), /TN_NATIVE_STARTER_CONTAINER_ICON_MISMATCH/u);
+    } else {
+      const proof = inspectMacosIcon(icon, source, { run });
+      assert.equal(proof.representations.length, NAMES.length);
+      assert.equal(calls.filter(({ command, args }) => command === 'iconutil' && args[1] === 'icns').length, 1);
+      assert.equal(calls.filter(({ command, args }) => command === 'iconutil' && args[1] === 'iconset').length, 2);
+    }
+    assert.deepEqual(readFileSync(icon), icnsEnvelope(), 'never modify the packaged icon');
+    const scratch = dirname(calls[0].args[3]);
+    assert.equal(existsSync(scratch), false, 'remove both reference and artifact scratch after success or refusal');
+  }));
+}

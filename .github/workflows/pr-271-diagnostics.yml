@@ -37,9 +37,8 @@ jobs:
           git rev-parse HEAD > "$out/revision.txt"
           git rev-parse HEAD^{tree} > "$out/tree.txt"
           if [ "$RUNNER_OS" = Linux ]; then
-            git archive --format=tar.gz HEAD > "$out/source.tar.gz"
-            find . -name .git -prune -o -name node_modules -prune -print0 > "$out/module-paths.bin"
-            tar -czf "$out/dependencies.tar.gz" --null -T "$out/module-paths.bin"
+            cp "$(command -v pnpm)" "$out/pnpm"
+            sha256sum "$out/pnpm" > "$out/pnpm.sha256"
             pnpm exec biome check . --diagnostic-level=error --max-diagnostics=100 > "$out/biome.log" 2>&1
             echo "$?" > "$out/biome.status"
             pnpm quality > "$out/quality.log" 2>&1
