@@ -74,6 +74,15 @@ fi
 DISPLAY=":$display"
 export DISPLAY
 
+# GitHub's Xvfb has no DRI3 device. Mesa's EGL loader reports that expected headless condition as
+# warning text on stderr; the playtest runtime correctly records stderr as diagnostics, so those
+# environment warnings otherwise turn a successful software-rendered run red. Keep fatal EGL
+# diagnostics visible and leave an operator-provided log level untouched.
+if [ -z "${EGL_LOG_LEVEL+x}" ]; then
+  EGL_LOG_LEVEL=fatal
+  export EGL_LOG_LEVEL
+fi
+
 # Nothing blends on a bare Xvfb: it has no compositing manager, and the X server will not do it
 # either, so the desktop runtime refuses to attach its UI overlay to such a display. Borrow an
 # installed compositor for this private display only -- `-n` keeps xcompmgr to plain blending,
