@@ -30,22 +30,23 @@ jobs:
       - name: Record real decoder and verifier results
         shell: bash
         run: |
+          set +e
           set -uo pipefail
           out="$RUNNER_TEMP/pr271-verification"
           mkdir -p "$out"
           git rev-parse HEAD > "$out/revision.txt"
           git rev-parse HEAD^{tree} > "$out/tree.txt"
-          pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/macos-icon-content.test.mjs tests/starter-brand.test.mjs tests/starter-desktop.test.mjs > "$out/focused.log" 2>&1
-          echo "$?" > "$out/focused.status"
           if [ "$RUNNER_OS" = Linux ]; then
+            git archive --format=tar.gz HEAD > "$out/source.tar.gz"
+            find . -name .git -prune -o -name node_modules -prune -print0 > "$out/module-paths.bin"
+            tar -czf "$out/dependencies.tar.gz" --null -T "$out/module-paths.bin"
             pnpm exec biome check . --diagnostic-level=error --max-diagnostics=100 > "$out/biome.log" 2>&1
             echo "$?" > "$out/biome.status"
             pnpm quality > "$out/quality.log" 2>&1
             echo "$?" > "$out/quality.status"
-            git archive --format=tar.gz HEAD > "$out/source.tar.gz"
-            find . -name .git -prune -o -name node_modules -prune -print0 > "$out/module-paths.bin"
-            tar -czf "$out/dependencies.tar.gz" --null -T "$out/module-paths.bin"
           fi
+          pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/macos-icon-content.test.mjs tests/starter-brand.test.mjs tests/starter-desktop.test.mjs > "$out/focused.log" 2>&1
+          echo "$?" > "$out/focused.status"
           cat "$out/focused.log"
           test "$(cat "$out/focused.status")" = 0
       - uses: actions/upload-artifact@v7
