@@ -311,14 +311,17 @@ test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap',
 test('the Canvas2D property script delegates to bindings the native side registers', () => {
   const calls = [];
   const native = (name, value) => calls.push([name, value]);
+  // Mutable so a read can be proven to observe restored native state, not a JavaScript shadow.
+  let lineJoin = 'round';
+  const dashSegments = { 0: 5, 1: 3, length: 2 };
   const ctx = {
     __nativeGetLineCap: () => 'butt',
     __nativeSetLineCap: (value) => native('lineCap', value),
-    __nativeGetLineJoin: () => 'round',
-    __nativeSetLineJoin: (value) => native('lineJoin', value),
+    __nativeGetLineJoin: () => lineJoin,
+    __nativeSetLineJoin: (value) => { native('lineJoin', value); lineJoin = value; },
     // The binding returns a host array-like, not a JS Array. Copying it is the whole job: the spec
     // says getLineDash hands back a copy, and Three's dashed materials call .slice() on it.
-    __nativeGetLineDash: () => ({ 0: 5, 1: 3, length: 2 }),
+    __nativeGetLineDash: () => dashSegments,
     __nativeSetFillStyle: (value) => native('fillStyle', value),
     __nativeSetStrokeStyle: (value) => native('strokeStyle', value),
     __nativeSetLineWidth: (value) => native('lineWidth', value),
@@ -332,14 +335,20 @@ test('the Canvas2D property script delegates to bindings the native side registe
   assert.equal(ctx.lineJoin, 'round', 'the getter must read the native value, not a shadow copy');
   ctx.lineJoin = 'bevel';
   assert.deepEqual(calls.at(-1), ['lineJoin', 'bevel']);
+  lineJoin = 'miter';
+  assert.equal(ctx.lineJoin, 'miter', 'a read observes restored native state, not a JavaScript shadow');
 
   const dash = ctx.getLineDash();
   assert.ok(Array.isArray(dash), 'getLineDash must return a real Array');
   // Array.from re-homes it: the script builds the copy inside the runtime's realm, the way the
   // real engine does, and a cross-realm Array is not deep-strict-equal to one made out here.
   assert.deepEqual(Array.from(dash), [5, 3]);
+  dash[0] = 99;
   dash.push(99);
-  assert.deepEqual(Array.from(ctx.getLineDash()), [5, 3], 'the returned pattern is a copy');
+  const second = ctx.getLineDash();
+  assert.notEqual(dash, second, 'each call must hand back a fresh array');
+  assert.deepEqual(Array.from(second), [5, 3], 'the returned pattern is a copy');
+  assert.deepEqual(dashSegments, { 0: 5, 1: 3, length: 2 }, 'the native segments are not mutated');
 
   // Every name the script reaches for must exist on the C++ side. `setLineDash`, `clip` and
   // `createRadialGradient` are methods the bindings install directly; the game calls them by name.
