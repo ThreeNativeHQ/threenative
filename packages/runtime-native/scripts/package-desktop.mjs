@@ -229,6 +229,9 @@ function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
       staging,
       options.config === undefined ? undefined : readConfig(options.config),
       process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
+      // Installed from a tarball there is no CMakeLists to read, so the decoder preflight asks
+      // this binary — the one the container is about to ship — instead of guessing.
+      runtime,
     );
     // The UI bundle sits beside the executable rather than inside it. Desktop compiles to one
     // file, but the overlay's web view reads its page from a real path — that is what gives it a
@@ -312,6 +315,7 @@ export function stageDesktopFiles(
   staging,
   config = undefined,
   runtimeSource = runtimeRoot,
+  runtimeExecutable = undefined,
 ) {
   mkdirSync(staging, { recursive: true });
   if (assets && existsSync(assets)) {
@@ -323,7 +327,7 @@ export function stageDesktopFiles(
     // read the bytes on its way past. Same gate, desktop's own derived capabilities.
     assertNativeAssetsDecodable(assets, {
       target: 'desktop',
-      capabilities: { webp: deriveDesktopWebpSupport(runtimeSource) },
+      capabilities: { webp: deriveDesktopWebpSupport(runtimeSource, runtimeExecutable) },
     });
     for (const entry of readdirSync(assets)) {
       if (entry === '.threenative') {

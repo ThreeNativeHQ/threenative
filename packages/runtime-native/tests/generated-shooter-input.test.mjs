@@ -282,9 +282,9 @@ test("should preserve button order on the native target", async () => {
     { buttons: 2, type: "pointermove", x: 960 },   // look-right: relative move while aiming
     { buttons: 2, type: "pointermove", x: 640 },   // look-back: equal and opposite
     { buttons: 0, type: "pointermove", x: 640 },   // release-buttons clears the mask in-step
-    { buttons: 0, type: "pointerup", x: 0 },       // that release closes the pointer
+    { buttons: 0, type: "pointerup", x: 640 },     // that release closes the pointer at its last point
     { buttons: 1, type: "pointerdown", x: 640 },   // fire-while-aiming: the trigger, alone
-    { buttons: 0, type: "pointerup", x: 0 },       // end-of-step release closes it again
+    { buttons: 0, type: "pointerup", x: 640 },     // end-of-step release closes it at the last point
   ];
   assert.deepEqual(
     pointers.map(({ buttons, type, x }) => ({ buttons, type, x })),

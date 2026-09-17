@@ -16,11 +16,14 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  readSync,
   readdirSync,
   realpathSync,
   renameSync,
@@ -458,24 +461,90 @@ function buildIcon(icon, destination, { platform, run }) {
   throw new Error(`TN_DESKTOP_CONTAINER_UNSUPPORTED: no icon builder for '${platform}'.`);
 }
 
+/** The local file header every zip starts with, and an empty archive's end-of-central-directory. */
+function isZipArchive(path) {
+  const header = Buffer.alloc(4);
+  let handle;
+  try {
+    handle = openSync(path, 'r');
+    if (readSync(handle, header, 0, 4, 0) !== 4) return false;
+  } catch {
+    return false;
+  } finally {
+    if (handle !== undefined) closeSync(handle);
+  }
+  return header.toString('latin1') === 'PK\u0003\u0004' || header.toString('latin1') === 'PK\u0005\u0006';
+}
+
+/**
+ * Tools that write a real `.zip`, best first.
+ *
+ * tar.gz has one universal writer; .zip does not. `zip` is absent from a stock Arch and from
+ * Windows entirely — where packaging a Windows container therefore failed on the one tool it
+ * needed, on the OS the container is for. libarchive fills the gap: `bsdtar` on Arch and Homebrew,
+ * and plain `tar` on macOS and Windows 10 1803 onwards, where `-a` picks the format from the .zip
+ * suffix. Both carry the Unix mode bits, so a macOS `.app` still has its executable bit after a
+ * round trip; `7z` is deliberately not on this list, because its zip writer drops them and every
+ * platform that needs a zip already ships one of these three.
+ */
+function zipWriters(candidate, staging, rootFolder) {
+  return [
+    { args: ['-r', '-q', candidate, rootFolder], name: 'zip', options: { cwd: staging } },
+    { args: ['-a', '-c', '-f', candidate, rootFolder], name: 'bsdtar', options: { cwd: staging } },
+    { args: ['-a', '-c', '-f', candidate, rootFolder], name: 'tar', options: { cwd: staging } },
+  ];
+}
+
 function archiveContainer({ platform, staging, rootFolder, output, run }) {
   // zip updates existing archives in place, retaining removed files. Build a fresh candidate on
   // the output filesystem and replace the old artifact only after the archiver succeeds.
   const archiveDirectory = mkdtempSync(join(dirname(output), '.threenative-archive-'));
   const candidate = join(archiveDirectory, basename(output));
   try {
-    const command = platform === 'linux'
-      ? { args: ['-czf', candidate, '-C', staging, rootFolder], name: 'tar' }
-      : { args: ['-r', '-q', candidate, rootFolder], name: 'zip', options: { cwd: staging } };
-    const result = run(command.name, command.args, command.options ?? {});
-    if (result.error) {
+    // tar.gz has one universal writer; .zip does not. `zip` is not installed on a stock Arch or
+    // slim container image, and has never existed on Windows — where packaging a Windows container
+    // therefore failed on the one tool it needed, on the OS the container is for. Each candidate
+    // below writes a .zip that every player's OS unpacks natively, and the first one installed
+    // wins, so a machine with any of them can package a release.
+    const candidates = platform === 'linux'
+      ? [{ args: ['-czf', candidate, '-C', staging, rootFolder], name: 'tar' }]
+      : zipWriters(candidate, staging, rootFolder);
+    const wantsZip = desktopContainerFormat(platform) === 'zip';
+    let used;
+    let result;
+    let mislabelled;
+    for (const command of candidates) {
+      // zip updates in place and a rejected candidate leaves its own bytes behind, so every
+      // attempt starts from nothing.
+      rmSync(candidate, { force: true });
+      result = run(command.name, command.args, command.options ?? {});
+      // Only a missing tool is worth another candidate. A tool that ran and failed is a real
+      // failure, and retrying past it would hide it behind whichever archiver came next.
+      if (result.error) continue;
+      // An archiver is trusted to run, not to have written the format its suffix promises: GNU
+      // tar answers to libarchive's name and compresses by suffix, which it does not know for
+      // .zip, so it leaves a gzip wearing a .zip extension. That is this candidate failing rather
+      // than the build failing — the next one may be installed — but it must never ship.
+      if (result.status === 0 && wantsZip && command.name !== 'zip' && !isZipArchive(candidate)) {
+        mislabelled = command.name;
+        continue;
+      }
+      used = command;
+      break;
+    }
+    if (used === undefined) {
+      rmSync(candidate, { force: true });
+      const names = candidates.map((entry) => entry.name).join(', ');
       throw new Error(
-        `TN_DESKTOP_ARCHIVE_TOOL_MISSING: '${command.name}' is required to write ${output} (${result.error.message}).`,
+        `TN_DESKTOP_ARCHIVE_TOOL_MISSING: one of ${names} is required to write ${output} ` +
+          (mislabelled === undefined
+            ? `(${result.error.message}).`
+            : `('${mislabelled}' ran but wrote no zip archive).`),
       );
     }
     if (result.status !== 0) {
       throw new Error(
-        `TN_DESKTOP_ARCHIVE_FAILED: '${command.name}' exited ${result.status ?? 'unknown'} for ${output}.\n${result.stderr}`,
+        `TN_DESKTOP_ARCHIVE_FAILED: '${used.name}' exited ${result.status ?? 'unknown'} for ${output}.\n${result.stderr}`,
       );
     }
     renameSync(candidate, output);
@@ -488,17 +557,33 @@ function archiveContainer({ platform, staging, rootFolder, output, run }) {
 export function extractContainer(archive, destination, { platform = process.platform, run = exec } = {}) {
   assertFile(archive, 'desktop container archive');
   mkdirSync(destination, { recursive: true });
-  const command = desktopContainerFormat(platform) === 'tar.gz'
-    ? { args: ['-xzf', archive, '-C', destination], name: 'tar' }
-    : { args: ['-q', archive, '-d', destination], name: 'unzip' };
-  const result = run(command.name, command.args, {});
-  if (result.error) {
+  // Same portability gap as writing, on the other side of it: `unzip` is absent from a stock Arch
+  // and from Windows, so a host that can now write a container could not unpack its own. libarchive
+  // reads zip through `tar -xf` on both, and all three preserve the Unix mode the launcher needs.
+  const candidates = desktopContainerFormat(platform) === 'tar.gz'
+    ? [{ args: ['-xzf', archive, '-C', destination], name: 'tar' }]
+    : [
+      { args: ['-q', archive, '-d', destination], name: 'unzip' },
+      { args: ['-x', '-f', archive, '-C', destination], name: 'bsdtar' },
+      { args: ['-x', '-f', archive, '-C', destination], name: 'tar' },
+    ];
+  let used;
+  let result;
+  for (const command of candidates) {
+    result = run(command.name, command.args, {});
+    // A tool that ran and failed is a real failure; only a missing one is worth the next candidate.
+    if (result.error) continue;
+    used = command;
+    break;
+  }
+  if (used === undefined) {
     throw new Error(
-      `TN_DESKTOP_EXTRACT_TOOL_MISSING: '${command.name}' is required to unpack ${archive} (${result.error.message}).`,
+      `TN_DESKTOP_EXTRACT_TOOL_MISSING: one of ${candidates.map((entry) => entry.name).join(', ')} is ` +
+        `required to unpack ${archive} (${result.error.message}).`,
     );
   }
   if (result.status !== 0) {
-    throw new Error(`TN_DESKTOP_EXTRACT_FAILED: '${command.name}' exited ${result.status ?? 'unknown'} for ${archive}.`);
+    throw new Error(`TN_DESKTOP_EXTRACT_FAILED: '${used.name}' exited ${result.status ?? 'unknown'} for ${archive}.`);
   }
   return join(destination, locateContainerRoot(destination));
 }

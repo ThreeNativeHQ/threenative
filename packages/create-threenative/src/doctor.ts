@@ -406,7 +406,7 @@ export function probeDesktopOverlay(
   if (present === false) {
     return {
       detail: "no compositing manager is running, so nothing would blend the overlay",
-      fix: "Start a compositing manager or run the desktop target under a composited X11 session.",
+      fix: "Start a compositing manager (xcompmgr -n, picom or compton -- the three the repository's own private displays borrow) or run the desktop target under a composited X11 session.",
       status: "fail",
     };
   }
