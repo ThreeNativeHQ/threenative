@@ -52,11 +52,15 @@ pub extern "C" fn tn_ui_overlay_attach(
         return -1;
     }
     // On X11 a child window occludes its parent rather than blending with it, so the overlay is a
-    // top-level ARGB window and only a compositor blends it. Refusing here is the honest failure.
-    if !argb::compositor_present() {
+    // top-level ARGB window and only a compositor blends it. Refusing here is the honest failure —
+    // but a headless lane has none, so take the role first when the server can composite.
+    if !argb::ensure_compositor() {
         return -2;
     }
     let Ok(container) = argb::create(parent, width, height, Placement::Overlay) else {
+        // Taking the compositor role redirects the whole display; a failure after that would leave
+        // it black, so give it back before reporting the failure.
+        argb::release_compositor();
         return -3;
     };
     let inbound = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -97,6 +101,7 @@ pub extern "C" fn tn_ui_overlay_attach(
         })
         .build_gtk(&container.vbox);
     let Ok(webview) = built else {
+        argb::release_compositor();
         return -4;
     };
     container.show();
@@ -121,6 +126,9 @@ pub extern "C" fn tn_ui_overlay_attach(
 /// frame, and knew nothing about stacking or minimising at all.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_pump() -> c_int {
+    // When this process had to become the compositor, this is the frame it draws. A no-op on a
+    // display that has its own, and on Windows and macOS.
+    argb::compose_frame();
     OVERLAY.with(|slot| {
         let borrowed = slot.borrow();
         let Some(overlay) = borrowed.as_ref() else {
@@ -315,4 +323,6 @@ pub extern "C" fn tn_ui_overlay_detach() {
     OVERLAY.with(|slot| {
         slot.borrow_mut().take();
     });
+    // Restore the server's own drawing if this process had taken the compositor role.
+    argb::release_compositor();
 }

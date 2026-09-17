@@ -36,6 +36,7 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkImage.h"
 #include "include/effects/SkGradient.h"
+#include "include/effects/SkDashPathEffect.h"
 #include "include/utils/SkParse.h"
 
 // Platform-specific font manager
@@ -216,6 +217,9 @@ struct Canvas2DState {
     std::shared_ptr<CanvasGradient> strokeGradient;
     float lineWidth = 1.0f;
     std::string lineCap = "butt";
+    std::string lineJoin = "miter";
+    /** Canvas dash pattern; empty means a solid line. An odd count is doubled, per spec. */
+    std::vector<float> lineDash;
     float globalAlpha = 1.0f;
     std::string font = "10px sans-serif";
     std::string textAlign = "start";
@@ -307,7 +311,13 @@ struct Canvas2DContext::Impl {
 
     void applyGradient(SkPaint& paint, const std::shared_ptr<CanvasGradient>& gradient) {
         if (!gradient) return;
-        if (gradient->stops.empty() || (gradient->x0 == gradient->x1 && gradient->y0 == gradient->y1)) {
+        // A degenerate gradient paints nothing. For a radial that means both circles identical —
+        // equal centres AND equal radii; concentric circles of different radii are the ordinary
+        // case (`createRadialGradient(x,y,0,x,y,r)`) and must still draw.
+        const bool degenerate = gradient->radial
+            ? (gradient->x0 == gradient->x1 && gradient->y0 == gradient->y1 && gradient->r0 == gradient->r1)
+            : (gradient->x0 == gradient->x1 && gradient->y0 == gradient->y1);
+        if (gradient->stops.empty() || degenerate) {
             paint.setColor(SK_ColorTRANSPARENT);
             return;
         }
@@ -326,7 +336,10 @@ struct Canvas2DContext::Impl {
         paint.setAlphaf(currentState.globalAlpha);
         const SkGradient::Colors stops({colors.data(), colors.size()},
                                        {offsets.data(), offsets.size()}, SkTileMode::kClamp);
-        paint.setShader(SkShaders::LinearGradient(points, SkGradient(stops, {})));
+        paint.setShader(gradient->radial
+            ? SkShaders::TwoPointConicalGradient(points[0], gradient->r0, points[1], gradient->r1,
+                                                 SkGradient(stops, {}))
+            : SkShaders::LinearGradient(points, SkGradient(stops, {})));
     }
 
     SkPaint makeFillPaint() {
@@ -349,6 +362,14 @@ struct Canvas2DContext::Impl {
         paint.setStrokeWidth(currentState.lineWidth);
         paint.setStrokeCap(currentState.lineCap == "round" ? SkPaint::kRound_Cap :
                            currentState.lineCap == "square" ? SkPaint::kSquare_Cap : SkPaint::kButt_Cap);
+        paint.setStrokeJoin(currentState.lineJoin == "round" ? SkPaint::kRound_Join :
+                            currentState.lineJoin == "bevel" ? SkPaint::kBevel_Join : SkPaint::kMiter_Join);
+        if (!currentState.lineDash.empty()) {
+            // The spec doubles an odd-length pattern so it always alternates on/off.
+            std::vector<SkScalar> intervals(currentState.lineDash.begin(), currentState.lineDash.end());
+            if (intervals.size() % 2 == 1) intervals.insert(intervals.end(), intervals.begin(), intervals.end());
+            paint.setPathEffect(SkDashPathEffect::Make({intervals.data(), intervals.size()}, 0.0f));
+        }
         Color c = parseColor(currentState.strokeStyle);
         paint.setColor(SkColorSetARGB(
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
@@ -474,7 +495,12 @@ void Canvas2DContext::setGradient(bool stroke, std::shared_ptr<CanvasGradient> g
 }
 
 size_t Canvas2DContext::createLinearGradient(float x0, float y0, float x1, float y1) {
-    gradients_.push_back(std::make_shared<CanvasGradient>(CanvasGradient{x0, y0, x1, y1, {}}));
+    gradients_.push_back(std::make_shared<CanvasGradient>(CanvasGradient{x0, y0, x1, y1, 0.0f, 0.0f, false, {}}));
+    return gradients_.size() - 1;
+}
+
+size_t Canvas2DContext::createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1) {
+    gradients_.push_back(std::make_shared<CanvasGradient>(CanvasGradient{x0, y0, x1, y1, r0, r1, true, {}}));
     return gradients_.size() - 1;
 }
 
@@ -492,6 +518,31 @@ void Canvas2DContext::setLineCap(const std::string& cap) {
 
 std::string Canvas2DContext::getLineCap() const {
     return impl_->currentState.lineCap;
+}
+
+void Canvas2DContext::setLineJoin(const std::string& join) {
+    if (join == "miter" || join == "round" || join == "bevel") impl_->currentState.lineJoin = join;
+}
+
+std::string Canvas2DContext::getLineJoin() const {
+    return impl_->currentState.lineJoin;
+}
+
+void Canvas2DContext::setLineDash(const std::vector<float>& segments) {
+    // A negative or non-finite entry makes the whole call a no-op, as the spec requires.
+    for (const float segment : segments) if (!std::isfinite(segment) || segment < 0) return;
+    impl_->currentState.lineDash = segments;
+}
+
+std::vector<float> Canvas2DContext::getLineDash() const {
+    return impl_->currentState.lineDash;
+}
+
+void Canvas2DContext::clip() {
+#if defined(MYSTRAL_HAS_SKIA)
+    // save()/restore() already wrap SkCanvas::save/restore, so the clip unwinds with the state.
+    if (impl_->canvas) impl_->canvas->clipPath(impl_->pathBuilder.snapshot(), SkClipOp::kIntersect, true);
+#endif
 }
 
 void Canvas2DContext::setGlobalAlpha(float alpha) {

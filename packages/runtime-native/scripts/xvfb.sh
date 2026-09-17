@@ -26,7 +26,9 @@ runtime="$(mktemp -d)"
 display_file="$runtime/display"
 : >"$display_file"
 
-Xvfb -displayfd 3 -screen 0 "$screen" -nolisten tcp 3>"$display_file" &
+# COMPOSITE and SHAPE let a compositing manager blend on this display; without them the native
+# desktop runtime cannot attach its UI overlay. Xvfb leaves both off by default.
+Xvfb -displayfd 3 +extension COMPOSITE +extension SHAPE -screen 0 "$screen" -nolisten tcp 3>"$display_file" &
 xvfb_pid=$!
 
 cleanup() {
