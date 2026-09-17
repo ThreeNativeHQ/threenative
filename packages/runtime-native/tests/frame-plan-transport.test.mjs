@@ -111,6 +111,18 @@ function scene(device, queue, tick, extraDraw = 0) {
   queue.submit([encoder.finish()]);
 }
 
+function passFrame(plans, record, compute = false) {
+  const encoder = plans.device.createCommandEncoder();
+  const pass = compute
+    ? encoder.beginComputePass()
+    : encoder.beginRenderPass({ colorAttachments: [] });
+  record(pass);
+  pass.end();
+  const command = encoder.finish();
+  plans.queue.submit([command]);
+  return { encoder, pass, command };
+}
+
 describe("compiled frame plan transport", () => {
   it("stays on the v2 stream unless the host asks for plans", () => {
     const plain = recorder(false);
@@ -209,9 +221,16 @@ describe("compiled frame plan transport", () => {
     // cleanly from there: the fallback is a whole frame, not a plan-shaped one with a v2 header.
     expect(recordOpcodes(flushed.body)).toEqual([1, 2, 3, 4, 5, 8, 17, 28, 29]);
     expect(flushed.count).toBe(9);
+    expect(plans.drain(1, 1)).toBeNull();
+    // A partial drain is not a frame boundary. Close the now-empty frame before recording another.
+    expect(plans.drain(undefined, 1)).toBeNull();
 
     scene(plans.device, plans.queue, 3);
-    expect(packet(plans.drain(undefined, 1), 24).mode).toBe(CAPTURE_MODE);
+    const next = packet(plans.drain(undefined, 1), 24);
+    expect(next.mode).toBe(CAPTURE_MODE);
+    expect(next.count).toBe(9);
+    scene(plans.device, plans.queue, 3);
+    expect(packet(plans.drain(undefined, 1), 24).mode).toBe(PATCH_MODE);
   });
 
   it("sends the whole frame when the frame rewrote most of itself", () => {
@@ -241,5 +260,206 @@ describe("compiled frame plan transport", () => {
     expect(Number(script[1]) * 2 ** Number(script[2])).toBe(
       Number(native[1]) * 2 ** Number(native[2]),
     );
+  });
+
+  it("consumes a partial prefix while preserving a reused unfinished encoder tail", () => {
+    const plans = recorder(true);
+    const beginTail = () => {
+      const encoder = plans.device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({ colorAttachments: [] });
+      pass.setPipeline({ _pipelineId: 5 });
+      return { encoder, pass };
+    };
+    const finishTail = ({ encoder, pass }) => {
+      pass.draw(7);
+      pass.end();
+      plans.queue.submit([encoder.finish()]);
+    };
+    scene(plans.device, plans.queue, 1);
+    finishTail(beginTail());
+    const expected = packet(plans.drain(undefined, 1), 24);
+
+    // Both the submitted prefix and the unfinished tail now contain records reused from the plan.
+    scene(plans.device, plans.queue, 1);
+    const tail = beginTail();
+    const prefix = packet(plans.drain(1, 1), 16);
+    expect(prefix.count).toBe(9);
+    expect(plans.drain(1, 2)).toBeNull();
+    finishTail(tail);
+    const suffix = packet(plans.drain(undefined, 2), 16);
+    expect(suffix.version).toBe(2);
+    expect(recordOpcodes(suffix.body)).toEqual([2, 3, 4, 8, 17, 28, 29]);
+    expect([...prefix.body, ...suffix.body]).toEqual(Array.from(expected.body));
+    expect(plans.drain()).toBeNull();
+
+    scene(plans.device, plans.queue, 1);
+    finishTail(beginTail());
+    const recovered = packet(plans.drain(undefined, 3), 24);
+    expect(recovered.mode).toBe(CAPTURE_MODE);
+    expect(Array.from(recovered.body)).toEqual(Array.from(expected.body));
+  });
+
+  it("expires wire wrappers at an empty boundary after a complete partial drain", () => {
+    const plans = recorder(true);
+    const { encoder, pass, command } = passFrame(plans, (render) => render.draw(3));
+    expect(packet(plans.drain(1, 1), 16).version).toBe(2);
+    expect(plans.drain(undefined, 2)).toBeNull();
+    expect(() => encoder.finish()).toThrow(/stale command encoder/u);
+    expect(() => pass.draw(3)).toThrow(/stale render pass/u);
+    expect(() => plans.queue.submit([command])).toThrow(/stale command buffer/u);
+  });
+
+  it("falls back above the native retained-body bound and recovers capture then patch", () => {
+    const plans = recorder(true);
+    const payload = new Uint8Array((32 << 20) - 16);
+    payload[0] = 7;
+    payload[payload.length - 1] = 9;
+    // writeBuffer adds 24 bytes, making this body eight bytes larger than the native ceiling.
+    plans.queue.writeBuffer({ _bufferId: 7 }, 0, payload);
+    const frame = plans.drain(undefined, 1);
+    const header = new DataView(frame);
+    expect(header.getUint32(4, true)).toBe(2);
+    expect(header.getUint32(8, true)).toBe(16 + 24 + payload.byteLength);
+    expect(header.getUint32(12, true)).toBe(1);
+    const upload = new Uint8Array(frame, 40, payload.byteLength);
+    expect(upload[0]).toBe(7);
+    expect(upload[upload.length - 1]).toBe(9);
+
+    scene(plans.device, plans.queue, 1);
+    expect(packet(plans.drain(undefined, 2), 24).mode).toBe(CAPTURE_MODE);
+    scene(plans.device, plans.queue, 1);
+    expect(packet(plans.drain(undefined, 2), 24).mode).toBe(PATCH_MODE);
+  });
+
+  it("allows a captured body exactly at the native bound, excluding its header", () => {
+    const plans = recorder(true);
+    plans.queue.writeBuffer({ _bufferId: 7 }, 0, new Uint8Array((32 << 20) - 24));
+    const header = new DataView(plans.drain(undefined, 1));
+    expect(header.getUint32(4, true)).toBe(3);
+    expect(header.getUint32(8, true)).toBe((32 << 20) + 24);
+    expect(header.getUint32(12, true)).toBe(CAPTURE_MODE);
+  });
+
+  for (const compute of [false, true]) {
+    it(`forgets stale ${compute ? "compute" : "render"} bind-group snapshots after a wide record`, () => {
+      const plans = recorder(true);
+      const group = { _bindGroupId: 4 };
+      const narrow = [0, 256, 512, 768];
+      passFrame(plans, (pass) => pass.setBindGroup(0, group, narrow), compute);
+      const expected = packet(plans.drain(undefined, 1), 24);
+      passFrame(plans, (pass) => pass.setBindGroup(0, group, [...narrow, 1024]), compute);
+      const wide = packet(plans.drain(undefined, 1), 24);
+      expect(wide.mode).toBe(CAPTURE_MODE);
+      passFrame(plans, (pass) => pass.setBindGroup(0, group, narrow), compute);
+      const recovered = packet(plans.drain(undefined, 1), 24);
+      const body = recovered.mode === PATCH_MODE ? patched(wide.body, recovered) : recovered.body;
+      expect(Array.from(body)).toEqual(Array.from(expected.body));
+    });
+  }
+
+  it("does not reuse an old draw snapshot after a non-reusable opcode occupies its slot", () => {
+    const plans = recorder(true);
+    passFrame(plans, (pass) => pass.draw(3));
+    const expected = packet(plans.drain(undefined, 1), 24);
+    passFrame(plans, (pass) => pass.executeBundles([]));
+    const middle = packet(plans.drain(undefined, 1), 24);
+    passFrame(plans, (pass) => pass.draw(3));
+    const last = packet(plans.drain(undefined, 1), 24);
+    const body = last.mode === PATCH_MODE ? patched(middle.body, last) : last.body;
+    expect(Array.from(body)).toEqual(Array.from(expected.body));
+  });
+
+  it("does not publish a partly written snapshot when numeric coercion throws", () => {
+    const plans = recorder(true);
+    passFrame(plans, (pass) => pass.draw(3));
+    const first = packet(plans.drain(undefined, 1), 24);
+    passFrame(plans, (pass) => {
+      expect(() => pass.draw(7, 1, 0, 0n)).toThrow(TypeError);
+      pass.draw(7);
+    });
+    const recovered = packet(plans.drain(undefined, 1), 24);
+    const body = recovered.mode === PATCH_MODE ? patched(first.body, recovered) : recovered.body;
+    const reference = recorder(false);
+    passFrame(reference, (pass) => pass.draw(7));
+    expect(Array.from(body)).toEqual(Array.from(packet(reference.drain(), 16).body));
+  });
+
+  it("invalidates a prepared snapshot when encoding fails before a corrected retry", () => {
+    const plans = recorder(true);
+    passFrame(plans, (pass) => pass.setPipeline({ _pipelineId: 5 }));
+    const first = packet(plans.drain(undefined, 1), 24);
+    passFrame(plans, (pass) => {
+      let reads = 0;
+      const unstable = {
+        get _pipelineId() {
+          return ++reads === 1 ? 9 : 0;
+        },
+      };
+      expect(() => pass.setPipeline(unstable)).toThrow(/no numeric id/u);
+      pass.setPipeline({ _pipelineId: 9 });
+    });
+    const recovered = packet(plans.drain(undefined, 1), 24);
+    const body = recovered.mode === PATCH_MODE ? patched(first.body, recovered) : recovered.body;
+    const reference = recorder(false);
+    passFrame(reference, (pass) => pass.setPipeline({ _pipelineId: 9 }));
+    expect(Array.from(body)).toEqual(Array.from(packet(reference.drain(), 16).body));
+  });
+
+  it("matches fresh v2 bytes across 300 deterministic structural and value changes", () => {
+    const plans = recorder(true);
+    let body = null;
+    let seed = 275;
+    const random = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed;
+    };
+    for (let tick = 0; tick < 300; tick += 1) {
+      const width = random() % 7;
+      const compute = (random() & 4) !== 0;
+      const bundle = (random() & 8) !== 0;
+      const count = (random() % 20) + 1;
+      const values = Uint32Array.of(random(), random(), random(), random());
+      const record = (target) => {
+        target.queue.writeBuffer({ _bufferId: 7 }, 0, values);
+        passFrame(target, (pass) => {
+          pass.setPipeline({ _pipelineId: compute ? 6 : 5 });
+          pass.setBindGroup(0, { _bindGroupId: 4 }, Array.from({ length: width }, (_, i) => i * 256));
+          if (compute) pass.dispatchWorkgroups(count);
+          else if (bundle) pass.executeBundles([{ _renderBundleId: 9 }]);
+          else pass.draw(count);
+        }, compute);
+      };
+      record(plans);
+      const current = packet(plans.drain(undefined, 1), 24);
+      body = current.mode === PATCH_MODE ? patched(body, current) : current.body;
+      const reference = recorder(false);
+      record(reference);
+      expect(Array.from(body), `frame ${tick}`).toEqual(Array.from(packet(reference.drain(), 16).body));
+    }
+  });
+
+  it("preserves earlier patch entries when the packet buffer grows", () => {
+    const plans = recorder(true);
+    const payload = new Uint8Array(40 << 10);
+    const frame = (value) => {
+      payload.fill(value);
+      plans.queue.writeBuffer({ _bufferId: 7 }, 0, payload);
+      plans.queue.writeBuffer({ _bufferId: 8 }, 0, payload);
+      passFrame(plans, (pass) => {
+        for (let draw = 0; draw < 10000; draw += 1) pass.draw(3);
+      });
+    };
+    frame(1);
+    const capture = packet(plans.drain(undefined, 1), 24);
+    frame(2);
+    const patch = packet(plans.drain(undefined, 1), 24);
+    expect(patch.mode).toBe(PATCH_MODE);
+    expect(patch.bytes).toBeGreaterThan(1 << 16);
+    expect(patch.count).toBe(2);
+    expect(patch.view.getUint32(24, true)).toBe(0);
+    expect(patch.view.getUint32(28, true)).toBe(1);
+    frame(2);
+    const recaptured = packet(plans.drain(undefined, 2), 24);
+    expect(patched(capture.body, patch)).toEqual(recaptured.body);
   });
 });

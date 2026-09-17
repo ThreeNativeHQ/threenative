@@ -49,6 +49,8 @@
   let hostEpoch = -1;
   let spare = null;
   let captureMode = false;
+  // Once a mapAsync drain splits a frame, every remaining piece stays v2 until its boundary.
+  let splitFrame = false;
   // The records that moved this frame, as flat [plan index, arena offset, bytes] triples. Records
   // the plan already holds are absent, and nothing else in the frame has to remember them.
   const changed = [];
@@ -98,6 +100,8 @@
   // keep the check to a handful of loads: one identity per record index, its values behind it.
   let planCodes = new Int32Array(0);
   let planValues = new Float64Array(0);
+  // Only the immediately following successful emit may publish this prepared snapshot.
+  let snapshotIndex = -1;
   // The one call a record site makes before it encodes: true means the plan already holds this
   // record, so it is neither written nor sent. False records its values for the next frame to
   // compare. Reading `arguments` directly keeps both the decision and the snapshot allocation-free,
@@ -117,6 +121,7 @@
     const values = arguments;
     const count = values.length - 1;
     const index = opCount;
+    snapshotIndex = -1;
     if (count > kValueStride - 1) return false;
     if (index >= planCodes.length) growSnapshot(index);
     const at = index * kValueStride;
@@ -135,9 +140,13 @@
       }
       if (same) return true;
     }
-    planCodes[index] = code;
+    // Coercion can throw while filling a Float64Array. Never leave a valid signature for
+    // values that were only partly copied, or for a record that failed to encode afterwards.
+    planCodes[index] = 0;
     for (let i = 0; i < count; i += 1) planValues[at + i] = values[i + 1];
     planValues[at + kValueStride - 1] = count;
+    planCodes[index] = code;
+    snapshotIndex = index;
     return false;
   }
   const reuseRecord = (openDelta) => {
@@ -158,6 +167,11 @@
   const emit = (code, write, openDelta) => {
     const start = cursor;
     const retainedStart = retained.length;
+    if (planMode) {
+      // Wide/variable records bypass reusable(), so any older signature at this slot is stale.
+      if (snapshotIndex !== opCount) planCodes[opCount] = 0;
+      snapshotIndex = -1;
+    }
     ensure(8);
     u32(code);
     u32(0);
@@ -166,6 +180,10 @@
     } catch (error) {
       cursor = start;
       retained.length = retainedStart;
+      if (planMode) {
+        planCodes[opCount] = 0;
+        captureMode = true;
+      }
       throw error;
     }
     while (cursor & 7) {
@@ -839,9 +857,12 @@
     if (n <= packet.byteLength) return;
     let size = packet.byteLength || 1 << 16;
     while (n > size) size *= 2;
-    packet = new ArrayBuffer(size);
+    const next = new ArrayBuffer(size);
+    const nextBytes = new Uint8Array(next);
+    nextBytes.set(packetBytes);
+    packet = next;
     packetView = new DataView(packet);
-    packetBytes = new Uint8Array(packet);
+    packetBytes = nextBytes;
   };
   // Copies one changed run out of the arena into the packet at `at` and returns the offset after it:
   // one run header (offset and length, both relative to the record) and its bytes.
@@ -897,6 +918,14 @@
     };
     spare = previous;
   };
+  const discardPlan = () => {
+    if (plan !== null) spare = plan.buffer;
+    plan = null;
+    planBytes = null;
+    planWords = null;
+    planCodes.fill(0);
+    snapshotIndex = -1;
+  };
   // The body size of records [0, count): the plan's own sizes for the records it kept, the arena's
   // for the ones that moved.
   const assembledBytes = (count) => {
@@ -943,15 +972,19 @@
   // One packet for a whole frame: a v3 capture the host may keep, or the v2 packet a partial drain
   // has to use because a frame cut short must never become the plan.
   const assemblePacket = (count, partial) => {
-    const packetHeaderBytes = partial ? 16 : 24;
-    const buffer = planBuffer(packetHeaderBytes + assembledBytes(count));
+    const bodyBytes = assembledBytes(count);
+    const plain = partial || bodyBytes > maxPlanBytes;
+    const packetHeaderBytes = plain ? 16 : 24;
+    const buffer = planBuffer(packetHeaderBytes + bodyBytes);
     const end = assemble(buffer, count, packetHeaderBytes);
     const target = new DataView(buffer);
     target.setUint32(0, magic, true);
-    target.setUint32(4, partial ? version : planVersion, true);
+    target.setUint32(4, plain ? version : planVersion, true);
     target.setUint32(8, end, true);
-    if (partial) {
+    if (plain) {
       target.setUint32(12, count, true);
+      // Partial drains still need the plan to materialize their tail before invalidation.
+      if (!partial) discardPlan();
       return buffer;
     }
     planSequence += 1;
@@ -1040,6 +1073,8 @@
     safeCursor = headerBytes;
     safeOpCount = 0;
     captureMode = false;
+    splitFrame = false;
+    snapshotIndex = -1;
   };
   // `partial` drains only up to the last clean cut, leaving a half-recorded encoder to keep
   // recording; the host passes it from `buffer.mapAsync`. The frame boundary passes nothing and
@@ -1048,13 +1083,45 @@
   // the frame is sent as a capture instead of as a patch.
   return (partial, planEpoch) => {
     const ops = partial ? safeOpCount : opCount;
-    if (!ops) return null;
+    if (!ops) {
+      // A fully consumed partial frame still has a real boundary: expire its wire wrappers.
+      if (planMode && !partial) {
+        resetFrame();
+        frameSerial += 1;
+        frameId = 0;
+      }
+      return null;
+    }
     hostEpoch = planEpoch;
     if (planMode) {
       if (partial) {
-        // A cut frame keeps recording into the same arena, and keeps its plan: the host's copy is
-        // gone, but this frame's own bytes are still the ones the next comparison needs.
-        return assemblePacket(ops, true);
+        // Materialize before dropping the plan: even the unfinished tail may contain reused
+        // records absent from the arena. The returned prefix must not be replayed a second time.
+        const end = 16 + assembledBytes(ops);
+        const frame = assemblePacket(opCount, true);
+        const target = new DataView(frame);
+        const tailBytes = target.getUint32(8, true) - end;
+        target.setUint32(8, end, true);
+        target.setUint32(12, ops, true);
+        cursor = 0;
+        ensure(tailBytes);
+        arenaBytes.set(new Uint8Array(frame, end, tailBytes));
+        cursor = tailBytes;
+        opCount -= ops;
+        changedCount = 0;
+        writtenBytes = tailBytes;
+        for (let index = 0, at = 0; index < opCount; index += 1) {
+          const bytes = view.getUint32(at + 4, true);
+          recordChanged(index, at, bytes);
+          at += bytes;
+        }
+        discardPlan();
+        safeCursor = 0;
+        safeOpCount = 0;
+        captureMode = true;
+        splitFrame = true;
+        // Keep openObjects, retained resources and wire ids until the real frame boundary.
+        return frame;
       }
       let frame = null;
       // A frame that rewrote most of itself is cheaper to send whole than to diff, apply and carry:
@@ -1078,7 +1145,7 @@
           planSequence += 1;
         }
       }
-      if (frame === null) frame = assemblePacket(opCount, false);
+      if (frame === null) frame = assemblePacket(opCount, splitFrame);
       resetFrame();
       frameSerial += 1;
       frameId = 0;

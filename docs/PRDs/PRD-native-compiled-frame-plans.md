@@ -1,8 +1,8 @@
 # Native compiled frame plans
 
 Status: PARTIAL. Experimental, default off. Transport landed and measured; the recorder is 43–45%
-cheaper and the packet 94.8–99.5% smaller on draw-heavy frames, and the device and desktop
-measurements below are still open. Base: f8d6da914 (develop synced after #273).
+cheaper and the packet 94.8–99.5% smaller on draw-heavy frames in the original measurement. Desktop
+A/B is recorded; activation, visual, device-recreation and mobile proof remain open. Base: f8d6da914 (develop synced after #273).
 
 ## Goal and boundary
 
@@ -41,9 +41,10 @@ Implemented as:
   already holds the record, so nothing is encoded and nothing is sent. Only the records that moved
   are written, and the word diff drops even those out of the packet when their bytes are unchanged;
 - **fail-towards-capture**: an opcode or length that does not match the plan's at that index, a
-  record count that moved, a host that reports a dropped plan, a partial drain, or a frame that
-  rewrote more than half of itself above a 64 KiB floor, each send the whole frame instead. The
-  host reports its plan generation (`epoch`) on every drain; a recorder that sees it move captures.
+  record count that moved, a host that reports a dropped plan, or a frame that rewrote more than
+  half of itself above a 64 KiB floor sends a capture instead. Partial drains consume only submitted
+  prefixes and keep the remainder v2; oversized bodies also use v2. Both invalidate reuse. The host
+  reports its plan generation (`epoch`) on every drain; a recorder that sees it move captures.
 
 ## Implementation and verification
 
@@ -70,15 +71,38 @@ Implemented as:
   value-checked reuse, word-diff patches, and recapture when the layout moves or the delta would be
   larger than the frame it replaces.
 - [x] Preserve v2 fallback, partial drains, eager uploads and stale-wrapper safety.
-  The partial-drain path still cuts at `safeCursor` and sends the prefix as v2; oversized and
-  mostly-rewritten frames fall back the same way; the pre-existing 14 recorder tests (eager Canvas2D
-  snapshot, upload ordering, arena reuse, split flush) pass unchanged. Wire ids stay monotonic
-  without plans, so the default path has nothing a stale holder could alias.
+  Follow-up below repairs plan-mode partial consumption and oversized fallback; mostly-rewritten
+  frames still capture. The earlier 14-test recorder result predates these repairs. A local
+  differential check now compares the default-off recorder against `3d316925c` across 1,000 frames
+  and 2,868 drains: byte-identical, including eager uploads and partial encoder tails (exit 0).
 - [x] Observe a behavioral red, then pass recorder regression tests.
-  With the implementation stashed, 5 of the 6 new `tests/frame-plan-transport.test.mjs` cases fail
+  Original implementation evidence: with it stashed, 5 of the 6 new `tests/frame-plan-transport.test.mjs` cases fail
   (`expected 2 to be 3`, `expected 9 to be 1`, missing `FramePlanState::maxBytes`); with it, both
   recorder suites pass 22/22, including a frame in which nothing moved carrying a 24-byte packet
-  with no entries.
+  with no entries. That historical Vitest result is not a rerun of the follow-up below.
+- [x] Consume partial drains exactly once while preserving unfinished encoder tails.
+  Repeated partial drains now return null; materialized tails remain v2, with live wrappers until
+  the actual boundary. An empty final drain expires old wrappers. Regression tests pass locally.
+- [x] Enforce the native retained-body bound before choosing v3 capture.
+  A body of exactly 32 MiB still captures; eight bytes over uses v2 and then recovers capture/patch.
+  Both boundary cases pass locally, with upload endpoint bytes preserved.
+- [x] Invalidate stale or failed value snapshots before a record can be reused.
+  Render/compute wide-to-narrow bind groups, opcode replacement, coercion failure and failed-emit
+  retry pass; 300 deterministic mixed frames reconstruct byte-identically to fresh v2 records.
+- [x] Preserve earlier patch entries when the patch buffer grows.
+  Two changed 40 KiB uploads in a draw-heavy frame cross the 64 KiB packet capacity. The regression
+  failed before the growth-copy fix; afterwards applying the patch matches a forced capture.
+
+Follow-up verification (2026-09-17): the original eight transport tests passed first; ten added or
+strengthened behavioral cases failed before repairs, and the packet-growth case failed separately.
+After repairs, all 19 `frame-plan-transport.test.mjs` cases pass using Node 22.16.0 `node:test` and
+`node:assert/strict` through a temporary Vitest-API adapter (exit 0). Test bodies and production
+recorder were unchanged by that adapter; the native bound declaration was read from a fetched
+header excerpt. `node --check` passes for both changed JS files. Reproduction in a full checkout:
+`pnpm exec vitest run packages/runtime-native/tests/frame-plan-transport.test.mjs`.
+**Actual Vitest, workspace gates, native replay, GPU rendering and device lanes were not rerun in
+this follow-up environment.** The downloaded source files were verified against Git blob hashes.
+The temporary adapter and header excerpt are not repository changes.
 
 ### Phase 3: Review and measurement
 - [x] Exercise JS-generated packets through the actual C++ decoder and compare canonical bytes.
@@ -96,12 +120,14 @@ Implemented as:
   frame-rate claim.
 
 ### Phase 4: Integration proof before promotion
-- [x] Run the full workspace typecheck/lint/test/budgets and PRD progress gates.
-  `pnpm typecheck`, `pnpm lint`, `pnpm check:docs`, `pnpm quality`, `pnpm budgets` (after
+- [ ] Run the full workspace typecheck/lint/test/budgets and PRD progress gates.
+  Historical pre-follow-up result: `pnpm typecheck`, `pnpm lint`, `pnpm check:docs`, `pnpm quality`,
+  `pnpm budgets` (after
   re-stamping the native coverage record for the new source digest) and `pnpm prd:progress` all
   exit 0. `pnpm test` in this worktree fails 19 runtime-native tests whose own message is
   `<target> is not built. Run: cmake --build build/tn-linux-quickjs …` — the other native presets
-  are not built here, and those lanes are environment, not this change.
+  were not built there. This does not establish a successful full test gate. The follow-up
+  snapshot has no installed workspace dependencies/native build; full gates need a fresh run.
 - [ ] Build the native host and run an enabled/disabled visual and lifecycle conformance case.
   The `tn-linux` host is built and the plan-enabled lifecycle contract runs (above); the
   enabled/disabled *visual* case is not run.
@@ -117,14 +143,15 @@ Implemented as:
   `arguments` — all JSC-legal — and the JSC engine passes arguments through the same `call` path,
   but that is reasoning, not a run.
 
-## Acceptance
+## Acceptance criteria
 - [ ] All preceding checks have executed successfully.
-  Everything except the Android hardware, desktop and iOS measurement boxes above.
-- [x] No queue-order regression: the native contract asserts the exact operation order and census
-  for a patched frame, and the vitest lane asserts a patched plan is byte-identical to its frame.
-- [x] No resource-lifetime regression: the v2 path's own contract passes unchanged, a rejected patch
-  leaves the retained frame intact and the plan invalid rather than half-applied, and every call
-  site still retains the resources its record names before the reuse check can skip the record.
+  Full workspace success, enabled/disabled visual proof, mobile runs and activation remain open.
+- [ ] No queue-order regression on the repaired recorder through native replay.
+  Historical native order/census proof remains above; local prefix/tail byte equality passes, but
+  the changed partial-drain path still needs the native contract rerun.
+- [ ] No resource-lifetime regression on the repaired recorder through native replay.
+  The local tests preserve unfinished wrappers and expire them at the boundary. Native resource
+  lifetime and GPU readback still need revalidation after these repairs.
 - [ ] No visual regression on an enabled/disabled conformance case.
   Not run (no desktop lane with the flag on and off).
 - [ ] No device-recreation regression.
@@ -139,5 +166,11 @@ Implemented as:
 
 ## Environment
 
-Landed and measured on the workstation: Linux, AMD Ryzen 9 5900X, NVIDIA RTX 2080 (Vulkan), Node
+Original implementation and performance evidence came from the workstation: Linux, AMD Ryzen 9 5900X, NVIDIA RTX 2080 (Vulkan), Node
 20.19.6, `tn-linux` native build (V8 + Dawn). Android hardware and iOS are not available here.
+
+Follow-up recorder repairs were exercised in a Linux source snapshot with Node 22.16.0, not the
+workstation/native build above. Direct repository/package downloads failed DNS resolution, so no
+workspace install, native build, new GPU result or new performance claim is made. The existing
+`scripts/prd-progress.ts` runs directly with Node type stripping; the acceptance heading now uses
+its recognized `Acceptance criteria` spelling rather than silently reporting 0/0 acceptance boxes.
