@@ -56,7 +56,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'audio-source-properties.js': 'e631cdd093d660c0ada6f9cf23e0627a2bd1f16d22d8c003c52d7f86419d29ef',
   'audio-gain-param.js': 'd12e77670eaafe552e90d9fcc78a95d51f872922880bb95b8d51e1bad23b9723',
   'audio-panner-properties.js': '347b79924b271915fce4259f5cd1ca48ce334d59d76b18730014bd1670cf1cea',
-  'canvas2d-properties.js': '90614cfd7e7c44c885e7bd719b5404ed544adee78b4b2758d4e6e494feeb0e71',
+  'canvas2d-properties.js': 'e9bd1ff7562fca7cb16ec1c57ffb05aee9dbead65e1d38cebb9d2d710af5bdf7',
 };
 
 const RUNTIME_SCRIPT_LOADERS = {
@@ -1329,4 +1329,37 @@ test('the QuickJS rollback stays reachable', () => {
     'the rollback flag must be named where someone editing this file will see it');
   const cmake = read('CMakeLists.txt');
   assert.match(cmake, /MYSTRAL_USE_QUICKJS/u, 'the QuickJS option must still exist in CMake');
+});
+
+
+// Execute the shipped wrapper, not a parallel implementation. Native hook results are the seam;
+// C++ rasterization and platform execution remain the native contract lane's responsibility.
+test('Canvas2D lineJoin delegates reads and writes to its native state', () => {
+  let join = 'miter';
+  const writes = [];
+  const ctx = {
+    __nativeGetLineJoin: () => join,
+    __nativeSetLineJoin: (value) => { writes.push(value); join = value; },
+  };
+  runInNewContext(read('src/runtime-scripts/canvas2d-properties.js'), { __canvas2dContextTemp: ctx });
+  assert.equal(ctx.lineJoin, 'miter');
+  ctx.lineJoin = 'round';
+  assert.deepEqual(writes, ['round']);
+  join = 'bevel';
+  assert.equal(ctx.lineJoin, 'bevel', 'observe restored native state, not a JavaScript shadow');
+});
+
+test('Canvas2D getLineDash returns a fresh real array without mutating native segments', () => {
+  const segments = { 0: 2, 1: 5, length: 2 };
+  const ctx = { __nativeGetLineDash: () => segments };
+  runInNewContext(read('src/runtime-scripts/canvas2d-properties.js'), { __canvas2dContextTemp: ctx });
+  const first = ctx.getLineDash();
+  assert.ok(Array.isArray(first));
+  assert.deepEqual(Array.from(first), [2, 5]);
+  first[0] = 99;
+  first.push(7);
+  const second = ctx.getLineDash();
+  assert.notEqual(first, second);
+  assert.deepEqual(Array.from(second), [2, 5]);
+  assert.deepEqual(segments, { 0: 2, 1: 5, length: 2 });
 });

@@ -33,7 +33,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, posix, extname } from 'node:path';
 
@@ -61,27 +61,23 @@ import { join, posix, extname } from 'node:path';
  * So ask it. The runtime already answers this question on every boot, in
  * `src/runtime-scripts/image-support-init.js`, by the same `canvas.toDataURL("image/webp")` test
  * @loaders.gl uses. Running that one line under `--no-sdl` needs no display and no GPU window,
- * costs ~0.6 s once per build, and cannot go stale: it is the shipped binary's own answer.
+ * reports the selected desktop binary's compiled feature. It is not Android/device evidence.
  */
-const PROBE_CACHE = new Map();
 
 /** The packaged runtime executable inside an installed prebuilt, or undefined when there is none. */
 function prebuiltExecutable(runtimeRoot) {
   if (!runtimeRoot) return undefined;
-  const prebuilt = join(runtimeRoot, 'prebuilt');
-  let keys = [];
+  // The installer keys desktop payloads by OS and architecture. A neighbouring target's
+  // executable cannot establish support for the host that will run this desktop build.
+  const prebuilt = join(runtimeRoot, 'prebuilt', `${process.platform}-${process.arch}`);
+  const suffix = process.platform === 'win32' ? '.exe' : '';
   try {
-    keys = readdirSync(prebuilt, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
+    for (const name of ['threenative-runtime', 'mystral']) {
+      const candidate = join(prebuilt, `${name}${suffix}`);
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+    }
   } catch {
     return undefined;
-  }
-  for (const key of keys) {
-    for (const name of ['threenative-runtime', 'threenative-runtime.exe', 'mystral', 'mystral.exe']) {
-      const candidate = join(prebuilt, key, name);
-      if (existsSync(candidate)) return candidate;
-    }
   }
   return undefined;
 }
@@ -95,10 +91,10 @@ function prebuiltExecutable(runtimeRoot) {
 export function probePrebuiltDecoders(runtimeRoot, options = {}) {
   const executable = options.executable ?? prebuiltExecutable(runtimeRoot);
   if (executable === undefined) return undefined;
-  if (PROBE_CACHE.has(executable)) return PROBE_CACHE.get(executable);
-  let answer;
+  let directory;
   try {
-    const directory = mkdtempSync(join(tmpdir(), 'tn-decoder-probe-'));
+    if (!statSync(executable).isFile()) return undefined;
+    directory = mkdtempSync(join(tmpdir(), 'tn-decoder-probe-'));
     const script = join(directory, 'probe.js');
     writeFileSync(
       script,
@@ -109,39 +105,35 @@ export function probePrebuiltDecoders(runtimeRoot, options = {}) {
     const run = (options.spawn ?? spawnSync)(executable, ['run', script, '--no-sdl', '--frames', '1', '--quiet'], {
       encoding: 'utf8',
       timeout: options.timeoutMs ?? 30_000,
-      // A probe must never inherit a display: it is a question about the binary, not about X.
-      env: { ...process.env, DISPLAY: undefined, WAYLAND_DISPLAY: undefined },
+      maxBuffer: 64 * 1024,
+      // The feature probe must neither inherit a display nor launch an unrelated game bundle.
+      env: { ...process.env, DISPLAY: undefined, WAYLAND_DISPLAY: undefined, MYSTRAL_BUNDLE: undefined },
     });
-    const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
-    const line = /TN_DECODERS:(\{.*?\})/u.exec(output);
-    if (line !== null) answer = { webp: JSON.parse(line[1]).webp === true, executable };
+    if (run.error || run.signal || run.status !== 0) return undefined;
+    // Native console.log emits "[log] "; accept only that owned prefix or a plain receipt.
+    // A quoted diagnostic, duplicate receipt, malformed payload or absent field is not evidence.
+    const output = `${run.stdout ?? ''}\n${run.stderr ?? ''}`;
+    const lines = [...output.matchAll(/^(?:\[log\] )?TN_DECODERS:(\{[^\r\n]*\})\r?$/gmu)];
+    if (lines.length !== 1) return undefined;
+    const payload = JSON.parse(lines[0][1]);
+    if (Object.keys(payload).length !== 1 || typeof payload.webp !== 'boolean') return undefined;
+    return { webp: payload.webp, executable };
   } catch {
-    answer = undefined;
+    return undefined;
+  } finally {
+    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
   }
-  PROBE_CACHE.set(executable, answer);
-  return answer;
 }
 
 /** Mirrors the ANDROID branch of the libwebp block in CMakeLists.txt. */
 export function deriveAndroidWebpSupport(runtimeSource) {
   if (!runtimeSource || !existsSync(join(runtimeSource, 'CMakeLists.txt'))) {
-    // No source checkout: this is an installed release, so ask the shipped binary itself rather
-    // than refusing what it may well decode.
-    const probed = probePrebuiltDecoders(runtimeSource);
-    if (probed !== undefined) {
-      return {
-        supported: probed.webp,
-        reason: probed.webp
-          ? `${probed.executable} answers the @loaders.gl WebP test with YES, so this release was built with libwebp`
-          : `${probed.executable} answers the @loaders.gl WebP test with NO, so this release was built without libwebp`,
-      };
-    }
+    // An executable on the build host says nothing about the Android libraries being packaged.
+    // Keep the target-specific refusal until Android artifact/device evidence is available.
     return {
       supported: false,
       reason:
-        `${runtimeSource || '(no runtime root)'} is not a runtime source checkout, a prebuilt ` +
-        'Android release does not declare which decoders it was built with, and its runtime could ' +
-        'not be probed',
+        `${runtimeSource || '(no runtime root)'} is not a runtime source checkout, and a prebuilt Android release does not declare which decoders it was built with`,
     };
   }
   const sourceRoot = join(runtimeSource, 'third_party', 'webp-source');
@@ -188,17 +180,13 @@ export function deriveDesktopWebpSupport(runtimeSource) {
     if (probed !== undefined) {
       return {
         supported: probed.webp,
-        reason: probed.webp
-          ? `${probed.executable} answers the @loaders.gl WebP test with YES, so this release was built with libwebp`
-          : `${probed.executable} answers the @loaders.gl WebP test with NO, so this release was built without libwebp`,
+        reason: `${probed.executable} reports desktop WebP support: ${probed.webp ? 'YES' : 'NO'}`,
       };
     }
     return {
       supported: false,
       reason:
-        `${runtimeSource || '(no runtime root)'} is not a runtime source checkout, a prebuilt ` +
-        'desktop release does not declare which decoders it was built with, and its runtime could ' +
-        'not be probed',
+        `${runtimeSource || '(no runtime root)'} is not a runtime source checkout, a prebuilt desktop release does not declare which decoders it was built with, and its runtime could not be probed`,
     };
   }
   const prebuiltRoot = join(runtimeSource, 'third_party', 'webp');

@@ -1,12 +1,12 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
-import { probePrebuiltDecoders } from '../scripts/asset-preflight.mjs';
+import { deriveAndroidWebpSupport, probePrebuiltDecoders } from '../scripts/asset-preflight.mjs';
 import { packageDesktop, stageDesktopFiles } from '../scripts/package-desktop.mjs';
 import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
@@ -266,7 +266,7 @@ test('desktop packaging uses THREENATIVE_RUNTIME_SOURCE for decoder preflight', 
         /TN_NATIVE_ASSET_UNSUPPORTED/u,
       );
     } finally {
-      if (previous === undefined) delete process.env.THREENATIVE_RUNTIME_SOURCE;
+      if (previous === undefined) process.env.THREENATIVE_RUNTIME_SOURCE = undefined;
       else process.env.THREENATIVE_RUNTIME_SOURCE = previous;
     }
   } finally {
@@ -281,8 +281,8 @@ test('desktop packaging uses THREENATIVE_RUNTIME_SOURCE for decoder preflight', 
  */
 test('a prebuilt release is asked what it decodes instead of being assumed decoder-less', () => {
   const root = makeTempDirSync('tn-prebuilt-probe');
-  const executable = join(root, 'prebuilt', 'linux-x64', 'threenative-runtime');
-  mkdirSync(join(root, 'prebuilt', 'linux-x64'), { recursive: true });
+  const executable = join(root, 'prebuilt', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime');
+  mkdirSync(join(root, 'prebuilt', `${process.platform}-${process.arch}`), { recursive: true });
   writeFileSync(executable, '');
   const calls = [];
   const spawn = (command, args) => {
@@ -299,8 +299,8 @@ test('a prebuilt release is asked what it decodes instead of being assumed decod
 
 test('a prebuilt release that answers NO is still refused, with the binary named', () => {
   const root = makeTempDirSync('tn-prebuilt-probe-no');
-  mkdirSync(join(root, 'prebuilt', 'linux-x64'), { recursive: true });
-  writeFileSync(join(root, 'prebuilt', 'linux-x64', 'threenative-runtime'), '');
+  mkdirSync(join(root, 'prebuilt', `${process.platform}-${process.arch}`), { recursive: true });
+  writeFileSync(join(root, 'prebuilt', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime'), '');
   const spawn = () => ({ status: 0, stdout: 'TN_DECODERS:{"webp":false}\n' });
   assert.equal(probePrebuiltDecoders(root, { spawn })?.webp, false);
   rmSync(root, { force: true, recursive: true });
@@ -311,9 +311,82 @@ test('an unprobeable runtime root yields no answer at all', () => {
   const root = makeTempDirSync('tn-prebuilt-probe-missing');
   assert.equal(probePrebuiltDecoders(root), undefined);
   const withBinary = makeTempDirSync('tn-prebuilt-probe-silent');
-  mkdirSync(join(withBinary, 'prebuilt', 'linux-x64'), { recursive: true });
-  writeFileSync(join(withBinary, 'prebuilt', 'linux-x64', 'threenative-runtime'), '');
+  mkdirSync(join(withBinary, 'prebuilt', `${process.platform}-${process.arch}`), { recursive: true });
+  writeFileSync(join(withBinary, 'prebuilt', `${process.platform}-${process.arch}`, process.platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime'), '');
   assert.equal(probePrebuiltDecoders(withBinary, { spawn: () => ({ status: 1, stdout: '' }) }), undefined);
   rmSync(root, { force: true, recursive: true });
   rmSync(withBinary, { force: true, recursive: true });
+});
+
+
+function probeFixture(key = `${process.platform}-${process.arch}`) {
+  const root = makeTempDirSync('tn-decoder-guard-');
+  const executable = join(root, 'prebuilt', key, process.platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime');
+  mkdirSync(dirname(executable), { recursive: true });
+  writeFileSync(executable, 'probe fixture');
+  return { root, executable };
+}
+
+const yes = { status: 0, stdout: 'TN_DECODERS:{"webp":true}\n' };
+for (const [name, outcome, expected] of [
+  ['successful yes', yes, true],
+  ['native console receipt', { status: 0, stdout: '[log] TN_DECODERS:{"webp":true}\n' }, true],
+  ['successful no', { status: 0, stdout: 'TN_DECODERS:{"webp":false}\n' }, false],
+  ['nonzero exit with stale positive output', { ...yes, status: 1 }, undefined],
+  ['signal with stale positive output', { ...yes, status: null, signal: 'SIGTERM' }, undefined],
+  ['timeout with stale positive output', { ...yes, error: new Error('ETIMEDOUT') }, undefined],
+  ['duplicate receipts', { status: 0, stdout: yes.stdout.repeat(2) }, undefined],
+  ['nonboolean capability', { status: 0, stdout: 'TN_DECODERS:{"webp":"true"}\n' }, undefined],
+  ['absent capability', { status: 0, stdout: 'TN_DECODERS:{}\n' }, undefined],
+  ['unexpected capability', { status: 0, stdout: 'TN_DECODERS:{"webp":true,"extra":1}\n' }, undefined],
+  ['malformed JSON', { status: 0, stdout: 'TN_DECODERS:{bad}\n' }, undefined],
+  ['embedded diagnostic, not a receipt', { status: 0, stdout: 'error quoting TN_DECODERS:{"webp":true}\n' }, undefined],
+  ['exception', null, undefined],
+]) {
+  test(`decoder probe fails closed and cleans temporary files: ${name}`, () => {
+    const { root } = probeFixture();
+    let directory;
+    try {
+      const result = probePrebuiltDecoders(root, { spawn: (_command, args, options) => {
+        directory = dirname(args[1]);
+        assert.equal(existsSync(args[1]), true);
+        assert.equal(options.env.DISPLAY, undefined);
+        assert.equal(options.env.WAYLAND_DISPLAY, undefined);
+        if (outcome === null) throw new Error('fixture spawn failure');
+        return outcome;
+      } });
+      assert.equal(result?.webp, expected);
+      assert.ok(directory, 'actually execute the probe');
+      assert.equal(existsSync(directory), false, 'the probe owns cleanup on every exit');
+    } finally {
+      if (directory) rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+test('decoder probing chooses only the installed host platform, never a neighbouring target', () => {
+  const { root, executable } = probeFixture();
+  const foreign = join(root, 'prebuilt', 'aaa-foreign', process.platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime');
+  mkdirSync(dirname(foreign), { recursive: true }); writeFileSync(foreign, 'foreign');
+  const calls = [];
+  assert.equal(probePrebuiltDecoders(root, { spawn: (command) => { calls.push(command); return yes; } })?.webp, true);
+  assert.deepEqual(calls, [executable]);
+  rmSync(executable);
+  calls.length = 0;
+  assert.equal(probePrebuiltDecoders(root, { spawn: (command) => { calls.push(command); return yes; } }), undefined);
+  assert.equal(calls.length, 0, 'foreign executables cannot establish host support');
+});
+
+test('Android cannot inherit the desktop decoder answer from an installed package', () => {
+  const { root } = probeFixture();
+  assert.equal(probePrebuiltDecoders(root, { spawn: () => yes })?.webp, true);
+  assert.equal(deriveAndroidWebpSupport(root).supported, false);
+});
+
+test('a failed decoder probe can recover and a replaced executable cannot reuse a stale positive', () => {
+  const { root, executable } = probeFixture();
+  assert.equal(probePrebuiltDecoders(root, { spawn: () => ({ status: 1 }) }), undefined);
+  assert.equal(probePrebuiltDecoders(root, { spawn: () => yes })?.webp, true);
+  writeFileSync(executable, 'replacement without the decoder');
+  assert.equal(probePrebuiltDecoders(root, { spawn: () => ({ status: 0, stdout: 'TN_DECODERS:{"webp":false}\n' }) })?.webp, false);
 });
