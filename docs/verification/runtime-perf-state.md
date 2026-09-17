@@ -60,6 +60,30 @@ The default path pays for the plan check it does not use: `frame-op-stream.js` a
 recorder's own frame (≈7.5 ns per record for the `planMode` branch), which is under 1% of a 16 ms
 frame. Plan mode is off unless `TN_FRAME_PLANS=1` sets `host.compiledFramePlans`.
 
+### Desktop lane, flag on and off — 2026-09-17
+
+**On the one desktop scene available the plan transport costs 2.6%, because that scene is GPU-bound
+and the recorder's JavaScript is hidden behind it. Activation stays off.**
+
+Method: `SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy sh scripts/xvfb.sh
+packages/runtime-native/build/tn-linux/mystral run examples/native-smoke/dist/native-smoke.js
+--frames 300`, three runs per arm, `TN_FRAME_PLANS=1` in the "on" arm, RTX 2080 (Vulkan), Xvfb. This
+is the native host with the packaging default scene, not a game.
+
+| arm | runs (ms) | median | per frame |
+| --- | --- | --- | --- |
+| plan off | 9160, 9180, 9349 | 9180 | 30.6 ms |
+| plan on | 9470, 9401, 9527 | 9470 | 31.6 ms |
+
++2.6%. The scene renders 300 frames in 9.2 s on this GPU, so the frame is bound by present and draw
+work rather than by the recorder: the −43% the transport takes off the recorder's own frame is
+invisible here and the +8% the plan check adds to it is not. That is the measurement the acceptance
+criterion needed, and it says the flag stays off until a lane that is actually recorder-bound, or a
+scene whose JS the recorder dominates, shows the transport's saving end to end. Screenshots from the
+two arms are not comparable — the scene animates, and every run differs from every other, arms
+included — so visual equivalence rests on the contract's GPU readback and the byte-equality tests
+below, not on these images.
+
 Proven separately from this measurement: `frame op stream replay contract passed` runs the same
 recorder through the real C++ decoder, asserts one capture then patched frames, reads a patched
 upload back off the GPU as `[3,4,5,6]`, and rejects thirteen malformed v3 packets without entering a

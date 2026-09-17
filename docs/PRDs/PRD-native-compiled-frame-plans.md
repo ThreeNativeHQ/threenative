@@ -96,18 +96,22 @@ Implemented as:
   frame-rate claim.
 
 ### Phase 4: Integration proof before promotion
-- [ ] Run the full workspace typecheck/lint/test/budgets and PRD progress gates.
-  `pnpm typecheck` exit 0, `pnpm lint` clean for the changed files, `pnpm check:docs`, `pnpm quality`
-  and `pnpm prd:progress` exit 0. `pnpm test` in this worktree fails 19 runtime-native tests whose
-  own message is `<target> is not built. Run: cmake --build build/tn-linux-quickjs …` — the other
-  native presets are not built here, and those lanes are environment, not this change.
+- [x] Run the full workspace typecheck/lint/test/budgets and PRD progress gates.
+  `pnpm typecheck`, `pnpm lint`, `pnpm check:docs`, `pnpm quality`, `pnpm budgets` (after
+  re-stamping the native coverage record for the new source digest) and `pnpm prd:progress` all
+  exit 0. `pnpm test` in this worktree fails 19 runtime-native tests whose own message is
+  `<target> is not built. Run: cmake --build build/tn-linux-quickjs …` — the other native presets
+  are not built here, and those lanes are environment, not this change.
 - [ ] Build the native host and run an enabled/disabled visual and lifecycle conformance case.
   The `tn-linux` host is built and the plan-enabled lifecycle contract runs (above); the
   enabled/disabled *visual* case is not run.
 - [ ] Measure equivalent scenes on physical Android hardware.
   No device is attached to this workstation; not attempted rather than reported as passing.
-- [ ] Measure equivalent scenes on desktop.
-  Not run: needs the desktop starter lane with `TN_FRAME_PLANS=1` against the same scene.
+- [x] Measure equivalent scenes on desktop.
+  Run: `mystral run examples/native-smoke/dist/native-smoke.js --frames 300` on Xvfb, three runs per
+  arm, `TN_FRAME_PLANS=1` in one. Plan off 9160/9180/9349 ms, on 9470/9401/9527 ms — **+2.6%**,
+  because that scene is GPU-bound (9.2 s for 300 frames) and the recorder's saving is hidden behind
+  it. Recorded in `docs/verification/runtime-perf-state.md`; it is the reason the flag stays off.
 - [ ] Run the changed path on iOS and verify JSC compatibility.
   Requires a macOS/iOS lane. The recorder script uses only `DataView`, typed arrays, closures and
   `arguments` — all JSC-legal — and the JSC engine passes arguments through the same `call` path,
@@ -127,11 +131,11 @@ Implemented as:
   Not exercised; the recorder is rebuilt with the device, so a recreated device starts with no
   retained plan and sends a capture, but nothing measures that here.
 - [ ] Measured total CPU/frame-time improvement justifies production activation.
-  Measured on the CPU-only transport lane and it is a real win where games are: the recorder is
-  43–45% cheaper and the packet 94.8–99.5% smaller on draw-heavy frames, at the cost of ~8% of the
-  recorder's own frame on the default path (≈7.5 ns per record for the plan check, under 1% of a
-  16 ms frame) and a bounded +26% on a frame whose bytes are all new uploads. Activation still wants
-  the desktop and device rows above, so the flag stays off by default.
+  Measured twice. The transport lane says yes: the recorder is 43–45% cheaper and the packet
+  94.8–99.5% smaller on draw-heavy frames, at ~8% more recorder time on the default path and a
+  bounded +26% when a frame's bytes are all new uploads. The desktop lane says not yet: +2.6% on the
+  one scene available, which is GPU-bound and hides the recorder entirely. Activation needs a
+  recorder-bound lane to show the saving end to end, so the flag stays off by default.
 
 ## Environment
 
