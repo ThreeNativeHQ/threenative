@@ -667,8 +667,12 @@ impl ArgbContainer {
                         .collect::<Vec<_>>()
                 );
             }
-            // ShapeInput = 2, ShapeSet = 0, YXBanded = 1. An empty set is a window that takes no
+            // ShapeInput = 2, ShapeSet = 0, Unsorted = 0. An empty set is a window that takes no
             // pointer events at all, which is exactly right for a UI with no interactive islands.
+            // The ordering must be Unsorted, not a sorted one: the page publishes its islands in
+            // DOM order, and the server answers `BadMatch` for a list that does not satisfy the
+            // order it declares (`VerifyRectOrder` in `Xext/shape.c`), which GDK's error handler
+            // turns into a process exit.
             combine(
                 self.display,
                 self.x11_window,
@@ -678,7 +682,7 @@ impl ArgbContainer {
                 rectangles.as_mut_ptr(),
                 rectangles.len() as i32,
                 0,
-                1,
+                0,
             );
             (self.xlib.XFlush)(self.display);
         }
