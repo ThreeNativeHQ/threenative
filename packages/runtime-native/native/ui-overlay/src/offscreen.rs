@@ -616,9 +616,20 @@ struct Driver {
     size: (u32, u32),
     loaded: bool,
     in_flight: bool,
+    /// When the outstanding request went out, so a request that never comes back is visible.
+    in_flight_since: Instant,
     next_at: Instant,
     /// Consecutive snapshots that came back byte-identical, which is what the cadence backs off on.
     unchanged: u32,
+    /// Snapshots asked for, and how long the last one took to come back.
+    ///
+    /// A snapshot is asked for once and answered once, and the loop waits for the answer before
+    /// asking again — so an answer that never arrives stops the UI dead while everything else looks
+    /// healthy. Reported once a second beside the cadence, because that failure has no other
+    /// symptom a reader can act on.
+    requests: u64,
+    last_round_trip: Duration,
+    last_report: Instant,
     /// The bytes published last, kept so an unchanged frame is not published at all.
     previous: Option<Arc<Vec<u8>>>,
     /// Buffers to write the next snapshot into, so a static HUD is not an allocation per tick.
@@ -641,11 +652,34 @@ impl Driver {
             size: (width, height),
             loaded: false,
             in_flight: false,
+            in_flight_since: Instant::now(),
             next_at: Instant::now(),
             unchanged: 0,
+            requests: 0,
+            last_round_trip: Duration::ZERO,
+            last_report: Instant::now(),
             previous: None,
             pool: Vec::new(),
         }
+    }
+
+    /// One line a second naming what the snapshot loop is doing, or not doing.
+    fn report(&mut self, in_flight_since: Option<Instant>) {
+        if self.last_report.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        self.last_report = Instant::now();
+        let waiting = in_flight_since.map(|at| at.elapsed().as_millis()).unwrap_or(0);
+        println!(
+            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"unchanged\":{},\"counter\":{}}}",
+            self.requests,
+            in_flight_since.is_some(),
+            waiting,
+            self.last_round_trip.as_millis(),
+            interval(self.unchanged).as_millis(),
+            self.unchanged,
+            self.shared.frames.published()
+        );
     }
 
     fn loaded(&mut self) {
@@ -709,6 +743,8 @@ impl Driver {
                 }
             }
         }
+        let waiting = this.in_flight.then_some(this.in_flight_since);
+        this.report(waiting);
         if this.loaded && !this.in_flight && Instant::now() >= this.next_at {
             this.request(driver);
         }
@@ -745,6 +781,8 @@ impl Driver {
 
     fn request(&mut self, driver: &Rc<RefCell<Driver>>) {
         self.in_flight = true;
+        self.in_flight_since = Instant::now();
+        self.requests += 1;
         self.view.queue_draw();
         let driver = Rc::clone(driver);
         self.view.snapshot(
@@ -757,6 +795,7 @@ impl Driver {
 
     fn complete(&mut self, result: Result<gtk::cairo::Surface, gtk::glib::Error>) {
         self.in_flight = false;
+        self.last_round_trip = self.in_flight_since.elapsed();
         let Some((width, height, stride, buffer)) = self.read(result) else {
             // A snapshot that failed or came back in a shape we cannot upload: try again, but not
             // in a tight loop, so a permanently broken web view cannot spin a core.

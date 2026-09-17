@@ -93,6 +93,15 @@ bool uiOverlayFrame(UiOverlayFrame& frame);
 /** How many frames the web view has published. Monotonic; reported in the composite marker. */
 uint64_t uiOverlayFramesPublished();
 
+/**
+ * Tell the offscreen UI how many pixels the game window has now, so the page re-lays out.
+ *
+ * The web view has no window of its own to follow, so without this it keeps the viewport it was
+ * attached at and the composite stretches that layout across the swapchain. A no-op where nothing is
+ * attached and on every platform whose web view is a real window the OS resizes for it.
+ */
+void uiOverlaySetSize(int width, int height);
+
 /** Publish the interactive rectangles, normalized to the viewport, as x, y, width, height. */
 void setUiHitRegions(const std::vector<float>& regions);
 

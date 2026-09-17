@@ -302,6 +302,25 @@ bool routePointerToUi(const SDL_Event& event) {
 }
 
 /**
+ * Tell the offscreen UI how many pixels the game window has now.
+ *
+ * The web view has no window to follow, so this is the only thing that re-lays it out: the page's
+ * viewport is what its CSS sees, and the composite draws the frame it produces across the whole
+ * swapchain. Skip it and the HUD is a stretched copy of the layout it was attached at.
+ *
+ * Pixels, not logical points: the page is sized in device pixels, which is what the swapchain is
+ * measured in too, so the two agree at any scale factor.
+ */
+void uiOverlayResizeToWindow() {
+    if (g_window.sdlWindow == nullptr) return;
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSizeInPixels(g_window.sdlWindow, &width, &height);
+    if (width <= 0 || height <= 0) return;
+    uiOverlaySetSize(width, height);
+}
+
+/**
  * The DOM's names for the keys the platform's own naming does not already match.
  *
  * SDL names a key the way a keyboard does ("Left", "Escape", "Return"); the DOM names the same
@@ -403,6 +422,17 @@ bool pollEvents() {
                 g_window.height = event.window.data2;
                 std::cout << "[Window] Resized to " << g_window.width << "x" << g_window.height << std::endl;
                 processResize(g_window.width, g_window.height);
+                // The offscreen UI has no window of its own to follow, so nothing tells it the game
+                // changed size unless this does. Without it the web view keeps the layout it was
+                // attached at and the composite scales that onto the new swapchain, which a player
+                // sees as a stretched HUD rather than a re-laid-out one.
+                uiOverlayResizeToWindow();
+                break;
+
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                // A different scale factor is a different number of pixels for the same logical size,
+                // and the page's viewport is measured in pixels.
+                uiOverlayResizeToWindow();
                 break;
 
             case SDL_EVENT_KEY_DOWN:

@@ -657,6 +657,58 @@ failed — `pnpm budgets` is green.
       `first_frame` at 3.81–5.53 s and `first_playable` not yet reached (it lands at ~39 s here, and
       every run was asserted not to have reached it)
 
+## Two defects found by playing it, after the phases closed
+
+Both were found by João running the game on his own session rather than by any gate in this PRD, and
+both are recorded here rather than left in a transcript.
+
+### The HUD stretched instead of re-laying out
+
+`tn_ui_overlay_set_bounds` had **no caller at all**. The old overlay followed the game window through
+X server events; an offscreen view has no window to follow, so nothing told the page it had changed
+size, and the composite scaled the layout it was attached at across the new swapchain. Any resize —
+or any window whose pixel size differs from the attach size — showed a stretched HUD.
+
+Fixed in `platform/window.cpp`: `SDL_EVENT_WINDOW_RESIZED` and `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED`
+now call `uiOverlayResizeToWindow()`, which pushes the window's **pixel** size (the unit the page's
+viewport and the swapchain share) through a new `platform::uiOverlaySetSize`. Verified by resizing a
+running game from 1280×720 to 1600×900: the published hit regions move in normalized terms
+(`x=0.860 → 0.888` for the flight-manual button), which only happens when the page re-lays out, and
+the capture shows the briefing at its 1600×900 positions rather than a stretched 1280-wide one.
+
+### The page's CSS animations do not run
+
+Midway's loading screen is a `transform` sweep (`.load-line:after`), and on native it **does not
+move** — the player watches a frozen loading screen for the whole load. Measured on a private
+display with a fixture page carrying one animation of each kind, sampling the raw CPU buffer over
+5 s:
+
+| Animation | Changes in 5 s |
+|---|---|
+| JavaScript `requestAnimationFrame` | 312 (≈62/s) |
+| CSS `left` (a paint property) | 8 (≈1.6/s) |
+| CSS `transform` | 1 |
+| CSS `opacity` | 0 |
+
+Three attempts to lift it, all measured and all without effect: `gtk_widget_map` on the offscreen
+window and its child (the widget reports mapped; the animations stay frozen), forcing
+`Animation.currentTime` from rAF (no change — so it is not the animation clock that is throttled),
+and a sweep of every `WebKitSettings` property (there is no visibility, animation or throttling
+knob; the complete list was read from the installed headers).
+
+The mechanism is the one this PRD's Phase 1 named as the GTK path's cost, taken one step further:
+WebKit runs no display refresh for a view that is not a real, mapped, GL-backed window, so a
+software-composited offscreen view repaints on its own slow timer and never composites a layer
+transform at all. The window-based overlay this PRD deleted did not have that problem, so this is a
+**capability regression**, not a pre-existing defect: a native HUD could animate before and cannot
+now. It does not affect anything the PRD's acceptance criteria measure — the loading screen is
+*present* in 10 of 10 launches, it is simply still — but it is the kind of loss that a player notices
+and a screenshot does not, which is why it is written down.
+
+Lifting it means giving WebKit a display refresh again: a real mapped window (which is the design
+this PRD removed) or an accelerated path that does not abort on an offscreen window. Neither is a
+tweak, and both are the owner's call rather than something to fold into a phase that has closed.
+
 ## Out of scope
 
 - The ~34 s `first_playable` on this game against 6.6 s on web. Real and worth its own PRD, but it

@@ -235,6 +235,13 @@ uint64_t uiOverlayFramesPublished() {
 #endif
 }
 
+void uiOverlaySetSize(int width, int height) {
+    if (!uiOverlayAttached() || width <= 0 || height <= 0) return;
+    // The offscreen view is placed by its own size, not by a position: there is no window, so x and
+    // y have nothing to move.
+    tn_ui_overlay_set_bounds(0, 0, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+}
+
 void setUiHitRegions(const std::vector<float>& regions) {
     if (!uiOverlayAttached()) return;
     tn_ui_overlay_set_hit_regions(regions.empty() ? nullptr : regions.data(),
@@ -342,6 +349,10 @@ bool uiOverlayFrame(UiOverlayFrame& frame) {
     return false;
 }
 uint64_t uiOverlayFramesPublished() { return 0; }
+void uiOverlaySetSize(int width, int height) {
+    (void)width;
+    (void)height;
+}
 void setUiHitRegions(const std::vector<float>& regions) { (void)regions; }
 void detachDesktopUiOverlay() {}
 bool uiOverlayHitTest(float nx, float ny) {
