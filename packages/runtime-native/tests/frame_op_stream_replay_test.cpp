@@ -430,6 +430,116 @@ void runContract(bool disableStreamControl) {
     state->profiling.frameOpStreamDrain = {};
 }
 
+// One arm of the visual comparison: the same two frames rendered twice, with only the clear colour
+// moving between them, and the pixels read back. `plans` selects the transport.
+struct VisualArm {
+    std::string first;
+    std::string second;
+    bool ran = false;
+};
+
+VisualArm runVisualArm(bool plans) {
+    VisualArm arm;
+    if (plans) setenv("TN_FRAME_PLANS", "1", 1);
+    else unsetenv("TN_FRAME_PLANS");
+    // The arm has to be the transport it claims, or the comparison below would pass by comparing two
+    // v2 streams. The plan arm asserts its own capture and patch where the arm is read.
+    expect(plans == (std::getenv("TN_FRAME_PLANS") != nullptr),
+           std::string("visual arm flag matches the transport it claims: TN_FRAME_PLANS is ") +
+               (std::getenv("TN_FRAME_PLANS") ? "set" : "unset"));
+    mystral::RuntimeConfig config;
+    config.width = 4;
+    config.height = 4;
+    config.noSdl = true;
+    const auto runtime = mystral::Runtime::create(config);
+    if (!runtime || !runtime->getWebGPUBindingsState()) {
+        expect(false, "headless runtime with WebGPU bindings created for the visual arm");
+        return arm;
+    }
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
+    auto* engine = state->engine;
+    const bool evaluated = engine->evalScript(
+        R"JS((async () => {
+          try {
+          const adapter = await navigator.gpu.requestAdapter();
+          const device = await adapter.requestDevice();
+          const target = device.createTexture({
+            size: [4, 4], format: "rgba8unorm",
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+          });
+          const view = target.createView();
+          // One readback per frame: bytesPerRow must be a multiple of 256 for a texture copy, so the
+          // mapping is padded and the comparison reads the first row of it.
+          const makeReadback = () => device.createBuffer({
+            size: 1024, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+          });
+          const first = makeReadback();
+          const second = makeReadback();
+          globalThis.__tnVisualPixels = [];
+          globalThis.__tnVisualDone = false;
+          const render = (frame, colour, readback) => {
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginRenderPass({colorAttachments: [{
+              view, loadOp: "clear", storeOp: "store", clearValue: colour,
+            }]});
+            pass.end();
+            encoder.copyTextureToBuffer(
+              {texture: target},
+              {buffer: readback, bytesPerRow: 256, rowsPerImage: 4},
+              [4, 4, 1]);
+            device.queue.submit([encoder.finish()]);
+          };
+          // One frame each, chained rather than registered together: a map in the same frame as a
+          // render would drain that frame mid-way, which is the split case and not this comparison.
+          requestAnimationFrame(() => {
+            // The clear colour is the visual value under test, and it is the only thing that moves.
+            render(1, [0.25, 0.5, 0.75, 1], first);
+            requestAnimationFrame(() => {
+              render(2, [0.75, 0.5, 0.25, 1], second);
+              requestAnimationFrame(async () => {
+                for (const readback of [first, second]) {
+                  await readback.mapAsync(GPUMapMode.READ, 0, 1024);
+                  globalThis.__tnVisualPixels.push(
+                    Array.from(new Uint8Array(readback.getMappedRange(0, 1024))));
+                  readback.unmap();
+                }
+                globalThis.__tnVisualDone = true;
+              });
+            });
+          });
+          } catch (error) {
+            globalThis.__tnVisualError = String(error);
+            globalThis.__tnVisualDone = true;
+          }
+        })())JS",
+        "tn-visual.js");
+    expect(evaluated, "visual scene evaluated: " +
+                          (engine->hasException() ? engine->getException() : std::string("no exception")));
+    awaitFlag(runtime.get(), engine, "__tnVisualDone");
+    expect(engine->isUndefined(engine->getGlobalProperty("__tnVisualError")),
+           "visual scene completed without an error: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "String(globalThis.__tnVisualError || '')", "tn-visual-error.js")));
+    const auto read = [&](const char* which) {
+        return engine->toString(engine->evalScriptWithResult(
+            (std::string("JSON.stringify(globalThis.__tnVisualPixels[") + which + "] || null)")
+                .c_str(),
+            "tn-visual-pixels.js"));
+    };
+    arm.first = read("0");
+    arm.second = read("1");
+    arm.ran = arm.first != "null" && arm.second != "null";
+    if (plans) {
+        // Otherwise the comparison above would pass because both arms sent the same v2 stream.
+        expect(state->framePlan.captures >= 1 && state->framePlan.patches >= 1,
+               "the plan arm of the visual comparison captured one frame and patched the next: " +
+                   std::to_string(state->framePlan.captures) + " captures, " +
+                   std::to_string(state->framePlan.patches) + " patches, valid " +
+                   std::to_string(state->framePlan.valid ? 1 : 0));
+    }
+    return arm;
+}
+
 // Drives real frames until the page's own frame counter passes `frames`.
 void awaitFrames(mystral::Runtime* runtime, mystral::js::Engine* engine, int frames) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
@@ -689,6 +799,143 @@ void runPlanContract() {
     unsetenv("TN_FRAME_PLANS");
 }
 
+// The lifecycle a retained plan has to survive on the real decoder: a mapAsync drain that splits a
+// frame, and a device recreation.
+void runPlanLifecycleContract() {
+    setenv("TN_FRAME_PLANS", "1", 1);
+    mystral::RuntimeConfig config;
+    config.width = 1;
+    config.height = 1;
+    config.noSdl = true;
+    const auto runtime = mystral::Runtime::create(config);
+    if (!runtime || !runtime->getWebGPUBindingsState()) {
+        expect(false, "headless runtime with WebGPU bindings created for the plan lifecycle contract");
+        return;
+    }
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
+    auto* engine = state->engine;
+    state->profiling.captureFrameOpStreamTrace = true;
+    const uint64_t crossingsBefore = state->profiling.frameOpStreamReplayCrossings;
+    const uint64_t capturesBefore = state->framePlan.captures;
+
+    // A map mid-frame splits the frame: the prefix has to reach the host before the map can resolve,
+    // and the frame boundary has to send the rest without replaying anything twice. A second
+    // encoder creating the same wire id again, or a buffer copy running twice, would be a failure
+    // the host reports rather than a quiet difference.
+    expect(engine->evalScript(
+        R"JS((async () => {
+          try {
+          const adapter = await navigator.gpu.requestAdapter();
+          const device = await adapter.requestDevice();
+          globalThis.__tnSplitDevice = device;
+          const src = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+          const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+          globalThis.__tnSplitFrame = 0;
+          globalThis.__tnSplitDone = false;
+          const step = async () => {
+            const frame = ++globalThis.__tnSplitFrame;
+            if (frame > 2) {
+              globalThis.__tnSplitDone = true;
+              return;
+            }
+            device.queue.writeBuffer(src, 0, new Uint32Array([frame, frame, frame, frame]));
+            const encoder = device.createCommandEncoder();
+            encoder.copyBufferToBuffer(src, 0, dst, 0, 16);
+            device.queue.submit([encoder.finish()]);
+            // WebGPU completes a map only after the work already submitted, so this drains the
+            // prefix of the frame right here, in the middle of it.
+            await dst.mapAsync(GPUMapMode.READ, 0, 16);
+            globalThis.__tnSplitValue = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
+            dst.unmap();
+            // The frame keeps recording behind the cut, and its boundary sends that tail.
+            const tail = device.createCommandEncoder();
+            const pass = tail.beginRenderPass({colorAttachments: []});
+            pass.end();
+            device.queue.submit([tail.finish()]);
+            requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+          } catch (error) {
+            globalThis.__tnSplitError = String(error);
+            globalThis.__tnSplitDone = true;
+          }
+        })())JS",
+        "tn-plan-split.js"),
+        "split-frame scene evaluated");
+    awaitFlag(runtime.get(), engine, "__tnSplitDone");
+    // The last split frame's own boundary drain lands after the scene's done flag, so let the frame
+    // loop turn over before counting crossings.
+    for (int pump = 0; pump < 5; ++pump) runtime->pollEvents();
+    expect(engine->isUndefined(engine->getGlobalProperty("__tnSplitError")),
+           "the split frame completed without an error: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "String(globalThis.__tnSplitError || '')", "tn-split-error.js")));
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+               "JSON.stringify(__tnSplitValue) === '[2,2,2,2]'", "tn-split-value.js")),
+           "a split frame's prefix executed before its map resolved: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "JSON.stringify(__tnSplitValue)", "tn-split-value-read.js")));
+    // Two frames, and the recorded work reaches the host exactly once: the prefix of each frame
+    // crosses at its map, and the tail the second split left behind crosses at the following frame
+    // boundary, because the map's continuation records it after that boundary has already run.
+    expect(state->profiling.frameOpStreamReplayCrossings - crossingsBefore >= 3,
+           "a split frame's prefix and tail each crossed the host once: " +
+               std::to_string(state->profiling.frameOpStreamReplayCrossings - crossingsBefore));
+    const std::vector<std::string> tailOrder = {"createCommandEncoder", "beginRenderPass",
+                                                "render.end", "finish", "submit"};
+    expect(state->profiling.frameOpStreamLastOrder == tailOrder,
+           "the frame boundary replayed the tail a split left behind");
+    expect(state->framePlan.captures > capturesBefore,
+           "a split frame dropped the retained plan and the next frame captured a new one");
+
+    // A device recreation builds a new recorder over a new device. The host's retained plan is still
+    // the old frame, so the first frame after recreation has to be a capture that replaces it, and
+    // the records have to name the new device's resources.
+    expect(engine->evalScript(
+        R"JS((async () => {
+          try {
+          globalThis.__tnSplitDevice.destroy();
+          const adapter = await navigator.gpu.requestAdapter();
+          const device = await adapter.requestDevice();
+          const src = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+          const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+          globalThis.__tnRecreateDone = false;
+          requestAnimationFrame(async () => {
+            device.queue.writeBuffer(src, 0, new Uint32Array([9, 8, 7, 6]));
+            const encoder = device.createCommandEncoder();
+            encoder.copyBufferToBuffer(src, 0, dst, 0, 16);
+            device.queue.submit([encoder.finish()]);
+            await dst.mapAsync(GPUMapMode.READ, 0, 16);
+            globalThis.__tnRecreateValue = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
+            dst.unmap();
+            globalThis.__tnRecreateDone = true;
+          });
+          } catch (error) {
+            globalThis.__tnRecreateError = String(error);
+            globalThis.__tnRecreateDone = true;
+          }
+        })())JS",
+        "tn-recreate-device.js"),
+        "device recreation requested");
+    awaitFlag(runtime.get(), engine, "__tnRecreateDone");
+    expect(engine->isUndefined(engine->getGlobalProperty("__tnRecreateError")),
+           "device recreation completed without an error: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "String(globalThis.__tnRecreateError || '')", "tn-recreate-error.js")));
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+               "JSON.stringify(__tnRecreateValue) === '[9,8,7,6]'", "tn-recreate-value.js")),
+           "a recreated device replays a frame whose resources belong to it: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "JSON.stringify(__tnRecreateValue)", "tn-recreate-value-read.js")));
+    expect(state->profiling.frameOpStreamLastOrder ==
+               std::vector<std::string>{"writeBuffer", "createCommandEncoder", "copyBufferToBuffer",
+                                        "finish", "submit"},
+           "the frame after device recreation replayed in order");
+
+    state->profiling.frameOpStreamDrain = {};
+    unsetenv("TN_FRAME_PLANS");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -698,7 +945,23 @@ int main(int argc, char** argv) {
     // Compiled frame plans run after the default contract, and only then: the recorder reads the
     // flag when the device is created, so a plan-enabled runtime would change what the assertions
     // above are looking at.
-    if (!disableStreamControl) runPlanContract();
+    if (!disableStreamControl) {
+        // The same two frames on both transports, compared as pixels: the clear colour moves between
+        // them, so the plan arm has to carry that value in a patch and land on the same image.
+        const VisualArm withoutPlans = runVisualArm(false);
+        runPlanContract();
+        const VisualArm withPlans = runVisualArm(true);
+        expect(withoutPlans.ran && withPlans.ran, "both visual arms read pixels back");
+        expect(!withoutPlans.first.empty() && withoutPlans.first != "null",
+               "the v2 arm read its first frame back");
+        expect(withoutPlans.first != withoutPlans.second,
+               "the visual comparison moved the pixels it compares");
+        expect(withoutPlans.first == withPlans.first,
+               "the v2 and plan transports render the same first frame");
+        expect(withoutPlans.second == withPlans.second,
+               "a patched clear colour renders the pixels the v2 stream renders");
+        runPlanLifecycleContract();
+    }
     if (failures != 0) {
         if (disableStreamControl) {
             std::cerr << "RED observed: disabled frame stream rejected" << std::endl;

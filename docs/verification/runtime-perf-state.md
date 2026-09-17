@@ -12,9 +12,9 @@ detail is not in this file exists only in git — quote it with the commit.
 
 ## Compiled frame plan transport (v3) — native compiled frame plans — 2026-09-17
 
-**The default-off v3 transport costs the JS recorder 43% less per frame and carries 94.8% fewer bytes
-on a draw-heavy frame, 39% less and 99.5% fewer on a 20000-draw frame. It is the recorder's work, not
-the packet, that pays: a frame whose records did not move is not re-encoded at all.**
+**The default-off v3 transport costs the JS recorder 35–41% less per frame and carries 94.8–99.5% fewer
+bytes on draw-heavy frames. On the desktop lane it is now neutral (1.3% faster by median, inside the
+±1.5% run-to-run spread) after a frame that cannot be patched stopped being copied.**
 
 Method: `node packages/runtime-native/scripts/measure-frame-plan-transport.mjs --frames=120`
 (branch `perf/compiled-frame-plans-20260917`), Node 20.19.6, AMD 5900X. A CPU-only microbenchmark of
@@ -26,11 +26,11 @@ sends today, `v3` the capture-then-patch plan.
 
 | scene | v2 total ms | v3 total ms | CPU | v2 packet | v3 packet | bytes |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2000 draws, 64 × 256 B uploads (default) | 0.902 | 0.518 | −43% | 338,120 | 17,432 | −94.8% |
-| 20000 draws, 64 × 256 B uploads | 9.672 | 5.297 | −45% | 3,218,120 | 17,432 | −99.5% |
-| 200 draws, 32 × 64 KiB uploads, all new | 0.628 | 0.792 | +26% | 2,130,120 | 2,130,128 | 0% |
+| 2000 draws, 64 × 256 B uploads (default) | 0.976 | 0.580 | −41% | 338,120 | 17,432 | −94.8% |
+| 20000 draws, 64 × 256 B uploads | 10.199 | 6.491 | −36% | 3,218,120 | 17,432 | −99.5% |
+| 200 draws, 32 × 64 KiB uploads, all new | 0.649 | 0.702 | +8.2% | 2,130,120 | 2,130,128 | 0% |
 
-`total` is encode plus drain JavaScript per frame. Three mechanisms carry the win:
+`total` is encode plus drain JavaScript per frame. Four mechanisms carry it:
 
 1. **Per-frame wire ids.** Encoder, render pass, compute pass and command buffer ids restart every
    frame in plan mode, so a record that did not move is the same bytes as last frame's — before
@@ -41,19 +41,16 @@ sends today, `v3` the capture-then-patch plan.
    bytes — pass, pipeline, bind group, counts, offsets — against the ones the retained plan was
    recorded from, in one allocation-free call. Equal means the plan already holds the record, so
    nothing is encoded and nothing is sent: 10,004 of 10,069 records in the default scene are reused
-   on a steady frame. Only the 64 uniform uploads are written, and the word diff drops those too
-   when their payload is unchanged.
-3. **A layout check that fails towards a capture.** A record whose opcode or length does not match
-   the plan's at that index, a frame whose record count moved, a host that reports a dropped plan,
-   a partial drain: each of those sends the whole frame instead of a patch. A frame that rewrote
-   more than half of itself does the same, because patching it would touch those bytes three times
-   over while a capture touches them once.
-
-The third row is the shape this transport is worst at, and it is bounded: when the changed bytes
-*are* the payload there is nothing to elide, so the cost is one assembly pass over the frame and the
-byte count does not move. The guard in (3) is what keeps that row at +26% instead of the +260% the
-same scene cost before it existed. A frame like that is 2 MB of fresh upload per frame, which is
-bandwidth the GPU is going to spend regardless; the draw-heavy rows are where games live.
+   on a steady frame.
+3. **A capture the arena already holds.** A frame that cannot be patched — a layout change, a
+   dropped plan, a host that reports a plan it no longer holds — is handed over as the arena with a
+   header written in front of it, and the buffer the old plan used becomes the next arena. Before
+   that, every such frame was assembled into a fresh buffer first, one full copy per frame.
+4. **A guard that bounds the loss.** When the changed bytes *are* the payload there is nothing to
+   elide, so a frame that rewrote most of itself above a 64 KiB floor is sent whole rather than
+   diffed, applied and carried. That is what holds the third row at +8.2% instead of the +260% the
+   same scene cost before the guard existed; such a frame is 2 MB of fresh upload per frame, which
+   the GPU spends anyway.
 
 The default path pays for the plan check it does not use: `frame-op-stream.js` at `main` measures
 0.79–0.82 ms and with the plan call sites present 0.89–0.94 ms on the same scene, +8% of the
@@ -62,33 +59,38 @@ frame. Plan mode is off unless `TN_FRAME_PLANS=1` sets `host.compiledFramePlans`
 
 ### Desktop lane, flag on and off — 2026-09-17
 
-**On the one desktop scene available the plan transport costs 2.6%, because that scene is GPU-bound
-and the recorder's JavaScript is hidden behind it. Activation stays off.**
+**Neutral: 1.3% faster by median over six interleaved pairs, inside the ±1.5% spread of the runs
+themselves. The earlier +2.6% loss was the per-frame capture copy that mechanism 3 removed.**
 
 Method: `SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy sh scripts/xvfb.sh
 packages/runtime-native/build/tn-linux/mystral run examples/native-smoke/dist/native-smoke.js
---frames 300`, three runs per arm, `TN_FRAME_PLANS=1` in the "on" arm, RTX 2080 (Vulkan), Xvfb. This
-is the native host with the packaging default scene, not a game.
+--frames 300`, six pairs of runs alternating the arms so drift lands on both, `TN_FRAME_PLANS=1` in
+the "on" arm, RTX 2080 (Vulkan), Xvfb, no emulator running. The native host with the packaging
+default scene, not a game.
 
 | arm | runs (ms) | median | per frame |
 | --- | --- | --- | --- |
-| plan off | 9160, 9180, 9349 | 9180 | 30.6 ms |
-| plan on | 9470, 9401, 9527 | 9470 | 31.6 ms |
+| plan off | 10116, 10318, 10175, 10184, 9860, 9855 | 10,146 | 33.8 ms |
+| plan on | 10065, 10283, 9967, 10170, 9906, 9919 | 10,016 | 33.4 ms |
 
-+2.6%. The scene renders 300 frames in 9.2 s on this GPU, so the frame is bound by present and draw
-work rather than by the recorder: the −43% the transport takes off the recorder's own frame is
-invisible here and the +8% the plan check adds to it is not. That is the measurement the acceptance
-criterion needed, and it says the flag stays off until a lane that is actually recorder-bound, or a
-scene whose JS the recorder dominates, shows the transport's saving end to end. Screenshots from the
+That scene renders 300 frames in ~10 s on this GPU, so the frame is bound by present and draw work
+rather than by the recorder: the −41% the transport takes off the recorder's own frame buys nothing
+here, and the +8% the plan check adds to it costs nothing measurable either. Screenshots from the
 two arms are not comparable — the scene animates, and every run differs from every other, arms
-included — so visual equivalence rests on the contract's GPU readback and the byte-equality tests
+included — so visual equivalence rests on the contract's pixel readback and the byte-equality tests
 below, not on these images.
 
 Proven separately from this measurement: `frame op stream replay contract passed` runs the same
 recorder through the real C++ decoder, asserts one capture then patched frames, reads a patched
 upload back off the GPU as `[3,4,5,6]`, and rejects thirteen malformed v3 packets without entering a
-backend call; `tests/frame-plan-transport.test.mjs` proves a patched plan is byte-identical to the
-frame it replaces, and that a frame in which nothing moved carries a 24-byte packet with no entries.
+backend call. It also renders the same two frames on both transports with only the clear colour
+moving and compares the pixels read back from each arm (with a negative control that the comparison
+moves when the colour does); drives a `mapAsync` that splits a frame and asserts the prefix ran
+before the map resolved, the tail replayed at the next boundary, and the plan recaptured after; and
+destroys the device to prove a recreated one replays a capture naming its own resources.
+`tests/frame-plan-transport.test.mjs` proves a patched plan is byte-identical to the frame it
+replaces, that a frame in which nothing moved carries a 24-byte packet with no entries, and that a
+reused record still reads the resource ids that keep its objects alive.
 
 ## PRD-217 desktop WebView overlay on/off — 2026-09-12
 

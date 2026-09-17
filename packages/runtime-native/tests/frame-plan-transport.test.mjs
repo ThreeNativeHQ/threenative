@@ -233,6 +233,36 @@ describe("compiled frame plan transport", () => {
     expect(packet(plans.drain(undefined, 1), 24).mode).toBe(PATCH_MODE);
   });
 
+  it("still reads the resource ids of a record the plan already holds", () => {
+    // A reused record is not re-encoded, but its call site must still read the resource ids it
+    // names: that read is what keeps the wrapper — and the GPU object behind it — alive, and the
+    // plan can name the object for as long as the record stays in it.
+    const reads = { buffer: 0 };
+    const buffer = {
+      get _bufferId() {
+        reads.buffer += 1;
+        return 5;
+      },
+      destroy() {},
+    };
+    const plans = recorder(true);
+    const frame = () => {
+      const encoder = plans.device.createCommandEncoder();
+      encoder.copyBufferToBuffer(buffer, 0, buffer, 16, 16);
+      plans.queue.submit([encoder.finish()]);
+    };
+    frame();
+    expect(packet(plans.drain(undefined, 1), 24).mode).toBe(CAPTURE_MODE);
+    const afterFirst = reads.buffer;
+    frame();
+    const patch = packet(plans.drain(undefined, 1), 24);
+    expect(patch.mode).toBe(PATCH_MODE);
+    expect(patch.count).toBe(0);
+    // Both of the copy's references were read again while the record was reused, so nothing the
+    // plan names went unreferenced on the frame that skipped re-encoding it.
+    expect(reads.buffer - afterFirst).toBeGreaterThanOrEqual(2);
+  });
+
   it("sends the whole frame when the frame rewrote most of itself", () => {
     const plans = recorder(true);
     const payload = new Uint8Array(1 << 17);

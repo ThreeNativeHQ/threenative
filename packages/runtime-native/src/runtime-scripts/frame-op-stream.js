@@ -20,10 +20,9 @@
   const kValueStride = 9;
   // Above this many rewritten bytes a frame is cheaper to send as a capture than to diff and apply.
   const kCaptureWhenRewrittenBytes = 1 << 16;
-  // Without plans the arena *is* the packet, so its records start behind the v2 header. With plans
-  // it holds only this frame's changed records, whose bytes are packed around it, so it starts at
-  // zero and carries no header at all.
-  const headerBytes = planMode ? 0 : 16;
+  // The arena starts behind a header either way: a v2 packet's 16 bytes, or the 24 a v3 packet needs
+  // so a frame that cannot be patched can be handed over as a capture without copying it.
+  const headerBytes = planMode ? 24 : 16;
   let storage = new ArrayBuffer(headerBytes + (1 << 20));
   let view = new DataView(storage);
   let arenaBytes = new Uint8Array(storage);
@@ -68,6 +67,14 @@
   let openObjects = 0;
   let safeCursor = headerBytes;
   let safeOpCount = 0;
+  // Records the next frame into `buffer`, with the views that go with it. A capture handed over from
+  // the arena swaps the two buffers, so this is a rotation and not an allocation.
+  const useArena = (buffer) => {
+    storage = buffer;
+    view = new DataView(storage);
+    arenaBytes = new Uint8Array(storage);
+    arenaWords = new Uint32Array(storage);
+  };
   const ensure = (n) => {
     if (cursor + n <= storage.byteLength) return;
     let size = storage.byteLength * 2;
@@ -901,9 +908,11 @@
     }
     return buffer;
   };
+  // Adopts [headerBytes, end) of `buffer` as the retained plan. Which buffers are free afterwards is
+  // the caller's business: an assembled capture frees the old plan's buffer, a capture handed over
+  // from the arena does not.
   const adoptPlan = (buffer, end, headerBytes, count) => {
     const body = new Uint8Array(buffer, headerBytes, end - headerBytes);
-    const previous = plan === null ? null : plan.buffer;
     planBytes = body;
     planWords = new Uint32Array(buffer, headerBytes, body.byteLength >> 2);
     plan = {
@@ -916,7 +925,17 @@
       // plan, which is exactly when the recorder has to stop patching and capture again.
       epoch: hostEpoch,
     };
-    spare = previous;
+  };
+  // True when the arena already holds records 0..count-1, in order and back to back: the frame a
+  // capture would assemble is sitting there, so handing it over costs a header and nothing else.
+  const arenaHoldsFrame = (count) => {
+    if (changedCount !== count) return false;
+    let at = headerBytes;
+    for (let index = 0; index < count; index += 1) {
+      if (changed[index * 3] !== index || changed[index * 3 + 1] !== at) return false;
+      at += changed[index * 3 + 2];
+    }
+    return true;
   };
   const discardPlan = () => {
     if (plan !== null) spare = plan.buffer;
@@ -991,7 +1010,11 @@
     target.setUint32(12, planCapture, true);
     target.setUint32(16, planSequence, true);
     target.setUint32(20, count, true);
+    const previous = plan === null ? null : plan.buffer;
     adoptPlan(buffer, end, packetHeaderBytes, count);
+    // The assembled buffer is the plan now, so the buffer the old plan used is free to assemble
+    // into next time.
+    if (previous !== null && previous !== buffer && previous !== storage) spare = previous;
     return buffer;
   };
   // The packet for a frame whose layout the host already holds: one entry per record that moved and,
@@ -1145,6 +1168,29 @@
           planSequence += 1;
         }
       }
+      const arenaBodyBytes = cursor - headerBytes;
+      if (
+        frame === null &&
+        !splitFrame &&
+        !captureMode &&
+        arenaBodyBytes <= maxPlanBytes &&
+        arenaHoldsFrame(opCount)
+      ) {
+        // Every record of this frame is already in the arena, in order, so a capture is a header
+        // written in front of them: the packet is the arena, and the buffer the old plan used
+        // becomes the next frame's arena.
+        frame = storage;
+        planSequence += 1;
+        writePacketHeader(view, cursor, planCapture, planSequence, opCount);
+        const previous = plan === null ? null : plan.buffer;
+        adoptPlan(frame, cursor, headerBytes, opCount);
+        if (previous !== null && previous !== storage) useArena(previous);
+        else useArena(new ArrayBuffer(storage.byteLength));
+        resetFrame();
+        frameSerial += 1;
+        frameId = 0;
+        return frame;
+      }
       if (frame === null) frame = assemblePacket(opCount, splitFrame);
       resetFrame();
       frameSerial += 1;
@@ -1166,10 +1212,7 @@
       const tail = new Uint8Array(storage, end, cursor - end);
       const next = new ArrayBuffer(storage.byteLength);
       new Uint8Array(next, 16, tail.byteLength).set(tail);
-      storage = next;
-      view = new DataView(storage);
-      arenaBytes = new Uint8Array(storage);
-      arenaWords = new Uint32Array(storage);
+      useArena(next);
       cursor = 16 + tail.byteLength;
       opCount -= ops;
       safeCursor = 16;

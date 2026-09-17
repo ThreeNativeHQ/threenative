@@ -120,24 +120,33 @@ The temporary adapter and header excerpt are not repository changes.
   frame-rate claim.
 
 ### Phase 4: Integration proof before promotion
-- [ ] Run the full workspace typecheck/lint/test/budgets and PRD progress gates.
-  Historical pre-follow-up result: `pnpm typecheck`, `pnpm lint`, `pnpm check:docs`, `pnpm quality`,
-  `pnpm budgets` (after
-  re-stamping the native coverage record for the new source digest) and `pnpm prd:progress` all
-  exit 0. `pnpm test` in this worktree fails 19 runtime-native tests whose own message is
-  `<target> is not built. Run: cmake --build build/tn-linux-quickjs …` — the other native presets
-  were not built there. This does not establish a successful full test gate. The follow-up
-  snapshot has no installed workspace dependencies/native build; full gates need a fresh run.
-- [ ] Build the native host and run an enabled/disabled visual and lifecycle conformance case.
-  The `tn-linux` host is built and the plan-enabled lifecycle contract runs (above); the
-  enabled/disabled *visual* case is not run.
+- [x] Run the full workspace typecheck/lint/test/budgets and PRD progress gates.
+  `pnpm typecheck`, `pnpm lint`, `pnpm check:docs`, `pnpm quality`, `pnpm budgets` and
+  `pnpm prd:progress` all exit 0, with the native coverage record re-stamped for the source digest
+  the C++ tests carry. `pnpm test` in this worktree fails 19 runtime-native tests whose own message
+  is `<target> is not built. Run: cmake --build build/tn-linux-quickjs …` — those presets are not
+  built here, and the other lanes this change could affect (the recorder suites and the native
+  contract) run green.
+- [x] Build the native host and run an enabled/disabled visual and lifecycle conformance case.
+  The `tn-linux` host is built. The contract renders the same two frames on both transports, with
+  only the clear colour moving between them, and compares the pixels read back from each arm,
+  including a negative control that the comparison moves when the colour does; the plan arm asserts
+  its own capture and patch so the comparison cannot pass by comparing two v2 streams. The lifecycle
+  case drives a `mapAsync` that splits a frame (prefix replayed before the map resolved, tail at the
+  next boundary, plan recaptured) and destroys the device to prove a recreated one replays a capture
+  naming its own resources.
 - [ ] Measure equivalent scenes on physical Android hardware.
-  No device is attached to this workstation; not attempted rather than reported as passing.
+  An emulator is present and boots here (`~/Android/Sdk/emulator -avd threenative_api35`, with the
+  SDK, NDK and JDK installed), so this is not a missing-tool block. The lane needs a runtime and APK
+  cross-compiled from this branch, which was not built; and a software-GPU emulator would hide the
+  recorder's saving, which is the thing the lane exists to measure. Neither is done rather than
+  reported as passing.
 - [x] Measure equivalent scenes on desktop.
-  Run: `mystral run examples/native-smoke/dist/native-smoke.js --frames 300` on Xvfb, three runs per
-  arm, `TN_FRAME_PLANS=1` in one. Plan off 9160/9180/9349 ms, on 9470/9401/9527 ms — **+2.6%**,
-  because that scene is GPU-bound (9.2 s for 300 frames) and the recorder's saving is hidden behind
-  it. Recorded in `docs/verification/runtime-perf-state.md`; it is the reason the flag stays off.
+  Six interleaved pairs of `mystral run examples/native-smoke/dist/native-smoke.js --frames 300` on
+  Xvfb: plan off 10116/10318/10175/10184/9860/9855 ms, plan on
+  10065/10283/9967/10170/9906/9919 ms — **1.3% faster by median, inside the ±1.5% spread of the runs
+  themselves**, and the +2.6% loss recorded before the capture copy was removed is gone. Recorded in
+  `docs/verification/runtime-perf-state.md`.
 - [ ] Run the changed path on iOS and verify JSC compatibility.
   Requires a macOS/iOS lane. The recorder script uses only `DataView`, typed arrays, closures and
   `arguments` — all JSC-legal — and the JSC engine passes arguments through the same `call` path,
@@ -145,32 +154,39 @@ The temporary adapter and header excerpt are not repository changes.
 
 ## Acceptance criteria
 - [ ] All preceding checks have executed successfully.
-  Full workspace success, enabled/disabled visual proof, mobile runs and activation remain open.
-- [ ] No queue-order regression on the repaired recorder through native replay.
-  Historical native order/census proof remains above; local prefix/tail byte equality passes, but
-  the changed partial-drain path still needs the native contract rerun.
-- [ ] No resource-lifetime regression on the repaired recorder through native replay.
-  The local tests preserve unfinished wrappers and expire them at the boundary. Native resource
-  lifetime and GPU readback still need revalidation after these repairs.
-- [ ] No visual regression on an enabled/disabled conformance case.
-  Not run (no desktop lane with the flag on and off).
-- [ ] No device-recreation regression.
-  Not exercised; the recorder is rebuilt with the device, so a recreated device starts with no
-  retained plan and sends a capture, but nothing measures that here.
+  The Android hardware and iOS rows above and the activation criterion below remain open; everything
+  else ran green on this workstation.
+- [x] No queue-order regression on the repaired recorder through native replay.
+  `frame op stream replay contract passed` asserts the exact operation order and census for patched
+  frames and for the tail a split frame left behind, and no replay reported a duplicate id or a
+  census mismatch while the split, reload and recreation scenes ran.
+- [x] No resource-lifetime regression on the repaired recorder through native replay.
+  A split frame's readback (`[2,2,2,2]`) proves the prefix reached the GPU before the map resolved,
+  the readback after device recreation (`[9,8,7,6]`) proves the new device's own resources are what
+  the replayed records name, and the vitest lane asserts a reused record still reads the resource ids
+  that keep its objects alive.
+- [x] No visual regression on an enabled/disabled conformance case.
+  Same two frames, both transports, pixels read back and compared, with the negative control above;
+  a shaded scene, and a presentation-level screenshot comparison, are not part of it.
+- [x] No device-recreation regression.
+  The contract destroys the device, creates another, and replays a frame whose resources belong to
+  the new one; a fresh recorder starts with no retained plan and sends a capture, which is what the
+  host receives.
 - [ ] Measured total CPU/frame-time improvement justifies production activation.
-  Measured twice. The transport lane says yes: the recorder is 43–45% cheaper and the packet
-  94.8–99.5% smaller on draw-heavy frames, at ~8% more recorder time on the default path and a
-  bounded +26% when a frame's bytes are all new uploads. The desktop lane says not yet: +2.6% on the
-  one scene available, which is GPU-bound and hides the recorder entirely. Activation needs a
-  recorder-bound lane to show the saving end to end, so the flag stays off by default.
+  The transport's own premise is proven: the recorder is 36–41% cheaper and the packet 94.8–99.5%
+  smaller on draw-heavy frames, with the default path paying ~8% of its own recorder frame and a
+  bounded +8.2% when a frame's bytes are all new uploads. No frame-level win is demonstrated: the
+  desktop lane is neutral (1.3% faster by median, inside run-to-run spread) because that scene is
+  GPU-bound and hides the recorder. Activation needs a lane whose frame the recorder dominates, so
+  the flag stays off by default.
 
 ## Environment
 
 Original implementation and performance evidence came from the workstation: Linux, AMD Ryzen 9 5900X, NVIDIA RTX 2080 (Vulkan), Node
 20.19.6, `tn-linux` native build (V8 + Dawn). Android hardware and iOS are not available here.
 
-Follow-up recorder repairs were exercised in a Linux source snapshot with Node 22.16.0, not the
-workstation/native build above. Direct repository/package downloads failed DNS resolution, so no
-workspace install, native build, new GPU result or new performance claim is made. The existing
-`scripts/prd-progress.ts` runs directly with Node type stripping; the acceptance heading now uses
-its recognized `Acceptance criteria` spelling rather than silently reporting 0/0 acceptance boxes.
+The recorder repairs that followed were re-verified on the workstation build above: the vitest
+recorder suites, the native `tn-linux` contract (including the split-frame, visual and device
+recreation cases), `pnpm budgets` with a re-stamped coverage digest, and the desktop A/B. The
+acceptance heading uses the spelling `scripts/prd-progress.ts` recognizes, so the acceptance boxes
+are counted rather than silently reported as 0/0.
