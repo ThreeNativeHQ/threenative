@@ -353,8 +353,8 @@ test("desktop runner asks for the frame series a performance assertion reads", a
 
     expect(requests.some((request) => request.include?.includes("runtimeDiagnosticsSeries") === true))
       .toBe(true);
-    expect(report.observations.performanceSeries?.length ?? 0).toBeGreaterThan(0);
-    const performance = report.assertionResults.find(({ id }) => id === "performance.minFps");
+    expect(report.observations?.performanceSeries?.length ?? 0).toBeGreaterThan(0);
+    const performance = report.assertionResults?.find(({ id }) => id === "performance.minFps");
     expect(performance?.pass).toBe(true);
   } finally {
     if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
