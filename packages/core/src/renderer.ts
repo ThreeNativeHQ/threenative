@@ -280,6 +280,11 @@ type RendererInstance = {
   dispose?: () => void;
   /** three's per-draw seam, present on the WebGPU renderer and absent on the WebGL2 fallback. */
   getRenderObjectFunction?: () => RenderObjectFunction | null;
+  /** three's compile-time render target seam; see the `compileAsync` wrapper. */
+  needsFrameBufferTarget?: boolean;
+  getRenderTarget?: () => unknown;
+  setRenderTarget?: (target: unknown) => void;
+  _getFrameBufferTarget?: () => unknown;
   renderObject?: RenderObjectFunction;
   setRenderObjectFunction?: (renderObjectFunction: RenderObjectFunction) => void;
 };
@@ -459,6 +464,21 @@ function wrapRenderer(
         });
       }
       const compileTargetScene = targetScene ?? scene;
+      // three's `compile()` picks the frame-buffer target for its render context but never binds
+      // it (`Renderer.js:908`, unlike `_renderScene`'s `setRenderTarget`), so inside one compile a
+      // viewport-depth copy destination is sized from that target's `samples` (4) while its bind
+      // group layout is sized from `currentSamples` (0). The mismatch is a lost device the first
+      // time a material samples depth under warm-up. Bind what is being compiled for, as
+      // `_renderScene` does, and put back whatever was bound.
+      const frameBufferTarget =
+        raw.needsFrameBufferTarget === true &&
+        typeof raw.getRenderTarget === "function" &&
+        typeof raw.setRenderTarget === "function" &&
+        typeof raw._getFrameBufferTarget === "function" &&
+        raw.getRenderTarget() === null
+          ? raw._getFrameBufferTarget()
+          : undefined;
+      if (frameBufferTarget !== undefined) raw.setRenderTarget?.(frameBufferTarget);
       activeCompiles += 1;
       compileCount += 1;
       try {
@@ -472,6 +492,7 @@ function wrapRenderer(
           else await raw.compileAsync(scene, camera, targetScene);
         }
       } finally {
+        if (frameBufferTarget !== undefined) raw.setRenderTarget?.(null);
         activeCompiles -= 1;
         if (activeCompiles === 0) {
           const requestedScale = pendingScale;
