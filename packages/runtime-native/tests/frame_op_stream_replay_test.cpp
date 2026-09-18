@@ -31,7 +31,7 @@ void setFramePlanOverride(bool enabled) {
     const int result = _putenv_s("TN_FRAME_PLANS", enabled ? "1" : "");
 #else
     const int result =
-        enabled ? setenv("TN_FRAME_PLANS", "1", 1) : setFramePlanOverride(false);
+        enabled ? setenv("TN_FRAME_PLANS", "1", 1) : unsetenv("TN_FRAME_PLANS");
 #endif
     expect(result == 0, std::string("frame-plan diagnostic override ") +
                             (enabled ? "enabled" : "cleared"));

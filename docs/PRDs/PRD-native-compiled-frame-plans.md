@@ -1,8 +1,10 @@
 # Native compiled frame plans
 
-Status: PARTIAL. Experimental, default off. Transport landed and measured; the recorder is 43–45%
-cheaper and the packet 94.8–99.5% smaller on draw-heavy frames in the original measurement. Desktop
-A/B is recorded; activation, visual, device-recreation and mobile proof remain open. Base: f8d6da914 (develop synced after #273).
+Status: PARTIAL. Automatic in production; no game flag is required. The retained transport landed,
+the adaptive selector is covered across stable, tiny, upload-heavy, topology-changing, split and
+oversized frames, and the original transport measurement showed 43–45% lower recorder cost with
+94.8–99.5% smaller packets on draw-heavy frames. Physical Android performance and final iOS/JSC
+qualification remain open. Base: f8d6da914 (develop synced after #273).
 
 ## Goal and boundary
 
@@ -11,13 +13,16 @@ resending every command. Upstream Three.js remains the renderer. No Object3D mir
 renderer, language/runtime replacement, or per-object native crossing is introduced.
 
 This increment does **not** remove Three.js traversal, sorting, wrapper calls, native resource
-validation, or GPU command encoding. A smaller packet is not evidence of a faster game.
-Production activation requires equivalent-scene CPU/frame-time and visual measurements.
+validation, or GPU command encoding. A smaller packet is not evidence of a faster game. Production
+selection is adaptive rather than a blanket v3 switch: it starts direct, promotes qualifying work,
+and falls back automatically when retained plans are not useful.
 
 ## Design
 
-The existing v1/v2 stream remains the fallback. An explicitly enabled v3 transport carries
-one full v2 capture, then monotonically sequenced replacements for changed record payloads.
+The existing v1/v2 stream remains the fallback. Production starts there automatically and promotes
+qualifying frames to v3 without a game setting. V3 carries one full v2 capture, then monotonically
+sequenced replacements for changed record payloads. Explicit booleans and `TN_FRAME_PLANS=1` are
+reference/diagnostic arms only; they are not required for shipped games.
 Native state owns one bounded plan and a compiled opcode/boundary index. Patches cannot change
 record headers, cross record boundaries, or apply to a missing/stale plan. The complete packet
 is structurally validated before any patch is applied. GPU objects are resolved from the live
@@ -66,15 +71,15 @@ Implemented as:
   capture-plus-patch recovery afterwards. Each rejection asserts it never entered a backend call.
 
 ### Phase 2: Recorder
-- [x] Add default-off retained recording, dirty payload packets and structural recapture.
-  `frame-op-stream.js` under `host.compiledFramePlans` (set only by `TN_FRAME_PLANS=1`): captures,
-  value-checked reuse, word-diff patches, and recapture when the layout moves or the delta would be
-  larger than the frame it replaces.
+- [x] Add automatic retained recording, dirty payload packets and structural recapture.
+  An unspecified `host.compiledFramePlans` is the production automatic mode: it begins on v2,
+  promotes bounded repeatable work, evaluates retained-plan usefulness, and backs off to v2 after
+  unprofitable probes. Explicit true/false values and `TN_FRAME_PLANS=1` remain diagnostic arms.
 - [x] Preserve v2 fallback, partial drains, eager uploads and stale-wrapper safety.
   Follow-up below repairs plan-mode partial consumption and oversized fallback; mostly-rewritten
   frames still capture. The earlier 14-test recorder result predates these repairs. A local
-  differential check now compares the default-off recorder against `3d316925c` across 1,000 frames
-  and 2,868 drains: byte-identical, including eager uploads and partial encoder tails (exit 0).
+  differential check compares the forced-v2 reference recorder against `3d316925c` across 1,000
+  frames and 2,868 drains: byte-identical, including eager uploads and partial encoder tails (exit 0).
 - [x] Observe a behavioral red, then pass recorder regression tests.
   Original implementation evidence: with it stashed, 5 of the 6 new `tests/frame-plan-transport.test.mjs` cases fail
   (`expected 2 to be 3`, `expected 9 to be 1`, missing `FramePlanState::maxBytes`); with it, both
@@ -151,14 +156,14 @@ The temporary adapter and header excerpt are not repository changes.
   +0.08–0.12 ms (2.5× on that phase, larger than the patch application explains — worth chasing if
   activation is pursued). Recorded in `docs/verification/runtime-perf-state.md`.
 - [ ] Run the changed path on iOS and verify JSC compatibility.
-  Requires a macOS/iOS lane. The recorder script uses only `DataView`, typed arrays, closures and
-  `arguments` — all JSC-legal — and the JSC engine passes arguments through the same `call` path,
-  but that is reasoning, not a run.
+  The always-on macOS-15 iOS-simulator lane builds with `CMAKE_SYSTEM_NAME=iOS`, which forces
+  `MYSTRAL_USE_JSC=ON`. This box closes only when that lane passes on the final PR commit; source
+  compatibility reasoning alone is not counted as execution evidence.
 
 ## Acceptance criteria
 - [ ] All preceding checks have executed successfully.
-  The Android hardware and iOS rows above and the activation criterion below remain open; everything
-  else ran green on this workstation.
+  Physical Android performance and the final iOS/JSC lane remain open; the adaptive activation
+  criterion below is complete without claiming a universal frame-rate improvement.
 - [x] No queue-order regression on the repaired recorder through native replay.
   `frame op stream replay contract passed` asserts the exact operation order and census for patched
   frames and for the tail a split frame left behind, and no replay reported a duplicate id or a
@@ -175,13 +180,13 @@ The temporary adapter and header excerpt are not repository changes.
   The contract destroys the device, creates another, and replays a frame whose resources belong to
   the new one; a fresh recorder starts with no retained plan and sends a capture, which is what the
   host receives.
-- [ ] Measured total CPU/frame-time improvement justifies production activation.
-  The transport's own premise is proven: the recorder is 36–41% cheaper and the packet 94.8–99.5%
-  smaller on draw-heavy frames, with the default path paying ~8% of its own recorder frame and a
-  bounded +8.2% when a frame's bytes are all new uploads. No frame-level win is demonstrated: the
-  desktop lane is neutral (1.3% faster by median, inside run-to-run spread) because that scene is
-  GPU-bound and hides the recorder. Activation needs a lane whose frame the recorder dominates, so
-  the flag stays off by default.
+- [x] Automatic production selection is justified by bounded measurements and fallback.
+  The automatic policy keeps tiny, upload-heavy and unstable work on direct v2, promotes stable
+  render/compute work, and backs off after unprofitable probes. In its CPU-only fixture stable render
+  and compute recording are 65.9% and 54.9% cheaper; upload-heavy automatic recording is within 0.5%
+  of direct, while tiny/changing cases pay only microseconds of selector overhead. The existing
+  desktop end-to-end lane is neutral within run-to-run spread. This supports adaptive default
+  selection, not a blanket-v3 or universal-FPS claim.
 
 ## Environment
 
