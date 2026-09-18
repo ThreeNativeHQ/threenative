@@ -341,6 +341,7 @@ describe("IAssetLoader through the asset manifest", () => {
           : new Promise<Texture>((resolve) => setTimeout(() => resolve(new Texture()), 0)),
     });
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 0,
       requestedBytes: 0,
       settled: 0,
@@ -349,7 +350,9 @@ describe("IAssetLoader through the asset manifest", () => {
     const first = assets.texture("a.png");
     void assets.texture("a.png"); // cached: one request, not two
     // No manifest here, so no size is knowable and the byte ledger stays at zero throughout.
+    // A loading view reads `pending` to say *what* it is waiting for, not just how much is left.
     expect(assets.progress).toEqual({
+      pending: ["a.png"],
       requested: 1,
       requestedBytes: 0,
       settled: 0,
@@ -357,6 +360,7 @@ describe("IAssetLoader through the asset manifest", () => {
     });
     await first;
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 1,
       requestedBytes: 0,
       settled: 1,
@@ -364,7 +368,9 @@ describe("IAssetLoader through the asset manifest", () => {
     });
     await expect(assets.texture("nope.png")).rejects.toThrow(/no such texture/u);
     // A rejected load settles too: a bar that waits for a texture that failed never finishes.
+    // A rejected load leaves `pending` too, or the bar names a file nothing is waiting for.
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 2,
       requestedBytes: 0,
       settled: 2,
