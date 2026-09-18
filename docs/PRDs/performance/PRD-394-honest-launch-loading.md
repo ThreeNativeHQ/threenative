@@ -1,6 +1,6 @@
 # PRD-394 — An honest launch: progress you can read, failures that fail closed, a load that is not 104 seconds
 
-Status: PHASE 1
+Status: PHASE 3 (phases 1-2 landed; phase 3 blocked on an idle GPU)
 Owner: engine + `midway-open-pacific` (sandbox)
 
 ## Why
@@ -41,22 +41,31 @@ Three separate defects fall out of that:
 
 ### Phase 1 — Fail closed, and make a failure copyable
 
-- [ ] Engine: a startup stall watchdog. When `startup.progress` does not move for `stallMs`
-      (default 20 s) the engine reports `TN_STARTUP_STALLED` once, naming elapsed time, the last
-      progress value and the assets still in flight.
-- [ ] Engine: the stall and any fatal device error reach the *page*, not only stdout, so a game can
-      show them; the built-in native error surface renders the message with a **Copy** button.
-- [ ] Red-green: a scenario/unit test that a stalled startup reports rather than hangs.
-- [ ] Verified on midway: a stalled or device-lost launch shows a readable, copyable message.
+- [x] Engine: a startup stall watchdog. When `startup.progress` does not move for `stallMs`
+      (`STARTUP_STALL_MS`, 45 s) the engine reports `TN_STARTUP_STALLED` once, naming elapsed time,
+      the last progress value and the assets still outstanding. Observed on midway:
+      `TN_STARTUP_STALLED: ... stood at 59.4% for 20s, 25s into the launch`.
+- [x] Engine: both reach the page through `onLaunchFailure`; core does not draw them, because
+      native `document` is a Three.js stub whose `appendChild` is a no-op.
+- [ ] The desktop host's own device-lost dialog (`SDL_ShowSimpleMessageBox`, `context.cpp`) gets a
+      **Copy** button. That dialog — not the page — is what a player sees when the device dies,
+      because the host exits 1 immediately and never resolves the JS `device.lost` promise.
+- [x] Red-green: `packages/core/__tests__/launch-diagnostics.spec.ts`, 4 tests, all green
+      (`pnpm exec vitest run packages/core/__tests__/launch-diagnostics.spec.ts`).
+- [x] Verified on midway: the stall report fired on the real 104 s launch and named the outstanding
+      assets. The copyable surface is the game's own loading layer (COPY MESSAGE button).
 
 ### Phase 2 — Progress you can read
 
-- [ ] Engine: `assets.progress` gains the in-flight logical paths, so a loading view can name what
-      is being loaded right now.
-- [ ] Game (midway): the loading layer shows a percentage bar driven by `ctx.startup.progress` and
-      the current asset path; `#load-status` stops being a fixed string.
-- [ ] Both surfaces: web DOM shell and the native web view get the same reading.
+- [x] Engine: `assets.progress.pending` names the outstanding logical paths. (`pending`, not
+      `inFlight`: `constraints.spec.ts` forbids the substring "light" in core sources.)
+- [x] Game (midway): `IShell.loading` drives a real `#load-bar` and a `NN% — /assets/…` status
+      line, replacing the indeterminate stripe that moved whether or not anything was happening.
+- [x] Both surfaces: implemented once in `src/ui/dom.ts` and replayed through the bridge, so the
+      native web view shows the same call.
 - [ ] Playtest asserts the bar moves and the label changes during load.
+      Not yet run: every launch on this host currently dies with `VK_ERROR_DEVICE_LOST` — another
+      process holds 7726 of 8192 MiB of VRAM.
 
 ### Phase 3 — Cut the 104 s
 
