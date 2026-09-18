@@ -793,15 +793,23 @@ move while a present is blocked — and it is why the loop-side CPU cost is the 
 GPU-composited session does not starve this way, but *any* session starves in proportion to how much
 CPU the startup takes, and that number is the engine's to reduce.
 
+**Post-startup the loop paces correctly**: `TN_PRESENTS_TICK` reaches 60 frames → 60 presents at
+`capHz: 60`, one image on screen per frame, once the burst is over.
+
 **Two things about this lane that a reader should not re-derive.** `playtest perf --executable`
 cannot describe this game's steady state: its windows are 300 *frames*, and the startup runs ~15
 frames in forty seconds, so windows 2 and 3 land inside the startup and report 1219 and 20000 fps
 with sub-millisecond frames — the loop free-runs between presents the display declined, which is
 what `paceToPresentationCap` is supposed to do. Measuring this game's in-game frame rate needs a
-time-based window, which the lane does not offer yet. And the machine this was measured on is
-shared: other agents' processes and `kswapd0` at ~100% were running throughout, and a startup that
-allocates hundreds of megabytes of textures is exactly what makes the kernel reclaim, so part of
-the display's 16 s may be this host rather than the engine.
+time-based window, which the lane does not offer yet. And the host this was measured on is the
+remaining explanation for the display's 16 s, measured rather than suspected: 62 GiB of RAM, 43 GiB
+used, **35 GiB of swap in use and 1.7 TB swapped out since boot**, `kswapd0` at ~100% during the
+run. The game holds ~920 MB across 226 textures, and a startup that allocates that much on a host
+already deep in swap makes the kernel reclaim — which stops the compositor consuming frames, which
+is the 16 s in `wgpuSurfacePresent`. That is a property of this host, not of the engine or the game,
+and it is why the same startup must be re-measured somewhere idle before anyone calls the freeze a
+defect: on this host the loop is the smaller half of it, and the loop's half is what got smaller
+today (12-14 → 58-74 page frames reaching the screen).
 
 **Two engine-side costs found on the way and fixed.** `fillStyle` compiled a `std::regex` and
 `makeFillPaint` re-parsed the style string on every painted rectangle — 20.6 µs for a rect that sets
