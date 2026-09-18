@@ -226,6 +226,47 @@ describe("createRenderer", () => {
     }
   });
 
+  it("binds the frame-buffer target while compiling, so a depth sampler is not compiled against the wrong sample count", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // three's own compile() reads the frame-buffer target for its render context but never binds
+      // it, so a viewport-depth copy destination is sized from that target while the bind group
+      // layout for the same binding is sized from `currentSamples`. Dawn refuses the bind group and
+      // the device is lost. The wrapper has to bind what is being compiled for, and put back what
+      // was bound.
+      const frameBufferTarget = { samples: 4 };
+      const boundDuringCompile: unknown[] = [];
+      let bound: unknown = null;
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          needsFrameBufferTarget: true,
+          getRenderTarget: () => bound,
+          setRenderTarget: (target: unknown) => {
+            bound = target;
+          },
+          _getFrameBufferTarget: () => frameBufferTarget,
+          compileAsync: async () => {
+            boundDuringCompile.push(bound);
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      await renderer.compileAsync({} as never, {} as never);
+      expect(boundDuringCompile).toEqual([frameBufferTarget]);
+      expect(bound).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("records the actual WebGPU adapter identity in the pipeline census", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
