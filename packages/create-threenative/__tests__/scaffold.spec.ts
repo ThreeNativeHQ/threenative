@@ -346,8 +346,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed again 2026-09-16 after merging origin/develop: the landed local backlog (#270)
   // brings scaffold bytes of its own, so the branch's ponytail values no longer describe the
   // merged tree and all ten move together once more.
-  "action-rpg": "8e9b0b086c2bcc878717c7af7558baa9e3e0b5a54e52cf3733e999a9390893e4",
-  defense: "c7434d8ec9476e84ffe79c362f20a3d09c16335bc7189b651653671121e6783d",
+  // Recomputed 2026-09-17 for the binding-sampler Three.js patch: root, core and template mirrors
+  // all carry the new patch bytes, which ship in every scaffold, so all ten trees move together.
+  "action-rpg": "eacfbec44e2bdd476b9c88e9af16bc4c6731ca02e3f48b8ef14de36dab992002",
+  defense: "68a861c769235b3fcee0cffc19f9b7eff092b419b86a0120758feb25b642f235",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -355,17 +357,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "c9f5d159e07ebf4ca397d69c2d5f6142cf4cd474aa4166bb1172c73781aa7f24",
-  platformer: "2a42ba08a36094de8493a88478eccb057b995acb961c4eaedf9770d8b001e71e",
-  runner: "88db4ba1b998a5eda841a082be0c54bd3aeb9226f57e4b6e71d268d4d746b75f",
-  puzzle: "bd56aa473fd7793fc71c41658a472367f0738409ed4082efb6952d31181b1e89",
-  racing: "cf861f7af18fc7e576c2c1c352982b53f02feb5b8e655b722fc72a70f20d6a70",
-  shooter: "0f9e5841767e84f44ceacdd382a066f79d4cbd9a84bd84d40da763346495987c",
+  minimal: "4d960a42be3171523705879d0144429235973246f803bf1614255e766cc6d296",
+  platformer: "751f00850acbf873c0a8757fcb399f3e823808e421811cefdef9095b606aba14",
+  runner: "72248097872f921229a8014d21e681fee9a0f3e484cc76fba3a7a44b426555d7",
+  puzzle: "848710001c224959bb8ca1ded9b8c2a2f44be63b2336b27a427eeb6aef54748a",
+  racing: "b501a8d0db3702171cfeec920f0951190e0e67d551ca1f1829aa455928858405",
+  shooter: "7920427cb9571bbe9fb406d58821f2ad6ac036a3a0bf10f87476d177f125fa13",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "159de0bf9a46b5932215294b65a29df31819597182f3b21f6fcff00c791d8132",
+  // Recomputed 2026-09-17 after merging origin/develop: both sides moved the starter tree — this
+  // branch's PRD-393 UI-frame work and develop's Midway/UI-parity changes — so neither branch's
+  // value describes the merged tree. Measured from the merged worktree, no sibling edits in it.
+  starter: "aabea649034386a31f34cb7438cb6388a257c91c5c6d2aebe60d6cd77a0f2a87",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -391,7 +396,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "f258b442354724c69065c78b4fd2734d898e9cb0762b9a62c31abb9a3400ebb9",
+  sailing: "ab8992f81180501a54d75f097518e8dc3d44cae647d3d466b9510bf3c6565ad3",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

@@ -254,7 +254,7 @@ function holdUntilAttached(
       );
     }, timeoutMs);
     // Node keeps the process alive for a pending timer; a held game must not outlive its host.
-    (timer as unknown as { unref?: () => void }).unref?.();
+    timer.unref?.();
     const release = () => {
       if (settled) return;
       settled = true;

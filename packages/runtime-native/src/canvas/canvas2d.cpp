@@ -254,32 +254,6 @@ bool CanvasGradient::addColorStop(float offset, const std::string& text) {
 
 #if defined(MYSTRAL_HAS_SKIA)
 
-/**
- * The process's font manager, built on first use.
- *
- * Building one is not per-canvas work: on Linux it reads the fontconfig configuration and builds a
- * FreeType scanner over the installed fonts, and the result is process state that every canvas
- * shares - which is how a browser holds it. Measured on Midway, which creates 65 canvases while
- * its modules load: 690 ms in total when each canvas built its own, 145 ms when they share one.
- *
- * That is 1.8% of this game's 30 s startup and it is deliberately *not* offered as the startup's
- * problem - the startup's problem is that it runs inside a single frame, which is a loader/pump
- * change. This is worth having because a font manager is process state, not because it is fast.
- * SkFontMgr lookups are thread-safe, so one instance serves every canvas on every thread.
- */
-sk_sp<SkFontMgr> sharedFontMgr() {
-#if defined(__APPLE__)
-    static sk_sp<SkFontMgr> manager = SkFontMgr_New_CoreText(nullptr);
-#elif defined(__ANDROID__)
-    static sk_sp<SkFontMgr> manager = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
-#elif defined(__linux__) && !defined(__ANDROID__)
-    static sk_sp<SkFontMgr> manager = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
-#else
-    static sk_sp<SkFontMgr> manager = SkFontMgr::RefEmpty();  // Fallback
-#endif
-    return manager;
-}
-
 struct Canvas2DContext::Impl {
     sk_sp<SkSurface> surface;
     SkCanvas* canvas = nullptr;  // Owned by surface
@@ -303,7 +277,16 @@ struct Canvas2DContext::Impl {
             canvas->clear(SK_ColorTRANSPARENT);
         }
 
-        fontMgr = sharedFontMgr();
+        // Initialize font manager (platform-specific)
+#if defined(__APPLE__)
+        fontMgr = SkFontMgr_New_CoreText(nullptr);
+#elif defined(__ANDROID__)
+        fontMgr = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+#elif defined(__linux__) && !defined(__ANDROID__)
+        fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+#else
+        fontMgr = SkFontMgr::RefEmpty();  // Fallback
+#endif
         if (fontMgr) {
             currentTypeface = fontMgr->matchFamilyStyle("sans-serif", SkFontStyle::Normal());
             if (!currentTypeface) {
@@ -382,9 +365,8 @@ struct Canvas2DContext::Impl {
         paint.setStrokeJoin(currentState.lineJoin == "round" ? SkPaint::kRound_Join :
                             currentState.lineJoin == "bevel" ? SkPaint::kBevel_Join : SkPaint::kMiter_Join);
         if (!currentState.lineDash.empty()) {
-            // The spec doubles an odd-length pattern so it always alternates on/off.
-            std::vector<SkScalar> intervals(currentState.lineDash.begin(), currentState.lineDash.end());
-            if (intervals.size() % 2 == 1) intervals.insert(intervals.end(), intervals.begin(), intervals.end());
+            // setLineDash already doubled an odd-length pattern, so this list alternates on/off.
+            const std::vector<SkScalar> intervals(currentState.lineDash.begin(), currentState.lineDash.end());
             paint.setPathEffect(SkDashPathEffect::Make({intervals.data(), intervals.size()}, 0.0f));
         }
         Color c = parseColor(currentState.strokeStyle);
@@ -549,6 +531,11 @@ void Canvas2DContext::setLineDash(const std::vector<float>& segments) {
     // A negative or non-finite entry makes the whole call a no-op, as the spec requires.
     for (const float segment : segments) if (!std::isfinite(segment) || segment < 0) return;
     impl_->currentState.lineDash = segments;
+    // An odd-length pattern is concatenated with itself so it always alternates on and off, and
+    // the doubled list is also what reads back: setLineDash({5}) gives getLineDash() {5, 5}, the
+    // way a browser does. Doubling here rather than at stroke time keeps the two the same list.
+    if (segments.size() % 2 == 1)
+        impl_->currentState.lineDash.insert(impl_->currentState.lineDash.end(), segments.begin(), segments.end());
 }
 
 std::vector<float> Canvas2DContext::getLineDash() const {

@@ -18,6 +18,8 @@ esac
 
 if ! command -v Xvfb >/dev/null 2>&1; then
   echo "scripts/xvfb.sh: Xvfb is required for headless Linux runs and is not installed." >&2
+  echo "scripts/xvfb.sh: install it (Debian/Ubuntu 'xvfb', Arch 'xorg-server-xvfb', Fedora" >&2
+  echo "scripts/xvfb.sh: 'xorg-x11-server-Xvfb'). Refusing to run blind." >&2
   exit 2
 fi
 
@@ -31,7 +33,13 @@ display_file="$runtime/display"
 Xvfb -displayfd 3 +extension COMPOSITE +extension SHAPE -screen 0 "$screen" -nolisten tcp 3>"$display_file" &
 xvfb_pid=$!
 
+compositor_pid=""
+
 cleanup() {
+  if [ -n "$compositor_pid" ] && kill -0 "$compositor_pid" 2>/dev/null; then
+    kill "$compositor_pid" 2>/dev/null || true
+    wait "$compositor_pid" 2>/dev/null || true
+  fi
   if kill -0 "$xvfb_pid" 2>/dev/null; then
     kill "$xvfb_pid" 2>/dev/null || true
     wait "$xvfb_pid" 2>/dev/null || true
@@ -65,6 +73,43 @@ fi
 
 DISPLAY=":$display"
 export DISPLAY
+
+# GitHub's Xvfb has no DRI3 device. Mesa's EGL loader reports that expected headless condition as
+# warning text on stderr; the playtest runtime correctly records stderr as diagnostics, so those
+# environment warnings otherwise turn a successful software-rendered run red. Keep fatal EGL
+# diagnostics visible and leave an operator-provided log level untouched.
+if [ -z "${EGL_LOG_LEVEL+x}" ]; then
+  EGL_LOG_LEVEL=fatal
+  export EGL_LOG_LEVEL
+fi
+
+# Nothing blends on a bare Xvfb: it has no compositing manager, and the X server will not do it
+# either, so the desktop runtime refuses to attach its UI overlay to such a display. Borrow an
+# installed compositor for this private display only -- `-n` keeps xcompmgr to plain blending,
+# with none of the shadows or fades that would alter the pixels a run asserts on. A host with
+# none installed still gets its display, and that refusal still reports the missing dependency.
+for candidate in xcompmgr picom compton; do
+  command -v "$candidate" >/dev/null 2>&1 || continue
+  case "$candidate" in
+    xcompmgr) "$candidate" -n >/dev/null 2>&1 & ;;
+    *) "$candidate" >/dev/null 2>&1 & ;;
+  esac
+  compositor_pid=$!
+  break
+done
+
+# Owning _NET_WM_CM_S0 takes a moment, and a command that reaches the runtime first sees a display
+# with no compositing manager and gets the refusal. The same quarter second the runner's TypeScript
+# path waits, followed by the same liveness check: a compositor that already died is not one we can
+# report as running, and the refusal then names the real state.
+if [ -n "$compositor_pid" ]; then
+  sleep 0.25
+  if ! kill -0 "$compositor_pid" 2>/dev/null; then
+    wait "$compositor_pid" 2>/dev/null || true
+    compositor_pid=""
+  fi
+fi
+
 "$@"
 status=$?
 exit "$status"

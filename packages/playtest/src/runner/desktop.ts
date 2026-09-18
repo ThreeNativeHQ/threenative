@@ -184,7 +184,7 @@ function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
   // unclassified stderr instead of dropping platform diagnostics to make a run pass.
   if (/^(?:\[error\]|(?:error|fatal):)/iu.test(text)) return "error";
   if (
-    /^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|\*\* \([^)]*\): WARNING \*\*:|\([^)]*\): dbind-WARNING \*\*:)/iu.test(
+    /^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|libEGL\s+warning:|\*\* \([^)]*\): WARNING \*\*:|\([^)]*\): dbind-WARNING \*\*:)/iu.test(
       text,
     )
   ) {

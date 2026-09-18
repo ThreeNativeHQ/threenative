@@ -127,7 +127,20 @@ int main() {
         return 1;
     }
 
+    // The other half of the same conditional: a cue the game schedules ahead of the clock must
+    // still wait for it. A fix that simply started everything at `currentTime` would pass the
+    // leg above and fire every queued gun cue in the same block.
+    auto pending = context.createBufferSource();
+    pending->setBuffer(constantBuffer(context));
+    pending->start(now + 1.0);
+    float pendingOut[8] = {};
+    pending->process(pendingOut, 4, 2);
+    if (!closeTo(pendingOut[0], 0.0f) || !pending->isPlaying()) {
+        std::cerr << "a cue scheduled 1s ahead sounded early: " << pendingOut[0] << '\n';
+        return 1;
+    }
+
     std::cout << "audio graph ok: ramp-mid=0.5 gain=0.5 right=0.1 flipped-left=0.1 ended=1"
-              << " absolute-start=1\n";
+              << " absolute-start=1 scheduled-ahead=0\n";
     return 0;
 }

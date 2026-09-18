@@ -39,6 +39,72 @@ constexpr const char* kCanvasScript = R"JS((() => {
   ctx.miterLimit = 10;
   if (ctx.setLineDash) ctx.setLineDash([5, 5]);
   if (ctx.getLineDash) ctx.getLineDash();
+  // A number is not a sequence. It has no length, so the host once read NaN, cast it to a size_t
+  // near 2^63 and allocated dash segments until it died -- from a plain game typo. Browsers throw.
+  let refusedNonSequence = false;
+  try {
+    ctx.setLineDash(5);
+  } catch (error) {
+    refusedNonSequence = true;
+  }
+  if (!refusedNonSequence) throw new Error("setLineDash accepted a number as a dash list");
+  // A finite length larger than 2^32 - 1 is out of range for the size_t conversion (undefined
+  // behaviour) and must be refused before it is converted, not converted and walked.
+  let refusedHugeLength = false;
+  try {
+    ctx.setLineDash({ length: 1e300 });
+  } catch (error) {
+    refusedHugeLength = true;
+  }
+  if (!refusedHugeLength) throw new Error("setLineDash accepted an object with a huge length");
+  // A Proxy wrapping an Array reports an out-of-range length through its get trap; the range check
+  // has to catch it before a single element is read.
+  let refusedProxyHuge = false;
+  try {
+    ctx.setLineDash(new Proxy([], { get: (target, key) => (key === "length" ? 1e300 : target[key]) }));
+  } catch (error) {
+    refusedProxyHuge = true;
+  }
+  if (!refusedProxyHuge) throw new Error("setLineDash accepted a proxied array with a huge length");
+  // Compatibility: a plain array-like and a Float32Array both have a length and numeric indices and
+  // were accepted before the fix; they must stay accepted.
+  ctx.setLineDash({ length: 2, 0: 5, 1: 3 });
+  const likeDash = ctx.getLineDash();
+  if (likeDash.length !== 2 || likeDash[0] !== 5 || likeDash[1] !== 3) {
+    throw new Error("a plain array-like dash list did not read back: " + likeDash.join(","));
+  }
+  ctx.setLineDash(new Float32Array([7, 2]));
+  const typedDash = ctx.getLineDash();
+  if (typedDash.length !== 2 || typedDash[0] !== 7 || typedDash[1] !== 2) {
+    throw new Error("a Float32Array dash list did not read back: " + typedDash.join(","));
+  }
+  // An ordinary pattern reads back unchanged.
+  ctx.setLineDash([2, 3]);
+  const evenDash = ctx.getLineDash();
+  if (evenDash.length !== 2 || evenDash[0] !== 2 || evenDash[1] !== 3) {
+    throw new Error("an even dash list did not read back unchanged: " + evenDash.join(","));
+  }
+  ctx.setLineDash([4]);
+  const oddDash = ctx.getLineDash();
+  if (oddDash.length !== 2 || oddDash[0] !== 4 || oddDash[1] !== 4) {
+    throw new Error("an odd dash list did not read back doubled: " + oddDash.join(","));
+  }
+  // A non-finite entry is not a dash: the call is a no-op and the odd list above stays.
+  ctx.setLineDash([6, Infinity]);
+  const afterNonFinite = ctx.getLineDash();
+  if (afterNonFinite.length !== 2 || afterNonFinite[0] !== 4 || afterNonFinite[1] !== 4) {
+    throw new Error("a non-finite dash entry replaced the pattern: " + afterNonFinite.join(","));
+  }
+  // A plain array-like whose entries run out is also a no-op, never a partial pattern.
+  ctx.setLineDash({ length: 3, 0: 9, 1: 1 });
+  const afterShortLike = ctx.getLineDash();
+  if (afterShortLike.length !== 2 || afterShortLike[0] !== 4 || afterShortLike[1] !== 4) {
+    throw new Error("a short array-like replaced the pattern: " + afterShortLike.join(","));
+  }
+  ctx.setLineDash([]);
+  if (ctx.getLineDash().length !== 0) {
+    throw new Error("an empty dash list did not restore a solid line");
+  }
   ctx.lineDashOffset = 2.0;
   ctx.globalAlpha = 0.8;
 

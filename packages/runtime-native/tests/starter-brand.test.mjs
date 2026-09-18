@@ -123,13 +123,18 @@ function brandedContainer({
   return root;
 }
 
-const ENGINE_ICON = authoredIcon('the engine default icon');
+// Called inside a test, never at module scope: a directory made while this file is collected
+// cannot be attributed to a test, so `makeTempDirSync` can only register it for process-exit
+// cleanup — and it then outlives the file, growing the suite's shared temporary namespace.
+function engineIcon() {
+  return authoredIcon('the engine default icon');
+}
 
 test('a branded container matches its consumer config', () => {
   const icon = authoredIcon();
   const config = brandConfig(icon);
   const root = brandedContainer({ config, loading: { bootSplash: config.bootSplash } });
-  const report = inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON });
+  const report = inspectContainerBrand(root, config, { engineIcon: engineIcon() });
   assert.equal(report.name.name, 'Orbit Game');
   assert.equal(report.icon.sha256, sha256Of(readFileSync(icon)));
 });
@@ -139,12 +144,12 @@ test('should reject a distributed starter when the embedded application icon or 
   const config = brandConfig(icon);
   const wrongIcon = brandedContainer({ config, embeddedIcon: Buffer.from('another game icon') });
   assert.throws(
-    () => inspectContainerBrand(wrongIcon, config, { engineIcon: ENGINE_ICON }),
+    () => inspectContainerBrand(wrongIcon, config, { engineIcon: engineIcon() }),
     /TN_NATIVE_STARTER_CONTAINER_ICON_MISMATCH/u,
   );
   const wrongName = brandedContainer({ config, manifestName: 'Engine Default' });
   assert.throws(
-    () => inspectContainerBrand(wrongName, config, { engineIcon: ENGINE_ICON }),
+    () => inspectContainerBrand(wrongName, config, { engineIcon: engineIcon() }),
     /TN_NATIVE_STARTER_CONTAINER_NAME_MISMATCH/u,
   );
 });
@@ -152,9 +157,9 @@ test('should reject a distributed starter when the embedded application icon or 
 test('an embedded engine-default icon is rejected even when the config declares custom art', () => {
   const icon = authoredIcon();
   const config = brandConfig(icon);
-  const root = brandedContainer({ config, embeddedIcon: readFileSync(ENGINE_ICON) });
+  const root = brandedContainer({ config, embeddedIcon: readFileSync(engineIcon()) });
   assert.throws(
-    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    () => inspectContainerBrand(root, config, { engineIcon: engineIcon() }),
     /TN_NATIVE_STARTER_CONTAINER_ICON_ENGINE_DEFAULT/u,
   );
 });
@@ -164,7 +169,7 @@ test('a container that dropped its icon resource fails closed', () => {
   const config = brandConfig(icon);
   const root = brandedContainer({ config, dropIconResource: true });
   assert.throws(
-    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    () => inspectContainerBrand(root, config, { engineIcon: engineIcon() }),
     /TN_NATIVE_STARTER_CONTAINER_ICON_MISSING/u,
   );
 });
@@ -174,7 +179,7 @@ test('a macOS bundle without a CFBundleName entry fails closed', () => {
   const config = brandConfig(icon);
   const root = brandedContainer({ config, platform: 'darwin', dropPlistName: true });
   assert.throws(
-    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    () => inspectContainerBrand(root, config, { engineIcon: engineIcon() }),
     /TN_NATIVE_STARTER_CONTAINER_PLIST_ENTRY_MISSING/u,
   );
 });
@@ -184,7 +189,7 @@ test('a Linux container without .desktop metadata fails closed', () => {
   const config = brandConfig(icon);
   const root = brandedContainer({ config, dropDesktopName: true });
   assert.throws(
-    () => inspectContainerBrand(root, config, { engineIcon: ENGINE_ICON }),
+    () => inspectContainerBrand(root, config, { engineIcon: engineIcon() }),
     /TN_NATIVE_STARTER_CONTAINER_DESKTOP_ENTRY_MISSING/u,
   );
 });
@@ -212,7 +217,7 @@ test('the declared loading sequence must match the consumer config', () => {
     loading: { bootSplash: { backgroundColor: '#0d1b2a', imageSha256: null } },
   });
   assert.deepEqual(
-    inspectContainerBrand(matching, config, { engineIcon: ENGINE_ICON }).loading.bootSplash,
+    inspectContainerBrand(matching, config, { engineIcon: engineIcon() }).loading.bootSplash,
     { backgroundColor: '#0d1b2a', imageSha256: null },
   );
   const wrong = brandedContainer({
@@ -220,7 +225,7 @@ test('the declared loading sequence must match the consumer config', () => {
     loading: { bootSplash: { backgroundColor: '#ffffff', imageSha256: null } },
   });
   assert.throws(
-    () => inspectContainerBrand(wrong, config, { engineIcon: ENGINE_ICON }),
+    () => inspectContainerBrand(wrong, config, { engineIcon: engineIcon() }),
     /TN_NATIVE_STARTER_CONTAINER_LOADING_MISMATCH/u,
   );
 });

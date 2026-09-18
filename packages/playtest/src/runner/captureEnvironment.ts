@@ -135,6 +135,8 @@ export interface IProvideDisplayOptions {
 }
 
 export interface IProvidedDisplay {
+  /** The compositing manager this run started, or `undefined` when it started none. */
+  compositor: string | undefined;
   /** `undefined` when the host platform provides its own display. */
   display: string | undefined;
   /** Environment to hand the browser child; Wayland variables stripped wherever we decided. */
@@ -157,10 +159,19 @@ export async function provideDisplay(options: IProvideDisplayOptions = {}): Prom
     platform,
   });
   if (strategy.kind === "host") {
-    return { display: undefined, env: { ...env }, release: async () => undefined, strategy };
+    return {
+      compositor: undefined,
+      display: undefined,
+      env: { ...env },
+      release: async () => undefined,
+      strategy,
+    };
   }
   if (strategy.kind === "existing") {
+    // A display that was already here belongs to a desktop session that owns its own
+    // compositing selection; taking it would be stealing the user's.
     return {
+      compositor: undefined,
       display: strategy.display,
       env: childEnvForDisplay(env, strategy.display),
       release: async () => undefined,
@@ -201,16 +212,74 @@ export async function provideDisplay(options: IProvideDisplayOptions = {}): Prom
   try {
     const number = await readXvfbDisplayNumber(xvfb);
     const display = `:${number}`;
+    const compositor = await startCompositor(display, { commandExists, env, spawnProcess });
     return {
+      compositor: compositor?.name,
       display,
       env: childEnvForDisplay(env, display),
-      release: () => stopXvfb(xvfb),
+      release: async () => {
+        if (compositor !== undefined) await stopChild(compositor.child);
+        await stopChild(xvfb);
+      },
       strategy,
     };
   } catch (error) {
-    await stopXvfb(xvfb);
+    await stopChild(xvfb);
     throw error;
   }
+}
+
+/**
+ * The compositing managers a private display can borrow, and the arguments that make each one
+ * plainly composite: no shadows, no fades, nothing that would alter the pixels a scenario
+ * asserts on. `picom` and `compton` composite with no arguments and stay in the foreground
+ * unless told to daemonise.
+ */
+const COMPOSITORS: ReadonlyArray<{ args: readonly string[]; name: string }> = [
+  { args: ["-n"], name: "xcompmgr" },
+  { args: [], name: "picom" },
+  { args: [], name: "compton" },
+];
+
+/** Long enough for a compositor that lost the selection race to exit and be reported as absent. */
+const COMPOSITOR_SETTLE_MS = 250;
+
+/**
+ * A private Xvfb has no compositing manager, and nothing else will blend for it: an ARGB window
+ * simply draws its own pixels, and a child redirected with `CompositeRedirectAutomatic` still
+ * reads back unblended, measured on this server. That is why the native runtime refuses to
+ * attach its UI overlay to such a display — so the display we provision starts one, rather than
+ * the game process ever becoming a compositor itself.
+ *
+ * Nothing here is required: a host with no compositing manager installed gets a display without
+ * one and the overlay's refusal stands, naming the missing dependency as it always has.
+ */
+async function startCompositor(
+  display: string,
+  options: {
+    commandExists: (command: string) => boolean;
+    env: NodeJS.ProcessEnv;
+    spawnProcess: typeof spawn;
+  },
+): Promise<{ child: ChildProcess; name: string } | undefined> {
+  const choice = COMPOSITORS.find(({ name }) => options.commandExists(name));
+  if (choice === undefined) return undefined;
+  const child = options.spawnProcess(choice.name, [...choice.args], {
+    env: { ...options.env, DISPLAY: display },
+    stdio: "ignore",
+  });
+  // A spawn that fails outright reports neither an exit code nor a signal, so the failure has to
+  // be remembered: `commandExists` said yes a moment ago and the binary can still be gone by now.
+  let spawnFailed = false;
+  child.on?.("error", () => {
+    spawnFailed = true;
+  });
+  await new Promise((settle) => setTimeout(settle, COMPOSITOR_SETTLE_MS));
+  // A compositor that exited took no selection — most often because one was already held — and
+  // reporting it as running would claim a blend nothing performs.
+  if (spawnFailed) return undefined;
+  if ((child.exitCode ?? null) !== null || (child.signalCode ?? null) !== null) return undefined;
+  return { child, name: choice.name };
 }
 
 const XVFB_DISPLAY_TIMEOUT_MS = 10_000;
@@ -248,15 +317,15 @@ async function readXvfbDisplayNumber(xvfb: ChildProcess): Promise<number> {
   });
 }
 
-async function stopXvfb(xvfb: ChildProcess): Promise<void> {
-  const exitedAlready = (): boolean => (xvfb.exitCode ?? null) !== null || (xvfb.signalCode ?? null) !== null;
+async function stopChild(child: ChildProcess): Promise<void> {
+  const exitedAlready = (): boolean => (child.exitCode ?? null) !== null || (child.signalCode ?? null) !== null;
   if (exitedAlready()) return;
-  xvfb.kill("SIGTERM");
+  child.kill("SIGTERM");
   const started = Date.now();
   while (Date.now() - started < 1_000 && !exitedAlready()) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 25));
   }
-  if (!exitedAlready()) xvfb.kill("SIGKILL");
+  if (!exitedAlready()) child.kill("SIGKILL");
 }
 
 function defaultCommandExists(command: string): boolean {
