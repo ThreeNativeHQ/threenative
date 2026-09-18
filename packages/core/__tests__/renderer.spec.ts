@@ -237,29 +237,37 @@ describe("createRenderer", () => {
       // the device is lost. The wrapper has to bind what is being compiled for, and put back what
       // was bound.
       const frameBufferTarget = { samples: 4 };
-      const boundDuringCompile: unknown[] = [];
-      let bound: unknown = null;
+      const seenDuringCompile: unknown[] = [];
+      // What a concurrent frame sees. three's compile yields to the render loop between objects, so
+      // this must not move while the compile runs.
+      const rendered: unknown[] = [];
+      const raw: Record<string, unknown> = {
+        needsFrameBufferTarget: true,
+        _renderTarget: null,
+        getRenderTarget(this: Record<string, unknown>) {
+          return this._renderTarget;
+        },
+        _getFrameBufferTarget: () => frameBufferTarget,
+        compileAsync: async () => {
+          seenDuringCompile.push((raw.getRenderTarget as () => unknown).call(raw));
+          rendered.push(raw._renderTarget);
+        },
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      };
       const renderer = await createRenderer({
         canvas,
         preferWebGPU: false,
-        webgl2Factory: () => ({
-          needsFrameBufferTarget: true,
-          getRenderTarget: () => bound,
-          setRenderTarget: (target: unknown) => {
-            bound = target;
-          },
-          _getFrameBufferTarget: () => frameBufferTarget,
-          compileAsync: async () => {
-            boundDuringCompile.push(bound);
-          },
-          domElement: canvas,
-          render: () => undefined,
-          setSize: () => undefined,
-        }),
+        webgl2Factory: () => raw as never,
       });
       await renderer.compileAsync({} as never, {} as never);
-      expect(boundDuringCompile).toEqual([frameBufferTarget]);
-      expect(bound).toBe(null);
+      // The sample-count question is answered ...
+      expect(seenDuringCompile).toEqual([frameBufferTarget]);
+      // ... without moving what a frame arriving mid-compile renders into.
+      expect(rendered).toEqual([null]);
+      // and the accessor is handed back afterwards.
+      expect((raw.getRenderTarget as () => unknown).call(raw)).toBe(null);
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

@@ -464,21 +464,34 @@ function wrapRenderer(
         });
       }
       const compileTargetScene = targetScene ?? scene;
-      // three's `compile()` picks the frame-buffer target for its render context but never binds
-      // it (`Renderer.js:908`, unlike `_renderScene`'s `setRenderTarget`), so inside one compile a
-      // viewport-depth copy destination is sized from that target's `samples` (4) while its bind
-      // group layout is sized from `currentSamples` (0). The mismatch is a lost device the first
-      // time a material samples depth under warm-up. Bind what is being compiled for, as
-      // `_renderScene` does, and put back whatever was bound.
-      const frameBufferTarget =
+      // three's `compile()` picks the frame-buffer target for its render context but never binds it
+      // (`Renderer.js:908`, unlike `_renderScene`'s `setRenderTarget`). Inside one compile that
+      // leaves a viewport-depth copy destination sized from that target's `samples` (4) while the
+      // bind group layout for the same binding is sized from `currentSamples` (0): Dawn refuses the
+      // bind group, the command buffer carrying it is invalid, and the device is lost the first
+      // time a material samples depth under warm-up.
+      //
+      // The two halves disagree through one accessor. `getTextureSampleData` asks
+      // `renderer.getRenderTarget()` for a depth texture that carries no target of its own
+      // (`WebGPUUtils.js:112`), while the copy destination is built from the target `compile()`
+      // already chose. So this answers that question and nothing else: `_renderTarget` is left
+      // alone, because `render()` reads the field directly and this compile deliberately yields to
+      // the frame loop between objects (`Renderer.js:1062`, `await yieldToMain()`). Binding the
+      // target instead would put the live loading screen's frames into the frame-buffer target for
+      // the whole warm-up, which is a frozen screen and a worse bug than the one being fixed.
+      const previousGetRenderTarget = raw.getRenderTarget;
+      const overrideTarget =
         raw.needsFrameBufferTarget === true &&
-        typeof raw.getRenderTarget === "function" &&
-        typeof raw.setRenderTarget === "function" &&
+        typeof previousGetRenderTarget === "function" &&
         typeof raw._getFrameBufferTarget === "function" &&
-        raw.getRenderTarget() === null
+        previousGetRenderTarget.call(raw) === null
           ? raw._getFrameBufferTarget()
           : undefined;
-      if (frameBufferTarget !== undefined) raw.setRenderTarget?.(frameBufferTarget);
+      const hadOwnGetRenderTarget = Object.hasOwn(raw, "getRenderTarget");
+      if (overrideTarget !== undefined) {
+        raw.getRenderTarget = () =>
+          (previousGetRenderTarget as () => unknown).call(raw) ?? overrideTarget;
+      }
       activeCompiles += 1;
       compileCount += 1;
       try {
@@ -492,7 +505,10 @@ function wrapRenderer(
           else await raw.compileAsync(scene, camera, targetScene);
         }
       } finally {
-        if (frameBufferTarget !== undefined) raw.setRenderTarget?.(null);
+        if (overrideTarget !== undefined) {
+          if (hadOwnGetRenderTarget) raw.getRenderTarget = previousGetRenderTarget;
+          else Reflect.deleteProperty(raw as object, "getRenderTarget");
+        }
         activeCompiles -= 1;
         if (activeCompiles === 0) {
           const requestedScale = pendingScale;
