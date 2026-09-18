@@ -5,6 +5,11 @@ each is stated with its reason rather than left implied: **AC-5**'s diagnostics 
 pre-existing three.js fault whose root cause is traced below and whose one-line fix was measured and
 reverted because it costs Midway ~15 s of launch; **AC-9**, unrun because this host cannot build
 Windows or macOS; **AC-10**, which is João's to run and which no local result substitutes for.
+**One defect found by playing the game is half fixed and now has a gate of its own**: the loading
+screen froze for 16 s at a time because the startup owns the frame thread. `TN_SLOW_PHASE` names the
+two phases that own it, a bounded decode drain removed 12-14 → 57-63 page frames per startup, and
+`scripts/verify-desktop-loading-animation.mjs` is red on the remaining 16.2 s freeze and on nothing
+else. The rest is the loader/pump change this PRD hands over, with its cost measured.
 **POST-DEVICE-EVALUATION-REQUIRED**
 **Complexity:** 10 (HIGH); risk override: none — the score already lands HIGH
 **Owner:** unassigned
@@ -730,6 +735,62 @@ note below assumed. What the gaps actually contain, measured with markers inside
 **The change this points at, not yet made:** the frame loop has to keep running while the startup
 is in flight, the way a browser keeps compositing while a page's JavaScript awaits. That is a real
 change to the loader/pump relationship and it is the next PRD's work, not a tweak to this one.
+
+### Which pump phase ate the startup, and how much of it a drain budget buys
+
+The paragraph above is a shape, not a number. `TN_SLOW_PHASE` now reports a single pump phase that
+took 250 ms or more, with its name, its real duration and the launch clock — the frame meters could
+not see any of this, because they close a window every 300 frames and a startup iterates the loop a
+handful of times in forty seconds. On `sandbox/midway-open-pacific`, one 60 s launch:
+
+| phase | ms | at launch ms |
+|---|---|---|
+| `fileCallbacks` | 840 | 1 736 |
+| `fileCallbacks` | 844 | 3 224 |
+| `imageDecodeDrain` | 486 | 2 380 |
+| **`imageDecodeDrain`** | **11 760** | 15 038 |
+| `animationFrames` | 2 517 | 19 342 |
+| **`endDawnFrame`** | **16 048** | 35 390 |
+
+Two phases own the freeze: one image-completion batch delivered in a single iteration, and one
+frame whose replay uploads the game's 886 MB of textures. Between them the loop iterated ~14 times
+in 40 s, so the page's 60 fps animation reached the screen 12-14 times.
+
+**The decode half is fixed and measured.** `AsyncImageDecoder::drain()` now has a soft 2 ms delivery
+budget and a bounded completed-decode backlog, the excess deferred to a later poll and overflow
+reported as a deferred error rather than decoded on the frame thread (the same fix as
+`fix/native-perf-followups-clean`'s `bb97df99c`). Page frames reaching the game's frame across the
+startup went **from 12-14 to 57-63**, and the first seven seconds now update at ~10 fps.
+
+**The rest is the loader/pump change this PRD defers**, now with its cost named: one image
+completion callback that runs the game's own asset work for ~11 s, and the 16 s first-frame replay.
+A drain budget cannot split either, because the time is inside one callback and inside one frame.
+
+### The gate that can see it, since every other gate could not
+
+`verify-desktop-loading.mjs` asks whether the loading screen is *there*, and a still loading screen
+and a moving one are the same screenshot — which is how a frozen one reached a player through a
+green board. `scripts/verify-desktop-loading-animation.mjs` asks the player's question instead:
+**the screen never holds one picture for longer than `--max-freeze-ms`** across the startup, read
+from the composite's own timeline, then `first_playable`, then the transition scenario, then no
+crash. It launches the game bare, deliberately not through the playtest bridge, which advances the
+app itself and would be driving the animation the gate exists to prove the game drives.
+
+The freeze, and not a pixel diff, is the assertion, because the window capture on this lane is not
+trustworthy: `import -window` reads the window's backing store, which lags the composited output —
+consecutive captures of a demonstrably moving sweep came back identical (the loading screen's 2 px
+gold bar tracked to three different positions across captures whose own pixel diff was 0-141 px). A
+gate built on that would report the capture's staleness as the engine's. The composite's timeline
+cannot: the uploaded texture *is* the quad the frame draws, and its marker only exists when the loop
+reached the present.
+
+Run against `sandbox/midway-open-pacific` today, it is red on the remaining half and on nothing else:
+
+```
+the loading screen froze for 16.2 s during the startup (from 18143 ms), against the 2.0 s this
+gate allows: 57 page frame(s) reached the game's frame in the whole startup
+```
+
 
 ## Out of scope
 
