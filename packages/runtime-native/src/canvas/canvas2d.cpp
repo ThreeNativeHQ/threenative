@@ -7,6 +7,7 @@
 
 #include "mystral/canvas/canvas2d.h"
 #include <iostream>
+#include <unordered_map>
 #include <cmath>
 #include <regex>
 #include <stack>
@@ -289,6 +290,10 @@ struct Canvas2DContext::Impl {
     sk_sp<SkFontMgr> fontMgr;
     sk_sp<SkTypeface> currentTypeface;
     SkFont currentFont;
+    /** The font string `currentFont` was resolved from; `updateFont` is a no-op while it matches. */
+    std::string resolvedFontSpec;
+    /** Resolved typefaces, keyed by the family and style that decide them. */
+    std::unordered_map<std::string, sk_sp<SkTypeface>> typefaceCache;
 
     Impl(int width, int height) {
         // Create RGBA surface using new API (SkSurfaces namespace)
@@ -311,6 +316,8 @@ struct Canvas2DContext::Impl {
             }
         }
         currentFont = SkFont(currentTypeface, 10.0f);
+        // The default family is resolved above, so the default spec is already satisfied.
+        resolvedFontSpec = currentState.font;
     }
 
     void resize(int width, int height) {
@@ -396,6 +403,21 @@ struct Canvas2DContext::Impl {
     }
 
     void updateFont() {
+        // `restore()` calls this after every `save()` and `setFont()` calls it on every set, so a
+        // canvas that draws text inside save/restore pairs asks for the same family hundreds of
+        // times over. Each ask ran the platform's font matcher end to end — on Linux that is
+        // fontconfig's FcPatternFilter — and it was the hottest stack in Midway's native startup
+        // and again when a HUD redraw followed a click: the main thread sat inside
+        // `SkFontMgr_fontconfig::onMatchFamilyStyle` rather than in any game or engine work, while
+        // all 109 of that startup's module compiles cost 0.07 s between them.
+        //
+        // Comparing only the *last* spec was the first fix and it was not enough: a HUD draws its
+        // labels at several sizes and weights, so the spec alternates and nearly every draw asked
+        // for a family the previous draw had not. The family and its style are what the matcher
+        // resolves, and a spec's size is not part of that — so the cache is keyed by family and
+        // style, and a size change only rebuilds the (cheap) `SkFont` around the same typeface.
+        if (resolvedFontSpec == currentState.font) return;
+        resolvedFontSpec = currentState.font;
         FontInfo fi = parseFont(currentState.font);
         SkFontStyle style = SkFontStyle(
             fi.weight,
@@ -404,24 +426,32 @@ struct Canvas2DContext::Impl {
         );
 
         if (fontMgr) {
-            currentTypeface.reset();
-            std::istringstream families(fi.family);
-            std::string family;
-            while (std::getline(families, family, ',')) {
-                const auto first = family.find_first_not_of(" \t\"'");
-                if (first == std::string::npos) continue;
-                family = family.substr(first, family.find_last_not_of(" \t\"'") - first + 1);
-                if (family == "ui-monospace") family = "monospace";
-                else if (family == "ui-serif") family = "serif";
-                else if (family == "ui-sans-serif" || family == "system-ui") family = "sans-serif";
-                currentTypeface = fontMgr->matchFamilyStyle(family.c_str(), style);
-                if (currentTypeface) break;
-            }
-            if (!currentTypeface) {
-                currentTypeface = fontMgr->matchFamilyStyle("sans-serif", style);
-            }
-            if (!currentTypeface) {
-                currentTypeface = fontMgr->matchFamilyStyle(nullptr, style);
+            const std::string cacheKey = fi.family + '\x1f' + std::to_string(fi.weight) +
+                                         (fi.italic ? "\x1fi" : "\x1fn");
+            const auto cached = typefaceCache.find(cacheKey);
+            if (cached != typefaceCache.end()) {
+                currentTypeface = cached->second;
+            } else {
+                currentTypeface.reset();
+                std::istringstream families(fi.family);
+                std::string family;
+                while (std::getline(families, family, ',')) {
+                    const auto first = family.find_first_not_of(" \t\"'");
+                    if (first == std::string::npos) continue;
+                    family = family.substr(first, family.find_last_not_of(" \t\"'") - first + 1);
+                    if (family == "ui-monospace") family = "monospace";
+                    else if (family == "ui-serif") family = "serif";
+                    else if (family == "ui-sans-serif" || family == "system-ui") family = "sans-serif";
+                    currentTypeface = fontMgr->matchFamilyStyle(family.c_str(), style);
+                    if (currentTypeface) break;
+                }
+                if (!currentTypeface) {
+                    currentTypeface = fontMgr->matchFamilyStyle("sans-serif", style);
+                }
+                if (!currentTypeface) {
+                    currentTypeface = fontMgr->matchFamilyStyle(nullptr, style);
+                }
+                typefaceCache[cacheKey] = currentTypeface;
             }
         }
 
