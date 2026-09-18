@@ -49,6 +49,8 @@
  *   --max-freeze-ms <n>   the longest stretch of the startup in which no new page frame reaches
  *                         the game's own frame, default 2000
  *   --min-changes <n>     page frames that must reach the frame across the startup, default 3
+ *   --runner <path>       the playtest runner to drive the transition with; defaults to this
+ *                         workspace's build, which a worktree without an install does not have
  *   --window-size <WxH>   the private display's geometry, default 1280x720
  *
  * Exit codes: 0 all assertions passed; 1 an assertion failed (the reason is printed and written
@@ -81,30 +83,28 @@ function fail(message, code = 1) {
 }
 
 function parseArguments(argv) {
-  const options = {
-    intervalMs: 1000,
-    maxFreezeMs: 2000,
-    minChanges: 3,
-    timeoutMs: 90_000,
-    windowSize: "1280x720",
+  const options = { intervalMs: 1000, maxFreezeMs: 2000, minChanges: 3, timeoutMs: 90_000, windowSize: "1280x720" };
+  // Numbers by flag, so adding one is a row and not another branch.
+  const numbers = {
+    "--interval-ms": "intervalMs",
+    "--max-freeze-ms": "maxFreezeMs",
+    "--min-changes": "minChanges",
+    "--timeout-ms": "timeoutMs",
   };
+  const paths = { "--cwd": "cwd", "--executable": "executable", "--out": "out", "--runner": "runner" };
+  const strings = { "--scenario": "scenario", "--window-size": "windowSize" };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    const value = () => {
-      const next = argv[++index];
-      if (next === undefined) throw new Error(`${argument} needs a value.`);
-      return next;
-    };
-    if (argument === "--executable") options.executable = resolve(value());
-    else if (argument === "--cwd") options.cwd = resolve(value());
-    else if (argument === "--scenario") options.scenario = value();
-    else if (argument === "--out") options.out = resolve(value());
-    else if (argument === "--interval-ms") options.intervalMs = Number(value());
-    else if (argument === "--timeout-ms") options.timeoutMs = Number(value());
-    else if (argument === "--min-changes") options.minChanges = Number(value());
-    else if (argument === "--max-freeze-ms") options.maxFreezeMs = Number(value());
-    else if (argument === "--window-size") options.windowSize = value();
-    else if (argument === "--help" || argument === "-h") options.help = true;
+    if (argument === "--help" || argument === "-h") {
+      options.help = true;
+      continue;
+    }
+    const value = argv[index + 1];
+    if (value === undefined) throw new Error(`${argument} needs a value.`);
+    index += 1;
+    if (numbers[argument] !== undefined) options[numbers[argument]] = Number(value);
+    else if (paths[argument] !== undefined) options[paths[argument]] = resolve(value);
+    else if (strings[argument] !== undefined) options[strings[argument]] = value;
     else throw new Error(`unknown argument: ${argument}`);
   }
   return options;
@@ -113,7 +113,7 @@ function parseArguments(argv) {
 const USAGE =
   "usage: node scripts/verify-desktop-loading-animation.mjs --executable <game> [--cwd <dir>] " +
   "[--scenario <playtest.json>] [--out <dir>] [--interval-ms n] [--timeout-ms n] " +
-  "[--max-freeze-ms n] [--min-changes n] [--window-size WxH]";
+  "[--max-freeze-ms n] [--min-changes n] [--window-size WxH] [--runner <path>]";
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...options });
@@ -238,6 +238,25 @@ function markersIn(log, prefix) {
   return out;
 }
 
+/** A private display, the game launched on it, and the samples taken while it started. */
+async function runStartup(options) {
+  const { compositor, display, xvfb } = await startDisplay(options.windowSize);
+  if (compositor === undefined) {
+    fail("no compositing manager is installed (xcompmgr, picom or compton); the runtime will not attach a UI overlay without one", 2);
+  }
+  try {
+    return await sampleStartup(options, display, options.out);
+  } finally {
+    for (const process_ of [compositor, xvfb]) {
+      try {
+        process_.kill("SIGTERM");
+      } catch {
+        // Already gone.
+      }
+    }
+  }
+}
+
 /**
  * Phase one: the real startup, sampled from the game's own window.
  *
@@ -300,7 +319,9 @@ async function sampleStartup(options, display, artifactDirectory) {
 function runTransitionScenario(options, artifactDirectory) {
   const scenario = resolve(options.cwd, options.scenario);
   if (!existsSync(scenario)) fail(`the transition scenario is missing: ${scenario}`, 2);
-  const cli = join(workspaceRoot, "packages", "playtest", "dist", "runner", "cli.js");
+  // The workspace build by default; a lane whose checkout is not installed (a worktree, a sandbox)
+  // passes the engine's own built runner instead of failing on a missing file.
+  const cli = options.runner ?? join(workspaceRoot, "packages", "playtest", "dist", "runner", "cli.js");
   if (!existsSync(cli)) fail(`the playtest runner is not built: ${cli} (run pnpm --filter @threenative/playtest build)`, 2);
   const result = run(
     process.execPath,
@@ -340,41 +361,16 @@ async function main(argv) {
   );
   mkdirSync(options.out, { recursive: true });
 
-  const { compositor, display, xvfb } = await startDisplay(options.windowSize);
-  if (compositor === undefined) {
-    fail("no compositing manager is installed (xcompmgr, picom or compton); the runtime will not attach a UI overlay without one", 2);
-  }
+  const startup = await runStartup(options);
 
-  let startup;
-  try {
-    startup = await sampleStartup(options, display, options.out);
-  } finally {
-    for (const process_ of [compositor, xvfb]) {
-      try {
-        process_.kill("SIGTERM");
-      } catch {
-        // Already gone.
-      }
-    }
-  }
-
-  const failures = [];
-  const overlay = markersIn(startup.log, "TN_UI_OVERLAY:").at(-1);
-  if (overlay?.attached !== true) {
-    failures.push(
-      `the page never attached: TN_UI_OVERLAY says ${JSON.stringify(overlay ?? null)}, so there is nothing to move`,
-    );
-  }
-
-  const composites = markersIn(startup.log, "TN_UI_COMPOSITE:");
-  const coldStart = markersIn(startup.log, "TN_COLD_START:");
-  const firstPlayable = coldStart.find((marker) => marker.segment === "first_playable");
-  if (firstPlayable === undefined) {
-    failures.push(
-      `the game did not reach first_playable within ${options.timeoutMs} ms — the transition out of the loading screen did not happen`,
-    );
-  }
-
+/**
+ * What the window samples can say: the loading screen was up for the startup, and it was on screen.
+ *
+ * A window found before it has painted captures nothing, so those samples are counted and set aside
+ * rather than failing the gate on a blank — but a startup with nothing *but* blanks is a failure,
+ * not a pass.
+ */
+function judgeSamples(options, startup, firstPlayable, failures) {
   // Only the samples taken while the loading screen was up can say anything about its motion: the
   // ones after `first_playable` are the game, which is supposed to change. A window found before it
   // has painted captures nothing, so those samples are counted and set aside rather than failing
@@ -402,6 +398,36 @@ async function main(argv) {
       `the loading screen was not on screen for the whole startup: ${withBackground.length} of ${loading.length} samples carry ${LOADING_PRESENCE * 100}% or more of the bootSplash colour`,
     );
   }
+
+  return { blankSamples, loading, withBackground };
+}
+
+/**
+ * Everything the gate asserts about the startup, from the run's own markers and samples.
+ *
+ * Separate from `main` because it is a judgement over evidence, not a sequence of side effects:
+ * `main` provisions a display, launches a game and writes artifacts, and this decides what the
+ * evidence means.
+ */
+function judgeStartup(options, startup) {
+  const failures = [];
+  const overlay = markersIn(startup.log, "TN_UI_OVERLAY:").at(-1);
+  if (overlay?.attached !== true) {
+    failures.push(
+      `the page never attached: TN_UI_OVERLAY says ${JSON.stringify(overlay ?? null)}, so there is nothing to move`,
+    );
+  }
+
+  const composites = markersIn(startup.log, "TN_UI_COMPOSITE:");
+  const coldStart = markersIn(startup.log, "TN_COLD_START:");
+  const firstPlayable = coldStart.find((marker) => marker.segment === "first_playable");
+  if (firstPlayable === undefined) {
+    failures.push(
+      `the game did not reach first_playable within ${options.timeoutMs} ms — the transition out of the loading screen did not happen`,
+    );
+  }
+
+  const { blankSamples, loading, withBackground } = judgeSamples(options, startup, firstPlayable, failures);
 
   // The loading screen advances when the page's *new* frames reach the game's own frame, and that
   // is what `TN_UI_COMPOSITE` counts once a second with the launch clock beside it: a marker whose
@@ -451,12 +477,40 @@ async function main(argv) {
     .filter((line) => CRASH_MARKERS.some((marker) => line.includes(marker)));
   if (crashes.length > 0) failures.push(`the startup console carries a crash marker: ${crashes[0]}`);
 
+  return {
+    blankSamples,
+    failures,
+    firstPlayable,
+    loading,
+    longestFreeze,
+    overlay,
+    startupComposites,
+    uploadsDuringLoading,
+    withBackground,
+  };
+}
+
+  const {
+    blankSamples,
+    failures,
+    firstPlayable,
+    loading,
+    longestFreeze,
+    overlay,
+    startupComposites,
+    uploadsDuringLoading,
+    withBackground,
+  } = judgeStartup(options, startup);
+
   let transition;
   if (options.scenario !== undefined) {
     transition = runTransitionScenario(options, options.out);
     if (transition.exitCode !== 0) {
+      // The runner's own words, not just its code: "request timed out" says the game stopped
+      // answering, which is a different defect from a step asserting the wrong value.
+      const reason = /"message": "([^"]+)"/u.exec(transition.stdout ?? "")?.[1] ?? "no diagnostic in its console";
       failures.push(
-        `the transition scenario failed with exit code ${transition.exitCode}; its console is beside the samples`,
+        `the transition scenario failed with exit code ${transition.exitCode}: ${reason}`,
       );
     }
   }
