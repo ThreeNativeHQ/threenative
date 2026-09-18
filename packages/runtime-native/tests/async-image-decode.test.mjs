@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,17 +13,20 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const compiler = process.env.CXX || "c++";
 const probe = spawnSync(compiler, ["--version"], { encoding: "utf8" });
 const nativeTest = probe.error?.code === "ENOENT" ? test.skip : test;
-let buildDirectory;
+// Created here rather than inside the first test on purpose: `makeTempDirSync` registers
+// `onTestFinished` when it is called from within a test, which would delete the compiled contract
+// binary after the first of the five cases that share it. At module scope it falls back to
+// process-exit cleanup, which is the lifetime this binary actually has.
+const buildDirectory = makeTempDirSync("tn-image-decode-");
 let executable;
 
 afterAll(() => {
-  if (buildDirectory) rmSync(buildDirectory, { recursive: true, force: true });
+  rmSync(buildDirectory, { recursive: true, force: true });
 });
 
 function contractBinary() {
   if (executable) return executable;
   assert.equal(probe.status, 0, probe.error?.message ?? probe.stderr);
-  buildDirectory = mkdtempSync(join(tmpdir(), "tn-image-decode-"));
   const output = join(buildDirectory, process.platform === "win32" ? "contract.exe" : "contract");
   const fixture = join(root, "tests/fixtures/async-image-decode");
   const built = spawnSync(
