@@ -23,7 +23,7 @@ jobs:
       - name: Install native coverage dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          xvfb ccache
+          xvfb ccache llvm
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
