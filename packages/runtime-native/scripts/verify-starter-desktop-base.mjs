@@ -9,6 +9,7 @@ import { PNG } from 'pngjs';
 
 import { parseLinkedLibraries, resolveContainer } from './desktop-distribution.mjs';
 import { inspectContainerBrand } from './inspect-container-brand.mjs';
+import { inspectMacosIcon } from './inspect-macos-icon.mjs';
 
 const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
@@ -317,7 +318,7 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
  * resolved first, so a tampered or incomplete payload never reaches the launch.
  */
 /**
- * Resolve what the container records and what brand it carries, without running anything.
+ * Resolve the container and inspect its brand without launching the game.
  *
  * Brand is judged before anything launches: a container that carries the wrong identity must not
  * be rescued by a green frame, and its failure names the surface, not the launch.
@@ -328,6 +329,14 @@ function inspectContainer(containerRoot, config, projectRoot) {
     config === undefined
       ? null
       : inspectContainerBrand(containerRoot, config, { project: projectRoot });
+  // inspectContainerBrand owns metadata/provenance. A release-verifier pass additionally needs
+  // the final macOS payload decoded: a matching source hash cannot prove an ICNS conversion.
+  if (brand?.icon !== undefined && manifest.platform.startsWith('darwin-')) {
+    brand.icon.macos = inspectMacosIcon(
+      join(containerRoot, brand.icon.path),
+      resolve(projectRoot, config.app.icon),
+    );
+  }
   return { brand, manifest };
 }
 
@@ -335,7 +344,8 @@ function inspectContainer(containerRoot, config, projectRoot) {
  * Inspect a distributed container's brand on a host that cannot launch it.
  *
  * The Windows CI leg packages a real `.exe` with real PE resources but has no interactive desktop
- * to run it on, and a macOS `.app` can be inspected from anywhere. Integrity records are resolved
+ * to run it on. macOS icon-content inspection needs macOS iconutil/sips, but no GUI session.
+ * Integrity records are resolved
  * first either way, so this is not a weaker check than the launching path — only a shorter one.
  */
 export function verifyContainerBrand({ root, config, project = process.cwd() } = {}) {
