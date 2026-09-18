@@ -793,6 +793,16 @@ move while a present is blocked — and it is why the loop-side CPU cost is the 
 GPU-composited session does not starve this way, but *any* session starves in proportion to how much
 CPU the startup takes, and that number is the engine's to reduce.
 
+**Two things about this lane that a reader should not re-derive.** `playtest perf --executable`
+cannot describe this game's steady state: its windows are 300 *frames*, and the startup runs ~15
+frames in forty seconds, so windows 2 and 3 land inside the startup and report 1219 and 20000 fps
+with sub-millisecond frames — the loop free-runs between presents the display declined, which is
+what `paceToPresentationCap` is supposed to do. Measuring this game's in-game frame rate needs a
+time-based window, which the lane does not offer yet. And the machine this was measured on is
+shared: other agents' processes and `kswapd0` at ~100% were running throughout, and a startup that
+allocates hundreds of megabytes of textures is exactly what makes the kernel reclaim, so part of
+the display's 16 s may be this host rather than the engine.
+
 **Two engine-side costs found on the way and fixed.** `fillStyle` compiled a `std::regex` and
 `makeFillPaint` re-parsed the style string on every painted rectangle — 20.6 µs for a rect that sets
 `rgba(...)` against 2.3 µs for one that does not, on a game whose startup is ~1 M canvas operations
