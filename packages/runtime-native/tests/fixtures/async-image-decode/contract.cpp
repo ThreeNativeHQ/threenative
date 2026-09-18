@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -149,6 +151,45 @@ void saturatedQueueDoesNotDecodeInline() {
     require(stayedDeferred, "overload reentered JS synchronously");
     require(rejected == 8, "overload did not reject exactly the excess queued decodes");
 }
+
+void destroyedOwnerCannotBeReentered() {
+    auto& decoder = AsyncImageDecoder::instance();
+    struct Owner { int marker; };
+    alignas(Owner) unsigned char storage[sizeof(Owner)];
+    auto oldAlive = std::make_shared<std::atomic<bool>>(true);
+    auto* oldOwner = new (storage) Owner{7};
+    int staleCalls = 0;
+    decoder.decode({254}, [oldOwner, oldAlive, &staleCalls](DecodedImage) {
+        if (!oldAlive->load(std::memory_order_acquire)) return;
+        staleCalls += oldOwner->marker;
+    });
+    until([&] { return enteredCodec.load() >= 1; });
+
+    // Model BindingsState teardown, then recreate an owner at the same address before the old
+    // worker completes. A raw owner capture would now hit the replacement object on drain.
+    oldAlive->store(false, std::memory_order_release);
+    oldOwner->~Owner();
+    auto freshAlive = std::make_shared<std::atomic<bool>>(true);
+    auto* freshOwner = new (storage) Owner{11};
+    releaseCodec = true;
+    until([&] { return decoder.completed() >= 1; });
+    decoder.drain();
+    require(staleCalls == 0, "a queued completion reentered a destroyed/recreated owner");
+
+    int freshCalls = 0;
+    decoder.decode({1}, [freshOwner, freshAlive, &freshCalls](DecodedImage image) {
+        if (!freshAlive->load(std::memory_order_acquire)) return;
+        require(image.error.empty(), "replacement owner decode failed");
+        freshCalls += freshOwner->marker;
+    });
+    until([&] {
+        decoder.drain();
+        return freshCalls == 11;
+    });
+    freshAlive->store(false, std::memory_order_release);
+    freshOwner->~Owner();
+    decoder.shutdown();
+}
 }  // namespace
 
 unsigned char* stbi_load_from_memory(const unsigned char* bytes, int, int* width, int* height,
@@ -178,6 +219,7 @@ int main(int argc, char** argv) {
         else if (mode == "shutdown") shutdownDoesNotCallJs();
         else if (mode == "shutdown-full") shutdownWakesBackpressuredWorkers();
         else if (mode == "saturation") saturatedQueueDoesNotDecodeInline();
+        else if (mode == "owner-lifetime") destroyedOwnerCannotBeReentered();
         else throw std::runtime_error("unknown contract mode");
         std::cout << "async image decode " << mode << " passed\n";
         return 0;

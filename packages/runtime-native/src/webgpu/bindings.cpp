@@ -366,6 +366,10 @@ bool stageWriteInUploadStaging(
 
 void destroyBindingsState(BindingsState*& state) {
     if (!state) return;
+    // Decoder workers never touch JS, but deferred completions may outlive this state. Invalidate
+    // their shared owner before any engine/state teardown; a later drain becomes a no-op.
+    auto imageDecodeOwner = state->imageDecodeOwner;
+    if (imageDecodeOwner) imageDecodeOwner->alive.store(false, std::memory_order_release);
     // Join the compile pool before anything it touches goes away. A worker holds `state` and the
     // device; letting one run past this point is a use-after-free with a two-thread window.
     shutdownAsyncBufferMaps(state);
@@ -376,6 +380,16 @@ void destroyBindingsState(BindingsState*& state) {
         BindingsState* state = ownedState;
         if (state->engine) {
             js::Engine* engine = state->engine;
+            if (imageDecodeOwner) {
+                for (const auto& callback : imageDecodeOwner->callbacks) {
+                    if (callback && callback->live) {
+                        engine->freeHandle(callback->handle);
+                        callback->live = false;
+                    }
+                }
+                imageDecodeOwner->callbacks.clear();
+                imageDecodeOwner->engine = nullptr;
+            }
             state->engine = nullptr;
             for (auto it = state->registries.protectedHandles.rbegin(); it != state->registries.protectedHandles.rend();
                  ++it) {
@@ -1113,11 +1127,19 @@ static js::JSValueHandle handleWebGpuDecodeImageData(BindingsState* state, Bindi
             // detached or collected long before a worker reaches it.
             const unsigned char* inputBytes = static_cast<const unsigned char*>(inputData);
             std::vector<uint8_t> bytes(inputBytes, inputBytes + inputSize);
-            auto callback = state->engine->retainHandle(args[1]);
+            auto callback = std::make_shared<AsyncImageDecodeCallback>();
+            callback->handle = state->engine->retainHandle(args[1]);
+            auto owner = state->imageDecodeOwner;
+            owner->engine = state->engine;
+            owner->callbacks.push_back(callback);
             AsyncImageDecoder::instance().decode(
                 std::move(bytes),
-                [state, callback](DecodedImage image) {
-                    auto* engine = state->engine;
+                [owner, callback](DecodedImage image) {
+                    // Never dereference the old BindingsState: teardown can happen after queueing
+                    // and before this completion is drained, including across runtime recreation.
+                    if (!owner->alive.load(std::memory_order_acquire)) return;
+                    auto* engine = owner->engine;
+                    if (!engine || !callback->live) return;
                     js::JSValueHandle result = engine->newUndefined();
                     js::JSValueHandle error = image.error.empty()
                         ? engine->newNull()
@@ -1132,8 +1154,12 @@ static js::JSValueHandle handleWebGpuDecodeImageData(BindingsState* state, Bindi
                         engine->setProperty(result, "_data", arrayBuffer);
                         engine->setProperty(result, "_closed", engine->newBoolean(false));
                     }
-                    engine->call(callback, engine->newUndefined(), {result, error});
-                    engine->freeHandle(callback);
+                    engine->call(callback->handle, engine->newUndefined(), {result, error});
+                    // JS may synchronously destroy the runtime. Teardown then releases this handle
+                    // while the engine is still valid and marks the record dead.
+                    if (!owner->alive.load(std::memory_order_acquire) || !callback->live) return;
+                    engine->freeHandle(callback->handle);
+                    callback->live = false;
                 });
             return state->engine->newUndefined();
 }
