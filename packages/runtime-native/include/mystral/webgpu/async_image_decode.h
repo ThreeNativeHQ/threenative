@@ -52,13 +52,19 @@ class AsyncImageDecoder {
 public:
     static AsyncImageDecoder& instance();
 
-    /** Queue one decode. The callback runs on the thread that next calls `drain()`. */
+    /** Queue one decode, or defer a queue-capacity error. Callbacks run only from `drain()`. */
     void decode(std::vector<uint8_t> bytes, ImageDecodeCallback done);
 
-    /** Run every completed decode. Must be called from the thread that owns the JS engine. */
+    /**
+     * Deliver completions within a soft 2 ms budget, always allowing one to make progress.
+     * A callback is not preemptible. Must be called from the thread that owns the JS engine.
+     */
     void drain();
 
-    /** Stop the workers and drop anything still queued. Safe to call more than once. */
+    /**
+     * Stop workers and discard queued/completed callbacks without invoking JS. Idempotent.
+     * Call from the owning thread, never a decoder worker.
+     */
     void shutdown();
 
     /** Queued decodes that no worker has picked up yet. Diagnostics and tests. */
