@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync,
+  copyFileSync, existsSync, mkdirSync, readFileSync,
   rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { test } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.ts';
 import { assertIconPixels, inspectMacosIcon } from '../scripts/inspect-macos-icon.mjs';
 import { packageDesktopContainer } from '../scripts/desktop-distribution.mjs';
 import { verifyContainerBrand, verifyStarterContainer } from '../scripts/verify-starter-desktop-base.mjs';
@@ -21,7 +21,7 @@ const NAMES = [16, 32, 128, 256, 512].flatMap((size) => [
 ]);
 
 function temporary(fn) {
-  const directory = mkdtempSync(join(tmpdir(), 'prd375-icon-test-'));
+  const directory = makeTempDirSync('prd375-icon-test-');
   try { return fn(directory); } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
