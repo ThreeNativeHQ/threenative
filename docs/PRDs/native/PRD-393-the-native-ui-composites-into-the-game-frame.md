@@ -676,45 +676,70 @@ running game from 1280×720 to 1600×900: the published hit regions move in norm
 (`x=0.860 → 0.888` for the flight-manual button), which only happens when the page re-lays out, and
 the capture shows the briefing at its 1600×900 positions rather than a stretched 1280-wide one.
 
-### The page's CSS animations do not run
+### The loading screen does not move — and the page is not the reason
 
-Midway's loading screen is a `transform` sweep (`.load-line:after`), and on native it **does not
-move** — the player watches a frozen loading screen for the whole load. Measured on a private
-display with a fixture page carrying one animation of each kind, sampling the raw CPU buffer over
-5 s:
+Midway's loading screen is a `transform` sweep (`.load-line:after`) and on native it sits still.
+The first measurement of this blamed WebKit and was **wrong**; it is corrected here because the
+wrong version was written down as a capability regression and would have sent someone to rebuild
+the backend for no reason.
 
-| Animation | Changes in 5 s |
-|---|---|
-| JavaScript `requestAnimationFrame` | 312 (≈62/s) |
-| CSS `left` (a paint property) | 8 (≈1.6/s) |
-| CSS `transform` | 1 |
-| CSS `opacity` | 0 |
+**What was actually measured the first time.** A fixture page with one animation of each kind, the
+CPU readback sampled at a **single pixel** per element. A solid block sliding past a fixed pixel
+changes that pixel only a handful of times per sweep, so "CSS `transform`: 1 change in 5 s" was
+the sampling, not the renderer. Scanning the element's whole row instead, on the same offscreen
+GTK view and the same software compositing, over 6 s:
 
-Three attempts to lift it, all measured and all without effect: `gtk_widget_map` on the offscreen
-window and its child (the widget reports mapped; the animations stay frozen), forcing
-`Animation.currentTime` from rAF (no change — so it is not the animation clock that is throttled),
-and a sweep of every `WebKitSettings` property (there is no visibility, animation or throttling
-knob; the complete list was read from the installed headers).
+| Motion | Row changes in 6 s | Rate |
+|---|---|---|
+| `requestAnimationFrame` (JS clock) | 373 | 62/s |
+| CSS `transform` animation | 373 | 62/s |
+| JS `transform` | 53 | 9/s |
+| JS `opacity` | 53 | 9/s |
+| JS `left` | 53 | 9/s |
 
-The mechanism is the one this PRD's Phase 1 named as the GTK path's cost, taken one step further:
-WebKit runs no display refresh for a view that is not a real, mapped, GL-backed window, so a
-software-composited offscreen view repaints on its own slow timer and never composites a layer
-transform at all. The window-based overlay this PRD deleted did not have that problem, so this is a
-**capability regression**, not a pre-existing defect: a native HUD could animate before and cannot
-now. It does not affect anything the PRD's acceptance criteria measure — the loading screen is
-*present* in 10 of 10 launches, it is simply still — but it is the kind of loss that a player notices
-and a screenshot does not, which is why it is written down.
+Nothing is throttled. The page renders at full rate, which also matches the engine's own numbers:
+`TN_UI_SNAPSHOT` shows 12-15 ms round trips and the page's counter climbing while the loading
+screen is up.
 
-Lifting it means giving WebKit a display refresh again: a real mapped window (which is the design
-this PRD removed) or an accelerated path that does not abort on an offscreen window. Neither is a
-tweak, and both are the owner's call rather than something to fold into a phase that has closed.
+**The real cause: the UI is presented once per game frame, and the game's startup is one frame.**
+`compositeUiLayer` is called from `endDawnFrame`; the loading screen therefore advances only when
+the game renders. During startup the runtime loads the entire module graph synchronously inside a
+single pump iteration — `ModuleSystem::loadEntry` recurses through `require` on one call stack, and
+the awaited file callbacks are drained at the top of the pump, once per frame. Measured on Midway:
+a `pump` marker fires **twice** in the first 30 s (0.58 s and 3.79 s), and the UI reports
+`uploads: 1` for the whole run. Two presentations in 30 s is a still picture.
+
+So the loading screen is starved, not frozen: the page has the frames, and nothing asks for them.
+
+**And the startup itself is 30 s of one frame.** `TN_COLD_START` puts 109 modules in 31.7 s with
+**0.07 s inside the JS engine** — so the time is not compilation, which is what the out-of-scope
+note below assumed. What the gaps actually contain, measured with markers inside them:
+
+- **Image decode is not the cost.** 326 decodes, 2.3 s in total, median 2 ms, slowest 108 ms.
+- **Fetch is not the cost.** The assets are read from the embedded bundle; the reads are fast.
+- **Canvas 2D rebuilt the system's font manager per canvas** — `SkFontMgr_New_FontConfig(nullptr,
+  ...)` reads the fontconfig configuration and builds a FreeType scanner over the installed fonts,
+  which is process state, not per-canvas state. Hoisting it to one `sharedFontMgr()` took the
+  game's 65 canvases from **690 ms to 145 ms**. Real, correct, and **1.8% of the startup**: this is
+  written down as a fix, not as the answer, because a first pass at this measurement wrongly
+  attributed the multi-second gaps to it and the numbers do not support that.
+- **What is left is the startup's own awaited asset work, serialized inside that one frame** — the
+  gaps sit between a module's `execute_complete` and the last step of its await chain, and the
+  frame loop is not running while they happen.
+
+**The change this points at, not yet made:** the frame loop has to keep running while the startup
+is in flight, the way a browser keeps compositing while a page's JavaScript awaits. That is a real
+change to the loader/pump relationship and it is the next PRD's work, not a tweak to this one.
 
 ## Out of scope
 
-- The ~34 s `first_playable` on this game against 6.6 s on web. Real and worth its own PRD, but it
-  is dominated by the game's own module compiles and asset loads, not by the UI seam. Phase 3's
-  frame-budget numbers will say how much of the *frame* cost belongs here; startup cost needs its
-  own profile.
+- The ~30 s `first_playable` on this game against 6.6 s on web. Real and worth its own PRD. The
+  assumption that it was "the game's own module compiles" is now **disproved**: 109 modules cost
+  0.07 s inside the JS engine, decode is 2.3 s across 326 images, and the one engine-side defect
+  found (a fontconfig scan rebuilt per canvas) is worth 545 ms of it. What remains is the startup
+  running inside a single frame with its awaited asset work serialized, which is a loader/pump
+  change, not a UI-seam one. Phase 3's frame-budget numbers cover the *frame* cost of the seam,
+  which is not this.
 - Diagnosing why the X11 overlay is blank under kwin/XWayland. Deleting it settles the symptom, and
   the suspected foreign-`GdkWindow` realization path is recorded above for anyone who needs the
   answer for another reason.
