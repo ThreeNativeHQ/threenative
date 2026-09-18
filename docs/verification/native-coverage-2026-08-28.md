@@ -26,7 +26,7 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **22476** | **18128** | **80.65%** |
 
-Source digest: `sha256:00d6d0d10860a0567f27f64b63cc4914b7fd1184d621c9ed2f09c276fa7b2583`
+Source digest: `sha256:3d24efe1b4d279aeff679ab99a1c47e0e23df4c6f8c3b10ef07b783e11c33dd4`
 
 > Merged 2026-09-17: the tables below are the last real `native:coverage` measurement (develop),
 > and the digest is the merged tree's. Regenerate with

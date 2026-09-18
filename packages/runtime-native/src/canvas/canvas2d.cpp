@@ -254,6 +254,32 @@ bool CanvasGradient::addColorStop(float offset, const std::string& text) {
 
 #if defined(MYSTRAL_HAS_SKIA)
 
+/**
+ * The process's font manager, built on first use.
+ *
+ * Building one is not per-canvas work: on Linux it reads the fontconfig configuration and builds a
+ * FreeType scanner over the installed fonts, and the result is process state that every canvas
+ * shares - which is how a browser holds it. Measured on Midway, which creates 65 canvases while
+ * its modules load: 690 ms in total when each canvas built its own, 145 ms when they share one.
+ *
+ * That is 1.8% of this game's 30 s startup and it is deliberately *not* offered as the startup's
+ * problem - the startup's problem is that it runs inside a single frame, which is a loader/pump
+ * change. This is worth having because a font manager is process state, not because it is fast.
+ * SkFontMgr lookups are thread-safe, so one instance serves every canvas on every thread.
+ */
+sk_sp<SkFontMgr> sharedFontMgr() {
+#if defined(__APPLE__)
+    static sk_sp<SkFontMgr> manager = SkFontMgr_New_CoreText(nullptr);
+#elif defined(__ANDROID__)
+    static sk_sp<SkFontMgr> manager = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+#elif defined(__linux__) && !defined(__ANDROID__)
+    static sk_sp<SkFontMgr> manager = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+#else
+    static sk_sp<SkFontMgr> manager = SkFontMgr::RefEmpty();  // Fallback
+#endif
+    return manager;
+}
+
 struct Canvas2DContext::Impl {
     sk_sp<SkSurface> surface;
     SkCanvas* canvas = nullptr;  // Owned by surface
@@ -277,16 +303,7 @@ struct Canvas2DContext::Impl {
             canvas->clear(SK_ColorTRANSPARENT);
         }
 
-        // Initialize font manager (platform-specific)
-#if defined(__APPLE__)
-        fontMgr = SkFontMgr_New_CoreText(nullptr);
-#elif defined(__ANDROID__)
-        fontMgr = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
-#elif defined(__linux__) && !defined(__ANDROID__)
-        fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
-#else
-        fontMgr = SkFontMgr::RefEmpty();  // Fallback
-#endif
+        fontMgr = sharedFontMgr();
         if (fontMgr) {
             currentTypeface = fontMgr->matchFamilyStyle("sans-serif", SkFontStyle::Normal());
             if (!currentTypeface) {
