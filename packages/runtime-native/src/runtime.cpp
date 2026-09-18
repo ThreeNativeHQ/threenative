@@ -1259,11 +1259,37 @@ public:
         LOGE("%s", marker);
     }
 
+    /**
+     * Reports a pump phase that took long enough to matter, with the clock it really took.
+     *
+     * The frame meters answer "what did the frames cost", and they cannot answer "what happened
+     * while there were no frames": a native startup iterates the loop a handful of times in forty
+     * seconds, and a window that closes every 300 frames never covers that stretch. This says so
+     * from the one place that knows - the phase itself. The threshold is deliberately high: this is
+     * a stall report, not a profiler, and it stays silent on a healthy run.
+     */
+    struct SlowPhaseWatch {
+        const char* phase;
+        std::chrono::steady_clock::time_point began = std::chrono::steady_clock::now();
+        explicit SlowPhaseWatch(const char* name) : phase(name) {}
+        ~SlowPhaseWatch() {
+            const double ms =
+                static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                        std::chrono::steady_clock::now() - began)
+                                        .count()) /
+                1000.0;
+            if (ms >= 250.0)
+                std::cout << "TN_SLOW_PHASE:{\"phase\":\"" << phase << "\",\"ms\":" << ms
+                          << ",\"atMs\":" << coldStartNowMs() << "}" << std::endl;
+        }
+    };
+
     bool pollEvents() override {
         // PRD-360 pump-silence observation: one entry stamp on the launch clock,
         // before every early return. Two steady_clock reads per entry; no
         // scheduling, quality, or scene-work change.
         pumpSilence().notePumpEntry(coldStartNowMs());
+        SlowPhaseWatch iterationWatch("pollEvents");
         // Each frame's between-callbacks time is metered into named sub-phases (TN_HOST_GAP).
         // Segments bracket the existing calls; nothing here changes order or behaviour.
         hostGapMeter_.begin(HostGapMeter::kEvents);
@@ -1429,7 +1455,7 @@ public:
         hostGapMeter_.begin(HostGapMeter::kIo);
         fs::getAsyncFileReader().processCompletedReads();
         // Image decodes land here for the same reason file reads do: a worker may not touch V8.
-        webgpu::AsyncImageDecoder::instance().drain();
+        { SlowPhaseWatch watch("imageDecodeDrain"); webgpu::AsyncImageDecoder::instance().drain(); }
 
         // Process file watch events (for hot reload)
         fs::getFileWatcher().processPendingEvents();
@@ -1448,20 +1474,20 @@ public:
 
         // Execute timer callbacks (setTimeout, setInterval)
         hostGapMeter_.begin(HostGapMeter::kTimers);
-        executeTimerCallbacks();
+        { SlowPhaseWatch watch("timerCallbacks"); executeTimerCallbacks(); }
 
         // Process any queued file callbacks that were deferred from previous frames
         // We process them here (after other callbacks) to ensure we're not in a nested callback stack
-        processPendingFileCallbacks();
+        { SlowPhaseWatch watch("fileCallbacks"); processPendingFileCallbacks(); }
 
         // Deliver whatever the UI posted since the last frame.
-        drainUiMessages();
+        { SlowPhaseWatch watch("uiMessages"); drainUiMessages(); }
         hostGapMeter_.end(HostGapMeter::kTimers);
 
         // Process microtask queue for promises
         hostGapMeter_.begin(HostGapMeter::kMicrotasks);
-        processMicrotasks();
-        executeSchedulerCallbacks();
+        { SlowPhaseWatch watch("microtasks"); processMicrotasks(); }
+        { SlowPhaseWatch watch("schedulerCallbacks"); executeSchedulerCallbacks(); }
         hostGapMeter_.end(HostGapMeter::kMicrotasks);
 
         // A deliberate fault, after startup, only when a proof harness asked for one. This is the
@@ -1481,10 +1507,10 @@ public:
         hostGapMeter_.end(HostGapMeter::kPreFrame);
 
         // Execute requestAnimationFrame callbacks (renders a frame)
-        executeAnimationFrameCallbacks();
+        { SlowPhaseWatch watch("animationFrames"); executeAnimationFrameCallbacks(); }
 
         // Replay the JS-recorded WebGPU frame while descriptor and upload handles are still live.
-        webgpu::endDawnFrame(bindingsState_);
+        { SlowPhaseWatch watch("endDawnFrame"); webgpu::endDawnFrame(bindingsState_); }
         // The replay boundary's own split (drain / replay / present / poll / other) was timed
         // inside endDawnFrame; fold it into this frame's sample.
         hostGapMeter_.recordEndFramePhases(

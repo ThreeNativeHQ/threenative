@@ -24,6 +24,7 @@
 
 #include "bindings_state.h"
 #include "bindings_presentation.h"
+#include "mystral/cold_start.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/checked_handle.h"
@@ -343,7 +344,8 @@ void reportUiComposite(BindingsState* state, const platform::UiOverlayFrame& fra
     // The very first line has no interval behind it; report it anyway, with the totals, so a run
     // that lasts under a second still says the UI composited at all.
     last = now;
-    std::cout << "TN_UI_COMPOSITE:{\"uploads\":" << uploads << ",\"skipped\":" << skipped
+    std::cout << "TN_UI_COMPOSITE:{\"atMs\":" << coldStartNowMs()
+              << ",\"uploads\":" << uploads << ",\"skipped\":" << skipped
               << ",\"uploadsPerSecond\":" << deltaUploads << ",\"skippedPerSecond\":" << deltaSkipped
               // Quoted, because every other field here is JSON and this one used to be the only
               // thing making the whole payload unparseable: `"frame":1280x720` is not a value, so
