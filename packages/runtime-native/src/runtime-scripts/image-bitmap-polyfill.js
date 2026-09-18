@@ -21,7 +21,10 @@ async function createImageBitmap(source, options) {
   if (source instanceof ArrayBuffer) {
     arrayBuffer = source;
   } else if (source instanceof Uint8Array) {
-    arrayBuffer = source.buffer;
+    // A view may name one embedded image or part of a pooled buffer, not the whole allocation.
+    arrayBuffer = source.byteOffset === 0 && source.byteLength === source.buffer.byteLength
+      ? source.buffer
+      : source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
   } else if (source && typeof source.arrayBuffer === "function") {
     // Blob or Response
     arrayBuffer = await source.arrayBuffer();

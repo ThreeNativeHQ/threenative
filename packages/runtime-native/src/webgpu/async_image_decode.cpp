@@ -1,6 +1,7 @@
 #include "mystral/webgpu/async_image_decode.h"
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstdlib>
 #include <deque>
@@ -22,6 +23,10 @@ namespace {
 
 constexpr size_t kMaxWorkers = 4;
 constexpr size_t kMaxQueuedDecodes = 512;
+// Bound decoded pixel payloads too, not just the smaller encoded inputs. A stalled frame must
+// not let the pool expand the entire texture set into RGBA before JS can consume any of it.
+constexpr size_t kMaxCompletedDecodes = 2 * kMaxWorkers;
+constexpr auto kDrainBudget = std::chrono::milliseconds(2);
 
 bool looksLikeWebP(const uint8_t* bytes, size_t length) {
     return length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F' &&
@@ -132,13 +137,15 @@ struct AsyncImageDecoder::Impl {
             {
                 std::unique_lock<std::mutex> lock(mutex);
                 wake.wait(lock, [this] { return stopping || !jobs.empty(); });
-                if (stopping && jobs.empty()) return;
+                if (stopping) return;
                 if (jobs.empty()) continue;
                 job = std::move(jobs.front());
                 jobs.pop_front();
             }
             DecodedImage image = decodeImageBytes(job.bytes.data(), job.bytes.size());
-            std::lock_guard<std::mutex> lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
+            wake.wait(lock, [this] { return stopping || results.size() < kMaxCompletedDecodes; });
+            if (stopping) return;
             results.push_back({std::move(image), std::move(job.done)});
         }
     }
@@ -176,50 +183,61 @@ void AsyncImageDecoder::decode(std::vector<uint8_t> bytes, ImageDecodeCallback d
         impl_->decodeInline(std::move(bytes), std::move(done));
         return;
     }
-    // Bounded: a runaway producer waits here rather than growing a queue without limit. The bound
-    // is far above any real asset set, so it never blocks a load that fits in memory.
+    // Overload must not move expensive decoding back onto the frame thread. Reject the excess
+    // request on the next drain, with no pixel payload and no synchronous JS re-entry.
     if (impl_->jobs.size() >= kMaxQueuedDecodes) {
-        lock.unlock();
-        impl_->decodeInline(std::move(bytes), std::move(done));
+        DecodedImage image;
+        image.error = "image decode queue capacity exceeded";
+        impl_->results.push_back({std::move(image), std::move(done)});
         return;
     }
     impl_->jobs.push_back({std::move(bytes), std::move(done)});
     lock.unlock();
-    impl_->wake.notify_one();
+    impl_->wake.notify_all();
 }
 
 void AsyncImageDecoder::drain() {
-    std::deque<Impl::Result> results;
+    const auto deadline = std::chrono::steady_clock::now() + kDrainBudget;
+    size_t remaining = 0;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
-        results.swap(impl_->results);
+        remaining = impl_->results.size();
     }
-    // Handed back in completion order, outside the lock: a callback builds JS objects and may take
-    // as long as it likes without stalling the workers.
-    for (auto& result : results) {
+    // At least one completion makes progress; newly arriving results wait for a later poll.
+    // A single callback cannot be preempted, but it must not pull the whole burst into its turn.
+    while (remaining-- > 0) {
+        Impl::Result result;
+        {
+            std::lock_guard<std::mutex> lock(impl_->mutex);
+            if (impl_->results.empty()) break;
+            result = std::move(impl_->results.front());
+            impl_->results.pop_front();
+        }
+        // Workers wait on both job availability and result capacity, so wake all predicates.
+        impl_->wake.notify_all();
         if (result.done) result.done(std::move(result.image));
+        if (std::chrono::steady_clock::now() >= deadline) break;
     }
 }
 
 void AsyncImageDecoder::shutdown() {
     std::vector<std::thread> workers;
     std::deque<Impl::Job> dropped;
+    std::deque<Impl::Result> completed;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         if (impl_->stopping) return;
         impl_->stopping = true;
         workers.swap(impl_->workers);
         dropped.swap(impl_->jobs);
+        completed.swap(impl_->results);
     }
     impl_->wake.notify_all();
     for (auto& worker : workers) {
         if (worker.joinable() && worker.get_id() != std::this_thread::get_id()) worker.join();
     }
-    // A decode that was still queued still settles, on this thread: a promise that never resolves
-    // is worse than a promise that resolves late.
-    for (auto& job : dropped) {
-        if (job.done) job.done(decodeImageBytes(job.bytes.data(), job.bytes.size()));
-    }
+    // Cancellation, not delivery: shutdown may run from the singleton's destructor, after the
+    // JS engine has gone away. Destroy queued and completed callbacks without invoking them.
 }
 
 size_t AsyncImageDecoder::queued() const {
