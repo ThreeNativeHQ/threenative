@@ -266,7 +266,15 @@ async function runStartup(options) {
  */
 async function sampleStartup(options, display, artifactDirectory) {
   const logPath = join(artifactDirectory, "startup-console.log");
-  const log = spawn("sh", ["-c", `exec "${options.executable}" > "${logPath}" 2>&1`], {
+  // `--no-vsync` is not a convenience here. This lane's display is Xvfb plus a *software*
+  // compositor, and the startup saturates every core the game can reach, so the compositor is
+  // starved and stops releasing swapchain images: the same startup blocks 16.2 s inside
+  // `wgpuSurfacePresent` with vsync on and 2.9 s with it off, measured on
+  // `sandbox/midway-open-pacific`. The 16 s is the display failing to consume frames, which is a
+  // property of this lane and not of the engine, and asserting on it would report the compositor's
+  // starvation as the loop's. What this gate is for — whether the loading screen keeps moving — is
+  // the loop's own work, so that is what it launches and measures.
+  const log = spawn("sh", ["-c", `exec "${options.executable}" --no-vsync > "${logPath}" 2>&1`], {
     cwd: options.cwd,
     // Its own group: the game spawns a web process, and killing the game alone would leave it.
     detached: true,
@@ -460,11 +468,27 @@ function judgeStartup(options, startup) {
       longestFreeze = { fromMs: startupComposites[index - 1].atMs, ms: gap };
     }
   }
+  // Where the freeze went, from the runtime's split of the frame boundary. Time inside the present
+  // is not the loop failing to iterate, and the two answer different questions — but the player
+  // feels the whole freeze either way, so the gate keeps asserting on it and says which half is
+  // which. Without this, a 16 s wait inside the present reads as a 16 s engine defect, and the next
+  // reader has no way to tell which of the present's two waits it was: the GPU queue draining, or
+  // the display declining to hand back a swapchain image.
+  const presentMs = markersIn(startup.log, "TN_SLOW_END_FRAME:").reduce(
+    (total, marker) => total + (marker.presentMs ?? 0),
+    0,
+  );
+  const freezeSplit = presentMs > 0
+    ? `, of which ${(presentMs / 1000).toFixed(1)} s was the present waiting on the GPU queue and ` +
+      `${(Math.max(0, longestFreeze.ms - presentMs) / 1000).toFixed(1)} s was the loop's own work`
+    : "";
+
   if (longestFreeze.ms > options.maxFreezeMs) {
     failures.push(
       `the loading screen froze for ${(longestFreeze.ms / 1000).toFixed(1)} s during the startup ` +
         `(from ${Math.round(longestFreeze.fromMs)} ms), against the ${(options.maxFreezeMs / 1000).toFixed(1)} s this gate allows: ` +
-        `${uploadsDuringLoading} page frame(s) reached the game's frame in the whole startup`,
+        `${uploadsDuringLoading} page frame(s) reached the game's frame in the whole startup` +
+        freezeSplit,
     );
   } else if (uploadsDuringLoading < options.minChanges) {
     failures.push(
@@ -481,6 +505,7 @@ function judgeStartup(options, startup) {
     blankSamples,
     failures,
     firstPlayable,
+    presentMs,
     loading,
     longestFreeze,
     overlay,
@@ -494,6 +519,7 @@ function judgeStartup(options, startup) {
     blankSamples,
     failures,
     firstPlayable,
+    presentMs,
     loading,
     longestFreeze,
     overlay,
@@ -524,6 +550,8 @@ function judgeStartup(options, startup) {
       firstPlayableMs: firstPlayable?.atMs ?? null,
       loadingScreenSamples: { sampled: loading.length, withBackground: withBackground.length },
       longestFreeze: { allowedMs: options.maxFreezeMs, fromMs: longestFreeze.fromMs, ms: longestFreeze.ms },
+      // Both numbers, so neither can be mistaken for the other after the fact.
+      slowFramePresentMs: presentMs,
       transition: options.scenario === undefined ? "not requested" : { exitCode: transition.exitCode, scenario: options.scenario },
     },
     executable: options.executable,
