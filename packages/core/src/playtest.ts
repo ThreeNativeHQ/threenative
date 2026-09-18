@@ -138,11 +138,13 @@ export function playtest<
         });
       }
       installRuntimeChannels(installation.bridge, runtime);
-      // A runner announced itself before the page loaded: it is the one consumer of per-frame
-      // render samples, so collection turns on exactly for playtest runs and stays off for
-      // every plain `pnpm dev` frame.
-      if ((globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true)
-        runtime?.enableRuntimeDiagnostics?.();
+      // A runner announced itself: it is the one consumer of per-frame render samples, so
+      // collection turns on exactly for playtest runs and stays off for every plain `pnpm dev`
+      // frame. It reads the same predicate as the boot hold below, because gating collection on
+      // the browser's half alone left every device and desktop run with an empty
+      // `runtimeDiagnosticsSeries` under an advertised `runtime.performance` — a native host
+      // announces itself through `TN_PLAYTEST_ENDPOINT`, not through the expected global.
+      if (runnerAnnounced()) runtime?.enableRuntimeDiagnostics?.();
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
@@ -211,6 +213,20 @@ export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EX
  */
 function shouldHoldUntilAttached(options: IPlaytestOptions): boolean {
   if (options.holdUntilAttached !== undefined) return options.holdUntilAttached;
+  return runnerAnnounced();
+}
+
+/**
+ * Whether a runner announced itself, whichever lane it came from.
+ *
+ * Browser runners set the expected global before navigation; a native host exposes
+ * `TN_PLAYTEST_ENDPOINT` when a device or desktop transport is attached. Both decisions that
+ * depend on an announcement — holding the boot, and turning per-frame render collection on — read
+ * this one predicate: they were written separately once, and the collection half shipped with only
+ * the browser branch, so every device and desktop run answered an advertised
+ * `runtime.performance` with an empty series.
+ */
+function runnerAnnounced(): boolean {
   const host = globalThis as Record<string, unknown>;
   return host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true || host.TN_PLAYTEST_ENDPOINT !== undefined;
 }

@@ -250,6 +250,12 @@ async function runDevicePlaytestInternal(
         scenario.assert?.settled === undefined
           ? []
           : ["physicsDebugSeries"]),
+        // The same two fields the browser lane requests, for the same reason: the bridge answers
+        // only what it was asked for, so a `performance` or `renderChain` assertion on a device or
+        // desktop target used to evaluate against an empty series and fail as "unobserved" even
+        // though the handshake advertises `runtime.performance` and `runtime.renderChain`.
+        ...(scenario.assert?.performance === undefined ? [] : ["runtimeDiagnosticsSeries"]),
+        ...(scenario.assert?.renderChain === undefined ? [] : ["renderChain"]),
       ],
       resources: observedResourceIds(scenario),
       // One selector per assertion in scenario order: the evaluator reads observation `i` for
