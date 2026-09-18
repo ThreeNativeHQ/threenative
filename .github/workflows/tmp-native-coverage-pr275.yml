@@ -34,10 +34,15 @@ jobs:
       - name: Restore and build native third-party dependencies
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Regenerate native coverage evidence
-        run: pnpm --filter @threenative/runtime-native native:coverage
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @threenative/runtime-native native:coverage 2>&1 | tee native-coverage-pr275.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: native-coverage-pr275
-          path: docs/verification/native-coverage-2026-08-28.md
+          name: native-coverage-pr275-debug
+          path: |
+            docs/verification/native-coverage-2026-08-28.md
+            native-coverage-pr275.log
           if-no-files-found: error
