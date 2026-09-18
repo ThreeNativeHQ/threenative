@@ -231,24 +231,41 @@ public:
         struct Entry { unsigned hits = 0; std::string location; };
         std::unordered_map<std::string, Entry> self;
         unsigned total = 0;
-        std::vector<const v8::CpuProfileNode*> stack{profile->GetTopDownRoot()};
+        // Walk with the caller in hand: a C++ binding has no name of its own in a V8 profile, so
+        // the only way to say *which* binding ate the time is to name the JS frame that called it.
+        // Without this, 62% of a startup stall read as "(anonymous) @ (native)" and named nothing.
+        struct Frame { const v8::CpuProfileNode* node; std::string caller; };
+        auto label = [&](const v8::CpuProfileNode* node, std::string& name, std::string& file) {
+            // `file` stays bare so the native test below can recognise "(native)"; callers carry
+            // the line, because "which binding" is answered by "which line called it".
+            v8::String::Utf8Value fn(isolate_, node->GetFunctionName());
+            v8::String::Utf8Value url(isolate_, node->GetScriptResourceName());
+            name = *fn && **fn ? *fn : "(anonymous)";
+            file = *url && **url ? *url : "(native)";
+            const size_t slash = file.find_last_of('/');
+            if (slash != std::string::npos) file = file.substr(slash + 1);
+        };
+        std::vector<Frame> stack{{profile->GetTopDownRoot(), "(root)"}};
         while (!stack.empty()) {
-            const v8::CpuProfileNode* node = stack.back();
+            Frame frame = stack.back();
             stack.pop_back();
+            const v8::CpuProfileNode* node = frame.node;
             const unsigned hits = node->GetHitCount();
             total += hits;
+            std::string name;
+            std::string file;
+            label(node, name, file);
             if (hits > 0) {
-                v8::String::Utf8Value fn(isolate_, node->GetFunctionName());
-                v8::String::Utf8Value url(isolate_, node->GetScriptResourceName());
-                std::string name = *fn && **fn ? *fn : "(anonymous)";
-                std::string file = *url && **url ? *url : "(native)";
-                const size_t slash = file.find_last_of('/');
-                if (slash != std::string::npos) file = file.substr(slash + 1);
-                auto& entry = self[name + " @ " + file];
+                const bool native = file == "(native)";
+                const std::string key = native ? "native <- " + frame.caller : name + " @ " + file;
+                auto& entry = self[key];
                 entry.hits += hits;
-                entry.location = file + ":" + std::to_string(node->GetLineNumber());
+                entry.location = native ? frame.caller : file + ":" + std::to_string(node->GetLineNumber());
             }
-            for (int i = 0; i < node->GetChildrenCount(); i++) stack.push_back(node->GetChild(i));
+            const std::string caller = file == "(native)"
+                ? frame.caller
+                : name + " @ " + file + ":" + std::to_string(node->GetLineNumber());
+            for (int i = 0; i < node->GetChildrenCount(); i++) stack.push_back({node->GetChild(i), caller});
         }
         std::vector<std::pair<std::string, Entry>> rows(self.begin(), self.end());
         std::sort(rows.begin(), rows.end(),

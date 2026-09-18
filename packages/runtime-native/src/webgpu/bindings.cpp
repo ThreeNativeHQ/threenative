@@ -37,6 +37,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
 #include <atomic>
 #include <cstring>
 #include <cmath>
@@ -590,8 +591,17 @@ uint64_t endProfiledBinding(
 }
 
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
-    if (state->profiling.frameEndCount == 226 && js::g_startCpuProfile)
-        js::g_startCpuProfile();
+    // 226 is the frame the Android lane profiles from, which is fine for steady state and useless
+    // for a startup: a game whose first seconds stall the loop reaches frame 226 long after the
+    // stall is over. `TN_JS_CPU_PROFILE_START_FRAME` moves the window so the stall can be profiled
+    // at all. Read once — a `getenv` per frame is not worth a measurement that is already opt-in.
+    if (js::g_startCpuProfile) {
+        static const uint32_t startFrame = [] {
+            const char* value = std::getenv("TN_JS_CPU_PROFILE_START_FRAME");
+            return value != nullptr ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 226u;
+        }();
+        if (state->profiling.frameEndCount == startFrame) js::g_startCpuProfile();
+    }
     const uint64_t nowCpuNs = readRenderThreadCpuNs();
     const uint64_t renderThreadCpuNs =
         (state->profiling.lastRenderThreadCpuNs != 0 && nowCpuNs > state->profiling.lastRenderThreadCpuNs)
@@ -1320,6 +1330,11 @@ static js::JSValueHandle handleGpuQueueOnSubmittedWorkDone(BindingsState* state,
                             return resolvedPromise(state, "undefined", "onSubmittedWorkDone-success");
 }
 
+/** An upload this slow is what the next present fences on. */
+constexpr uint64_t kSlowTextureUploadNs = 50'000'000;
+
+
+
 static js::JSValueHandle handleGpuQueueCopyExternalImageToTexture(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             if (args.size() < 3) {
                                 state->engine->throwException("copyExternalImageToTexture requires source, destination, and copySize");
@@ -1530,7 +1545,16 @@ static js::JSValueHandle handleGpuQueueCopyExternalImageToTexture(BindingsState*
                             layout.bytesPerRow = imgWidth * 4;  // RGBA
                             layout.rowsPerImage = imgHeight;
                             WGPUExtent3D copySize = {width, height, depthOrArrayLayers};
+                            const auto uploadBegin = std::chrono::steady_clock::now();
                             wgpuQueueWriteTexture(state->queue, &destCopy, uploadDataPtr, dataSize, &layout, &copySize);
+                            const uint64_t uploadNs = static_cast<uint64_t>(
+                                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::steady_clock::now() - uploadBegin).count());
+                            if (uploadNs >= kSlowTextureUploadNs) {
+                                std::cout << "TN_SLOW_TEXTURE_UPLOAD:{\"ms\":" << static_cast<double>(uploadNs) / 1e6
+                                          << ",\"mb\":" << static_cast<double>(dataSize) / 1048576.0
+                                          << ",\"w\":" << width << ",\"h\":" << height << "}" << std::endl;
+                            }
                             if (state->verboseLogging) std::cout << "[WebGPU] copyExternalImageToTexture: " << width << "x" << height << (flipY ? " (flipY)" : "") << std::endl;
                             return state->engine->newUndefined();
 }
@@ -2811,6 +2835,9 @@ void invokeVideoCaptureCallback(BindingsState* state, WGPUTexture texture, uint3
 }
 
 
+/** An end-frame boundary this slow is the reason the loop is not iterating. */
+constexpr uint64_t kSlowEndFrameNs = 250'000'000;
+
 void endDawnFrame(BindingsState* state) {
     // The one command-submission crossing for this frame. All requestAnimationFrame callbacks
     // have returned, while descriptor objects and eager-copied upload payloads are still live.
@@ -2952,6 +2979,20 @@ void endDawnFrame(BindingsState* state) {
                              state->profiling.framePhasePresentNs + state->profiling.framePhaseGpuDrainNs +
                              state->profiling.framePhasePollNs + state->profiling.framePhaseUiNs;
     state->profiling.framePhaseOtherNs = phaseTotalNs > namedNs ? phaseTotalNs - namedNs : 0;
+
+    // A frame this slow is why the loop is not iterating, and `TN_SLOW_PHASE` only says
+    // `endDawnFrame`. The split says which half of the boundary owns it — the JS call that packs
+    // the stream, or the C++ replay of it — and a reader cannot get that anywhere else.
+    if (phaseTotalNs >= kSlowEndFrameNs) {
+        const auto ms = [](uint64_t ns) { return static_cast<double>(ns) / 1e6; };
+        std::cout << "TN_SLOW_END_FRAME:{\"totalMs\":" << ms(phaseTotalNs)
+                  << ",\"drainMs\":" << ms(state->profiling.framePhaseDrainNs)
+                  << ",\"replayMs\":" << ms(state->profiling.framePhaseReplayNs)
+                  << ",\"uiMs\":" << ms(state->profiling.framePhaseUiNs)
+                  << ",\"presentMs\":" << ms(state->profiling.framePhasePresentNs)
+                  << ",\"pollMs\":" << ms(state->profiling.framePhasePollNs)
+                  << ",\"otherMs\":" << ms(state->profiling.framePhaseOtherNs) << "}" << std::endl;
+    }
 }
 
 }  // namespace webgpu

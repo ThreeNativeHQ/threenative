@@ -196,6 +196,9 @@ void AsyncImageDecoder::decode(std::vector<uint8_t> bytes, ImageDecodeCallback d
     impl_->wake.notify_all();
 }
 
+/** A completion callback this slow is why the frame loop is not iterating. */
+constexpr uint64_t kSlowCallbackNs = 100'000'000;
+
 void AsyncImageDecoder::drain() {
     const auto deadline = std::chrono::steady_clock::now() + kDrainBudget;
     size_t remaining = 0;
@@ -215,7 +218,20 @@ void AsyncImageDecoder::drain() {
         }
         // Workers wait on both job availability and result capacity, so wake all predicates.
         impl_->wake.notify_all();
+        // One callback cannot be preempted, so a slow one is the whole reason the loop stopped
+        // iterating: name it, with the image it was handed, or the next reader has to guess.
+        const auto callbackBegin = std::chrono::steady_clock::now();
+        const int callbackWidth = result.image.width;
+        const int callbackHeight = result.image.height;
         if (result.done) result.done(std::move(result.image));
+        const uint64_t callbackNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - callbackBegin).count());
+        if (callbackNs >= kSlowCallbackNs) {
+            std::cout << "TN_SLOW_DECODE_CALLBACK:{\"ms\":" << static_cast<double>(callbackNs) / 1e6
+                      << ",\"w\":" << callbackWidth << ",\"h\":" << callbackHeight
+                      << ",\"waiting\":" << remaining << "}" << std::endl;
+        }
         if (std::chrono::steady_clock::now() >= deadline) break;
     }
 }
