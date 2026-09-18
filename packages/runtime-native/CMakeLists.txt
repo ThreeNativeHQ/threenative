@@ -1421,6 +1421,7 @@ set(MYSTRAL_SOURCES
     src/js/module_system.cpp
     src/js/ts_transpiler.cpp
     src/webgpu/bindings.cpp
+    src/webgpu/async_image_decode.cpp
     src/webgpu/bindings_canvas2d_composite.cpp
     src/webgpu/bindings_commands.cpp
     src/webgpu/bindings_frame_stream.cpp
