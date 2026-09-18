@@ -1,0 +1,39 @@
+name: Temporary native coverage refresh for PR 275
+
+on:
+  push:
+    branches:
+      - automation/native-coverage-pr275
+
+permissions:
+  contents: read
+
+jobs:
+  native-coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install native coverage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb ccache \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libxinerama-dev libwayland-dev libxkbcommon-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+            vulkan-tools mesa-vulkan-drivers libglfw3-dev libglm-dev
+      - name: Regenerate native coverage evidence
+        run: pnpm --filter @threenative/runtime-native native:coverage
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-coverage-pr275
+          path: docs/verification/native-coverage-2026-08-28.md
+          if-no-files-found: error
