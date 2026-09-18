@@ -26,7 +26,7 @@ describe("native coverage gate", () => {
 
   it("should fail when the report is stale or missing", async () => {
     expect(nativeCoverageGateErrors(record, "bbbb")).toEqual([
-      "native coverage report is stale: source digest changed; run `pnpm --filter @threenative/runtime-native native:coverage`",
+      "native coverage report is stale: source digest changed to bbbb; run `pnpm --filter @threenative/runtime-native native:coverage`",
     ]);
     expect(() => nativeCoverageGateErrors("", "aaaa")).toThrow(
       /native coverage record is missing its source digest/u,
