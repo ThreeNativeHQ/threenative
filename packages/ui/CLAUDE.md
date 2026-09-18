@@ -18,6 +18,16 @@ compatibility stub whose `body.appendChild` is a no-op, so neither `react-dom` n
 applies. **A native build ships the game without this package.** The native UI stack is a
 deliberately open question; do not answer it in a feature.
 
+Note the one exception, because it is the native UI: on desktop the HUD is a web view whose
+frames are composited into the game's own frame, so this package *does* run there even
+though `react-dom` does not stand behind it in the usual way. What that costs is one control:
+a `<select>` has no native popup to open, because there is no view to open it into. The host
+draws that list in the page instead — `[data-tn-native-select]`, styled by the project the
+same way `[data-threenative-debug-overlay]` is — and reports whether the page holds the
+keyboard so the host can forward keys to a focused control and leave every other key to the
+game. Everything else — published state in, intents out, `data-tn-interactive` on every touch
+target — crosses unchanged.
+
 That makes one mistake fatal: gameplay, state transitions, or scoring written inside a
 component are simply missing on native, with no gate reporting it. Components read state and
 draw; the game writes state. A HUD is a view of `ctx.state`, never its owner.
