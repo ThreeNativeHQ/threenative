@@ -41,7 +41,7 @@ export function nativeCoverageGateErrors(record: string, currentDigest: string):
   const floors = parseTable(record, "| Coverage floor | Minimum |");
   const errors: string[] = [];
   if (digest !== currentDigest) {
-    errors.push(`native coverage report is stale: source digest changed; ${REGENERATE}`);
+    errors.push(`native coverage report is stale: source digest changed to ${currentDigest}; ${REGENERATE}`);
   }
   const measuredSubsystems = [...measured.keys()].sort();
   const floorSubsystems = [...floors.keys()].sort();
