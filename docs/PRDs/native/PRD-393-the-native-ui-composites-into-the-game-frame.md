@@ -772,13 +772,26 @@ present waiting on the GPU queue and 0.1 s was the loop's own work
 ```
 
 So the loop's own work inside the worst freeze is 0.1 s. The 16 s is `wgpuSurfacePresent`, and what
-is *inside* that wait is the next question, with the evidence for each side already gathered: the
-frame that blocks submits nothing (`replayMs: 0`), no single texture upload exceeds 50 ms, the
-game's uploads do not go through `copyExternalImageToTexture` or `writeTexture` at all on this path
-(measured — the meters stayed silent), and `--no-vsync` does not shorten it. That leaves the GPU
-queue draining or the display declining to hand back a swapchain image, and this lane cannot tell
-them apart: its display is Xvfb with a *software* compositor. A GPU-composited session would, which
-is AC-10's run.
+is inside that wait is settled, not assumed. Built with the diagnostic drain probe
+(`-DTN_WEBGPU_GPU_DRAIN_PROFILE=ON`), the blocking device poll *after* the present finds **zero
+outstanding GPU work** while the same frame reports 16.0 s in the present:
+
+```
+TN_SLOW_END_FRAME:{"totalMs":16100.1,"replayMs":0,"presentMs":16037.0,"gpuDrainMs":0,"otherMs":0.002}
+```
+
+The GPU is idle and the frame submitted nothing (`replayMs: 0`), so the present is waiting for a
+**swapchain image the display has not handed back**. Nothing else fits: no single texture upload
+exceeds 50 ms, the game's uploads do not go through `copyExternalImageToTexture` or `writeTexture`
+at all on this path (the meters stayed silent), and `--no-vsync` does not shorten the wait — an
+image is still an image in Immediate mode.
+
+Why the display stops consuming: this lane is Xvfb with **xcompmgr**, a single-threaded software
+compositor, and the startup takes every core it can reach, so the compositor is starved and releases
+no images. That is the same defect the player sees from the other side — the loading screen cannot
+move while a present is blocked — and it is why the loop-side CPU cost is the lever: a
+GPU-composited session does not starve this way, but *any* session starves in proportion to how much
+CPU the startup takes, and that number is the engine's to reduce.
 
 **Two engine-side costs found on the way and fixed.** `fillStyle` compiled a `std::regex` and
 `makeFillPaint` re-parsed the style string on every painted rectangle — 20.6 µs for a rect that sets

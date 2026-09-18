@@ -471,15 +471,19 @@ function judgeStartup(options, startup) {
   // Where the freeze went, from the runtime's split of the frame boundary. Time inside the present
   // is not the loop failing to iterate, and the two answer different questions — but the player
   // feels the whole freeze either way, so the gate keeps asserting on it and says which half is
-  // which. Without this, a 16 s wait inside the present reads as a 16 s engine defect, and the next
-  // reader has no way to tell which of the present's two waits it was: the GPU queue draining, or
-  // the display declining to hand back a swapchain image.
+  // which. Without this, a 16 s wait inside the present reads as a 16 s engine defect.
+  //
+  // The present's wait is for a swapchain *image*, not for GPU work: with the diagnostic drain
+  // probe on (`-DTN_WEBGPU_GPU_DRAIN_PROFILE=ON`), the blocking device poll after the present finds
+  // zero outstanding GPU work (`gpuDrainMs: 0`) while the same frame reports 16.0 s in the present.
+  // The display had stopped consuming frames, which is what a software compositor does when the
+  // startup takes every core it can reach.
   const presentMs = markersIn(startup.log, "TN_SLOW_END_FRAME:").reduce(
     (total, marker) => total + (marker.presentMs ?? 0),
     0,
   );
   const freezeSplit = presentMs > 0
-    ? `, of which ${(presentMs / 1000).toFixed(1)} s was the present waiting on the GPU queue and ` +
+    ? `, of which ${(presentMs / 1000).toFixed(1)} s was the present waiting for the display to take a frame and ` +
       `${(Math.max(0, longestFreeze.ms - presentMs) / 1000).toFixed(1)} s was the loop's own work`
     : "";
 
@@ -553,7 +557,8 @@ function judgeStartup(options, startup) {
       firstPlayableMs: firstPlayable?.atMs ?? null,
       loadingScreenSamples: { sampled: loading.length, withBackground: withBackground.length },
       longestFreeze: { allowedMs: options.maxFreezeMs, fromMs: longestFreeze.fromMs, ms: longestFreeze.ms },
-      // Both numbers, so neither can be mistaken for the other after the fact.
+      // Both numbers, so neither can be mistaken for the other after the fact. The present's share
+      // is the display failing to consume a frame, and the loop's share is what the engine can fix.
       slowFramePresentMs: presentMs,
       transition: options.scenario === undefined ? "not requested" : { exitCode: transition.exitCode, scenario: options.scenario },
     },

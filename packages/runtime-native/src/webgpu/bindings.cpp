@@ -2991,6 +2991,7 @@ void endDawnFrame(BindingsState* state) {
                   << ",\"uiMs\":" << ms(state->profiling.framePhaseUiNs)
                   << ",\"presentMs\":" << ms(state->profiling.framePhasePresentNs)
                   << ",\"pollMs\":" << ms(state->profiling.framePhasePollNs)
+                  << ",\"gpuDrainMs\":" << ms(state->profiling.framePhaseGpuDrainNs)
                   << ",\"otherMs\":" << ms(state->profiling.framePhaseOtherNs) << "}" << std::endl;
     }
 }
