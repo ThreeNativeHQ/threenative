@@ -15,7 +15,7 @@ const probe = spawnSync(compiler, ["--version"], { encoding: "utf8" });
 const nativeTest = probe.error?.code === "ENOENT" ? test.skip : test;
 // Created here rather than inside the first test on purpose: `makeTempDirSync` registers
 // `onTestFinished` when it is called from within a test, which would delete the compiled contract
-// binary after the first of the five cases that share it. At module scope it falls back to
+// binary after the first case that shares it. At module scope it falls back to
 // process-exit cleanup, which is the lifetime this binary actually has.
 const buildDirectory = makeTempDirSync("tn-image-decode-");
 let executable;
@@ -59,6 +59,9 @@ for (const [mode, description] of [
   ["shutdown", "shutdown never reenters a possibly destroyed JS engine"],
   ["shutdown-full", "shutdown wakes workers blocked by completed-image backpressure"],
   ["saturation", "queue saturation rejects asynchronously instead of decoding on the frame thread"],
+  ["shutdown-owner", "shutdown destroys in-flight callback captures on the owning thread"],
+  ["allocation-failure", "RGBA allocation failure rejects, frees codec pixels, and preserves the worker"],
+  ["missing-error", "codec failure without a diagnostic rejects safely"],
 ]) {
   nativeTest(description, () => {
     const result = spawnSync(contractBinary(), [mode], { encoding: "utf8", timeout: 10_000 });
