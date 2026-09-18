@@ -26,6 +26,17 @@ void expect(bool condition, const std::string& what) {
     }
 }
 
+void setFramePlanOverride(bool enabled) {
+#if defined(_WIN32)
+    const int result = _putenv_s("TN_FRAME_PLANS", enabled ? "1" : "");
+#else
+    const int result =
+        enabled ? setenv("TN_FRAME_PLANS", "1", 1) : setFramePlanOverride(false);
+#endif
+    expect(result == 0, std::string("frame-plan diagnostic override ") +
+                            (enabled ? "enabled" : "cleared"));
+}
+
 void awaitFlag(mystral::Runtime* runtime, mystral::js::Engine* engine, const char* flag) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
@@ -440,8 +451,7 @@ struct VisualArm {
 
 VisualArm runVisualArm(bool plans) {
     VisualArm arm;
-    if (plans) setenv("TN_FRAME_PLANS", "1", 1);
-    else unsetenv("TN_FRAME_PLANS");
+    setFramePlanOverride(plans);
     // The arm has to be the transport it claims, or the comparison below would pass by comparing two
     // v2 streams. The plan arm asserts its own capture and patch where the arm is read.
     expect(plans == (std::getenv("TN_FRAME_PLANS") != nullptr),
@@ -576,7 +586,7 @@ void expectAccepted(mystral::webgpu::BindingsState* state, const std::string& ex
 // frame and patches the next, the patch reaches the GPU, every malformed packet fails closed
 // without entering a backend call, and a capture re-establishes the plan afterwards.
 void runPlanContract() {
-    setenv("TN_FRAME_PLANS", "1", 1);
+    setFramePlanOverride(true);
     mystral::RuntimeConfig config;
     config.width = 1;
     config.height = 1;
@@ -796,13 +806,13 @@ void runPlanContract() {
 
     state->profiling.frameOpStreamNativeCallObserver = nullptr;
     state->profiling.frameOpStreamDrain = {};
-    unsetenv("TN_FRAME_PLANS");
+    setFramePlanOverride(false);
 }
 
 // The lifecycle a retained plan has to survive on the real decoder: a mapAsync drain that splits a
 // frame, and a device recreation.
 void runPlanLifecycleContract() {
-    setenv("TN_FRAME_PLANS", "1", 1);
+    setFramePlanOverride(true);
     mystral::RuntimeConfig config;
     config.width = 1;
     config.height = 1;
@@ -933,7 +943,7 @@ void runPlanLifecycleContract() {
            "the frame after device recreation replayed in order");
 
     state->profiling.frameOpStreamDrain = {};
-    unsetenv("TN_FRAME_PLANS");
+    setFramePlanOverride(false);
 }
 
 }  // namespace
@@ -943,7 +953,7 @@ int main(int argc, char** argv) {
         argc > 1 && std::string(argv[1]) == "disabled-stream-control";
     runContract(disableStreamControl);
     // Compiled frame plans run after the default contract, and only then: the recorder reads the
-    // flag when the device is created, so a plan-enabled runtime would change what the assertions
+    // diagnostic override when the device is created, so a forced-plan runtime would change what the assertions
     // above are looking at.
     if (!disableStreamControl) {
         // The same two frames on both transports, compared as pixels: the clear colour moves between

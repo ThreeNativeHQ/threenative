@@ -2038,9 +2038,10 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         const auto host = state->engine->newObject();
                         state->engine->setProperty(host, "device", device);
                         state->engine->setProperty(host, "queue", queue);
-                        // Compiled frame plans (v3 transport) stay off unless the host asks for
-                        // them by name. The recorder reads this one flag and otherwise writes the
-                        // v2 stream it has always written, so an unset variable costs nothing.
+                        // Production leaves selection automatic: an absent property starts on
+                        // direct v2 and promotes only when the recorder's bounded heuristics say a
+                        // retained plan is useful. TN_FRAME_PLANS=1 is a diagnostic/reference
+                        // override that forces the v3 arm; games do not need to set it.
                         if (const char* plans = std::getenv("TN_FRAME_PLANS")) {
                             if (plans[0] == '1' && plans[1] == '\0') {
                                 state->engine->setProperty(host, "compiledFramePlans", state->engine->newBoolean(true));
