@@ -4,11 +4,12 @@
  * CPU-only microbenchmark for the compiled frame plan transport (PRD-native-compiled-frame-plans).
  *
  * It measures the JavaScript half of the transport: what the recorder spends turning one frame
- * into a packet, and how many bytes that packet carries — for the v2 stream every shipped frame
- * uses, and for the v3 plan transport that patches it. There is no GPU, no renderer and no game
- * here, so none of these numbers is a frame rate and nothing is extrapolated to one. The native
- * half (validate, apply, replay) belongs to `threenative-frame-op-stream-replay-test`, which runs
- * the same recorder through the real decoder.
+ * into a packet, and how many bytes that packet carries — for the forced v2 reference stream
+ * and for the forced v3 plan transport that patches it. The automatic production policy has a
+ * separate six-scenario benchmark in measure-frame-plan-auto.mjs. There is no GPU, renderer or
+ * game here, so none of these numbers is a frame rate and nothing is extrapolated to one. The
+ * native half (validate, apply, replay) belongs to `threenative-frame-op-stream-replay-test`, which
+ * runs the same recorder through the real decoder.
  *
  *   node scripts/measure-frame-plan-transport.mjs [--draws=2000] [--uploads=64] [--frames=120]
  */
@@ -43,7 +44,8 @@ function recorder(compiledFramePlans) {
     copyExternalImageToTexture() {},
     submit() {},
   };
-  const host = compiledFramePlans ? { device, queue, compiledFramePlans: true } : { device, queue };
+  // False must remain explicit: absence now means automatic production selection, not v2.
+  const host = { device, queue, compiledFramePlans };
   return { drain: factory(host), device, queue };
 }
 

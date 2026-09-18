@@ -5,9 +5,21 @@
   const queue = host.queue;
   const magic = 0x544e4652;
   const version = 2;
-  // Compiled frame plans (v3). Off unless the host asks for it by name, and when it is off nothing
-  // below runs: the recorder writes the v2 stream it has always written.
-  const planMode = host.compiledFramePlans === true;
+  // Production selects its transport at complete frame boundaries, without a game setting.
+  // Explicit booleans remain internal reference arms for transport tests and profiling.
+  const automaticPlans = host.compiledFramePlans === undefined;
+  let planMode = host.compiledFramePlans === true;
+  const frameScopedIds = automaticPlans || planMode;
+  // Do not pay to retain tiny frames or mostly-upload payloads. Two equal-sized frames qualify
+  // for a probe; failed probes back off so churn cannot cause continuous capture/diff work.
+  const minPlanOps = 128;
+  const maxBytesPerPlanOp = 128;
+  const retryFrames = 32;
+  let candidateOps = 0;
+  let candidateBytes = 0;
+  let candidateFrames = 0;
+  let planMisses = 0;
+  let retryAfter = 0;
   const planVersion = 3;
   const planCapture = 1;
   const planPatch = 2;
@@ -22,7 +34,7 @@
   const kCaptureWhenRewrittenBytes = 1 << 16;
   // The arena starts behind a header either way: a v2 packet's 16 bytes, or the 24 a v3 packet needs
   // so a frame that cannot be patched can be handed over as a capture without copying it.
-  const headerBytes = planMode ? 24 : 16;
+  let headerBytes = planMode ? 24 : 16;
   let storage = new ArrayBuffer(headerBytes + (1 << 20));
   let view = new DataView(storage);
   let arenaBytes = new Uint8Array(storage);
@@ -227,7 +239,7 @@
   const bindGroupId = (v) => resourceId(v, v?._bindGroupId, "bind group");
   const renderBundleId = (v) => resourceId(v, v?._renderBundleId, "render bundle");
   const commandBufferId = (v) => {
-    if (planMode && v?.[wireIdKey] !== frameSerial)
+    if (frameScopedIds && v?.[wireIdKey] !== frameSerial)
       throw new TypeError("frame op stream: stale command buffer from an earlier frame");
     return resourceId(v, v?.__tnCommandBufferId, "command buffer");
   };
@@ -331,9 +343,9 @@
     const id = receiver?.[key];
     if (!Number.isSafeInteger(id) || id <= 0)
       throw new TypeError(`frame op stream: no ${label} receiver`);
-    // Only plan mode reuses wire ids across frames; without plans they stay monotonic and there is
-    // nothing a stale holder could alias, so the default path does not pay for the check.
-    if (planMode && receiver[wireIdKey] !== frameSerial)
+    // Automatic fallback still uses frame-local ids: wrappers must not alias a later frame's
+    // objects merely because that later frame chose a different transport.
+    if (frameScopedIds && receiver[wireIdKey] !== frameSerial)
       throw new TypeError(`frame op stream: stale ${label} from an earlier frame`);
     return id;
   };
@@ -1099,6 +1111,62 @@
     splitFrame = false;
     snapshotIndex = -1;
   };
+  // Called only at a real frame boundary, after the returned packet has been materialized.
+  // Selection uses counters already collected by recording; the direct path does not scan,
+  // hash, copy or retain its packet to decide whether to try plans on the next frame.
+  const finishFrame = (bodyBytes, usefulPatch = false) => {
+    if (automaticPlans) {
+      const eligible =
+        !splitFrame &&
+        opCount >= minPlanOps &&
+        bodyBytes <= maxPlanBytes &&
+        bodyBytes <= opCount * maxBytesPerPlanOp;
+      let nextMode = planMode;
+      if (planMode) {
+        planMisses = usefulPatch ? 0 : planMisses + 1;
+        // The initial capture gets one grace frame. Repeated captures, near-full patches,
+        // upload-heavy frames and partial readbacks are not profitable retained workloads.
+        if (!eligible || planMisses >= 2) {
+          nextMode = false;
+          retryAfter = retryFrames;
+          candidateFrames = 0;
+        }
+      } else if (retryAfter > 0) {
+        retryAfter -= 1;
+        candidateFrames = 0;
+      } else if (eligible) {
+        candidateFrames =
+          candidateOps === opCount && candidateBytes === bodyBytes ? candidateFrames + 1 : 1;
+        candidateOps = opCount;
+        candidateBytes = bodyBytes;
+        nextMode = candidateFrames >= 2;
+      } else {
+        candidateFrames = 0;
+      }
+      if (nextMode !== planMode) {
+        discardPlan();
+        planMode = nextMode;
+        headerBytes = planMode ? 24 : 16;
+        planMisses = 0;
+        if (!planMode) {
+          // A streaming/loading phase must not keep an abandoned retained plan and its
+          // snapshots alive indefinitely. The direct recorder only keeps its normal arena.
+          spare = null;
+          changed.length = 0;
+          planCodes = new Int32Array(0);
+          planValues = new Float64Array(0);
+          packet = new ArrayBuffer(0);
+          packetView = new DataView(packet);
+          packetBytes = new Uint8Array(packet);
+        }
+      }
+    }
+    resetFrame();
+    if (frameScopedIds) {
+      frameSerial += 1;
+      frameId = 0;
+    }
+  };
   // `partial` drains only up to the last clean cut, leaving a half-recorded encoder to keep
   // recording; the host passes it from `buffer.mapAsync`. The frame boundary passes nothing and
   // drains everything, exactly as before. `planEpoch` is the retained-plan generation the host
@@ -1108,11 +1176,7 @@
     const ops = partial ? safeOpCount : opCount;
     if (!ops) {
       // A fully consumed partial frame still has a real boundary: expire its wire wrappers.
-      if (planMode && !partial) {
-        resetFrame();
-        frameSerial += 1;
-        frameId = 0;
-      }
+      if (frameScopedIds && !partial) finishFrame(0);
       return null;
     }
     hostEpoch = planEpoch;
@@ -1147,6 +1211,7 @@
         return frame;
       }
       let frame = null;
+      let usefulPatch = false;
       // A frame that rewrote most of itself is cheaper to send whole than to diff, apply and carry:
       // the patch path would touch those bytes three times over, and the host already holds the
       // layout, so a capture costs one pass and keeps the plan in step with it. The floor is what
@@ -1163,6 +1228,10 @@
       ) {
         frame = buildPatch();
         if (frame !== null) {
+          usefulPatch =
+            packetView.getUint32(8, true) * 2 <= plan.size &&
+            changedCount * 2 <= opCount &&
+            writtenBytes * 2 <= plan.size;
           applyChanges();
           plan.sequence = planSequence + 1;
           planSequence += 1;
@@ -1186,15 +1255,12 @@
         adoptPlan(frame, cursor, headerBytes, opCount);
         if (previous !== null && previous !== storage) useArena(previous);
         else useArena(new ArrayBuffer(storage.byteLength));
-        resetFrame();
-        frameSerial += 1;
-        frameId = 0;
+        finishFrame(arenaBodyBytes);
         return frame;
       }
       if (frame === null) frame = assemblePacket(opCount, splitFrame);
-      resetFrame();
-      frameSerial += 1;
-      frameId = 0;
+      const bodyBytes = plan === null ? cursor - headerBytes : plan.size;
+      finishFrame(bodyBytes, usefulPatch);
       return frame;
     }
     // The v2 stream is the packet: its records start behind the header and the host reads the whole
@@ -1206,6 +1272,7 @@
     view.setUint32(8, end, true);
     view.setUint32(12, ops, true);
     const frame = storage;
+    if (partial) splitFrame = true;
     if (end < cursor) {
       // The host reads `frame` after this returns, so the bytes it was handed must not move: the
       // still-recording tail continues in a buffer of its own.
@@ -1219,12 +1286,17 @@
       safeOpCount = 0;
       return frame;
     }
-    cursor = 16;
-    opCount = 0;
-    openObjects = 0;
-    retained = [];
-    safeCursor = 16;
-    safeOpCount = 0;
+    if (!partial) {
+      finishFrame(end - 16);
+    } else {
+      // Consuming the submitted prefix is not permission to change modes or recycle ids.
+      cursor = 16;
+      opCount = 0;
+      openObjects = 0;
+      retained = [];
+      safeCursor = 16;
+      safeOpCount = 0;
+    }
     return frame;
   };
 };
