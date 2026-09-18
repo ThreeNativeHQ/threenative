@@ -762,9 +762,31 @@ reported as a deferred error rather than decoded on the frame thread (the same f
 `fix/native-perf-followups-clean`'s `bb97df99c`). Page frames reaching the game's frame across the
 startup went **from 12-14 to 57-63**, and the first seven seconds now update at ~10 fps.
 
-**The rest is the loader/pump change this PRD defers**, now with its cost named: one image
-completion callback that runs the game's own asset work for ~11 s, and the 16 s first-frame replay.
-A drain budget cannot split either, because the time is inside one callback and inside one frame.
+**The rest is not the loop, and that is now measured rather than assumed.** `TN_SLOW_END_FRAME`
+splits a slow frame boundary, and the game's longest freeze reads:
+
+```
+the loading screen froze for 16.2 s during the startup (from 13186 ms), against the 2.0 s this gate
+allows: 59 page frame(s) reached the game's frame in the whole startup, of which 16.0 s was the
+present waiting on the GPU queue and 0.1 s was the loop's own work
+```
+
+So the loop's own work inside the worst freeze is 0.1 s. The 16 s is `wgpuSurfacePresent`, and what
+is *inside* that wait is the next question, with the evidence for each side already gathered: the
+frame that blocks submits nothing (`replayMs: 0`), no single texture upload exceeds 50 ms, the
+game's uploads do not go through `copyExternalImageToTexture` or `writeTexture` at all on this path
+(measured — the meters stayed silent), and `--no-vsync` does not shorten it. That leaves the GPU
+queue draining or the display declining to hand back a swapchain image, and this lane cannot tell
+them apart: its display is Xvfb with a *software* compositor. A GPU-composited session would, which
+is AC-10's run.
+
+**Two engine-side costs found on the way and fixed.** `fillStyle` compiled a `std::regex` and
+`makeFillPaint` re-parsed the style string on every painted rectangle — 20.6 µs for a rect that sets
+`rgba(...)` against 2.3 µs for one that does not, on a game whose startup is ~1 M canvas operations
+and whose V8 profile put 55% of samples in canvas bindings. The parsed colour now lives in the
+context state and the numeric forms are scanned, not matched: 4.4 µs per such rect (4.7x), and the
+decode phase of the same startup went 7.5 s → 3.1 s. A drain budget still cannot split a single
+callback, which is why `TN_SLOW_DECODE_CALLBACK` exists to name one.
 
 ### The gate that can see it, since every other gate could not
 
