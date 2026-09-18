@@ -1,0 +1,119 @@
+name: PR 278 owner lifetime correction v2
+on:
+  push:
+    branches: [fix/native-perf-followups-clean]
+    paths: [.github/workflows/pr-278-owner-lifetime-v2.yml]
+permissions:
+  contents: write
+jobs:
+  correct-owner-lifetime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 3
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Apply owner-scoped async image callback lifetime fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 443f084a43b43e2c42ae3ec87386a9796eaa34ab
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          state = Path('packages/runtime-native/src/webgpu/bindings_state.h')
+          text = state.read_text()
+          engine_anchor = '    js::Engine* engine = nullptr;\n'
+          if text.count(engine_anchor) != 2:
+              raise SystemExit(f'bindings_state.h: expected two BindingsState engine fields, got {text.count(engine_anchor)}')
+          image_owner_field = '    std::shared_ptr<AsyncImageDecodeOwner> imageDecodeOwner =\n        std::make_shared<AsyncImageDecodeOwner>();\n'
+          text = text.replace(engine_anchor, engine_anchor + image_owner_field)
+          anchor = 'namespace mystral::webgpu {\n\n#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)\n'
+          owner = '''namespace mystral::webgpu {\n\n// Async image work outlives the BindingsState that queued it. Results retain this owner, never\n// the raw state pointer. Teardown invalidates it and releases each still-live JS callback while\n// the engine is valid; a later decoder drain only observes an inert owner.\nstruct AsyncImageDecodeCallback {\n    js::JSValueHandle handle{};\n    bool live = true;\n};\n\nstruct AsyncImageDecodeOwner {\n    std::atomic<bool> alive{true};\n    js::Engine* engine = nullptr;\n    std::vector<std::shared_ptr<AsyncImageDecodeCallback>> callbacks;\n};\n\n#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)\n'''
+          if text.count(anchor) != 1:
+              raise SystemExit('bindings_state.h: owner insertion anchor changed')
+          text = text.replace(anchor, owner, 1)
+          state.write_text(text)
+
+          replace_once(
+              'packages/runtime-native/src/webgpu/bindings.cpp',
+              '''void destroyBindingsState(BindingsState*& state) {\n    if (!state) return;\n    // Join the compile pool before anything it touches goes away. A worker holds `state` and the\n''',
+              '''void destroyBindingsState(BindingsState*& state) {\n    if (!state) return;\n    // Decoder workers never touch JS, but deferred completions may outlive this state. Invalidate\n    // their shared owner before any engine/state teardown; a later drain becomes a no-op.\n    auto imageDecodeOwner = state->imageDecodeOwner;\n    if (imageDecodeOwner) imageDecodeOwner->alive.store(false, std::memory_order_release);\n    // Join the compile pool before anything it touches goes away. A worker holds `state` and the\n''',
+          )
+          replace_once(
+              'packages/runtime-native/src/webgpu/bindings.cpp',
+              '''        if (state->engine) {\n            js::Engine* engine = state->engine;\n            state->engine = nullptr;\n            for (auto it = state->registries.protectedHandles.rbegin(); it != state->registries.protectedHandles.rend();\n''',
+              '''        if (state->engine) {\n            js::Engine* engine = state->engine;\n            if (imageDecodeOwner) {\n                for (const auto& callback : imageDecodeOwner->callbacks) {\n                    if (callback && callback->live) {\n                        engine->freeHandle(callback->handle);\n                        callback->live = false;\n                    }\n                }\n                imageDecodeOwner->callbacks.clear();\n                imageDecodeOwner->engine = nullptr;\n            }\n            state->engine = nullptr;\n            for (auto it = state->registries.protectedHandles.rbegin(); it != state->registries.protectedHandles.rend();\n''',
+          )
+          replace_once(
+              'packages/runtime-native/src/webgpu/bindings.cpp',
+              '''            auto callback = state->engine->retainHandle(args[1]);\n            AsyncImageDecoder::instance().decode(\n                std::move(bytes),\n                [state, callback](DecodedImage image) {\n                    auto* engine = state->engine;\n''',
+              '''            auto callback = std::make_shared<AsyncImageDecodeCallback>();\n            callback->handle = state->engine->retainHandle(args[1]);\n            auto owner = state->imageDecodeOwner;\n            owner->engine = state->engine;\n            owner->callbacks.push_back(callback);\n            AsyncImageDecoder::instance().decode(\n                std::move(bytes),\n                [owner, callback](DecodedImage image) {\n                    // Never dereference the old BindingsState: teardown can happen after queueing\n                    // and before this completion is drained, including across runtime recreation.\n                    if (!owner->alive.load(std::memory_order_acquire)) return;\n                    auto* engine = owner->engine;\n                    if (!engine || !callback->live) return;\n''',
+          )
+          replace_once(
+              'packages/runtime-native/src/webgpu/bindings.cpp',
+              '''                    engine->call(callback, engine->newUndefined(), {result, error});\n                    engine->freeHandle(callback);\n                });\n''',
+              '''                    engine->call(callback->handle, engine->newUndefined(), {result, error});\n                    // JS may synchronously destroy the runtime. Teardown then releases this handle\n                    // while the engine is still valid and marks the record dead.\n                    if (!owner->alive.load(std::memory_order_acquire) || !callback->live) return;\n                    engine->freeHandle(callback->handle);\n                    callback->live = false;\n                });\n''',
+          )
+
+          test_file = Path('packages/runtime-native/tests/async-image-decode.test.mjs')
+          text = test_file.read_text()
+          old_import = 'import { mkdtempSync, rmSync } from "node:fs";'
+          if text.count(old_import) != 1:
+              raise SystemExit('async-image-decode.test.mjs: import anchor changed')
+          text = text.replace(old_import, 'import { mkdtempSync, readFileSync, rmSync } from "node:fs";', 1)
+          saturation = '  ["saturation", "queue saturation rejects asynchronously instead of decoding on the frame thread"],\n'
+          if text.count(saturation) != 1:
+              raise SystemExit('async-image-decode.test.mjs: mode anchor changed')
+          text = text.replace(saturation, saturation + '  ["owner-lifetime", "a queued completion cannot use a destroyed owner after recreation"],\n', 1)
+          text += '''\n\ntest("bindings invalidate image-decode ownership before engine teardown", () => {\n  const stateSource = readFileSync(join(root, "src/webgpu/bindings_state.h"), "utf8");\n  const bindingsSource = readFileSync(join(root, "src/webgpu/bindings.cpp"), "utf8");\n  assert.match(stateSource, /std::shared_ptr<AsyncImageDecodeOwner> imageDecodeOwner/u);\n  const destroy = bindingsSource.indexOf("void destroyBindingsState");\n  const invalidate = bindingsSource.indexOf("imageDecodeOwner->alive.store(false", destroy);\n  const engineNull = bindingsSource.indexOf("state->engine = nullptr", destroy);\n  assert.ok(destroy >= 0 && invalidate > destroy && engineNull > invalidate);\n  const callback = bindingsSource.indexOf("[owner, callback](DecodedImage image)");\n  const gate = bindingsSource.indexOf("if (!owner->alive.load", callback);\n  const engineUse = bindingsSource.indexOf("auto* engine = owner->engine", callback);\n  assert.ok(callback >= 0 && gate > callback && engineUse > gate);\n  assert.equal(bindingsSource.indexOf("[state, callback](DecodedImage image)"), -1);\n});\n'''
+          test_file.write_text(text)
+
+          contract = Path('packages/runtime-native/tests/fixtures/async-image-decode/contract.cpp')
+          text = contract.read_text()
+          old_include = '#include <iostream>\n'
+          if text.count(old_include) != 1:
+              raise SystemExit('contract.cpp: include anchor changed')
+          text = text.replace(old_include, old_include + '#include <memory>\n#include <new>\n', 1)
+          tail = '''    require(rejected == 8, "overload did not reject exactly the excess queued decodes");\n}\n}  // namespace\n'''
+          inserted = '''    require(rejected == 8, "overload did not reject exactly the excess queued decodes");\n}\n\nvoid destroyedOwnerCannotBeReentered() {\n    auto& decoder = AsyncImageDecoder::instance();\n    struct Owner { int marker; };\n    alignas(Owner) unsigned char storage[sizeof(Owner)];\n    auto oldAlive = std::make_shared<std::atomic<bool>>(true);\n    auto* oldOwner = new (storage) Owner{7};\n    int staleCalls = 0;\n    decoder.decode({254}, [oldOwner, oldAlive, &staleCalls](DecodedImage) {\n        if (!oldAlive->load(std::memory_order_acquire)) return;\n        staleCalls += oldOwner->marker;\n    });\n    until([&] { return enteredCodec.load() >= 1; });\n\n    // Model BindingsState teardown, then recreate an owner at the same address before the old\n    // worker completes. A raw owner capture would now hit the replacement object on drain.\n    oldAlive->store(false, std::memory_order_release);\n    oldOwner->~Owner();\n    auto freshAlive = std::make_shared<std::atomic<bool>>(true);\n    auto* freshOwner = new (storage) Owner{11};\n    releaseCodec = true;\n    until([&] { return decoder.completed() >= 1; });\n    decoder.drain();\n    require(staleCalls == 0, "a queued completion reentered a destroyed/recreated owner");\n\n    int freshCalls = 0;\n    decoder.decode({1}, [freshOwner, freshAlive, &freshCalls](DecodedImage image) {\n        if (!freshAlive->load(std::memory_order_acquire)) return;\n        require(image.error.empty(), "replacement owner decode failed");\n        freshCalls += freshOwner->marker;\n    });\n    until([&] {\n        decoder.drain();\n        return freshCalls == 11;\n    });\n    freshAlive->store(false, std::memory_order_release);\n    freshOwner->~Owner();\n    decoder.shutdown();\n}\n}  // namespace\n'''
+          if text.count(tail) != 1:
+              raise SystemExit('contract.cpp: insertion anchor changed')
+          text = text.replace(tail, inserted, 1)
+          mode = '        else if (mode == "saturation") saturatedQueueDoesNotDecodeInline();\n'
+          if text.count(mode) != 1:
+              raise SystemExit('contract.cpp: dispatch anchor changed')
+          text = text.replace(mode, mode + '        else if (mode == "owner-lifetime") destroyedOwnerCannotBeReentered();\n', 1)
+          contract.write_text(text)
+          PY
+          git diff --check
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run focused regressions
+        run: |
+          set -euo pipefail
+          pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/async-image-decode.test.mjs tests/image-bitmap-polyfill.test.mjs
+          git diff --check
+      - name: Commit verified correction and remove temporary workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/fix/native-perf-followups-clean | cut -f1)" = "$GITHUB_SHA"
+          git add packages/runtime-native/src/webgpu/bindings_state.h packages/runtime-native/src/webgpu/bindings.cpp packages/runtime-native/tests/async-image-decode.test.mjs packages/runtime-native/tests/fixtures/async-image-decode/contract.cpp
+          git rm .github/workflows/pr-278-owner-lifetime.yml .github/workflows/pr-278-owner-lifetime-v2.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(native): scope async image callbacks to binding lifetime' -m 'Deferred decoder completions no longer capture a raw BindingsState. A shared owner is invalidated before engine teardown; still-live retained JS handles are released while the engine is valid, and later drains become no-ops. Add queue-destroy-recreate-drain regression coverage.'
+          git push origin HEAD:refs/heads/fix/native-perf-followups-clean
