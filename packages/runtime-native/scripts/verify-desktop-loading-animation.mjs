@@ -534,7 +534,10 @@ function judgeStartup(options, startup) {
     if (transition.exitCode !== 0) {
       // The runner's own words, not just its code: "request timed out" says the game stopped
       // answering, which is a different defect from a step asserting the wrong value.
-      const reason = /"message": "([^"]+)"/u.exec(transition.stdout ?? "")?.[1] ?? "no diagnostic in its console";
+      // The runner writes its JSON to either stream depending on the failure, and the console
+      // artifact holds both; a reader of the failure should not have to open the file for it.
+      const console_ = `${transition.stdout ?? ""}\n${transition.stderr ?? ""}`;
+      const reason = /"message":\s*"([^"]+)"/u.exec(console_)?.[1] ?? "no diagnostic in its console";
       failures.push(
         `the transition scenario failed with exit code ${transition.exitCode}: ${reason}`,
       );
