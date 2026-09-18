@@ -271,8 +271,12 @@ test.runIf(hasNativeToolchain)("non-Android Skia keeps the existing host layout"
 test("canvas2d.cpp uses Android system fonts, not Fontconfig or RefEmpty", () => {
   assert.match(canvas2d, /#include "include\/ports\/SkFontMgr_android\.h"/u);
   assert.match(canvas2d, /SkFontMgr_New_Android/u, "missing Android font-manager factory");
-  const initStart = canvas2d.indexOf("fontMgr = SkFontMgr_New_CoreText");
-  assert.notEqual(initStart, -1, "font-manager initialization missing");
+  // Anchored on the shared factory rather than on one assignment's spelling: the per-canvas
+  // `fontMgr = ...` moved into `sharedFontMgr()` so a font manager is process state instead of
+  // one per canvas. The claim below is unchanged - Android takes the Android branch, never
+  // Fontconfig and never an empty manager.
+  const initStart = canvas2d.indexOf("sk_sp<SkFontMgr> sharedFontMgr()");
+  assert.notEqual(initStart, -1, "shared font-manager factory missing");
   const initRegion = canvas2d.slice(initStart, initStart + 900);
   assert.match(initRegion, /defined\(__ANDROID__\)[\s\S]*SkFontMgr_New_Android/u);
   const androidBranch = initRegion.match(

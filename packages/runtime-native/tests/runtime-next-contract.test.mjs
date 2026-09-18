@@ -49,7 +49,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
   'install-async-pipelines.js': 'd58fb3fb55d24743273ea79f9ec72303a79ec91b322969d705a9f4d11ce47024',
-  'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
+  'image-bitmap-polyfill.js': '8b58401aab0f334113b11246c78aecf987ac029e70b49b41ded27c6a2225ee12',
   'webtransport-polyfill.js': '7a25c702d467985f89f3b8a6d4a3c222307397c22b9b76ed5381defefd8e8d32',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
   'audio-context-constructor.js': 'c3436f70b2597d2d953f780a3388c24b7e60fa3697796973d5002d0c378de227',
