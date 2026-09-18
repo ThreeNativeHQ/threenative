@@ -586,9 +586,16 @@ public:
 
     JSValueHandle newUndefined() override {
         V8EntryScope entry_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Undefined(isolate_));
-        frameHandles_.insert(persistent);
-        return {persistent, isolate_};
+        // One persistent, not one per call. Every binding that returns nothing used to take a
+        // pooled Persistent, `Reset` it, insert it into `frameHandles_` and have the trampoline
+        // erase and release it again — a canvas `fillRect` is exactly that, and a page painting
+        // procedurally calls it a million times at startup. A protected handle is skipped by the
+        // trampoline's release path, so this one outlives every call and is never pooled.
+        if (undefinedHandle_ == nullptr) {
+            undefinedHandle_ = acquirePersistent(isolate_, v8::Undefined(isolate_));
+            protectedHandles_.insert(undefinedHandle_);
+        }
+        return {undefinedHandle_, isolate_};
     }
 
     JSValueHandle newNull() override {
@@ -1948,6 +1955,9 @@ private:
         internedKeys_.emplace(name, v8::Global<v8::String>(isolate, key));
         return key;
     }
+
+    /** The one `undefined` this engine hands out; protected, so no call releases it. */
+    v8::Persistent<v8::Value>* undefinedHandle_ = nullptr;
 
     v8::Persistent<v8::Value>* acquirePersistent(v8::Isolate* isolate, v8::Local<v8::Value> value) {
         v8::Persistent<v8::Value>* persistent;
