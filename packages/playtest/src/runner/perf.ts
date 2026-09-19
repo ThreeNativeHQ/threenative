@@ -80,11 +80,20 @@ export interface IFrameSurfaceJson {
 }
 
 export interface IFrameBudgetWindowJson {
+  /**
+   * The loop's cadence. It is the display's where the loop presents every frame — the web, via rAF —
+   * and is inflated by the presentation-cap ratio where it does not, so prefer
+   * {@link presentedFps} whenever the engine reports it.
+   */
   readonly fps: number;
   readonly frames: number;
   readonly frame?: IPerfSummary;
   readonly hitches: number;
   readonly phases?: Readonly<Record<string, IPerfSummary>>;
+  /** Frames that reached the display in this window, when the host can count them. */
+  readonly presents?: number;
+  /** The rate those presents imply, over the window's own duration. */
+  readonly presentedFps?: number;
   readonly surface?: IFrameSurfaceJson;
   /** GPU milliseconds from `timestamp-query`, absent when the adapter has none. */
   readonly gpuMs?: number;
@@ -386,6 +395,8 @@ export function assessPerfMarkers(
   const discardedWindows = parse.budgets.slice(0, discardCount).map(({ window }) => window);
   const steady = parse.budgets.slice(discardCount);
   const violations: IPerfViolation[] = [];
+  /** Windows that counted presents but no present period long enough to carry a rate. */
+  const unassessableWindows: number[] = [];
   // A frame rate from a private Xvfb is wrong, not missing: without vsync the present wait lands
   // inside the update phase, and the same package's `trace` measured 13.3 fps there against 57.7
   // on the real display from one build. So the number is never presented, and an fps bound is
@@ -399,7 +410,12 @@ export function assessPerfMarkers(
     tick === undefined || !Number.isFinite(tick.frames) || tick.frames <= 0 || !Number.isFinite(tick.presents)
       ? undefined
       : tick.presents / tick.frames;
+  // A window that carries the display's own count has answered the question the tick ratio was
+  // standing in for: its `presentedFps` is the rate a player saw, so nothing is suppressed.
+  const windowsCarryPresents =
+    parse.budgets.length > 0 && parse.budgets.every((window) => Number.isFinite(window.presents));
   const unvouchableBy = (): string | undefined => {
+    if (windowsCarryPresents) return display?.virtual === true ? `a ${display.strategy} display` : undefined;
     if (presentsRatio !== undefined && presentsRatio < PRESENTS_REACHED_DISPLAY_RATIO) {
       return (
         `the host presented ${tick?.presents} of ${tick?.frames} loop frames` +
@@ -427,9 +443,36 @@ export function assessPerfMarkers(
     }
     // Only the frame-rate bound is unassessable here: a frame callback's own duration was still
     // measured, but the rate it was presented at was not.
-    if (bounds.minFps !== undefined && !virtualDisplay && window.fps < bounds.minFps) {
-      violations.push({ bound: bounds.minFps, code: "TN_PERF_MIN_FPS", observed: window.fps, window: window.window });
+    if (bounds.minFps !== undefined && !virtualDisplay) {
+      // Three cases, and they are not the same fact: a window carrying the display's own rate is
+      // assessed on it; a window that counted presents but none of them is too short to carry a
+      // rate at all; a window with no present series is assessed on the loop's cadence, as before.
+      const rate = window.presentedFps;
+      if (rate !== undefined) {
+        if (rate < bounds.minFps)
+          violations.push({ bound: bounds.minFps, code: "TN_PERF_MIN_FPS", observed: rate, window: window.window });
+      } else if (window.presents === undefined) {
+        if (window.fps < bounds.minFps)
+          violations.push({ bound: bounds.minFps, code: "TN_PERF_MIN_FPS", observed: window.fps, window: window.window });
+      } else {
+        unassessableWindows.push(window.window);
+      }
     }
+  }
+  // Every steady window counted presents and none of them presented anything: the display's rate
+  // was never measured in this run, so the bound is unassessable rather than passed. The same
+  // fail-closed rule the frame summary already follows.
+  if (
+    unassessableWindows.length > 0 &&
+    unassessableWindows.length === steady.length &&
+    bounds.minFps !== undefined
+  ) {
+    violations.push({
+      bound: bounds.minFps,
+      code: "TN_PERF_BOUNDS_NOT_ASSESSABLE",
+      observed: undefined,
+      window: -1,
+    });
   }
   return {
     budgets: parse.budgets,
@@ -695,7 +738,9 @@ export function formatPerfReport(report: IPerfReport): string {
     lines.push(
       [
         label.padEnd(7),
-        fpsSuppressed ? "".padEnd(7) : window.fps.toFixed(2).padEnd(7),
+        fpsSuppressed
+          ? "".padEnd(7)
+          : (window.presentedFps ?? (window.presents === 0 ? 0 : window.fps)).toFixed(2).padEnd(7),
         summary(window.frame).padEnd(16),
         summary(window.phases?.render).padEnd(16),
         summary(window.phases?.hostGap),
@@ -708,6 +753,15 @@ export function formatPerfReport(report: IPerfReport): string {
     );
   }
   if (report.discardedWindows.length > 0) lines.push("* discarded as startup (window 1 always lies)");
+  // A zero in the fps column is true and easy to misread as a frozen game: name the windows where
+  // the display simply showed nothing in a window of loop frames too short to contain a present.
+  const presentedNothing = report.budgets.filter((window) => window.presents === 0);
+  if (presentedNothing.length > 0) {
+    lines.push(
+      `windows ${presentedNothing.map((window) => window.window).join(", ")} presented nothing in their loop frames: ` +
+        "too short to contain a present, so their frame rate is unmeasured rather than zero",
+    );
+  }
   lines.push(...formatProjection(report.projections));
   const lastGap = report.hostGaps.at(-1);
   if (lastGap !== undefined) {

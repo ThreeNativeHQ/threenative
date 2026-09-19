@@ -2691,12 +2691,18 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     //
     // Note: PNG/JPEG supported via stb_image. WebP supported via libwebp (when MYSTRAL_HAS_WEBP defined).
 
-    // The presentation ceiling's named override (PRD-218).
+    // The presentation ceiling's named override (PRD-218), and the count of frames that actually
+    // reached the display, which the JavaScript frame budget reads so a window can report a rate the
+    // display saw rather than the loop's cadence.
     if (!installBindingTable(state->engine, state, bindingTable({
         {"WebGPU", "__tnPresentationCap", 0, nullptr,
         &handleWebGpuPresentationCap
+    , globalBindingHost},
+        {"WebGPU", "__tnPresentedCount", 0, nullptr,
+        &handleWebGpuPresentedCount
     , globalBindingHost}})) ||
-        !copyGlobalBinding(globalBindingHost, "__tnPresentationCap")) return false;
+        !copyGlobalBinding(globalBindingHost, "__tnPresentationCap") ||
+        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount")) return false;
 
     // Native helper that decodes image data off the frame thread
     if (!installBindingTable(state->engine, state, bindingTable({

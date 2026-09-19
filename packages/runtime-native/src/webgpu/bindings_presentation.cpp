@@ -809,6 +809,16 @@ void reportPresentTick(BindingsState* state, uint64_t frames) {
 #endif
 }
 
+js::JSValueHandle handleWebGpuPresentedCount(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    // Read-only count of the frames that reached the display. The JavaScript frame budget needs it
+    // because its callback runs once per raf dispatch while `paceToPresentationCap` paces the
+    // **present**, never the loop: a window that counted dispatches reported 2631 fps beside a host
+    // that presented 133 frames in 1740. A private diagnostic seam, like `__tnPresentationCap`.
+    (void)bindingDestination;
+    (void)args;
+    return state->engine->newNumber(static_cast<double>(state->profiling.presentCount));
+}
+
 js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
     // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
     // presents above the ceiling. This global is a private diagnostic seam; the supported

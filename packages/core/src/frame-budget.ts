@@ -197,6 +197,21 @@ export interface IFrameBudgetWindow {
    * counter only where the loop's cadence is the display's, as it is on the web via rAF.
    */
   readonly fps: number;
+  /**
+   * Frames that reached the display in this window, when the host reports them.
+   *
+   * Absent on the web, where rAF *is* the display's cadence and a second number would be the same
+   * one. On a native host the presentation cap lets the loop dispatch many times per present, so
+   * this is the count a player saw and `fps` is not. **Zero is a reading**: a window of loop frames
+   * can be shorter than one present period, and the display genuinely showed nothing in it.
+   */
+  readonly presents?: number;
+  /**
+   * Presents per second over this window's own duration. Absent when the window counted none —
+   * a rate needs at least one present, and a window too short to contain one carries no rate to
+   * assess rather than a zero.
+   */
+  readonly presentedFps?: number;
   /** Interval between loop frames — the honest frame period where the loop presents every frame. */
   readonly presented: IFrameBudgetSummary;
   /** Duration of the frame callback itself, entry to exit. */
@@ -270,6 +285,14 @@ export interface IFrameBudgetOptions {
    * loop, which is the only place that knows both the renderer and the window boundary.
    */
   readonly readSurface?: () => IFrameSurfaceState;
+  /**
+   * Frames the display has presented so far, when the platform can say.
+   *
+   * Defaults to the native host's `__tnPresentedCount`, whose presence is the whole signal: the
+   * web has no such seam and needs none. A counter that goes backwards or non-finite is ignored
+   * for the window rather than reported as a negative rate.
+   */
+  readonly readPresentCount?: () => number | undefined;
   /** Reads the successful GPU query frame age, not the age of the last resolve attempt. */
   readonly readGpuAgeFrames?: () => number | undefined;
 }
@@ -346,6 +369,24 @@ class Ring {
   }
 }
 
+/**
+ * The native host's presented-frame counter, when this build has one.
+ *
+ * `__tnPresentedCount` is a private diagnostic seam beside `__tnPresentationCap`; its *presence* is
+ * the signal, so the web returns `undefined` here and the window reports no present series at all
+ * rather than a zero. Read through a property lookup once, at construction: a per-frame lookup of a
+ * global is a per-frame megamorphic access for no gain.
+ */
+function hostPresentCountReader(): (() => number | undefined) | undefined {
+  const host = globalThis as { __tnPresentedCount?: unknown };
+  if (typeof host.__tnPresentedCount !== "function") return undefined;
+  const read = host.__tnPresentedCount as () => unknown;
+  return () => {
+    const value = read();
+    return typeof value === "number" ? value : undefined;
+  };
+}
+
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -396,6 +437,11 @@ export class FrameBudget {
   #framesInWindow = 0;
   #hitchesInWindow = 0;
   #windowIndex = 0;
+  #readPresentCount: (() => number | undefined) | undefined;
+  #lastPresentCount: number | undefined;
+  #presentsInWindow = 0;
+  #presentsUnreadable = false;
+  #firstFrameStart: number | undefined;
 
   constructor(options: IFrameBudgetOptions = {}) {
     this.reportEvery = requirePositiveInteger(
@@ -409,6 +455,7 @@ export class FrameBudget {
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
     this.#readSurface = options.readSurface;
+    this.#readPresentCount = options.readPresentCount ?? hostPresentCountReader();
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
@@ -447,6 +494,7 @@ export class FrameBudget {
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
     this.#frameStart = nowMs;
+    if (this.#firstFrameStart === undefined) this.#firstFrameStart = nowMs;
     this.#simulationEnd = undefined;
     this.#renderMs = 0;
     this.#overlayMs = 0;
@@ -552,6 +600,8 @@ export class FrameBudget {
     const frameMs = Math.max(0, nowMs - this.#frameStart);
     this.#lastFrameEnd = nowMs;
 
+    this.#countPresents();
+
     const isHitch = this.#presentedDelta >= this.hitchMs;
     if (isHitch) {
       this.#passesThisFrame.length = 0;
@@ -633,6 +683,13 @@ export class FrameBudget {
       throw new Error(
         `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,
       );
+    // The window's own duration, for a rate built from presents rather than from loop intervals.
+    const windowSpanMs = this.#windowSpanMs;
+    // A seam plus one readable sample: zero presents is a reading, absent is no seam. The
+    // unreadable flag clears itself on the next good sample, so a transient gap does not end the
+    // series for the rest of the run.
+    const presentCounted =
+      this.#readPresentCount !== undefined && this.#lastPresentCount !== undefined;
     const gpuSummary = this.#gpu.summarize(this.#scratch);
     const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
     return {
@@ -642,6 +699,10 @@ export class FrameBudget {
       hitches: this.#hitchesInWindow,
       phases,
       presented,
+      ...(presentCounted ? { presents: this.#presentsInWindow } : {}),
+      ...(presentCounted && this.#presentsInWindow > 0 && windowSpanMs > 0
+        ? { presentedFps: round((this.#presentsInWindow * 1_000) / windowSpanMs) }
+        : {}),
       shares: {
         hostGap: share(phases.hostGap.mean),
         overlay: share(phases.overlay.mean),
@@ -663,6 +724,38 @@ export class FrameBudget {
     };
   }
 
+  /**
+   * Folds the display's own present counter into this window.
+   *
+   * Read once per frame, at the frame's close, so the delta covers what the display did during it.
+   * A counter that went backwards (a host restarting its numbering) or is not finite is treated as
+   * a gap in the reading rather than as a negative rate; the window then reports no presents at all
+   * rather than a number built from a discontinuity.
+   */
+  /** Duration of the window's loop frames, first start to last end. */
+  get #windowSpanMs(): number {
+    if (this.#firstFrameStart === undefined || this.#lastFrameEnd === undefined) return 0;
+    return Math.max(0, this.#lastFrameEnd - this.#firstFrameStart);
+  }
+
+  #countPresents(): void {
+    const read = this.#readPresentCount;
+    if (read === undefined) return;
+    const count = read();
+    if (count === undefined || !Number.isFinite(count)) {
+      // One unreadable sample is not a broken counter: the reading resumes on the next frame, and
+      // the window still says what it counted.
+      this.#presentsUnreadable = true;
+      this.#lastPresentCount = undefined;
+      return;
+    }
+    this.#presentsUnreadable = false;
+    const previous = this.#lastPresentCount;
+    this.#lastPresentCount = count;
+    if (previous === undefined || count < previous) return; // first sample, or a restarted counter
+    this.#presentsInWindow += count - previous;
+  }
+
   #maybeReport(): void {
     if (this.#framesInWindow < this.reportEvery) return;
     const completed = this.window();
@@ -681,6 +774,8 @@ export class FrameBudget {
     }
     this.#framesInWindow = 0;
     this.#hitchesInWindow = 0;
+    this.#presentsInWindow = 0;
+    this.#firstFrameStart = undefined;
     // After the reset, so a consumer that changes the scene from this callback changes it for the
     // window that starts now rather than for the one just reported.
     this.#onWindow?.(completed);

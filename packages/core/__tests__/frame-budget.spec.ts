@@ -452,3 +452,121 @@ describe("FrameBudget pass split", () => {
     ).toThrow(/pass kind/u);
   });
 });
+
+describe("the display's own present counter", () => {
+  const CAP_60_FRAME = { ...DEVICE_FRAME, hostGap: 0.4, update: 0.2, render: 0.1, overlay: 0, residual: 0.1 };
+
+  /**
+   * Drives one window of `frameCount` loop frames spanning `spanMs` of clock, while the display
+   * presents one frame every `everyNth` loop frames.
+   */
+  function driveLoopFasterThanDisplay(
+    everyNth: number,
+    frameCount = 300,
+    spanMs = 1_000,
+  ): IFrameBudgetWindow {
+    let presents = 0;
+    let loopFrames = 0;
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      onWindow: (window) => windows.push(window),
+      readPresentCount: () => presents,
+      reportEvery: frameCount,
+    });
+    const clock = { now: 0, timestamp: 0 };
+    const perFrame = spanMs / frameCount;
+    for (let index = 0; index < frameCount; index += 1) {
+      loopFrames += 1;
+      if (loopFrames % everyNth === 0) presents += 1;
+      clock.now += perFrame;
+      clock.timestamp += perFrame;
+      budget.beginFrame(clock.timestamp, clock.now);
+      budget.markSimulationEnd(clock.now, 1);
+      budget.endFrame(clock.now);
+    }
+    const first = windows[0];
+    if (first === undefined) throw new Error("the budget reported no window");
+    return first;
+  }
+
+  it("reports the frames a player saw, not the frames the loop dispatched", () => {
+    // One present every thirteen loop frames is midway's native launch ratio (133 presents in 1740
+    // frames). The loop's cadence is what `fps` has always measured; this is what the display did.
+    const window = driveLoopFasterThanDisplay(13);
+    expect(window.frames).toBe(300);
+    expect(window.presents).toBe(23);
+    // 300 loop frames in one second is 300 fps as the window has always computed it…
+    expect(window.fps).toBeGreaterThan(299);
+    expect(window.fps).toBeLessThan(301);
+    // …and the display, at one present per thirteen of them, saw 23.
+    expect(window.presentedFps).toBeGreaterThan(22);
+    expect(window.presentedFps as number).toBeLessThan(24);
+    expect(window.presentedFps as number).toBeLessThan(window.fps);
+  });
+
+  it("says nothing about presents where the platform cannot count them", () => {
+    // No seam — the web, and every host without this binding. Absent, never zero: a zero would read
+    // as "the display presented nothing", which is the opposite of the fact.
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({ onWindow: (w) => windows.push(w), reportEvery: 300 });
+    const clock = { now: 0, timestamp: 0 };
+    for (let index = 0; index < 300; index += 1) driveFrame(budget, clock, DEVICE_FRAME);
+    expect(windows[0]?.presents).toBeUndefined();
+    expect(windows[0]?.presentedFps).toBeUndefined();
+  });
+
+  it("reports zero presents as a reading, and keeps counting after a gap", () => {
+    // A window of loop frames can be shorter than one present period: at 20000 fps, 300 frames is
+    // 15 ms, and the display may show nothing in it. Midway's own log had exactly that — window 1
+    // counted 119 presents, windows 2-5 counted none — and the first cut called all five absent.
+    let count = 0;
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      onWindow: (w) => windows.push(w),
+      readPresentCount: () => count,
+      reportEvery: 10,
+    });
+    const clock = { now: 0, timestamp: 0 };
+    for (let index = 0; index < 20; index += 1) {
+      clock.now += 1;
+      clock.timestamp += 1;
+      budget.beginFrame(clock.timestamp, clock.now);
+      budget.markSimulationEnd(clock.now, 1);
+      budget.endFrame(clock.now);
+    }
+    expect(windows.at(-1)?.presents).toBe(0);
+    expect(windows.at(-1)?.presentedFps).toBeUndefined();
+
+    count = 5;
+    for (let index = 0; index < 10; index += 1) {
+      clock.now += 1;
+      clock.timestamp += 1;
+      budget.beginFrame(clock.timestamp, clock.now);
+      budget.markSimulationEnd(clock.now, 1);
+      budget.endFrame(clock.now);
+    }
+    const last = windows.at(-1);
+    expect(last?.presents).toBe(5);
+    expect(last?.presentedFps).toBeGreaterThan(0);
+  });
+
+  it("ignores a counter that restarts instead of reporting a negative rate", () => {
+    let count = 500;
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      onWindow: (w) => windows.push(w),
+      readPresentCount: () => count,
+      reportEvery: 10,
+    });
+    const clock = { now: 0, timestamp: 0 };
+    for (let index = 0; index < 12; index += 1) {
+      driveFrame(budget, clock, DEVICE_FRAME);
+      count += 1;
+    }
+    count = 0; // the host restarted its numbering
+    for (let index = 0; index < 10; index += 1) driveFrame(budget, clock, DEVICE_FRAME);
+    const last = windows.at(-1);
+    expect(last?.presentedFps ?? 0).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(last?.presentedFps ?? 0)).toBe(true);
+  });
+});

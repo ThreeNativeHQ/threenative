@@ -665,3 +665,91 @@ describe("a loop cadence the display never saw", () => {
     expect(formatPerfReport(accepted)).toMatch(/^window\s+fps/mu);
   });
 });
+
+describe("a window that carries the display's own rate", () => {
+  const tick = 'TN_PRESENTS_TICK:{"frames":1740,"presents":133,"capHz":60}';
+  // What the engine reports once the host can count presents: the loop's cadence, and the rate the
+  // display actually ran at, side by side in one window.
+  const window = 'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"presents":18,"presentedFps":60.4,' +
+    '"fps":2631.58,"presented":{"samples":300,"mean":0.38,"p50":0.03,"p95":0.1,"p99":8.15,"max":47.77},' +
+    '"frame":{"samples":300,"mean":0.3,"p50":0.2,"p95":0.4,"p99":0.6,"max":1.0},' +
+    '"phases":{"render":{"samples":300,"mean":0.1,"p50":0.1,"p95":0.2,"p99":0.3,"max":0.4}}}';
+
+  it("prints the display's rate without suppressing it, even though the loop outran it", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, window].join("\n")),
+      { minFps: 55, requireWindows: 0 },
+      "test",
+    );
+    expect(report.display?.fpsSuppressed).not.toBe(true);
+    expect(report.violations).toEqual([]);
+    const text = formatPerfReport(report);
+    expect(text).toMatch(/^window\s+fps/mu);
+    expect(text).toContain("60.40");
+    expect(text).not.toContain("2631.58");
+  });
+
+  it("assesses the fps bound against the display's rate, not the loop's", () => {
+    // 60.4 clears a 55 bound. A 70 bound must fail on the display's rate even though the loop's
+    // 2631 would clear it — that is the whole reason the two are separate numbers.
+    const failing = assessPerfMarkers(
+      parsePerformanceMarkers([tick, window].join("\n")),
+      { minFps: 70, requireWindows: 0 },
+      "test",
+    );
+    expect(failing.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_MIN_FPS", observed: 60.4 }),
+    ]);
+  });
+});
+
+describe("windows too short to carry a display rate", () => {
+  const tick = 'TN_PRESENTS_TICK:{"frames":1740,"presents":133,"capHz":60}';
+  const zero = 'TN_FRAME_BUDGET:{"window":2,"frames":300,"hitches":0,"presents":0,"fps":20000,' +
+    '"presented":{"samples":300,"mean":0.05,"p50":0.03,"p95":0.1,"p99":1,"max":2},' +
+    '"frame":{"samples":300,"mean":0.04,"p50":0.02,"p95":0.08,"p99":1,"max":2},' +
+    '"phases":{"render":{"samples":300,"mean":0.01,"p50":0.01,"p95":0.02,"p99":0.1,"max":0.2}}}';
+  const rated = 'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"presents":18,"presentedFps":60.4,' +
+    '"fps":2631.58,"presented":{"samples":300,"mean":0.38,"p50":0.03,"p95":0.1,"p99":8.15,"max":47.77},' +
+    '"frame":{"samples":300,"mean":0.3,"p50":0.2,"p95":0.4,"p99":0.6,"max":1.0},' +
+    '"phases":{"render":{"samples":300,"mean":0.1,"p50":0.1,"p95":0.2,"p99":0.3,"max":0.4}}}';
+
+  it("prints a zero-present window as zero, never the loop's cadence", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, zero, rated].join("\n")),
+      { requireWindows: 0 },
+      "test",
+    );
+    const text = formatPerfReport(report);
+    const rows = text.split("\n").filter((line) => /^\d+\*?\s/.test(line));
+    expect(rows.some((row) => row.includes("0.00"))).toBe(true);
+    expect(rows.some((row) => row.includes("20000.00"))).toBe(false);
+    expect(report.display?.fpsSuppressed).not.toBe(true);
+    // A bare zero is true and reads as a frozen game, so the windows that had nothing to measure
+    // are named.
+    expect(text).toContain("windows 2 presented nothing in their loop frames");
+  });
+
+  it("refuses an fps bound when no window produced a rate, instead of passing it", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, zero].join("\n")),
+      { minFps: 55, requireWindows: 0 },
+      "test",
+    );
+    expect(report.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_BOUNDS_NOT_ASSESSABLE", bound: 55 }),
+    ]);
+    expect(report.pass).toBe(false);
+  });
+
+  it("assesses the bound on the windows that do carry a rate", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, zero, rated].join("\n")),
+      { minFps: 70, requireWindows: 0 },
+      "test",
+    );
+    expect(report.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_MIN_FPS", observed: 60.4, window: 3 }),
+    ]);
+  });
+});
