@@ -2347,6 +2347,33 @@ the phase baselines quoted in `packages/runtime-native/AGENTS.md` are unaffected
 seven tests in `packages/playtest/__tests__/perf.spec.ts`; rule recorded in
 `packages/playtest/AGENTS.md`.
 
+### 1.4.5 One marker name, two payloads, and a reader that printed `NaN` (2026-09-19)
+
+The native host emits `TN_FRAME_HITCH` once per 300-frame window
+(`{window,maxMs,maxAtFrame,p99Ms,p50Ms,…}`, `runtime-native/include/mystral/cold_start.h`). Core's own
+frame budget emits the **same marker** for a different event on every platform — one line the moment
+a present gap exceeds `hitchMs` (`{gapMs,uptimeMs,wallClock}`, `packages/core/src/frame-budget.ts`).
+`perf` parsed every line as a window.
+
+Measured on midway's native launch log (`artifacts/playtest/01-native-playtests-launch.playtest.json/console.json`,
+read with `perf --file`), which carried three gap lines of 2.1–3.0 s:
+
+```text
+hitch windows (post-launch, 3): worst NaN ms
+  late sync compile: unreported — this host predates the pipelineCompile fields (TN_FRAME_HITCH without them)
+```
+
+A maximum it never received, an explanation false for those lines, and the three-second stall — the
+thing worth knowing — discarded. The browser log from the same session lost `present gaps (1): worst
+3683.200 ms at uptime 7301 ms`, which is the launch stall PRD-394 exists for.
+
+Both series are read as what they measured now, and a line carrying neither shape throws
+`TN_PERF_MARKER_MALFORMED` naming the missing field instead of rendering `NaN`. Commit `c798bd21f`;
+four tests in `packages/playtest/__tests__/perf.spec.ts`; package suite 95 files / 1191 tests green.
+The marker collision itself is left in place deliberately: the game `tools/capture-battle-profile.mjs`
+and every recorded log read the gap payload under this name, so the reader discriminates rather than
+the emitter being renamed.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
