@@ -2303,6 +2303,17 @@ per-frame churn. The instrument is coarse at this scale, so read that as "no per
 site found in the loop", not as a proof of zero. What is left to attribute is the budget's
 per-*window* report path and the game's own step, and neither was chased here.
 
+**The projected-size gate is not the frame's hidden cost.** In the same browser profile the largest
+engine-owned self time was `RenderCameraCull`'s `#visit` (578 ms of a 20 s sample), and the gate does
+walk the whole scene every frame while its two siblings (`updateClusteredMeshes`, `updateModelLods`)
+iterate a tracked set. Measured in isolation instead — 19,446 objects with 4,276 renderables, the
+game's own census, `RenderCameraCull.apply` at `minimumPixels: 2` — it costs **0.42 ms per frame
+median**, of which the traverse itself is 0.27 ms. The profile figure was stall attribution: a
+handful of samples carried the ~350 ms wall-frame stalls the same capture reports, which is the
+reason a self-time leaderboard read from a GPU-bound profile is not CPU time. Replacing the walk
+with a maintained registry would save at most 0.27 ms/frame and add an index to keep correct across
+three scene seams, so it was not done.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
