@@ -35,6 +35,12 @@ export const PROJECTION_MARKER = "TN_PROJECTION:";
 export const HOST_GAP_MARKER = "TN_HOST_GAP:";
 export const HITCH_MARKER = "TN_FRAME_HITCH:";
 
+/**
+ * The host's own stall report, emitted after any phase that took at least 250 ms
+ * (`runtime-native/src/runtime.cpp`, `SlowPhaseWatch`). `atMs` is the phase's **end**.
+ */
+export const SLOW_PHASE_MARKER = "TN_SLOW_PHASE:";
+
 export interface IPerfSummary {
   readonly mean: number;
   readonly p50: number;
@@ -99,6 +105,13 @@ export interface IHitchWindowJson {
   readonly pipelineCompileCalls?: number;
 }
 
+/** A phase the native host watched take longer than its stall threshold. */
+export interface ISlowPhaseJson {
+  readonly atMs: number;
+  readonly ms: number;
+  readonly phase: string;
+}
+
 /** One present gap the JS frame budget reported, not a 300-frame window. */
 export interface IPresentGapJson {
   readonly gapMs: number;
@@ -141,6 +154,7 @@ export interface IPerfMarkerParse {
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
+  readonly slowPhases: readonly ISlowPhaseJson[];
 }
 
 /**
@@ -169,6 +183,7 @@ export interface IPerfReport {
   readonly presentGaps: readonly IPresentGapJson[];
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
+  readonly slowPhases: readonly ISlowPhaseJson[];
   readonly source: string;
   readonly violations: readonly IPerfViolation[];
 }
@@ -234,6 +249,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const budgetPayloads = new Set<string>();
   const hitches: IHitchWindowJson[] = [];
   const presentGaps: IPresentGapJson[] = [];
+  const slowPhases: ISlowPhaseJson[] = [];
   const hitchPayloads = new Set<string>();
   const hostGaps: IHostGapWindowJson[] = [];
   const projections: IProjectionWindowJson[] = [];
@@ -275,6 +291,8 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
         }
       }
     }
+    const slowPhase = parseMarkerLine<ISlowPhaseJson>(line, SLOW_PHASE_MARKER);
+    if (slowPhase !== undefined) slowPhases.push(slowPhase);
     const hostGap = parseMarkerLine<IHostGapWindowJson>(line, HOST_GAP_MARKER);
     if (hostGap !== undefined) hostGaps.push(hostGap);
     const projection = parseMarkerLine<IProjectionWindowJson>(line, PROJECTION_MARKER);
@@ -298,6 +316,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     presentGaps,
     presentMode,
     projections,
+    slowPhases,
   };
 }
 
@@ -371,6 +390,7 @@ export function assessPerfMarkers(
     pipelineCaches: parse.pipelineCaches ?? [],
     pass: violations.length === 0 && parse.budgets.length > 0,
     presentMode: parse.presentMode,
+    slowPhases: parse.slowPhases,
     projections: parse.projections,
     source,
     violations,
@@ -623,7 +643,7 @@ export function formatPerfReport(report: IPerfReport): string {
       lines.push(`  ${name.padEnd(16)}${segment.p50Ms.toFixed(3)}`);
     }
   }
-  lines.push(...formatHitches(report.hitches, report.presentGaps));
+  lines.push(...formatHitches(report.hitches, report.presentGaps, report.slowPhases));
   for (const violation of report.violations) {
     const observed = violation.observed === undefined ? "absent" : round(violation.observed).toString();
     lines.push(`FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}`);
@@ -688,9 +708,51 @@ function summary(summaryValue: IPerfSummary | undefined): string {
  * printed `worst NaN ms` beside a note blaming an older host, and threw away the only record of a
  * multi-second stall the launch had.
  */
+
+/**
+ * Which of the host's slow phases fall inside a present gap, innermost first.
+ *
+ * A gap spans `[uptimeMs - gapMs, uptimeMs]` — the budget notices at a present that the last one was
+ * that long ago. A phase spans `[atMs - ms, atMs]`, its `atMs` being the end. The host's outermost
+ * watcher brackets a whole iteration and therefore *contains* the phases inside it, so a containing
+ * phase is dropped whenever it also overlaps a phase it contains: naming `pollEvents` for a stall
+ * the host itself attributed to `imageDecodeDrain` would be the same empty answer as naming nothing.
+ */
+export function phasesWithinGap(
+  gap: IPresentGapJson,
+  slowPhases: readonly ISlowPhaseJson[],
+): ISlowPhaseJson[] {
+  const start = gap.uptimeMs - gap.gapMs;
+  const overlapping = slowPhases.filter(
+    (phase) => phase.atMs > start && phase.atMs - phase.ms < gap.uptimeMs,
+  );
+  const innermost = overlapping.filter(
+    (candidate) =>
+      !overlapping.some(
+        (other) =>
+          other !== candidate &&
+          other.atMs <= candidate.atMs &&
+          other.atMs - other.ms >= candidate.atMs - candidate.ms,
+      ),
+  );
+  const reportable = innermost.length > 0 ? innermost : overlapping;
+  return [...reportable].sort((left, right) => right.ms - left.ms).slice(0, 3);
+}
+
+function describeGap(gap: IPresentGapJson, slowPhases: readonly ISlowPhaseJson[]): string {
+  const phases = phasesWithinGap(gap, slowPhases);
+  if (phases.length === 0) {
+    return slowPhases.length === 0
+      ? "no slow phase reported in this log"
+      : "no slow phase fell inside it";
+  }
+  return phases.map((phase) => `${phase.phase} ${phase.ms.toFixed(3)} ms`).join(", ");
+}
+
 function formatHitches(
   hitches: readonly IHitchWindowJson[],
   presentGaps: readonly IPresentGapJson[] = [],
+  slowPhases: readonly ISlowPhaseJson[] = [],
 ): string[] {
   const lines: string[] = [];
   if (presentGaps.length > 0) {
@@ -700,6 +762,10 @@ function formatHitches(
       `present gaps (${presentGaps.length}): worst ${worst.toFixed(3)} ms at uptime ${at.uptimeMs.toFixed(0)} ms` +
         ` — one frame each, reported by the frame budget's own hitch threshold`,
     );
+    // The host watched the phases either side of those gaps and said so in another marker. Joining
+    // them is the difference between "3000 ms" and "3000 ms, and it was the image decode" — the
+    // engine's own stall report exists because a stall that names nothing is nobody's to fix.
+    for (const gap of presentGaps) lines.push(`  gap ${gap.gapMs.toFixed(3)} ms at uptime ${gap.uptimeMs.toFixed(0)} ms: ${describeGap(gap, slowPhases)}`);
   }
   if (hitches.length === 0) return lines;
   const windows = `hitch windows (post-launch, ${hitches.length}): worst ${Math.max(...hitches.map((h) => h.maxMs)).toFixed(3)} ms`;

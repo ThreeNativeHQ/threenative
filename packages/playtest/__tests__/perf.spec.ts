@@ -530,3 +530,64 @@ describe("the two TN_FRAME_HITCH payloads", () => {
     expect(() => parsePerformanceMarkers(bare)).toThrow(/TN_PERF_MARKER_MALFORMED:.*maxMs/u);
   });
 });
+
+describe("attributing a present gap to the host's own slow phases", () => {
+  // The real pair from midway's native launch log: the host attributed the stall to the image
+  // decode and its outer watcher bracketed the same stretch.
+  const neverMind = {
+    budgets: [],
+    discardedWindows: [],
+    hitches: [],
+    hostGaps: [],
+    pass: true,
+    presentGaps: [{ gapMs: 3000.14, uptimeMs: 10177.57 }],
+    presentMode: undefined,
+    projections: [],
+    slowPhases: [
+      { atMs: 9945.939384, ms: 2965.129, phase: "imageDecodeDrain" },
+      { atMs: 10419.748819, ms: 473.653, phase: "animationFrames" },
+      { atMs: 10438.395025, ms: 3457.714, phase: "pollEvents" },
+    ],
+    source: "test",
+    violations: [],
+  };
+
+  it("names the innermost phases, never the watcher that contains them", () => {
+    const text = formatPerfReport(neverMind);
+    expect(text).toContain("imageDecodeDrain 2965.129 ms");
+    expect(text).toContain("animationFrames 473.653 ms");
+    // `pollEvents` brackets the whole iteration: it contains both, so naming it says nothing.
+    expect(text).not.toContain("pollEvents");
+  });
+
+  it("says when a gap had no phase inside it, and when the log carries none at all", () => {
+    const none = { ...neverMind, slowPhases: [] };
+    expect(formatPerfReport({ ...none, presentGaps: [{ gapMs: 900, uptimeMs: 5000 }] })).toContain(
+      "no slow phase reported in this log",
+    );
+    const outsideOnly = { ...neverMind, presentGaps: [{ gapMs: 120, uptimeMs: 4000 }] };
+    expect(formatPerfReport(outsideOnly)).toContain("no slow phase fell inside it");
+  });
+
+  it("keeps its cap and its ordering when many phases overlap", () => {
+    // Nesting as the host really reports it: one watcher per iteration, containing the phases the
+    // iteration ran — plus a fourth phase whose span ends before the gap begins.
+    const many = {
+      ...neverMind,
+      slowPhases: [
+        { atMs: 9945.94, ms: 2965.13, phase: "outermostInner" },
+        { atMs: 10419.75, ms: 473.65, phase: "secondInner" },
+        { atMs: 10100, ms: 300, phase: "thirdInner" },
+        { atMs: 10438.4, ms: 3457.71, phase: "iterationWatcher" },
+        { atMs: 4000, ms: 500, phase: "beforeTheGap" },
+      ],
+    };
+    const line = formatPerfReport(many).split("\n").find((entry) => entry.includes("gap 3000.140"));
+    expect(line).toBeDefined();
+    expect(line).not.toContain("iterationWatcher");
+    expect(line).not.toContain("beforeTheGap");
+    expect(line?.match(/Inner/g)).toHaveLength(3);
+    expect(line?.indexOf("outermostInner")).toBeLessThan(line?.indexOf("secondInner") ?? 0);
+    expect(line?.indexOf("secondInner")).toBeLessThan(line?.indexOf("thirdInner") ?? 0);
+  });
+});
