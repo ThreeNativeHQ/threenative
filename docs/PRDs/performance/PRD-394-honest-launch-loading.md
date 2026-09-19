@@ -89,14 +89,40 @@ Three separate defects fall out of that:
       built and each is warmed once.
 - [x] Launch to `whenReady` on this desktop: **24.3 s -> 9.4 s**.
 - [ ] Nothing regresses: `pnpm test:templates` and midway's own playtests stay green.
+      Midway's half is green: all four browser scenarios (`midway-launches`, `midway-flight`,
+      `midway-briefing`, `midway-audio-realism`) pass with no console errors and no runtime
+      diagnostics, and on the desktop target `boot`, `launch`, `cockpit` and `ui` pass against a
+      host at the engine's version. `pnpm test:templates` has **not** been run for this branch.
 
 ### Phase 4 — Never ship a stale host again
 
-- [ ] `threenative doctor` fails when the installed `@threenative/runtime-native` prebuilt is older
+- [x] `threenative doctor` fails when the installed `@threenative/runtime-native` prebuilt is older
       than the installed `@threenative/core` contract it must satisfy (found the hard way: the
       published `runtime-native-v0.3.2` prebuilt predates PRD-393, so every scaffolded game built a
       desktop binary whose UI never appeared).
-- [ ] Red-green: doctor spec covers the stale-prebuilt case.
+      Landed as the host's own answer, because the package metadata was the thing that lied: the
+      installed prebuilt runs `--version` and answers `Mystral Native Runtime v0.3.0`, while
+      `install-status.json` beside it says 0.3.2 — reading the host is the only check that does not
+      trust a file about a binary nobody ran. Doctor fails when the reported runtime is older than
+      the newest of the installed engine and runtime packages, when the host names no version, and
+      when what it names cannot be compared.
+      Measured in `sandbox/midway-open-pacific`, `threenative doctor --text`:
+
+      | host installed | doctor | exit |
+      | --- | --- | --- |
+      | published prebuilt (v0.3.0), before this change | `✓ native runtime: available (linux-x64)` | 0 |
+      | published prebuilt (v0.3.0), after | `✗ … the linux-x64 host reports runtime v0.3.0, older than the installed engine 0.3.2` | 1 |
+      | a host at the engine's version | `✓ native runtime: available (linux-x64, host runtime v0.3.2)` | 0 |
+
+      The stale host is not a theory on this machine: with it, midway's native `launch`, `cockpit`,
+      `ui` and `native-select` scenarios all fail at `waitForResource ui.screens.flight` with
+      `frames 0` — the injected clicks never reach a UI that never composited. Rebuilt against a
+      host at the engine's version, `launch` (2011 frames), `cockpit` (1895) and `ui` (931) pass
+      with zero diagnostics. Commit `6571c4ed5`.
+- [x] Red-green: doctor spec covers the stale-prebuilt case.
+      `packages/create-threenative/__tests__/doctor.spec.ts`: the stale host, a host that names no
+      version, a prerelease beneath its own release, an equal and a newer host, an unparseable
+      version, and `probeNativeHost`'s own parse and spawn-failure paths. 97 tests green.
 
 ## Acceptance criteria
 
@@ -104,4 +130,6 @@ Three separate defects fall out of that:
 - [ ] The loading screen shows a moving percentage and the asset being loaded.
 - [ ] Midway's desktop launch is measurably faster than the 104 s baseline, re-measured on an idle
       GPU, with the number in this file.
-- [ ] `threenative doctor` rejects a prebuilt host older than the core it is installed beside.
+- [x] `threenative doctor` rejects a prebuilt host older than the core it is installed beside.
+      Red on the real project with the published prebuilt (exit 1, naming both versions), green with
+      a host at the engine's version — see Phase 4.
