@@ -336,6 +336,15 @@ async function loadBitmapTexture(url: string, renderer: unknown): Promise<Textur
   return texture;
 }
 
+/** True when the caller asked for per-asset timing; read once per settle, not per frame. */
+function assetTraceEnabled(): boolean {
+  return (globalThis as { __TN_ASSET_TRACE__?: unknown }).__TN_ASSET_TRACE__ === true;
+}
+
+function performanceNow(): number {
+  return globalThis.performance?.now() ?? Date.now();
+}
+
 function resourcePathOf(url: string): string {
   const slash = url.lastIndexOf("/");
   return slash === -1 ? "" : url.slice(0, slash + 1);
@@ -742,6 +751,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       },
       () => undefined,
     );
+    // Opt-in per-asset timing, off by default and free when off: a launch that is slow because of
+    // *which* asset is slow cannot be told from the group totals a game logs, and the engine is the
+    // only place that sees every settle. Set `globalThis.__TN_ASSET_TRACE__ = true` before boot.
+    const traceStart = assetTraceEnabled() ? performanceNow() : 0;
     const entry: IAssetEntry = {
       disposed: false,
       kind: kind as AssetKind,
@@ -767,6 +780,16 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       void weighed.then(() => {
         settledBytes += weight;
       });
+      if (traceStart !== 0) {
+        console.log(
+          `TN_ASSET:${JSON.stringify({
+            bytes: weight,
+            kind,
+            ms: Math.round((performanceNow() - traceStart) * 10) / 10,
+            path,
+          })}`,
+        );
+      }
     };
     entry.promise.then(note, note);
     cache.set(key, entry);
