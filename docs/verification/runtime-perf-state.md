@@ -2310,7 +2310,10 @@ iterate a tracked set. Measured in isolation instead — 19,446 objects with 4,2
 game's own census, `RenderCameraCull.apply` at `minimumPixels: 2` — it costs **0.42 ms per frame
 median**, of which the traverse itself is 0.27 ms. The profile figure was stall attribution: a
 handful of samples carried the ~350 ms wall-frame stalls the same capture reports, which is the
-reason a self-time leaderboard read from a GPU-bound profile is not CPU time. Replacing the walk
+reason a self-time leaderboard read from a GPU-bound profile is not CPU time. A live Chrome trace of
+the same game (`threenative-playtest trace`, 20 s, 135,784 events) agrees with the bench rather than
+with the profile: `#visit` is **2.3 % of sampled CPU**, behind three's own `_projectObject` (5.4 %)
+and `updateMatrixWorld` (3.8 %), with the main thread 49 % idle. Replacing the walk
 with a maintained registry would save at most 0.27 ms/frame and add an index to keep correct across
 three scene seams, so it was not done.
 
