@@ -91,8 +91,14 @@ Three separate defects fall out of that:
 - [ ] Nothing regresses: `pnpm test:templates` and midway's own playtests stay green.
       Midway's half is green: all four browser scenarios (`midway-launches`, `midway-flight`,
       `midway-briefing`, `midway-audio-realism`) pass with no console errors and no runtime
-      diagnostics, and on the desktop target `boot`, `launch`, `cockpit` and `ui` pass against a
-      host at the engine's version. `pnpm test:templates` has **not** been run for this branch.
+      diagnostics, and on the desktop target all ten native scenarios pass against a host at the
+      engine's version — including the two audio ones (`audio-sweep` 6631 frames, `speech-once` 2892).
+      `pnpm test:templates` was run and is **not** green: action-rpg, defense, minimal, puzzle,
+      runner, sailing and shooter pass, and `racing` fails one scenario
+      (`racing-touch-controls`: `TN_PLAYTEST_RESOURCE_STATE_STAGNATED`, "Resource 'state' path
+      'speed' did not change after the scenario moved the subject 0.055 units"). No template imports
+      `FlightModel`/`flightForces` or the doctor, so this branch's changes are not in that path — but
+      it was not re-run against a pre-change baseline, so that is an argument and not a measurement.
 
 ### Phase 4 — Never ship a stale host again
 
