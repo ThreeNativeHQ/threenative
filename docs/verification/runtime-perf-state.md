@@ -2314,6 +2314,35 @@ reason a self-time leaderboard read from a GPU-bound profile is not CPU time. Re
 with a maintained registry would save at most 0.27 ms/frame and add an index to keep correct across
 three scene seams, so it was not done.
 
+### 1.4.4 `perf` printed a frame rate from a display it cannot vouch for (2026-09-19)
+
+`threenative-playtest perf --executable` spawned the desktop host in whatever `DISPLAY` it inherited
+and printed that run's `fps` column — including a private Xvfb, where the same package's `trace`
+already refuses to print one, for a reason it measured: without vsync the present wait lands inside
+the update phase, and the number is wrong rather than missing (13.3 fps there against 57.7 on the
+real display, one build).
+
+Measured on midway's desktop build under the capture-lock Xvfb, one binary, one command:
+
+| window | fps | frame p50/p95 |
+| --- | ---: | --- |
+| 2 | 1123.60 | 0.0/0.0 |
+| 3 | 20000.00 | 0.0/0.0 |
+
+and `--min-fps 55` **passed, exit 0**. A bound satisfied by 20,000 fps is a green with nothing
+behind it, which is the failure mode this package's own doctrine — "a check that cannot run must
+fail, never skip" — exists to prevent.
+
+`perf --executable` now decides its display the way every other lane does, and when the operator did
+not ask for the host display it prints no frame rate, names the reason and both escapes, and refuses
+a `--min-fps` bound with `TN_PERF_VIRTUAL_DISPLAY` (exit 1). `--allow-virtual-display` accepts the
+run explicitly, the same flag `trace` takes. `--max-frame-p95` is untouched: the callback's own
+duration was measured, the rate it was presented at was not. `--file` and `--logcat` sources carry
+no display knowledge and keep their meaning, so the device lanes' `--logcat … --min-fps 60` flows and
+the phase baselines quoted in `packages/runtime-native/AGENTS.md` are unaffected. Commit `5ea4b9c76`;
+seven tests in `packages/playtest/__tests__/perf.spec.ts`; rule recorded in
+`packages/playtest/AGENTS.md`.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by

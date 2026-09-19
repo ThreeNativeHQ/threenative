@@ -108,7 +108,11 @@ without bounds the command reports and exits 0. The host's `Present mode:` line 
 when the host logs one. `--text` renders the human-readable table; default output is JSON.
 
 Desktop spawn under a headless session rides the same Xvfb rule as any pixel run:
-`sh scripts/xvfb.sh threenative-playtest perf --executable … --host-arg run --host-arg game.js …`.
+`sh scripts/xvfb.sh threenative-playtest perf --executable … --host-arg run --host-arg game.js …`,
+and that Xvfb is exactly the display whose frame rate cannot be trusted — such a run prints no
+`fps` column and refuses `--min-fps` (exit 1, `TN_PERF_VIRTUAL_DISPLAY`) unless the operator passes
+`--allow-virtual-display`. The phase and host-gap rows, which are what the native lane's baselines
+quote, are unaffected.
 The command never launches a browser — the browser lane already bounds performance through
 `assert.performance` — and it never tunes anything; it is a meter reader.
 
