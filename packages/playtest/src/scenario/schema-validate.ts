@@ -1009,10 +1009,10 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
 /** One cue-count claim: a label, and how many times it may or must have sounded. */
 export function validateAudioAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAudioAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["cue", "maxPlays", "minPlays"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["cue", "maxPlays", "minGapMs", "minPlays"], scenarioPath, objectPath);
   if (typeof record.cue !== "string" || record.cue.trim() === "")
     throw invalidScenario(scenarioPath, `Assertion '${objectPath}.cue' must be a non-empty string.`);
-  const bound = (name: "maxPlays" | "minPlays"): number | undefined => {
+  const bound = (name: "maxPlays" | "minGapMs" | "minPlays"): number | undefined => {
     const raw = record[name];
     if (raw === undefined) return undefined;
     if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0)
@@ -1021,6 +1021,7 @@ export function validateAudioAssertion(value: unknown, scenarioPath: string, obj
   };
   const minPlays = bound("minPlays");
   const maxPlays = bound("maxPlays");
+  const minGapMs = bound("minGapMs");
   if (minPlays !== undefined && maxPlays !== undefined && maxPlays < minPlays) {
     throw invalidScenario(
       scenarioPath,
@@ -1030,6 +1031,7 @@ export function validateAudioAssertion(value: unknown, scenarioPath: string, obj
   return {
     cue: record.cue,
     ...(maxPlays === undefined ? {} : { maxPlays }),
+    ...(minGapMs === undefined ? {} : { minGapMs }),
     ...(minPlays === undefined ? {} : { minPlays }),
   };
 }

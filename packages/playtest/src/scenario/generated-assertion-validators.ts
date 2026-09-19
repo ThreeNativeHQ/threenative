@@ -158,6 +158,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "cue": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minPlays": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
     "maxPlays": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "minGapMs": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
   }),
   "world": Object.freeze({
     "seed": (value: unknown) => true,

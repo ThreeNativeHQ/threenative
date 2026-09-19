@@ -397,6 +397,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Cue label the game passed to AudioBus.play/playAt.", name: "cue", required: true, type: "string" },
       { description: "Fewest plays required. Defaults to 1, so naming a cue asserts it was heard.", name: "minPlays", type: "non-negative integer" },
       { description: "Most plays allowed; 0 proves silence and 1 proves a one-shot stayed one.", name: "maxPlays", type: "non-negative integer" },
+      { description: "Fewest milliseconds between this cue and the cue played before it, so one line cannot cut another.", name: "minGapMs", type: "non-negative integer" },
     ],
     cardinality: "array",
     kind: "audio",

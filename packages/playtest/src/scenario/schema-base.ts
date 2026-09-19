@@ -527,6 +527,13 @@ export interface IPlaytestAudioAssertion {
   minPlays?: number;
   /** Most times it may have sounded. `0` proves silence; `1` proves a one-shot stayed one. */
   maxPlays?: number;
+  /**
+   * Fewest milliseconds that must separate this cue from the cue before it.
+   *
+   * One loudspeaker cannot say two things at once. A game whose urgent line cuts another 250 ms
+   * in sounds broken rather than urgent, and nothing but the gap between two plays shows it.
+   */
+  minGapMs?: number;
 }
 
 export interface IPlaytestScenarioAssertions {

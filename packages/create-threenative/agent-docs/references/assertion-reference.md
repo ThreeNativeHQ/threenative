@@ -685,6 +685,7 @@ play happened.
 | `cue` | string | yes |
 | `minPlays` | non-negative integer (defaults to 1) | no |
 | `maxPlays` | non-negative integer; 0 proves silence | no |
+| `minGapMs` | non-negative integer; fewest ms since the line before it | no |
 
 
 ```json
@@ -693,7 +694,8 @@ play happened.
     {
       "cue": "speech:p01",
       "minPlays": 1,
-      "maxPlays": 1
+      "maxPlays": 1,
+      "minGapMs": 500
     }
   ]
 }
