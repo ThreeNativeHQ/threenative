@@ -81,6 +81,13 @@ export interface IHostGapWindowJson {
  * One `TN_FRAME_HITCH` window from the native host: the first 300 presented frames after launch,
  * reported as a distribution. The `pipelineCompile` fields are PRD-327 Phase 4's late-sync-compile
  * attribution — absent on lines from hosts older than the field, which must still parse.
+ *
+ * **Two engine modules emit this marker name with different payloads.** The native host
+ * (`runtime-native/include/mystral/cold_start.h`) emits the window below; core's own frame budget
+ * (`packages/core/src/frame-budget.ts`, `endFrame`) emits `{ gapMs, uptimeMs, wallClock }` the
+ * moment a present gap exceeds `hitchMs`, on every platform. A reader that assumes one shape turns
+ * the other into an absent `maxMs` and prints `worst NaN ms` — measured on midway's native launch
+ * log, which carried three gap lines of 2.1-3.0 s beside the host's windows.
  */
 export interface IHitchWindowJson {
   readonly window: number;
@@ -90,6 +97,13 @@ export interface IHitchWindowJson {
   readonly p50Ms: number;
   readonly pipelineCompileMs?: number;
   readonly pipelineCompileCalls?: number;
+}
+
+/** One present gap the JS frame budget reported, not a 300-frame window. */
+export interface IPresentGapJson {
+  readonly gapMs: number;
+  readonly uptimeMs: number;
+  readonly wallClock?: number;
 }
 
 export type IPerfViolationCode =
@@ -121,6 +135,7 @@ export interface IProjectionWindowJson {
 export interface IPerfMarkerParse {
   readonly budgets: readonly IFrameBudgetWindowJson[];
   readonly hitches: readonly IHitchWindowJson[];
+  readonly presentGaps: readonly IPresentGapJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pipelineEvents: readonly IPipelineCaptureEvent[];
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
@@ -151,6 +166,7 @@ export interface IPerfReport {
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly display?: IPerfDisplay;
   readonly pass: boolean;
+  readonly presentGaps: readonly IPresentGapJson[];
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
   readonly source: string;
@@ -197,10 +213,27 @@ const PRESENT_MODE_PATTERN = /Present mode: (\S+ \(vsync=(?:true|false)\))/u;
  * counted as absent, because "absent" is itself a failure here and a silent drop would hide the
  * difference between the two.
  */
+/**
+ * Which of the two `TN_FRAME_HITCH` payloads this is.
+ *
+ * The gap shape is `{ gapMs, uptimeMs, wallClock }` and nothing else; the window shape carries
+ * `window` and a `maxMs`. A payload with neither is treated as a window so the window reader names
+ * the fields it is missing rather than this silently dropping the line.
+ */
+function isPresentGap(payload: IHitchWindowJson | IPresentGapJson): payload is IPresentGapJson {
+  const candidate = payload as Partial<IPresentGapJson> & Partial<IHitchWindowJson>;
+  return (
+    Number.isFinite(candidate.gapMs) &&
+    Number.isFinite(candidate.uptimeMs) &&
+    candidate.window === undefined
+  );
+}
+
 export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const budgets: IFrameBudgetWindowJson[] = [];
   const budgetPayloads = new Set<string>();
   const hitches: IHitchWindowJson[] = [];
+  const presentGaps: IPresentGapJson[] = [];
   const hitchPayloads = new Set<string>();
   const hostGaps: IHostGapWindowJson[] = [];
   const projections: IProjectionWindowJson[] = [];
@@ -219,13 +252,27 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
         budgets.push(budget);
       }
     }
-    const hitch = parseMarkerLine<IHitchWindowJson>(line, HITCH_MARKER);
+    const hitch = parseMarkerLine<IHitchWindowJson | IPresentGapJson>(line, HITCH_MARKER);
     if (hitch !== undefined) {
       // Same reason the budget lines are de-duplicated: Android mirrors console output twice.
       const payload = JSON.stringify(hitch);
       if (!hitchPayloads.has(payload)) {
         hitchPayloads.add(payload);
-        hitches.push(hitch);
+        // Two engine modules share this marker name: the native host's 300-frame window and core's
+        // own per-frame present gap. Reading every line as a window is what printed `worst NaN ms`.
+        if (isPresentGap(hitch)) {
+          presentGaps.push(hitch);
+        } else {
+          // Neither shape: the window reader would print a maximum it never received. Name the
+          // line instead — a marker that cannot be read is the finding, never a rendered number.
+          if (!Number.isFinite(hitch.maxMs)) {
+            throw new Error(
+              `TN_PERF_MARKER_MALFORMED: a ${HITCH_MARKER} line carries neither a present gap ` +
+                `(gapMs) nor a window's maxMs: ${line.trim()}`,
+            );
+          }
+          hitches.push(hitch);
+        }
       }
     }
     const hostGap = parseMarkerLine<IHostGapWindowJson>(line, HOST_GAP_MARKER);
@@ -242,7 +289,16 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     const mode = PRESENT_MODE_PATTERN.exec(line);
     if (mode?.[1] !== undefined) presentMode = mode[1];
   }
-  return { budgets, hitches, hostGaps, pipelineEvents, pipelineCaches: parsePipelineCacheObservations(text), presentMode, projections };
+  return {
+    budgets,
+    hitches,
+    hostGaps,
+    pipelineEvents,
+    pipelineCaches: parsePipelineCacheObservations(text),
+    presentGaps,
+    presentMode,
+    projections,
+  };
 }
 
 function parseMarkerLine<T>(line: string, marker: string): T | undefined {
@@ -310,6 +366,7 @@ export function assessPerfMarkers(
       : { display: { fpsSuppressed: virtualDisplay, strategy: display.strategy, virtual: display.virtual } }),
     hitches: parse.hitches,
     hostGaps: parse.hostGaps,
+    presentGaps: parse.presentGaps,
     pipelineEvents: parse.pipelineEvents,
     pipelineCaches: parse.pipelineCaches ?? [],
     pass: violations.length === 0 && parse.budgets.length > 0,
@@ -566,7 +623,7 @@ export function formatPerfReport(report: IPerfReport): string {
       lines.push(`  ${name.padEnd(16)}${segment.p50Ms.toFixed(3)}`);
     }
   }
-  lines.push(...formatHitches(report.hitches));
+  lines.push(...formatHitches(report.hitches, report.presentGaps));
   for (const violation of report.violations) {
     const observed = violation.observed === undefined ? "absent" : round(violation.observed).toString();
     lines.push(`FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}`);
@@ -623,11 +680,30 @@ function summary(summaryValue: IPerfSummary | undefined): string {
  * name. A host older than the field omits it and is named as such rather than read as a zero,
  * which is the same rule the gpu column follows.
  */
-function formatHitches(hitches: readonly IHitchWindowJson[]): string[] {
-  if (hitches.length === 0) return [];
-  const lines = [
-    `hitch windows (post-launch, ${hitches.length}): worst ${Math.max(...hitches.map((h) => h.maxMs)).toFixed(3)} ms`,
-  ];
+/**
+ * The two `TN_FRAME_HITCH` series, reported as what each one measured.
+ *
+ * A window is the host's distribution over its first 300 presented frames; a present gap is one
+ * frame the JS budget found more than `hitchMs` after the last. Folding the second into the first
+ * printed `worst NaN ms` beside a note blaming an older host, and threw away the only record of a
+ * multi-second stall the launch had.
+ */
+function formatHitches(
+  hitches: readonly IHitchWindowJson[],
+  presentGaps: readonly IPresentGapJson[] = [],
+): string[] {
+  const lines: string[] = [];
+  if (presentGaps.length > 0) {
+    const worst = Math.max(...presentGaps.map((gap) => gap.gapMs));
+    const at = presentGaps.reduce((best, gap) => (gap.gapMs >= best.gapMs ? gap : best));
+    lines.push(
+      `present gaps (${presentGaps.length}): worst ${worst.toFixed(3)} ms at uptime ${at.uptimeMs.toFixed(0)} ms` +
+        ` — one frame each, reported by the frame budget's own hitch threshold`,
+    );
+  }
+  if (hitches.length === 0) return lines;
+  const windows = `hitch windows (post-launch, ${hitches.length}): worst ${Math.max(...hitches.map((h) => h.maxMs)).toFixed(3)} ms`;
+  lines.push(windows);
   const named = hitches.filter((hitch) => (hitch.pipelineCompileCalls ?? 0) > 0);
   if (named.length === 0) {
     // A missing field and a measured zero are different facts: the first means the host predates

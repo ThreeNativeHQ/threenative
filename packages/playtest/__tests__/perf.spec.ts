@@ -482,3 +482,51 @@ describe("the GPU column never reads as a measured zero", () => {
     expect(text).not.toContain("gpu: not reported");
   });
 });
+
+describe("the two TN_FRAME_HITCH payloads", () => {
+  // The native host emits a 300-frame window; core's frame budget emits one line per present gap
+  // over `hitchMs` ({gapMs, uptimeMs, wallClock}) on every platform. Both carry the same marker.
+  const windowLine =
+    'TN_FRAME_HITCH:{"window":300,"maxMs":203.114,"maxAtFrame":41,"p99Ms":8.221,"p50Ms":7.940}';
+  const gapLines = [
+    'TN_FRAME_HITCH:{"gapMs":3000.14,"uptimeMs":10177.57,"wallClock":1789852713865}',
+    'TN_FRAME_HITCH:{"gapMs":2102.54,"uptimeMs":13362.72,"wallClock":1789852717050}',
+  ];
+
+  it("sorts a gap line into its own series rather than into the window series", () => {
+    const parsed = parsePerformanceMarkers([windowLine, ...gapLines].join("\n"));
+    expect(parsed.hitches).toHaveLength(1);
+    expect(parsed.presentGaps).toHaveLength(2);
+    expect(parsed.presentGaps[0]).toMatchObject({ gapMs: 3000.14, uptimeMs: 10177.57 });
+  });
+
+  it("reports a gap-only run as gaps, with no NaN and no misattributed reason", () => {
+    // Measured on midway's native launch log: three gap lines of 2.1-3.0 s beside the host's
+    // windows made this reader print `worst NaN ms` and blame an older host for fields that were
+    // never in the line.
+    const report = assessPerfMarkers(parsePerformanceMarkers(gapLines.join("\n")), { requireWindows: 0 }, "test");
+    const text = formatPerfReport(report);
+    expect(text).not.toContain("NaN");
+    expect(text).not.toContain("hitch windows");
+    expect(text).not.toContain("predates the pipelineCompile fields");
+    expect(text).toContain("present gaps (2): worst 3000.140 ms at uptime 10178 ms");
+  });
+
+  it("keeps the window figures and the compile note when both series are present", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([windowLine, ...gapLines].join("\n")),
+      { requireWindows: 0 },
+      "test",
+    );
+    const text = formatPerfReport(report);
+    expect(text).toContain("present gaps (2): worst 3000.140 ms");
+    expect(text).toContain("hitch windows (post-launch, 1): worst 203.114 ms");
+    // The window genuinely carries no compile fields, so this note is still the honest one.
+    expect(text).toContain("predates the pipelineCompile fields");
+  });
+
+  it("names a line that is neither shape instead of rendering a number it never received", () => {
+    const bare = 'TN_FRAME_HITCH:{"window":300,"maxAtFrame":41}';
+    expect(() => parsePerformanceMarkers(bare)).toThrow(/TN_PERF_MARKER_MALFORMED:.*maxMs/u);
+  });
+});
