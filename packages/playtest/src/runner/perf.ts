@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
+import { decideDisplayStrategy } from "./captureEnvironment.js";
 
 import { discoverAdb } from "./android.js";
 import { formatPipelineCacheObservations, parsePipelineCacheObservations, type IPipelineCacheObservation } from "./pipeline-cache-observations.js";
@@ -95,6 +96,7 @@ export type IPerfViolationCode =
   | "TN_PERF_BOUNDS_NOT_ASSESSABLE"
   | "TN_PERF_MAX_FRAME_P95"
   | "TN_PERF_MIN_FPS"
+  | "TN_PERF_VIRTUAL_DISPLAY"
   | "TN_PERF_WINDOWS_MISSING";
 
 export interface IPerfViolation {
@@ -126,6 +128,20 @@ export interface IPerfMarkerParse {
   readonly projections: readonly IProjectionWindowJson[];
 }
 
+/**
+ * What the run painted on, as far as the command can know.
+ *
+ * `virtual` means the operator never asked for the host display, so whatever this run drew on is a
+ * private Xvfb — the arrangement in which the present wait lands inside the engine's update phase
+ * and a frame rate is wrong rather than missing. `fpsSuppressed` says the report refused to print
+ * one, which the text output must state rather than leave as a blank column.
+ */
+export interface IPerfDisplay {
+  readonly fpsSuppressed: boolean;
+  readonly strategy: string;
+  readonly virtual: boolean;
+}
+
 export interface IPerfReport {
   readonly budgets: readonly IFrameBudgetWindowJson[];
   readonly discardedWindows: readonly number[];
@@ -133,6 +149,7 @@ export interface IPerfReport {
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pipelineEvents?: readonly IPipelineCaptureEvent[];
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
+  readonly display?: IPerfDisplay;
   readonly pass: boolean;
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
@@ -156,6 +173,8 @@ export function rankExactReasons(
 }
 
 export interface IPerfBounds {
+  /** Accept a frame rate measured on a private Xvfb, which the same package's `trace` never does. */
+  readonly allowVirtualDisplay?: boolean;
   readonly maxFrameMsP95?: number;
   readonly minFps?: number;
   readonly requireWindows: number;
@@ -247,11 +266,24 @@ function parseMarkerLine<T>(line: string, marker: string): T | undefined {
  * windows than `requireWindows` is a `TN_PERF_WINDOWS_MISSING` violation — the run did not
  * produce enough evidence to assess, which is a failure, not an empty pass.
  */
-export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, source: string): IPerfReport {
+export function assessPerfMarkers(
+  parse: IPerfMarkerParse,
+  bounds: IPerfBounds,
+  source: string,
+  display?: { readonly strategy: string; readonly virtual: boolean },
+): IPerfReport {
   const discardCount = parse.budgets.length > 1 ? 1 : 0;
   const discardedWindows = parse.budgets.slice(0, discardCount).map(({ window }) => window);
   const steady = parse.budgets.slice(discardCount);
   const violations: IPerfViolation[] = [];
+  // A frame rate from a private Xvfb is wrong, not missing: without vsync the present wait lands
+  // inside the update phase, and the same package's `trace` measured 13.3 fps there against 57.7
+  // on the real display from one build. So the number is never presented, and an fps bound is
+  // refused rather than satisfied by it — 16,666 fps passed a 60 bound on midway's desktop build.
+  const virtualDisplay = display?.virtual === true && bounds.allowVirtualDisplay !== true;
+  if (virtualDisplay && bounds.minFps !== undefined) {
+    violations.push({ bound: bounds.minFps, code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, window: -1 });
+  }
   if (steady.length < bounds.requireWindows) {
     violations.push({ bound: bounds.requireWindows, code: "TN_PERF_WINDOWS_MISSING", observed: steady.length, window: -1 });
   }
@@ -264,13 +296,18 @@ export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, 
         violations.push({ bound: bounds.maxFrameMsP95, code: "TN_PERF_MAX_FRAME_P95", observed: frameP95, window: window.window });
       }
     }
-    if (bounds.minFps !== undefined && window.fps < bounds.minFps) {
+    // Only the frame-rate bound is unassessable here: a frame callback's own duration was still
+    // measured, but the rate it was presented at was not.
+    if (bounds.minFps !== undefined && !virtualDisplay && window.fps < bounds.minFps) {
       violations.push({ bound: bounds.minFps, code: "TN_PERF_MIN_FPS", observed: window.fps, window: window.window });
     }
   }
   return {
     budgets: parse.budgets,
     discardedWindows,
+    ...(display === undefined
+      ? {}
+      : { display: { fpsSuppressed: virtualDisplay, strategy: display.strategy, virtual: display.virtual } }),
     hitches: parse.hitches,
     hostGaps: parse.hostGaps,
     pipelineEvents: parse.pipelineEvents,
@@ -292,13 +329,16 @@ export interface IPerfSources {
 
 export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
   const sources: IPerfSources = { hostArgs: [] };
-  const bounds: { maxFrameMsP95?: number; minFps?: number; requireWindows: number } = { requireWindows: 2 };
+  const bounds: { allowVirtualDisplay?: boolean; maxFrameMsP95?: number; minFps?: number; requireWindows: number } = {
+    requireWindows: 2,
+  };
   let text = false;
   let timeoutSeconds = 180;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (flag === "--text") text = true;
+    else if (flag === "--allow-virtual-display") bounds.allowVirtualDisplay = true;
     else if (flag === "--file") { sources.file = requireValue(flag, value); index += 1; }
     else if (flag === "--executable") { sources.executable = requireValue(flag, value); index += 1; }
     else if (flag === "--host-arg") {
@@ -322,6 +362,7 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     throw new PlaytestCliUsageError("threenative-playtest perf: --file, --executable and --logcat are mutually exclusive.");
   }
   return {
+    allowVirtualDisplay: bounds.allowVirtualDisplay === true,
     executable: sources.executable,
     file: sources.file,
     hostArgs: sources.hostArgs,
@@ -377,6 +418,9 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
 /** Spawn the host, collect its output, and stop once enough windows have closed. */
 async function runExecutable(args: IPerfArgs, executable: string): Promise<number> {
   const source = `executable: ${[executable, ...args.hostArgs].join(" ")}`;
+  // The same decision every other lane makes: the operator asked for the host display or this run
+  // paints on a private one. A run that owns its Xvfb cannot report a frame rate from it.
+  const strategy = decideDisplayStrategy({ env: process.env, platform: process.platform });
   const child = spawn(executable, args.hostArgs, { stdio: ["ignore", "pipe", "pipe"] });
   let collected = "";
   let stopped = false;
@@ -405,7 +449,10 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
     });
     child.on("exit", () => {
       clearTimeout(timeout);
-      const code = emit(parsePerformanceMarkers(collected), args, source);
+      const code = emit(parsePerformanceMarkers(collected), args, source, {
+        strategy: strategy.kind,
+        virtual: strategy.kind === "private-xvfb",
+      });
       process.exitCode = code;
       settleExit(code);
     });
@@ -421,8 +468,13 @@ async function readLogcat(serial: string): Promise<string> {
   return stdout;
 }
 
-function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string): number {
-  const report = assessPerfMarkers(parse, args, source);
+function emit(
+  parse: IPerfMarkerParse,
+  args: IPerfArgs,
+  source: string,
+  display?: { readonly strategy: string; readonly virtual: boolean },
+): number {
+  const report = assessPerfMarkers(parse, args, source, display);
   const windowsMissing = report.violations.some(({ code }) => code === "TN_PERF_WINDOWS_MISSING");
   const exitCode: 0 | 1 | 2 = windowsMissing ? 2 : report.pass ? 0 : 1;
   process.stdout.write(args.text ? formatPerfReport(report) : `${JSON.stringify(report, null, 2)}\n`);
@@ -473,15 +525,27 @@ export function formatPerfReport(report: IPerfReport): string {
         "'timestamp-query'. Check the TN_WEBGPU_FEATURES line in the same log for what it did grant.",
     );
   }
+  const fpsSuppressed = report.display?.fpsSuppressed === true;
+  if (fpsSuppressed) {
+    // Named, never blank: a missing column reads as a zero, and the number it would have carried is
+    // not zero — it is wrong. The phase rows below are unaffected and are what the native lane's
+    // baselines quote.
+    lines.push(
+      `fps suppressed: this run painted on a ${String(report.display?.strategy ?? "virtual")} display, where the ` +
+        "present wait lands inside the update phase and the frame rate is wrong rather than missing. " +
+        "Rerun with TN_PLAYTEST_HOST_DISPLAY=1 for a quotable frame rate, or pass " +
+        "--allow-virtual-display to accept the phase timings with it.",
+    );
+  }
   lines.push(
-    `window  fps     frame p50/p95    render p50/p95   hostGap p50/p95${anyGpu ? "  gpu ms" : ""}`,
+    `window  ${fpsSuppressed ? "        " : "fps     "}frame p50/p95    render p50/p95   hostGap p50/p95${anyGpu ? "  gpu ms" : ""}`,
   );
   for (const window of report.budgets) {
     const label = report.discardedWindows.includes(window.window) ? `${window.window}*` : String(window.window);
     lines.push(
       [
         label.padEnd(7),
-        window.fps.toFixed(2).padEnd(7),
+        fpsSuppressed ? "".padEnd(7) : window.fps.toFixed(2).padEnd(7),
         summary(window.frame).padEnd(16),
         summary(window.phases?.render).padEnd(16),
         summary(window.phases?.hostGap),

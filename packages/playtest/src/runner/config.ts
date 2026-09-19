@@ -125,6 +125,8 @@ export function formatUsage(): string {
     "                        with repeatable --host-arg, or --logcat <serial>",
     "                        bounds: --max-frame-p95 <ms>, --min-fps <fps>",
     "                        --require-windows <n> (default 2), --timeout <s>, --text",
+    "                        --allow-virtual-display accepts a run that owns an Xvfb; without it",
+    "                        such a run prints no frame rate and refuses a --min-fps bound",
     "  trace                 record a Chrome performance trace of a running game and name the",
     "                        functions inside its slow frames — a percentile says a frame was",
     "                        slow, a trace says which function. Take one BEFORE attributing any",

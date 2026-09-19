@@ -32,6 +32,14 @@ when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock stat
 either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper — never `xvfb-run`,
 whose exit status is its own failing cleanup kill rather than the command's.
 
+**A frame rate from that private Xvfb is wrong, not missing**, so no command may print one as
+though it were measured: without vsync the present wait lands inside the update phase (13.3 fps
+there against 57.7 on the real display, one build). `trace` never prints one; `perf --executable`
+refuses a `--min-fps` bound and suppresses the column under the same rule, and both accept
+`--allow-virtual-display` when the operator is deliberately reading phase timings alone. A
+`--min-fps` bound that can be satisfied by a number nobody can vouch for is a green with nothing
+behind it — midway's desktop build reported 20,000 fps and passed a 55 bound that way.
+
 In a scaffolded project the same CLI is `npx @threenative/playtest`, and `diagnostics`, console,
 network, screenshot and trace assertions work against any URL. The framework template installs the
 bridge with `playtest()` in `defineGame`; a plain Three.js project uses `installThreePlaytestBridge`

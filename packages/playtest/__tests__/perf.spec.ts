@@ -174,6 +174,90 @@ describe("assessPerfMarkers", () => {
   });
 });
 
+describe("a frame rate the run cannot vouch for", () => {
+  const VIRTUAL = { strategy: "private-xvfb", virtual: true } as const;
+  const HOST = { strategy: "host", virtual: false } as const;
+
+  it("refuses an fps bound on a private Xvfb instead of satisfying it with a wrong number", () => {
+    // Measured on midway's desktop build under the capture-lock Xvfb: window 2 reported 1123.60 fps
+    // and window 3 20000.00, and `--min-fps 55` PASSED. Same package's `trace` refuses to print a
+    // frame rate from a private display at all (13.3 fps there against 57.7 on the real one).
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL);
+    expect(report.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, bound: 55 }),
+    ]);
+    expect(report.pass).toBe(false);
+    expect(report.display).toEqual({ fpsSuppressed: true, strategy: "private-xvfb", virtual: true });
+  });
+
+  it("assesses the same bound when the operator acknowledges the display", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(
+      parsed,
+      { allowVirtualDisplay: true, minFps: 55, requireWindows: 2 },
+      "test",
+      VIRTUAL,
+    );
+    // The windows in this fixture are 20.55 and 20.9 fps, so the bound genuinely fails — the point
+    // is that it is assessed rather than refused, and the number is presented.
+    expect(report.violations.map(({ code }) => code)).toEqual(["TN_PERF_MIN_FPS", "TN_PERF_MIN_FPS"]);
+    expect(report.display).toEqual({ fpsSuppressed: false, strategy: "private-xvfb", virtual: true });
+  });
+
+  it("leaves a run on a vouched-for display exactly as it was", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test", HOST);
+    expect(report.violations).toEqual([]);
+    expect(report.display).toEqual({ fpsSuppressed: false, strategy: "host", virtual: false });
+    // A source that carries no display knowledge — a log file from elsewhere — is untouched.
+    expect(assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test").display).toBeUndefined();
+  });
+
+  it("still assesses a frame-duration bound, which the run did measure", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(parsed, { maxFrameMsP95: 45.0, requireWindows: 2 }, "test", VIRTUAL);
+    // Both steady windows carry a 45.7 ms frame p95, and a bound is checked against every steady
+    // window rather than the median — so two violations, and the frame rate never enters it.
+    expect(report.violations.map(({ code }) => code)).toEqual([
+      "TN_PERF_MAX_FRAME_P95",
+      "TN_PERF_MAX_FRAME_P95",
+    ]);
+    expect(report.pass).toBe(false);
+  });
+
+  it("prints no frame-rate column, and says why rather than leaving it blank", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const text = formatPerfReport(
+      assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL),
+    );
+    expect(text).toContain("fps suppressed");
+    expect(text).toContain("private-xvfb");
+    expect(text).toContain("TN_PLAYTEST_HOST_DISPLAY=1");
+    expect(text).toContain("--allow-virtual-display");
+    // The column header carries no `fps`, and no window row prints one.
+    expect(text).not.toMatch(/^window\s+fps/mu);
+    expect(text.split("\n").some((line) => /^\d+\*?\s+20\.\d/u.test(line))).toBe(false);
+    // The phase rows the native lane quotes are untouched.
+    expect(text).toContain("host gap segments");
+    expect(text).toContain("render p50/p95");
+  });
+
+  it("prints the frame rate again once the operator has acknowledged the display", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const text = formatPerfReport(
+      assessPerfMarkers(parsed, { allowVirtualDisplay: true, requireWindows: 2 }, "test", VIRTUAL),
+    );
+    expect(text).not.toContain("fps suppressed");
+    expect(text).toMatch(/^window\s+fps/mu);
+  });
+
+  it("parses the acknowledgement off the command line, defaulting to off", () => {
+    expect(parsePerfArgs(["--file", "a.log"]).allowVirtualDisplay).toBe(false);
+    expect(parsePerfArgs(["--file", "a.log", "--allow-virtual-display"]).allowVirtualDisplay).toBe(true);
+  });
+});
+
 describe("parsePerfArgs", () => {
   it("requires exactly one source", () => {
     expect(() => parsePerfArgs(["--text"])).toThrow(PlaytestCliUsageError);
