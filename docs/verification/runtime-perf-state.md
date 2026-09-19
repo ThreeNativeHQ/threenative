@@ -2267,6 +2267,42 @@ The surface marker, sRGB bridge and Android backend contracts pass their focused
 desktop native binary and the phone pair were not built in this attempt. Therefore no suspect has
 a measured `>=` or `< 2 ms` delta, and no product default changed.
 
+### 1.4.3 A per-aircraft step was 18x its own cost, in the object shape rather than the math (2026-09-19)
+
+Found by profiling the game, not by reading the engine. `midway-open-pacific`'s own fixed-step
+budget (68 airborne, p95 ≤ 4 ms) failed at **4.293 ms**. A V8 CPU profile of that run put **34% of
+all sampled CPU inside `flightForces`**, with line-level ticks concentrated on the return literal's
+property stores — `{ ...coeff, airspeed, alpha, … }`. A spread cannot use the boilerplate V8 gives a
+fixed literal; it goes through `CopyDataProperties`, property by property, twice per aircraft per
+step. After that literal was written out field by field, the next profile's hottest single line in
+the entire fixed step was `FlightModel.stepDeck`'s `{ ...this.environment, modifiers }`.
+
+Engine harness, `scripts/check-flight-cost.ts` (32 aircraft, 600 timed ticks, three runs a side),
+`--max-mean-ms 0.35`:
+
+| | mean step | p95 | exit | `finalStateSha256` |
+| --- | --- | --- | --- | --- |
+| as shipped | 0.805–0.824 ms | 1.95–2.15 ms | 1 | `bde0e51b5700123a…` |
+| forces literal written out | 0.089–0.094 ms | 0.14–0.18 ms | 0 | `bde0e51b5700123a…` |
+| + one step environment per model | 0.044–0.048 ms | 0.05–0.06 ms | 0 | `bde0e51b5700123a…` |
+
+The identical `finalStateSha256` at every step is the point: the physics did not move, so only the
+cost did. On the game's own gate the same two changes take the cap population from mean 2.154 ms /
+p95 4.293 ms (FAIL) to mean 0.669–0.698 ms / p95 1.07–1.22 ms (PASS, three runs), and the marginal
+cost at the top of the range from 30.9 to 8.7 µs per aircraft per step. Commits `b04b9d3a1`,
+`302780021`. Three cheaper explanations were measured and rejected first: `Math.hypot` in the same
+path is 1.09x here (not the 6.4x `ripple-field` saw), and an inlined coefficient writer with scratch
+vectors is 1.07x.
+
+**The remaining per-frame allocation is not in the loop.** §1.4.1 left "the remaining ~57 events'
+worth" unowned. Driving `FixedStepLoop.stepFrame` with `collectMetrics: false`, a no-op update and
+no-op render for 200,000 frames under `node --heap-prof --heap-prof-interval=2048` attributes about
+**4 B/frame** of sampled allocation, and the engine-attributed sites are single samples
+(`stepFrame` 11.1 KB, `FrameBudget.endFrame` 10.8 KB, `#recordFrameTiming` 7.4 KB) rather than
+per-frame churn. The instrument is coarse at this scale, so read that as "no per-frame allocation
+site found in the loop", not as a proof of zero. What is left to attribute is the budget's
+per-*window* report path and the game's own step, and neither was chased here.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
