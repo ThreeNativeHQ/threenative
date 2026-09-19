@@ -605,8 +605,18 @@ export interface IFlightModelOptions<TState extends IFlightState = IFlightState>
   readonly state: TState;
 }
 
+/** `IFlightEnvironment` with a writable `modifiers`, for the one record each model steps with. */
+interface IFlightStepEnvironment extends Omit<IFlightEnvironment, "modifiers"> {
+  modifiers?: IFlightModifiers;
+}
+
 /**
  * One aircraft's dynamics: a thin owner of a game-authored state object plus its environment.
+ *
+ * The step record copies the options' own fields once, at construction — so `airframe`, `wind`,
+ * `gravity` and `deckHeight` are read from the objects those fields reference, which stay live,
+ * but replacing a field on the options object afterwards is not observed. Change a model's airframe
+ * or deck by building it again, as a game that binds aircraft to carriers already does.
  *
  * @example
  * const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
@@ -616,10 +626,18 @@ export interface IFlightModelOptions<TState extends IFlightState = IFlightState>
 export class FlightModel<TState extends IFlightState = IFlightState> {
   readonly state: TState;
   readonly environment: IFlightEnvironment;
+  /**
+   * `environment` plus the modifiers of the step in flight: one record per model, written per call
+   * rather than spread per call. Spreading allocated a whole environment on every aircraft every
+   * fixed step, which was the single hottest line of Midway's step; the caller's own environment is
+   * never touched.
+   */
+  readonly #stepEnvironment: IFlightStepEnvironment;
 
   constructor(options: IFlightModelOptions<TState>) {
     this.state = options.state;
     this.environment = options;
+    this.#stepEnvironment = { ...options };
     initFlight(this.state, this.environment);
   }
 
@@ -640,7 +658,8 @@ export class FlightModel<TState extends IFlightState = IFlightState> {
   }
 
   forces(modifiers: IFlightModifiers = NEUTRAL_FLIGHT_MODIFIERS): IFlightForces {
-    return flightForces(this.state, { ...this.environment, modifiers });
+    this.#stepEnvironment.modifiers = modifiers;
+    return flightForces(this.state, this.#stepEnvironment);
   }
 
   step(
@@ -648,7 +667,8 @@ export class FlightModel<TState extends IFlightState = IFlightState> {
     controls: IFlightControls,
     modifiers: IFlightModifiers = NEUTRAL_FLIGHT_MODIFIERS,
   ): void {
-    stepFlight(this.state, dt, controls, { ...this.environment, modifiers });
+    this.#stepEnvironment.modifiers = modifiers;
+    stepFlight(this.state, dt, controls, this.#stepEnvironment);
   }
 
   stepDeck(
@@ -657,6 +677,7 @@ export class FlightModel<TState extends IFlightState = IFlightState> {
     controls: IFlightControls,
     modifiers: IFlightModifiers = NEUTRAL_FLIGHT_MODIFIERS,
   ): "liftoff" | "overrun" | null {
-    return stepDeck(this.state, deck, dt, controls, { ...this.environment, modifiers });
+    this.#stepEnvironment.modifiers = modifiers;
+    return stepDeck(this.state, deck, dt, controls, this.#stepEnvironment);
   }
 }
