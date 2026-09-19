@@ -188,7 +188,12 @@ describe("a frame rate the run cannot vouch for", () => {
       expect.objectContaining({ code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, bound: 55 }),
     ]);
     expect(report.pass).toBe(false);
-    expect(report.display).toEqual({ fpsSuppressed: true, strategy: "private-xvfb", virtual: true });
+    expect(report.display).toEqual({
+      fpsSuppressed: true,
+      reason: "a private-xvfb display",
+      strategy: "private-xvfb",
+      virtual: true,
+    });
   });
 
   it("assesses the same bound when the operator acknowledges the display", () => {
@@ -202,7 +207,12 @@ describe("a frame rate the run cannot vouch for", () => {
     // The windows in this fixture are 20.55 and 20.9 fps, so the bound genuinely fails — the point
     // is that it is assessed rather than refused, and the number is presented.
     expect(report.violations.map(({ code }) => code)).toEqual(["TN_PERF_MIN_FPS", "TN_PERF_MIN_FPS"]);
-    expect(report.display).toEqual({ fpsSuppressed: false, strategy: "private-xvfb", virtual: true });
+    expect(report.display).toEqual({
+      fpsSuppressed: false,
+      reason: "a private-xvfb display",
+      strategy: "private-xvfb",
+      virtual: true,
+    });
   });
 
   it("leaves a run on a vouched-for display exactly as it was", () => {
@@ -541,6 +551,7 @@ describe("attributing a present gap to the host's own slow phases", () => {
     hostGaps: [],
     pass: true,
     presentGaps: [{ gapMs: 3000.14, uptimeMs: 10177.57 }],
+    presents: [],
     presentMode: undefined,
     projections: [],
     slowPhases: [
@@ -589,5 +600,68 @@ describe("attributing a present gap to the host's own slow phases", () => {
     expect(line?.match(/Inner/g)).toHaveLength(3);
     expect(line?.indexOf("outermostInner")).toBeLessThan(line?.indexOf("secondInner") ?? 0);
     expect(line?.indexOf("secondInner")).toBeLessThan(line?.indexOf("thirdInner") ?? 0);
+  });
+});
+
+describe("a loop cadence the display never saw", () => {
+  // The host counts loop frames and presents separately; the presentation cap lets a loop iterate
+  // many times per present. These are midway's native launch numbers: 1740 frames, 133 presents,
+  // cap 60 Hz — beside a window this reader printed as 2631 fps.
+  const tick = 'TN_PRESENTS_TICK:{"frames":1740,"presents":133,"textureMB":886,"textures":221,"bufferMB":45,"capHz":60}';
+  const window = 'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"fps":2631.58,' +
+    '"presented":{"samples":300,"mean":0.38,"p50":0.03,"p95":0.1,"p99":8.15,"max":47.77},' +
+    '"frame":{"samples":300,"mean":0.3,"p50":0.2,"p95":0.4,"p99":0.6,"max":1.0},' +
+    '"phases":{"render":{"samples":300,"mean":0.1,"p50":0.1,"p95":0.2,"p99":0.3,"max":0.4}}}';
+
+  const report = (allowVirtualDisplay: boolean) =>
+    assessPerfMarkers(
+      parsePerformanceMarkers([tick, window].join("\n")),
+      { allowVirtualDisplay, minFps: 55, requireWindows: 0 },
+      "test",
+    );
+
+  it("refuses the frame rate and the fps bound the log cannot support", () => {
+    const refused = report(false);
+    expect(refused.display).toMatchObject({
+      fpsSuppressed: true,
+      reason: "the host presented 133 of 1740 loop frames (cap 60 Hz)",
+      virtual: false,
+    });
+    expect(refused.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_VIRTUAL_DISPLAY", bound: 55 }),
+    ]);
+    expect(refused.pass).toBe(false);
+    const text = formatPerfReport(refused);
+    expect(text).toContain("the host presented 133 of 1740 loop frames (cap 60 Hz)");
+    expect(text).not.toMatch(/^window\s+fps/mu);
+    // The phase rows the native lane quotes survive, and the window itself is still listed.
+    expect(text).toContain("render p50/p95");
+  });
+
+  it("prints the frame rate when the display saw every frame", () => {
+    const honest = 'TN_PRESENTS_TICK:{"frames":1740,"presents":1738,"capHz":60}';
+    const allowed = assessPerfMarkers(
+      parsePerformanceMarkers([honest, window].join("\n")),
+      { minFps: 55, requireWindows: 0 },
+      "test",
+    );
+    expect(allowed.display).toBeUndefined();
+    const text = formatPerfReport(allowed);
+    expect(text).toMatch(/^window\s+fps/mu);
+    // 2631 fps clears a 55 fps bound honestly here: this display really saw the frames.
+    expect(text).not.toContain("TN_PERF_VIRTUAL_DISPLAY");
+    expect(allowed.violations).toEqual([]);
+  });
+
+  it("lets the operator accept it explicitly, and still records what was accepted", () => {
+    const accepted = report(true);
+    expect(accepted.display).toMatchObject({
+      fpsSuppressed: false,
+      reason: "the host presented 133 of 1740 loop frames (cap 60 Hz)",
+    });
+    // 2631 loop fps clears a 55 fps bound; the acknowledgement is what makes that printable, and
+    // the report keeps the reason beside it.
+    expect(accepted.violations).toEqual([]);
+    expect(formatPerfReport(accepted)).toMatch(/^window\s+fps/mu);
   });
 });

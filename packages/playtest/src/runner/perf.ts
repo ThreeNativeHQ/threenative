@@ -41,6 +41,26 @@ export const HITCH_MARKER = "TN_FRAME_HITCH:";
  */
 export const SLOW_PHASE_MARKER = "TN_SLOW_PHASE:";
 
+/**
+ * The host's own frames-versus-presents counter (`runtime-native/src/webgpu/bindings_presentation.cpp`,
+ * `reportPresentTick`), emitted periodically on every platform.
+ *
+ * It is the only reading in a log that says whether the loop's cadence reached the display: the
+ * presentation cap lets a loop iterate many times per present, so a budget window's `fps` can be the
+ * loop's rate rather than the display's. Measured on midway's native launch: 1740 loop frames, 133
+ * presents, cap 60 Hz, beside a window reporting 2631 fps.
+ */
+export const PRESENTS_TICK_MARKER = "TN_PRESENTS_TICK:";
+
+export interface IPresentsTickJson {
+  readonly bufferMB?: number;
+  readonly capHz?: number;
+  readonly frames: number;
+  readonly presents: number;
+  readonly textureMB?: number;
+  readonly textures?: number;
+}
+
 export interface IPerfSummary {
   readonly mean: number;
   readonly p50: number;
@@ -153,6 +173,7 @@ export interface IPerfMarkerParse {
   readonly pipelineEvents: readonly IPipelineCaptureEvent[];
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly presentMode: string | undefined;
+  readonly presents: readonly IPresentsTickJson[];
   readonly projections: readonly IProjectionWindowJson[];
   readonly slowPhases: readonly ISlowPhaseJson[];
 }
@@ -167,9 +188,18 @@ export interface IPerfMarkerParse {
  */
 export interface IPerfDisplay {
   readonly fpsSuppressed: boolean;
+  /** Why the frame rate was not presented — a private display, or frames the host never presented. */
+  readonly reason?: string;
   readonly strategy: string;
   readonly virtual: boolean;
 }
+
+/**
+ * Below this share of loop frames reaching the display, the loop's cadence is not a frame rate a
+ * player would see. The presentation cap permits many iterations per present, so a loop spinning
+ * faster than the cap inflates `fps` by exactly that factor.
+ */
+export const PRESENTS_REACHED_DISPLAY_RATIO = 0.95;
 
 export interface IPerfReport {
   readonly budgets: readonly IFrameBudgetWindowJson[];
@@ -182,6 +212,7 @@ export interface IPerfReport {
   readonly pass: boolean;
   readonly presentGaps: readonly IPresentGapJson[];
   readonly presentMode: string | undefined;
+  readonly presents: readonly IPresentsTickJson[];
   readonly projections: readonly IProjectionWindowJson[];
   readonly slowPhases: readonly ISlowPhaseJson[];
   readonly source: string;
@@ -249,6 +280,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const budgetPayloads = new Set<string>();
   const hitches: IHitchWindowJson[] = [];
   const presentGaps: IPresentGapJson[] = [];
+  const presents: IPresentsTickJson[] = [];
   const slowPhases: ISlowPhaseJson[] = [];
   const hitchPayloads = new Set<string>();
   const hostGaps: IHostGapWindowJson[] = [];
@@ -291,6 +323,8 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
         }
       }
     }
+    const tick = parseMarkerLine<IPresentsTickJson>(line, PRESENTS_TICK_MARKER);
+    if (tick !== undefined) presents.push(tick);
     const slowPhase = parseMarkerLine<ISlowPhaseJson>(line, SLOW_PHASE_MARKER);
     if (slowPhase !== undefined) slowPhases.push(slowPhase);
     const hostGap = parseMarkerLine<IHostGapWindowJson>(line, HOST_GAP_MARKER);
@@ -315,6 +349,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     pipelineCaches: parsePipelineCacheObservations(text),
     presentGaps,
     presentMode,
+    presents,
     projections,
     slowPhases,
   };
@@ -355,7 +390,26 @@ export function assessPerfMarkers(
   // inside the update phase, and the same package's `trace` measured 13.3 fps there against 57.7
   // on the real display from one build. So the number is never presented, and an fps bound is
   // refused rather than satisfied by it — 16,666 fps passed a 60 bound on midway's desktop build.
-  const virtualDisplay = display?.virtual === true && bounds.allowVirtualDisplay !== true;
+  // A log says for itself whether the loop's cadence reached the display: the host counts loop
+  // frames and presents separately, and the presentation cap lets many frames pass between them.
+  // Midway's native launch: 1740 frames, 133 presents, cap 60 Hz, beside a window reporting 2631
+  // fps. That number is the loop's, not a player's, so it is not printed either.
+  const tick = parse.presents.at(-1);
+  const presentsRatio =
+    tick === undefined || !Number.isFinite(tick.frames) || tick.frames <= 0 || !Number.isFinite(tick.presents)
+      ? undefined
+      : tick.presents / tick.frames;
+  const unvouchableBy = (): string | undefined => {
+    if (presentsRatio !== undefined && presentsRatio < PRESENTS_REACHED_DISPLAY_RATIO) {
+      return (
+        `the host presented ${tick?.presents} of ${tick?.frames} loop frames` +
+        (tick?.capHz === undefined ? "" : ` (cap ${tick.capHz} Hz)`)
+      );
+    }
+    return display?.virtual === true ? `a ${display.strategy} display` : undefined;
+  };
+  const unvouchable = unvouchableBy();
+  const virtualDisplay = unvouchable !== undefined && bounds.allowVirtualDisplay !== true;
   if (virtualDisplay && bounds.minFps !== undefined) {
     violations.push({ bound: bounds.minFps, code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, window: -1 });
   }
@@ -380,12 +434,20 @@ export function assessPerfMarkers(
   return {
     budgets: parse.budgets,
     discardedWindows,
-    ...(display === undefined
-      ? {}
-      : { display: { fpsSuppressed: virtualDisplay, strategy: display.strategy, virtual: display.virtual } }),
+    ...(display !== undefined || unvouchable !== undefined
+      ? {
+          display: {
+            fpsSuppressed: virtualDisplay,
+            ...(unvouchable === undefined ? {} : { reason: unvouchable }),
+            strategy: display?.strategy ?? "host",
+            virtual: display?.virtual === true,
+          },
+        }
+      : {}),
     hitches: parse.hitches,
     hostGaps: parse.hostGaps,
     presentGaps: parse.presentGaps,
+    presents: parse.presents,
     pipelineEvents: parse.pipelineEvents,
     pipelineCaches: parse.pipelineCaches ?? [],
     pass: violations.length === 0 && parse.budgets.length > 0,
@@ -559,6 +621,17 @@ function emit(
   return exitCode;
 }
 
+
+function describeSuppression(report: IPerfReport): string {
+  const reason = report.display?.reason;
+  if (reason !== undefined) {
+    return reason.startsWith("the host presented")
+      ? `${reason} — the loop's cadence, not the display's`
+      : `this run painted on ${reason}, where the present wait lands inside the update phase`;
+  }
+  return "this run's frame rate could not be vouched for";
+}
+
 export function formatPerfReport(report: IPerfReport): string {
   const lines: string[] = [`perf — ${report.budgets.length} window(s) from ${report.source}`];
   lines.push(formatPipelineCacheObservations(report.pipelineCaches ?? []));
@@ -608,10 +681,10 @@ export function formatPerfReport(report: IPerfReport): string {
     // not zero — it is wrong. The phase rows below are unaffected and are what the native lane's
     // baselines quote.
     lines.push(
-      `fps suppressed: this run painted on a ${String(report.display?.strategy ?? "virtual")} display, where the ` +
-        "present wait lands inside the update phase and the frame rate is wrong rather than missing. " +
-        "Rerun with TN_PLAYTEST_HOST_DISPLAY=1 for a quotable frame rate, or pass " +
-        "--allow-virtual-display to accept the phase timings with it.",
+      `fps suppressed: ${describeSuppression(report)}, so the frame rate is not the one a player ` +
+        "would read. The phase rows below are unaffected. Rerun on the host display with " +
+        "TN_PLAYTEST_HOST_DISPLAY=1 for a quotable frame rate, or pass --allow-virtual-display to " +
+        "accept the phase timings with it.",
     );
   }
   lines.push(

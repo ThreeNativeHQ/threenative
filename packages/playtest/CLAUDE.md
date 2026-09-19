@@ -36,11 +36,15 @@ whose exit status is its own failing cleanup kill rather than the command's.
 
 **A frame rate from that private Xvfb is wrong, not missing**, so no command may print one as
 though it were measured: without vsync the present wait lands inside the update phase (13.3 fps
-there against 57.7 on the real display, one build). `trace` never prints one; `perf --executable`
-refuses a `--min-fps` bound and suppresses the column under the same rule, and both accept
+there against 57.7 on the real display, one build). `trace` never prints one. `perf` suppresses the
+column and refuses a `--min-fps` bound whenever the run's display is private (`--executable`) **or
+the log says for itself that the frames never reached the display**: the host counts loop frames and
+presents separately in `TN_PRESENTS_TICK`, and a loop the presentation cap outran inflates `fps` by
+exactly that ratio — midway's native launch log reported 2631 fps beside its own
+`{"frames":1740,"presents":133,"capHz":60}`, and passed a 55 fps bound. Both refusals take
 `--allow-virtual-display` when the operator is deliberately reading phase timings alone. A
 `--min-fps` bound that can be satisfied by a number nobody can vouch for is a green with nothing
-behind it — midway's desktop build reported 20,000 fps and passed a 55 bound that way.
+behind it — the desktop build above reported 20,000 fps that way.
 
 In a scaffolded project the same CLI is `npx @threenative/playtest`, and `diagnostics`, console,
 network, screenshot and trace assertions work against any URL. The framework template installs the
