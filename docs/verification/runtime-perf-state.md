@@ -2403,10 +2403,19 @@ refuses a `--min-fps` bound — when a log's own counter shows fewer than 95% of
 the display, quoting the counts, unless the operator passes `--allow-virtual-display`. Before that,
 `perf --file <native log> --min-fps 55` passed at 2631 fps. Commit `a85959e71`.
 
-**Open, named:** the *field* is still called `presented` in `IFrameBudgetWindow` on a platform where
-it counts loop iterations. Correcting that needs a host→core per-frame present signal — the host
-knows (its `presentCount` and `TN_SURFACE_FRAME` are present-gated) and core does not — so the
-reader's refusal is the honest stopgap, not the fix.
+**The claim is corrected; the counting is not.** `IFrameBudgetWindow.presented`/`fps` no longer say
+they measure presented frames — the interface states which interval it is, what inflates it, and
+that the host's own series is the display's (commit `d69c17355`). Counting *presents* instead needs a
+host→core per-frame present signal: the host knows (`presentCount` and `TN_SURFACE_FRAME` are
+present-gated) and core does not, and the one JS-visible seam that exists, `__tnPresentationCap`,
+reports only the ceiling.
+
+**A prerequisite for that fix, learned the hard way:** the reader's refusal keys off the log's own
+presents ratio, so a core that starts counting presents would report an honest `fps` beside an
+unchanged `TN_PRESENTS_TICK` ratio (the loop still iterates many times per present) and the reader
+would suppress a correct number. Any such change must also teach the reader **which basis a window
+counted** — a field on the window, not an inference from the log — or the tool lies in the opposite
+direction.
 
 ### 1.5 Untried, named
 
