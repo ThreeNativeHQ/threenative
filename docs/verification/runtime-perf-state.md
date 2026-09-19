@@ -2278,7 +2278,8 @@ step. After that literal was written out field by field, the next profile's hott
 the entire fixed step was `FlightModel.stepDeck`'s `{ ...this.environment, modifiers }`.
 
 Engine harness, `scripts/check-flight-cost.ts` (32 aircraft, 600 timed ticks, three runs a side),
-`--max-mean-ms 0.35`:
+`--max-mean-ms 0.35` — now reachable by name as **`pnpm check:flight-cost`**, whose red control is
+reintroducing the spread, which makes it exit 1:
 
 | | mean step | p95 | exit | `finalStateSha256` |
 | --- | --- | --- | --- | --- |
