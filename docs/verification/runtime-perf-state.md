@@ -2374,6 +2374,20 @@ The marker collision itself is left in place deliberately: the game `tools/captu
 and every recorded log read the gap payload under this name, so the reader discriminates rather than
 the emitter being renamed.
 
+The same command now joins the host's own stall report, `TN_SLOW_PHASE` (one line after any phase
+over 250 ms, `atMs` stamped at the phase's end), so a gap says what it was. On that log:
+
+```text
+present gaps (3): worst 3000.140 ms at uptime 10178 ms
+  gap 3000.140 ms at uptime 10178 ms: imageDecodeDrain 2965.129 ms, animationFrames 473.653 ms
+  gap 2102.540 ms at uptime 13363 ms: animationFrames 2040.518 ms
+  gap 2588.250 ms at uptime 18740 ms: animationFrames 2474.115 ms
+```
+
+A phase that merely contains another overlapping phase is not named — the host's `pollEvents` watcher
+brackets a whole iteration, and attributing a stall to it would be the empty answer this join exists
+to remove. Commit `bc4cf759d`; three tests use that log's own numbers and nesting.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
