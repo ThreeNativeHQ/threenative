@@ -171,16 +171,33 @@ export interface IFrameBudgetPassSummary {
   readonly triangles: IFrameBudgetSummary;
 }
 
+/**
+ * One reported window of the frame meter.
+ *
+ * **The cadence here is the loop's, not necessarily the display's.** `endFrame` is called once per
+ * frame the game's loop runs, and on the web that is one `requestAnimationFrame` per vblank, so the
+ * interval is a presented frame's. On a native host the loop's dispatch is what drives it — the host
+ * says so itself: "the JavaScript budget reads the same interval as presentedDelta"
+ * (`runtime-native/src/runtime.cpp`, `executeAnimationFrameCallbacks`). Its presentation cap paces
+ * the **present**, never the loop, so a loop that outruns 60 Hz iterates many times per present and
+ * this window's `fps` is inflated by exactly that ratio. Measured on midway's native launch:
+ * `fps 2631.58` beside the host's own `TN_PRESENTS_TICK:{"frames":1740,"presents":133,"capHz":60}`.
+ * The display's rate is the host's series; a reader that has both must not print this one as though
+ * it were a player's — `threenative-playtest perf` refuses to (`TN_PERF_VIRTUAL_DISPLAY`).
+ */
 export interface IFrameBudgetWindow {
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
-  /** Presented frames counted in this window, hitches excluded. */
+  /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
   /** Frames excluded from the window because their present gap exceeded `hitchMs`. */
   readonly hitches: number;
-  /** Derived from the mean presented interval: the number a player would read off a counter. */
+  /**
+   * Derived from the mean interval between loop frames. The number a player would read off a
+   * counter only where the loop's cadence is the display's, as it is on the web via rAF.
+   */
   readonly fps: number;
-  /** Interval between presented frames — the honest frame period. */
+  /** Interval between loop frames — the honest frame period where the loop presents every frame. */
   readonly presented: IFrameBudgetSummary;
   /** Duration of the frame callback itself, entry to exit. */
   readonly frame: IFrameBudgetSummary;
