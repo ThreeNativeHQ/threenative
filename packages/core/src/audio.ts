@@ -91,24 +91,43 @@ export interface IAudioRuntimeSnapshot {
   readonly unsupported: readonly string[];
 }
 
-const buses = new Set<AudioBus>();
-
 /**
- * The cue ledger, kept for the process rather than the bus.
+ * The live buses and the cue ledger, held on `globalThis` rather than in this module.
  *
- * Per-bus was the obvious place and the wrong one: a scene change disposes the bus and builds
- * another, so the counts reset exactly when the question is "did this one-shot line play again
- * after the restart". The question outlives the bus, so the ledger does too.
+ * Two reasons, and the second is why this is not over-engineering. The ledger has to outlive the
+ * bus, because a scene change disposes one and builds another and the question being asked is
+ * "did this one-shot line play again after the restart". And core ships one bundle per entry point
+ * with no shared chunks (`splitting: false`), so a game importing `@threenative/core` and
+ * `@threenative/core/playtest` loads **two copies of this module**, each with its own state: the
+ * playtest bridge runs in the second copy, so every audio observation it ever published — voices,
+ * pooled, paused, unsupported — described an empty registry no game had touched, and read as a
+ * clean zero rather than "not measured". State something else reads back has to outlive the copy
+ * it was written into.
  */
-const cueCounts = new Map<string, number>();
-let cueLog: Array<{ atMs: number; cue: string }> = [];
+const AUDIO_STATE = Symbol.for("threenative.audio.runtime");
+
+interface IAudioRuntimeState {
+  readonly buses: Set<AudioBus>;
+  readonly cueCounts: Map<string, number>;
+  cueLog: Array<{ atMs: number; cue: string }>;
+}
+
+function audioState(): IAudioRuntimeState {
+  const host = globalThis as Record<symbol, unknown>;
+  const existing = host[AUDIO_STATE] as IAudioRuntimeState | undefined;
+  if (existing !== undefined) return existing;
+  const created: IAudioRuntimeState = { buses: new Set(), cueCounts: new Map(), cueLog: [] };
+  host[AUDIO_STATE] = created;
+  return created;
+}
 
 /** Records one labelled cue. Bounded: a session that plays for hours keeps the last 200. */
 function noteCue(cue: string | undefined): void {
   if (cue === undefined || cue.length === 0) return;
-  cueCounts.set(cue, (cueCounts.get(cue) ?? 0) + 1);
-  cueLog.push({ atMs: Math.round(globalThis.performance?.now() ?? Date.now()), cue });
-  if (cueLog.length > 200) cueLog = cueLog.slice(-200);
+  const state = audioState();
+  state.cueCounts.set(cue, (state.cueCounts.get(cue) ?? 0) + 1);
+  state.cueLog.push({ atMs: Math.round(globalThis.performance?.now() ?? Date.now()), cue });
+  if (state.cueLog.length > 200) state.cueLog = state.cueLog.slice(-200);
 }
 
 /**
@@ -118,8 +137,9 @@ function noteCue(cue: string | undefined): void {
  * @example resetAudioCueLedger();
  */
 export function resetAudioCueLedger(): void {
-  cueCounts.clear();
-  cueLog = [];
+  const state = audioState();
+  state.cueCounts.clear();
+  state.cueLog = [];
 }
 
 const DEFAULT_MAX_VOICES = 48;
@@ -208,7 +228,7 @@ export class AudioBus {
     for (const event of ["keydown", "pointerdown", "touchstart"] as const) {
       this.#gestureTarget?.addEventListener(event, this.#gesture);
     }
-    buses.add(this);
+    audioState().buses.add(this);
   }
 
   get queued(): number {
@@ -446,7 +466,7 @@ export class AudioBus {
       if (this.#gesture !== undefined)
         this.#gestureTarget?.removeEventListener(event, this.#gesture);
     }
-    buses.delete(this);
+    audioState().buses.delete(this);
   }
 
   #queueOrStart(entry: PooledVoice, options: IAudioPlayOptions): void {
@@ -681,7 +701,8 @@ export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
   let pooled = 0;
   let paused = 0;
   const unsupported = new Set<string>();
-  for (const bus of buses) {
+  const state = audioState();
+  for (const bus of state.buses) {
     queued += bus.queued;
     voices += bus.voices;
     pooled += bus.pooled;
@@ -689,11 +710,11 @@ export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
     for (const option of bus.unsupported) unsupported.add(option);
   }
   return {
-    cues: Object.fromEntries(cueCounts),
+    cues: Object.fromEntries(state.cueCounts),
     paused,
     pooled,
     queued,
-    recentCues: cueLog.map((entry) => ({ ...entry })),
+    recentCues: state.cueLog.map((entry) => ({ ...entry })),
     unsupported: [...unsupported].sort(),
     voices,
   };

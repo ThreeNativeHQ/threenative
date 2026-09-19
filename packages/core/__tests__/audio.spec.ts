@@ -660,4 +660,28 @@ describe("AudioBus", () => {
       bus.dispose();
     }
   });
+  it("keeps its registry on the realm, so a second copy of this module sees the same buses", async () => {
+    audioContext(true);
+    resetAudioCueLedger();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.play(buffer, { cue: "P01" });
+
+      // Core ships one bundle per entry with no shared chunks, so a game importing both
+      // `@threenative/core` and `@threenative/core/playtest` loads this module twice. The playtest
+      // bridge runs in the second copy: with module-level state it observed its own empty registry
+      // and reported zero voices and no cues for a game that was playing audio the whole time.
+      const path = new URL("../src/audio.js", import.meta.url).href;
+      const second = (await import(
+        /* @vite-ignore */ `${path}?copy=${Date.now()}`
+      )) as typeof import("../src/audio.js");
+      expect(second).not.toBe(await import("../src/audio.js"));
+      expect(second.audioRuntimeSnapshot().voices).toBe(audioRuntimeSnapshot().voices);
+      expect(second.audioRuntimeSnapshot().cues).toEqual({ P01: 1 });
+    } finally {
+      bus.dispose();
+    }
+  });
 });
