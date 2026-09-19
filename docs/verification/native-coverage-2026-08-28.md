@@ -9,29 +9,24 @@ targets could not be built and are named below.
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
 | `src/audio/` | 1053 | 919 | 87.27% |
-| `src/canvas/` | 1293 | 1039 | 80.36% |
-| `src/cli/` | 1622 | 1214 | 74.85% |
+| `src/canvas/` | 1334 | 1110 | 83.21% |
+| `src/cli/` | 1622 | 1197 | 73.80% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2632 | 2199 | 83.55% |
-| `src/platform/` | 1063 | 873 | 82.13% |
+| `src/js/` | 2634 | 2203 | 83.64% |
+| `src/platform/` | 1236 | 895 | 72.41% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2295 | 1823 | 79.43% |
+| `src/runtime.cpp` | 2314 | 1840 | 79.52% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 8740 | 6926 | 79.24% |
-| `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **22476** | **18128** | **80.65%** |
+| `src/webgpu/` | 9328 | 7109 | 76.21% |
+| `src/webtransport/` | 1391 | 1073 | 77.14% |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **23299** | **18400** | **78.97%** |
 
-Source digest: `sha256:3edd6fb72d5e858776050626c186cd33287756131946ac2230b883fcc1ee7358`
-
-> Merged 2026-09-17: the tables below are the last real `native:coverage` measurement (develop),
-> and the digest is the merged tree's. Regenerate with
-> `pnpm --filter @threenative/runtime-native native:coverage` to replace the rows with a
-> measurement of this tree; the gate checks the digest and the floors, not the row values.
+Source digest: `sha256:1b3414f726f07ef28188892797205fc33d8e9e52b1da5c70995a8266f7d738dc`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
