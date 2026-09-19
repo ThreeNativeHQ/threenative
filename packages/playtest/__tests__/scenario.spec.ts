@@ -588,6 +588,7 @@ test("preflight requirements derive from the registries", () => {
 const FAMILY_SCENARIO_ASSERTS = {
   aerodynamics: [{ controls: [{ sign: "positive", surface: "elevator" }], entity: "aircraft", minForceSamples: 1 }],
   animation: [{ advancedFrames: 2, clip: "run", entity: "player" }],
+  audio: [{ cue: "speech:p01", maxPlays: 1, minPlays: 1 }],
   camera: { entity: "camera.main", follows: "player", targetInViewport: true },
   components: [{ changed: true, component: "health", entity: "player", equals: 2 }],
   contacts: [{ entity: "fox", kind: "trigger", minCount: 1, with: "coin" }],
@@ -642,6 +643,7 @@ const FAMILY_PASS_IDS = [
   "performance.maxTriangles",
   "resource.GameState.coins",
   "signal.collected",
+  "audio.speech:p01",
   "world.seed",
   "component.player.health.value",
   "aerodynamics.0",
@@ -803,6 +805,7 @@ function familyReportObservations(fulfilled: boolean) {
     runtimeObservations: {
       gameplay: {
         animation: { player: { advancedFrames: 5, clip: "run", finished: true } },
+        audio: { cues: { "speech:p01": 1 }, recentCues: [{ atMs: 3200, cue: "speech:p01" }] },
         contacts: [{ entity: "fox", kind: "trigger", tick: 4, with: "coin" }],
         states: { player: "won" },
         tags: { coin: { count: 3 } },
@@ -876,6 +879,7 @@ test("should preserve every assertion family's result contract", async () => {
     "performance.maxTriangles",
     "resource.GameState.coins",
     "signal.collected",
+    "audio.speech:p01",
     "world.seed",
     "component.player.health.value",
     "aerodynamics.0",
@@ -918,6 +922,7 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
     "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
     "TN_PLAYTEST_SIGNAL_NOT_OBSERVED",
+    "TN_PLAYTEST_AUDIO_ASSERTION_FAILED",
     "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
     "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
     "TN_PLAYTEST_AERODYNAMICS_ASSERTION_FAILED",

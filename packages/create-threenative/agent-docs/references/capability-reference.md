@@ -1350,6 +1350,20 @@ export function replay< TState extends Record<string, unknown> = Record<string, 
 const driver = createReplayDriver(recording, ctx.renderer.domElement);
 ```
 
+### `resetAudioCueLedger`
+
+`function` — Forgets every recorded cue.
+
+```ts
+export function resetAudioCueLedger(): void { … }
+```
+
+- **Use when:** clear the recorded audio cue counts between tests so one test cannot read another's plays
+
+```ts
+resetAudioCueLedger();
+```
+
 ### `resolveAtmosphereLutResolutions`
 
 `function` — Resolve the three LUT dimensions, allowing a game to trade startup cost for resolution.

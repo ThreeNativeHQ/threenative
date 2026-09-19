@@ -1691,6 +1691,22 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "resetAudioCueLedger();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resetAudioCueLedger(): void { … }",
+      "situations": [
+        "clear the recorded audio cue counts between tests so one test cannot read another's plays"
+      ],
+      "summary": "Forgets every recorded cue.",
+      "supersedes": [],
+      "symbol": "resetAudioCueLedger"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "every width and height must be a positive integer; the dimensions are not a named fidelity tier"
       ],

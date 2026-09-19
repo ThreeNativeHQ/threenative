@@ -1,4 +1,4 @@
-import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, IPlaytestPerformanceAssertion } from "../scenario.js";
+import type { IPlaytestAnimationAssertion, IPlaytestAudioAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, IPlaytestPerformanceAssertion } from "../scenario.js";
 import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
 import { physicsDebugContactEvidence } from "./measures.js";
@@ -231,6 +231,57 @@ export function contactAssertionSatisfiedAtStep(
     && (!anonymous || candidates.length > 0)
     && count >= minimum
     && (assertion.maxCount === undefined || count <= assertion.maxCount);
+}
+
+/**
+ * Reads the runtime cue ledger, which is the only observation that can say what the game played.
+ *
+ * A missing ledger is a failure, not a pass: a target whose bridge never published `audio` cannot
+ * support the claim, and reporting green on an absent observation is how an audio defect ships
+ * under a green gate.
+ */
+export function evaluateAudioAssertion(
+  assertion: IPlaytestAudioAssertion,
+  observations: unknown,
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const gameplay = gameplayObservations(observations);
+  const audio = isRecord(gameplay?.audio) ? gameplay.audio : undefined;
+  const cues = isRecord(audio?.cues) ? audio.cues : undefined;
+  const observed = cues === undefined ? undefined : cues[assertion.cue];
+  const plays = typeof observed === "number" ? observed : 0;
+  const minimum = assertion.minPlays ?? 1;
+  const pass =
+    cues !== undefined &&
+    plays >= minimum &&
+    (assertion.maxPlays === undefined || plays <= assertion.maxPlays);
+  const result = {
+    details: {
+      cue: assertion.cue,
+      maxPlays: assertion.maxPlays ?? null,
+      minPlays: minimum,
+      observed: cues === undefined ? null : plays,
+    },
+    id: `audio.${assertion.cue}`,
+    pass,
+  };
+  return pass
+    ? { assertion: result }
+    : {
+        assertion: result,
+        diagnostic: {
+          code: "TN_PLAYTEST_AUDIO_ASSERTION_FAILED",
+          message:
+            cues === undefined
+              ? `No runtime audio ledger was published, so cue '${assertion.cue}' cannot be proved either way.`
+              : `Cue '${assertion.cue}' played ${plays} time(s); expected at least ${minimum}${assertion.maxPlays === undefined ? "" : ` and at most ${assertion.maxPlays}`}.`,
+          observedRuntimePath: "observations.json/runtimeObservations/gameplay/audio/cues",
+          severity: "error",
+          suggestion:
+            cues === undefined
+              ? "Run on a target whose bridge advertises runtime.audio, and pass `cue` to AudioBus.play/playAt for the lines under test."
+              : "Read observations.json/runtimeObservations/gameplay/audio/recentCues for when each play happened, and check the one-shot flag that gates the cue.",
+        },
+      };
 }
 
 export function evaluateWorldAssertion(

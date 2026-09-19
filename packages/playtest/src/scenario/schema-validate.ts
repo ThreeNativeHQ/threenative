@@ -3,7 +3,7 @@ import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
-import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
+import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
@@ -871,6 +871,7 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   return {
     ...(Array.isArray(value.aerodynamics) ? { aerodynamics: value.aerodynamics.map((entry, index) => validateAerodynamicsAssertion(entry, scenarioPath, `assert.aerodynamics[${index}]`)) } : {}),
     ...(Array.isArray(value.animation) ? { animation: value.animation.map((entry, index) => validateAnimationAssertion(entry, scenarioPath, `assert.animation[${index}]`)) } : {}),
+    ...(Array.isArray(value.audio) ? { audio: value.audio.map((entry, index) => validateAudioAssertion(entry, scenarioPath, `assert.audio[${index}]`)) } : {}),
     ...(camera === undefined
       ? {}
       : {
@@ -1002,6 +1003,34 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
     ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map((entry, index) => validateVisibilityAssertion(entry, scenarioPath, `assert.visibility[${index}]`)) } : {}),
     ...(Array.isArray(value.visual) ? { visual: value.visual.map((entry, index) => validateVisualAssertion(entry, scenarioPath, `assert.visual[${index}]`)) } : {}),
     ...(world === undefined ? {} : { world: validateWorldAssertion(world, scenarioPath) }),
+  };
+}
+
+/** One cue-count claim: a label, and how many times it may or must have sounded. */
+export function validateAudioAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAudioAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["cue", "maxPlays", "minPlays"], scenarioPath, objectPath);
+  if (typeof record.cue !== "string" || record.cue.trim() === "")
+    throw invalidScenario(scenarioPath, `Assertion '${objectPath}.cue' must be a non-empty string.`);
+  const bound = (name: "maxPlays" | "minPlays"): number | undefined => {
+    const raw = record[name];
+    if (raw === undefined) return undefined;
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0)
+      throw invalidScenario(scenarioPath, `Assertion '${objectPath}.${name}' must be a non-negative integer.`);
+    return raw;
+  };
+  const minPlays = bound("minPlays");
+  const maxPlays = bound("maxPlays");
+  if (minPlays !== undefined && maxPlays !== undefined && maxPlays < minPlays) {
+    throw invalidScenario(
+      scenarioPath,
+      `Assertion '${objectPath}' cannot require at least ${minPlays} play(s) and at most ${maxPlays}.`,
+    );
+  }
+  return {
+    cue: record.cue,
+    ...(maxPlays === undefined ? {} : { maxPlays }),
+    ...(minPlays === undefined ? {} : { minPlays }),
   };
 }
 
