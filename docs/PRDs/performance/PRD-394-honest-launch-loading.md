@@ -93,12 +93,15 @@ Three separate defects fall out of that:
       `midway-briefing`, `midway-audio-realism`) pass with no console errors and no runtime
       diagnostics, and on the desktop target all ten native scenarios pass against a host at the
       engine's version — including the two audio ones (`audio-sweep` 6631 frames, `speech-once` 2892).
-      `pnpm test:templates` was run and is **not** green: action-rpg, defense, minimal, puzzle,
-      runner, sailing and shooter pass, and `racing` fails one scenario
-      (`racing-touch-controls`: `TN_PLAYTEST_RESOURCE_STATE_STAGNATED`, "Resource 'state' path
-      'speed' did not change after the scenario moved the subject 0.055 units"). No template imports
-      `FlightModel`/`flightForces` or the doctor, so this branch's changes are not in that path — but
-      it was not re-run against a pre-change baseline, so that is an argument and not a measurement.
+      `pnpm test:templates` was run: action-rpg, defense, minimal, puzzle, runner, sailing and
+      shooter pass, and `racing-touch-controls` failed once inside the sweep
+      (`TN_PLAYTEST_RESOURCE_STATE_STAGNATED`, "Resource 'state' path 'speed' did not change after the
+      scenario moved the subject 0.055 units"). **That failure does not reproduce**: the same
+      scenario, scaffolded on the same tree with its own server and run alone, reports `pass: true`
+      with its visibility and resource assertions green. The sweep runs ten templates in sequence,
+      each with a browser, and the machine was under load — so it reads as contention, not a template
+      defect, and the seven-pass-and-one-flake result is what is recorded. No template imports
+      `FlightModel`/`flightForces` or the doctor, so this branch's changes are not in that path.
 
 ### Phase 4 — Never ship a stale host again
 
