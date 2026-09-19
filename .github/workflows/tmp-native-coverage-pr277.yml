@@ -1,0 +1,59 @@
+name: Temporary native coverage refresh for PR 277
+
+on:
+  push:
+    branches:
+      - automation/native-coverage-pr277
+
+permissions:
+  contents: read
+
+jobs:
+  native-coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install native coverage dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          xvfb ccache llvm
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 libvulkan-dev mesa-vulkan-drivers vulkan-tools zlib1g-dev
+          libxinerama-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev
+          libglfw3-dev libglm-dev
+      - name: Install LLVM 21 coverage tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 21
+          test -x /usr/lib/llvm-21/bin/llvm-cov
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+          /usr/lib/llvm-21/bin/llvm-cov --version
+      - name: Restore and build native third-party dependencies
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Regenerate native coverage evidence
+        shell: bash
+        run: |
+          set -o pipefail
+          llvm-cov --version
+          pnpm --filter @threenative/runtime-native native:coverage 2>&1 | tee native-coverage-pr277.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-coverage-pr277-debug
+          path: |
+            docs/verification/native-coverage-2026-08-28.md
+            native-coverage-pr277.log
+          if-no-files-found: error
