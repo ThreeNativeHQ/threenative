@@ -21,6 +21,7 @@
     "caps:recall": "tsx scripts/capability-recall.ts",
     "census": "tsx scripts/generate-native-census.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
+    "check:flight-cost": "tsx scripts/check-flight-cost.ts --max-mean-ms 0.35",
     "ci:fast": "bash scripts/ci-fast.sh",
     "ci:local": "bash scripts/ci-local.sh",
     "coverage": "vitest run --coverage",
