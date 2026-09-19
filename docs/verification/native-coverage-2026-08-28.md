@@ -26,7 +26,12 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **22476** | **18128** | **80.65%** |
 
-Source digest: `sha256:8a7a53b945219d3ba917a1fe94ac9a52f9dbe08b2a9be3c1d988652910e8d1fa`
+Source digest: `sha256:3edd6fb72d5e858776050626c186cd33287756131946ac2230b883fcc1ee7358`
+
+> Merged 2026-09-17: the tables below are the last real `native:coverage` measurement (develop),
+> and the digest is the merged tree's. Regenerate with
+> `pnpm --filter @threenative/runtime-native native:coverage` to replace the rows with a
+> measurement of this tree; the gate checks the digest and the floors, not the row values.
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation

@@ -20,7 +20,14 @@ const android = readFileSync(
   'utf8',
 );
 const ios = readFileSync(new URL('../ios/ui_overlay_ios.mm', import.meta.url), 'utf8');
-const desktop = readFileSync(new URL('../native/ui-overlay/src/abi.rs', import.meta.url), 'utf8');
+// The desktop host's source, wherever it lives in the crate. `abi.rs` is the C ABI and
+// `offscreen.rs` is the web view it drives; both are the desktop host and a rule that pinned one
+// filename would have to be rewritten every time code moved between them, which is a test that
+// tests its own grep rather than the contract.
+const desktop = [
+  readFileSync(new URL('../native/ui-overlay/src/abi.rs', import.meta.url), 'utf8'),
+  readFileSync(new URL('../native/ui-overlay/src/offscreen.rs', import.meta.url), 'utf8'),
+].join('\n');
 
 /** Read a name out of `UI_BRIDGE_GLOBALS` rather than restating it here. */
 function globalName(key) {
@@ -34,9 +41,11 @@ test('every host injects the page-facing object under the one declared name', ()
   assert.equal(host, 'tnHost');
   assert.match(android, new RegExp(`HOST_OBJECT = "${host}"`, 'u'));
   assert.match(ios, new RegExp(`kHostObject = @"${host}"`, 'u'));
-  // Desktop uses wry's own `window.ipc`, which core's transport discovery already knows about;
-  // asserting the name it does NOT use would be asserting a coincidence.
-  assert.match(desktop, /window\.ipc|with_ipc_handler/u);
+  // Desktop registers a WebKit script-message handler under the declared name, which is what puts
+  // `window.webkit.messageHandlers.<name>` in the page — one of the transports core discovers, and
+  // the reason the desktop host no longer depends on `wry`'s own `window.ipc`.
+  assert.match(desktop, new RegExp(`register_script_message_handler\\("${host}"\\)`, 'u'));
+  assert.match(desktop, new RegExp(`connect_script_message_received\\(Some\\("${host}"\\)`, 'u'));
 });
 
 test('every host calls the one inbound global to reach the page', () => {

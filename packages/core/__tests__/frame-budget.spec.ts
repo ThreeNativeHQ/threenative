@@ -34,6 +34,9 @@ function driveFrame(
     update: number;
     render: number;
     overlay: number;
+    // The native UI composite. Absent for a capture that predates it and for a host with no
+    // overlay to composite, where there is no cost to attribute.
+    ui?: number;
     residual: number;
     presented: number;
   },
@@ -47,6 +50,8 @@ function driveFrame(
   clock.now += frame.render;
   budget.addOverlay(frame.overlay);
   clock.now += frame.overlay;
+  budget.addUi(frame.ui ?? 0);
+  clock.now += frame.ui ?? 0;
   clock.now += frame.residual;
   budget.endFrame(clock.now);
 }
@@ -54,7 +59,7 @@ function driveFrame(
 function driveFrameWithoutSample(
   budget: FrameBudget,
   clock: { now: number; timestamp: number },
-  frame: typeof DEVICE_FRAME,
+  frame: typeof DEVICE_FRAME & { ui?: number },
 ): IFramePhaseSample | undefined {
   clock.now += frame.hostGap;
   clock.timestamp += frame.presented;
@@ -65,6 +70,8 @@ function driveFrameWithoutSample(
   clock.now += frame.render;
   budget.addOverlay(frame.overlay);
   clock.now += frame.overlay;
+  budget.addUi(frame.ui ?? 0);
+  clock.now += frame.ui ?? 0;
   clock.now += frame.residual;
   return budget.endFrame(clock.now, false);
 }
@@ -192,6 +199,51 @@ describe("FrameBudget", () => {
     for (const phase of FRAME_BUDGET_PHASES) expect(window.phases[phase].samples).toBe(0);
   });
 
+  it("names `ui` in the tuple and reports every named phase in the window", () => {
+    const { budget } = collectingBudget(2);
+    const clock = { now: 0, timestamp: 0 };
+    for (let index = 0; index < 2; index += 1)
+      driveFrame(budget, clock, { ...DEVICE_FRAME, ui: 0.6 });
+    const window = budget.window();
+    expect(FRAME_BUDGET_PHASES).toContain("ui");
+    // Both key sets are the tuple and nothing else: a phase the tuple names but the window omits
+    // is one no consumer can read, and a key outside the tuple is one nobody can iterate.
+    const named = [...FRAME_BUDGET_PHASES].sort();
+    expect(Object.keys(window.phases).sort()).toEqual(named);
+    expect(Object.keys(window.shares).sort()).toEqual(named);
+  });
+
+  it("charges the native UI composite to `ui` instead of leaving it in residual", () => {
+    const budget = new FrameBudget({ report: () => undefined });
+    const clock = { now: 0, timestamp: 0 };
+    clock.now += DEVICE_FRAME.hostGap;
+    clock.timestamp += DEVICE_FRAME.presented;
+    budget.beginFrame(clock.timestamp, clock.now);
+    const frameStart = clock.now;
+    clock.now += DEVICE_FRAME.update;
+    budget.markSimulationEnd(clock.now, 3);
+    budget.addRender(DEVICE_FRAME.render);
+    clock.now += DEVICE_FRAME.render;
+    budget.addOverlay(DEVICE_FRAME.overlay);
+    clock.now += DEVICE_FRAME.overlay;
+    // What the host reports for the composited page: one upload of its pixels and one quad.
+    budget.addUi(1.5);
+    clock.now += 1.5;
+    clock.now += DEVICE_FRAME.residual;
+    const sample = budget.endFrame(clock.now);
+
+    expect(sample?.ui).toBeCloseTo(1.5, 2);
+    // The named parts and the remainder account for the callback's own duration, so a composite
+    // charged to nothing but `residual` would read here as 1.5 ms nobody can attribute.
+    const callbackMs =
+      (sample?.update ?? 0) +
+      (sample?.render ?? 0) +
+      (sample?.overlay ?? 0) +
+      (sample?.ui ?? 0) +
+      (sample?.residual ?? 0);
+    expect(callbackMs).toBeCloseTo(clock.now - frameStart, 2);
+  });
+
   it("resets the rings each window so a late line describes steady state", () => {
     const { budget, lines } = collectingBudget(3);
     const clock = { now: 0, timestamp: 0 };
@@ -234,6 +286,8 @@ describe("FrameBudget", () => {
     const budget = new FrameBudget({ report: () => undefined });
     expect(() => budget.endFrame(1)).toThrow(/outside a frame/u);
     expect(() => budget.addRender(1)).toThrow(/outside a frame/u);
+    expect(() => budget.addOverlay(1)).toThrow(/FrameBudget\.addOverlay called outside a frame/u);
+    expect(() => budget.addUi(1)).toThrow(/FrameBudget\.addUi called outside a frame/u);
     expect(() => budget.markSimulationEnd(1, 1)).toThrow(/outside a frame/u);
     budget.beginFrame(0, 0);
     expect(() => budget.beginFrame(1, 1)).toThrow(/before the previous frame ended/u);

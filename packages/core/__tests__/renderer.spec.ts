@@ -226,6 +226,55 @@ describe("createRenderer", () => {
     }
   });
 
+  it("binds the frame-buffer target while compiling, so a depth sampler is not compiled against the wrong sample count", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // three's own compile() reads the frame-buffer target for its render context but never binds
+      // it, so a viewport-depth copy destination is sized from that target while the bind group
+      // layout for the same binding is sized from `currentSamples`. Dawn refuses the bind group and
+      // the device is lost. The wrapper has to bind what is being compiled for, and put back what
+      // was bound.
+      const frameBufferTarget = { samples: 4 };
+      const seenDuringCompile: unknown[] = [];
+      // What a concurrent frame sees. three's compile yields to the render loop between objects, so
+      // this must not move while the compile runs.
+      const rendered: unknown[] = [];
+      const raw: Record<string, unknown> = {
+        needsFrameBufferTarget: true,
+        _renderTarget: null,
+        getRenderTarget(this: Record<string, unknown>) {
+          return this._renderTarget;
+        },
+        _getFrameBufferTarget: () => frameBufferTarget,
+        compileAsync: async () => {
+          seenDuringCompile.push((raw.getRenderTarget as () => unknown).call(raw));
+          rendered.push(raw._renderTarget);
+        },
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      };
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => raw as never,
+      });
+      await renderer.compileAsync({} as never, {} as never);
+      // The sample-count question is answered ...
+      expect(seenDuringCompile).toEqual([frameBufferTarget]);
+      // ... without moving what a frame arriving mid-compile renders into.
+      expect(rendered).toEqual([null]);
+      // and the accessor is handed back afterwards.
+      expect((raw.getRenderTarget as () => unknown).call(raw)).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("records the actual WebGPU adapter identity in the pipeline census", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

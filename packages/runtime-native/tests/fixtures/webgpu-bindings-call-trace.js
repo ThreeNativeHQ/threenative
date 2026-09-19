@@ -252,8 +252,8 @@ record("GPUDevice", "pushErrorScope", ["not-a-filter"], () =>
 );
 record("GPUDevice", "popErrorScope", [], () => device.popErrorScope());
 record("GPUDevice", "destroy", [], () => device.destroy());
-record("WebGPU", "__decodeImageData", [new ArrayBuffer(0)], () =>
-  __decodeImageData(new ArrayBuffer(0)),
+record("WebGPU", "__decodeImageDataAsync", [new ArrayBuffer(0), "function"], () =>
+  __decodeImageDataAsync(new ArrayBuffer(0), () => {}),
 );
 record("WebGPU", "createOffscreenCanvas2D", ["number", "number"], () =>
   createOffscreenCanvas2D(2, 2),
