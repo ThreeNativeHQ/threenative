@@ -1,6 +1,6 @@
 # PRD-394 — An honest launch: progress you can read, failures that fail closed, a load that is not 104 seconds
 
-Status: PHASE 3 (phases 1-2 landed; phase 3 blocked on an idle GPU)
+Status: PHASE 3 (the launch freeze is fixed and measured; asset decode still to cut)
 Owner: engine + `midway-open-pacific` (sandbox)
 
 ## Why
@@ -69,10 +69,25 @@ Three separate defects fall out of that:
 
 ### Phase 3 — Cut the 104 s
 
-- [ ] Re-measure on an idle GPU (the 104 s reading was taken with 94% of VRAM held by another
-      process); record the clean baseline here.
-- [ ] Attribute the ~100 s of post-fetch work between GLB parse, texture decode and GPU upload.
-- [ ] Land the cuts that the attribution justifies, each with a before/after number in this file.
+- [x] Re-measure on an idle GPU: **24.3 s** to `whenReady`, not 104 s. The 104 s was VRAM
+      starvation (another process held 7726/8192 MiB); every number below is on an idle GPU.
+- [x] **The launch did not just look frozen — it was.** The window stopped being presented a few
+      seconds in and never recovered: presents froze at 137 while the loop ran at 59 fps with a
+      16.5 ms render phase, so the screen kept the loading layer for the rest of the session, and
+      a click on the briefing behind it did nothing visible. Root cause in `packages/core/src/
+      renderer.ts` (three's reflector saves and restores `getRenderTarget()` inside a compile, and
+      the compile was answering with the frame-buffer target, which then stayed bound). Fixed and
+      proved red-green; presents now run 60/s for the whole session. Same on a private Xvfb, so it
+      was never the compositor.
+- [x] `TN_FRAME_NOT_PRESENTED` names which of the three silent conditions suppressed a present.
+- [x] Attribute the post-fetch work: on an idle GPU it is a 3.0-4.8 s `imageDecodeDrain` at
+      `enter()` and a 2.7-3.7 s first world frame; all 222 bundle reads finish inside 1.5 s.
+- [ ] Cut the image decode (227 textures, ~1 GB). The asset pipeline compresses embedded GLB
+      textures, and this game bypasses it entirely — its assets are committed under `public/`.
+- [x] Airframe switching: the player's aircraft was disposed and rebuilt on every loadout change,
+      recompiling its pipelines each time — the multi-second freeze on the briefing. Both are kept
+      built and each is warmed once.
+- [x] Launch to `whenReady` on this desktop: **24.3 s -> 9.4 s**.
 - [ ] Nothing regresses: `pnpm test:templates` and midway's own playtests stay green.
 
 ### Phase 4 — Never ship a stale host again
