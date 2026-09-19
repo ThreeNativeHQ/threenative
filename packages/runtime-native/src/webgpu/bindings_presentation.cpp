@@ -462,6 +462,40 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
 }
 
 /**
+ * Names a frame the loop rendered and never presented, at most once a second.
+ *
+ * A present is suppressed silently by three separate conditions - no surface, no acquired
+ * swapchain texture, and a frame whose replay never ended a render pass on the surface - and none
+ * of them said anything. A real game hit the third one at the moment its first world frame
+ * replaced the loading screen: the JavaScript side went on rendering at 59 fps with a `render`
+ * phase of 16.5 ms per frame, presents stopped dead at 137, and the window showed the same
+ * five-second-old picture for the rest of the run with nothing in the log. Say which condition it
+ * is, once a second, so the next one is a grep and not an afternoon.
+ */
+static void reportUnpresentedFrame(BindingsState* state, bool pending) {
+    static uint64_t suppressed = 0;
+    static std::chrono::steady_clock::time_point lastReport{};
+    if (pending && state->presentation.currentTexture && state->surface) {
+        suppressed = 0;
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const bool first = lastReport.time_since_epoch().count() == 0;
+    if (!first && now - lastReport < std::chrono::seconds(1)) {
+        suppressed += 1;
+        return;
+    }
+    lastReport = now;
+    std::cout << "TN_FRAME_NOT_PRESENTED:{\"pending\":" << (pending ? "true" : "false")
+              << ",\"texture\":" << (state->presentation.currentTexture ? "true" : "false")
+              << ",\"surface\":" << (state->surface ? "true" : "false")
+              << ",\"renderPassEnded\":"
+              << (state->presentation.surfaceRenderPassEnded ? "true" : "false")
+              << ",\"suppressed\":" << suppressed << "}" << std::endl;
+    suppressed = 0;
+}
+
+/**
  * Names a failed swapchain acquire, at most once a second and always the first one.
  *
  * `TN_SURFACE_ACQUIRE_FAILED` is the marker a logcat filter finds when a device shows a black
@@ -620,6 +654,7 @@ void presentPendingSurface(BindingsState* state) {
     captureFrameScreenshot(state);
     const bool pending = state->presentation.framePresentPending;
     state->presentation.framePresentPending = false;
+    reportUnpresentedFrame(state, pending);
     if (!state->presentation.currentTexture)
         return;
 
