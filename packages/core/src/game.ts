@@ -971,6 +971,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
       },
     });
+    // Startup readiness does not wait on `ui-ready`, and cannot. The intent proves the page's
+    // script ran, not that a pixel reached the screen, so waiting on it never closed the race it
+    // was added for — it only made the losing side lose later, after up to 45 s of held frames.
+    // The race no longer exists: the native UI is now composited into the game's own frame, so the
+    // cover and the world share one swapchain and there is no second surface left to arrive late.
     // The held loop starts before an explicit warm-up so the loading surface can animate. A native
     // frame may therefore arrive while that pass is still awaiting a compile promise; keep first-use
     // rendering and compute behind the same held boundary until the explicit pass has settled.
@@ -1452,6 +1457,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
         }
         if (mustPresentLoader) loadingFramePresented = true;
+        // Every frame, including one whose canvas layer is empty: the native UI is composited into
+        // the game's own frame whether or not the game draws a HUD of its own, so a frame that
+        // skipped this would report work it did pay as `residual`. The host reports what the
+        // *previous* frame's composite cost — the only reading that exists when a frame begins —
+        // so this charges the phase to the frame that paid it, one frame late rather than never.
+        // Absent on the web target and on any host with no overlay, where the work is zero rather
+        // than unknown, so an absent global must read as zero and not as a missing measurement.
+        const uiHost = globalThis as { __tnUiCompositeMs?: () => number };
+        frameBudget?.addUi(
+          typeof uiHost.__tnUiCompositeMs === "function" ? (uiHost.__tnUiCompositeMs() ?? 0) : 0,
+        );
         if (canvasLayer.scene.children.length > 0) {
           const overlayStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);

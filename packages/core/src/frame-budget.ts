@@ -35,9 +35,21 @@ export const FRAME_HITCH_MARKER = "TN_FRAME_HITCH";
 /**
  * The named parts of one presented frame. They partition the frame: `hostGap` is the time before
  * the callback (present wait plus whatever the host did between callbacks), and `update`,
- * `render`, `overlay` and `residual` sum to the callback's own duration.
+ * `render`, `overlay`, `ui` and `residual` sum to the callback's own duration.
+ *
+ * `overlay` and `ui` are two different draws that happen to sit next to each other. `overlay` is
+ * the three.js HUD pass; `ui` is the native UI layer's composite of the page's pixels into the
+ * game's own frame — one upload and one quad — which is why it is a phase of its own and not part
+ * of `overlay`.
  */
-export const FRAME_BUDGET_PHASES = ["hostGap", "update", "render", "overlay", "residual"] as const;
+export const FRAME_BUDGET_PHASES = [
+  "hostGap",
+  "update",
+  "render",
+  "overlay",
+  "ui",
+  "residual",
+] as const;
 
 export type FrameBudgetPhase = (typeof FRAME_BUDGET_PHASES)[number];
 
@@ -47,6 +59,7 @@ export interface IFramePhaseSample {
   readonly update: number;
   readonly render: number;
   readonly overlay: number;
+  readonly ui: number;
   readonly residual: number;
 }
 
@@ -324,7 +337,7 @@ function round(value: number): number {
  * Accumulates one frame at a time and reports windowed attribution.
  *
  * The caller is the frame loop; the sequence per frame is
- * `beginFrame` → `markSimulationEnd` → (`addRender` / `addOverlay`) → `endFrame`.
+ * `beginFrame` → `markSimulationEnd` → (`addRender` / `addOverlay` / `addUi`) → `endFrame`.
  * Calling them out of order throws rather than producing a plausible-looking split.
  */
 export class FrameBudget {
@@ -357,6 +370,7 @@ export class FrameBudget {
   #simulationEnd: number | undefined;
   #renderMs = 0;
   #overlayMs = 0;
+  #uiMs = 0;
   #substepCount = 0;
   #hostGap = 0;
   #presentedDelta = 0;
@@ -389,6 +403,7 @@ export class FrameBudget {
       overlay: new Ring(capacity),
       render: new Ring(capacity),
       residual: new Ring(capacity),
+      ui: new Ring(capacity),
       update: new Ring(capacity),
     };
     this.#passDrawRings = {
@@ -418,6 +433,7 @@ export class FrameBudget {
     this.#simulationEnd = undefined;
     this.#renderMs = 0;
     this.#overlayMs = 0;
+    this.#uiMs = 0;
     this.#substepCount = 0;
     this.#gpuThisFrame = undefined;
     this.#gpuStaleThisFrame = false;
@@ -442,6 +458,11 @@ export class FrameBudget {
   addOverlay(ms: number): void {
     if (!this.#open) throw new Error("FrameBudget.addOverlay called outside a frame.");
     this.#overlayMs += ms;
+  }
+
+  addUi(ms: number): void {
+    if (!this.#open) throw new Error("FrameBudget.addUi called outside a frame.");
+    this.#uiMs += ms;
   }
 
   /**
@@ -531,13 +552,14 @@ export class FrameBudget {
 
     const update = Math.max(0, simulationEnd - this.#frameStart);
     const tail = Math.max(0, nowMs - simulationEnd);
-    const residual = Math.max(0, tail - this.#renderMs - this.#overlayMs);
+    const residual = Math.max(0, tail - this.#renderMs - this.#overlayMs - this.#uiMs);
     const sample: IFramePhaseSample | undefined = wantSample
       ? {
           hostGap: round(this.#hostGap),
           overlay: round(this.#overlayMs),
           render: round(this.#renderMs),
           residual: round(residual),
+          ui: round(this.#uiMs),
           update: round(update),
         }
       : undefined;
@@ -551,6 +573,7 @@ export class FrameBudget {
     this.#phaseRings.render.push(this.#renderMs);
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
+    this.#phaseRings.ui.push(this.#uiMs);
     if (this.#gpuThisFrame !== undefined) this.#gpu.push(this.#gpuThisFrame);
     if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
     for (const pass of this.#passesThisFrame) {
@@ -572,6 +595,7 @@ export class FrameBudget {
       overlay: this.#phaseRings.overlay.summarize(this.#scratch),
       render: this.#phaseRings.render.summarize(this.#scratch),
       residual: this.#phaseRings.residual.summarize(this.#scratch),
+      ui: this.#phaseRings.ui.summarize(this.#scratch),
       update: this.#phaseRings.update.summarize(this.#scratch),
     };
     const share = (value: number): number =>
@@ -606,6 +630,7 @@ export class FrameBudget {
         overlay: share(phases.overlay.mean),
         render: share(phases.render.mean),
         residual: share(phases.residual.mean),
+        ui: share(phases.ui.mean),
         update: share(phases.update.mean),
       },
       substeps: this.#substeps.summarize(this.#scratch),

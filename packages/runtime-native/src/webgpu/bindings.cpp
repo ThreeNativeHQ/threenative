@@ -27,6 +27,7 @@
 #include "mystral/stall_budget.h"
 #include "runtime_scripts.h"
 #include "mystral/webgpu/checked_handle.h"
+#include "mystral/webgpu/async_image_decode.h"
 #include "bindings_presentation.h"
 #include <ctime>
 #include <iostream>
@@ -36,6 +37,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
 #include <atomic>
 #include <cstring>
 #include <cmath>
@@ -589,8 +591,17 @@ uint64_t endProfiledBinding(
 }
 
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
-    if (state->profiling.frameEndCount == 226 && js::g_startCpuProfile)
-        js::g_startCpuProfile();
+    // 226 is the frame the Android lane profiles from, which is fine for steady state and useless
+    // for a startup: a game whose first seconds stall the loop reaches frame 226 long after the
+    // stall is over. `TN_JS_CPU_PROFILE_START_FRAME` moves the window so the stall can be profiled
+    // at all. Read once — a `getenv` per frame is not worth a measurement that is already opt-in.
+    if (js::g_startCpuProfile) {
+        static const uint32_t startFrame = [] {
+            const char* value = std::getenv("TN_JS_CPU_PROFILE_START_FRAME");
+            return value != nullptr ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 226u;
+        }();
+        if (state->profiling.frameEndCount == startFrame) js::g_startCpuProfile();
+    }
     const uint64_t nowCpuNs = readRenderThreadCpuNs();
     const uint64_t renderThreadCpuNs =
         (state->profiling.lastRenderThreadCpuNs != 0 && nowCpuNs > state->profiling.lastRenderThreadCpuNs)
@@ -1019,12 +1030,6 @@ static bool installWebGPUBindingSurfaces(BindingsState* state, js::Engine* engin
 }
 /** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
 
-static js::JSValueHandle handleOwnedHtmlCanvasElementGetContext(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
-                    // Get the stored context from the global (we need a way to access it)
-                    // For now, return null and let callers use the _context directly
-                    return state->engine->newNull();
-}
-
 static js::JSValueHandle handleWebGpuCreateOffscreenCanvas2d(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
             int width = 800;
             int height = 600;
@@ -1042,10 +1047,16 @@ static js::JSValueHandle handleWebGpuCreateOffscreenCanvas2d(BindingsState* stat
             // Create the 2D context
             auto ctx2d = createOwnedCanvas2DContext(state, width, height);
             state->engine->setProperty(canvasWrapper, "_context", ctx2d);
-            // getContext('2d') returns the pre-created context
+            // getContext('2d') returns the pre-created context. Captured rather than looked up on
+            // the receiver: a binding-table handler's destination is not a live JS value to read
+            // properties from, and answering null here was a stub — the same call on a canvas
+            // element answered a context, and the only way through was the undocumented
+            // `_context` property.
             if (!installBindingTable(state->engine, state, bindingTable({
                 {"HTMLCanvasElement", "getContext", 0, nullptr,
-                &handleOwnedHtmlCanvasElementGetContext
+                [ctx2d](BindingsState*, BindingDestination, const std::vector<js::JSValueHandle>&) {
+                    return ctx2d;
+                }
             , canvasWrapper}}))) {
                 rollbackOwnedCanvas2DContext(state, ctx2d);
                 return state->engine->newUndefined();
@@ -1094,71 +1105,47 @@ static js::JSValueHandle handleWebGpuNativeGetContext2d(BindingsState* state, Bi
             return canvas->context2d;
 }
 static js::JSValueHandle handleWebGpuDecodeImageData(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
-            if (args.empty()) {
-                state->engine->throwException("__decodeImageData requires an ArrayBuffer argument");
+            // `__decodeImageDataAsync(arrayBuffer, callback)` — the decode runs on the decoder's
+            // pool and the callback is invoked from `AsyncImageDecoder::drain()` on this thread,
+            // as `(bitmap, error)`. It used to decode inline here, which stopped the frame loop for
+            // the whole of a texture load; see async_image_decode.h.
+            if (args.size() < 2) {
+                state->engine->throwException("__decodeImageDataAsync requires an ArrayBuffer and a callback");
                 return state->engine->newUndefined();
             }
-            // Get ArrayBuffer data
             size_t inputSize = 0;
             void* inputData = state->engine->getArrayBufferData(args[0], &inputSize);
             if (!inputData || inputSize == 0) {
-                state->engine->throwException("__decodeImageData: invalid ArrayBuffer");
+                state->engine->throwException("__decodeImageDataAsync: invalid ArrayBuffer");
                 return state->engine->newUndefined();
             }
-            const unsigned char* inputBytes = (const unsigned char*)inputData;
-            int width = 0, height = 0;
-            unsigned char* data = nullptr;
-            bool isWebP = false;
-            // Check if this is a WebP image (starts with "RIFF" and has "WEBP" at offset 8)
-            if (inputSize >= 12 &&
-                inputBytes[0] == 'R' && inputBytes[1] == 'I' &&
-                inputBytes[2] == 'F' && inputBytes[3] == 'F' &&
-                inputBytes[8] == 'W' && inputBytes[9] == 'E' &&
-                inputBytes[10] == 'B' && inputBytes[11] == 'P') {
-                isWebP = true;
-            }
-            if (isWebP) {
-#ifdef MYSTRAL_HAS_WEBP
-                // Decode WebP using libwebp
-                data = WebPDecodeRGBA(inputBytes, inputSize, &width, &height);
-                if (!data) {
-                    state->engine->throwException("Failed to decode WebP image");
-                    return state->engine->newUndefined();
-                }
-                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded WebP " << width << "x" << height << " image" << std::endl;
-#else
-                state->engine->throwException("WebP image detected but libwebp support not compiled in. Rebuild with MYSTRAL_HAS_WEBP.");
-                return state->engine->newUndefined();
-#endif
-            } else {
-                // Decode using stb_image (PNG, JPEG, etc.)
-                int channels;
-                data = stbi_load_from_memory(inputBytes, (int)inputSize, &width, &height, &channels, 4);
-                if (!data) {
-                    std::string error = std::string("Failed to decode image: ") + stbi_failure_reason();
-                    state->engine->throwException(error.c_str());
-                    return state->engine->newUndefined();
-                }
-                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded " << width << "x" << height << " image" << std::endl;
-            }
-            // Create ImageBitmap-like object
-            auto result = state->engine->newObject();
-            // Create ArrayBuffer with RGBA pixel data
-            size_t dataSize = width * height * 4;
-            auto arrayBuffer = state->engine->newArrayBuffer(data, dataSize);
-            state->engine->setProperty(result, "width", state->engine->newNumber(width));
-            state->engine->setProperty(result, "height", state->engine->newNumber(height));
-            state->engine->setProperty(result, "_data", arrayBuffer);  // Internal pixel data
-            state->engine->setProperty(result, "_closed", state->engine->newBoolean(false));
-            // Free decoded data (we copied it to ArrayBuffer)
-            if (isWebP) {
-#ifdef MYSTRAL_HAS_WEBP
-                WebPFree(data);
-#endif
-            } else {
-                stbi_image_free(data);
-            }
-            return result;
+            // The bytes are copied before they are queued: the ArrayBuffer belongs to JS and may be
+            // detached or collected long before a worker reaches it.
+            const unsigned char* inputBytes = static_cast<const unsigned char*>(inputData);
+            std::vector<uint8_t> bytes(inputBytes, inputBytes + inputSize);
+            auto callback = state->engine->retainHandle(args[1]);
+            AsyncImageDecoder::instance().decode(
+                std::move(bytes),
+                [state, callback](DecodedImage image) {
+                    auto* engine = state->engine;
+                    js::JSValueHandle result = engine->newUndefined();
+                    js::JSValueHandle error = image.error.empty()
+                        ? engine->newNull()
+                        : engine->newString(image.error.c_str());
+                    if (image.error.empty()) {
+                        // The ImageBitmap-like object the polyfill wraps: dimensions and the RGBA
+                        // payload as an ArrayBuffer, built here because only this thread owns V8.
+                        result = engine->newObject();
+                        auto arrayBuffer = engine->newArrayBuffer(image.rgba.data(), image.rgba.size());
+                        engine->setProperty(result, "width", engine->newNumber(image.width));
+                        engine->setProperty(result, "height", engine->newNumber(image.height));
+                        engine->setProperty(result, "_data", arrayBuffer);
+                        engine->setProperty(result, "_closed", engine->newBoolean(false));
+                    }
+                    engine->call(callback, engine->newUndefined(), {result, error});
+                    engine->freeHandle(callback);
+                });
+            return state->engine->newUndefined();
 }
 
 static js::JSValueHandle handleGpuGetPreferredCanvasFormat(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
@@ -1342,6 +1329,11 @@ static js::JSValueHandle handleGpuQueueOnSubmittedWorkDone(BindingsState* state,
                             }
                             return resolvedPromise(state, "undefined", "onSubmittedWorkDone-success");
 }
+
+/** An upload this slow is what the next present fences on. */
+constexpr uint64_t kSlowTextureUploadNs = 50'000'000;
+
+
 
 static js::JSValueHandle handleGpuQueueCopyExternalImageToTexture(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             if (args.size() < 3) {
@@ -1553,7 +1545,16 @@ static js::JSValueHandle handleGpuQueueCopyExternalImageToTexture(BindingsState*
                             layout.bytesPerRow = imgWidth * 4;  // RGBA
                             layout.rowsPerImage = imgHeight;
                             WGPUExtent3D copySize = {width, height, depthOrArrayLayers};
+                            const auto uploadBegin = std::chrono::steady_clock::now();
                             wgpuQueueWriteTexture(state->queue, &destCopy, uploadDataPtr, dataSize, &layout, &copySize);
+                            const uint64_t uploadNs = static_cast<uint64_t>(
+                                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::steady_clock::now() - uploadBegin).count());
+                            if (uploadNs >= kSlowTextureUploadNs) {
+                                std::cout << "TN_SLOW_TEXTURE_UPLOAD:{\"ms\":" << static_cast<double>(uploadNs) / 1e6
+                                          << ",\"mb\":" << static_cast<double>(dataSize) / 1048576.0
+                                          << ",\"w\":" << width << ",\"h\":" << height << "}" << std::endl;
+                            }
                             if (state->verboseLogging) std::cout << "[WebGPU] copyExternalImageToTexture: " << width << "x" << height << (flipY ? " (flipY)" : "") << std::endl;
                             return state->engine->newUndefined();
 }
@@ -2420,18 +2421,27 @@ static js::JSValueHandle handleHtmlCanvasElementGetContext(BindingsState* state,
             std::string contextType = state->engine->toString(args[0]);
             // Handle Canvas 2D context
             if (contextType == "2d") {
+                // One canvas answers with one context, the same rule the offscreen path follows.
+                // A repeat call built a second Skia surface and a second set of method closures,
+                // so a game that asked again — per frame, or twice for the same canvas — paid an
+                // allocation and left the earlier context orphaned.
+                auto canvas = state->engine->getGlobalProperty("canvas");
+                auto cached = state->engine->getProperty(canvas, "__tnCanvas2dContext");
+                if (!state->engine->isUndefined(cached) && !state->engine->isNull(cached)) {
+                    return cached;
+                }
                 if (state->verboseLogging)
                     std::cout << "[Canvas] Creating 2D context (" << state->presentation.canvasWidth << "x"
                               << state->presentation.canvasHeight << ")" << std::endl;
                 auto ctx2d = createOwnedCanvas2DContext(state, state->presentation.canvasWidth,
                                                         state->presentation.canvasHeight);
                 // Set reference back to canvas
-                auto canvas = state->engine->getGlobalProperty("canvas");
                 state->engine->setProperty(ctx2d, "canvas", canvas);
                 if (state->engine->hasException()) {
                     rollbackOwnedCanvas2DContext(state, ctx2d);
                     return state->engine->newUndefined();
                 }
+                state->engine->setProperty(canvas, "__tnCanvas2dContext", ctx2d);
                 // Store the native context for Canvas 2D to WebGPU compositing
                 state->canvas2D.mainCanvas2DContext =
                     static_cast<canvas::Canvas2DContext*>(state->engine->getPrivateData(ctx2d));
@@ -2688,12 +2698,12 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     , globalBindingHost}})) ||
         !copyGlobalBinding(globalBindingHost, "__tnPresentationCap")) return false;
 
-    // Native helper that decodes image data synchronously
+    // Native helper that decodes image data off the frame thread
     if (!installBindingTable(state->engine, state, bindingTable({
-        {"WebGPU", "__decodeImageData", 0, nullptr,
+        {"WebGPU", "__decodeImageDataAsync", 0, nullptr,
         &handleWebGpuDecodeImageData
     , globalBindingHost}})) ||
-        !copyGlobalBinding(globalBindingHost, "__decodeImageData")) return false;
+        !copyGlobalBinding(globalBindingHost, "__decodeImageDataAsync")) return false;
 
     // JavaScript polyfill for createImageBitmap
     if (!evalEmbeddedRuntimeScript(*engine, "image-bitmap-polyfill", "image-bitmap-polyfill.js")) {
@@ -2825,6 +2835,9 @@ void invokeVideoCaptureCallback(BindingsState* state, WGPUTexture texture, uint3
 }
 
 
+/** An end-frame boundary this slow is the reason the loop is not iterating. */
+constexpr uint64_t kSlowEndFrameNs = 250'000'000;
+
 void endDawnFrame(BindingsState* state) {
     // The one command-submission crossing for this frame. All requestAnimationFrame callbacks
     // have returned, while descriptor objects and eager-copied upload payloads are still live.
@@ -2839,6 +2852,7 @@ void endDawnFrame(BindingsState* state) {
     state->profiling.framePhasePresentNs = 0;
     state->profiling.framePhaseGpuDrainNs = 0;
     state->profiling.framePhasePollNs = 0;
+    state->profiling.framePhaseUiNs = 0;
     state->profiling.framePhaseOtherNs = 0;
     if (state->profiling.frameOpStreamDrain.ptr) {
         const steady::time_point drainBegin = steady::now();
@@ -2885,6 +2899,16 @@ void endDawnFrame(BindingsState* state) {
 #endif
     // Composite Canvas 2D content to WebGPU if the main canvas uses 2D context
     compositeCanvas2DToWebGPU(state);
+
+    // The native UI layer, over whatever the world left in the frame's colour target and before
+    // the present, so one swapchain carries both. Its own phase, not the remainder: this is the
+    // whole cost PRD-393 adds to a frame, and AC-6 measures it on its own.
+    {
+        const steady::time_point uiBegin = steady::now();
+        compositeUiOverlayToWebGPU(state);
+        state->profiling.framePhaseUiNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - uiBegin).count());
+    }
 
     // Every pass this frame has been submitted; put the one image on screen.
     const uint64_t presentsBefore = state->profiling.presentCount;
@@ -2953,8 +2977,23 @@ void endDawnFrame(BindingsState* state) {
         std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - phaseBegin).count());
     const uint64_t namedNs = state->profiling.framePhaseDrainNs + state->profiling.framePhaseReplayNs +
                              state->profiling.framePhasePresentNs + state->profiling.framePhaseGpuDrainNs +
-                             state->profiling.framePhasePollNs;
+                             state->profiling.framePhasePollNs + state->profiling.framePhaseUiNs;
     state->profiling.framePhaseOtherNs = phaseTotalNs > namedNs ? phaseTotalNs - namedNs : 0;
+
+    // A frame this slow is why the loop is not iterating, and `TN_SLOW_PHASE` only says
+    // `endDawnFrame`. The split says which half of the boundary owns it — the JS call that packs
+    // the stream, or the C++ replay of it — and a reader cannot get that anywhere else.
+    if (phaseTotalNs >= kSlowEndFrameNs) {
+        const auto ms = [](uint64_t ns) { return static_cast<double>(ns) / 1e6; };
+        std::cout << "TN_SLOW_END_FRAME:{\"totalMs\":" << ms(phaseTotalNs)
+                  << ",\"drainMs\":" << ms(state->profiling.framePhaseDrainNs)
+                  << ",\"replayMs\":" << ms(state->profiling.framePhaseReplayNs)
+                  << ",\"uiMs\":" << ms(state->profiling.framePhaseUiNs)
+                  << ",\"presentMs\":" << ms(state->profiling.framePhasePresentNs)
+                  << ",\"pollMs\":" << ms(state->profiling.framePhasePollNs)
+                  << ",\"gpuDrainMs\":" << ms(state->profiling.framePhaseGpuDrainNs)
+                  << ",\"otherMs\":" << ms(state->profiling.framePhaseOtherNs) << "}" << std::endl;
+    }
 }
 
 }  // namespace webgpu

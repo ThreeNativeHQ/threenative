@@ -74,6 +74,15 @@ void requestFrameScreenshot(BindingsState* state);
 
 void compositeCanvas2DToWebGPU(BindingsState* state);
 
+/**
+ * Draw the attached native UI layer over this frame's colour target. Returns true when a quad was
+ * drawn; false when there is no overlay, nothing has been painted yet, or the frame has no target.
+ *
+ * PRD-393. Called after the frame's own passes and before `presentPendingSurface()`, so the UI is
+ * carried by the same present as the world.
+ */
+bool compositeUiOverlayToWebGPU(BindingsState* state);
+
 using VideoCaptureCallback = void (*)(void* texture, uint32_t width, uint32_t height, void* userData);
 void setVideoCaptureCallback(BindingsState* state, VideoCaptureCallback callback, void* userData);
 void clearVideoCaptureCallback(BindingsState* state);

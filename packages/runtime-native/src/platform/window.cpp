@@ -6,8 +6,13 @@
  */
 
 #include "mystral/platform/input.h"
+#include "mystral/platform/ui_overlay.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include <iostream>
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <X11/Xlib.h>
+#endif
 #include <cstdlib>
 #include <vector>
 #include <SDL3/SDL.h>
@@ -72,6 +77,67 @@ static void applyEmbeddedWindowIcon() {
     }
     if (surface != nullptr) SDL_DestroySurface(surface);
     stbi_image_free(pixels);
+}
+
+
+/**
+ * Paint the window the game's own `bootSplash.backgroundColor` before the first frame exists.
+ *
+ * A freshly created X window has no background, so the server shows whatever was behind it — in
+ * practice a flat grey — for every second between the window appearing and the GPU's first
+ * present. On this game that gap is about four seconds, and it read as a "grey screen before
+ * everything loads" that no loading screen could cover, because the UI overlay cannot paint that
+ * early either.
+ *
+ * `bootSplash` was already resolved, validated and embedded in the config; only web, Android and
+ * iOS ever read it, so the desktop window was the one target that ignored the colour the game had
+ * already chosen. X11 only: Windows and macOS have their own launch-image paths and are NOT
+ * covered here — do not claim them.
+ */
+static void applyEmbeddedBootSplash() {
+#if defined(__linux__) && !defined(__ANDROID__)
+    std::vector<uint8_t> bytes;
+    if (!vfs::readEmbeddedFile(".threenative/config.json", bytes)) return;
+    const std::string config(bytes.begin(), bytes.end());
+    // Anchored, not flattened. `uiRenderer` is flattened because `renderer` already exists at the
+    // top level and a flat scan would find the wrong one; `backgroundColor` has no such twin, and
+    // the two packaging paths — `threenative build` and the release packager — do not both flatten,
+    // so a flattened key was present in one artifact and absent in the other. Find `bootSplash`
+    // first and read the colour after it: correct on both, and still no JSON parser.
+    const auto section = config.find("\"bootSplash\"");
+    if (section == std::string::npos) return;
+    const auto at = config.find("\"backgroundColor\"", section);
+    if (at == std::string::npos) return;
+    const auto open = config.find('"', config.find(':', at));
+    if (open == std::string::npos) return;
+    const auto close = config.find('"', open + 1);
+    if (close == std::string::npos) return;
+    const std::string color = config.substr(open + 1, close - open - 1);
+    // `#rrggbb`, which is the only form the packager's brand-colour validator accepts.
+    if (color.size() != 7 || color[0] != '#') return;
+    unsigned long rgb = 0;
+    for (size_t i = 1; i < color.size(); ++i) {
+        const char c = color[i];
+        const int digit = c >= '0' && c <= '9' ? c - '0'
+            : c >= 'a' && c <= 'f' ? c - 'a' + 10
+            : c >= 'A' && c <= 'F' ? c - 'A' + 10
+            : -1;
+        if (digit < 0) return;
+        rgb = (rgb << 4) | static_cast<unsigned long>(digit);
+    }
+    auto* display = static_cast<Display*>(SDL_GetPointerProperty(
+        SDL_GetWindowProperties(g_window.sdlWindow), SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr));
+    const auto window = static_cast<::Window>(SDL_GetNumberProperty(
+        SDL_GetWindowProperties(g_window.sdlWindow), SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    if (display == nullptr || window == 0) return;
+    // Truecolor 24/32-bit visuals take a packed pixel directly, which is every visual SDL picks
+    // for a Vulkan window here; a colormap allocation would be the general answer and is not
+    // needed for one background.
+    XSetWindowBackground(display, window, rgb);
+    XClearWindow(display, window);
+    XFlush(display);
+    std::cout << "[Window] Boot splash background applied: " << color << std::endl;
+#endif
 }
 
 /**
@@ -139,6 +205,7 @@ bool createWindow(
     g_window.shouldQuit = false;
 
     applyEmbeddedWindowIcon();
+    applyEmbeddedBootSplash();
 
     std::cout << "[Window] Actual window size: " << g_window.width << "x" << g_window.height << std::endl;
 
@@ -182,6 +249,133 @@ void destroyWindow() {
     std::cout << "[Window] SDL video shutdown complete" << std::endl;
 }
 
+/** SDL's button index as the DOM's `buttons` bit. Returns 0 for a button the DOM does not name. */
+int domButtonBit(Uint8 sdlButton) {
+    switch (sdlButton) {
+        case SDL_BUTTON_LEFT: return 1;
+        case SDL_BUTTON_RIGHT: return 2;
+        case SDL_BUTTON_MIDDLE: return 4;
+        default: return 0;
+    }
+}
+
+/** The DOM `buttons` bitmask across a gesture, which is not SDL's: DOM is 1=left, 2=right, 4=middle. */
+int g_domButtons = 0;
+
+/** A normalized viewport point from SDL's window-relative one, or false when it cannot be one. */
+bool uiViewportPoint(float x, float y, float& nx, float& ny) {
+    int width = 0;
+    int height = 0;
+    if (g_window.sdlWindow == nullptr) return false;
+    SDL_GetWindowSize(g_window.sdlWindow, &width, &height);
+    if (width <= 0 || height <= 0) return false;
+    nx = x / static_cast<float>(width);
+    ny = y / static_cast<float>(height);
+    return nx >= 0.0f && ny >= 0.0f && nx <= 1.0f && ny <= 1.0f;
+}
+
+/**
+ * Offer one real OS pointer event to the page.
+ *
+ * A thin wrapper: which side owns the gesture and where it last was is decided in
+ * `platform::uiOverlayRoutePointer`, so a real press and a synthetic playtest press cannot be
+ * routed by different rules. All this adds is the SDL-to-DOM button mask, which is not the same
+ * numbering (SDL is left/middle/right, the DOM is 1/2/4).
+ */
+bool routePointerToUi(const SDL_Event& event) {
+    float x = 0.0f;
+    float y = 0.0f;
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        x = event.motion.x;
+        y = event.motion.y;
+    } else {
+        x = event.button.x;
+        y = event.button.y;
+    }
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (!uiViewportPoint(x, y, nx, ny)) return false;
+    const char* type = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown"
+        : event.type == SDL_EVENT_MOUSE_BUTTON_UP               ? "pointerup"
+                                                                : "pointermove";
+    return uiOverlayRoutePointer(type, nx, ny, g_domButtons, 1);
+}
+
+/**
+ * Tell the offscreen UI how many pixels the game window has now.
+ *
+ * The web view has no window to follow, so this is the only thing that re-lays it out: the page's
+ * viewport is what its CSS sees, and the composite draws the frame it produces across the whole
+ * swapchain. Skip it and the HUD is a stretched copy of the layout it was attached at.
+ *
+ * Pixels, not logical points: the page is sized in device pixels, which is what the swapchain is
+ * measured in too, so the two agree at any scale factor.
+ */
+void uiOverlayResizeToWindow() {
+    if (g_window.sdlWindow == nullptr) return;
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSizeInPixels(g_window.sdlWindow, &width, &height);
+    if (width <= 0 || height <= 0) return;
+    uiOverlaySetSize(width, height);
+}
+
+/**
+ * The DOM's names for the keys the platform's own naming does not already match.
+ *
+ * SDL names a key the way a keyboard does ("Left", "Escape", "Return"); the DOM names the same
+ * keys "ArrowLeft", "Escape", "Enter". Only the differences are listed — a table of every key
+ * would be a second keyboard layout to keep in step, and anything absent falls through to SDL's
+ * own name, which is already the DOM's for letters, digits and punctuation.
+ */
+const char* domKeyName(SDL_Keycode key) {
+    switch (key) {
+        case SDLK_LEFT: return "ArrowLeft";
+        case SDLK_RIGHT: return "ArrowRight";
+        case SDLK_UP: return "ArrowUp";
+        case SDLK_DOWN: return "ArrowDown";
+        case SDLK_RETURN: return "Enter";
+        case SDLK_KP_ENTER: return "Enter";
+        case SDLK_ESCAPE: return "Escape";
+        case SDLK_BACKSPACE: return "Backspace";
+        case SDLK_DELETE: return "Delete";
+        case SDLK_TAB: return "Tab";
+        case SDLK_HOME: return "Home";
+        case SDLK_END: return "End";
+        case SDLK_PAGEUP: return "PageUp";
+        case SDLK_PAGEDOWN: return "PageDown";
+        case SDLK_SPACE: return " ";
+        default: return nullptr;
+    }
+}
+
+/**
+ * Offer one key to the page, but only while the page owns the keyboard.
+ *
+ * Everything else is the game's, which is what makes a HUD usable at all: `W` is throttle and
+ * `KeyQ` is the command overlay, and a rectangle under the pointer cannot decide that. The page
+ * says whether it holds the keyboard — a focused input, textarea, select or open list — and that
+ * answer is the whole rule.
+ *
+ * `text` is the character the key would insert, and is empty for anything that types nothing; the
+ * page inserts it itself, because a synthesised `keydown` never inserts one.
+ */
+bool routeKeyToUi(const SDL_KeyboardEvent& event, bool isDown) {
+    if (!uiOverlayKeyboardCaptured()) return false;
+    const char* named = domKeyName(event.key);
+    const char* key = named != nullptr ? named : SDL_GetKeyName(event.key);
+    const char* code = SDL_GetScancodeName(event.scancode);
+    char text[8] = {};
+    if (isDown && !event.repeat && event.key >= 0x20 && event.key < 0x7F) {
+        text[0] = static_cast<char>(event.key);
+    }
+    const SDL_Keymod modifiers = SDL_GetModState();
+    uiOverlayInjectKey(isDown ? "keydown" : "keyup", key, code != nullptr ? code : "", text,
+                       (modifiers & SDL_KMOD_CTRL) != 0, (modifiers & SDL_KMOD_ALT) != 0,
+                       (modifiers & SDL_KMOD_SHIFT) != 0, (modifiers & SDL_KMOD_GUI) != 0);
+    return true;
+}
+
 /**
  * Poll SDL events
  * @return false if quit event received
@@ -189,6 +383,34 @@ void destroyWindow() {
 bool pollEvents() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // The UI is offered every pointer event before the game sees it, and either takes it or
+        // declines. `uiOverlayAttached()` is false for a `renderer: "native"` game and on every
+        // platform without an offscreen UI, which is what keeps those targets on the exact path
+        // they had.
+        if (uiOverlayAttached()) {
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                const int bit = domButtonBit(event.button.button);
+                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+                    g_domButtons |= bit;
+                else
+                    g_domButtons &= ~bit;
+            }
+            switch (event.type) {
+                case SDL_EVENT_MOUSE_MOTION:
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                case SDL_EVENT_MOUSE_BUTTON_UP:
+                    if (routePointerToUi(event)) continue;
+                    break;
+                case SDL_EVENT_KEY_DOWN:
+                    if (routeKeyToUi(event.key, true)) continue;
+                    break;
+                case SDL_EVENT_KEY_UP:
+                    if (routeKeyToUi(event.key, false)) continue;
+                    break;
+                default:
+                    break;
+            }
+        }
         switch (event.type) {
             case SDL_EVENT_QUIT:
                 std::cout << "[Window] Quit event received" << std::endl;
@@ -200,6 +422,17 @@ bool pollEvents() {
                 g_window.height = event.window.data2;
                 std::cout << "[Window] Resized to " << g_window.width << "x" << g_window.height << std::endl;
                 processResize(g_window.width, g_window.height);
+                // The offscreen UI has no window of its own to follow, so nothing tells it the game
+                // changed size unless this does. Without it the web view keeps the layout it was
+                // attached at and the composite scales that onto the new swapchain, which a player
+                // sees as a stretched HUD rather than a re-laid-out one.
+                uiOverlayResizeToWindow();
+                break;
+
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                // A different scale factor is a different number of pixels for the same logical size,
+                // and the page's viewport is measured in pixels.
+                uiOverlayResizeToWindow();
                 break;
 
             case SDL_EVENT_KEY_DOWN:

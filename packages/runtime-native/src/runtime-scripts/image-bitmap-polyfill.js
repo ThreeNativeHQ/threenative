@@ -21,7 +21,10 @@ async function createImageBitmap(source, options) {
   if (source instanceof ArrayBuffer) {
     arrayBuffer = source;
   } else if (source instanceof Uint8Array) {
-    arrayBuffer = source.buffer;
+    // A view may name one embedded image or part of a pooled buffer, not the whole allocation.
+    arrayBuffer = source.byteOffset === 0 && source.byteLength === source.buffer.byteLength
+      ? source.buffer
+      : source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
   } else if (source && typeof source.arrayBuffer === "function") {
     // Blob or Response
     arrayBuffer = await source.arrayBuffer();
@@ -32,8 +35,17 @@ async function createImageBitmap(source, options) {
     throw new Error("createImageBitmap: unsupported source type");
   }
 
-  // Decode using native function
-  const decoded = __decodeImageData(arrayBuffer);
+  // Decode off the frame thread: the native side queues the bytes and calls back once a worker
+  // has finished, so this returns to the event loop instead of stopping it for the whole decode.
+  const decoded = await new Promise((resolve, reject) => {
+    __decodeImageDataAsync(arrayBuffer, (bitmap, error) => {
+      if (error) {
+        reject(new Error(error));
+        return;
+      }
+      resolve(bitmap);
+    });
+  });
 
   if (!decoded) {
     throw new Error("createImageBitmap: failed to decode image");
