@@ -34,13 +34,17 @@ whose exit status is its own failing cleanup kill rather than the command's.
 
 **A frame rate from that private Xvfb is wrong, not missing**, so no command may print one as
 though it were measured: without vsync the present wait lands inside the update phase (13.3 fps
-there against 57.7 on the real display, one build). `trace` never prints one. `perf` suppresses the
-column and refuses a `--min-fps` bound whenever the run's display is private (`--executable`) **or
-the log says for itself that the frames never reached the display**: the host counts loop frames and
-presents separately in `TN_PRESENTS_TICK`, and a loop the presentation cap outran inflates `fps` by
-exactly that ratio — midway's native launch log reported 2631 fps beside its own
-`{"frames":1740,"presents":133,"capHz":60}`, and passed a 55 fps bound. Both refusals take
-`--allow-virtual-display` when the operator is deliberately reading phase timings alone. A
+there against 57.7 on the real display, one build). `trace` never prints one. `perf` prefers the
+display's own rate whenever a window carries one — core reads the host's `__tnPresentedCount` and
+reports `presents`/`presentedFps` beside the loop's `fps` — and otherwise suppresses the column and
+refuses a `--min-fps` bound when the run's display is private (`--executable`) **or the log says for
+itself that the frames never reached the display**: the host counts loop frames and presents
+separately in `TN_PRESENTS_TICK`, and a loop the presentation cap outran inflates `fps` by exactly
+that ratio — midway's native launch log reported 2631 fps beside its own
+`{"frames":1740,"presents":133,"capHz":60}`, and passed a 55 fps bound. A window that counted zero
+presents carries no rate at all: the column prints `0.00`, the windows are named in words, and a
+bound over windows that all lack a rate fails closed. Both refusals take `--allow-virtual-display`
+when the operator is deliberately reading phase timings alone. A
 `--min-fps` bound that can be satisfied by a number nobody can vouch for is a green with nothing
 behind it — the desktop build above reported 20,000 fps that way.
 

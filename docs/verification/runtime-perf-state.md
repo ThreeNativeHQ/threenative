@@ -2390,32 +2390,34 @@ to remove. Commit `bc4cf759d`; three tests use that log's own numbers and nestin
 
 ### 1.4.6 The loop's cadence is not the display's (2026-09-19)
 
-`TN_FRAME_BUDGET`'s `fps` is derived from the intervals a game's own frame loop reports. On the web
+`TN_FRAME_BUDGET`'s `fps` is derived from the intervals the game's own frame loop reports. On the web
 that is `requestAnimationFrame`, one per vblank, so it is the number a player would read. On native
 the presentation cap lets the loop iterate many times per present — `paceToPresentationCap` paces the
 *present*, deliberately not the loop, because "pacing an unpresented loop would add sleep to the
-twelve seconds a player already waits".
+twelve seconds a player already waits" — so a window read `fps 2631.58` on a host that presented 133
+frames in 1740. The reader first refused to print either number (`a85959e71`); the measurement now
+exists.
 
-So the same window reads 2631.58 fps on a host that presented 133 frames in 1740, and the two meters
-are both right about different things. The host says so in `TN_PRESENTS_TICK`
-(`{"frames":1740,"presents":133,"capHz":60}`). `perf` now refuses to print the frame rate — and
-refuses a `--min-fps` bound — when a log's own counter shows fewer than 95% of loop frames reached
-the display, quoting the counts, unless the operator passes `--allow-virtual-display`. Before that,
-`perf --file <native log> --min-fps 55` passed at 2631 fps. Commit `a85959e71`.
+The host exposes the counter it already keeps — `__tnPresentedCount`, beside `__tnPresentationCap` —
+and core reads it once per frame, so a window carries `presents` and `presentedFps` beside the loop's
+`fps`. Verified on a rebuilt host and a rebuilt desktop artifact, `perf --file <native launch log>`:
 
-**The claim is corrected; the counting is not.** `IFrameBudgetWindow.presented`/`fps` no longer say
-they measure presented frames — the interface states which interval it is, what inflates it, and
-that the host's own series is the display's (commit `d69c17355`). Counting *presents* instead needs a
-host→core per-frame present signal: the host knows (`presentCount` and `TN_SURFACE_FRAME` are
-present-gated) and core does not, and the one JS-visible seam that exists, `__tnPresentationCap`,
-reports only the ceiling.
+| window | fps (loop) | presents | presentedFps |
+| --- | ---: | ---: | ---: |
+| 1 (launch) | 51.28 | 115 | 13.42 |
+| 2-5 (spinning) | 1449–25000 | 0 | absent |
 
-**A prerequisite for that fix, learned the hard way:** the reader's refusal keys off the log's own
-presents ratio, so a core that starts counting presents would report an honest `fps` beside an
-unchanged `TN_PRESENTS_TICK` ratio (the loop still iterates many times per present) and the reader
-would suppress a correct number. Any such change must also teach the reader **which basis a window
-counted** — a field on the window, not an inference from the log — or the tool lies in the opposite
-direction.
+The first cut of this got two things wrong, both caught by that log:
+
+- **Zero is a reading, absent is no seam.** 300 loop frames at 20,000 fps is 20 ms, which can contain
+  no present at all; the first cut reported those windows as absent, hiding four of five.
+- **A window with no presents carries no rate.** `presentedFps` is absent rather than 0, the reader
+  prints `0.00` and names those windows in words, and a `--min-fps` bound over windows that all lack
+  a rate fails closed as `TN_PERF_BOUNDS_NOT_ASSESSABLE` rather than passing on a loop number.
+
+Commit `8db1fd632`. The prerequisite recorded below while scoping this — a window must say which
+cadence it counted — is what `presents`/`presentedFps` being present-or-absent implements: no reader
+infers a basis from a log any more. Suites: core 126 files, playtest 95 files, 2649 tests green.
 
 ### 1.5 Untried, named
 
