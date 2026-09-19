@@ -2388,6 +2388,26 @@ A phase that merely contains another overlapping phase is not named — the host
 brackets a whole iteration, and attributing a stall to it would be the empty answer this join exists
 to remove. Commit `bc4cf759d`; three tests use that log's own numbers and nesting.
 
+### 1.4.6 The loop's cadence is not the display's (2026-09-19)
+
+`TN_FRAME_BUDGET`'s `fps` is derived from the intervals a game's own frame loop reports. On the web
+that is `requestAnimationFrame`, one per vblank, so it is the number a player would read. On native
+the presentation cap lets the loop iterate many times per present — `paceToPresentationCap` paces the
+*present*, deliberately not the loop, because "pacing an unpresented loop would add sleep to the
+twelve seconds a player already waits".
+
+So the same window reads 2631.58 fps on a host that presented 133 frames in 1740, and the two meters
+are both right about different things. The host says so in `TN_PRESENTS_TICK`
+(`{"frames":1740,"presents":133,"capHz":60}`). `perf` now refuses to print the frame rate — and
+refuses a `--min-fps` bound — when a log's own counter shows fewer than 95% of loop frames reached
+the display, quoting the counts, unless the operator passes `--allow-virtual-display`. Before that,
+`perf --file <native log> --min-fps 55` passed at 2631 fps. Commit `a85959e71`.
+
+**Open, named:** the *field* is still called `presented` in `IFrameBudgetWindow` on a platform where
+it counts loop iterations. Correcting that needs a host→core per-frame present signal — the host
+knows (its `presentCount` and `TN_SURFACE_FRAME` are present-gated) and core does not — so the
+reader's refusal is the honest stopgap, not the fix.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by
