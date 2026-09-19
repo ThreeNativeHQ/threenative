@@ -289,6 +289,43 @@ struct FrameReplayState {
     std::vector<uint8_t> externalImageCrop;
 };
 
+// Retained compiled frame (PRD native compiled frame plans). One captured frame's record layout
+// stays native-side, so later frames carry only the payload words that changed. Bounded by
+// `maxBytes`, owned by the bindings state, and invalidated by anything that makes the retained
+// bytes a lie: a v2 fallback packet, a rejected patch, or a failed replay. `epoch` is the
+// recorder's read-back — it changes exactly when the retained plan stopped being usable, which is
+// the only signal a recorder needs to recapture instead of patching a plan that is gone.
+struct FramePlanState {
+    // Hard ceiling on one retained frame. The JS recorder mirrors this number so it can fall back
+    // to v2 for a frame it knows will not fit; the vitest lane reads both and fails when they
+    // drift, because a mirror that quietly disagrees turns into a hard frame failure at runtime.
+    static constexpr uint32_t maxBytes = 32u << 20;
+    struct Record {
+        uint32_t offset = 0;
+        uint32_t opcode = 0;
+        uint32_t bytes = 0;
+    };
+    bool valid = false;
+    uint32_t sequence = 0;
+    uint32_t opCount = 0;
+    uint64_t epoch = 1;
+    std::vector<uint8_t> bytes;
+    std::vector<Record> records;
+    // Transport accounting for the measurement lane: what each mode carried, so a report can state
+    // the byte reduction instead of implying it.
+    uint64_t captures = 0;
+    uint64_t patches = 0;
+    uint64_t captureBytes = 0;
+    uint64_t patchBytes = 0;
+    void invalidate() {
+        valid = false;
+        sequence = 0;
+        opCount = 0;
+        records.clear();
+        epoch += 1;
+    }
+};
+
 struct FrameProfiling {
     uint64_t frameEndCount = 0;
 #if TN_ANDROID_JS_PROFILE
@@ -478,6 +515,7 @@ struct BindingsState {
     ResourceRegistries registries;
     PresentationState presentation;
     FrameReplayState frameReplay;
+    FramePlanState framePlan;
     FrameProfiling profiling;
     ScreenshotCapture screenshot;
     Canvas2DComposite canvas2D;
