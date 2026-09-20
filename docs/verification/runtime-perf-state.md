@@ -291,6 +291,26 @@ The reproduction wrote into the same `raw/exp-05-<arm>-<slot>` paths as the orig
 replaced those logs; the original values survive in the experiment's own fields, and `raw/exp-05/`
 and `raw/exp-05-gates/` are untouched.
 
+**Batching a scene is bounded by its material count, not by its object count.** The engine's own
+guidance says to reach for `mergeParts` when many different shapes never move relative to each
+other, and the arithmetic behind that looked strong: a game whose frame is JavaScript with the GPU
+idle, 1,561 meshes, and ~2 microseconds of three.js work per object per pass implies about 5 ms of a
+16 ms render that fewer objects would delete.
+
+Measured on that game, a per-material merge (material, `castShadow`, `receiveShadow` and the layer
+mask all part of the bucket key, animated and game-toggled subtrees skipped) replaced **246 parts
+with 61 meshes: 1,561 -> 1,376**, and moved nothing - 46.5 fps against 48-51 for the same build
+without it, inside that run's own spread. The reason is in the buckets: of 459 meshes it could even
+consider, **274 buckets held 213 singletons**, because an imported model carries a material per
+part. A merge can only collapse parts that share a material, so a scene authored that way has
+almost nothing to collapse; the rest of the population sat inside subtrees the game toggles per
+object and correctly refused to merge.
+
+So the lever is real but its size is a content property, and the number to read before promising
+anything is the bucket census, not the object count. A scene that wants it needs shared materials -
+an atlas, one material per hull - or repeated shapes for `InstancedBatch`. Where neither is true,
+"fewer objects" is not available, and the remaining lever is moving the walk itself.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
