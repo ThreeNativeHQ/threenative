@@ -155,6 +155,22 @@ box's noise**: three alternating pairs against the unchanged control read +3200,
 loading screen that froze for half a second per burst does not — and the launch-total claim stays
 unresolved here.
 
+**exp-05 — the asset-read burst does not own a frame either.** `processPendingFileCallbacks()`
+emptied the whole queue in one phase: a real launch measured a single `fileCallbacks` phase of **625,
+824 and 1043 ms** across three runs — every completed read's callback in one frame, each copying its
+bytes into a fresh ArrayBuffer before the game could continue. The reads are issued in parallel, so
+they arrive together; the work is the same either way, and what was missing was a frame between
+batches. It is now bounded the way the engine already bounds its scheduler drain (4 ms, 256
+callbacks, `processMicrotasks()` between them so a callback that enqueues the next read advances).
+
+Three paired runs against the unchanged build: worst `fileCallbacks` phase **0, 0, 0 ms** — below the
+host's own 250 ms reporting threshold — against 625/1043/824 ms; `ready` moved −728, −1766 and
+−310 ms (median −728 ms, secondary and load-dependent), with **zero unresolved assets, zero decode
+failures and zero cue warnings in all six runs**. Gates: `launch` (2011 frames), `briefing` (631) and
+`audio-sweep` (6631) native playtests pass; the whole `@threenative/runtime-native` suite passes
+(1372 tests); the shape test fails on the unbounded drain with *"the drain must carry a time budget"*
+and passes on the bounded one.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,

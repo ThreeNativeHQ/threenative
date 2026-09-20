@@ -2872,9 +2872,16 @@ private:
 
     void processPendingFileCallbacks() {
         // Process pending file callbacks - these come from async file reads
-        // We process them on the main thread to ensure JS context safety
-
-        while (!pendingFileCallbacks_.empty()) {
+        // We process them on the main thread to ensure JS context safety.
+        //
+        // Bounded in time and count, the way `executeSchedulerCallbacks` below is: one frame must
+        // not own a whole asset burst. A native run of a real game measured a single `fileCallbacks`
+        // phase of 846-1527 ms during launch — the reads are issued in parallel, so every completed
+        // read arrives at once, and each callback copies its bytes into a fresh ArrayBuffer before
+        // the game can continue. The work is the same either way; what changes is that the loading
+        // screen gets a frame between batches instead of freezing through all of them.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+        for (int count = 0; running_ && count < 256 && !pendingFileCallbacks_.empty(); ++count) {
             auto pending = std::move(pendingFileCallbacks_.front());
             pendingFileCallbacks_.pop();
 
@@ -2894,6 +2901,9 @@ private:
 
             // Unprotect the callback now that we're done with it
             jsEngine_->freeHandle(pending.callback);
+            // A callback may enqueue the next read; let its continuation run before the next one.
+            processMicrotasks();
+            if (std::chrono::steady_clock::now() >= deadline) break;
         }
     }
 
