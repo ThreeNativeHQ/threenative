@@ -139,10 +139,16 @@ Measured with the campaign's own instrument on the same profile lane, frames 1-7
 and `speech-once.playtest.json` (2892 frames) both pass, with 146 clips decoded off-thread and zero
 load failures; the whole `@threenative/runtime-native` suite passes (1370 tests, 23 skipped); the
 decode contract test is red when the binding decodes inline again (`expected 5 decodes outstanding,
-saw 0`) and green with the queue. **The launch *seconds* did not clear this box's noise**: three
-alternating pairs against the unchanged control read +3200, +622 and −509 ms on `ready`, while the
-`audio` load step itself moved only +134, +59 and −49 ms. So the block is gone — a loading screen
-that froze for half a second per burst does not — and the launch-total claim stays unresolved here.
+saw 0`) and green with the queue. **One existing contract had to change with it**:
+`threenative-audio-decode-promise-test` asserted that `decodeAudioData`'s legacy `successCallback`
+had already fired when the call returned — true only because decoding was synchronous, and not what a
+browser does. It now asserts the browser contract in both directions: the callback has *not* fired
+before the decode lands, and it does fire when it lands. That pair is the red-green for the contract,
+and the proof's pump drains the way `pollEvents()` does. **The launch *seconds* did not clear this
+box's noise**: three alternating pairs against the unchanged control read +3200, +622 and −509 ms on
+`ready`, while the `audio` load step itself moved only +134, +59 and −49 ms. So the block is gone — a
+loading screen that froze for half a second per burst does not — and the launch-total claim stays
+unresolved here.
 
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
