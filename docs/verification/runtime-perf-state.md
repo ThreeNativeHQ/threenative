@@ -205,6 +205,23 @@ launch lead for this campaign: the engine's share of the worst single frame in a
 TN_DECODE_CALLBACK_SPLIT:{"nativeMs":4.26,"jsMs":1818.44,"uploadMs":0,"w":2048,"h":2048,"bytes":16777216}
 ```
 
+**A second game walks the kept changes.** The scaffolded production platformer — the repository's
+own template, packed from the workspace at `50c26f9ba` and built against the changed host — launches
+and passes `playtests/collect.playtest.json` on desktop (83 frames, no diagnostics). Its
+`playtests/performance.playtest.json` reads 15.6 fps under the runner's private Xvfb and fails its
+30 fps floor, then passes that floor on the real display (`TN_PLAYTEST_HOST_DISPLAY=1`) and fails only
+its 33 ms p95 product budget at 107 ms — on a box at 1-minute load ~20, with no pre-change control
+arm built (that needs a full CMake reconfigure, and the question it would answer is the template's
+own budget, not this campaign's changes). The Xvfb figure is the repo's own documented artifact
+(13.3 fps there against 57.7 on the real display, one build), which is why the second run named the
+display.
+
+**Harness observation, not a change:** `pnpm profile:production -- --target desktop` reports
+`BLOCKED` with `TN_PROD_PLAYTEST_FAILED` and *"Desktop application did not expose a playtest bridge"*
+for that same scaffolded platformer, while the same project built and driven directly by the playtest
+runner passes. The harness's desktop invocation is the part that fails on this checkout; nothing in
+the two kept changes is implicated.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
