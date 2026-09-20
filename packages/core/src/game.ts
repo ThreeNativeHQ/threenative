@@ -61,7 +61,12 @@ import {
   StartupReadiness,
 } from "./startup-readiness.js";
 import { type GameStore, createGameStore } from "./state.js";
-import { type IUiBridge, UI_READY_INTENT, connectUiBridge } from "./ui-bridge.js";
+import {
+  type IUiBridge,
+  UI_DEV_METRICS_MESSAGE,
+  UI_READY_INTENT,
+  connectUiBridge,
+} from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
 import { type IViewportOptions, Viewport } from "./viewport.js";
 import {
@@ -165,14 +170,52 @@ export interface IGamePlatformSource {
   unmountCanvas(canvas: HTMLCanvasElement): void;
 }
 
+/**
+ * Whether this launch is a development one.
+ *
+ * A web build answers through Vite's own flag. A native build has no bundler flag at launch, so the
+ * host publishes `DEV_MODE` on `process.env` — the one place a game can read how it was started —
+ * and this reads it. Both routes answer the same question: should the dev surfaces exist.
+ */
+/**
+ * The bundler's dev flag.
+ *
+ * The `import.meta.env` access must stay written out exactly here. Vite replaces that member
+ * expression at build time; any indirection — a variable holding `import.meta`, or a helper that
+ * takes it as an argument — survives into the bundle, where the game is compiled as a script and
+ * not a module, and the whole bundle then fails to parse with "Cannot use 'import.meta' outside a
+ * module". That is a game that never starts, so the literal access is load-bearing, not style.
+ */
+function bundlerDevFlag(): boolean {
+  return (import.meta as unknown as IImportMeta).env?.DEV === true;
+}
+
+function isDevLaunch(): boolean {
+  // `process.env` exists only where a host installed one: the native runtime does, a browser
+  // bundle does not. Narrowed rather than asserted, so a host that installs something else
+  // answers "not dev" instead of reading a field that is not there.
+  const scope: unknown = globalThis;
+  if (typeof scope === "object" && scope !== null && "process" in scope) {
+    const hostProcess: unknown = scope.process;
+    if (typeof hostProcess === "object" && hostProcess !== null && "env" in hostProcess) {
+      const env: unknown = hostProcess.env;
+      if (typeof env === "object" && env !== null && "DEV_MODE" in env) {
+        const flag: unknown = env.DEV_MODE;
+        if (typeof flag === "string" && flag !== "" && flag !== "0" && flag !== "false")
+          return true;
+      }
+    }
+  }
+  return bundlerDevFlag();
+}
+
 function installDevTools(
   entities: Registry,
   host: DevToolsHost | undefined,
   // Late-bound: the capture is constructed with the render loop, after this install runs.
   geometry: () => GeometryCapture | undefined,
 ): PluginCleanup {
-  const isDev =
-    (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
+  const isDev = isDevLaunch();
   if (!isDev || host === undefined) return () => undefined;
   const devTools: IDevTools = {
     ...(host.__THREENATIVE__ as (IDevTools & Record<string, unknown>) | undefined),
@@ -1283,10 +1326,29 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const geometryCapture = new GeometryCapture();
     this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
+    // Dev metrics are decided once per launch, and counted here rather than timed: a chip that
+    // changed every frame would be unreadable, and a timer would be a second clock.
+    const devMetricsEnabled = isDevLaunch();
+    let devMetricsFrames = 0;
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
+        // The tick that just ran has written whatever the HUD should show; publish it before the
+        // frame is drawn so the UI the player sees belongs to the frame they are looking at.
+        // Coalesced, so a tick that wrote ten times still publishes once, and a game that named
+        // `stateFlushMs` keeps its own cadence instead.
+        this.#state.flush();
+        // A dev launch also reports the rate it is running at, for the UI's own frame-rate chip.
+        // Four times a second is a readable number and no measurable cost; the loop's own smoothed
+        // rate is the measurement, not a second one taken here.
+        if (devMetricsEnabled && this.#uiBridge?.hasPeer() === true) {
+          devMetricsFrames += 1;
+          if (devMetricsFrames >= 15) {
+            devMetricsFrames = 0;
+            this.#uiBridge.post({ type: UI_DEV_METRICS_MESSAGE, fps: gameLoop.fps });
+          }
+        }
         observeCompilation();
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
