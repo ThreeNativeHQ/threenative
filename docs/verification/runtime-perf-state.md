@@ -311,6 +311,27 @@ anything is the bucket census, not the object count. A scene that wants it needs
 an atlas, one material per hull - or repeated shapes for `InstancedBatch`. Where neither is true,
 "fewer objects" is not available, and the remaining lever is moving the walk itself.
 
+**What a C++ traversal would actually recover, priced against the profile rather than the slogan.**
+The per-object block on the measured scene is 32.4% of a 16.1 ms JS frame (5.22 ms). Split by what
+each entry is, not by which file it lives in: traversal — the walk plus the frustum and projection
+tests that build the render list — is 3.71 ms of it (project 1.48, matrix walk 2.22), and per-draw
+bookkeeping keyed on JavaScript object identity is 1.51 ms, inside three.js's own
+`_renderObjectDirect`: `_objects.get`, `_nodes.needsRefresh`, `_geometries.updateForRender`,
+`_bindings.updateForRender`, `_pipelines.updateForRender`. The shadow lane is a second full walk of
+the same machinery, so these numbers are paid per pass.
+
+Moving traversal to C++ behind the existing frame-op stream, staying inside the charter (three.js
+stays the renderer), recovers **1.1-1.9 ms of a 20.2 ms frame — 49.5 to about 52-55 fps** — because
+the other 60% of the block is either the matrix walk three consumes on the same frame or bookkeeping
+whose key is a JS object. It cannot reach the 3.7-4.6 ms that "move traversal to C++" suggests. It
+would also have to publish about 187 KB per frame of compiled traversal output (against 17% of
+today's packet; 104 KB of that is command overhead), which is a real cost the transport already
+measured once in PR #275.
+
+The comparison that matters: where a scene shares materials or repeats shapes, batching with the
+capabilities the engine already ships recovers as much or more (2.0-2.9 ms) for no engine work at
+all; where it does not — as measured above — batching recovers nothing and the walk is what is left.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
