@@ -192,8 +192,18 @@ launches that marker fired **exactly once each**: 1347-1835 ms, `waiting: 0`, fo
 `engine->call(callback, {bitmap, null})`, so the cost is whatever the JS continuation does with the
 first texture — three's upload path. `AsyncImageDecoder::drain()` is *already* bounded and its
 leftovers wait for a later poll, so the drain is not the lever; the cost inside that one continuation
-is. Naming it needs a probe inside the upload path (or a profile sliced to that frame), which is a
-new instrument rather than a new bound, and it is left here as the next lead rather than guessed at.
+is. A split probe answered the ownership question in two runs: the callback's **native** half — building
+the V8 ArrayBuffer from 16.8 MB of RGBA — is **2.96 and 4.26 ms**, and the JS continuation is **1391.7
+and 1418.4 ms**; a third run on a 512x512 image reads 0.16 ms native against 1567.2 ms of JS, so the
+engine's half tracks the bytes while the JS half does not. Accumulating the engine's own texture-upload
+bindings (`copyExternalImageToTexture`, `queue.writeTexture`) over the same window gives **0 ms**: the time is JavaScript outside the engine's
+upload path, so the lever is in the game's or three's continuation, not in the host. That closes the
+launch lead for this campaign: the engine's share of the worst single frame in a launch is 5 ms of
+1.8 s.
+
+```
+TN_DECODE_CALLBACK_SPLIT:{"nativeMs":4.26,"jsMs":1818.44,"uploadMs":0,"w":2048,"h":2048,"bytes":16777216}
+```
 
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
