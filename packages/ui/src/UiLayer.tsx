@@ -1,6 +1,7 @@
 import {
   type IUiBridge,
   type IUiStateMirror,
+  UI_DEV_METRICS_MESSAGE,
   UI_READY_INTENT,
   connectUiBridge,
   publishHitRegions,
@@ -51,6 +52,49 @@ function useUiLayer(name: string): IUiLayerValue {
   return value;
 }
 
+/**
+ * The frame rate the game reports when it was launched in dev mode.
+ *
+ * Renders nothing until the game says it is a dev launch, so a shipped build carries the component
+ * and never a number. `pointer-events: none` because a readout must never eat a touch: the host
+ * routes input by the rectangles the UI publishes, and a chip that intercepted one would be a
+ * button that stopped working while a developer was watching.
+ */
+function DevFrameRateChip({ bridge }: { bridge: IUiBridge }) {
+  const [fps, setFps] = useState<number | undefined>(undefined);
+  useEffect(
+    () =>
+      bridge.onMessage((message) => {
+        if (message.type !== UI_DEV_METRICS_MESSAGE) return;
+        const value: unknown = message.fps;
+        if (typeof value === "number" && Number.isFinite(value) && value > 0) setFps(value);
+      }),
+    [bridge],
+  );
+  if (fps === undefined) return null;
+  return (
+    // `<output>` carries the status role natively, so the readout is announced without an ARIA
+    // attribute standing in for an element that already means this.
+    <output
+      className="tn-dev-fps"
+      style={{
+        position: "absolute",
+        top: 8,
+        right: 8,
+        padding: "2px 6px",
+        borderRadius: 4,
+        background: "rgba(0, 0, 0, 0.55)",
+        color: "#e8f0ff",
+        font: "500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace",
+        pointerEvents: "none",
+        zIndex: 2147483647,
+      }}
+    >
+      {`${Math.round(fps)} fps`}
+    </output>
+  );
+}
+
 export function UiLayer({ children }: { children: ReactNode }) {
   const [value, setValue] = useState<IUiLayerValue | undefined>(undefined);
   const registryRef = useRef<IStopHandle | undefined>(undefined);
@@ -85,7 +129,12 @@ export function UiLayer({ children }: { children: ReactNode }) {
     };
   }, [value]);
   if (value === undefined) return null;
-  return <UiLayerContext.Provider value={value}>{children}</UiLayerContext.Provider>;
+  return (
+    <UiLayerContext.Provider value={value}>
+      {children}
+      <DevFrameRateChip bridge={value.bridge} />
+    </UiLayerContext.Provider>
+  );
 }
 
 /**

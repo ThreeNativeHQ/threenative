@@ -2060,8 +2060,18 @@ private:
         auto argv = jsEngine_->newArray();
         jsEngine_->setProperty(process, "argv", argv);
 
-        // process.env - environment variables (empty object for now, could populate later)
+        // process.env - the launch flags a game may read.
+        //
+        // Only the flags a host chooses to publish: handing over the whole environment would put
+        // the machine's variables in a game's hands, which is a leak nobody asked for. `DEV_MODE`
+        // is the one a developer sets on the command line to ask for the dev surfaces, and the
+        // engine reads it to decide whether they exist at all.
         auto env = jsEngine_->newObject();
+        const char* devMode = std::getenv("DEV_MODE");
+        if (devMode != nullptr && devMode[0] != '\0' && std::strcmp(devMode, "0") != 0 &&
+            std::strcmp(devMode, "false") != 0) {
+            jsEngine_->setProperty(env, "DEV_MODE", jsEngine_->newString("true"));
+        }
         jsEngine_->setProperty(process, "env", env);
 
         jsEngine_->setGlobalProperty("process", process);
