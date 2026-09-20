@@ -171,6 +171,16 @@ failures and zero cue warnings in all six runs**. Gates: `launch` (2011 frames),
 (1372 tests); the shape test fails on the unbounded drain with *"the drain must carry a time budget"*
 and passes on the bounded one.
 
+**The 1.7-2.6 s `timerCallbacks` launch phase is one callback, not a burst — bounded, measured,
+reverted.** The same shape as the file drain looked like it applied to the *largest* single phase in
+a launch: `executeTimerCallbacks()` emptied its queue unbounded, and three launches reported one
+`timerCallbacks` phase of 1744, 2139 and 2608 ms. A probe that counted callbacks inside the phase
+answered it in one run: **`{"callbacks":1,"ms":2663}`** — a single callback, which no drain budget can
+bound, because a callback is not preemptible. Three paired runs against the unchanged build read
+2062, 1813 and 2248 ms with the bound in place: **no change**, so the bound was reverted. The
+callback's identity is still open (it did not reproduce in two later probe runs, so it is conditional
+on a stalled loop) and is recorded here as a lead rather than a fix.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
