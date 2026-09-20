@@ -81,25 +81,30 @@ with `flushRecordedFrameOps` (`bindings_resources.cpp:1140`), replaying the fram
 boundary would replay anyway, so the profile attributes relocated replay to the map. The promise,
 readback buffer and extra submit are what would actually be saved.
 
-**exp-01 — one scene-graph walk per frame: no timing verdict on this box.** Three walks the whole
-scene at the top of every `render()` (`Renderer.js`: `if ( scene.matrixWorldAutoUpdate === true )
-scene.updateMatrixWorld()`), and a water surface's mirrored pass is a second `render()` of the same
-scene from *inside* the first — `ReflectorBaseNode.updateBefore` calls `renderer.render( scene,
-virtualCamera )` during the node-update phase, so the outer render's walk then recomputes
-`updateMatrix()` for every auto-update object in a graph nothing has moved in. `wrapRenderer` now
-keeps the nested walk and pins `matrixWorldAutoUpdate` for the rest of the frame
-(`packages/core/src/renderer.ts`).
+**exp-01 — the double scene walk does not exist on this workload, and the change built for it was
+reverted.** Three does walk the whole graph at the top of every `render()` (`Renderer.js`:
+`if ( scene.matrixWorldAutoUpdate === true ) scene.updateMatrixWorld();`), and a mirrored pass is a
+second `render()` of the same scene — so the duplicate is real *where auto-update is left on*.
+**midway does not leave it on.** It sets `scene.matrixWorldAutoUpdate = false` at startup and walks
+the scene itself once per presented frame from the engine's `beforeRender` seam, with its own comment
+saying why: *"Shadow and reflection passes (which draw through their own cameras) reuse the
+transforms prepared here."* A probe on the live host counted, over 1200 frames, **3180 nested
+renders, 1746 calls to the scene's own `updateMatrixWorld` — every one at render depth 0 with
+`matrixWorldAutoUpdate === false` — and zero suppressions.** There was no second walk to remove.
 
-Evidence that holds: `packages/core/__tests__/single-scene-walk.spec.ts` fails without the guard (the
-mirrored case walks twice) and passes with it; the full core suite passes 1452 tests;
-`midway-open-pacific` passes `native-playtests/launch.playtest.json` on both arms identically (same
-assertions, 2011 frames) with world pixels matching within animation noise; the instrumented
-renderer test now asserts forwarding rather than function identity, because a wrapper is the point.
+The guard this campaign committed for it (`e0c31a8a3`) is **reverted** here, its test deleted and
+`renderer.spec.ts`'s identity assertion restored. Two lessons worth the ink:
 
-The timing series could not be taken. Five valid runs over four slots: the incumbent arm read
-**15.79, 18.38 and 18.05 ms p50** minutes apart at a nominally identical 5-minute load (11.6-13.2) —
-a 4.53 ms spread against a claimed effect of 1.17 ms — so the series is `invalid` rather than
-`keep`, and the queue keeps exp-01 open for a quiet machine.
+- **A timing pair is the wrong instrument for a claim about removed work.** Three wall-clock series
+  for this change came back `invalid` on a shared box; what settled it was *counting* the walks a
+  probe saw (two runs, unambiguous). Where a change claims to delete work, count the work first.
+- **The engine already has this lever, twice over.** `renderProjection.ts` walks its source once and
+  leaves `matrixWorldAutoUpdate` false for the passes that follow, and midway does the same by hand.
+  A change that adds a third mechanism for a case two existing mechanisms already cover is exactly
+  what the charter's kill switch is for.
+
+For a game that leaves auto-update on, the duplicate walk is real and **unmeasured here** — it is
+recorded as a lead, not taken.
 
 **A false positive worth recording, because the obvious fix causes it.** Pairing the arms by their
 recorded load average looks objective and is not: the tool matched *both* candidate runs against the

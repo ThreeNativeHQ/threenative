@@ -315,59 +315,6 @@ function installDrawHook(raw: RendererInstance, alphaAntialiasing: AlphaAntialia
   });
 }
 
-/**
- * A scene rendered twice in one frame updates its world matrices once.
- *
- * Three walks the entire scene graph at the top of every `render()` — `Renderer.js`:
- * `if ( scene.matrixWorldAutoUpdate === true ) scene.updateMatrixWorld();` — and `updateMatrixWorld`
- * composes every `matrixAutoUpdate` object's local matrix and multiplies it into `matrixWorld`, so
- * the walk is not a flag check: it is per-object work proportional to the graph.
- *
- * A water surface's mirrored pass is a **second** `render()` of the same scene from inside the
- * first (three's `ReflectorBaseNode.updateBefore` calls `renderer.render( scene, virtualCamera )`).
- * It runs during the node-update phase, before the outer render reaches its own walk, so the outer
- * walk then recomputes matrices for a graph nothing has moved in since.
- *
- * The nested walk is the one kept, and it keeps its exact position in the frame: the mirrored pass
- * and the world pass see the same matrices they saw before this change. The outer render is pinned
- * to `matrixWorldAutoUpdate: false` for the rest of the frame and restored at its exit, which is the
- * value the game left on the scene.
- *
- * A scene rendered once, or twice for two different scenes, is untouched.
- */
-function installSingleSceneWalk(raw: RendererInstance): void {
-  // Three's own `render()` takes just the pair; the rest-parameter shape is here so the wrapper can
-  // forward whatever a caller passed without changing the arity of anything it wraps.
-  const render = raw.render.bind(raw) as (
-    scene: Object3D,
-    camera: Camera,
-    ...rest: unknown[]
-  ) => void;
-  let depth = 0;
-  let outerScene: Object3D | undefined;
-  let pinned: Object3D | undefined;
-  raw.render = ((scene: Object3D, camera: Camera, ...rest: unknown[]) => {
-    if (depth === 0) outerScene = scene;
-    depth += 1;
-    try {
-      return render(scene, camera, ...rest);
-    } finally {
-      depth -= 1;
-      if (depth === 1 && scene === outerScene && scene.matrixWorldAutoUpdate === true) {
-        scene.matrixWorldAutoUpdate = false;
-        pinned = scene;
-      }
-      if (depth === 0) {
-        if (pinned !== undefined && pinned.matrixWorldAutoUpdate === false) {
-          pinned.matrixWorldAutoUpdate = true;
-        }
-        pinned = undefined;
-        outerScene = undefined;
-      }
-    }
-  }) as RendererInstance["render"];
-}
-
 export function readCanvasSize(canvas: HTMLCanvasElement): readonly [number, number] {
   return [
     Math.max(1, canvas.clientWidth || globalThis.innerWidth || 1),
@@ -907,7 +854,6 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       const alphaAntialiasing = arm(instance);
       const pipelineCensus = await createWebGpuPipelineCensus(instance, options);
       installDrawHook(instance, alphaAntialiasing);
-      installSingleSceneWalk(instance);
       renderer = wrapRenderer(
         instance,
         "webgpu",
@@ -931,7 +877,6 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     const alphaAntialiasing = arm(raw);
     const pipelineCensus = createRendererPipelineCensus(raw, "webgl2", options);
     installDrawHook(raw, alphaAntialiasing);
-    installSingleSceneWalk(raw);
     renderer = wrapRenderer(
       raw,
       "webgl2",

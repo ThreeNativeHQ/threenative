@@ -642,10 +642,7 @@ describe("createRenderer", () => {
       value: { gpu: {} },
     });
     let disposed = 0;
-    let rawRenderCalls = 0;
-    const originalRender = () => {
-      rawRenderCalls += 1;
-    };
+    const originalRender = () => undefined;
 
     try {
       const renderer = await createRenderer({
@@ -662,17 +659,11 @@ describe("createRenderer", () => {
           toneMapping: 0,
         }),
       });
-      const raw = renderer.raw as { render: (scene: unknown, camera: unknown) => void };
-      // The framework wraps `render` on the raw renderer — that wrapper is how it sees a nested
-      // render of the same scene, which is a water surface's mirrored pass — so an identity
-      // assertion here would be asserting that the wrapper does not exist. What has to hold is
-      // that the framework's own pipeline never stands between a caller and the raw renderer.
-      raw.render(new Scene(), new PerspectiveCamera());
-      expect(rawRenderCalls).toBe(1);
+      const raw = renderer.raw as { render: () => void };
+      expect(raw.render).toBe(originalRender);
       renderer.setOutputNode({});
       renderer.setOutputNode({});
-      raw.render(new Scene(), new PerspectiveCamera());
-      expect(rawRenderCalls).toBe(2);
+      expect(raw.render).toBe(originalRender);
       renderer.dispose();
       expect(disposed).toBe(1);
     } finally {
