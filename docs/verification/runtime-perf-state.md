@@ -240,6 +240,22 @@ refused as a lever.
 Two conclusions, both worth keeping: midway is the right primary workload, because it is the one that
 is *CPU-bound*; and a profile share is not a cost until the wait has been taken out of it.
 
+**The same trap, twice more, and the pairing rule that caught it.** The scaffolded platformer's
+profile is led by a *different* entry in every configuration: at 60 Hz the swapchain wait above, and
+uncapped `native <- buffer.mapAsync` (the per-frame GPU timestamp readback) at **30.91% and 31.75%**
+of all samples across two control runs. Removing the readback outright changed no frame: control frame
+p50 5.58/5.35 ms against 4.56/6.60 ms without it, with the arm's own spread (2.04 ms) wider than any
+difference between arms and the render phase moving the *other* way (2.79-2.88 against 3.74-5.24) —
+the shape of relocated work rather than work removed. The readback's CPU sits on the main thread
+inside the host poll and submit path, which is exactly where a paced loop already spends its wait.
+
+The first, unpaired reading of that same A/B showed a 2.67 ms win. It was load noise, and it is the
+reason the campaign alternates its arms instead of running them one after another: on this box a
+single arm's spread exceeds every steady-frame effect measured so far, so an unpaired pair can
+manufacture any answer. Cadence was tested too — sampling every fourth frame holds 75 GPU samples in
+a 300-frame window at a 1-frame age against the scaler's limit of 8 — and it bought no frame time, so
+it was reverted rather than shipped as measurement density traded for nothing.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
