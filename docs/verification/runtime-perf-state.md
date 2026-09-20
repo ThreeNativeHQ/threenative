@@ -256,6 +256,26 @@ manufacture any answer. Cadence was tested too — sampling every fourth frame h
 a 300-frame window at a 1-frame age against the scaler's limit of 8 — and it bought no frame time, so
 it was reverted rather than shipped as measurement density traded for nothing.
 
+**Every engine-owned entry in the steady frame is now accounted for, and none is reducible without
+changing behaviour.** On the primary workload the engine's own share is small and spread, and each
+piece was read rather than assumed:
+
+- **The camera cull** (3.7-5.3%, about 0.5-0.7 ms) is property- and `WeakMap`-bound, not
+  trigonometry: it already owns its scratch vector, scratch matrix, visitor and hidden list, and the
+  per-object arithmetic a rewrite would replace (one `sqrt`, one divide, one `applyMatrix4` for a
+  point, one `getMaxScaleOnAxis`) prices at roughly 15 microseconds across 1,529 objects. A
+  "faster" version would be a cosmetic diff.
+- **The per-frame GPU timestamp readback** (0.40 ms on this workload, 30.91% and 31.75% of the
+  second workload's samples) was priced against a paired control and removed outright; the frame did
+  not move, because its CPU sits in the host poll and submit path, where a paced loop already spends
+  its wait.
+- **The frame-op recorder** (about 0.5 ms, 4,131 commands a frame) is already fast-pathed: typed
+  upload paths per view width, resource ids cached on the object, a manual `DataView` encoder. What
+  remains is the byte copy the deferred design requires - a megabyte a frame on this workload, and
+  the safety property that lets the game reuse its own buffers before replay.
+
+That is the whole of the engine's named steady-frame cost, and the campaign's bar is 0.5 ms.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
