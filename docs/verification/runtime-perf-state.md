@@ -185,6 +185,16 @@ load 17-29. The phase is ordinary timer work whose *wall* time is inflated by co
 exactly the confound this record's honest-gap note describes. Nothing was wrong with the drain, and
 the lead closes here.
 
+**The remaining launch lead is a one-off first-upload callback, not a decode queue.** The engine
+already names slow decode callbacks itself (`TN_SLOW_DECODE_CALLBACK`, 100 ms floor), and across eight
+launches that marker fired **exactly once each**: 1347-1835 ms, `waiting: 0`, for a 512x512 and a
+2048x2048 image alike. Size-independence rules out the RGBA copy; the callback is
+`engine->call(callback, {bitmap, null})`, so the cost is whatever the JS continuation does with the
+first texture — three's upload path. `AsyncImageDecoder::drain()` is *already* bounded and its
+leftovers wait for a later poll, so the drain is not the lever; the cost inside that one continuation
+is. Naming it needs a probe inside the upload path (or a profile sliced to that frame), which is a
+new instrument rather than a new bound, and it is left here as the next lead rather than guessed at.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
