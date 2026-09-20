@@ -81,6 +81,47 @@ with `flushRecordedFrameOps` (`bindings_resources.cpp:1140`), replaying the fram
 boundary would replay anyway, so the profile attributes relocated replay to the map. The promise,
 readback buffer and extra submit are what would actually be saved.
 
+**exp-01 — one scene-graph walk per frame: no timing verdict on this box.** Three walks the whole
+scene at the top of every `render()` (`Renderer.js`: `if ( scene.matrixWorldAutoUpdate === true )
+scene.updateMatrixWorld()`), and a water surface's mirrored pass is a second `render()` of the same
+scene from *inside* the first — `ReflectorBaseNode.updateBefore` calls `renderer.render( scene,
+virtualCamera )` during the node-update phase, so the outer render's walk then recomputes
+`updateMatrix()` for every auto-update object in a graph nothing has moved in. `wrapRenderer` now
+keeps the nested walk and pins `matrixWorldAutoUpdate` for the rest of the frame
+(`packages/core/src/renderer.ts`).
+
+Evidence that holds: `packages/core/__tests__/single-scene-walk.spec.ts` fails without the guard (the
+mirrored case walks twice) and passes with it; the full core suite passes 1452 tests;
+`midway-open-pacific` passes `native-playtests/launch.playtest.json` on both arms identically (same
+assertions, 2011 frames) with world pixels matching within animation noise; the instrumented
+renderer test now asserts forwarding rather than function identity, because a wrapper is the point.
+
+The timing series could not be taken. Five valid runs over four slots: the incumbent arm read
+**15.79, 18.38 and 18.05 ms p50** minutes apart at a nominally identical 5-minute load (11.6-13.2) —
+a 4.53 ms spread against a claimed effect of 1.17 ms — so the series is `invalid` rather than
+`keep`, and the queue keeps exp-01 open for a quiet machine.
+
+**A false positive worth recording, because the obvious fix causes it.** Pairing the arms by their
+recorded load average looks objective and is not: the tool matched *both* candidate runs against the
+one slow incumbent and printed `keep — frame p50 improved 2.140 ms against a 0.450 ms margin`, out of
+environment noise. `tools/pair-decision.mjs` now pairs by execution adjacency, never reuses a run in
+two pairs, and refuses a verdict when the incumbent arm's own spread exceeds the effect being
+claimed. On a shared machine the honest output of a paired experiment is often `invalid`, and a tool
+that cannot say so is worse than no tool.
+
+**The launch, attributed the same way.** Frames 1-700 of a launch under the same profile host,
+78,301 samples. Load timeline: `audio` 1252 ms → `aircraft` 1967 → `ships` 2364 → `fleet` 2846 →
+`hulls` 3365 → `environment` 3437 → `deck-crew` 3459 → `scene-load-total` 4107 → `enter` 5638 →
+`ready` 9882. So 4.1 s of scene loading and 4.2 s between `enter` and `ready`. The bridge counters
+name two costs inside it: **146 `decodeAudioData` calls, ~542 ms of them inside a single frame**
+(still synchronous on the loading thread — the same finding as the 2026-09-17 probe), and
+**27,647 `fillRect` calls with 27,647 `__nativeSetFillStyle` calls, ~60 ms of crossings, again inside
+about one frame**. Those crossings are the game's own texture generation — the bundle writes
+`ctx.fillStyle = rgba(...)` then `ctx.fillRect(...)` once per iteration over 25,000 iterations and
+over a 512x512 step-3 grid. It is recorded here as a lead, not a fix: the same texture written into
+an `ImageData` and uploaded once is one crossing instead of 27,647, which is the game's call and
+changes no pixel; the audio decode is an engine seam that is still synchronous by construction.
+
 **Honest gap: this box is shared, and both obvious metrics fail on it.** A paired series taken at
 1-minute load 10-32 read the *incumbent* binary 13% slower than the baseline above, which compares
 the neighbours rather than the code; that series is retained as `raw/exp-01-confounded/`. A
