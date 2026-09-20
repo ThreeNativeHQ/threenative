@@ -222,6 +222,24 @@ for that same scaffolded platformer, while the same project built and driven dir
 runner passes. The harness's desktop invocation is the part that fails on this checkout; nothing in
 the two kept changes is implicated.
 
+**The second workload is vsync-bound, and its 72% profile entry is the wait.** The scaffolded
+platformer profiled the same way as midway (profile host, frames after the choreography) reads frame
+p50 15.48 ms with **render p50 14.27 ms** — the same CPU-bound shape — but one entry owns
+**71.97%** of all JS samples: `native <- _getDefaultRenderPassDescriptor @ game.js:103420`, a native
+frame whose nearest named JS caller is three's canvas-target lookup inside
+`WebGPUBackend._getDefaultRenderPassDescriptor`. That lookup is a plain getter, so the sample is deeper
+than the name suggests.
+
+Running the same game with `--no-vsync` settles it: the entry falls to **6.74%**, `render` p50 falls
+14.27 -> **5.58 ms**, and the 8.7 ms moves to `hostGap` (6.07 ms). The platformer was waiting for the
+next swapchain image inside the pass descriptor path, not working: it has **5.6 ms of work in a
+16.7 ms budget**, and with the wait removed the largest remaining term is the per-frame GPU-timestamp
+resolve (`native <- buffer.mapAsync`, 29.49%) — the relocated frame-op replay this record already
+refused as a lever.
+
+Two conclusions, both worth keeping: midway is the right primary workload, because it is the one that
+is *CPU-bound*; and a profile share is not a cost until the wait has been taken out of it.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
