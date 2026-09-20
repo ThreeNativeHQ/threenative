@@ -276,6 +276,21 @@ piece was read rather than assumed:
 
 That is the whole of the engine's named steady-frame cost, and the campaign's bar is 0.5 ms.
 
+**The kept launch change reproduced on a later day, and the reproduction is the point.** The
+campaign's queued row was a quiet-machine re-run of the file-drain pair, and it ran on 2026-09-20
+under loads the script prints per run (9.4 to 16.1, so no row is left queued): every control run
+reported the worst `fileCallbacks` phase the change was accepted for (783.5, 647.5 and 638.1 ms) and
+every candidate run reported nothing at all, below the host's 250 ms threshold - three of three, on a
+metric that does not move with machine load. Launch `ready` moved the *other* way this time (median
+8,438 ms control against 9,307 ms candidate), with the candidate runs carrying the higher loads,
+which is the load dependence the original record already attached to that number and the reason its
+decision was never placed there. A reproduction that only repeated the accepted numbers would have
+proved less than one that also shows which metric is allowed to disagree.
+
+The reproduction wrote into the same `raw/exp-05-<arm>-<slot>` paths as the original pairs and
+replaced those logs; the original values survive in the experiment's own fields, and `raw/exp-05/`
+and `raw/exp-05-gates/` are untouched.
+
 **A trap worth naming, because it produced a confident wrong number.** The first arm of this
 experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
 (`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
