@@ -10,6 +10,89 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## A real-time native gameplay lane, and what the render term is made of — 2026-09-19
+
+**Subject:** `sandbox/midway-open-pacific`, airborne cruise, packaged desktop binary (host
+`build/tn-linux/mystral` `1059b36b`, CMake Release; game bundled against the sandbox tarballs),
+RTX 2080 driver 615.71.09, 1280x720, MSAA 4x, `resolutionScale` 1, present mode fifo at 60 Hz.
+Campaign record, raw logs and the tools are in
+`artifacts/native-performance-loop/native-desktop-midway-20260919/` (untracked).
+
+**A `.playtest.json` cannot measure native frame pacing, and this is why.** A step's
+`waitTicks`/`holdTicks` (and `waitFrames`, which a fixed-step bridge converts to ticks —
+`steps.ts:302`) call `GameLoop.advance()`, and `advance()` runs the fixed-step callbacks in a tight
+loop **with no render and no present** (`packages/core/src/loop.ts:296`). Measured: a 5010-tick
+flight scenario presented ~60 frames in total, and its six `TN_FRAME_BUDGET` windows were the
+loading screen (windows 2-6: `presents: 0`, `render p50 0`). The scenario is a correctness harness,
+not a workload.
+
+**The lane this record now has:** `tools/realtime-drive.mjs` attaches the same mailbox bridge (so the
+boot hold releases), drives a fixed input choreography, and then leaves the host alone for a
+wall-clock window while it runs its own loop; `tools/measure.mjs` reads the host's own markers with
+the existing `threenative-playtest perf` parser and reduces the last 8 windows whose every counted
+loop frame reached the display. Both arms must run on `TN_PLAYTEST_HOST_DISPLAY=1`, because a
+private Xvfb's frame rate is wrong rather than missing.
+
+**Baseline, three runs, 8 fully presented windows (2400 presented frames) each, zero hitches:**
+
+| metric | median | spread over three runs |
+| --- | ---: | --- |
+| frame p50 | 15.00 ms | 14.80-15.20 |
+| frame p95 | 18.34 ms | 18.33-19.47 |
+| render p50 (JS) | 12.30 ms | 11.84-12.55 |
+| gpuMs | 1.8 ms | 1.4-2.3 |
+| presentedFps | 57.9 | 57.6-58.3 |
+
+Noise margin, predeclared and applied to every later candidate: the larger of 3% of the baseline and
+twice the largest deviation from the median — **±2.25 ms p95, ±0.45 ms p50, ±0.93 ms render p50**.
+Launch on the same runs: `ready` at 9033 ms (median; 8192-9618), with `audio` 1.2 s →
+`scene-load-total` 3.8 s → `enter` 5.1 s. This supersedes the 2026-09-17 probe's 21.4-22.9 ms p50
+airborne reading, which was a different camera instant under the old load stall.
+
+**What the 12.3 ms render term is made of.** A `TN_ANDROID_JS_PROFILE=ON` host of the same revision
+(names JS functions and attributes a native frame to its JS caller; it also prints a per-frame
+marker), 90,923 samples over frames 900-2000 of the same cruise. Attribution only — the build's own
+absolute milliseconds are inflated and are never quoted as a timing claim:
+
+| self % | entry |
+| ---: | --- |
+| 9.22 | `_projectObject` (three RenderList) |
+| 9.07 | `updateMatrixWorld` |
+| 8.45 | `native <- buffer.mapAsync` (via `install-async-pipelines.js:80`) |
+| 6.54 | `_update` (three node update) |
+| 5.92 | `update` (`AnimationAction`) |
+| 4.74 | `multiplyMatrices` |
+| 4.13 | `_renderObjectDirect` |
+| 3.89 | `get` (binding cache) |
+| 3.71 + 1.56 | `RenderCameraCull.#visit` (engine) |
+| 2.89 | `traverse` |
+
+Per frame, from the same host: render-thread CPU 21.9 ms of which **JS frame 19.8 ms** and all
+bridge crossings 3.3 ms (`mapAsync` 3.39 ms, `getCurrentTexture` 0.52 ms); 4131 WebGPU commands
+(`setVertexBuffer` 1144, `writeBuffer` 949, `setBindGroup` 664, `drawIndexed` 538,
+`setIndexBuffer` 524, `setPipeline` 253) in 5 submits, writing 1091 KB into 643 distinct buffers.
+So the frame is **JS-owned, not bridge-owned**: the crossings are 15% of it, and three's render list,
+its matrix walk and its node update are over half.
+
+**One hypothesis refused before it cost a build:** the per-frame GPU-timestamp resolve
+(`renderer.resolveGpuFrame()`, `game.ts:1456`) shows up as 8.45% self time in `mapAsync` and looked
+like the single biggest engine-owned item. It is not added work — `handleGpuBufferMapAsync` begins
+with `flushRecordedFrameOps` (`bindings_resources.cpp:1140`), replaying the frame-op stream the frame
+boundary would replay anyway, so the profile attributes relocated replay to the map. The promise,
+readback buffer and extra submit are what would actually be saved.
+
+**Honest gap: this box is shared, and both obvious metrics fail on it.** A paired series taken at
+1-minute load 10-32 read the *incumbent* binary 13% slower than the baseline above, which compares
+the neighbours rather than the code; that series is retained as `raw/exp-01-confounded/`. A
+second attempt at a robust lane measured the host process's own CPU time at each
+`TN_FRAME_BUDGET` window boundary (CPU excludes the waiting a preempted thread does) and closed
+itself the same day: at load 33 the *unchanged* binary read **68.7 ms frame p50 and 85.3 ms of
+process CPU per frame**, against 15.0 ms and ~15 ms on a quiet run. Roughly 5x inflation in the
+work itself, not only in the waiting — cache and memory pressure at 11 resident CPU hogs. So no
+metric this record can take is comparable while the machine is loaded, and `tools/run-pairs.sh` now
+refuses to start a pair above 1-minute load 4 and abandons one above 8. Any number in this file
+taken during such a window is not comparable and is marked as such where it appears.
+
 ## Midway native probe — desktop steady state, the load stall, and a desktop perf-series gap — 2026-09-17
 
 **Subject:** the tarball sandbox game `sandbox/midway-open-pacific`, packaged desktop binary built
