@@ -122,6 +122,38 @@ over a 512x512 step-3 grid. It is recorded here as a lead, not a fix: the same t
 an `ImageData` and uploaded once is one crossing instead of 27,647, which is the game's call and
 changes no pixel; the audio decode is an engine seam that is still synchronous by construction.
 
+**exp-03 — the audio decode leaves the frame thread.** `decodeAudioData` decoded inline and handed
+back a promise settled by the hand-rolled thenable, because a *settled* promise was the only shape
+that object could fake. A real `Promise` has no such problem, so the decode can leave the thread:
+`AsyncAudioDecoder` (one worker, bounded queue, results delivered on the draining thread — the shape
+`AsyncImageDecoder` already had), resolvers in `src/runtime-scripts/install-async-audio-decode.js`,
+and `processAudioEvents()` draining once per `pollEvents()`.
+
+Measured with the campaign's own instrument on the same profile lane, frames 1-700 of a launch:
+
+| | sync decode (before) | queued decode (after) |
+| --- | ---: | ---: |
+| `decodeAudioData` bridge time, 146 calls, inside one frame | **541.99 ms** | **4.66 ms** |
+
+**Behaviour, which is what caught this:** `native-playtests/audio-sweep.playtest.json` (6631 frames)
+and `speech-once.playtest.json` (2892 frames) both pass, with 146 clips decoded off-thread and zero
+load failures; the whole `@threenative/runtime-native` suite passes (1370 tests, 23 skipped); the
+decode contract test is red when the binding decodes inline again (`expected 5 decodes outstanding,
+saw 0`) and green with the queue. **The launch *seconds* did not clear this box's noise**: three
+alternating pairs against the unchanged control read +3200, +622 and −509 ms on `ready`, while the
+`audio` load step itself moved only +134, +59 and −49 ms. So the block is gone — a loading screen
+that froze for half a second per burst does not — and the launch-total claim stays unresolved here.
+
+**A trap worth naming, because it produced a confident wrong number.** The first arm of this
+experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
+(`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
+so the script was present as text but never ran. `__tnAudioDecodePending` was missing, every one of
+the 146 audio loads failed, **no decode happened at all**, and the launch looked ~1.2 s faster in
+six of six pairs because the work had been deleted rather than moved. The audio playtests failed
+(0 cues played) and that is the only reason it was caught. Before measuring an arm, confirm the
+*executed* artifact carries the change — `strings <game binary> | grep <new marker>` — not just the
+source tree.
+
 **Honest gap: this box is shared, and both obvious metrics fail on it.** A paired series taken at
 1-minute load 10-32 read the *incumbent* binary 13% slower than the baseline above, which compares
 the neighbours rather than the code; that series is retained as `raw/exp-01-confounded/`. A
