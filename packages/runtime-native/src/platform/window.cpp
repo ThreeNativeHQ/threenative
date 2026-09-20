@@ -14,6 +14,7 @@
 #include <X11/Xlib.h>
 #endif
 #include <cstdlib>
+#include <string>
 #include <vector>
 #include <SDL3/SDL.h>
 #include "stb_image.h"
@@ -565,12 +566,25 @@ void setWindowSize(int width, int height) {
 }
 
 /**
- * Set window title
+ * Set window title, or restore the one the window was created with when given `nullptr`.
+ *
+ * Restoring matters because the title is also the one channel a failure can use when the game's
+ * own JavaScript is dead: a stall writes its reason there, and a run that recovers must not keep
+ * carrying a diagnosis that is no longer true.
  */
 void setWindowTitle(const char* title) {
-    if (g_window.sdlWindow) {
-        SDL_SetWindowTitle(g_window.sdlWindow, title);
+    if (!g_window.sdlWindow) return;
+    static std::string baseTitle;
+    if (title == nullptr) {
+        if (baseTitle.empty()) return;
+        SDL_SetWindowTitle(g_window.sdlWindow, baseTitle.c_str());
+        return;
     }
+    if (baseTitle.empty()) {
+        const char* current = SDL_GetWindowTitle(g_window.sdlWindow);
+        if (current != nullptr) baseTitle = current;
+    }
+    SDL_SetWindowTitle(g_window.sdlWindow, title);
 }
 
 }  // namespace platform

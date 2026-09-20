@@ -5,6 +5,7 @@
 #include "bindings_pipelines.h"
 #include "bindings_presentation.h"
 #include "bindings_state.h"
+#include "mystral/platform/window.h"
 #include "mystral/cold_start.h"
 #include "mystral/pump_silence.h"
 #include "mystral/js/engine.h"
@@ -475,8 +476,20 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
 static void reportUnpresentedFrame(BindingsState* state, bool pending) {
     static uint64_t suppressed = 0;
     static std::chrono::steady_clock::time_point lastReport{};
+    // Consecutive one-second reports, and whether this run's title currently carries the stall.
+    static uint64_t stalledSeconds = 0;
+    static bool titleCarriesStall = false;
+    // A stall this long is not a hitch: say it where a developer is already looking, because a
+    // marker in stdout is invisible to anyone watching the window, and a frozen picture with no
+    // explanation is the failure this escalation exists to end.
+    static constexpr uint64_t kStallSeconds = 3;
     if (pending && state->presentation.currentTexture && state->surface) {
         suppressed = 0;
+        stalledSeconds = 0;
+        if (titleCarriesStall) {
+            mystral::platform::setWindowTitle(nullptr);
+            titleCarriesStall = false;
+        }
         return;
     }
     const auto now = std::chrono::steady_clock::now();
@@ -493,6 +506,15 @@ static void reportUnpresentedFrame(BindingsState* state, bool pending) {
               << (state->presentation.surfaceRenderPassEnded ? "true" : "false")
               << ",\"suppressed\":" << suppressed << "}" << std::endl;
     suppressed = 0;
+    stalledSeconds += 1;
+    if (stalledSeconds < kStallSeconds) return;
+    // Name the condition in the title, not just "stalled": the three conditions are different bugs.
+    const char* condition = !state->surface                 ? "no surface"
+                            : !state->presentation.currentTexture ? "no swapchain texture"
+                                                                  : "a render pass never ended";
+    std::string title = std::string("ThreeNative - no frames presented: ") + condition;
+    mystral::platform::setWindowTitle(title.c_str());
+    titleCarriesStall = true;
 }
 
 /**
