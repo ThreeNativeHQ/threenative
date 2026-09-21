@@ -607,6 +607,71 @@ fn content_type(path: &str) -> &'static str {
     }
 }
 
+/// When the next snapshot is due, and why — the cadence, kept pure so it can be a unit test.
+///
+/// The driver owns the view and the asynchronous callback; every decision about *when* to ask
+/// again is made here. Two rules this type exists to state, both defects before they were tests:
+///
+/// - A capture is paced from a **deadline anchored at the request**, not from the previous answer.
+///   Asking again a full `interval` after each completion made the real period the snapshot's round
+///   trip *plus* the interval — about 30 ms for the measured 14 ms round trip against the page's own
+///   16 ms frame, half the rate the page was painting. With the deadline anchored at the request, a
+///   round trip shorter than a frame leaves the next ask already due.
+/// - A **wake during an in-flight request is not lost.** A post, an input or a resize that arrives
+///   before the answer used to have its urgent deadline overwritten by the completion's backoff, so
+///   the change the game just made waited out the idle poll. `settled` honours the pending wake.
+struct Cadence {
+    /// When the next snapshot may be asked for.
+    next_at: Instant,
+    /// Consecutive byte-identical snapshots, which is what the cadence backs off on.
+    unchanged: u32,
+    /// A wake arrived while a request was in flight, so the next one is urgent.
+    wake_pending: bool,
+}
+
+impl Cadence {
+    fn new(now: Instant) -> Self {
+        Self {
+            next_at: now,
+            unchanged: 0,
+            wake_pending: false,
+        }
+    }
+
+    /// A request arrived from the game: the page is about to change, so stop backing off.
+    fn wake(&mut self, now: Instant) {
+        self.unchanged = 0;
+        self.wake_pending = true;
+        self.next_at = now;
+    }
+
+    /// A snapshot just went out: anchor the next deadline at the request, not at its answer.
+    fn requested(&mut self, now: Instant) {
+        self.wake_pending = false;
+        self.next_at = now + BUSY_INTERVAL;
+    }
+
+    /// A snapshot came back. `changed` is false for a byte-identical frame or a failed read.
+    fn settled(&mut self, now: Instant, changed: bool) {
+        if self.wake_pending {
+            // The page moved since this request went out; do not make the change wait out a backoff.
+            self.wake_pending = false;
+            self.next_at = now;
+        } else if changed {
+            // Keep the deadline `requested` set: a round trip shorter than a frame leaves the next
+            // ask already due, a longer one makes it due now. Either way no interval is added.
+            self.unchanged = 0;
+        } else {
+            self.unchanged = self.unchanged.saturating_add(1);
+            self.next_at = now + interval(self.unchanged);
+        }
+    }
+
+    fn due(&self, now: Instant) -> bool {
+        now >= self.next_at
+    }
+}
+
 /// The web thread's state machine: drain the game's requests, then take a snapshot if one is due.
 struct Driver {
     shared: Arc<Shared>,
@@ -618,9 +683,8 @@ struct Driver {
     in_flight: bool,
     /// When the outstanding request went out, so a request that never comes back is visible.
     in_flight_since: Instant,
-    next_at: Instant,
-    /// Consecutive snapshots that came back byte-identical, which is what the cadence backs off on.
-    unchanged: u32,
+    /// When the next capture is due, and the backoff/wake state behind it.
+    cadence: Cadence,
     /// Snapshots asked for, and how long the last one took to come back.
     ///
     /// A snapshot is asked for once and answered once, and the loop waits for the answer before
@@ -653,8 +717,7 @@ impl Driver {
             loaded: false,
             in_flight: false,
             in_flight_since: Instant::now(),
-            next_at: Instant::now(),
-            unchanged: 0,
+            cadence: Cadence::new(Instant::now()),
             requests: 0,
             last_round_trip: Duration::ZERO,
             last_report: Instant::now(),
@@ -676,8 +739,8 @@ impl Driver {
             in_flight_since.is_some(),
             waiting,
             self.last_round_trip.as_millis(),
-            interval(self.unchanged).as_millis(),
-            self.unchanged,
+            interval(self.cadence.unchanged).as_millis(),
+            self.cadence.unchanged,
             self.shared.frames.published()
         );
     }
@@ -686,8 +749,7 @@ impl Driver {
         self.loaded = true;
         // The first paint is worth asking for immediately: this is the frame that carries the
         // loading screen, and the game is still compiling modules behind it.
-        self.next_at = Instant::now();
-        self.unchanged = 0;
+        self.cadence.wake(Instant::now());
     }
 
     /// Drain the game's requests, then take a snapshot if one is due.
@@ -745,15 +807,14 @@ impl Driver {
         }
         let waiting = this.in_flight.then_some(this.in_flight_since);
         this.report(waiting);
-        if this.loaded && !this.in_flight && Instant::now() >= this.next_at {
+        if this.loaded && !this.in_flight && this.cadence.due(Instant::now()) {
             this.request(driver);
         }
     }
 
     /// A request arrived from the game: the page is about to change, so stop backing off.
     fn wake(&mut self) {
-        self.unchanged = 0;
-        self.next_at = Instant::now();
+        self.cadence.wake(Instant::now());
     }
 
     fn resize(&mut self, width: u32, height: u32) {
@@ -782,6 +843,7 @@ impl Driver {
     fn request(&mut self, driver: &Rc<RefCell<Driver>>) {
         self.in_flight = true;
         self.in_flight_since = Instant::now();
+        self.cadence.requested(self.in_flight_since);
         self.requests += 1;
         self.view.queue_draw();
         let driver = Rc::clone(driver);
@@ -799,8 +861,7 @@ impl Driver {
         let Some((width, height, stride, buffer)) = self.read(result) else {
             // A snapshot that failed or came back in a shape we cannot upload: try again, but not
             // in a tight loop, so a permanently broken web view cannot spin a core.
-            self.unchanged = self.unchanged.saturating_add(1);
-            self.next_at = Instant::now() + interval(self.unchanged);
+            self.cadence.settled(Instant::now(), false);
             return;
         };
         let unchanged = self
@@ -809,7 +870,6 @@ impl Driver {
             .is_some_and(|previous| previous.as_slice() == buffer.as_slice());
         if unchanged {
             self.pool.push(buffer);
-            self.unchanged = self.unchanged.saturating_add(1);
         } else {
             let published = Arc::new(buffer);
             self.shared
@@ -822,9 +882,8 @@ impl Driver {
                     self.pool.push(recycled);
                 }
             }
-            self.unchanged = 0;
         }
-        self.next_at = Instant::now() + interval(self.unchanged);
+        self.cadence.settled(Instant::now(), !unchanged);
     }
 
     /// Read a completed snapshot into a pooled buffer, or `None` if it is not something we can use.
@@ -901,6 +960,61 @@ mod tests {
             Duration::from_millis(250),
             "a page that never changes polls, it does not stop"
         );
+    }
+
+    #[test]
+    fn a_capture_is_paced_from_its_request_not_its_answer() {
+        // A 14 ms round trip against the page's own 16 ms frame. The next ask must be due one frame
+        // after the request, not one interval after the answer (14 + 16 = 30 ms, ~33 fps).
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.requested(base);
+        cadence.settled(base + Duration::from_millis(14), true);
+        assert!(!cadence.due(base + Duration::from_millis(15)));
+        assert!(
+            cadence.due(base + Duration::from_millis(16)),
+            "the next capture is due one page frame after the request, not after the answer"
+        );
+    }
+
+    #[test]
+    fn a_wake_during_an_in_flight_request_is_not_lost() {
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.requested(base);
+        // The game posts while the snapshot is out: urgent, so the backoff must not swallow it.
+        cadence.wake(base + Duration::from_millis(2));
+        cadence.settled(base + Duration::from_millis(14), false);
+        assert!(
+            cadence.due(base + Duration::from_millis(14)),
+            "the change the game just made is captured now, not after an idle poll"
+        );
+    }
+
+    #[test]
+    fn an_unchanged_page_still_backs_off_to_the_idle_poll() {
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.requested(base);
+        cadence.settled(base + Duration::from_millis(4), false);
+        assert_eq!(cadence.unchanged, 1);
+        assert!(!cadence.due(base + Duration::from_millis(35)));
+        assert!(
+            cadence.due(base + Duration::from_millis(36)),
+            "an idle page waits the backed-off interval from the completion"
+        );
+    }
+
+    #[test]
+    fn a_request_consumes_the_wake_it_was_asked_for() {
+        // A wake served by a request that immediately follows must not leave a second urgent ask
+        // behind, or every game post would buy two captures instead of one.
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.wake(base);
+        cadence.requested(base);
+        assert!(!cadence.wake_pending);
+        assert!(!cadence.due(base + Duration::from_millis(15)));
     }
 
     #[test]
