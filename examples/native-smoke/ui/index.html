@@ -26,7 +26,6 @@
         padding: 12px 14px;
         border-radius: 12px;
         background: rgba(12, 20, 34, 0.55);
-        backdrop-filter: blur(2px);
       }
       .plate b {
         font-size: 28px;
@@ -62,16 +61,52 @@
       body.sliding #slider {
         transform: translateX(200%);
       }
+      /* The page-local clock: an animation the page owns, driven by its own rAF, that no game
+         state touches. PRD-398's AC-2 needs a page that keeps changing with no game post, so the
+         snapshot loop has to find it on its own rather than being woken by the bridge. `body.idle`
+         pauses it, which is how a run measures the backoff and the resume from it. */
+      #pulse {
+        position: absolute;
+        left: 60%;
+        top: 8%;
+        width: 6%;
+        height: 10%;
+        border-radius: 50%;
+        background: #ff3d00;
+        animation: tn-pulse 1000ms linear infinite alternate;
+      }
+      @keyframes tn-pulse {
+        from {
+          transform: translateX(0) scale(1);
+        }
+        to {
+          transform: translateX(220%) scale(0.6);
+        }
+      }
+      body.idle #pulse {
+        animation-play-state: paused;
+      }
+      /* Only the cadence gate turns this on (`window.__tnPageAnimation`), so the UI-frame gate keeps
+         the static page it was written against and its 2 ms ui-phase budget still means what it did. */
+      body:not(.animating) #pulse {
+        animation-play-state: paused;
+      }
+      #tick {
+        font-variant-numeric: tabular-nums;
+        color: #ff3d00;
+      }
     </style>
   </head>
   <body>
     <div class="plate">
       <div>POINTER DOWNS</div>
       <b id="downs">0</b>
+      <div>PAGE TICKS <span id="tick">0</span></div>
       <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
         <circle cx="20" cy="20" r="15" fill="none" stroke="#7fffd4" stroke-width="3" />
       </svg>
     </div>
+    <div id="pulse"></div>
     <button id="tap" data-tn-interactive type="button">SLIDE</button>
     <button id="slider" data-tn-interactive type="button">MOVING</button>
     <script type="module" src="./main.js"></script>

@@ -45,6 +45,37 @@ slider?.addEventListener("transitionend", () => {
   sendUiIntent(bridge, "slideDone");
 });
 
+// The page-local clock. Nothing here reads the bridge and nothing posts to it: this is the page
+// changing on its own, which is the case PRD-398 AC-2 asks about and the case the host's snapshot
+// loop has to find without a game post. It runs in 10 s bursts with a 1 s idle between them, so one
+// process exercises both the active capture and the resume from the idle backoff.
+//
+// Off unless `window.__tnPageAnimation` is set, because the UI-frame gate's page is meant to be
+// static: turning this on there would move its ui-phase budget from the composite to the page's own
+// paint and quietly change what that gate asserts.
+const tick = document.getElementById("tick");
+const ACTIVE_MS = 10000;
+const IDLE_MS = 1000;
+let ticks = 0;
+let idle = false;
+const animate = (now: number): void => {
+  const phase = now % (ACTIVE_MS + IDLE_MS);
+  const shouldIdle = phase >= ACTIVE_MS;
+  if (shouldIdle !== idle) {
+    idle = shouldIdle;
+    document.body.classList.toggle("idle", idle);
+  }
+  if (!idle) {
+    ticks += 1;
+    if (tick !== null) tick.textContent = String(ticks);
+  }
+  requestAnimationFrame(animate);
+};
+if ((window as { __tnPageAnimation?: boolean }).__tnPageAnimation === true) {
+  document.body.classList.add("animating");
+  requestAnimationFrame(animate);
+}
+
 // Announced to the game, not just to the console: a scenario has to be able to fail with "the UI
 // layer never came up" rather than with four input assertions that all look like game bugs. The
 // page is ready only once its rects are published, because an empty registry and a missing page

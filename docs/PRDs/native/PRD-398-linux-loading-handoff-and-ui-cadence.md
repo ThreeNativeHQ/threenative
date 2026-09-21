@@ -5,12 +5,15 @@ behavior; Phase 3's scheduling boundary is fixed and unit-tested. Results in “
 **Complexity:** 6 (MEDIUM); risk override: none. Anticipated 6–10 implementation files (2), cross-thread state (2), native host and published JS build boundaries (2); no new system.
 **Owner:** engine — native runtime and UI bridge
 **Depends on:** Existing PRD-393 and PRD-394 implementation on `fix/native-perf-followups`; their unrelated remaining acceptance criteria are not closure dependencies.
-**Progress:** 2/7 phase boxes; no acceptance criterion is closed. The consumer is refreshed, the
-reported dark-coverage symptom does not reproduce on the refreshed artifact, and the snapshot
-scheduler's two named defects are fixed with red-green unit tests. The page-local animation and
-frame-gap harnesses this PRD asks for do not exist yet, and the loading gate's remaining freeze is
-the loader/pump defect PRD-393 deferred, out of this PRD's scope. Exact gaps are in “Execution
-results”.
+**Progress:** 3/7 phase boxes; no acceptance criterion is closed. The consumer is refreshed, the
+reported dark-coverage symptom does not reproduce on the refreshed artifact, the snapshot
+scheduler's two named defects are fixed with red-green unit tests, and the missing measurement
+exists — a page-local animation fixture, a per-frame composite trace and
+`verify-native-ui-cadence.mjs`. That harness shows the fix lifting UI delivery from **84.9% to
+93.4%** of game frames, but it cannot certify AC-2/AC-6's thresholds: this host is at load 11 with
+28 GiB of swap in use and the page's own paint rate intermittently falls below the present rate. The
+loading gate's remaining freeze is the loader/pump defect PRD-393 deferred, out of this PRD's scope.
+Exact gaps are in “Execution results”.
 
 ## Context
 
@@ -156,7 +159,12 @@ prove a 60 Hz target, and a vanilla DOM page cannot by itself prove React behavi
       “Execution results”.
 - [ ] AC-2 [local; actor: agent]: During a 10 s page-local animation, distinct visible UI updates
       reach at least 90% of successful game presents, with p95 update gaps ≤ 2T. Repeat after 1 s
-      of idle and include a React-local update. Evidence: pending.
+      of idle and include a React-local update.
+      Evidence: **measured, threshold not met.** `verify-native-ui-cadence.mjs`, median over 19 active
+      segments of 4 runs: **93.4%** delivered (pre-fix 84.9% over 15 segments), p95 gap **71.3 ms**
+      against 2T **71.8 ms**, 10/19 segments under 2T. The idle resume measured **1018–1056 ms**
+      against the fixture's 1000 ms idle, i.e. 18–56 ms of latency. Not certifiable on this loaded
+      host and with a vanilla-DOM fixture, not React. See “Execution results”.
 - [ ] AC-3 [local; actor: agent]: A fixture publishing a changed state each game frame reaches the
       visible UI with p95 state age ≤ 3T; age does not grow over 30 s. Explicitly throttled stores
       retain their configured cadence. Evidence: pending.
@@ -165,12 +173,17 @@ prove a 60 Hz target, and a vanilla DOM page cannot by itself prove React behavi
       actions in the existing UI interaction scenario. Evidence: pending.
 - [ ] AC-5 [local; actor: agent]: The existing UI composite phase remains ≤ 2 ms at p95 across
       at least 300 steady frames at 1280×720.
-      Evidence: partial — `verify-desktop-ui-frame.mjs --contract in-frame` passed at `ui phase p95
-      0.03 ms` on `examples/native-smoke`, but over 240 frames, not the 300 this asks for, and not on
-      the reported game. See “Execution results”.
+      Evidence: met on the fixture lane, not the reported game. `verify-desktop-ui-frame.mjs
+      --contract in-frame` passed at `ui phase p95 0.03 ms` over 300 samples on `examples/native-smoke`
+      (static page). With the page animating every frame the same phase is 1.39–4.37 ms — a cost the
+      wording does not distinguish. See “Execution results”.
 - [ ] AC-6 [local; actor: agent]: In three interleaved baseline/candidate pairs on the same idle
       host and workload, median steady frame time regresses by no more than 5%; inspect web-thread
-      CPU separately so faster UI does not conceal a new busy loop. Evidence: pending.
+      CPU separately so faster UI does not conceal a new busy loop.
+      Evidence: **measured, not met.** Four interleaved baseline/candidate pairs of
+      `verify-native-ui-cadence.mjs`: median steady frame time delta **+5.2%** (−0.8% to +9.5%), just
+      over the 5% allowance. The cost is real in direction — more deliveries mean more game-thread
+      `writeTexture` — but the spread is host load, not the change. See “Execution results”.
 - [ ] AC-7 [local; actor: agent]: The same consumer's browser loading/UI scenario still passes
       with its authored transition unchanged and no new runtime diagnostics. Evidence: pending.
 
@@ -194,8 +207,8 @@ shared bridge contracts. Do not infer their runtime correctness from Linux.
 
 ### Phase 1: Attribute both visible defects on the current Linux artifact
 
-**Status:** PARTIAL — the artifact refresh, identification and loading observation are done; the
-cadence capture through a page-local animation is not.
+**Status:** DONE — both failures are captured through their real entry points, each with a runnable
+regression.
 **ACs:** establishes the baseline and failing observations for AC-1 through AC-6.
 **Files:** Existing native loading/UI verification scripts and their fixtures; targeted diagnostic
 fields in `offscreen.rs` or `bindings_ui_composite.cpp` only where current observations are inadequate.
@@ -204,12 +217,12 @@ fields in `offscreen.rs` or `bindings_ui_composite.cpp` only where current obser
       launch environment; establish the symptom on that artifact and compare with the current branch.
       — **DONE.** The installed consumer was the released 0.3.2 bundle without PRD-393/394; it was
       refreshed from HEAD and rebuilt with the HEAD host. See “Execution results”.
-- [ ] Capture both failures through the real entry points, identifying the first boundary that
+- [x] Capture both failures through the real entry points, identifying the first boundary that
       loses loading coverage or UI cadence; retain a runnable regression in the existing harness.
-      — **PARTIAL.** The loading path was captured through `verify-desktop-loading-animation.mjs`
-      and its first boundary identified (`TN_SLOW_PHASE`: the startup runs inside one frame). No
-      cadence capture exists: the fixture does not animate the page without a game post, and the
-      shipped diagnostics carry no frame-gap timestamps.
+      — **DONE.** Loading: `verify-desktop-loading-animation.mjs`, first boundary named by
+      `TN_SLOW_PHASE` (the startup runs inside one frame). Cadence: `verify-native-ui-cadence.mjs`,
+      newly built this session, which drives the page-local animation fixture through a bare launch
+      and reads the per-frame `TN_UI_COMPOSITE_TRACE`. See “Execution results”.
 
 **Implementation:** On later authorization, follow the existing one-PR-per-PRD/worktree lifecycle;
 no implementation PR or worktree is created for this planning request. Record actual resolution,
@@ -228,10 +241,11 @@ stale captures or a scenario with no relevant assertions fail the check. Do not 
 post-readiness screenshot gate for pre-readiness evidence, or stale `import -window` backing-store
 captures without first proving they track the displayed animation.
 
-**Checkpoint:** pending for the cadence half. The reported loading defect does not reproduce on the
-refreshed artifact: its dark background is the deleted X11 overlay path, and the refreshed artifact
-carries the authored loading surface at every pre-`first_playable` sample. The remaining gate
-failure is motion, not coverage, and belongs to the loader/pump work PRD-393 deferred.
+**Checkpoint:** done. The reported loading defect does not reproduce on the refreshed artifact: its
+dark background is the deleted X11 overlay path, and the refreshed artifact carries the authored
+loading surface at every pre-`first_playable` sample. The remaining gate failure is motion, not
+coverage, and belongs to the loader/pump work PRD-393 deferred. The cadence failure is captured
+end-to-end and quantified.
 
 ### Phase 2: Fix the proven loading handoff defect
 
@@ -269,9 +283,11 @@ locates the delay there. Keep package instructions consistent if their affected 
 
 - [ ] Resolve cadence with the refreshed artifact or fix the measured limiting boundary; keep
       bounded in-flight work and test timing/wake/idle behavior only where scheduling changes.
-      — **PARTIAL.** The ordering was reproduced at the unit level, not end-to-end: the two named
-      defects are fixed in `offscreen.rs`'s `Cadence` and covered by four red-green tests. The
-      end-to-end cadence is unmeasured, so the box stays open. See “Execution results”.
+      — **PARTIAL.** The scheduler boundary is fixed and unit-tested (red-green), and the harness now
+      measures it end-to-end: delivery went 84.9% → 93.4%, but the p95 and frame-time thresholds are
+      not met on this host. The remaining limit is the page's own paint rate, which the PRD's own
+      escalation path names (“if snapshot round-trip/raster cost is the actual limit, scheduling
+      alone is insufficient”). See “Execution results”.
 - [ ] Verify visible animation, state freshness, input response and cost on the current packaged
       Linux game and React consumer; run affected web coverage and required repository checks.
 - [ ] Update this PRD with actual results and remaining gaps; close only when every AC is verified.
@@ -324,26 +340,56 @@ node_modules/@threenative/playtest/dist/runner/cli.js --out artifacts/prd398-loa
 Two defects in `Driver`'s scheduling, both in `offscreen.rs`:
 
 1. The next capture was timed from the previous answer (`next_at = completion + interval`), so the
-   real period was the snapshot round trip plus a full interval. Measured round trips are 11–15 ms
-   against the page's own 16 ms frame, i.e. ~30 ms (~33 fps) where 16 ms is owed. The deadline is
-   now anchored at the request (`Cadence::requested`), and a round trip shorter than a frame leaves
-   the next ask already due.
+   real period was the snapshot round trip plus a full interval. The deadline is now anchored at the
+   request (`Cadence::requested`).
 2. A `wake()` that arrived while a snapshot was in flight was overwritten by the completion's
-   backoff (`next_at = now + interval(unchanged)`), so a post, input or resize that arrived mid-flight
-   waited out the idle poll. `Cadence` keeps a `wake_pending` flag and honours it on completion.
+   backoff, so a post, input or resize that arrived mid-flight waited out the idle poll. `Cadence`
+   keeps a `wake_pending` flag and honours it on completion.
 
 `cargo test --release --lib --manifest-path packages/runtime-native/native/ui-overlay/Cargo.toml`:
 **18 passed**. Against the pre-fix ordering, three of the four new tests fail —
-`a_capture_is_paced_from_its_request_not_its_answer` (“the next capture is due one page frame after
-the request, not after the answer”), `a_wake_during_an_in_flight_request_is_not_lost` (“the change
-the game just made is captured now, not after an idle poll”) and
-`a_request_consumes_the_wake_it_was_asked_for` (`assertion failed: !cadence.wake_pending`); the
-idle-backoff test passes on both, which is the point. `cargo fmt --check` flags only pre-existing
-long lines in the crate, none in the added code.
+`a_capture_is_paced_from_its_request_not_its_answer`, `a_wake_during_an_in_flight_request_is_not_lost`
+and `a_request_consumes_the_wake_it_was_asked_for`; the idle-backoff test passes on both, which is
+the point. `cargo fmt --check` flags only pre-existing long lines in the crate, none in the added
+code.
 
-**End-to-end cadence is not measured, and AC-2/3/4 stay open for that reason.** No fixture animates
-the page for ten seconds with no game post, and `TN_UI_SNAPSHOT` carries no timestamp, so distinct
-visible updates per game present cannot be counted yet.
+#### The harness the PRD asked for, and its numbers
+
+Three pieces, all new this session:
+
+- **`TN_UI_COMPOSITE_TRACE`** (`src/webgpu/bindings_ui_composite.cpp`, off unless the variable is
+  set): one line per composited frame on the same launch clock as `TN_UI_COMPOSITE`, carrying the
+  page counter it saw and whether it uploaded. The once-a-second marker cannot express a gap.
+- **A page-local animation fixture** (`examples/native-smoke/ui`): a CSS `#pulse` and a rAF `#tick`
+  the page drives itself, in 10 s bursts with a 1 s idle. Opt-in behind `window.__tnPageAnimation`,
+  so the UI-frame gate keeps its static page and its 2 ms budget still means what it did.
+- **`scripts/verify-native-ui-cadence.mjs`**: provisions its own Xvfb and compositor, builds the
+  bundle with no playtest bridge, launches it bare, and judges each active segment for the 90% /
+  2T bounds and reports the idle resume.
+
+Measured on the fixed host vs the pre-fix host, 4 interleaved pairs, 1280×720:
+
+| | pre-fix | fixed |
+| --- | --- | --- |
+| delivered / composited, median of active segments | **84.9%** (15 segments, 81.5–98.4%) | **93.4%** (19 segments, 86.5–98.3%) |
+| segments meeting p95 ≤ 2T | **0 / 15** | **10 / 19** |
+| p95 gap, median | 71.6 ms (2T 69.4) | 71.3 ms (2T 71.8) |
+| idle resume | 1018–1042 ms | 1018–1056 ms |
+
+So the fix does what it claims in direction and size, and the remaining p95 gap is the page's own
+paint rate dipping below the game's present rate — `TN_UI_SNAPSHOT` reports round trips of 1–3 ms,
+so the scheduler is not the limit. **AC-2 and AC-6 stay open**: the thresholds cannot be certified on
+this host, which is at load 11 with 28 GiB of swap in use, and the PRD's own rule says a scene below
+its cap cannot prove a 60 Hz target — native-smoke renders at ~30 fps here.
+
+#### Cost, and the AC-5 it changes
+
+With a *static* page, `verify-desktop-ui-frame.mjs --contract in-frame` passes at **`ui phase p95
+0.03 ms`** over 300 frames — AC-5 as written. With the page animating every frame the same phase is
+**p95 1.39 ms** in a light window and **4.37 ms** in a window where the host dropped to 13.6 fps,
+against the 2 ms bound. That is a genuine cost the AC-5 wording does not distinguish: the budget was
+set against a still HUD, where the upload is skipped, and a page that changes every frame pays
+`writeTexture` for all 3.7 MB every frame. It is reported here rather than hidden.
 
 ### Cost and repository gates
 
@@ -361,11 +407,13 @@ visible updates per game present cannot be counted yet.
 
 ### Remaining gaps
 
-- The page-local animation / React-local update fixture and the frame-gap measurement E1 requires.
-- The web reference comparison for AC-1/AC-7.
-- The ten-launch repeat for AC-1.
-- A page/paint wakeup for a page-local animation that starts after idle (Phase 3 item 3). No trace
-  yet proves it is missing, and it is not added speculatively.
+- AC-1's ten-launch repeat and the web reference; AC-3's state-age measurement; AC-4's pointer
+  display latency; a React-local update (the fixture lane is vanilla DOM).
+- A page/paint wakeup for a page-local animation that starts after idle (Phase 3 item 3). The
+  measured resume is 18–56 ms, so the idle poll has not been shown to need it.
+- **The decisive one:** an idle host. Every AC-2/AC-6 number above is bound by host load (load 11,
+  28 GiB swap), and the PRD's own lane note already says the same runs must be re-measured
+  somewhere idle before they are called defects or passes.
 
 ## Execution commands and planning verification
 
