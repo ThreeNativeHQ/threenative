@@ -21,6 +21,7 @@
  * instead of skipping.
  */
 
+import type { IFrameCounters } from "./profiling/FrameCounters.js";
 import {
   FRAME_PASS_KINDS,
   type FramePassKind,
@@ -261,6 +262,19 @@ export interface IFrameBudgetWindow {
   readonly gpuMs?: number;
   /** Age of the most recent resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
   readonly gpuAgeFrames?: number;
+  /**
+   * The frame's boundary counts, when something counted them.
+   *
+   * Each series is absent when nothing measured it, and a series present with zero samples is not
+   * possible: an uncounted frame and a frame that crossed the boundary zero times are different
+   * facts, and a fabricated zero merges them. `hostCalls` and `gpuBytes` come from
+   * `FrameCounters`; `jsAllocBytes` needs a platform that publishes `performance.memory`.
+   */
+  readonly counters?: {
+    readonly hostCalls?: IFrameBudgetSummary;
+    readonly gpuBytes?: IFrameBudgetSummary;
+    readonly jsAllocBytes?: IFrameBudgetSummary;
+  };
 }
 
 export interface IFrameBudgetOptions {
@@ -344,6 +358,11 @@ class Ring {
     if (this.#count < capacity) this.#count += 1;
   }
 
+  /** Samples currently held. A series with none is reported absent rather than summarised to zero. */
+  get count(): number {
+    return this.#count;
+  }
+
   reset(): void {
     this.#count = 0;
     this.#cursor = 0;
@@ -416,6 +435,11 @@ export class FrameBudget {
   #passTriangleRings: Record<FramePassKind, Ring>;
   #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
   #passesThisFrame: IRenderPassSample[] = [];
+  #hostCalls: Ring;
+  #gpuBytes: Ring;
+  #jsAllocBytes: Ring;
+  #countersThisFrame: IFrameCounters | undefined;
+  #lastRenderMs: number | undefined;
   // The resolved frame the last sample belonged to, so a reading still in flight is not measured
   // twice. It survives a window boundary: the first frame of a new window can still be showing the
   // previous window's resolved frame.
@@ -462,6 +486,9 @@ export class FrameBudget {
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
     this.#gpu = new Ring(capacity);
+    this.#hostCalls = new Ring(capacity);
+    this.#gpuBytes = new Ring(capacity);
+    this.#jsAllocBytes = new Ring(capacity);
     this.#phaseRings = {
       hostGap: new Ring(capacity),
       overlay: new Ring(capacity),
@@ -567,6 +594,29 @@ export class FrameBudget {
   }
 
   /**
+   * Records the frame's host-boundary counts, from `FrameCounters` or any other source.
+   *
+   * At most one call per frame; a second replaces the first rather than summing, because the
+   * counter's own reader already returns the frame's totals and summing two reads of one frame
+   * would double it. A field the platform cannot report is left out of the series entirely.
+   */
+  addCounters(counters: IFrameCounters): void {
+    if (!this.#open) throw new Error("FrameBudget.addCounters called outside a frame.");
+    for (const [name, value] of [
+      ["hostCalls", counters.hostCalls],
+      ["gpuBytes", counters.gpuBytes],
+      ["jsAllocBytes", counters.jsAllocBytes],
+    ] as const) {
+      if (value === undefined) continue;
+      if (!Number.isFinite(value) || value < 0)
+        throw new Error(
+          `Frame budget counter ${name} must be a non-negative number, received ${String(value)}.`,
+        );
+    }
+    this.#countersThisFrame = counters;
+  }
+
+  /**
    * Records the frame's per-pass submissions, from `RenderPassBudget` or any other source. At most
    * one entry per kind per frame is meaningful; a second of the same kind is summed by the caller.
    * An unknown kind throws rather than being dropped, the same fail-closed rule as a phase.
@@ -596,6 +646,7 @@ export class FrameBudget {
   endFrame(nowMs: number, wantSample = true): IFramePhaseSample | undefined {
     if (!this.#open) throw new Error("FrameBudget.endFrame called outside a frame.");
     this.#open = false;
+    this.#lastRenderMs = undefined;
     const simulationEnd = this.#simulationEnd ?? this.#frameStart;
     const frameMs = Math.max(0, nowMs - this.#frameStart);
     this.#lastFrameEnd = nowMs;
@@ -638,6 +689,7 @@ export class FrameBudget {
     if (this.#hostGap > 0) this.#phaseRings.hostGap.push(this.#hostGap);
     this.#phaseRings.update.push(update);
     this.#phaseRings.render.push(this.#renderMs);
+    this.#lastRenderMs = this.#renderMs;
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
     this.#phaseRings.ui.push(this.#uiMs);
@@ -649,6 +701,11 @@ export class FrameBudget {
       this.#passFrames[pass.kind] += 1;
     }
     this.#passesThisFrame.length = 0;
+    const counters = this.#countersThisFrame;
+    this.#countersThisFrame = undefined;
+    if (counters?.hostCalls !== undefined) this.#hostCalls.push(counters.hostCalls);
+    if (counters?.gpuBytes !== undefined) this.#gpuBytes.push(counters.gpuBytes);
+    if (counters?.jsAllocBytes !== undefined) this.#jsAllocBytes.push(counters.jsAllocBytes);
     this.#framesInWindow += 1;
     this.#maybeReport();
     return sample;
@@ -690,6 +747,20 @@ export class FrameBudget {
     // series for the rest of the run.
     const presentCounted =
       this.#readPresentCount !== undefined && this.#lastPresentCount !== undefined;
+    const hostCalls =
+      this.#hostCalls.count === 0 ? undefined : this.#hostCalls.summarize(this.#scratch);
+    const gpuBytes =
+      this.#gpuBytes.count === 0 ? undefined : this.#gpuBytes.summarize(this.#scratch);
+    const jsAllocBytes =
+      this.#jsAllocBytes.count === 0 ? undefined : this.#jsAllocBytes.summarize(this.#scratch);
+    const counters =
+      hostCalls === undefined && gpuBytes === undefined && jsAllocBytes === undefined
+        ? undefined
+        : {
+            ...(gpuBytes === undefined ? {} : { gpuBytes }),
+            ...(hostCalls === undefined ? {} : { hostCalls }),
+            ...(jsAllocBytes === undefined ? {} : { jsAllocBytes }),
+          };
     const gpuSummary = this.#gpu.summarize(this.#scratch);
     const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
     return {
@@ -720,8 +791,22 @@ export class FrameBudget {
       ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(surface === undefined ? {} : { surface }),
+      ...(counters === undefined ? {} : { counters }),
       window: this.#windowIndex + 1,
     };
+  }
+
+  /**
+   * The render phase of the frame that just closed, or `undefined` when that frame was a hitch and
+   * therefore not counted.
+   *
+   * It exists because the phase split object is optional — `endFrame` builds one only when a
+   * consumer asked for per-frame samples, which shipping games do not — and a reader that needs
+   * the number must not be forced to turn that allocation on to get it. Reading a measurement and
+   * collecting a sample are different requests.
+   */
+  get lastRenderMs(): number | undefined {
+    return this.#lastRenderMs;
   }
 
   /**
@@ -765,6 +850,9 @@ export class FrameBudget {
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
+    this.#hostCalls.reset();
+    this.#gpuBytes.reset();
+    this.#jsAllocBytes.reset();
     this.#gpuStaleInWindow = 0;
     for (const phase of FRAME_BUDGET_PHASES) this.#phaseRings[phase].reset();
     for (const kind of FRAME_PASS_KINDS) {

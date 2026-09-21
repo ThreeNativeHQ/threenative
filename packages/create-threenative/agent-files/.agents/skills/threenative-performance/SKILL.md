@@ -5,17 +5,28 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 
 # ThreeNative performance evidence
 
-Refill scratch and pool objects; load static GLBs through `ctx.assets.model()` so rollback is removal, and never claim Android/iOS from a web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, `residual`, plus per-pass draw calls and triangles attributed to the innermost render call. `defineGame({ frameBudget: false })` silences output, never measurement.
+Pool objects; load static GLBs through `ctx.assets.model()`; never claim Android/iOS from a
+desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`,
+`residual` and per-pass draws and triangles. `defineGame({ frameBudget: false })` silences
+output, never measurement.
+
+## The engine tells you when the scene is the problem
+
+`TN_SCENE_WARNING` fires when the GPU used under a third of a frame whose render phase overran
+the display period: move draws and objects, not settings. `npx threenative doctor` and
+`DEV_MODE=true` repeat it; `TN_FRAME_SPANS=1` splits that phase.
+The largest static win is free — three skips per-object binding updates when nothing changed, so
+not writing a transform saved 7.35 ms on 1,561 objects where `markStatic(root)` saved 0.009 ms.
 
 ## Reach for the shipped default before you write your own
 
-The engine already prepares transforms, batches and projects the scene, culls per pass, scales resolution, cooks assets and warms first use. Hand-rolling any of that pays twice — read `agent-docs/performance-basics.md` before the first profile.
-
-Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. The bounded proof shape is
-`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}` and its
-fields are defined in `agent-docs/assertion-reference.md#performance`. `maxPassDrawCalls` and
-`maxPassTriangles` bound one pass kind at a time; they fail closed when the run carries no
-per-pass split, so keep the frame budget installed.
+The engine prepares transforms, batches, culls, scales resolution and cooks assets;
+hand-rolling pays twice — read `agent-docs/performance-basics.md` first.
+Unexecuted platforms stay unverified; never invent numbers.
+Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. The bounded proof shape is
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`,
+defined in `agent-docs/assertion-reference.md#performance`; pass bounds fail closed without a
+per-pass split.
 
 |Tier|Measure|Floor|Target|
 |---|---|---:|---:|
@@ -40,6 +51,5 @@ per-pass split, so keep the frame budget installed.
 |4|Thermal-status|≤2|≤1|
 |4|Whole-device-current|—|report;not-gated|
 
-On Android, budget roughly a 500 MiB driver floor before your own textures; a dual-use
-equirectangular environment adds about 48 MiB. Fix it with `agent-docs/mobile-memory-budget.md`,
-which carries the measurement conditions behind both numbers.
+On Android, budget a ~500 MiB driver floor before your textures; a dual-use equirectangular
+environment adds ~48 MiB: `agent-docs/mobile-memory-budget.md`.

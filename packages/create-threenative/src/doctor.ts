@@ -1021,6 +1021,64 @@ function executePlaytestDoctor(
   });
 }
 
+/** The marker the engine prints when a frame's shape, not its device, is what costs the frame. */
+const SCENE_WARNING_MARKER = "TN_SCENE_WARNING";
+
+/**
+ * The engine's last scene-shape verdict, read out of whatever this project has already recorded.
+ *
+ * The verdict is produced by the running game and printed once per frame-budget window. An agent
+ * that has just run the game should not have to know which log line carries it, so doctor reads the
+ * recorded output and repeats the most recent one. No recorded run is an `ok` with a reason, never
+ * a failure: a project that has not been run yet has nothing wrong with it.
+ */
+function sceneShapeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  let latest: string | undefined;
+  for (const file of snapshot.files) {
+    if (!file.endsWith(".log") && !file.endsWith(".txt") && !file.endsWith(".json")) continue;
+    const text = snapshot.readText(file);
+    if (text === undefined || !text.includes(SCENE_WARNING_MARKER)) continue;
+    for (const line of text.split("\n")) {
+      const at = line.indexOf(`${SCENE_WARNING_MARKER}:`);
+      if (at >= 0) latest = line.slice(at + SCENE_WARNING_MARKER.length + 1).trim();
+    }
+  }
+  if (latest === undefined) {
+    return {
+      detail: "no recorded run carries a scene verdict yet",
+      name: "scene shape",
+      status: "ok",
+    };
+  }
+  let verdict: unknown;
+  try {
+    verdict = JSON.parse(latest);
+  } catch {
+    return {
+      detail: `a ${SCENE_WARNING_MARKER} line was recorded but could not be read: ${latest.slice(0, 120)}`,
+      fix: "Re-run the game and keep its stdout; the marker is one JSON object on one line.",
+      name: "scene shape",
+      status: "warn",
+    };
+  }
+  if (typeof verdict !== "object" || verdict === null || !("dominantTerm" in verdict)) {
+    return {
+      detail: `a ${SCENE_WARNING_MARKER} line was recorded without a verdict in it`,
+      name: "scene shape",
+      status: "warn",
+    };
+  }
+  const term = String(verdict.dominantTerm);
+  const renderMs = "renderMs" in verdict ? String(verdict.renderMs) : "?";
+  const gpuShare = "gpuShare" in verdict ? String(verdict.gpuShare) : "?";
+  return {
+    detail: `the last window was CPU-bound on scene shape: render ${renderMs} ms with the GPU at ${gpuShare} of the frame, dominated by ${term}`,
+    fix: "Reduce the dominant term before tuning the renderer: fewer objects and fewer draws, not different render settings.",
+    name: "scene shape",
+    status: "warn",
+  };
+}
+
 function playtestCheck(snapshot: IProjectSnapshot, capturePath?: string): IDoctorCheck {
   const runner = playtestRunner(snapshot);
   if (runner === undefined) return missingPlaytestCheck(snapshot);
@@ -2022,6 +2080,7 @@ export function diagnoseProject(
           name: "playtests",
           status: "warn",
         },
+    sceneShapeCheck(snapshot),
     ...capabilitySearchChecks(snapshot),
     editorActivationCheck(snapshot),
     ...(blender === undefined ? [] : [blender]),

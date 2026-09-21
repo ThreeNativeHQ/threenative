@@ -62,12 +62,18 @@ function useUiLayer(name: string): IUiLayerValue {
  */
 function DevFrameRateChip({ bridge }: { bridge: IUiBridge }) {
   const [fps, setFps] = useState<number | undefined>(undefined);
+  // The engine's scene-shape verdict, when the frame earned one. Shown beside the rate rather than
+  // in a second surface: a developer watching a slow window should not have to know which log line
+  // explains it.
+  const [verdict, setVerdict] = useState<string | undefined>(undefined);
   useEffect(
     () =>
       bridge.onMessage((message) => {
         if (message.type !== UI_DEV_METRICS_MESSAGE) return;
         const value: unknown = message.fps;
         if (typeof value === "number" && Number.isFinite(value) && value > 0) setFps(value);
+        const warning: unknown = message.sceneWarning;
+        if (typeof warning === "string" && warning.length > 0) setVerdict(warning);
       }),
     [bridge],
   );
@@ -91,6 +97,14 @@ function DevFrameRateChip({ bridge }: { bridge: IUiBridge }) {
       }}
     >
       {`${Math.round(fps)} fps`}
+      {verdict === undefined ? null : (
+        <span
+          className="tn-dev-scene-warning"
+          style={{ display: "block", maxWidth: 420, color: "#ffd98a", whiteSpace: "normal" }}
+        >
+          {verdict}
+        </span>
+      )}
     </output>
   );
 }

@@ -10,6 +10,193 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Read the distribution, not the average — 2026-09-19
+
+The single most expensive habit in this file's history, measured five times in one session. Every
+wrong conclusion below came from reading an aggregate where the answer was in the events
+underneath it, and every one was cheap to disprove once the right thing was counted.
+
+- `nodes.updateBefore` "costs 4.4 µs per draw under shadows" — a total over a call count. One
+  call per frame renders the shadow map at 3,600 µs while ~393 cost 0.2 µs. **A mean is not a
+  per-call cost unless the calls are alike.** `scripts/render-profile` now reports `maxMs` per
+  stage so the two cannot be confused again.
+- The same stage "costs 7 µs per shadow-pass draw" — arithmetic by subtraction across two arms,
+  never asking which calls held the time. Bucketing by material answered it in one run.
+- A host "spins without presenting", then "never enters a render loop" — both from fps averages
+  and a p50 of 0 ms. The event stream showed the overlay attaching, the game loading and
+  `TN_SURFACE_FRAME` advancing: it presents 118 frames in 26 seconds, a few percent of the
+  iterations its counter counts.
+- A freeze measured at "no difference" — per-frame samples against a clock Chrome coarsens to
+  100 µs, wider than the whole 9 µs effect. Batching 100 updates per sample made it visible.
+
+The rule that survives all four: **when a number is suspicious, look at the spread, the maximum
+and the call counts before believing the mean** — and when a change claims to delete work, count
+the work rather than timing it.
+
+## What the render phase is made of, measured on a scene that renders — 2026-09-19
+
+**Subject:** `examples/engine-load-test` (deterministic seeded lattice, one shared material) and a
+purpose-built 1,561-object caster field, Chrome WebGPU, 1280x720, 480 measured frames per rung,
+RTX 2080. Instruments: `scripts/render-profile/renderer-stage-hooks.ts` (function wrapping) and a
+CDP V8 sampling profile (stack sampling). Wrapping inflates absolute time, so proportions and
+unit costs are the finding and milliseconds are not comparable to an unprofiled run.
+
+**Why not the reference game.** `sandbox/midway-open-pacific` could not render on this machine in
+either lane: another tenant held 6.2 GiB of the 8 GiB card, Dawn lost the device on native and
+Chromium reported `VK_ERROR_OUT_OF_DEVICE_MEMORY` on `CreateTexture` in the browser. Rather than
+report nothing, the attribution was measured on scenes that fit. Every number below is synthetic.
+
+**The render phase splits 87 / 14 / 1.** At 4,096 objects and 2,469 draws, `renderer.renderScene`
+is 25.20 ms/frame: the per-draw loop 21.98 ms (87%), the scene-graph walk 3.57 ms (14%), the
+render-list sort 0.31 ms (1.2%). No single stage inside the per-draw loop is a majority — it is
+the sum of six, ranked by cost per draw: bindings 2.64 µs, render-object lookup 1.08 µs, node
+updates 1.03 µs, the draw itself 0.71 µs, pipelines 0.55 µs, geometries 0.35 µs. **The practical
+consequence is that no single fix recovers the render phase.**
+
+**Two unit costs, for pricing future work.**
+
+| | 1,024 obj / 629 draws | 4,096 obj / 2,469 draws |
+|---|---|---|
+| per draw (`renderObjects` ÷ draws) | 7.74 µs | 8.90 µs |
+| per object (`projectObject` ÷ objects) | 0.92 µs | 0.87 µs |
+
+Traversal is linear; per-draw cost grows with draw count. Applied to a 1,561-mesh, 573-draw game,
+these bound a perfect static freeze at ~1.4 ms and a perfect draw-call merge at ~5.1 ms.
+
+**Two independent instruments name the same subsystem.** The sampling profile, which shares no
+mechanism with the wrappers, ranks by non-idle self time: `writeBuffer` 10.0%, three's WebGPU
+`get` 8.6%, `updateForRender` 3.9%, `getForRender` 2.9%, `updateNode` 2.6%, `setBindGroup` 2.6%,
+`needsRenderUpdate` 2.3%, `updateGroup` 2.1%, `updateBinding` 1.5% — **48% of non-idle time in
+binding, uniform and node-update work.** `(garbage collector)` is 454 ms, 6.7% of non-idle: real
+but not dominant.
+
+**The shadow finding, which is the most actionable thing here.** The identical 1,561-object scene
+with `shadowMap.enabled` flipped, nothing else changed:
+
+| | off | on | |
+|---|---|---|---|
+| draw calls | 1,535 | 3,074 | ×2.00 |
+| `renderer.renderScene` | 16.09 ms | 43.16 ms | **×2.68** |
+| `renderer.projectObject` | 1.71 ms | 3.03 ms | +1.31 ms |
+| `nodes.updateBefore` | 0.33 ms | **13.49 ms** | **×40** |
+
+Doubling the draws nearly triples the render phase. Every per-draw stage holds its per-call cost
+(bindings ×1.0, lookup ×1.0, draw ×0.9, pipelines ×1.0, geometries ×1.0) except
+`nodes.updateBefore`, which is 13.16 ms of the 27.08 ms a shadow pass adds; the second traversal
+is +1.31 ms and is the cheap part. **That stage is resolved below, and it is not a per-call
+regression** — an earlier revision of this paragraph reported it as 0.216 µs → 4.391 µs per
+call, ×20.3, which was a whole render pass divided by a draw count.
+
+**The ×20 resolved: it is the shadow-map render, billed to one draw.** Two experiments were
+needed and the first one's conclusion was wrong, which is recorded here because the wrong step is
+instructive.
+
+*First*, `light.shadow.autoUpdate = false` after frame 2 — the shadow map stops being
+re-rendered, everything else identical:
+
+| | `nodes.updateBefore` | calls/frame | per call | `renderScene` |
+|---|---|---|---|---|
+| shadow re-rendered | 11.20 ms | 3,073 | 3.646 µs | 34.74 ms |
+| shadow frozen after frame 2 | 0.39 ms | 1,534 | 0.253 µs | 14.37 ms |
+
+From that I concluded the excess was spread across the shadow pass's own draws at ~7 µs each. It
+was arithmetic by subtraction — charge the survivors at the frozen rate, divide the remainder by
+the calls that disappeared — and it never checked **which** calls held the time.
+
+*Second*, bucketing every call by the material it draws with and the number of `updateBefore`
+nodes the render object carries, with per-call maxima:
+
+| bucket | calls/frame | mean per call | max | calls over 100 µs |
+|---|---|---|---|---|
+| `MeshStandardMaterial`, 1 updateBefore node (main pass) | 394 | 5.695 µs | **3,600 µs** | **1.43** |
+| `NodeMaterial`, 0 updateBefore nodes (shadow pass) | 396 | 0.205 µs | 100 µs | 0.31 |
+
+**About one call per frame carries the entire stage.** The shadow pass's own draws are the cheap
+ones — they use a shadow material with no `updateBefore` nodes at all. The lit material carries a
+single RENDER-typed node whose `updateBefore` renders the shadow map, and three's `NodeFrame`
+guard runs it once per render id, on whichever lit draw comes first.
+
+**The consequence is bigger than the number.** `nodes.updateBefore` is not a per-draw stage in a
+shadowed scene: most of its total is one whole render pass executed inside a method that a
+wrapping profiler attributes per draw. Any attribution built on wrapping that method — including
+this record's own table — will show a per-draw cost that is really a pass. The 28x and 7 µs
+figures from the first experiment are withdrawn; the per-draw cost of node updates in a shadowed
+frame is about 0.2 µs, the same as without shadows, and the mass is a shadow-map render.
+
+**A cross-validation that could have failed.** 0.87 µs/object × 1,561 predicts a 1.36 ms second
+traversal; the measured delta is 1.31 ms — 4% error, on a different scene at a different object
+count from the one the unit cost came from.
+
+**Native, with the collapse switched off: the browser's shape holds.** The same 1,561-mesh
+lattice through `defineGame` on the packaged host (`sh scripts/xvfb.sh --headless`, 900 frames,
+480 measured), as a 2x2 over the engine's projection and shadows. The switch is
+`render: { projection }` — `renderer:` takes a renderer instance, and passing the flag there
+silently does nothing, which cost one round of identical "arms" before it was caught.
+
+| arm | `renderScene` | draws/frame | µs/draw |
+|---|---|---|---|
+| projection off, no shadows | **9.98 ms** | 1,535 | 4.17 |
+| projection off, shadows | **30.40 ms** | 3,074 | 8.35 |
+| projection on, no shadows | **2.31 ms** | 3 | — |
+| projection on, shadows | 2.56 ms | 4 | — |
+
+Three things transfer from this:
+
+1. **Per-object traversal agrees across runtimes.** 1.472 ms over 1,566 visited objects is
+   **0.94 µs/object** on native, against 0.87-0.92 µs measured in the browser on a different
+   scene at different object counts.
+2. **The shadow result reproduces.** Draws exactly double, and `renderScene` goes up **3.05x**
+   (9.98 -> 30.40 ms) where the browser saw 2.68x. A shadow pass costing far more than the draws
+   it adds is not a browser artifact.
+3. **Native is about twice as cheap per draw** — 4.17 µs against the browser's 7.74-8.90 µs on
+   comparable scenes — which is the clearest single argument in this record for the native host.
+
+**The engine's collapse, measured against a real control this time.** With projection on, 1,561
+authored meshes become one instanced batch and 3 draws
+(`"sourceRenderables":1562,"instancedBatches":1,"projectedObjects":1561`), and `renderScene` falls
+from 9.98 ms to **2.31 ms — 4.3x less CPU**, with no game-side work. For PRD-397 this is the
+number that matters: the runtime already performs the collapse a build-time merge proposes,
+wherever geometry and material repeat. A merge can only win where this declines, which is the
+reference game's shape of 426 meshes over 232 materials — the residue the census measured at
+220 -> 192 buckets.
+
+**The 960-call anomaly explained, and it is the most useful result here.** Five per-subsystem
+stages recorded 960 calls in one native arm against 739,680 in another. That was not an instrument
+fault and not the shadow pass: **the native probe never moved anything, and the browser probe
+rotated every cube every frame.** Isolating exactly that, same scene, same host, projection off,
+no shadows:
+
+| | `bindings.updateForRender` calls/frame | that stage | `renderScene` |
+|---|---|---|---|
+| nothing moves | **2** | 0.03 ms | **10.10 ms** |
+| all 1,561 objects rotate | **1,534** | 3.94 ms | **17.45 ms** |
+
+**Moving 1,561 objects costs +7.35 ms of render phase**, and three skips the per-object binding
+update entirely when nothing changes. A static object is already cheap, automatically, with no
+API and no authoring — which is why the earlier arms disagreed by three orders of magnitude on
+call count, and why the ratios computed across them were discarded.
+
+This is the number PRD-396 should have been written against. Its `markStatic` freeze removes
+matrix composition and is worth 0.009 ms on a scene this size; the binding work that dominates a
+moving scene is already skipped for anything the game does not touch. **The engine rewards
+staticness by roughly 7 ms on this scene before any freeze API exists.**
+
+It also cautions every other row here: the browser attribution animated its scene and the native
+2x2 did not, so per-subsystem comparisons between them are not like-for-like. The stage-level
+totals (`renderScene`, `projectObject`, draw counts) are, and those are what the cross-runtime
+claims above rest on.
+
+**The bound on batching.** The same 4,096 objects rendered through the framework's collapse pass
+take 3 draws and **0.24 ms instead of 25.20 ms, 106× less CPU.** That is what perfect batching of
+a one-material scene achieves, and it is an upper bound: a game with 232 materials over 426 meshes
+does not collapse that far.
+
+**Host-boundary price, native.** One empty V8→host call costs **74.07 / 75.33 ns** measured by
+`packages/runtime-native/scripts/bench-host-boundary.js`. At 4,131 WebGPU commands per frame that
+is 0.31 ms — filling 10.9 ms would need 145,917 crossings per frame, 255 per draw, against the 7.2
+per draw actually made. **The boundary is not where render time goes**, which prices WASM-hot-loop
+proposals down rather than up.
+
 ## A real-time native gameplay lane, and what the render term is made of — 2026-09-19
 
 **Subject:** `sandbox/midway-open-pacific`, airborne cruise, packaged desktop binary (host

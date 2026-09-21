@@ -2072,6 +2072,17 @@ private:
             std::strcmp(devMode, "false") != 0) {
             jsEngine_->setProperty(env, "DEV_MODE", jsEngine_->newString("true"));
         }
+        // The engine's own launch diagnostics, each off unless asked for. Forwarded verbatim
+        // rather than as booleans so the engine's reader stays the single place that decides what
+        // counts as on, and a host that publishes a flag never decides it twice. Listed rather
+        // than pattern-matched on a prefix: publishing every `TN_*` variable a machine happens to
+        // carry is a leak, and one line per flag is the price of not having one.
+        for (const char* flag : {"TN_FRAME_SPANS", "TN_RENDERLIST_VALIDATE"}) {
+            const char* value = std::getenv(flag);
+            if (value != nullptr && value[0] != '\0') {
+                jsEngine_->setProperty(env, flag, jsEngine_->newString(value));
+            }
+        }
         jsEngine_->setProperty(process, "env", env);
 
         jsEngine_->setGlobalProperty("process", process);

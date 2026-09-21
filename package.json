@@ -79,7 +79,9 @@
     "visuals:baseline": "sh scripts/xvfb.sh tsx scripts/template-baseline.ts",
     "visuals:realism-effects": "sh scripts/xvfb.sh tsx scripts/realism-effects-visual.ts",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
-    "worktree:status": "tsx scripts/worktree-lifecycle.ts status"
+    "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
+    "census:content": "tsx scripts/content-census.ts",
+    "bench:host-boundary": "timeout 240 packages/runtime-native/build/tn-linux/mystral run packages/runtime-native/scripts/bench-host-boundary.js --headless"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
