@@ -3,6 +3,7 @@
 #include "mystral/cold_start.h"
 
 #include <atomic>
+#include <cstdlib>
 #include <deque>
 #include <iostream>
 #include <mutex>
@@ -259,6 +260,27 @@ bool uiOverlayHitTest(float nx, float ny) {
     return tn_ui_overlay_hit_test(nx, ny) == 1;
 }
 
+/**
+ * One line per state posted to the page and per pointer action routed to it, on the launch clock.
+ *
+ * PRD-398 asks for two ages that no screenshot can see: how long a state the game published takes to
+ * reach the screen, and how long a pointer action takes to produce the response the player is owed.
+ * Both start on this side of the bridge — the game thread posts state here, and every pointer action,
+ * real or synthetic, enters at `uiOverlayRoutePointer` — and both end at a composited frame the game
+ * thread also stamps (`TN_UI_COMPOSITE_TRACE`). One clock, one ordinal each, so a reader subtracts
+ * two numbers from the same origin and pairs the *n*-th post with the *n*-th new page frame instead
+ * of guessing from wall-clock timestamps.
+ *
+ * Off unless `TN_UI_LATENCY_TRACE` is set: a line per posted frame is noise in every other run.
+ */
+void traceUiLatency(const char* event, unsigned long long ordinal, const char* detail) {
+    static const bool enabled = std::getenv("TN_UI_LATENCY_TRACE") != nullptr;
+    if (!enabled) return;
+    std::printf("TN_UI_LATENCY_TRACE:{\"event\":\"%s\",\"n\":%llu,\"detail\":\"%s\",\"atMs\":%.3f}\n",
+                event, ordinal, detail, mystral::coldStartNowMs());
+    std::fflush(stdout);
+}
+
 bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, int pointerId) {
     if (!uiOverlayAttached()) return false;
     return tn_ui_overlay_inject_pointer(type, nx, ny, buttons, pointerId) == 0;
@@ -336,6 +358,11 @@ bool uiOverlayKeyboardCaptured() {
 
 bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId) {
     if (!uiOverlayAttached() || type == nullptr) return false;
+    // The arrival of a pointer action, before ownership is decided: this is the one function both
+    // the OS event loop and the playtest bridge's synthetic input come through, so an action's age
+    // is measured from here rather than from whichever side later claimed it.
+    static unsigned long long routed = 0;
+    traceUiLatency("pointer", ++routed, type);
     return g_uiGesture.route(type, nx, ny, buttons, pointerId);
 }
 #else
@@ -393,7 +420,11 @@ bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, in
 
 bool postUiMessage(const std::string& frame) {
 #if TN_ENABLE_UI_OVERLAY
-    if (uiOverlayAttached()) return tn_ui_overlay_post(frame.c_str()) == 0;
+    if (uiOverlayAttached()) {
+        static unsigned long long posted = 0;
+        traceUiLatency("post", ++posted, "");
+        return tn_ui_overlay_post(frame.c_str()) == 0;
+    }
 #endif
 #if defined(__APPLE__) && TARGET_OS_IPHONE
     if (uiOverlayAttached()) return postIosUiMessage(frame);

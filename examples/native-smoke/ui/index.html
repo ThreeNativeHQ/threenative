@@ -95,6 +95,24 @@
         font-variant-numeric: tabular-nums;
         color: #ff3d00;
       }
+      #state-age {
+        display: none;
+      }
+      body.echoing #state-age {
+        display: block;
+      }
+      /* The cadence gate's React page (`ui/react.tsx`): the same changing number as `#tick`, painted
+         by a React render rather than by CSS. Empty on every other page. */
+      #react-pulse {
+        position: absolute;
+        left: 60%;
+        top: 24%;
+        color: #7fffd4;
+        font-variant-numeric: tabular-nums;
+      }
+      #react-pulse b {
+        font-size: 28px;
+      }
     </style>
   </head>
   <body>
@@ -102,6 +120,15 @@
       <div>POINTER DOWNS</div>
       <b id="downs">0</b>
       <div>PAGE TICKS <span id="tick">0</span></div>
+      <!-- The bridged state's own frame counter, shown only in the state-age lane
+           (`window.__tnStateEcho`): a changed state has to be a changed picture for AC-3's age to be
+           attributable to a composited frame, and a page that changes every frame would move the
+           UI-frame gate's budget from the composite to the page's paint. -->
+      <div id="state-age">STATE FRAME <b id="frames">0</b></div>
+      <!-- The cadence gate's React page mounts here (`ui/react.tsx`, `--lane react`). Empty on every
+           other page, and an empty div paints nothing, so the UI-frame gate's static page is
+           unaffected. -->
+      <div id="react-root"></div>
       <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
         <circle cx="20" cy="20" r="15" fill="none" stroke="#7fffd4" stroke-width="3" />
       </svg>
