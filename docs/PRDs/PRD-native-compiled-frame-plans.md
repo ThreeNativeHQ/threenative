@@ -3,8 +3,9 @@
 Status: PARTIAL. Automatic in production; no game flag is required. The retained transport landed,
 the adaptive selector is covered across stable, tiny, upload-heavy, topology-changing, split and
 oversized frames, and the original transport measurement showed 43–45% lower recorder cost with
-94.8–99.5% smaller packets on draw-heavy frames. Physical Android performance and final iOS/JSC
-qualification remain open. Base: f8d6da914 (develop synced after #273).
+94.8–99.5% smaller packets on draw-heavy frames. Physical Android performance remains open; the
+final exact-head iOS/JSC qualification passed in CI run 35410762244. Base: f8d6da914 (develop synced
+after #273).
 
 ## Goal and boundary
 
@@ -155,15 +156,17 @@ The temporary adapter and header excerpt are not repository changes.
   result is available here; they also show the plan arm's drain at +0.08 ms and its replay at
   +0.08–0.12 ms (2.5× on that phase, larger than the patch application explains — worth chasing if
   activation is pursued). Recorded in `docs/verification/runtime-perf-state.md`.
-- [ ] Run the changed path on iOS and verify JSC compatibility.
-  The always-on macOS-15 iOS-simulator lane builds with `CMAKE_SYSTEM_NAME=iOS`, which forces
-  `MYSTRAL_USE_JSC=ON`. This box closes only when that lane passes on the final PR commit; source
-  compatibility reasoning alone is not counted as execution evidence.
+- [x] Run the changed path on iOS and verify JSC compatibility.
+  Exact-head CI run `35410762244` completed successfully on
+  `680f214a1376f3eede93bf345fd9884004ce10f7`. The full native-platform workflow's `ios-simulator`
+  job is unconditional for a full selection and runs on macOS-15; `verify-ios-simulator.mjs` builds
+  and executes the simulator runtime with the iOS/JSC configuration, so this final qualification
+  gate is closed by execution evidence rather than source-compatibility reasoning.
 
 ## Acceptance criteria
 - [ ] All preceding checks have executed successfully.
-  Physical Android performance and the final iOS/JSC lane remain open; the adaptive activation
-  criterion below is complete without claiming a universal frame-rate improvement.
+  Physical Android performance remains open; the final exact-head iOS/JSC lane passed in CI run
+  `35410762244`.
 - [x] No queue-order regression on the repaired recorder through native replay.
   `frame op stream replay contract passed` asserts the exact operation order and census for patched
   frames and for the tail a split frame left behind, and no replay reported a duplicate id or a
