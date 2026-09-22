@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -40,8 +40,13 @@ async function tree(directory: string): Promise<Record<string, string>> {
 }
 
 async function installDeterministicVite(project: string): Promise<string> {
-  const bin = path.join(project, "node_modules", ".bin", "vite");
+  const vite = path.join(project, "node_modules", "vite");
+  const bin = path.join(vite, "bin", "vite.js");
   await mkdir(path.dirname(bin), { recursive: true });
+  await writeFile(
+    path.join(vite, "package.json"),
+    JSON.stringify({ name: "vite", type: "module", bin: { vite: "bin/vite.js" } }),
+  );
   await writeFile(
     bin,
     `#!/usr/bin/env node
@@ -55,7 +60,6 @@ await writeFile(path.join(out, "index.html"), "<main>" + manifest.name + "</main
 await writeFile(path.join(out, "assets", "game.js"), "export const game = true;\\n");
 `,
   );
-  await chmod(bin, 0o755);
   return bin;
 }
 
@@ -232,15 +236,15 @@ describe("threenative build", () => {
     }
   });
 
-  it("delegates byte-identically to the same Vite binary for every template", async () => {
+  it("runs the installed Vite CLI through Node without a platform shell shim", async () => {
     for (const template of ["minimal", "starter", "platformer"] as const) {
       const root = await makeTempDir(`threenative-web-${template}-`);
       roots.push(root);
       const { target } = await createProject({ install: false, target: "game", template }, root);
       const vite = await installDeterministicVite(target);
-      await run(vite, ["build", "--outDir", "vite-dist"], { cwd: target });
-      await buildWeb(target, ["--outDir", "cli-dist"]);
-      expect(await tree(path.join(target, "cli-dist")), template).toEqual(
+      await run(process.execPath, [vite, "build", "--outDir", "vite-dist"], { cwd: target });
+      await buildWeb(target, ["--outDir", "web build & release"]);
+      expect(await tree(path.join(target, "web build & release")), template).toEqual(
         await tree(path.join(target, "vite-dist")),
       );
     }

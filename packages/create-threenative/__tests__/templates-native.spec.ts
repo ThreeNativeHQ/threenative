@@ -244,10 +244,11 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
       expect(args, `${target} must receive the resolved config`).toContain("--config");
       expect(args, `${target} must receive the default UI`).toContain("--ui");
       const ui = args[args.indexOf("--ui") + 1];
+      if (ui === undefined) throw new Error(`${target} must name its UI output`);
       const page = await readFile(path.join(ui, "index.html"), "utf8");
       for (const extension of ["js", "css"]) {
         const asset = page.match(new RegExp(`(?:src|href)="\\./([^" ]+\\.${extension})"`, "u"));
-        if (asset === null) throw new Error(`${target} UI must load ${extension}`);
+        if (asset?.[1] === undefined) throw new Error(`${target} UI must load ${extension}`);
         await expect(readFile(path.join(ui, asset[1]), "utf8")).resolves.not.toBe("");
       }
       if (target !== "desktop") {

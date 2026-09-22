@@ -58,6 +58,40 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it.each([false, true])(
+    "releases the UI bridge when renderer startup fails (host: %s)",
+    async (host) => {
+      if (host) {
+        vi.stubGlobal("__tnUiPost", () => undefined);
+        vi.stubGlobal("__tnUiOverlayAttached", () => true);
+      }
+      const ui = connectUiBridge({ end: "ui" });
+      const boom = new Error("renderer failed");
+      const game = defineGame({
+        renderer: {
+          ...renderer(testCanvas()),
+          webgl2Factory: () => {
+            throw boom;
+          },
+        },
+        scenes: { test: EmptyScene },
+        start: "test",
+      });
+      try {
+        await expect(game.start()).rejects.toBe(boom);
+        if (host) {
+          expect((globalThis as Record<string, unknown>).__tnUiGameReceive).toBeUndefined();
+        } else {
+          expect(ui.hasPeer()).toBe(false);
+        }
+      } finally {
+        game.stop();
+        ui.close();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it.each([undefined, 100])(
     "publishes UI state at the selected frame/interval cadence (%s)",
     async (stateFlushMs) => {
@@ -84,7 +118,6 @@ describe("IGame", () => {
         start: "test",
         ...(stateFlushMs === undefined ? {} : { stateFlushMs }),
       });
-      game.ui.onIntent(() => undefined);
       const ui = connectUiBridge({ end: "ui" });
       const mirror = subscribeUiState<{ score: number }>(ui);
       const observed: number[] = [];
@@ -97,6 +130,7 @@ describe("IGame", () => {
         if (frame === undefined) throw new Error("Game did not start its loop.");
         for (let count = 1; count <= 64; count++) {
           frame(count * 16);
+          if (stateFlushMs === undefined) expect(mirror.get()?.score).toBe(renderedFrames);
           await Promise.resolve();
         }
         // Startup may hold the world while still presenting loader frames. Count actual renders.

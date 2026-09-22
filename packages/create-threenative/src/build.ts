@@ -37,15 +37,8 @@ function packageRoot(cwd: string, packageName: string): string {
   try {
     return path.dirname(projectRequire(cwd).resolve(`${packageName}/package.json`));
   } catch {
-    throw new Error(
-      `Cannot build a native target because '${packageName}' is not installed in ${cwd}.`,
-    );
+    throw new Error(`Cannot build because '${packageName}' is not installed in ${cwd}.`);
   }
-}
-
-function executable(cwd: string, name: string): string {
-  const suffix = process.platform === "win32" ? ".cmd" : "";
-  return path.join(cwd, "node_modules", ".bin", `${name}${suffix}`);
 }
 
 async function run(command: string, args: readonly string[], cwd: string): Promise<void> {
@@ -313,7 +306,11 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
 export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
   const config = await loadConfig(cwd);
   await compileAssets({ config: config.assets, cwd, platform: "web" });
-  await run(executable(cwd, "vite"), ["build", ...viteArgs], cwd);
+  await run(
+    process.execPath,
+    [path.join(packageRoot(cwd, "vite"), "bin/vite.js"), "build", ...viteArgs],
+    cwd,
+  );
 }
 
 async function nativeEntry(cwd: string, config?: IResolvedThreeNativeConfig): Promise<string> {
