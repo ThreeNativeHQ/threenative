@@ -909,7 +909,7 @@ const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "web"];
 function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
   const ui = assertRecord(raw, "ui");
   assertKeys(ui, "ui", ["renderer"]);
-  const renderer = ui.renderer === undefined ? "native" : ui.renderer;
+  const renderer = ui.renderer === undefined ? "web" : ui.renderer;
   if (typeof renderer !== "string" || !UI_RENDERERS.includes(renderer as ThreeNativeUiRenderer)) {
     fail("TN_CONFIG_UI_RENDERER_INVALID", "ui.renderer must be web or native.");
   }

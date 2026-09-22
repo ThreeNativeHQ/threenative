@@ -12,7 +12,7 @@ export type GameStore<T extends Record<string, unknown>> = StoreApi<T> & {
 
 export function createGameStore<T extends Record<string, unknown>>(
   initial: T,
-  intervalMs = 100,
+  intervalMs?: number,
 ): GameStore<T> {
   const store = createStore<T>(() => ({ ...initial }));
   const getPublishedState = store.getState;
@@ -44,7 +44,7 @@ export function createGameStore<T extends Record<string, unknown>>(
   };
   gameStore.flush = flush;
   gameStore.start = () => {
-    if (timer !== undefined) return;
+    if (intervalMs === undefined || timer !== undefined) return;
     timer = setInterval(flush, intervalMs);
   };
   gameStore.stop = () => {

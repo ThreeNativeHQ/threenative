@@ -311,6 +311,7 @@ export interface IGameConfig<
    */
   readonly step?: number;
   readonly start: string;
+  /** Optional slower UI publication interval. Omitted publishes once per rendered frame. */
   readonly stateFlushMs?: number;
 }
 
@@ -339,7 +340,7 @@ export type CameraConfig = IPerspectiveCameraConfig | IOrthogonalCameraConfig;
  * two channels through an in-process broker, which is what keeps one `src/ui/` honest: a HUD
  * that works here works on a phone.
  *
- * Publication is automatic and throttled to the store's own published cadence, and it stops
+ * Publication is automatic at the rendered frame cadence (or the named stateFlushMs override), and it stops
  * entirely when nothing is listening — a game whose `ui.renderer` is `native` pays nothing.
  */
 export interface IGameUi {
@@ -1452,6 +1453,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
         }
         if (mustPresentLoader) loadingFramePresented = true;
+        // Include state written by beforeRender and Scene.render in this frame's UI snapshot.
+        if (this.#config.stateFlushMs === undefined) this.#state.flush();
         if (canvasLayer.scene.children.length > 0) {
           const overlayStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
