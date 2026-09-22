@@ -248,6 +248,20 @@ public final class Log {
   public static int w(String tag, String message) { return 0; }
 }
 `,
+    'android/view/Choreographer.java': `package android.view;
+
+// Minimal API-faithful stand-in for the platform vsync source. Production arms it on resume
+// and removes the callback on pause/destroy; the probe only needs the calls to resolve.
+public final class Choreographer {
+  private static final Choreographer instance = new Choreographer();
+  public static Choreographer getInstance() { return instance; }
+  public void postFrameCallback(FrameCallback callback) {}
+  public void removeFrameCallback(FrameCallback callback) {}
+  public interface FrameCallback {
+    public abstract void doFrame(long frameTimeNanos);
+  }
+}
+`,
     'android/view/Surface.java': `package android.view;
 
 public final class Surface {
@@ -355,6 +369,8 @@ public class SDLActivity {
 
   protected void onCreate(Bundle state) {}
   protected void onResume() {}
+  protected void onPause() {}
+  protected void onDestroy() {}
   public void onTrimMemory(int level) {}
   protected String[] getLibraries() { return new String[0]; }
   protected String getMainFunction() { return ""; }
@@ -486,10 +502,45 @@ public final class MetadataProbe {
   }
 }
 `,
-    'MystralActivity.java': readFileSync(
-      new URL('../android/app/src/main/java/com/mystral/engine/MystralActivity.java', import.meta.url),
-      'utf8',
-    ),
+    // This probe JVM ships no native library, so only the JNI boundary is stubbed: the two
+    // frame-arming native declarations on the onResume/onPause/onDestroy path become no-op
+    // Java bodies in this compiled fixture. Every line of production Java — onResume,
+    // arm/disarm, requestPreferredFrameRate — compiles and runs unmodified, so the
+    // frame-rate-reapply-after-resume assertions below exercise the real resume path.
+    // Match counts fail closed: a rename or another native on this path breaks loudly here
+    // instead of silently testing a stale copy. JNI-backed behavior has its own real-APK proof.
+    'MystralActivity.java': (() => {
+      const production = readFileSync(
+        new URL('../android/app/src/main/java/com/mystral/engine/MystralActivity.java', import.meta.url),
+        'utf8',
+      );
+      const boundaries = [
+        'private static native void nativeOnPresentationFramesStarted();',
+        'private static native void nativeOnPresentationFramesStopped();',
+      ];
+      for (const declaration of boundaries) {
+        assert.equal(
+          production.split(declaration).length - 1,
+          1,
+          `expected exactly one JNI boundary declaration: ${declaration}`,
+        );
+      }
+      const fixture = production
+        .replace(boundaries[0], 'private static void nativeOnPresentationFramesStarted() {}')
+        .replace(boundaries[1], 'private static void nativeOnPresentationFramesStopped() {}');
+      assert.doesNotMatch(fixture, /native void nativeOnPresentationFrames(Started|Stopped)\(\)/u);
+      for (const retained of [
+        'private static native void nativeOnPresentationFrame(long frameTimeNanos);',
+        'private static native void nativeOnTrimMemory(int level);',
+      ]) {
+        assert.equal(
+          fixture.split(retained).length - 1,
+          1,
+          `only the resume-path boundary is stubbed, JNI stays native: ${retained}`,
+        );
+      }
+      return fixture;
+    })(),
   };
   const sourcePaths = [];
   for (const [relative, source] of Object.entries(sources)) {
