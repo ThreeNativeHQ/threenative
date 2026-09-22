@@ -25,6 +25,12 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install LLVM 22 coverage tools
+        uses: ZhongRuoyu/setup-llvm@eea6238baf53d41c1615923680d7a738da584318
+        with:
+          llvm-version: 22
+      - name: Verify LLVM baseline coverage support
+        run: llvm-cov export --help | grep -q -- '-empty-profile'
       - name: Install Linux desktop build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
