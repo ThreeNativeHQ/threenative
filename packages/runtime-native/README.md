@@ -75,8 +75,9 @@ pnpm exec threenative build --target desktop --mode release
 Each container carries `threenative-container.json`: the app identity, the executable, every
 bundled dependency with a SHA-256, and every system library recorded as a player prerequisite. All
 of it resolves relative to the container root, so a container can be unpacked and moved anywhere; a
-resource that is missing or whose bytes changed is refused. Release containers are **unsigned** —
-signing and notarization are a separate step.
+resource that is missing or whose bytes changed is refused. Release containers are unsigned unless
+signing is configured. Signed macOS apps seal their manifest and executable with the application
+signature; verification checks that signature as well as the resource hashes.
 
 ### Player prerequisites
 

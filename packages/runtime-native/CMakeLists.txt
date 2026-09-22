@@ -156,6 +156,11 @@ option(TN_ENABLE_CLANG_TIDY "Run clang-tidy over ThreeNative native sources" OFF
 # PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
 # picture by construction and must never ship. Asserted absent from every shipped preset.
 option(TN_ABLATE_BACKEND "PRD-226 arm A2: no-op the hot backend command entry points, keeping JS, trampoline and argument parsing intact" OFF)
+# PRD-393 arm: the UI composite's upload and quad disappear, and nothing else does. The frame is
+# still structurally valid and still presents; it simply carries no UI. This is the "quad disabled"
+# arm AC-6's interleaved pairs are measured against — without it the phase's p95 could be
+# attributing something other than the compositing, and there would be no way to tell.
+option(TN_ABLATE_UI_COMPOSITE "PRD-393 arm: skip the native UI upload and quad, keeping the phase measurement" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
 
 if(TN_ENABLE_NATIVE_GLTF)
@@ -212,12 +217,19 @@ add_compile_definitions(
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
     TN_ABLATE_BACKEND=$<BOOL:${TN_ABLATE_BACKEND}>
+    TN_ABLATE_UI_COMPOSITE=$<BOOL:${TN_ABLATE_UI_COMPOSITE}>
 )
 
 if(TN_ABLATE_BACKEND)
     message(WARNING
         "TN_ABLATE_BACKEND is ON: this is a PRD-226 measurement build. It renders an incorrect "
         "picture by construction and must not be shipped or used for any visual gate.")
+endif()
+
+if(TN_ABLATE_UI_COMPOSITE)
+    message(WARNING
+        "TN_ABLATE_UI_COMPOSITE is ON: this is a PRD-393 measurement build. It draws no UI at all "
+        "and must not be shipped or used for any visual gate.")
 endif()
 
 # ============================================================================
@@ -1428,6 +1440,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_pipeline_cache.cpp
     src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
+    src/webgpu/bindings_ui_composite.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp
     src/webgpu/registration_table.cpp
@@ -1651,6 +1664,14 @@ if(TN_ENABLE_UI_OVERLAY)
         pkg_check_modules(TN_WEBKITGTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)
         target_link_libraries(mystral-runtime PRIVATE PkgConfig::TN_WEBKITGTK)
     endif()
+endif()
+
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    # `window.cpp` paints the window's X background with the game's `bootSplash.backgroundColor`
+    # before the first GPU present, which is two direct Xlib calls. SDL reaches X11 through its own
+    # dynamic loading and publishes no such API, so the link has to name X11 itself.
+    find_package(X11 REQUIRED)
+    target_link_libraries(mystral-runtime PRIVATE X11::X11)
 endif()
 
 

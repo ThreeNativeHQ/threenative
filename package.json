@@ -64,6 +64,7 @@
     "sync:agents": "tsx scripts/sync-agent-docs.ts",
     "sync:mcp": "tsx scripts/sync-mcp-configs.ts",
     "test": "bash scripts/run-test-suite.sh",
+    "test:ui-native": "tsx packages/runtime-native/scripts/verify-native-ui-input.ts",
     "test:browser": "pnpm --filter @threenative/playtest build && sh scripts/xvfb.sh playwright test --config=playwright.config.ts",
     "test:browser:ci": "test -f packages/playtest/dist/runner/cli.js || { echo 'TN_PREBUILT_PLAYWRIGHT_RUNNER_MISSING: packages/playtest/dist/runner/cli.js' >&2; exit 1; }; command -v playwright >/dev/null 2>&1 || { echo 'TN_PREBUILT_PLAYWRIGHT_CLI_MISSING: playwright is not installed' >&2; exit 1; }; test -n \"${THREENATIVE_PACKED_PACKAGES:-}\" && test -d \"$THREENATIVE_PACKED_PACKAGES\" && test -s \"$THREENATIVE_PACKED_PACKAGES/specs\" || { echo 'TN_PREBUILT_WORKSPACE_ARCHIVE_MISSING: THREENATIVE_PACKED_PACKAGES must point to a verified archive directory' >&2; exit 1; }; test -n \"$(find \"$THREENATIVE_PACKED_PACKAGES\" -maxdepth 1 -type f -name '*.tgz' -print -quit 2>/dev/null)\" || { echo 'TN_PREBUILT_WORKSPACE_ARCHIVE_MISSING: no workspace archive was found' >&2; exit 1; }; sh scripts/xvfb.sh playwright test --config=playwright.config.ts",
     "test:ci": "TN_SUITE_PREBUILT=1 bash scripts/run-test-suite.sh",

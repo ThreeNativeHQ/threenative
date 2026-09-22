@@ -308,6 +308,10 @@ struct FrameProfiling {
     // in the following callback's residual hostGap, because that meter spans host work between rAFs.
     uint64_t framePhaseGpuDrainNs = 0;
     uint64_t framePhasePollNs = 0;
+    // The UI composite (PRD-393 Phase 3): the offscreen web view's frame uploaded and drawn as a
+    // premultiplied quad. Named separately from `framePhaseOtherNs` because it is the whole cost
+    // this change adds to a frame, and AC-6 measures it as its own phase.
+    uint64_t framePhaseUiNs = 0;
     uint64_t framePhaseOtherNs = 0;
     // Render-thread CPU clock at the previous profile emission. Wall-clock phase timings on a
     // FIFO-presented surface are mostly vblank wait; the delta of this clock is the work.
@@ -366,6 +370,34 @@ struct Canvas2DComposite {
     WGPUSampler canvas2DSampler = nullptr;
     uint32_t canvas2DTextureWidth = 0;
     uint32_t canvas2DTextureHeight = 0;
+};
+
+/**
+ * The offscreen web view, uploaded and drawn into the game's own frame.
+ *
+ * PRD-393. The UI is a texture, never a window: there is no second swapchain, so the UI cannot be
+ * a frame ahead of the world, cannot be hidden by a compositor, and cannot be stacked wrong.
+ *
+ * `uploadedCounter` is the mailbox counter the texture currently holds. The web view publishes a
+ * counter that only moves when its pixels changed, so a still HUD costs one draw and no upload —
+ * which is the difference between this being free and it being 3.7 MB per frame.
+ */
+struct UiComposite {
+    WGPUTexture texture = nullptr;
+    WGPUTextureView textureView = nullptr;
+    WGPURenderPipeline pipeline = nullptr;
+    WGPUBindGroup bindGroup = nullptr;
+    WGPUSampler sampler = nullptr;
+    uint32_t textureWidth = 0;
+    uint32_t textureHeight = 0;
+    /// The mailbox counter the texture holds. Zero means nothing has been uploaded yet.
+    uint64_t uploadedCounter = 0;
+    /// Frames where the upload was skipped because the page had not changed.
+    uint64_t skippedUploads = 0;
+    /// Frames where a frame was uploaded. `skippedUploads + uploads` is every drawn frame.
+    uint64_t uploads = 0;
+    /// The format the pipeline was built for, so a format change rebuilds it rather than failing.
+    WGPUTextureFormat pipelineFormat = WGPUTextureFormat_Undefined;
 };
 
 /**
@@ -481,6 +513,7 @@ struct BindingsState {
     FrameProfiling profiling;
     ScreenshotCapture screenshot;
     Canvas2DComposite canvas2D;
+    UiComposite ui;
     AsyncBufferMaps asyncBufferMaps;
     AsyncPipelineCompiles asyncPipelines;
     PipelineCacheState pipelineCache;

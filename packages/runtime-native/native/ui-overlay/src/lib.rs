@@ -3,8 +3,8 @@
 //! `wry` attaches a web view to a window someone else owns. What each host has to add on top of
 //! that differs by window system:
 //!
-//! - Linux/X11 has no compositing of a child window, so `argb` builds the transparent container
-//!   `wry` will not and `abi` drives it; the hit-region protocol is an X11 input shape.
+//! - Linux renders WebKit offscreen on its own thread; `abi` supplies its newest pixels to the
+//!   game's compositor and routes input through the page's published hit regions.
 //! - Windows and macOS composite a child web view themselves, so `desktop` attaches one straight
 //!   to the game window and implements the hit-region protocol where each OS puts it — a GDI
 //!   window region on Windows, an `NSView` hit test on macOS.
@@ -16,7 +16,7 @@
 pub mod abi;
 
 #[cfg(target_os = "linux")]
-pub mod argb;
+pub mod offscreen;
 
 #[cfg(not(target_os = "linux"))]
 pub mod desktop;
@@ -26,7 +26,7 @@ use std::cell::RefCell;
 thread_local! {
     /// The interactive rectangles the page last published, normalized to the viewport. One list
     /// for both backends: the desktop module cuts its OS region and answers `hitTest:` from it,
-    /// the Linux ABI applies it as the X11 input shape, and a synthetic playtest pointer is
+    /// the Linux ABI uses it to route input, and a synthetic playtest pointer is
     /// routed through the same list so it cannot disagree with the OS.
     pub(crate) static HIT_REGIONS: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
 }
@@ -49,12 +49,37 @@ pub(crate) fn hit_test(nx: f32, ny: f32) -> bool {
     HIT_REGIONS.with(|regions| point_in_regions(&regions.borrow(), nx, ny))
 }
 
+/// A JSON string literal holding `value`, so no payload can end the script it is embedded in.
+///
+/// Hand-rolled rather than pulled from a serialiser because the only thing being escaped is a
+/// string, and a wrong escape here is script injection: `{:?}` looks like it does this and does
+/// not — Rust's debug formatter writes `\u{e9}` for a non-ASCII character where JSON wants `\u00e9`.
+#[cfg(any(not(target_os = "linux"), test))]
+pub(crate) fn json_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// The JavaScript a host evaluates to deliver one synthetic pointer event into the page.
 ///
 /// Built once so both desktop backends dispatch identically: the normalized point becomes a pixel
 /// position in the page's own viewport, and the event is dispatched on whatever element is there,
 /// so a control's own handlers run exactly as they would for an OS-routed press. Playtest input
 /// only; a real OS pointer needs no help.
+#[cfg(any(not(target_os = "linux"), test))]
 pub(crate) fn pointer_injection_script(
     kind: &str,
     nx: f32,
@@ -62,15 +87,19 @@ pub(crate) fn pointer_injection_script(
     buttons: i32,
     pointer_id: i32,
 ) -> String {
+    let kind = json_string(kind);
     format!(
         "(function(){{var x={nx}*window.innerWidth;var y={ny}*window.innerHeight;\
          var t=document.elementFromPoint(x,y)||document.body||document.documentElement;\
          if(!t)return false;\
-         t.dispatchEvent(new PointerEvent({kind:?},{{bubbles:true,cancelable:true,composed:true,\
+         t.dispatchEvent(new PointerEvent({kind},{{bubbles:true,cancelable:true,composed:true,\
          clientX:x,clientY:y,buttons:{buttons},pointerId:{pointer_id},pointerType:'touch',\
          isPrimary:true,width:1,height:1,pressure:{pressure}}}));\
-         if({kind:?}==='pointerup'){{t.dispatchEvent(new MouseEvent('click',{{bubbles:true,\
-         cancelable:true,composed:true,clientX:x,clientY:y,button:0,buttons:0}}));}}\
+         if({kind}==='pointerdown')window.__tnUiInjectedButtons={buttons};\
+         if({kind}==='pointerup'){{\
+         if(window.__tnUiInjectedButtons===1)t.dispatchEvent(new MouseEvent('click',{{bubbles:true,\
+         cancelable:true,composed:true,clientX:x,clientY:y,button:0,buttons:0}}));\
+         window.__tnUiInjectedButtons=undefined;}}\
          return true;}})()",
         nx = nx,
         ny = ny,
@@ -83,7 +112,24 @@ pub(crate) fn pointer_injection_script(
 
 #[cfg(test)]
 mod tests {
-    use super::point_in_regions;
+    use super::{json_string, point_in_regions, pointer_injection_script};
+
+    #[test]
+    fn a_non_ascii_character_survives_a_json_string_literal() {
+        assert_eq!(json_string("é"), "\"é\"");
+        assert_eq!(json_string("a\"b"), "\"a\\\"b\"");
+        assert_eq!(json_string("a\nb"), "\"a\\nb\"");
+        assert_eq!(json_string("a\u{1}b"), "\"a\\u0001b\"");
+    }
+
+    #[test]
+    fn a_pointer_kind_cannot_end_the_script_it_is_embedded_in() {
+        let script = pointer_injection_script("pointerdown'); alert(1); //", 0.5, 0.5, 1, 1);
+        assert!(
+            script.contains(r#"new PointerEvent("pointerdown'); alert(1); //","#),
+            "the kind is a JSON string literal: {script}"
+        );
+    }
 
     #[test]
     fn a_point_inside_a_rectangle_is_inside() {

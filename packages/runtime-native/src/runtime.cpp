@@ -230,6 +230,7 @@ struct HostGapMeter {
         kFrameDrain,     // endDawnFrame: the packed frame-stream drain call into JS
         kFrameReplay,    // endDawnFrame: C++ replay of the packed stream
         kPresent,        // endDawnFrame: presentPendingSurface (screenshot copy rides inside)
+        kUi,             // endDawnFrame: the native UI upload and quad (PRD-393)
         kGpuDrain,       // diagnostic post-present blocking poll; adds to period/next hostGap
         kDevicePoll,     // endDawnFrame: wgpuDevicePoll(false) / wgpuDeviceTick
         kEndFrameOther,  // endDawnFrame remainder: profile emission, 2D composite, pacing
@@ -241,7 +242,7 @@ struct HostGapMeter {
 
     static constexpr std::array<const char*, kSegmentCount> kNames = {
         "events", "io", "webtransport", "audio", "timers", "microtasks", "preFrame",
-        "frameDrain", "frameReplay", "present", "gpuDrain", "devicePoll", "endFrameOther",
+        "frameDrain", "frameReplay", "present", "ui", "gpuDrain", "devicePoll", "endFrameOther",
         "storage", "handles", "screenshot",
     };
 
@@ -293,10 +294,12 @@ struct HostGapMeter {
     // endDawnFrame timed its own interior in bindings.cpp; absorb that split here. Values are
     // nanoseconds; the sample stores microseconds. Repeated calls accumulate, like begin/end.
     void recordEndFramePhases(uint64_t drainNs, uint64_t replayNs, uint64_t presentNs,
-                              uint64_t gpuDrainNs, uint64_t pollNs, uint64_t otherNs) {
+                              uint64_t uiNs, uint64_t gpuDrainNs, uint64_t pollNs,
+                              uint64_t otherNs) {
         current_.micros[kFrameDrain] += drainNs / 1000;
         current_.micros[kFrameReplay] += replayNs / 1000;
         current_.micros[kPresent] += presentNs / 1000;
+        current_.micros[kUi] += uiNs / 1000;
         current_.micros[kGpuDrain] += gpuDrainNs / 1000;
         current_.micros[kDevicePoll] += pollNs / 1000;
         current_.micros[kEndFrameOther] += otherNs / 1000;
@@ -1483,7 +1486,8 @@ public:
         // inside endDawnFrame; fold it into this frame's sample.
         hostGapMeter_.recordEndFramePhases(
             bindingsState_->profiling.framePhaseDrainNs, bindingsState_->profiling.framePhaseReplayNs,
-            bindingsState_->profiling.framePhasePresentNs, bindingsState_->profiling.framePhaseGpuDrainNs,
+            bindingsState_->profiling.framePhasePresentNs, bindingsState_->profiling.framePhaseUiNs,
+            bindingsState_->profiling.framePhaseGpuDrainNs,
             bindingsState_->profiling.framePhasePollNs, bindingsState_->profiling.framePhaseOtherNs);
 
         // Free non-protected handles only after the replay boundary consumed the frame stream.
@@ -2563,6 +2567,21 @@ private:
             jsEngine_->newFunction("__tnUiOverlayAttached", [this](void*, const std::vector<js::JSValueHandle>&) {
                 return jsEngine_->newBoolean(platform::uiOverlayAttached());
             }));
+        // The native UI composite's cost, for the frame budget's `ui` phase (PRD-393 Phase 3).
+        //
+        // It is the *previous* frame's number. The composite runs inside `endDawnFrame`, which is
+        // after every rAF callback has returned, so the frame being measured cannot report its own
+        // composite cost from inside itself. One frame of skew on a phase whose whole purpose is a
+        // p95 is not a measurement anyone can be misled by, and the alternative — inventing a JS
+        // binding that blocks on the render thread — would cost more than the thing it measures.
+        // Zero when there is no overlay, so a game with a native renderer reports a real zero
+        // rather than an absent phase.
+        jsEngine_->setGlobalProperty("__tnUiCompositeMs",
+            jsEngine_->newFunction("__tnUiCompositeMs", [this](void*, const std::vector<js::JSValueHandle>&) {
+                if (!bindingsState_) return jsEngine_->newNumber(0);
+                return jsEngine_->newNumber(
+                    static_cast<double>(bindingsState_->profiling.framePhaseUiNs) / 1'000'000.0);
+            }));
     }
 
     /**
@@ -3527,25 +3546,24 @@ private:
                 event.width = 1;
                 event.height = 1;
                 event.pressure = event.buttons == 0 ? 0 : 0.5;
-                // A synthetic press is routed where the OS routes a real one: inside a published
-                // UI island the page gets it, outside it the game does. The regions are the ones
-                // the OS region and hit test are built from, so a playtest cannot disagree with a
-                // real click; without an overlay attached this is a plain game dispatch.
+                // A synthetic press is routed where the OS routes a real one, through the same
+                // authority: inside a published UI island the page gets it, outside it the game
+                // does, and a gesture keeps whichever side received its press. The regions are the
+                // ones the OS route is built from, so a playtest cannot disagree with a real click;
+                // without an overlay attached this is a plain game dispatch.
                 if (platform::uiOverlayAttached() && width_ > 0 && height_ > 0) {
                     const float nx = std::clamp(
                         static_cast<float>(event.clientX) / static_cast<float>(width_), 0.0f, 1.0f);
                     const float ny = std::clamp(
                         static_cast<float>(event.clientY) / static_cast<float>(height_), 0.0f, 1.0f);
-                    const bool hit = platform::uiOverlayHitTest(nx, ny);
-                    const bool injected = hit && platform::uiOverlayInjectPointer(
+                    const bool hit = platform::uiOverlayRoutePointer(
                         event.type.c_str(), nx, ny, event.buttons, event.pointerId);
                     // One bounded line per synthetic pointer: which side the host routed it to, and
                     // whether the page accepted it. A synthesized-input failure on one host is
                     // otherwise invisible — the press just does nothing.
                     std::cout << "TN_UI_POINTER_ROUTE:{\"type\":\"" << event.type
                               << "\",\"nx\":" << nx << ",\"ny\":" << ny
-                              << ",\"hit\":" << (hit ? "true" : "false")
-                              << ",\"injected\":" << (injected ? "true" : "false") << "}"
+                              << ",\"hit\":" << (hit ? "true" : "false") << "}"
                               << std::endl;
                     if (hit) {
                         // The page owns this gesture, exactly as it would for an OS-routed press.

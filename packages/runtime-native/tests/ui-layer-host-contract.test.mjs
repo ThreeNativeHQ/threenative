@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { test } from 'vitest';
 
 /**
@@ -20,7 +23,14 @@ const android = readFileSync(
   'utf8',
 );
 const ios = readFileSync(new URL('../ios/ui_overlay_ios.mm', import.meta.url), 'utf8');
-const desktop = readFileSync(new URL('../native/ui-overlay/src/abi.rs', import.meta.url), 'utf8');
+// The desktop host's source, wherever it lives in the crate. `abi.rs` is the C ABI and
+// `offscreen.rs` is the web view it drives; both are the desktop host and a rule that pinned one
+// filename would have to be rewritten every time code moved between them, which is a test that
+// tests its own grep rather than the contract.
+const desktop = [
+  readFileSync(new URL('../native/ui-overlay/src/abi.rs', import.meta.url), 'utf8'),
+  readFileSync(new URL('../native/ui-overlay/src/offscreen.rs', import.meta.url), 'utf8'),
+].join('\n');
 
 /** Read a name out of `UI_BRIDGE_GLOBALS` rather than restating it here. */
 function globalName(key) {
@@ -34,9 +44,11 @@ test('every host injects the page-facing object under the one declared name', ()
   assert.equal(host, 'tnHost');
   assert.match(android, new RegExp(`HOST_OBJECT = "${host}"`, 'u'));
   assert.match(ios, new RegExp(`kHostObject = @"${host}"`, 'u'));
-  // Desktop uses wry's own `window.ipc`, which core's transport discovery already knows about;
-  // asserting the name it does NOT use would be asserting a coincidence.
-  assert.match(desktop, /window\.ipc|with_ipc_handler/u);
+  // Desktop registers a WebKit script-message handler under the declared name, which is what puts
+  // `window.webkit.messageHandlers.<name>` in the page — one of the transports core discovers, and
+  // the reason the desktop host no longer depends on `wry`'s own `window.ipc`.
+  assert.match(desktop, new RegExp(`register_script_message_handler\\("${host}"\\)`, 'u'));
+  assert.match(desktop, new RegExp(`connect_script_message_received\\(Some\\("${host}"\\)`, 'u'));
 });
 
 test('every host calls the one inbound global to reach the page', () => {
@@ -93,4 +105,114 @@ test('the MRC iOS bridge keeps a non-owning overlay link only while its handler 
     detach,
     /removeScriptMessageHandlerForName:kHostObject[\s\S]*g_overlay = nil;/u,
   );
+});
+
+test.skipIf(process.platform !== 'linux')('non-Linux keyboard routing links without a Linux-only Rust export', () => {
+  const source = readFileSync(new URL('../src/platform/ui_overlay.cpp', import.meta.url), 'utf8');
+  const fn = /bool uiOverlayInjectKey\([\s\S]*?\n\}/u.exec(source)?.[0];
+  assert.ok(fn);
+  const directory = makeTempDirSync('tn-ui-keyboard-abi-');
+  const path = join(directory, 'stub.cpp');
+  const executable = join(directory, 'stub');
+  writeFileSync(path, `#include <cstdint>\n#define TN_ENABLE_UI_OVERLAY 1\nbool uiOverlayAttached() { return true; }\n${fn}\nint main() { return uiOverlayInjectKey(38, 0, 0, 0, true) ? 1 : 0; }\n`);
+  const compile = spawnSync('c++', ['-U__linux__', path, '-o', executable], { encoding: 'utf8' });
+  assert.equal(compile.status, 0, compile.stderr || compile.error?.message);
+  assert.equal(spawnSync(executable).status, 0, 'native child WebViews own keyboard input on non-Linux hosts');
+});
+
+test.skipIf(process.platform !== 'linux')('UI gestures finish outside the window and reset on cancellation or detach', () => {
+  const window = readFileSync(new URL('../src/platform/window.cpp', import.meta.url), 'utf8');
+  const overlay = readFileSync(new URL('../src/platform/ui_overlay.cpp', import.meta.url), 'utf8');
+  const extract = (source, expression) => {
+    const found = expression.exec(source)?.[0];
+    assert.ok(found);
+    return found;
+  };
+  const directory = makeTempDirSync('tn-ui-pointer-');
+  const path = join(directory, 'pointer.cpp');
+  const executable = join(directory, 'pointer');
+  writeFileSync(path, `
+#include <cassert>
+#include <string>
+struct { void* sdlWindow = reinterpret_cast<void*>(1); } g_window;
+void SDL_GetWindowSize(void*, int* width, int* height) { *width = 100; *height = 100; }
+enum { SDL_EVENT_MOUSE_MOTION, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP };
+struct SDL_Event { int type; struct { float x, y; } motion, button; };
+int g_domButtons = 0;
+bool attached = true;
+bool uiOverlayAttached() { return attached; }
+void setUiOverlayAttached(bool value) { attached = value; }
+void tn_ui_overlay_detach() {}
+void resetUiOverlayKeyboard() {}
+std::string delivered;
+bool uiOverlayHitTest(float x, float y) { return x >= 0.1f && x <= 0.3f && y >= 0.1f && y <= 0.3f; }
+bool uiOverlayInjectPointer(const char* type, float, float, int, int) { delivered = type; return true; }
+${extract(overlay, /struct UiPointerGesture \{[\s\S]*?\n\};\nUiPointerGesture g_uiGesture;/u)}
+${extract(overlay, /bool uiOverlayRoutePointer\([\s\S]*?\n\}/u)}
+${extract(overlay, /void detachDesktopUiOverlay\(\) \{[\s\S]*?\n\}/u)}
+${extract(window, /bool uiViewportPoint\([\s\S]*?\n\}/u)}
+${extract(window, /bool routePointerToUi\([\s\S]*?\n\}/u)}
+int main() {
+  SDL_Event event{};
+  event.type = SDL_EVENT_MOUSE_BUTTON_DOWN; event.button = {20, 20}; g_domButtons = 1;
+  assert(routePointerToUi(event));
+  event.type = SDL_EVENT_MOUSE_BUTTON_UP; event.button = {-10, 20}; g_domButtons = 0;
+  assert(routePointerToUi(event));
+  assert(!g_uiGesture.uiOwned && !g_uiGesture.gameOwned);
+  assert(!uiOverlayRoutePointer("pointermove", 0.8f, 0.8f, 0, 1));
+  assert(uiOverlayRoutePointer("pointerdown", 0.2f, 0.2f, 1, 1));
+  assert(uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1));
+  assert(delivered == "pointercancel");
+  assert(!g_uiGesture.uiOwned && !g_uiGesture.gameOwned);
+  assert(uiOverlayRoutePointer("pointerdown", 0.2f, 0.2f, 1, 1));
+  detachDesktopUiOverlay();
+  assert(!g_uiGesture.uiOwned && !g_uiGesture.gameOwned);
+  attached = true;
+  assert(!uiOverlayRoutePointer("pointerdown", 0.8f, 0.8f, 1, 1));
+  assert(!uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1));
+  assert(!g_uiGesture.gameOwned);
+}
+`);
+  const compile = spawnSync('c++', [path, '-o', executable], { encoding: 'utf8' });
+  assert.equal(compile.status, 0, compile.stderr || compile.error?.message);
+  const run = spawnSync(executable, { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+});
+
+test.skipIf(process.platform !== 'linux')('keyboard ownership survives focus changes until the matching release', () => {
+  const source = readFileSync(new URL('../src/platform/window.cpp', import.meta.url), 'utf8');
+  const structure = /struct UiKeyOwnership \{[\s\S]*?\n\};/u.exec(source)?.[0];
+  const reset = /void resetUiOverlayKeyboard\(\) \{[\s\S]*?\n\}/u.exec(source)?.[0];
+  assert.ok(structure, 'a key needs one ownership decision shared by repeats and release');
+  assert.ok(reset);
+  const directory = makeTempDirSync('tn-ui-key-owner-');
+  const path = join(directory, 'keys.cpp');
+  const executable = join(directory, 'keys');
+  writeFileSync(path, `#include <cassert>\n#include <cstdint>\n${structure}
+UiKeyOwnership g_uiKeys[1];
+int releases = 0;
+void uiOverlayInjectKey(uint32_t, uint32_t, uint32_t, uint32_t, bool down) { assert(!down); ++releases; }
+${reset}
+int main() {
+    auto& key = g_uiKeys[0];
+    assert(!key.route(true, false)); // Gameplay W down.
+    assert(!key.route(true, true));  // Repeat after input takes focus.
+    assert(!key.route(false, true)); // Gameplay must receive W up.
+    assert(key.route(true, true));   // UI key down.
+    assert(key.route(true, false));  // Repeat after a handler releases focus.
+    assert(key.route(false, false)); // UI must receive that key up.
+    assert(!key.route(true, false)); // Next gesture can belong to gameplay.
+    assert(!key.route(false, false));
+    assert(key.route(true, true));
+    resetUiOverlayKeyboard();
+    resetUiOverlayKeyboard();
+    assert(releases == 1);
+    assert(key.route(true, false));  // Repeat after detach remains owned by the cancelled UI.
+    assert(key.route(false, false)); // Physical release stays out of gameplay.
+    assert(!key.route(true, false)); // A fresh key can reach gameplay.
+  }\n`);
+  const compile = spawnSync('c++', [path, '-o', executable], { encoding: 'utf8' });
+  assert.equal(compile.status, 0, compile.stderr || compile.error?.message);
+  const run = spawnSync(executable, { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
 });
