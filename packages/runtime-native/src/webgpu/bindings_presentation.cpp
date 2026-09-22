@@ -113,36 +113,36 @@ void reportPacingPath(const char* path) {
 #endif
 }
 
-// Waits for the display to reach the scheduled target. Returns false when there is no live display
-// signal to wait on, which is the caller's signal to use the software deadline instead.
-bool paceToDisplayFrame(std::chrono::nanoseconds interval) {
+// Waits for the display target and reports why the caller may need its software deadline.
+PresentationPacingPath paceToDisplayFrame(std::chrono::nanoseconds interval) {
     std::unique_lock<std::mutex> lock(g_presentationPacing.mutex);
-    if (!g_presentationPacing.running || !g_presentationPacing.haveFrame) return false;
+    if (!g_presentationPacing.running || !g_presentationPacing.haveFrame)
+        return PresentationPacingPath::SoftwareDeadline;
 
     const int64_t intervalNs = interval.count();
     if (g_presentationPacing.nextPresentTargetNs == 0) {
         // First paced frame: schedule forward from the frame just observed.
         g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
-        return true;
+        return PresentationPacingPath::Display;
     }
 
-    // One bounded wait: two intervals plus a margin tolerates one late callback. The deadline is
-    // absolute, so a spurious or too-early callback cannot reset the budget and extend it. Timing
-    // out means the signal is gone, not slow: drop the schedule and forget the frame, so later
-    // presents use the software deadline instead of re-waiting this timeout, until a fresh
-    // callback re-arms the display path. A target the display has already reached skips the wait
-    // and falls through to the same advancement below.
+    // One absolute bounded wait tolerates a late callback without extending on spurious wakes.
+    // Only a deadline with no qualifying frame drops the display schedule until a fresh callback.
     const auto deadline =
         std::chrono::steady_clock::now() + interval * 2 + std::chrono::milliseconds(50);
     while (g_presentationPacing.running &&
            g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
         if (g_presentationPacing.ready.wait_until(lock, deadline) == std::cv_status::timeout) {
-            g_presentationPacing.haveFrame = false;
-            g_presentationPacing.nextPresentTargetNs = 0;
-            return false;
+            // A notified frame can be ready even when the waiting thread runs after the deadline.
+            if (!g_presentationPacing.running) return PresentationPacingPath::SoftwareDeadline;
+            if (g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
+                g_presentationPacing.haveFrame = false;
+                g_presentationPacing.nextPresentTargetNs = 0;
+                return PresentationPacingPath::DisplayTimeoutFallback;
+            }
         }
     }
-    if (!g_presentationPacing.running) return false;
+    if (!g_presentationPacing.running) return PresentationPacingPath::SoftwareDeadline;
 
     // Advance from the target, not from the frame just seen -- for an already-arrived frame too: a
     // fractional cap keeps its remainder instead of losing it to the display period. If callbacks
@@ -152,7 +152,7 @@ bool paceToDisplayFrame(std::chrono::nanoseconds interval) {
     if (g_presentationPacing.nextPresentTargetNs <= g_presentationPacing.frameTimeNs) {
         g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
     }
-    return true;
+    return PresentationPacingPath::Display;
 }
 
 }  // namespace
@@ -203,19 +203,20 @@ bool setPresentationCapHz(uint32_t hz) {
  * player already waits. A frame that misses its deadline resets the schedule instead of trying to
  * catch up, because a game running below the cap must not then be asked to present a burst.
  */
-void paceToPresentationCap() {
-    if (g_presentationCapHz == 0) return;
+PresentationPacingPath paceToPresentationCap() {
+    if (g_presentationCapHz == 0) return PresentationPacingPath::Uncapped;
     const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
 
     static bool reportedDisplay = false;
     static bool reportedFallback = false;
-    if (paceToDisplayFrame(interval)) {
+    const auto path = paceToDisplayFrame(interval);
+    if (path == PresentationPacingPath::Display) {
         if (!reportedDisplay) {
             reportedDisplay = true;
             reportedFallback = false;
             reportPacingPath("display-aligned");
         }
-        return;
+        return path;
     }
     if (!reportedFallback) {
         reportedFallback = true;
@@ -228,10 +229,11 @@ void paceToPresentationCap() {
     if (g_nextPresentDeadline == clock::time_point{} || now > g_nextPresentDeadline + interval) {
         // First paced frame, or the loop fell far enough behind that the old schedule is stale.
         g_nextPresentDeadline = now + interval;
-        return;
+        return path;
     }
     if (now < g_nextPresentDeadline) std::this_thread::sleep_until(g_nextPresentDeadline);
     g_nextPresentDeadline += interval;
+    return path;
 }
 
 bool isSrgbSurfaceFormat(WGPUTextureFormat format) {

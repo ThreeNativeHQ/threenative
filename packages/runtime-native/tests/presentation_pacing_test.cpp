@@ -3,13 +3,11 @@
 // This drives the production owner (`paceToPresentationCap`) with the same feed the Choreographer
 // JNI callback calls. Display timestamps are synthetic nanoseconds, so the assertions are the
 // pacing arithmetic and the condvar handoff, not wall-clock luck; only the pre-existing software
-// fallback is measured in real time. The measured runtime baseline is retained in the PRD, not
-// restated here.
+// fallback and bounded timeout are measured in real time.
 //
 // Pre-fix this file was compiled against the same production owner but fed nanoseconds as if they
 // were milliseconds, so every display target was unreachable and the 83 ms fallback made the
-// checks pass. The units are now explicit, display release is bounded well below that fallback,
-// and the lost-signal case fails until the schedule is dropped on timeout.
+// checks pass. The units and actual pacing path are now asserted explicitly.
 
 #include "mystral/webgpu/bindings.h"
 #include "../src/webgpu/bindings_presentation.h"
@@ -26,6 +24,7 @@ using mystral::webgpu::notePresentationFrame;
 using mystral::webgpu::notePresentationFramesStarted;
 using mystral::webgpu::notePresentationFramesStopped;
 using mystral::webgpu::paceToPresentationCap;
+using mystral::webgpu::PresentationPacingPath;
 using mystral::webgpu::setPresentationCapHz;
 
 // `notePresentationFrame` takes the raw Choreographer timestamp in nanoseconds, so a millisecond
@@ -34,11 +33,6 @@ constexpr int64_t frameMs(int64_t milliseconds) {
     return milliseconds * 1'000'000;
 }
 constexpr int64_t kFrame60Ns = 16'666'666;  // 1'000'000'000 / 60, truncated
-
-// A display release wakes the parked worker through the condition variable, so it returns in well
-// under a millisecond; the lost-signal fallback takes the 83 ms timeout. A bound of 50 ms tells
-// the two apart and would have caught the earlier false pass that allowed 250 ms.
-constexpr int kDisplayReleaseMs = 50;
 
 std::vector<std::string> failures;
 
@@ -53,14 +47,19 @@ void check(bool condition, const std::string& what) {
 
 using clock = std::chrono::steady_clock;
 
-std::future<void> runPaceAsync() {
-    return std::async(std::launch::async, [] { paceToPresentationCap(); });
+std::future<PresentationPacingPath> runPaceAsync() {
+    return std::async(std::launch::async, [] { return paceToPresentationCap(); });
 }
 
-// True when the paced call has returned by now. `wait_for` observes the handoff, so it is the same
-// answer under load: the worker is either blocked in the wait or it is done.
-bool paceReturned(std::future<void>& work, int milliseconds) {
+// True when the paced call has returned by now.
+bool paceReturned(std::future<PresentationPacingPath>& work, int milliseconds) {
     return work.wait_for(std::chrono::milliseconds(milliseconds)) == std::future_status::ready;
+}
+
+void checkPath(std::future<PresentationPacingPath>& work, PresentationPacingPath expected,
+               const std::string& what) {
+    const bool ready = paceReturned(work, 250);
+    check(ready && work.get() == expected, what);
 }
 
 // Leaves the global pacing state clean for the next case, and never leaves a worker parked: the
@@ -77,7 +76,7 @@ void testUncappedIgnoresDisplay() {
     notePresentationFramesStarted();
     notePresentationFrame(frameMs(1));
     const auto begin = clock::now();
-    paceToPresentationCap();
+    check(paceToPresentationCap() == PresentationPacingPath::Uncapped, "maxFps 0 uses uncapped pacing");
     const auto elapsed = clock::now() - begin;
     check(elapsed < std::chrono::milliseconds(5), "maxFps 0 returns without waiting");
     notePresentationFramesStopped();
@@ -87,14 +86,16 @@ void testUncappedIgnoresDisplay() {
 // software deadline still paces. The first call schedules; the next one waits it out.
 void testNoSignalUsesSoftwareDeadline() {
     resetPacing(60);
-    paceToPresentationCap();  // first paced frame: schedule, no wait
+    check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,
+          "no display signal schedules software pacing");
     const auto begin = clock::now();
-    paceToPresentationCap();  // must wait the software interval
+    const auto path = paceToPresentationCap();  // must wait the software interval
     const auto elapsed = clock::now() - begin;
     check(elapsed >= std::chrono::milliseconds(8) && elapsed < std::chrono::milliseconds(250),
           "no display signal falls back to the software interval (waited " +
               std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()) +
               " ms)");
+    check(path == PresentationPacingPath::SoftwareDeadline, "no display signal keeps software pacing");
     notePresentationFramesStopped();
 }
 
@@ -111,8 +112,7 @@ void testCapAtRefreshWaitsOneFrame() {
     notePresentationFrame(frameMs(8));  // short of 16.67 ms
     check(!paceReturned(work, 8), "a display frame short of the target does not unblock");
     notePresentationFrame(frameMs(20));  // the first frame at or past the target
-    check(paceReturned(work, kDisplayReleaseMs),
-          "the target display frame unblocks cap 60 (display release, not the 83 ms fallback)");
+    checkPath(work, PresentationPacingPath::Display, "the target display frame unblocks cap 60");
     notePresentationFramesStopped();
 }
 
@@ -129,7 +129,7 @@ void testFractionalTargetResolvesAtExactTarget() {
     notePresentationFrame(kFrame60Ns - 1);
     check(!paceReturned(work, 8), "a frame one nanosecond short of the fractional target does not unblock");
     notePresentationFrame(kFrame60Ns);
-    check(paceReturned(work, kDisplayReleaseMs), "the exact fractional target unblocks display release");
+    checkPath(work, PresentationPacingPath::Display, "the exact fractional target unblocks display release");
     notePresentationFramesStopped();
 }
 
@@ -146,7 +146,7 @@ void testBelowRefreshCapSkipsFrames() {
     notePresentationFrame(frameMs(16));  // one display period: not enough
     check(!paceReturned(work, 10), "cap 30 ignores the first display frame");
     notePresentationFrame(frameMs(34));  // the second display period
-    check(paceReturned(work, kDisplayReleaseMs), "cap 30 unblocks on the second display frame");
+    checkPath(work, PresentationPacingPath::Display, "cap 30 unblocks on the second display frame");
     notePresentationFramesStopped();
 }
 
@@ -160,7 +160,7 @@ void testAboveRefreshCapStaysPanelLimited() {
     auto work = runPaceAsync();
     check(!paceReturned(work, 5), "cap 120 waits for a display frame, it does not busy-spin");
     notePresentationFrame(frameMs(16));  // one display period
-    check(paceReturned(work, kDisplayReleaseMs), "cap 120 unblocks on the first display frame");
+    checkPath(work, PresentationPacingPath::Display, "cap 120 unblocks on the first display frame");
     notePresentationFramesStopped();
 }
 
@@ -173,11 +173,11 @@ void testLateFrameReschedulesWithoutBurst() {
     paceToPresentationCap();  // target 16,666,666
     auto late = runPaceAsync();
     notePresentationFrame(frameMs(200));  // the loop fell far behind the schedule
-    check(paceReturned(late, kDisplayReleaseMs), "a late display frame unblocks without waiting");
+    checkPath(late, PresentationPacingPath::Display, "a late display frame unblocks without waiting");
     auto next = runPaceAsync();
     check(!paceReturned(next, 8), "the next present reschedules one interval from the late frame");
     notePresentationFrame(frameMs(220));  // 200 + one interval is 216.67 ms
-    check(paceReturned(next, kDisplayReleaseMs), "the rescheduled target unblocks");
+    checkPath(next, PresentationPacingPath::Display, "the rescheduled target unblocks");
     notePresentationFramesStopped();
 }
 
@@ -196,8 +196,7 @@ void testAlreadyArrivedFrameCarriesSchedule() {
     auto next = runPaceAsync();
     check(!paceReturned(next, 8), "the next present waits for the carried target");
     notePresentationFrame(frameMs(50));  // 50,000,000 ns is past the 40 ms carried target
-    check(paceReturned(next, kDisplayReleaseMs),
-          "the carried target releases on the display frame, before the 90 ms timeout");
+    checkPath(next, PresentationPacingPath::Display, "the carried target releases on the display frame");
     notePresentationFramesStopped();
 }
 
@@ -213,7 +212,7 @@ void testPauseUnblocksWaiter() {
     check(!paceReturned(work, 10), "the render thread is parked on the display wait");
     const auto begin = clock::now();
     notePresentationFramesStopped();
-    check(paceReturned(work, 250), "pause unblocks the parked render thread");
+    checkPath(work, PresentationPacingPath::SoftwareDeadline, "pause unblocks the parked render thread");
     const auto elapsed = clock::now() - begin;
     check(elapsed < std::chrono::milliseconds(60),
           "pause unblocks before the wait timeout (took " +
@@ -233,26 +232,23 @@ void testLostSignalFallsBackAndRecovers() {
     auto lost = runPaceAsync();
     check(!paceReturned(lost, 8), "the present is parked waiting for the display frame");
     const auto boundedBegin = clock::now();
-    check(paceReturned(lost, 250), "a lost display signal releases the present through the bounded wait");
+    checkPath(lost, PresentationPacingPath::DisplayTimeoutFallback,
+              "a lost display signal releases the present through the bounded wait");
     const auto boundedElapsed = clock::now() - boundedBegin;
     check(boundedElapsed >= std::chrono::milliseconds(60) && boundedElapsed < std::chrono::milliseconds(250),
           "the first lost-signal release is the bounded timeout, not a display frame");
 
-    const auto fallbackBegin = clock::now();
-    paceToPresentationCap();  // must retain software pacing, not re-wait the display timeout
-    const auto fallbackElapsed = clock::now() - fallbackBegin;
-    check(fallbackElapsed < std::chrono::milliseconds(60),
-          "the next present retains software pacing instead of re-waiting the lost display (took " +
-              std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(fallbackElapsed).count()) +
-              " ms)");
+    check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,
+          "the next present retains software pacing instead of re-waiting the lost display");
 
     // A fresh callback re-arms display pacing; the first present schedules from it, the next waits.
     notePresentationFrame(frameMs(1000));
-    paceToPresentationCap();  // re-arm: schedule target 1016.67 ms, no wait
+    check(paceToPresentationCap() == PresentationPacingPath::Display,
+          "a fresh display frame schedules display pacing");
     auto rearmed = runPaceAsync();
     check(!paceReturned(rearmed, 8), "a fresh display frame re-arms display pacing");
     notePresentationFrame(frameMs(1000) + kFrame60Ns);
-    check(paceReturned(rearmed, kDisplayReleaseMs), "the re-armed target unblocks on the display frame");
+    checkPath(rearmed, PresentationPacingPath::Display, "the re-armed target unblocks on the display frame");
     notePresentationFramesStopped();
 }
 
@@ -263,19 +259,18 @@ void testStopThenStartReArmsDisplay() {
     notePresentationFramesStopped();
     notePresentationFrame(frameMs(1000));  // ignored: the signal is not running
     notePresentationFramesStarted();
-    paceToPresentationCap();  // no remembered frame, so this is the software schedule
-    const auto begin = clock::now();
-    paceToPresentationCap();
-    const auto elapsed = clock::now() - begin;
-    check(elapsed < std::chrono::milliseconds(60),
+    check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,
           "a frame fed while stopped is not remembered as the display");
+    check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,
+          "a stopped frame keeps software pacing");
 
     notePresentationFrame(frameMs(100));
-    paceToPresentationCap();  // display path: schedule target 116.67 ms
+    check(paceToPresentationCap() == PresentationPacingPath::Display,
+          "restarting the display signal schedules display pacing");
     auto rearmed = runPaceAsync();
     check(!paceReturned(rearmed, 8), "restarting the display signal re-arms display pacing");
     notePresentationFrame(frameMs(120));
-    check(paceReturned(rearmed, kDisplayReleaseMs), "the re-armed target unblocks on the display frame");
+    checkPath(rearmed, PresentationPacingPath::Display, "the re-armed target unblocks on the display frame");
     notePresentationFramesStopped();
 }
 

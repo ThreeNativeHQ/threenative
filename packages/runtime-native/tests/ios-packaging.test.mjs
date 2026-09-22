@@ -8,12 +8,15 @@ import { PNG } from 'pngjs';
 import { afterEach, test } from 'vitest';
 
 import {
+  SDL3_IOS_VERSION,
   compileIosAssets,
+  hasIosSceneManifestFields,
   packageIosSimulator,
   renderIosInfoPlist,
   runIosPackageCli,
   stageIosSimulatorApp,
 } from '../scripts/package-ios.mjs';
+import { SDL3_ANDROID_VERSION } from '../scripts/package-android.mjs';
 import { PREBUILT_ASSET_NAMES } from '../scripts/install-prebuilt.mjs';
 import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
@@ -26,6 +29,23 @@ const infoPlist = `<plist><dict>
     <string>UIInterfaceOrientationLandscapeLeft</string>
     <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+          <key>UISceneConfigurationName</key>
+          <string>Default Configuration</string>
+          <key>UISceneDelegateClassName</key>
+          <string>SDLUIKitSceneDelegate</string>
+        </dict>
+      </array>
+    </dict>
+  </dict>
 </dict></plist>`;
 const binaryInfoPlist = Buffer.from(
   [
@@ -489,6 +509,89 @@ test('simulator verification builds only the arm64 architecture carried by the h
   assert.match(verifier, /-DPLATFORM=SIMULATORARM64/);
   assert.match(verifier, /-DCMAKE_OSX_ARCHITECTURES=arm64/);
   assert.match(verifier, /result\.stdout[\s\S]*result\.stderr/);
+});
+
+test('iOS render preserves the TN3187 scene manifest across orientations', () => {
+  const host = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.equal(hasIosSceneManifestFields(host), true);
+  for (const orientation of ['landscape', 'portrait', 'sensor']) {
+    const plist = renderIosInfoPlist(host, { display: { orientation } });
+    assert.equal(hasIosSceneManifestFields(plist), true);
+  }
+});
+
+test('iOS scene guard rejects a wrong delegate and a comment spoof', () => {
+  const wrongDelegate = infoPlist.replaceAll('SDLUIKitSceneDelegate', 'CustomDelegate');
+  assert.equal(hasIosSceneManifestFields(wrongDelegate), false);
+  const commentSpoof =
+    '<plist><dict><key>UISupportedInterfaceOrientations</key><array></array>' +
+    '<!-- UIApplicationSceneManifest SDLUIKitSceneDelegate --></dict></plist>';
+  assert.equal(hasIosSceneManifestFields(commentSpoof), false);
+  const commentKeypairSpoof =
+    '<plist><dict><!-- <key>UIApplicationSceneManifest</key><dict></dict>' +
+    '<key>UISceneDelegateClassName</key><string>SDLUIKitSceneDelegate</string> --></dict></plist>';
+  assert.equal(hasIosSceneManifestFields(commentKeypairSpoof), false);
+  const root = makeTempDirSync('threenative-ios-wrong-delegate-');
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  for (const [label, plist] of [['wrong-delegate', wrongDelegate], ['comment-spoof', commentSpoof], ['comment-keypair-spoof', commentKeypairSpoof]]) {
+    writeFileSync(join(templateApp, 'Info.plist'), plist);
+    assert.throws(
+      () => stageIosSimulatorApp({ bundle, output: join(root, `${label}.app`), templateApp }),
+      /TN_IOS_SCENE_MANIFEST_MISSING/u,
+      label,
+    );
+  }
+});
+
+test('iOS selects SDL 3.4.16 while Android and desktop stay on 3.2.30', () => {
+  assert.equal(SDL3_IOS_VERSION, '3.4.16');
+  assert.equal(SDL3_ANDROID_VERSION, '3.2.30');
+  const lock = JSON.parse(
+    readFileSync(new URL('../native-deps.lock.json', import.meta.url), 'utf8'),
+  );
+  const versionOf = (name) => lock.components.find((entry) => entry.name === name)?.version;
+  assert.equal(versionOf('sdl3-ios'), '3.4.16');
+  assert.equal(versionOf('sdl3'), '3.2.30');
+  assert.equal(versionOf('sdl3-android'), '3.2.30');
+  const downloader = readFileSync(
+    new URL('../scripts/download-deps.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(downloader, /import \{ SDL3_IOS_VERSION \} from '\.\/package-ios\.mjs'/u);
+  assert.match(downloader, /const iosDeps = \[[^\]]*'sdl3-ios'[^\]]*\]/u);
+  const cmake = readFileSync(new URL('../CMakeLists.txt', import.meta.url), 'utf8');
+  assert.match(cmake, /MYSTRAL_PLATFORM STREQUAL "ios"\)\s*\n\s*set\(SDL3_DIR \$\{THIRD_PARTY_DIR\}\/sdl3-ios\)/u);
+  const verifier = readFileSync(
+    new URL('../scripts/verify-ios-simulator.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(verifier, /download-deps\.mjs', '--only', 'sdl3-ios'/u);
+});
+
+test('iOS staging rejects a prebuilt host that predates the scene manifest', () => {
+  const root = makeTempDirSync('threenative-ios-legacy-host-');
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(
+    join(templateApp, 'Info.plist'),
+    '<plist><dict><key>UISupportedInterfaceOrientations</key><array></array></dict></plist>',
+  );
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  assert.throws(
+    () => stageIosSimulatorApp({ bundle, output, templateApp }),
+    /TN_IOS_SCENE_MANIFEST_MISSING/u,
+  );
 });
 
 test('iOS staging runs the same gate, with iOS capabilities rather than Android ones', () => {

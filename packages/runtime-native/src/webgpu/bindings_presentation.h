@@ -7,7 +7,14 @@ namespace mystral::webgpu {
 
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 
-void paceToPresentationCap();
+enum class PresentationPacingPath {
+    Uncapped,
+    Display,
+    SoftwareDeadline,
+    DisplayTimeoutFallback,
+};
+
+PresentationPacingPath paceToPresentationCap();
 bool isSrgbSurfaceFormat(WGPUTextureFormat format);
 WGPUTextureFormat linearSurfaceFormat(WGPUTextureFormat format);
 void reportSurfaceFormatMarker(

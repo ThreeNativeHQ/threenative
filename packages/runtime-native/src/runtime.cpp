@@ -367,7 +367,16 @@ struct HostGapMeter {
                 << ",\"meanMs\":" << mean << "}";
             sumP50 += p50;
         }
-        out << "},\"sumP50Ms\":" << sumP50 << ",\"samples\":[";
+        out << "},\"sumP50Ms\":" << sumP50;
+#if defined(__ANDROID__)
+        // logcat carries ~4 KB per message: the 300 per-frame samples (~11 KB) can never
+        // arrive whole there, and a truncated marker fails the strict perf parser. The
+        // aggregates above stay; the uncapped desktop stdout keeps the samples array for
+        // the networking proof (scripts/run-networking-proof.mjs reads child stdout,
+        // never logcat).
+        out << "}";
+#else
+        out << ",\"samples\":[";
         for (size_t i = 0; i < samples_.size(); ++i) {
             if (i > 0) out << ",";
             const Sample& sample = samples_[i];
@@ -376,9 +385,16 @@ struct HostGapMeter {
                 << static_cast<double>(sample.micros[kWebTransport]) / 1000.0 << "}";
         }
         out << "]}";
+#endif
         const std::string marker = out.str();
         std::cout << marker << std::endl;
+#if defined(__ANDROID__)
+        // __android_log_write, not LOGI/__android_log_print: the print formatter caps at
+        // LOG_BUF_SIZE 1024 (1023 bytes); this assembled marker is larger and must arrive whole.
+        __android_log_write(ANDROID_LOG_INFO, MYSTRAL_LOG_TAG, marker.c_str());
+#else
         LOGI("%s", marker.c_str());
+#endif
 
         samples_.clear();
     }

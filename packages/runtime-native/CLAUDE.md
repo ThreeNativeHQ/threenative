@@ -131,8 +131,8 @@ Report what ran, per platform, and never write mobile-ready while a row below is
   measured on hardware, not only on an emulator.
 - **Android emulator** — a separate result from the phone, and the two have disagreed. A green on
   one does not carry to the other; say which you ran.
-- **iOS on physical hardware** — open. arm64 with real Metal, signing, touch input, thermal and
-  battery still need a phone.
+- **iOS on physical hardware** — outside CI qualification. If tested separately, report arm64
+  Metal, signing, touch input, thermal and battery evidence as device-only results.
 - **Android 16 KB pages** — green on the local 16 KB AVD as of 2026-09-11. Android 15+ can run with
   16 KB memory pages, where a 4 KB-aligned shared library cannot be loaded at all. Everything this
   repository controls is aligned — `libmystral-runtime.so` by a link option, `libSDL3.so` by the

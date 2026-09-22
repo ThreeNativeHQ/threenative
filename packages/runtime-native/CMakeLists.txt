@@ -299,7 +299,13 @@ if(TN_REQUIRE_WEBTRANSPORT AND NOT TN_ENABLE_WEBTRANSPORT)
 endif()
 
 # SDL3 - Build from source as static library for single-binary distribution
-set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3)
+# iOS builds against upstream 3.4.16 (sdl3-ios), whose SDLUIKitSceneDelegate owns the
+# UIWindowScene lifecycle; every other platform stays on 3.2.30 (sdl3) with Android Java/AAR.
+if(MYSTRAL_PLATFORM STREQUAL "ios")
+    set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3-ios)
+else()
+    set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3)
+endif()
 set(SDL3_FOUND OFF)
 
 # Find SDL3 source directory (SDL3-{version}/)

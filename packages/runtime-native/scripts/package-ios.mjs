@@ -22,6 +22,11 @@ import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 import { PNG } from 'pngjs';
 
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
+/**
+ * The iOS-only SDL3 version. Upstream 3.4.16 owns the UIWindowScene lifecycle via its
+ * built-in SDLUIKitSceneDelegate (TN3187 opt-in); desktop and Android stay on 3.2.30.
+ */
+export const SDL3_IOS_VERSION = '3.4.16';
 export const DEFAULT_IOS_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.13', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
@@ -134,6 +139,21 @@ function plistLaunchScreen(source, config) {
   return pattern.test(source)
     ? source.replace(pattern, `\n${rendered}`)
     : source.replace(/\s*<\/dict>\s*<\/plist>/u, `\n${rendered}\n</dict>\n</plist>`);
+}
+
+/**
+ * Legacy generated-host detection for the TN3187 scene opt-in: the Info.plist
+ * template must carry the manifest key opening a dict AND the delegate
+ * assignment naming SDLUIKitSceneDelegate. XML comments are stripped first so a
+ * commented-out pair cannot pass. Field markers only, not an XML structure
+ * validator: no nesting proof (manifest → configuration → delegate), and a pass
+ * never qualifies an arbitrary plist for Apple launch — real UIKit execution on
+ * device/simulator remains required.
+ */
+export function hasIosSceneManifestFields(source) {
+  const text = String(source ?? '').replace(/<!--[\s\S]*?-->/gu, '');
+  return /<key>UIApplicationSceneManifest<\/key>\s*<dict>/u.test(text) &&
+    /<key>UISceneDelegateClassName<\/key>\s*<string>SDLUIKitSceneDelegate<\/string>/u.test(text);
 }
 
 function orientationValue(value = 'landscape') {
@@ -456,6 +476,15 @@ export function stageIosSimulatorApp({
     if (!existsSync(join(templateApp, required))) {
       throw new Error(`Verified iOS simulator host is missing ${required}.`);
     }
+  }
+  // An old prebuilt archive predates the TN3187 scene opt-in and would ship a non-launching
+  // app. Fail closed with the matching-runtime fix instead of silently packaging it: the
+  // release lane must rebuild the ios-simulator-arm64 archive from SDL 3.4.16.
+  const templatePlist = readIosInfoPlist(join(templateApp, 'Info.plist'), convertInfoPlist);
+  if (!hasIosSceneManifestFields(templatePlist.source)) {
+    throw new Error(
+      'TN_IOS_SCENE_MANIFEST_MISSING: simulator host predates the UIScene adoption; rebuild the ios-simulator-arm64 archive from the matching runtime (SDL 3.4.16) before packaging.',
+    );
   }
   rmSync(output, { force: true, recursive: true });
   mkdirSync(dirname(output), { recursive: true });

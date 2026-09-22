@@ -27,6 +27,7 @@ import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
+import { SDL3_IOS_VERSION } from './package-ios.mjs';
 import { provisionAndroidV8 } from './build-android-v8.mjs';
 import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
 import { resolveWgpuCacheToolchain } from './wgpu-cache-toolchain.mjs';
@@ -128,6 +129,16 @@ const DEPS = {
       return `https://github.com/libsdl-org/SDL/releases/download/release-${DEPS.sdl3.version}/SDL3-${DEPS.sdl3.version}.tar.gz`;
     },
     extractTo: 'sdl3',
+  },
+  'sdl3-ios': {
+    // SDL3 source for iOS ONLY. Upstream 3.4.16 ships SDLUIKitSceneDelegate, which owns
+    // startup/lifecycle/window attachment on iOS 13+ (TN3187 scene opt-in). Desktop and
+    // Android stay on DEPS.sdl3 / sdl3-android at 3.2.30 with the matching Android Java/AAR.
+    version: SDL3_IOS_VERSION,
+    getUrl: () => {
+      return `https://github.com/libsdl-org/SDL/releases/download/release-${DEPS['sdl3-ios'].version}/SDL3-${DEPS['sdl3-ios'].version}.tar.gz`;
+    },
+    extractTo: 'sdl3-ios',
   },
   dawn: {
     // Dawn prebuilts from official releases: https://github.com/google/dawn/releases
@@ -1424,15 +1435,43 @@ function copyTree(from, to) {
   }
 }
 
+function printHelp() {
+  // Read-only: stdout only, no directory, acquisition, or network side effects.
+  console.log(`Mystral Native Runtime - Dependency Downloader
+
+Usage:
+  node scripts/download-deps.mjs                                # desktop deps for the current platform
+  node scripts/download-deps.mjs --android                      # Android cross-compilation deps
+  node scripts/download-deps.mjs --ios                          # iOS dependencies for macOS builds
+  node scripts/download-deps.mjs --all                          # everything (desktop + iOS + Android)
+  node scripts/download-deps.mjs --only <name>                  # one dependency (e.g. --only stb, --only v8-android)
+  node scripts/download-deps.mjs --check-lock                   # list locked payloads; no fetch, no toolchain
+
+Options:
+  --only <name>                 fetch a single dependency
+  --force                       re-fetch even if the cache exists
+  --backend <auto|dawn|wgpu>    Android WebGPU backend (only with --android)
+  --wgpu-version <version>      wgpu-native regression version (isolated under .runtime/wgpu-version-matrix)
+  --rebuild-wgpu-cache-api [--wgpu-source-archive <path>] [--wgpu-cache-target <target>]
+  --only skia-android [--source <dir>] [--dest <dir>] [--jobs <n>]
+  --check-lock                  show locked payloads without downloading
+  --help, -h                    print this usage and exit without touching caches or network`);
+}
+
 async function main() {
+  // Parse arguments
+  const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    // Read-only usage: return before any directory mutation, acquisition, or network.
+    printHelp();
+    return;
+  }
   console.log(`Platform: ${platformName}-${archName}`);
   // Ensure third_party directory exists
   if (!existsSync(THIRD_PARTY)) {
     mkdirSync(THIRD_PARTY, { recursive: true });
   }
 
-  // Parse arguments
-  const args = process.argv.slice(2);
   if (args.includes('--check-lock')) {
     // PRD-059 Phase 1 user verification: report every locked payload without
     // downloading, extracting, or invoking any toolchain. No network access.
@@ -1486,7 +1525,7 @@ async function main() {
   const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
-  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];
+  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios'];
 
   // Android deps (only downloaded with --only or --android)
   const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'];
