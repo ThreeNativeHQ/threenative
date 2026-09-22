@@ -70,7 +70,11 @@ test("Android release staging uses a stable path normalized from AGP's strip out
   assert.match(androidBuild, /x86_64\/libmystral-runtime\.so/u);
   assert.match(androidBuild, /destination\.deleteRecursively\(\)/u);
 
-  const stagingReferences = [...workflow.matchAll(/packages\/runtime-native\/android\/app\/build\/intermediates\/stripped_native_libs\/release\/out\/lib\//gu)];
+  const stagingReferences = [
+    ...workflow.matchAll(
+      /packages\/runtime-native\/android\/app\/build\/intermediates\/stripped_native_libs\/release\/out\/lib\//gu,
+    ),
+  ];
   assert.ok(
     stagingReferences.length >= 2,
     "the release workflow no longer consumes the normalized Android strip-output path",
