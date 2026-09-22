@@ -50,3 +50,29 @@ test("native release stages the SDL3 Android AAR version owned by the packager",
   assert.match(deps, /SDL3-devel-\$\{DEPS\['sdl3-android'\]\.version\}-android\.zip/u);
   assert.match(deps, /version: SDL3_ANDROID_VERSION/u);
 });
+
+test("Android release staging uses a stable path normalized from AGP's strip output", () => {
+  const androidBuild = readFileSync(
+    join(root, "packages/runtime-native/android/build.gradle.kts"),
+    "utf8",
+  );
+  const stablePath = "intermediates/stripped_native_libs/release/out/lib";
+  const agpPath =
+    "intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib";
+
+  // AGP 8.11.1 emits under the task-named path. The top-level Android build normalizes that to the
+  // stable location consumed by both QuickJS and V8 release staging, so the workflow is insulated
+  // from AGP's private output-directory shape while still failing closed if either ABI is missing.
+  assert.match(androidBuild, /stripReleaseDebugSymbols/u);
+  assert.ok(androidBuild.includes(agpPath));
+  assert.ok(androidBuild.includes(stablePath));
+  assert.match(androidBuild, /arm64-v8a\/libmystral-runtime\.so/u);
+  assert.match(androidBuild, /x86_64\/libmystral-runtime\.so/u);
+  assert.match(androidBuild, /destination\.deleteRecursively\(\)/u);
+
+  const stagingReferences = [...workflow.matchAll(/packages\/runtime-native\/android\/app\/build\/intermediates\/stripped_native_libs\/release\/out\/lib\//gu)];
+  assert.ok(
+    stagingReferences.length >= 2,
+    "the release workflow no longer consumes the normalized Android strip-output path",
+  );
+});
