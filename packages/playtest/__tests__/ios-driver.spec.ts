@@ -46,6 +46,63 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
   expect(calls.at(-1)?.args).toContain(`processIdentifier == ${process.pid}`);
 });
 
+test("iOS console severity follows the OS token, not incidental error text", async () => {
+  const root = await makeTempDir("playtest-ios-severity-");
+  const appPath = join(root, "ThreeNative.app");
+  const container = join(root, "data-container");
+  await mkdir(appPath);
+
+  // Captured verbatim from the failed simulator run: a Default asset catalog record whose text
+  // mentions an error domain, real E/F records with no error keyword, a JS marker transported as
+  // Default, a non-Apple record whose message embeds an Apple-looking subsystem field behind a
+  // custom one, and an unrecognised line that must keep the conservative text scan.
+  const assetManagerDefault =
+    `2026-09-22 15:07:18.517 Df threenative-ios[40455:17a9f] [com.apple.UIKit:AssetManager] Could not load asset catalog from bundle NSBundle </Users/runner/Library/Developer/CoreSimulator/Devices/E952A9B0-CC78-435C-BF08-06AD47FE1076/data/Containers/Bundle/Application/D80D5F1D-0655-4437-8221-6085BE423D2E/threenative-ios.app> (loaded): Error Domain=NSCocoaErrorDomain Code=260 "RunTimeThemeRefForBundleIdentifierAndName() couldn't find Assets.car in bundle with identifier: dev.threenative.runtime" UserInfo={NSLocalizedDescription=RunTimeThemeRefForBundleIdentifierAndName() couldn't find Assets.car in bundle with identifier: dev.threenative.runtime}`;
+  const pluginFault =
+    "2026-09-22 15:07:18.506 F  threenative-ios[40455:17a9f] [com.apple.runtime-issues:UIKit App Config] `UIScene` lifecycle will soon be required. Failure to adopt will result in an assert in the future.";
+  const launchMeasurementError =
+    "2026-09-22 15:07:18.566 E  threenative-ios[40455:17aa3] [com.apple.app_launch_measurement:General] Failed to send CA Event for app launch measurements for ca_event_type: 0 event_name: com.apple.app_launch_measurement.FirstFramePresentationMetric";
+  const appMarkerInDefault =
+    "2026-09-22 15:07:18.700 Df threenative-ios[40455:17a9f] [com.apple.Foundation:general] [error] TN_UI bridge failed";
+  // A custom-subsystem Default record whose *message* quotes `[com.apple.UIKit:AssetManager]`.
+  // The Apple-looking field is not in the compact prefix, so this is not an OS record: the text
+  // carries a real Error and must stay `error` rather than being read as a benign Apple log.
+  const embeddedAppleFieldInCustomSubsystem =
+    "2026-09-22 15:07:20.123 Df threenative-ios[40455:17a9f] [com.example.game:ui] bridge note referencing [com.apple.UIKit:AssetManager]: Error Domain=NSCocoaErrorDomain Code=260 could not find Assets.car";
+  const unknownFormat = "[info] Error Domain=NSCocoaErrorDomain Code=260 could not find Assets.car";
+
+  const driver = new XcrunIosDriver({
+    appPath,
+    bundleId: "dev.threenative.runtime",
+    device: "SIM-123",
+    transport: "simulator",
+  }, async (args) => {
+    if (args[1] === "get_app_container") return `${container}\n`;
+    if (args[1] === "launch") return `dev.threenative.runtime: ${process.pid}\n`;
+    if (args.includes("log")) {
+      return `${[
+        assetManagerDefault,
+        pluginFault,
+        launchMeasurementError,
+        appMarkerInDefault,
+        embeddedAppleFieldInCustomSubsystem,
+        unknownFormat,
+      ].join("\n")}\n`;
+    }
+    return "";
+  });
+
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  await expect(driver.captureConsole()).resolves.toEqual([
+    { text: assetManagerDefault, type: "log" },
+    { text: pluginFault, type: "error" },
+    { text: launchMeasurementError, type: "error" },
+    { text: appMarkerInDefault, type: "error" },
+    { text: embeddedAppleFieldInCustomSubsystem, type: "error" },
+    { text: unknownFormat, type: "error" },
+  ]);
+});
+
 test("simulator mailbox paths are remapped after simctl resolves the container", async () => {
   const root = await makeTempDir("playtest-ios-mailbox-");
   const appPath = join(root, "ThreeNative.app");

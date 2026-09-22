@@ -15,8 +15,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -28,6 +30,7 @@
 
 #if defined(__ANDROID__)
 #include <android/log.h>
+#include <jni.h>
 #endif
 
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
@@ -71,10 +74,124 @@ static uint32_t g_presentationCapHz = 60;
 /** The pacing deadline for the next present. Zero until the first paced frame. */
 static std::chrono::steady_clock::time_point g_nextPresentDeadline{};
 
+// ---------------------------------------------------------------------------
+// Display-synchronized pacing (PRD-399)
+// ---------------------------------------------------------------------------
+//
+// The Android activity feeds its `Choreographer.FrameCallback` here. While those callbacks are
+// live the cap is a target in the display's own timestamp domain -- nanoseconds, never compared
+// with `steady_clock`: the next present is scheduled `1/cap` after the previous target and the
+// render thread waits until a display frame reaches it. The measured cadence, not an assumed
+// 60 Hz, decides, and advancing from the target rather than the frame seen keeps a fractional
+// cap's remainder. A first frame or an already-past target schedules forward, so a slow frame
+// never draws a catch-up burst. With no callbacks -- startup, paused, or signal lost -- the wait
+// is bounded and the pre-existing `steady_clock` deadline below takes over; `maxFps == 0` returns
+// before either path. No new scheduler: the signal is only a better deadline for the existing
+// `paceToPresentationCap()` owner.
+namespace {
+
+struct PresentationPacing {
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool running = false;           // set on resume, cleared on pause; frames require it
+    bool haveFrame = false;         // at least one display frame timestamp has been seen
+    int64_t frameTimeNs = 0;        // latest display frame timestamp, in the display's own domain
+    int64_t nextPresentTargetNs = 0;  // schedule target, in that same domain
+};
+
+PresentationPacing g_presentationPacing;
+
+// Reports the effective pacing path once per transition, never per frame. A run can then tell
+// "display-aligned" from "deadline-fallback" without reading the source, and a packaged `.so` can
+// be grepped for the marker to prove the APK actually carries this change.
+void reportPacingPath(const char* path) {
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime",
+                        "TN_PRESENTATION_PACING:{\"path\":\"%s\"}", path);
+#else
+    (void)path;
+#endif
+}
+
+// Waits for the display to reach the scheduled target. Returns false when there is no live display
+// signal to wait on, which is the caller's signal to use the software deadline instead.
+bool paceToDisplayFrame(std::chrono::nanoseconds interval) {
+    std::unique_lock<std::mutex> lock(g_presentationPacing.mutex);
+    if (!g_presentationPacing.running || !g_presentationPacing.haveFrame) return false;
+
+    const int64_t intervalNs = interval.count();
+    if (g_presentationPacing.nextPresentTargetNs == 0) {
+        // First paced frame: schedule forward from the frame just observed.
+        g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
+        return true;
+    }
+
+    // One bounded wait: two intervals plus a margin tolerates one late callback. The deadline is
+    // absolute, so a spurious or too-early callback cannot reset the budget and extend it. Timing
+    // out means the signal is gone, not slow: drop the schedule and forget the frame, so later
+    // presents use the software deadline instead of re-waiting this timeout, until a fresh
+    // callback re-arms the display path. A target the display has already reached skips the wait
+    // and falls through to the same advancement below.
+    const auto deadline =
+        std::chrono::steady_clock::now() + interval * 2 + std::chrono::milliseconds(50);
+    while (g_presentationPacing.running &&
+           g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
+        if (g_presentationPacing.ready.wait_until(lock, deadline) == std::cv_status::timeout) {
+            g_presentationPacing.haveFrame = false;
+            g_presentationPacing.nextPresentTargetNs = 0;
+            return false;
+        }
+    }
+    if (!g_presentationPacing.running) return false;
+
+    // Advance from the target, not from the frame just seen -- for an already-arrived frame too: a
+    // fractional cap keeps its remainder instead of losing it to the display period. If callbacks
+    // arrived so late that the target is already behind, reschedule from now rather than firing a
+    // burst to catch up.
+    g_presentationPacing.nextPresentTargetNs += intervalNs;
+    if (g_presentationPacing.nextPresentTargetNs <= g_presentationPacing.frameTimeNs) {
+        g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
+    }
+    return true;
+}
+
+}  // namespace
+
+// Fed from the activity's Choreographer callback. `started`/`stopped` bracket its registration:
+// started on resume, stopped on pause *before* the callback is removed, so a render thread inside
+// paceToPresentationCap() is woken and falls back instead of waiting out its timeout. A frame
+// update is ignored unless the frames are running, so a late callback cannot resurrect a stopped
+// schedule.
+void notePresentationFramesStarted() {
+    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
+    g_presentationPacing.running = true;
+    g_presentationPacing.nextPresentTargetNs = 0;
+    g_presentationPacing.ready.notify_all();
+}
+
+void notePresentationFramesStopped() {
+    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
+    g_presentationPacing.running = false;
+    g_presentationPacing.haveFrame = false;
+    g_presentationPacing.frameTimeNs = 0;
+    g_presentationPacing.nextPresentTargetNs = 0;
+    g_presentationPacing.ready.notify_all();
+}
+
+void notePresentationFrame(int64_t frameTimeNs) {
+    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
+    if (!g_presentationPacing.running) return;
+    g_presentationPacing.frameTimeNs = frameTimeNs;
+    g_presentationPacing.haveFrame = true;
+    g_presentationPacing.ready.notify_all();
+}
+
 bool setPresentationCapHz(uint32_t hz) {
     if (hz > 1000) return false;
     g_presentationCapHz = hz;
     g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
+    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
+    g_presentationPacing.nextPresentTargetNs = 0;
     return true;
 }
 
@@ -88,8 +205,25 @@ bool setPresentationCapHz(uint32_t hz) {
  */
 void paceToPresentationCap() {
     if (g_presentationCapHz == 0) return;
-    using clock = std::chrono::steady_clock;
     const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
+
+    static bool reportedDisplay = false;
+    static bool reportedFallback = false;
+    if (paceToDisplayFrame(interval)) {
+        if (!reportedDisplay) {
+            reportedDisplay = true;
+            reportedFallback = false;
+            reportPacingPath("display-aligned");
+        }
+        return;
+    }
+    if (!reportedFallback) {
+        reportedFallback = true;
+        reportedDisplay = false;
+        reportPacingPath("deadline-fallback");
+    }
+
+    using clock = std::chrono::steady_clock;
     const auto now = clock::now();
     if (g_nextPresentDeadline == clock::time_point{} || now > g_nextPresentDeadline + interval) {
         // First paced frame, or the loop fell far enough behind that the old schedule is stale.
@@ -795,3 +929,23 @@ js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDesti
 }
 }  // namespace webgpu
 }  // namespace mystral
+
+#if defined(__ANDROID__)
+// The activity's display signal, PRD-399. These touch only process-lifetime pacing state and no
+// Java object, so a callback that is removed before the activity is destroyed cannot outlive
+// anything it references.
+extern "C" JNIEXPORT void JNICALL
+Java_com_threenative_runtime_MystralActivity_nativeOnPresentationFrame(JNIEnv*, jclass, jlong at) {
+    mystral::webgpu::notePresentationFrame(static_cast<int64_t>(at));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_threenative_runtime_MystralActivity_nativeOnPresentationFramesStarted(JNIEnv*, jclass) {
+    mystral::webgpu::notePresentationFramesStarted();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_threenative_runtime_MystralActivity_nativeOnPresentationFramesStopped(JNIEnv*, jclass) {
+    mystral::webgpu::notePresentationFramesStopped();
+}
+#endif

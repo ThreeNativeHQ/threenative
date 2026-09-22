@@ -2363,6 +2363,20 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/lifecycle_policy_test.cpp)
     target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
 
+    # PRD-399. Drives the real presentation-pacing owner with the same feed the Android
+    # Choreographer callback calls, so the display-aligned scheduling and the lifecycle unblock are
+    # exercised without a device.
+    add_executable(threenative-presentation-pacing-test EXCLUDE_FROM_ALL
+        tests/presentation_pacing_test.cpp)
+    target_link_libraries(threenative-presentation-pacing-test PRIVATE mystral-runtime)
+    # It includes `../src/webgpu/bindings_presentation.h`, whose state header needs the backend
+    # header; `mystral-runtime` links the backend PRIVATE, so its includes do not propagate.
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-presentation-pacing-test PRIVATE ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-presentation-pacing-test PRIVATE ${WGPU_TEST_INCLUDES})
+    endif()
+
     add_executable(threenative-webgpu-comprehensive-test EXCLUDE_FROM_ALL
         tests/webgpu_comprehensive_test.cpp)
     target_link_libraries(threenative-webgpu-comprehensive-test PRIVATE mystral-runtime)
@@ -2488,6 +2502,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-rg11b10-renderable-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
     tn_register_contract_test(threenative-surface-format-selection-test)
+    tn_register_contract_test(threenative-presentation-pacing-test)
     tn_register_contract_test(threenative-webgpu-comprehensive-test)
     tn_register_contract_test(threenative-js-module-comprehensive-test)
     tn_register_contract_test(threenative-runtime-platform-comprehensive-test)

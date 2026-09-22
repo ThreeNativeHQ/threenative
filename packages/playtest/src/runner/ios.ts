@@ -11,6 +11,31 @@ const execFileAsync = promisify(execFile);
 
 export type IosTransportKind = "device" | "simulator";
 
+// `log show --style compact` puts the OS's own severity token before the process, e.g.
+// `2026-09-22 15:07:18.517 Df threenative-ios[40455:17a9f] [com.apple.UIKit:AssetManager] ...`.
+// Only a record this exact shape -- timestamp, a recognised severity, the `process[pid:thread]`
+// field, and the subsystem:category field immediately after it -- gets severity-aware handling.
+// The Apple field must sit in the prefix, never be quoted from the message body: a non-Apple log
+// whose text embeds an Apple-looking `[com.apple....:...]` is not an OS record. Anything that does
+// not match keeps the textual fallback so an unrecognised format cannot turn a real error green.
+const kIosCompactAppleRecord =
+  /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ (Df|Db|A|I|E|F) +\S+\[\d+:[0-9a-f]+\] \[com\.apple\.[^\]:]+:[^\]]+\]/u;
+const kIosExplicitErrorMarker = /\[error\]|\bFATAL\b|GPUValidationError/u;
+const kIosTextError = /\[error\]|\b(?:Error|Fault|FATAL|FAILED|GPUValidationError)\b/u;
+
+// The compact record's own severity is authoritative: `E`/`F` is an error even when the message
+// carries no error keyword, and a Default record whose text merely mentions an error domain is a
+// log. An explicit app/JS marker (`[error]`, FATAL, a validation error) always wins, however the
+// unified log transported it. Unknown format/severity/subsystem keeps the conservative text scan.
+function classifyIosConsoleLine(text: string): "error" | "log" {
+  const compact = kIosCompactAppleRecord.exec(text);
+  if (compact !== null) {
+    if (compact[1] === "E" || compact[1] === "F") return "error";
+    return kIosExplicitErrorMarker.test(text) ? "error" : "log";
+  }
+  return kIosTextError.test(text) ? "error" : "log";
+}
+
 export interface IIosDriverOptions {
   appPath: string;
   bundleId: string;
@@ -82,10 +107,7 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
     return output
       .split(/\r?\n/u)
       .filter((line) => line.trim().length > 0)
-      .map((text) => ({
-        text,
-        type: /\[error\]|\b(?:Error|Fault|FATAL|FAILED|GPUValidationError)\b/u.test(text) ? "error" : "log",
-      }));
+      .map((text) => ({ text, type: classifyIosConsoleLine(text) }));
   }
 
   async isAlive(): Promise<boolean> {
