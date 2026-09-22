@@ -10,6 +10,107 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Compiled frame plan transport (v3) — native compiled frame plans — 2026-09-17
+
+**The default-off v3 transport costs the JS recorder 35–41% less per frame and carries 94.8–99.5% fewer
+bytes on draw-heavy frames. On the desktop lane it is now neutral (1.3% faster by median, inside the
+±1.5% run-to-run spread) after a frame that cannot be patched stopped being copied.**
+
+Method: `node packages/runtime-native/scripts/measure-frame-plan-transport.mjs --frames=120`
+(branch `perf/compiled-frame-plans-20260917`), Node 20.19.6, AMD 5900X. A CPU-only microbenchmark of
+the transport against a device and queue that record nothing: no GPU, no renderer, no game, and no
+frame-rate claim. The scene is one render pass with `--draws` repeated setPipeline / setBindGroup /
+setVertexBuffer / setIndexBuffer / drawIndexed groups and `--uploads` uniform buffers rewritten whole
+every frame; medians over 120 frames after a 5-frame warmup. `v2` is the stream every shipped frame
+sends today, `v3` the capture-then-patch plan.
+
+| scene | v2 total ms | v3 total ms | CPU | v2 packet | v3 packet | bytes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2000 draws, 64 × 256 B uploads (default) | 0.976 | 0.580 | −41% | 338,120 | 17,432 | −94.8% |
+| 20000 draws, 64 × 256 B uploads | 10.199 | 6.491 | −36% | 3,218,120 | 17,432 | −99.5% |
+| 200 draws, 32 × 64 KiB uploads, all new | 0.649 | 0.702 | +8.2% | 2,130,120 | 2,130,128 | 0% |
+
+`total` is encode plus drain JavaScript per frame. Four mechanisms carry it:
+
+1. **Per-frame wire ids.** Encoder, render pass, compute pass and command buffer ids restart every
+   frame in plan mode, so a record that did not move is the same bytes as last frame's — before
+   this, one pass id moved and invalidated every record inside the pass. A stale holder from an
+   earlier frame is refused by name (`stale render pass from an earlier frame`) instead of naming
+   whatever object inherited its id. Resource ids stay monotonic, assigned once at creation.
+2. **A value check at the call site.** Each reusable record compares the values that decide its
+   bytes — pass, pipeline, bind group, counts, offsets — against the ones the retained plan was
+   recorded from, in one allocation-free call. Equal means the plan already holds the record, so
+   nothing is encoded and nothing is sent: 10,004 of 10,069 records in the default scene are reused
+   on a steady frame.
+3. **A capture the arena already holds.** A frame that cannot be patched — a layout change, a
+   dropped plan, a host that reports a plan it no longer holds — is handed over as the arena with a
+   header written in front of it, and the buffer the old plan used becomes the next arena. Before
+   that, every such frame was assembled into a fresh buffer first, one full copy per frame.
+4. **A guard that bounds the loss.** When the changed bytes *are* the payload there is nothing to
+   elide, so a frame that rewrote most of itself above a 64 KiB floor is sent whole rather than
+   diffed, applied and carried. That is what holds the third row at +8.2% instead of the +260% the
+   same scene cost before the guard existed; such a frame is 2 MB of fresh upload per frame, which
+   the GPU spends anyway.
+
+The default path pays for the plan check it does not use: `frame-op-stream.js` at `main` measures
+0.79–0.82 ms and with the plan call sites present 0.89–0.94 ms on the same scene, +8% of the
+recorder's own frame (≈7.5 ns per record for the `planMode` branch), which is under 1% of a 16 ms
+frame. Plan mode is off unless `TN_FRAME_PLANS=1` sets `host.compiledFramePlans`.
+
+### Desktop lane, flag on and off — 2026-09-17
+
+**Neutral: 1.3% faster by median over six interleaved pairs, inside the ±1.5% spread of the runs
+themselves. The earlier +2.6% loss was the per-frame capture copy that mechanism 3 removed.**
+
+Method: `SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy sh scripts/xvfb.sh
+packages/runtime-native/build/tn-linux/mystral run examples/native-smoke/dist/native-smoke.js
+--frames 300`, six pairs of runs alternating the arms so drift lands on both, `TN_FRAME_PLANS=1` in
+the "on" arm, RTX 2080 (Vulkan), Xvfb, no emulator running. The native host with the packaging
+default scene, not a game.
+
+| arm | runs (ms) | median | per frame |
+| --- | --- | --- | --- |
+| plan off | 10116, 10318, 10175, 10184, 9860, 9855 | 10,146 | 33.8 ms |
+| plan on | 10065, 10283, 9967, 10170, 9906, 9919 | 10,016 | 33.4 ms |
+
+`TN_HOST_GAP` explains why no frame-level result is available on this lane: `present` is 29.4 ms of
+the 33 ms period (89%), so the frame is the display, not the recorder. Three metered pairs of the
+same run put the transport's own phases side by side:
+
+| arm | periodP50 | frameDrain | frameReplay | present |
+| --- | --- | --- | --- | --- |
+| plan off | 33.06 / 32.90 / 32.66 | 0.002 | 0.079 / 0.087 / 0.079 | 29.6 / 29.5 / 29.3 |
+| plan on | 33.33 / 33.38 / 33.49 | 0.081 / 0.081 / 0.084 | 0.204 / 0.207 / 0.185 | 29.6 / 29.7 / 29.9 |
+
+The same scene at 320×180 is pinned to the presentation cap instead: period p50 16.67 ms with a
+JavaScript budget of 1.7–1.9 ms per frame (period mean minus the sum of the host segments), of which
+the recorder is ~0.3 ms — about 17% of the JS and 2% of the frame, which is why the arms stay inside
+the spread here too. Uncapping that lane needs `maxFps` embedded in the bundle: `mystral compile`
+bundles the entry alone, and both the compiled and the loose run against a hand-written
+`.threenative/config.json` still booted with `Presentation cap: 60 fps`, so the lane could not be
+uncapped here.
+
+The plan arm's drain costs 0.08 ms (building the patch and folding it back into the plan) and its
+replay costs 0.08–0.12 ms more than the v2 replay, which is a 2.5× on that phase and larger than the
+patch application can explain: it is the one number here worth chasing if activation is ever
+pursued, and it is not chased in this increment. Against the ~0.35 ms the recorder stops spending
+per frame, the lane lands inside its own ±1.5% spread either way. Screenshots from the
+two arms are not comparable — the scene animates, and every run differs from every other, arms
+included — so visual equivalence rests on the contract's pixel readback and the byte-equality tests
+below, not on these images.
+
+Proven separately from this measurement: `frame op stream replay contract passed` runs the same
+recorder through the real C++ decoder, asserts one capture then patched frames, reads a patched
+upload back off the GPU as `[3,4,5,6]`, and rejects thirteen malformed v3 packets without entering a
+backend call. It also renders the same two frames on both transports with only the clear colour
+moving and compares the pixels read back from each arm (with a negative control that the comparison
+moves when the colour does); drives a `mapAsync` that splits a frame and asserts the prefix ran
+before the map resolved, the tail replayed at the next boundary, and the plan recaptured after; and
+destroys the device to prove a recreated one replays a capture naming its own resources.
+`tests/frame-plan-transport.test.mjs` proves a patched plan is byte-identical to the frame it
+replaces, that a frame in which nothing moved carries a 24-byte packet with no entries, and that a
+reused record still reads the resource ids that keep its objects alive.
+
 ## PRD-217 desktop WebView overlay on/off — 2026-09-12
 
 **Uncapped throughput on a software-composited Xvfb lane: the overlay costs ~12–15% frame time here.

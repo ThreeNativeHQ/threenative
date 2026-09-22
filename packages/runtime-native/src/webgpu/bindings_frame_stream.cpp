@@ -59,15 +59,96 @@ struct PackedFrameReader {
     }
 };
 
+constexpr uint32_t kFrameOpStreamMagic = 0x544e4652;
+constexpr uint32_t kFrameOpStreamHeaderBytes = 16;
+// A v3 packet keeps the first three header words — magic, version, declared bytes — and replaces
+// the fourth with its own three: mode, sequence, count. So its header is 24 bytes and its body
+// starts there, while the mode it dispatches on sits at byte 12, where a v2 packet's operation
+// count used to be.
+constexpr uint32_t kFramePlanFieldsOffset = 12;
+constexpr uint32_t kFramePlanHeaderBytes = 24;
+constexpr uint32_t kFramePlanModeCapture = 1;
+constexpr uint32_t kFramePlanModePatch = 2;
+
+const char* const kFrameOpNames[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet"};
+constexpr size_t kFrameOpCount = std::size(kFrameOpNames);
+
+// Walks a captured record stream and writes its record boundaries into the caller's index. The
+// rules are the ones replay enforces, run once per capture so a later patch can be bounds-checked
+// against a layout that is already known good — the payloads themselves stay replay's business,
+// because only replay holds the live registries a record body is validated against.
+bool compileFramePlanRecords(const uint8_t* data, size_t declaredBytes,
+                             std::vector<FramePlanState::Record>& records) {
+    records.clear();
+    size_t cursor = 0;
+    while (cursor < declaredBytes) {
+        if (declaredBytes - cursor < 8) return false;
+        uint32_t opcode = 0;
+        uint32_t recordBytes = 0;
+        std::memcpy(&opcode, data + cursor, sizeof(opcode));
+        std::memcpy(&recordBytes, data + cursor + 4, sizeof(recordBytes));
+        if (opcode == 0 || opcode >= kFrameOpCount || recordBytes < 8 || (recordBytes & 7) ||
+            recordBytes > declaredBytes - cursor)
+            return false;
+        records.push_back({static_cast<uint32_t>(cursor), opcode, recordBytes});
+        cursor += recordBytes;
+    }
+    return !records.empty();
+}
+
+// Walks one patch body and hands every changed run to `visit`, or returns the reason it is not a
+// usable patch. One walker serves both passes: the validation pass visits nothing, the application
+// pass copies. A rejected patch therefore cannot leave the retained frame half-patched.
+//
+// A run never touches the record's 8-byte header, never leaves its record, is 8-byte aligned in
+// offset and length, and runs inside one entry are strictly increasing. Indices are strictly
+// increasing too, so one record is never patched twice.
+template <typename Visit>
+const char* walkFramePlanPatch(const FramePlanState& plan, const uint8_t* body, size_t bodyBytes,
+                               uint32_t count, Visit&& visit) {
+    PackedFrameReader r{body, bodyBytes, 0, bodyBytes, true};
+    uint32_t previousIndex = 0;
+    for (uint32_t entry = 0; entry < count; ++entry) {
+        const uint32_t index = r.u32(), runCount = r.u32();
+        if (!r.ok) return "truncated frame plan patch entry";
+        if (index >= plan.records.size()) return "frame plan patch index out of range";
+        if (entry != 0 && index <= previousIndex) return "frame plan patch indices out of order";
+        previousIndex = index;
+        if (runCount == 0) return "frame plan patch entry carries no runs";
+        const auto record = plan.records[index];
+        uint32_t previousRunEnd = 0;
+        for (uint32_t run = 0; run < runCount; ++run) {
+            const uint32_t offset = r.u32(), length = r.u32();
+            if (!r.ok) return "truncated frame plan patch run";
+            if (offset < 8) return "frame plan patch touches the record header";
+            if ((offset & 7) || (length & 7) || length == 0) return "frame plan patch run is not a whole 8-byte word";
+            if (offset > record.bytes || length > record.bytes - offset)
+                return "frame plan patch run leaves its record";
+            if (run != 0 && offset < previousRunEnd) return "frame plan patch runs overlap";
+            if (r.remaining() < length) return "truncated frame plan patch payload";
+            if (!visit(record.offset + offset, body + r.cursor, length)) return "frame plan patch rejected";
+            previousRunEnd = offset + length;
+            r.cursor += length;
+        }
+    }
+    if (!r.ok) return "truncated frame plan patch";
+    if (r.cursor != bodyBytes) return "frame plan patch length mismatch";
+    return nullptr;
+}
+
 }  // namespace
 
-bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
-    size_t bytes = 0;
-    const auto* data = static_cast<const uint8_t*>(state->engine->getArrayBufferData(frame, &bytes));
-    if (!data || bytes < 16) { state->engine->throwException("frame op stream: truncated header"); return false; }
-    PackedFrameReader r{data, bytes, 0, bytes, true};
-    const uint32_t magic = r.u32(), version = r.u32(), declaredBytes = r.u32(), declaredOps = r.u32();
-    if (magic != 0x544e4652 || (version != 1 && version != 2) || declaredBytes < 16 || declaredBytes > bytes) { state->engine->throwException("frame op stream: invalid header"); return false; }
+
+// Replays one frame of packed records. `records`/`recordCount` are the compiled layout when the
+// frame comes from the retained plan, or null for a v2/v1 packet whose boundaries this walk
+// derives itself; `compiled`, when set, receives that layout so a capture can retain it.
+// `recordAreaStart` is where the records begin: behind a packet's header, or at byte zero of a
+// retained plan, which is body and nothing else.
+static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t declaredBytes,
+                               uint32_t declaredOps, uint32_t version, size_t recordAreaStart,
+                               const FramePlanState::Record* records, size_t recordCount,
+                               std::vector<FramePlanState::Record>* compiled) {
+    PackedFrameReader r{data, declaredBytes, recordAreaStart, declaredBytes, true};
     r.size = declaredBytes;
     r.recordEnd = declaredBytes;
     auto& encoders = state->frameReplay.encoders;
@@ -168,17 +249,33 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                                                  : WGPUTextureAspect_All;
     };
     auto readExtent = [&]() { return WGPUExtent3D{r.u32(), r.u32(), r.u32()}; };
-    static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet"};
     uint32_t seen = 0;
     uint32_t replaySubmits = 0;
     while (r.cursor < declaredBytes && r.ok) {
         const size_t start = r.cursor;
-        r.recordEnd = declaredBytes;
-        const uint32_t opcode = r.u32(), recordBytes = r.u32();
-        if (!r.ok || opcode == 0 || opcode >= std::size(names) || recordBytes < 8 || (recordBytes & 7) || start + recordBytes > declaredBytes) { fail("malformed record header"); break; }
+        uint32_t opcode = 0;
+        uint32_t recordBytes = 0;
+        if (records != nullptr) {
+            // The retained plan replays from its compiled layout: the boundary came from the
+            // capture's own validated walk. Opcode validation is untouched — the index says where
+            // a record ends, never what it is allowed to do.
+            if (seen >= recordCount || records[seen].offset != start) { fail("record index mismatch"); break; }
+            opcode = records[seen].opcode;
+            recordBytes = records[seen].bytes;
+            if (opcode == 0 || opcode >= kFrameOpCount) { fail("malformed record header"); break; }
+            // A packet's walk consumes its own header above; the compiled layout already read it,
+            // so the payload starts where the header ended.
+            r.cursor = start + 8;
+        } else {
+            r.recordEnd = declaredBytes;
+            opcode = r.u32();
+            recordBytes = r.u32();
+            if (!r.ok || opcode == 0 || opcode >= kFrameOpCount || recordBytes < 8 || (recordBytes & 7) || start + recordBytes > declaredBytes) { fail("malformed record header"); break; }
+            if (compiled != nullptr) compiled->push_back({static_cast<uint32_t>(start), opcode, recordBytes});
+        }
         r.recordEnd = start + recordBytes;
         if (state->profiling.captureFrameOpStreamTrace) {
-            state->profiling.frameOpStreamLastOrder.emplace_back(names[opcode]);
+            state->profiling.frameOpStreamLastOrder.emplace_back(kFrameOpNames[opcode]);
         }
         seen += 1;
 #if TN_ANDROID_JS_PROFILE
@@ -945,13 +1042,120 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
     return true;
 }
 
+// One v3 packet: either a capture that becomes the retained plan, or a patch set applied to the
+// plan already held. Returns false with the engine exception already set.
+static bool replayCompiledFramePacket(BindingsState* state, const uint8_t* data, size_t declaredBytes) {
+    auto& plan = state->framePlan;
+    auto fail = [&](const std::string& detail) {
+        const std::string message = "frame op stream: " + detail;
+        std::cerr << "[WebGPU] Frame op stream replay failed: " << detail << std::endl;
+        state->engine->throwException(message.c_str());
+    };
+    if (declaredBytes < kFramePlanHeaderBytes) {
+        fail("invalid header");
+        return false;
+    }
+    PackedFrameReader r{data, declaredBytes, kFramePlanFieldsOffset, declaredBytes, true};
+    const uint32_t mode = r.u32(), sequence = r.u32(), count = r.u32();
+    if (!r.ok) {
+        fail("invalid header");
+        return false;
+    }
+    const size_t bodyBytes = declaredBytes - kFramePlanHeaderBytes;
+    const uint8_t* body = data + kFramePlanHeaderBytes;
+    if (mode == kFramePlanModeCapture) {
+        if (bodyBytes > FramePlanState::maxBytes) {
+            fail("capture exceeds the retained frame bound");
+            return false;
+        }
+        // The index is compiled before the plan bytes are replaced, so a capture whose record
+        // layout does not parse leaves the previous plan intact instead of half-swapped.
+        if (!compileFramePlanRecords(body, bodyBytes, plan.records)) {
+            plan.invalidate();
+            fail("malformed capture record layout");
+            return false;
+        }
+        plan.bytes.resize(bodyBytes);
+        std::memcpy(plan.bytes.data(), body, bodyBytes);
+        plan.valid = true;
+        plan.sequence = sequence;
+        plan.opCount = count;
+        plan.captures += 1;
+        plan.captureBytes += declaredBytes;
+        if (!replayFrameRecords(state, plan.bytes.data(), plan.bytes.size(), plan.opCount, 2, 0,
+                                plan.records.data(), plan.records.size(), nullptr)) {
+            plan.invalidate();
+            return false;
+        }
+        return true;
+    }
+    if (mode == kFramePlanModePatch) {
+        if (!plan.valid) {
+            fail("patch sent without a retained plan");
+            return false;
+        }
+        if (sequence != plan.sequence + 1) {
+            plan.invalidate();
+            fail("stale frame plan sequence");
+            return false;
+        }
+        // The whole packet is validated before a single byte is applied, so a rejected patch
+        // leaves the retained frame exactly as it was rather than half-updated.
+        if (const char* detail = walkFramePlanPatch(plan, body, bodyBytes, count,
+                                                    [](uint32_t, const uint8_t*, uint32_t) { return true; })) {
+            plan.invalidate();
+            fail(detail);
+            return false;
+        }
+        uint8_t* destination = plan.bytes.data();
+        if (const char* detail = walkFramePlanPatch(
+                plan, body, bodyBytes, count,
+                [destination](uint32_t offset, const uint8_t* source, uint32_t length) {
+                    std::memcpy(destination + offset, source, length);
+                    return true;
+                })) {
+            plan.invalidate();
+            fail(detail);
+            return false;
+        }
+        plan.sequence = sequence;
+        plan.patches += 1;
+        plan.patchBytes += declaredBytes;
+        if (!replayFrameRecords(state, plan.bytes.data(), plan.bytes.size(), plan.opCount, 2, 0,
+                                plan.records.data(), plan.records.size(), nullptr)) {
+            plan.invalidate();
+            return false;
+        }
+        return true;
+    }
+    fail("unsupported frame plan mode " + std::to_string(mode));
+    return false;
+}
+
+bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
+    size_t bytes = 0;
+    const auto* data = static_cast<const uint8_t*>(state->engine->getArrayBufferData(frame, &bytes));
+    if (!data || bytes < kFrameOpStreamHeaderBytes) { state->engine->throwException("frame op stream: truncated header"); return false; }
+    PackedFrameReader r{data, bytes, 0, bytes, true};
+    const uint32_t magic = r.u32(), version = r.u32(), declaredBytes = r.u32(), declaredOps = r.u32();
+    if (magic != kFrameOpStreamMagic || (version != 1 && version != 2 && version != 3) || declaredBytes < kFrameOpStreamHeaderBytes || declaredBytes > bytes) { state->engine->throwException("frame op stream: invalid header"); return false; }
+    if (version == 3) return replayCompiledFramePacket(state, data, declaredBytes);
+    // A v1/v2 packet replaces the whole frame, and the recorder only sends one when it has itself
+    // dropped what it retained — after a partial drain cut the frame short, or for a capture it
+    // knows is too large. The plan goes with it rather than describing a frame nobody sent.
+    state->framePlan.invalidate();
+    return replayFrameRecords(state, data, declaredBytes, declaredOps, version,
+                              kFrameOpStreamHeaderBytes, nullptr, 0, nullptr);
+}
+
 bool flushRecordedFrameOps(BindingsState* state) {
     if (!state || !state->engine || !state->profiling.frameOpStreamDrain.ptr) return true;
     if (state->profiling.frameOpStreamFlushing) return true;
     state->profiling.frameOpStreamFlushing = true;
     const auto frame = state->engine->call(state->profiling.frameOpStreamDrain,
                                            state->engine->newUndefined(),
-                                           {state->engine->newNumber(1)});
+                                           {state->engine->newNumber(1),
+                                            state->engine->newNumber(static_cast<double>(state->framePlan.epoch))});
     bool replayed = true;
     if (!state->engine->isNull(frame) && !state->engine->isUndefined(frame)) {
         state->profiling.frameOpStreamReplayCrossings += 1;
