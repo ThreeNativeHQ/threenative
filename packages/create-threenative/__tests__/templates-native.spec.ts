@@ -158,7 +158,7 @@ export default { start: async () => console.info(marker) };
     );
     await writeFile(
       path.join(project, "threenative.config.ts"),
-      'export default { display: { orientation: "portrait" } };\n',
+      'export default { display: { orientation: "portrait" }, ui: { renderer: "native" } };\n',
     );
     await mkdir(path.join(project, "public"), { recursive: true });
     await mkdir(path.join(project, "assets"), { recursive: true });
@@ -203,6 +203,12 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
 
   it("builds a project with no config file through all native targets using defaults", async () => {
     const project = await projectRoot("threenative-native-no-config-");
+    await mkdir(path.join(project, "src/ui"), { recursive: true });
+    await writeFile(
+      path.join(project, "src/ui/main.tsx"),
+      'import "./hud.css"; document.querySelector("#tn-ui").textContent = "Default HUD";\n',
+    );
+    await writeFile(path.join(project, "src/ui/hud.css"), "#tn-ui { color: white; }\n");
     await writeFile(
       path.join(project, "src/game.ts"),
       "export default { start: async () => {} };\n",
@@ -236,6 +242,14 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
         await readFile(path.join(runtime, `${target}-args.json`), "utf8"),
       ) as string[];
       expect(args, `${target} must receive the resolved config`).toContain("--config");
+      expect(args, `${target} must receive the default UI`).toContain("--ui");
+      const ui = args[args.indexOf("--ui") + 1];
+      const page = await readFile(path.join(ui, "index.html"), "utf8");
+      for (const extension of ["js", "css"]) {
+        const asset = page.match(new RegExp(`(?:src|href)="\\./([^" ]+\\.${extension})"`, "u"));
+        if (asset === null) throw new Error(`${target} UI must load ${extension}`);
+        await expect(readFile(path.join(ui, asset[1]), "utf8")).resolves.not.toBe("");
+      }
       if (target !== "desktop") {
         expect(args, `${target} must receive the default orientation`).toContain("--orientation");
         expect(args[args.indexOf("--orientation") + 1]).toBe("landscape");
@@ -249,6 +263,7 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
       display: { orientation: "landscape", fullscreen: true, keepScreenOn: false },
       window: { title: "entry-proof", width: 1280, height: 720, maximized: false, resizable: true },
       renderer: { preferWebGPU: true },
+      ui: { renderer: "web" },
     });
   });
 });
