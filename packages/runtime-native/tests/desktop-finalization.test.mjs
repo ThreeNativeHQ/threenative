@@ -53,6 +53,12 @@ function files(root) {
  */
 const ARCHIVERS = ["bsdtar", "tar", "zip"];
 function archive(command, args, options) {
+  if (command === "makensis") {
+    const output = /^OutFile "([^"]+)"$/mu.exec(readFileSync(args.at(-1), "utf8"))?.[1];
+    assert.ok(output);
+    writeFileSync(output, "MZ installer fixture");
+    return { status: 0 };
+  }
   assert.ok(ARCHIVERS.includes(command), `unexpected tool: ${command}`);
   return spawnSync(command, args, { encoding: "utf8", ...options });
 }

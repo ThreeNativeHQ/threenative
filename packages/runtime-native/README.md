@@ -70,7 +70,10 @@ pnpm exec threenative build --target desktop --mode release
   `.desktop` entry plus icon under `share/`.
 - **macOS** — a `<Name>.app` inside a ZIP, with `Contents/MacOS/<exe>`, `Contents/Resources` and an
   `Info.plist` carrying the game's id, name, version and build.
-- **Windows** — a ZIP with `<Name>.exe` (icon and version embedded), `ui/` and non-system DLLs.
+- **Windows** — a portable ZIP and a `*-setup.exe` installer, both carrying `<Name>.exe` (icon and
+  version embedded), `ui/` and non-system DLLs. Setup installs per user, creates a Start Menu
+  shortcut and registers an uninstaller in Windows Settings. Upgrades remove obsolete owned files;
+  uninstall preserves unrelated files. Uninstall the existing copy before choosing another directory.
 
 Each container carries `threenative-container.json`: the app identity, the executable, every
 bundled dependency with a SHA-256, and every system library recorded as a player prerequisite. All
@@ -86,14 +89,14 @@ The container does not ship the platform's WebView or windowing stack. The playe
 | OS | Prerequisite | Install |
 | --- | --- | --- |
 | Linux | WebKitGTK 4.1 and GTK 3 | Debian/Ubuntu: `sudo apt-get install -y libwebkit2gtk-4.1-0 libgtk-3-0`; Fedora: `sudo dnf install webkit2gtk4.1 gtk3`; Arch: `sudo pacman -S webkit2gtk-4.1 gtk3` |
-| Windows | Microsoft Edge WebView2 Evergreen Runtime | <https://developer.microsoft.com/microsoft-edge/webview2/> |
+| Windows | Microsoft Edge WebView2 Evergreen Runtime, when WebUI is selected | Setup checks for it and installs it if missing (internet required); portable ZIP users install it from <https://developer.microsoft.com/microsoft-edge/webview2/> |
 | macOS | System WebKit | included with macOS |
 
 The verifier inspects an unpacked container and resolves its integrity records first. On Linux it
 also resolves every shared library the executable loads and refuses to launch when a recorded
 prerequisite is missing, naming the library with its install step rather than a bare loader error.
-On Windows and macOS the prerequisites above are documented and provided by the OS; the verifier
-does not machine-check them here.
+On Windows the installer checks WebView2 before installing the game; the portable ZIP verifier does
+not check it. macOS includes the system WebKit used by the overlay.
 
 ```sh
 node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --container <unpacked-directory>
@@ -110,12 +113,15 @@ it. They are needed on the machine that packages the game, never on the player's
 | macOS | `zip` | the `.zip` container | included with macOS |
 | macOS | `sips`, `iconutil` | converting `app.icon` into the `.icns` the `.app` bundle carries | included with macOS |
 | Windows | `zip` | the `.zip` container | `choco install zip` |
+| Windows | NSIS 3 (`makensis`) | the `*-setup.exe` installer | `choco install nsis --version=3.11.0`; the packager also finds the standard Program Files installation |
 | Windows | `rcedit` | embedding `app.icon` and the version strings into the executable's PE resources | <https://github.com/electron/rcedit/releases>, with `rcedit.exe` on `PATH` |
 | Windows | `dumpbin` | listing the DLLs the executable imports, so the container records them and stays relocatable | ships with Visual Studio; run the release build from a Developer Command Prompt |
 
 A missing tool refuses the release with `TN_DESKTOP_ARCHIVE_TOOL_MISSING` or
 `TN_DESKTOP_RESOURCE_TOOL_MISSING` naming the tool, rather than shipping a container without the
-identity it claims. The icon tools are required only when `app.icon` is configured.
+identity it claims. NSIS failures report `TN_WINDOWS_INSTALLER_FAILED`. The icon tools are required
+only when `app.icon` is configured. Windows WebUI packaging downloads Microsoft's signed WebView2
+bootstrapper and verifies its Authenticode signature before embedding it; this build needs internet.
 
 ### Standard distribution recipe
 
@@ -127,7 +133,19 @@ identity it claims. The icon tools are required only when `app.icon` is configur
    anything launches — on Windows by reading the executable's own `RT_GROUP_ICON`/`RT_ICON` and
    `RT_VERSION` resources, not the manifest beside it. Without `--config` the gate says
    `brand NOT inspected` rather than implying the identity was checked.
-3. Sign where the store requires it (below), then hand the archive to your installer or store depot.
+3. Configure signing before building where required (below), then distribute the installer or archive.
+
+On Windows, test the actual installer with a scenario from your game:
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/verify-windows-installer.mjs --installer dist-native/my-game-setup.exe --project . --scenario scenarios/production-readiness.playtest.json
+```
+
+This command installs into a temporary directory containing spaces, checks the installed manifest,
+runs the existing playtest runner against that exact executable, and uninstalls it. Signed builds
+also require `signtool` to verify the setup, game and uninstaller signatures. Failures retain the
+temporary directory and print its path. In this repository, use `pnpm native:verify:windows:installer`
+with the same arguments. Add `--require-signed` to reject an unsigned release explicitly.
 
 ### Signing and store/depot handoff
 
@@ -147,7 +165,7 @@ rather than failing the release.
 | `THREENATIVE_DESKTOP_SIGN_SUBJECT` | Windows certificate-store subject name; the private key stays in the store. |
 | `THREENATIVE_DESKTOP_TIMESTAMP_URL` | Windows Authenticode timestamp server. |
 
-Windows `signtool` signs then verifies the executable. Prefer
+Windows `signtool` signs and verifies the game, setup and embedded uninstaller. Prefer
 `THREENATIVE_DESKTOP_SIGN_SUBJECT`: it signs with `/n`, so the private key never leaves the store.
 `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` uses `/f` and is passed no password, so it only works for a
 password-less `.pfx`. Setting both is refused rather than silently resolved.

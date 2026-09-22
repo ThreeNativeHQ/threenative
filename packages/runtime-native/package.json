@@ -47,6 +47,8 @@
     "scripts/check-android-16kb-alignment.mjs",
     "scripts/check-source-list.mjs",
     "scripts/desktop-distribution.mjs",
+    "scripts/windows-installer.mjs",
+    "scripts/windows-installer.nsi",
     "scripts/device-preflight.mjs",
     "scripts/inspect-container-brand.mjs",
     "scripts/install-prebuilt.mjs",
@@ -60,6 +62,7 @@
     "scripts/verify-starter-consumer.mjs",
     "scripts/verify-starter-desktop-base.mjs",
     "scripts/verify-starter-desktop.mjs",
+    "scripts/verify-windows-installer.mjs",
     "scripts/xvfb.sh"
   ],
   "scripts": {

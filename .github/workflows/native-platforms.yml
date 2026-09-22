@@ -1166,6 +1166,10 @@ jobs:
           # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
           if [ "${{ matrix.platform }}" = "Windows" ]; then
             choco install zip -y --no-progress
+            choco install nsis --version=3.11.0 -y --no-progress
+            nsis='/c/Program Files (x86)/NSIS'
+            "$nsis/makensis.exe" -VERSION
+            cygpath -w "$nsis" >> "$GITHUB_PATH"
             # The starter sets app.icon, so desktop-distribution.mjs shells out to rcedit to embed
             # the icon and version strings in the PE resources. rcedit is not on the runner image.
             # Pin the release: `latest` would make the packaged identity move under us.
@@ -1195,6 +1199,37 @@ jobs:
             echo "TN_DESKTOP_ARCHIVER_MISSING: 'zip' is required to write the desktop release container." >&2
             exit 1
           fi
+      - name: Exercise the compiled Windows installer lifecycle
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          TN_WINDOWS_INSTALLER_INTEGRATION=1 pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/windows-installer.test.mjs
+      # A disposable trusted certificate proves the actual signing tools and final installer.
+      # These are CI qualification artifacts, not proof of public Authenticode trust.
+      - name: Create a self-signed code-signing certificate for the proof
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $subject = 'ThreeNative CI Signing Proof'
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=$subject" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
+          # `signtool verify /pa` requires a trusted chain, so the self-signed root is trusted for
+          # this user only, on this throwaway runner.
+          $cer = Join-Path $env:RUNNER_TEMP 'tn-signing-proof.cer'
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          # CurrentUser\Root opens an interactive Root Certificate Store confirmation on hosted Windows.
+          # Use certutil against the machine Root store instead: the hosted runner is disposable and
+          # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.
+          & certutil.exe -f -addstore Root $cer | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate" }
+          # signtool ships with the Windows SDK and is on PATH only inside a Developer Command
+          # Prompt, the same way dumpbin is. The signing step runs in bash, so put the newest x64
+          # SDK signtool on PATH for the steps that follow rather than entering VsDevCmd there.
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'TN_DESKTOP_SIGNING_PROOF: no signtool.exe found in the Windows SDK' }
+          Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
+          Write-Host "created $($cert.Thumbprint) for CN=$subject; signtool at $($signtool.FullName)"
       # The container records every DLL the executable imports so it can be relocated, and
       # `desktop-distribution.mjs` reads them with `dumpbin`, which lives only inside the Visual
       # Studio developer environment. Enter it here rather than exporting it through GITHUB_ENV,
@@ -1209,6 +1244,7 @@ jobs:
           where dumpbin || exit /b 1
           where rcedit || exit /b 1
           set "THREENATIVE_RUNTIME_BINARY=%GITHUB_WORKSPACE%\packages\runtime-native\build\tn-windows\mystral.exe"
+          set "THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof"
           pnpm --dir "%RUNNER_TEMP%\threenative-starter-native" exec threenative build --target desktop --mode release
       - name: Build the desktop release container
         if: runner.os != 'Windows'
@@ -1419,35 +1455,6 @@ jobs:
           PATH="$clean_path" "$executable" --windowed --screenshot "$RUNNER_TEMP/clean-player.png" --frames 300 2>&1 | tee "$log"
           grep -q 'TN_NATIVE_SMOKE_READY:webgpu' "$log"
           grep -qE 'Rendered [0-9]+ frames' "$log"
-      # The signtool path was only ever exercised through an injected transport, because a publicly
-      # trusted code-signing certificate does not exist for this repository. A certificate generated
-      # on the runner and trusted for this session proves the real tool, on a real Windows host,
-      # against the real distributed executable. It does NOT prove public trust: Authenticode against
-      # a CA-issued certificate stays with PRD-060, and the artifact this produces is thrown away.
-      - name: Create a self-signed code-signing certificate for the proof
-        if: matrix.platform == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $subject = 'ThreeNative CI Signing Proof'
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=$subject" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
-          # `signtool verify /pa` requires a trusted chain, so the self-signed root is trusted for
-          # this user only, on this throwaway runner.
-          $cer = Join-Path $env:RUNNER_TEMP 'tn-signing-proof.cer'
-          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
-          # CurrentUser\Root opens an interactive Root Certificate Store confirmation on hosted Windows.
-          # Use certutil against the machine Root store instead: the hosted runner is disposable and
-          # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.
-          & certutil.exe -f -addstore Root $cer | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw "TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate" }
-          # signtool ships with the Windows SDK and is on PATH only inside a Developer Command
-          # Prompt, the same way dumpbin is. The signing step runs in bash, so put the newest x64
-          # SDK signtool on PATH for the steps that follow rather than entering VsDevCmd there.
-          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $signtool) { throw 'TN_DESKTOP_SIGNING_PROOF: no signtool.exe found in the Windows SDK' }
-          Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
-          Write-Host "created $($cert.Thumbprint) for CN=$subject; signtool at $($signtool.FullName)"
       - name: Sign the distributed executable through the packager's own adapter
         if: matrix.platform == 'Windows'
         shell: bash
@@ -1490,6 +1497,17 @@ jobs:
           Write-Host "status=$($sig.Status) signer=$($sig.SignerCertificate.Subject)"
           if ($sig.Status -ne 'Valid') { throw "TN_DESKTOP_SIGNING_PROOF: signature status $($sig.Status)" }
           if ($sig.SignerCertificate.Subject -notlike '*ThreeNative CI Signing Proof*') { throw 'TN_DESKTOP_SIGNING_PROOF: unexpected signer' }
+      - name: Install and play the final signed Windows setup, then uninstall it
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Join-Path $env:RUNNER_TEMP 'threenative-starter-native'
+          $installers = @(Get-ChildItem (Join-Path $project 'dist-native') -Filter '*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one final Windows installer' }
+          $verifier = Join-Path $project 'node_modules/@threenative/runtime-native/scripts/verify-windows-installer.mjs'
+          node $verifier --require-signed --installer $installers[0].FullName --project $project --scenario packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json --artifacts packages/runtime-native/artifacts/release-container-Windows/installed-game
+          if ($LASTEXITCODE -ne 0) { throw 'Installed Windows gameplay or uninstall failed' }
       - name: Upload the desktop release container evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -1498,6 +1516,8 @@ jobs:
           path: |
             packages/runtime-native/artifacts/release-container-${{ matrix.platform }}/
             ${{ runner.temp }}/threenative-starter-native/artifacts/native/starter-container*
+            ${{ runner.temp }}/threenative-starter-native/dist-native/*-setup.exe
+            ${{ runner.temp }}/threenative-starter-native/dist-native/*.zip
           if-no-files-found: warn
       - name: Collect bounded desktop performance evidence from the built runtime
         if: always()

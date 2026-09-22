@@ -33,6 +33,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { buildWindowsInstaller } from './windows-installer.mjs';
 
 export const CONTAINER_MANIFEST = 'threenative-container.json';
 export const CONTAINER_SCHEMA_VERSION = 1;
@@ -1024,6 +1025,8 @@ export function packageDesktopContainer({
     // filesystem so the final rename never needs a cross-device copy.
     const candidateDirectory = mkdtempSync(join(dirname(archive), '.threenative-release-'));
     const candidateArchive = join(candidateDirectory, basename(archive));
+    const installer = platform === 'win32' ? archive.replace(/\.zip$/iu, '-setup.exe') : undefined;
+    let retainCandidates = false;
     try {
       archiveContainer({ output: candidateArchive, platform, rootFolder, run, staging });
       if (platform === 'darwin' && signing?.notarize) {
@@ -1032,11 +1035,51 @@ export function packageDesktopContainer({
         resolveContainer(join(staging, rootFolder), { platform, run });
         archiveContainer({ output: candidateArchive, platform, rootFolder, run, staging });
       }
-      renameSync(candidateArchive, archive);
+      const artifacts = [[candidateArchive, archive]];
+      if (installer) {
+        const candidateInstaller = join(candidateDirectory, basename(installer));
+        let installerIcon = icon;
+        if (icon && !icon.toLowerCase().endsWith('.ico')) {
+          installerIcon = join(candidateDirectory, 'installer.ico');
+          pngToIco(icon, installerIcon);
+        }
+        buildWindowsInstaller({
+          root: join(staging, rootFolder), output: candidateInstaller, manifest,
+          files: [...Object.keys(resources), paths.manifest].sort(),
+          icon: installerIcon, run, signing,
+        });
+        if (signing) signDesktopArtifact({ platform, run, signing, target: candidateInstaller });
+        artifacts.push([candidateInstaller, installer]);
+      }
+      const backups = [];
+      const published = [];
+      try {
+        for (const [, destination] of artifacts) {
+          if (!existsSync(destination)) continue;
+          if (!statSync(destination).isFile()) throw new Error('TN_DESKTOP_OUTPUT_NOT_FILE: ' + destination);
+          const backup = join(candidateDirectory, 'previous-' + basename(destination));
+          renameSync(destination, backup);
+          backups.push([backup, destination]);
+        }
+        for (const [candidate, destination] of artifacts) {
+          renameSync(candidate, destination);
+          published.push(destination);
+        }
+      } catch (error) {
+        try {
+          for (const destination of published.reverse()) rmSync(destination);
+          for (const [backup, destination] of backups.reverse()) renameSync(backup, destination);
+        } catch (recoveryError) {
+          retainCandidates = true;
+          throw new AggregateError([error, recoveryError],
+            'TN_DESKTOP_RELEASE_RECOVERY_REQUIRED: previous outputs retained at ' + candidateDirectory);
+        }
+        throw error;
+      }
     } finally {
-      rmSync(candidateDirectory, { force: true, recursive: true });
+      if (!retainCandidates) rmSync(candidateDirectory, { force: true, recursive: true });
     }
-    return { archive, manifest, rootFolder, signed: signedArtifact.signed };
+    return { archive, ...(installer ? { installer } : {}), manifest, rootFolder, signed: signedArtifact.signed };
   } finally {
     rmSync(staging, { force: true, recursive: true });
   }
