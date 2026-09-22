@@ -4,22 +4,50 @@ const requireObservation = (condition, code, message) => {
 const percentile = (values, fraction) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * fraction) - 1];
 
 /** Decode the fixture's exact state ID; complementary rows reject partial/shifted captures. */
-export function decodeUiSequence(frame) {
+export function decodeUiSequence(frame, { tolerance = 0 } = {}) {
   requireObservation(frame.length === 160 * 24 * 3, 'PIXELS', 'expected a 160x24 RGB24 capture');
+  requireObservation(Number.isInteger(tolerance) && tolerance >= 0 && tolerance <= 32, 'PIXELS', 'color tolerance must be within 0–32');
   const pixel = (x, y) => frame.readUIntBE((y * 160 + x) * 3, 3);
+  const near = (actual, expected) => [0, 8, 16].every((shift) => Math.abs(((actual >> shift) & 255) - ((expected >> shift) & 255)) <= tolerance);
   let sequence = 0;
-  let valid = pixel(136, 6) === 0x00ffff && pixel(152, 6) === 0xff00ff;
+  let valid = near(pixel(136, 6), 0x00ffff) && near(pixel(152, 6), 0xff00ff);
   for (let bit = 0; bit < 16; bit += 1) {
     const top = pixel(bit * 8 + 4, 6);
     const bottom = pixel(bit * 8 + 4, 18);
-    valid &&= (top === 0xffffff && bottom === 0) || (top === 0 && bottom === 0xffffff);
-    if (top === 0xffffff) sequence += 1 << bit;
+    const on = near(top, 0xffffff) && near(bottom, 0);
+    valid &&= on || (near(top, 0) && near(bottom, 0xffffff));
+    if (on) sequence += 1 << bit;
   }
   return { sequence, valid };
 }
 
+/** Android screenrecord's Winscope v2 data track, checked against each decoded frame's PTS. */
+export function decodeAndroidUiTimestamps(buffer, framePts) {
+  const magic = Buffer.from('#VV1NSC0PET1ME2#');
+  const header = magic.length + 16;
+  requireObservation(Buffer.isBuffer(buffer) && buffer.length >= header &&
+    buffer.subarray(0, magic.length).equals(magic) && buffer.readUInt32LE(magic.length) === 2,
+  'TIMESTAMPS', 'missing or unsupported Winscope v2 metadata');
+  const offset = buffer.readBigInt64LE(magic.length + 4);
+  const count = buffer.readUInt32LE(magic.length + 12);
+  requireObservation(count > 0 && buffer.length === header + count * 8 &&
+    Array.isArray(framePts) && framePts.length === count && framePts.every(Number.isFinite),
+  'TIMESTAMPS', 'decoded frames and metadata must have matching nonempty counts');
+  const times = Array.from({ length: count }, (_, index) => Number(offset + buffer.readBigUInt64LE(header + index * 8)) / 1e6);
+  let alignmentMaxErrorMs = 0;
+  for (let i = 0; i < count; i += 1) {
+    requireObservation(times[i] > 0 && times[i] < Number.MAX_SAFE_INTEGER &&
+      (i === 0 || (times[i] > times[i - 1] && framePts[i] > framePts[i - 1])),
+    'TIMESTAMPS', 'frame timestamps must increase');
+    alignmentMaxErrorMs = Math.max(alignmentMaxErrorMs, Math.abs((framePts[i] - framePts[0]) * 1000 - (times[i] - times[0])));
+  }
+  requireObservation(alignmentMaxErrorMs <= 1, 'TIMESTAMPS', 'decoded frame PTS differ from metadata by more than 1 ms');
+  return { times, alignmentMaxErrorMs };
+}
+
 /** Fixed qualification bounds for the 60 FPS fixture, including its two-second idle periods. */
-export function analyzeUiCadence({ states, captures }) {
+export function analyzeUiCadence({ states, captures }, { sampling = 'x11' } = {}) {
+  requireObservation(sampling === 'x11' || sampling === 'android', 'SAMPLING', 'unknown capture backend');
   requireObservation(Array.isArray(states) && states.length > 600 && Array.isArray(captures) && captures.length > 1000,
     'OBSERVATION', 'not enough game-state and screen observations');
   const published = new Map();
@@ -52,9 +80,10 @@ export function analyzeUiCadence({ states, captures }) {
   }
   const durationMs = captures.at(-1).at - captures[0].at;
   const captureHz = (captures.length - 1) * 1000 / durationMs;
-  requireObservation(durationMs >= 24_000 && captureHz >= 180 && captureHz <= 300 &&
-    percentile(captureIntervals, 0.95) <= 10 && Math.max(...captureIntervals) <= 100,
-  'SAMPLING', 'need at least 24 seconds of continuous 180–300 Hz capture');
+  const android = sampling === 'android';
+  requireObservation(durationMs >= 24_000 && captureHz >= (android ? 55 : 180) && captureHz <= (android ? 65 : 300) &&
+    percentile(captureIntervals, 0.95) <= (android ? 20 : 10) && Math.max(...captureIntervals) <= 100,
+  'SAMPLING', `need at least 24 seconds of continuous ${android ? '55–65' : '180–300'} Hz capture`);
   const start = captures[0].at + 1000;
   const end = captures.at(-1).at - 100;
   const latencies = [];
@@ -78,7 +107,8 @@ export function analyzeUiCadence({ states, captures }) {
         `source rendered ${samples.length} updates/s; this check requires a stable 60 FPS workload`);
       requireObservation(visible >= 50 && visible / samples.length >= 0.8, 'VISIBLE_RATE',
         `${visible}/${samples.length} updates became visible in the second starting ${at}`);
-      windows.push({ at, published: samples.length, visible, dropped: samples.length - visible });
+      windows.push({ at, published: samples.length, visible, unobserved: samples.length - visible,
+        dropped: android ? null : samples.length - visible });
     }
     if (active !== segments[0] && active[0].at >= start && active[0].at <= end) {
       const resumed = active.find((state) => firstVisible.has(state.sequence));
@@ -91,6 +121,7 @@ export function analyzeUiCadence({ states, captures }) {
   const total = (key) => windows.reduce((sum, window) => sum + window[key], 0);
   return { p50Ms: percentile(latencies, 0.5), p95Ms, maxMs: Math.max(...latencies),
     captureHz, durationMs, sourceHz: total('published') / windows.length, visibleHz: total('visible') / windows.length,
-    dropped: total('dropped'), droppedRatio: total('dropped') / total('published'),
+    dropped: android ? null : total('unobserved'), droppedRatio: android ? null : total('unobserved') / total('published'),
+    unobserved: total('unobserved'),
     matched: latencies.length, invalid: 0, stale: 0, idleResumes, windows };
 }

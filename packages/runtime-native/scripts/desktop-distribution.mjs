@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * OS container and resource operations for desktop release artifacts.
  *

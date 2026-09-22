@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
-import { analyzeUiCadence, decodeUiSequence } from '../scripts/ui-cadence.mjs';
+import { analyzeUiCadence, decodeAndroidUiTimestamps, decodeUiSequence } from '../scripts/ui-cadence.mjs';
 
 test.skipIf(process.platform !== 'linux')('failed reruns refuse a prior successful artifact directory before changing its evidence', () => {
   const directory = makeTempDirSync('tn-ui-cadence-');
@@ -53,6 +53,48 @@ test('low latest-state latency cannot hide a sustained 30 Hz presentation cap', 
   assert.throws(() => analyzeUiCadence(recording({ latency: 85 })), /LATENCY/u);
 });
 
+test('Android sampling keeps the same visible cadence bounds without attributing sampling misses to UI drops', () => {
+  const sample = (options) => {
+    const data = recording(options);
+    data.captures = data.captures.filter((_, index) => index % 4 === 0);
+    return data;
+  };
+  const report = analyzeUiCadence(sample(), { sampling: 'android' });
+  assert.ok(report.visibleHz >= 59);
+  assert.equal(report.dropped, null);
+  assert.equal(report.unobserved, 0);
+  assert.throws(() => analyzeUiCadence(sample({ latency: 1, every: 2 }), { sampling: 'android' }), /VISIBLE_RATE/u);
+  assert.throws(() => analyzeUiCadence(sample({ latency: 85 }), { sampling: 'android' }), /LATENCY/u);
+  assert.throws(() => analyzeUiCadence(sample(), { sampling: 'unknown' }), /SAMPLING/u);
+});
+
+test('Android timestamps require the exact Winscope format and decoded-frame PTS alignment', () => {
+  const magic = Buffer.from('#VV1NSC0PET1ME2#');
+  const buffer = Buffer.alloc(magic.length + 16 + 3 * 8);
+  magic.copy(buffer);
+  buffer.writeUInt32LE(2, magic.length);
+  buffer.writeBigInt64LE(1_700_000_000_000_000_000n, magic.length + 4);
+  buffer.writeUInt32LE(3, magic.length + 12);
+  for (let i = 0; i < 3; i += 1) buffer.writeBigUInt64LE(1_000_000_000n + BigInt(i) * 16_666_000n, magic.length + 16 + i * 8);
+  const pts = [0, 0.016666, 0.033332];
+  const report = decodeAndroidUiTimestamps(buffer, pts);
+  assert.equal(report.times[0], 1_700_000_001_000);
+  assert.ok(report.alignmentMaxErrorMs < 0.001);
+  for (const change of [
+    (data) => { data[0] = 0; },
+    (data) => { data.writeUInt32LE(1, magic.length); },
+    (data) => { data.writeUInt32LE(2, magic.length + 12); },
+    (data) => { data.writeBigUInt64LE(0n, magic.length + 24); },
+  ]) {
+    const bad = Buffer.from(buffer); change(bad);
+    assert.throws(() => decodeAndroidUiTimestamps(bad, pts), /TIMESTAMPS/u);
+  }
+  assert.throws(() => decodeAndroidUiTimestamps(buffer.subarray(0, -1), pts), /TIMESTAMPS/u);
+  assert.throws(() => decodeAndroidUiTimestamps(buffer, [0, 0.02, 0.04]), /TIMESTAMPS/u);
+  assert.throws(() => decodeAndroidUiTimestamps(buffer, [0, Number.NaN, 0.033332]), /TIMESTAMPS/u);
+  assert.throws(() => decodeAndroidUiTimestamps(buffer, pts.slice(1)), /TIMESTAMPS/u);
+});
+
 test('empty, corrupt, stale, unmatched and undersampled captures cannot qualify', () => {
   assert.throws(() => analyzeUiCadence({ states: [], captures: [] }), /OBSERVATION/u);
   for (const change of [
@@ -78,6 +120,9 @@ test('pixel IDs require complementary bits and both fixed color markers', () => 
   }
   set(136, 6, 0x00ffff); set(152, 6, 0xff00ff);
   assert.deepEqual(decodeUiSequence(frame), { sequence: expected, valid: true });
-  set(136, 6, 0);
+  for (let i = 0; i < frame.length; i += 1) frame[i] = frame[i] === 255 ? 239 : 16;
   assert.equal(decodeUiSequence(frame).valid, false);
+  assert.deepEqual(decodeUiSequence(frame, { tolerance: 32 }), { sequence: expected, valid: true });
+  set(136, 6, 0);
+  assert.equal(decodeUiSequence(frame, { tolerance: 32 }).valid, false);
 });

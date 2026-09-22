@@ -160,14 +160,32 @@ the final archive into a new location, checks its integrity, and captures its vi
 240 Hz using Xvfb and FFmpeg. It requires p95 publication-to-visible latency at most 50 ms, at least
 50 visible updates in each measured active second, and two idle wake-ups within 67 ms. Capture
 delivery delay is included. An attached overlay or fast React commits alone cannot pass this check.
-This capture backend qualifies Linux/X11 only; it does not measure a physical monitor's refresh rate.
+The desktop capture backend qualifies Linux/X11 only; it does not measure a physical monitor's refresh rate.
+
+For Android, select an online 60 Hz emulator or device and provide the same release signing
+environment used by `threenative build --target android --mode release`:
+
+```sh
+pnpm native:verify:ui --target android --project /absolute/path/to/game --device <serial>
+```
+
+This builds, verifies and installs the final signed APK, checks its installed SHA-256, and records
+27 seconds through Android's `screenrecord`. Exact visible state IDs are matched to its Winscope v2
+timestamps and checked against decoded frame timestamps. The same 50 ms latency and visible-update
+bounds apply. This measures captured SurfaceFlinger composition, not physical scanout. At Android's
+60 Hz capture rate, unobserved IDs can be sampling misses; they are reported separately from UI drops.
+Missing metadata, invalid pixels or inadequate capture cadence fail the command. `--allow-source-build`
+explicitly permits the installed builder's source fallback when required native prebuilts are absent.
 
 Results, raw observations, a screenshot and the final archive are retained under
 `artifacts/ui-cadence/<timestamp>/`. Use `--artifacts <empty-directory>` to choose the location;
 nonempty directories are refused so a failed rerun cannot inherit a passing result. Successful runs
 remove their temporary fixture project; failures retain it and print its path. To repeat a packaged
-fixture, use `--executable <extracted-fixture-executable>` instead of `--project` and `--runtime`.
-The command requires `Xvfb` and `ffmpeg` on `PATH` and takes about 40 seconds after dependencies build.
+fixture, use `--executable <extracted-fixture-executable>` on desktop, or
+`--target android --apk <packaged-fixture.apk> --device <serial>` on Android. These inputs must be the
+command's cadence fixture, not an arbitrary game. Both backends require FFmpeg; Android also requires
+`ffprobe` and ADB, and Linux requires Xvfb. Allow about 40 seconds on Linux or 60 seconds on Android
+after dependencies and the release artifact build.
 
 ### Signing and store/depot handoff
 

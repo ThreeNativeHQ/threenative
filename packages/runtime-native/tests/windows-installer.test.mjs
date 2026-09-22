@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
 import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { buildWindowsInstaller, windowsInstallerScript } from '../scripts/windows-installer.mjs';
@@ -10,6 +12,22 @@ import { packageDesktopContainer } from '../scripts/desktop-distribution.mjs';
 
 const app = { id: 'com.threenative.installertest', name: 'Orbit $INSTDIR ${NSIS_VERSION} "Game"', version: '1.0.0' };
 const manifest = { app, executable: 'game.exe' };
+
+test('installer dependencies remain valid after Windows checkout line-ending conversion', async () => {
+  const require = createRequire(import.meta.url);
+  const vite = require.resolve('vite', { paths: [require.resolve('vitest')] });
+  const { createServer } = await import(pathToFileURL(vite).href);
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, logLevel: 'silent' });
+  try {
+    const source = readFileSync(new URL('../scripts/desktop-distribution.mjs', import.meta.url), 'utf8');
+    for (const ending of ['\n', '\r\n']) {
+      const transformed = await server.ssrTransform(source.replace(/\r?\n/gu, ending), null, '/desktop-distribution.mjs');
+      const parsed = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: transformed.code, encoding: 'utf8', timeout: 10_000 });
+      assert.equal(parsed.error, undefined);
+      assert.equal(parsed.status, 0, parsed.stderr);
+    }
+  } finally { await server.close(); }
+}, 15_000);
 
 test('installer refuses paths Windows cannot safely represent', () => {
   for (const file of ['../outside', '/absolute', 'C:/absolute', 'a\\b', 'a/../b', 'a//b', 'nul.txt', 'bad.', 'bad ', 'a\u0001b', 'file:stream']) {
