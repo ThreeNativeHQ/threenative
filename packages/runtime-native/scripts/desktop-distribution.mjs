@@ -606,7 +606,7 @@ export function locateContainerRoot(extractDirectory) {
  * relative to the container root, so a move is legal; a resource absent or whose bytes changed
  * is a container that must not launch, not a warning.
  */
-export function resolveContainer(root, { platform = process.platform } = {}) {
+export function resolveContainer(root, { platform = process.platform, run = exec } = {}) {
   const resolvedRoot = resolve(root);
   assertDirectory(resolvedRoot, 'desktop container root');
   const candidates = platform === 'darwin'
@@ -651,9 +651,18 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
       throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: required resource '${path}' has no integrity record.`);
     }
   }
+  const signedMac = /^darwin-(?:x64|arm64)$/u.test(manifest.platform) &&
+    manifest.signed === true && manifest.signingScheme === 'codesign';
+  if (signedMac && (manifestRelative !== join('Contents', 'Resources', CONTAINER_MANIFEST) ||
+    !/^Contents\/MacOS\/[^/\\]+$/u.test(manifest.executable) ||
+    manifest.resources[manifest.executable]?.signature !== 'codesign')) {
+    throw new Error('TN_DESKTOP_CONTAINER_MANIFEST_INVALID: a signed macOS app requires a sealed internal manifest and a codesign integrity record for its main executable.');
+  }
   const physicalRoot = realpathSync(resolvedRoot);
   for (const [relativePath, expected] of Object.entries(manifest.resources)) {
-    if (!relativePath || !expected || typeof expected.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(expected.sha256)) {
+    const signature = signedMac && relativePath === manifest.executable && expected?.signature === 'codesign';
+    const hash = typeof expected?.sha256 === 'string' && /^[a-f0-9]{64}$/u.test(expected.sha256);
+    if (!relativePath || !expected || Array.isArray(expected) || Object.keys(expected).length !== 1 || (!signature && !hash)) {
       throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: invalid integrity record for '${relativePath}'.`);
     }
     const absolute = resolve(resolvedRoot, relativePath);
@@ -672,12 +681,19 @@ export function resolveContainer(root, { platform = process.platform } = {}) {
     if (physicalPath === '..' || physicalPath.startsWith(`..${sep}`) || isAbsolute(physicalPath)) {
       throw new Error(`TN_DESKTOP_CONTAINER_MANIFEST_INVALID: ${relativePath} resolves outside the container root.`);
     }
+    if (signature) continue;
     const actual = sha256File(absolute);
     if (actual !== expected.sha256) {
       throw new Error(
         `TN_DESKTOP_CONTAINER_TAMPERED: ${relativePath} hashes ${actual}, not the recorded ${expected.sha256}.`,
       );
     }
+  }
+  if (signedMac) {
+    if (platform !== 'darwin') {
+      throw new Error('TN_DESKTOP_CODESIGN_HOST_REQUIRED: verify this signed application on macOS with codesign.');
+    }
+    signingTool(run, 'codesign', ['--verify', '--strict', '--deep', resolvedRoot], 'TN_DESKTOP_CODESIGN_VERIFY');
   }
   return manifest;
 }
@@ -748,8 +764,19 @@ export function signDesktopArtifact({ platform = process.platform, target, signi
     if (!signing?.identity) {
       throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_MISSING: macOS signing needs a Developer ID identity; unsigned preparation can proceed without signing.');
     }
-    signingTool(run, 'codesign', ['--force', '--deep', '--options', 'runtime', '--sign', signing.identity, target], 'TN_DESKTOP_CODESIGN');
-    signingTool(run, 'codesign', ['--verify', '--strict', '--deep', target], 'TN_DESKTOP_CODESIGN_VERIFY');
+    // Hardened runtime otherwise denies the MAP_JIT memory V8/JavaScriptCore execute from.
+    // Entitlements belong to the application executable, never its nested dynamic libraries.
+    const temporary = statSync(target).isDirectory() ? mkdtempSync(join(tmpdir(), 'threenative-sign-')) : undefined;
+    try {
+      const entitlements = temporary === undefined ? [] : ['--entitlements', join(temporary, 'jit.plist')];
+      if (temporary !== undefined) {
+        writeFileSync(entitlements[1], '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>\n');
+      }
+      signingTool(run, 'codesign', ['--force', '--options', 'runtime', ...entitlements, '--sign', signing.identity, target], 'TN_DESKTOP_CODESIGN');
+      signingTool(run, 'codesign', ['--verify', '--strict', '--deep', target], 'TN_DESKTOP_CODESIGN_VERIFY');
+    } finally {
+      if (temporary !== undefined) rmSync(temporary, { force: true, recursive: true });
+    }
     // `target` is the `.app` directory, which has no single file hash; notarization evidence binds
     // to the archive's bytes instead.
     return { scheme: 'codesign', signed: true };
@@ -936,20 +963,28 @@ export function packageDesktopContainer({
       record(destination);
     }
 
-    // Signing changes the executable's bytes, so it runs before the final integrity records. A
-    // signing failure throws here, before any archive exists.
-    const signedArtifact = signing === undefined || signing === null
+    // Sign nested macOS code first. The outer signature seals the manifest itself, so the
+    // executable's integrity is verified by codesign rather than a circular whole-file hash.
+    const signMac = platform === 'darwin' && signing !== undefined && signing !== null;
+    if (signMac) {
+      for (const dependency of bundled) {
+        signDesktopArtifact({ platform, run, signing, target: stage(dependency.path) });
+      }
+    }
+    const signedArtifact = signMac
+      ? { scheme: 'codesign', signed: true }
+      : signing === undefined || signing === null
       ? { scheme: 'none', signed: false }
       : signDesktopArtifact({
           platform,
           run,
           signing,
-          target: platform === 'darwin' ? join(staging, rootFolder) : stage(paths.executable),
+          target: stage(paths.executable),
         });
 
-    // Resource editing or signing can change the executable, and macOS `codesign --deep` also
-    // rewrites the bundled frameworks; hash every final byte here, after signing.
-    record(paths.executable);
+    // Windows signing and all nested signing have finished; these hashes now describe final bytes.
+    if (signMac) resources[paths.executable] = { signature: 'codesign' };
+    else record(paths.executable);
     for (const dependency of bundled) {
       record(dependency.path);
       dependency.sha256 = resources[dependency.path].sha256;
@@ -978,12 +1013,9 @@ export function packageDesktopContainer({
     mkdirSync(dirname(stage(paths.manifest)), { recursive: true });
     writeFileSync(stage(paths.manifest), `${JSON.stringify(manifest, null, 2)}\n`);
 
-    // The initial codesign verification predates the manifest write. macOS seals all bundle
-    // resources, so re-check the final tree before archiving or submitting it to Apple. Until
-    // the signed-container manifest cycle is resolved, refuse an invalid release rather than
-    // publishing it with signed: true. Keep unsigned preparation and the integrity records intact.
-    if (platform === 'darwin' && signedArtifact.signed) {
-      signingTool(run, 'codesign', ['--verify', '--strict', '--deep', join(staging, rootFolder)], 'TN_DESKTOP_CODESIGN_FINAL_VERIFY');
+    if (signMac) {
+      signDesktopArtifact({ platform, run, signing, target: join(staging, rootFolder) });
+      resolveContainer(join(staging, rootFolder), { platform, run });
     }
 
     mkdirSync(dirname(archive), { recursive: true });
@@ -997,6 +1029,7 @@ export function packageDesktopContainer({
       if (platform === 'darwin' && signing?.notarize) {
         notarizeArchive({ archive: candidateArchive, run, signing });
         signingTool(run, 'xcrun', ['stapler', 'staple', join(staging, rootFolder)], 'TN_DESKTOP_NOTARY_STAPLE');
+        resolveContainer(join(staging, rootFolder), { platform, run });
         archiveContainer({ output: candidateArchive, platform, rootFolder, run, staging });
       }
       renameSync(candidateArchive, archive);

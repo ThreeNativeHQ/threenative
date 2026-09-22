@@ -1215,7 +1215,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/desktop-finalization.test.mjs
           target="$RUNNER_TEMP/threenative-starter-native"
+          # Ad-hoc signing proves seal integrity and hardened-runtime playability without
+          # claiming Developer ID trust, notarization or Gatekeeper acceptance.
+          THREENATIVE_DESKTOP_CODESIGN_IDENTITY=- \
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-macos/mystral" \
             pnpm --dir "$target" exec threenative build --target desktop --mode release
       - name: Relocate and extract the release container outside the project
