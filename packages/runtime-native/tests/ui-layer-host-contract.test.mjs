@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
@@ -13,9 +13,8 @@ import { test } from 'vitest';
  * because nothing throws when a page posts to an object nobody injected. That failure is invisible
  * in every test that does not compare the hosts to each other, which is what this file does.
  *
- * It is also the only automated coverage the iOS host has: this repository has no macOS host, so
- * `ios/ui_overlay_ios.mm` has never been compiled or run. Asserting that it agrees with the two
- * hosts that HAVE run is worth more than asserting nothing.
+ * iOS startup wiring is checked here, and its path resolver executes against Foundation on the
+ * Apple host. Neither substitutes for the packaged simulator UI proof or physical-device checks.
  */
 const core = readFileSync(new URL('../../core/src/ui-bridge.js', import.meta.url).pathname.replace(/\.js$/, '.ts'), 'utf8');
 const android = readFileSync(
@@ -94,6 +93,60 @@ test('the iOS host states that it is unproven', () => {
   // Acceptance criterion 6: iOS is either proven or stated unproven, and no result claims a
   // platform it did not execute. If someone runs it, this assertion is what they update.
   assert.match(ios, /UNPROVEN/u);
+});
+
+test('iOS connects selected WebUI before game evaluation and detaches before exit', () => {
+  const main = readFileSync(new URL('../ios/main.mm', import.meta.url), 'utf8');
+  assert.match(main, /info\[@"TNUIRenderer"\]/u);
+  const created = main.indexOf('mystral::Runtime::create(config)');
+  const attached = main.indexOf('attachIosUiOverlay(');
+  const evaluated = main.indexOf('runtime->evalScript(script,');
+  assert.ok(attached > created && attached < evaluated, 'Attach the UI after window creation and before the game starts');
+  assert.match(main.slice(created, evaluated), /TN_UI_BUNDLE_MISSING/u);
+  assert.match(main.slice(evaluated), /detachIosUiOverlay\(\)[\s\S]*return 2/u);
+  assert.match(main.slice(main.indexOf('runtime->run()')), /detachIosUiOverlay\(\)[\s\S]*return runtime->getExitCode/u);
+  assert.match(ios, /SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER/u);
+});
+
+test.skipIf(process.platform !== 'darwin')('iOS scheme paths remain inside the UI directory after URL decoding and symlink resolution', () => {
+  const resolver = /static NSString\* resolveUiFile\([\s\S]*?\n\}/u.exec(ios)?.[0];
+  assert.ok(resolver);
+  const root = makeTempDirSync('tn-ios-ui-paths-');
+  mkdirSync(join(root, 'ui/assets'), { recursive: true });
+  mkdirSync(join(root, 'ui-other'));
+  writeFileSync(join(root, 'ui/index.html'), 'INDEX');
+  writeFileSync(join(root, 'ui/assets/main.js'), 'SCRIPT');
+  writeFileSync(join(root, 'ui-other/secret.txt'), 'PRIVATE');
+  symlinkSync(join(root, 'ui-other'), join(root, 'ui/escape'), 'dir');
+  const source = join(root, 'paths.mm');
+  const executable = join(root, 'paths');
+  writeFileSync(source, `#import <Foundation/Foundation.h>
+${resolver}
+int main(int argc, char** argv) {
+  @autoreleasepool {
+    NSString* root = [NSString stringWithUTF8String:argv[1]];
+    NSArray* valid = @[@"threenative://localhost/", @"threenative://localhost/assets/main.js?v=1"];
+    NSArray* expected = @[@"INDEX", @"SCRIPT"];
+    for (NSUInteger i = 0; i < valid.count; ++i) {
+      NSString* file = resolveUiFile(root, [NSURL URLWithString:valid[i]]);
+      if (file == nil || ![[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding
+          error:nullptr] isEqualToString:expected[i]]) return 1;
+    }
+    for (NSString* url in @[@"threenative://localhost/../ui-other/secret.txt",
+      @"threenative://localhost/%2e%2e/ui-other/secret.txt",
+      @"threenative://localhost/escape/secret.txt", @"https://localhost/index.html",
+      @"threenative://other/index.html", @"threenative://localhost:8080/index.html"]) {
+      if (resolveUiFile(root, [NSURL URLWithString:url]) != nil) return 2;
+    }
+  }
+  return 0;
+}
+`);
+  const compiled = spawnSync('xcrun', ['clang++', '-std=c++17', '-framework', 'Foundation',
+    source, '-o', executable], { encoding: 'utf8', timeout: 30_000 });
+  assert.equal(compiled.status, 0, compiled.stderr || compiled.error?.message);
+  const result = spawnSync(executable, [join(root, 'ui')], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test('the MRC iOS bridge keeps a non-owning overlay link only while its handler is registered', () => {

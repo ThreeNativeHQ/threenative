@@ -87,6 +87,38 @@ test('iOS staging converts Xcode binary Info.plist archives before applying meta
   assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'), /UIInterfaceOrientationPortrait/u);
 });
 
+test('iOS app staging preserves WebUI selection, its files and the host launch contract', () => {
+  const root = makeTempDirSync('threenative-ios-web-ui-');
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const ui = join(root, 'built-ui');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp);
+  mkdirSync(ui);
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'game');
+  for (const [name, body] of Object.entries({ 'index.html': '<script src="ui.js"></script>',
+    'ui.js': 'console.log("React bundle")', 'ui.css': 'body{margin:0}' })) {
+    writeFileSync(join(ui, name), body);
+  }
+  const inputs = { bundle, output, templateApp, config: { ui: { renderer: 'web' } } };
+  stageIosSimulatorApp({ ...inputs, ui });
+  assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'),
+    /<key>TNUIRenderer<\/key>\s*<string>web<\/string>/u);
+  for (const name of ['index.html', 'ui.js', 'ui.css']) {
+    assert.deepEqual(readFileSync(join(output, 'ui', name)), readFileSync(join(ui, name)));
+  }
+  assert.throws(() => stageIosSimulatorApp(inputs), /TN_UI_BUNDLE_MISSING/u);
+  stageIosSimulatorApp({ ...inputs, config: { ui: { renderer: 'native' } } });
+  assert.equal(existsSync(join(output, 'ui')), false);
+  assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'),
+    /<key>TNUIRenderer<\/key>\s*<string>native<\/string>/u);
+  assert.throws(() => stageIosSimulatorApp({ ...inputs, config: { ui: { renderer: 'invalid' } } }),
+    /TN_UI_RENDERER_INVALID/u);
+});
+
 test('staging replaces the bundle and records every packaged game asset checksum', () => {
   const root = makeTempDirSync('threenative-ios-stage-');
   roots.push(root);

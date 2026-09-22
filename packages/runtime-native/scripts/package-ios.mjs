@@ -45,6 +45,10 @@ function configValue(value, orientation) {
   const display = source.display && typeof source.display === 'object' ? source.display : {};
   const window = source.window && typeof source.window === 'object' ? source.window : {};
   const bootSplash = source.bootSplash && typeof source.bootSplash === 'object' ? source.bootSplash : {};
+  const renderer = source.ui === undefined ? 'native' : source.ui?.renderer;
+  if (renderer !== 'web' && renderer !== 'native') {
+    throw new Error('TN_UI_RENDERER_INVALID: ui.renderer must be web or native.');
+  }
   return {
     app: { ...DEFAULT_IOS_CONFIG.app, ...app },
     display: {
@@ -53,6 +57,7 @@ function configValue(value, orientation) {
       orientation: orientation ?? display.orientation ?? DEFAULT_IOS_CONFIG.display.orientation,
     },
     window: { ...DEFAULT_IOS_CONFIG.window, ...window },
+    ui: { renderer },
     ...(source.bootSplash === undefined ? {} : { bootSplash: { ...bootSplash } }),
   };
 }
@@ -156,6 +161,7 @@ export function renderIosInfoPlist(source, orientation = 'landscape') {
   rendered = plistBoolean(rendered, 'TNFullscreen', config.display.fullscreen);
   rendered = plistBoolean(rendered, 'TNKeepScreenOn', config.display.keepScreenOn);
   rendered = plistInteger(rendered, 'TNMaxFps', config.display.maxFps);
+  rendered = plistKey(rendered, 'TNUIRenderer', config.ui.renderer);
   rendered = plistKey(rendered, 'TNWindowTitle', config.window.title);
   rendered = plistInteger(rendered, 'TNWindowWidth', config.window.width);
   rendered = plistInteger(rendered, 'TNWindowHeight', config.window.height);
@@ -394,7 +400,7 @@ function stageIosLaunchAssets(output, backgroundColor, compileAssets = compileIo
  * game with no built UI would launch and show nothing over a working game, and a `native` game must
  * carry no bundle at all.
  *
- * **The iOS host that would read this has never run.** See `ios/ui_overlay_ios.mm`.
+ * Native-only simulator smoke does not qualify WebUI. See the packaged React pixel proof.
  */
 export function stageIosUi(ui, renderer, destination) {
   rmSync(destination, { force: true, recursive: true });

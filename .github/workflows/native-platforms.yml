@@ -1958,6 +1958,54 @@ jobs:
               > "$telemetry/package-report.json"
             echo "TN_IOS_PACKAGE_PLIST_FORMAT:unavailable"
           fi
+      - name: Scaffold the iOS React UI consumer from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/ios-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-ios-ui
+          template: starter
+      - name: Verify packaged iOS React state reaches visible pixels
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-ios-ui"
+          cp packages/runtime-native/tests/fixtures/ui-cadence/game.ts "$target/src/game.ts"
+          # Keep the same barcode away from phone cutouts; its bit layout is unchanged.
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const source = readFileSync('packages/runtime-native/tests/fixtures/ui-cadence/main.tsx', 'utf8');
+          writeFileSync(join(process.env.RUNNER_TEMP, 'threenative-ios-ui/src/ui/main.tsx'),
+            source.replace('left: 16,', 'left: 96,').replace('top: 16,', 'top: 96,'));
+          NODE
+          pnpm --dir "$target" install --ignore-scripts
+          pnpm --dir "$target" build:ios
+          app="$target/dist-native/threenative-ios-ui.app"
+          bundle_id=$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).appId)' "$app.json")
+          node "$target/node_modules/@threenative/playtest/dist/runner/cli.js" \
+            "$GITHUB_WORKSPACE/packages/runtime-native/scenarios/ui-state-ios.playtest.json" \
+            --target ios --app "$app" --bundle-id "$bundle_id" --project "$target" \
+            --artifacts "$GITHUB_WORKSPACE/packages/runtime-native/artifacts/ios/web-ui"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { PNG } from 'pngjs';
+          import { decodeUiScreenshot } from './packages/runtime-native/scripts/ui-cadence.mjs';
+          const root = 'packages/runtime-native/artifacts/ios/web-ui';
+          const image = PNG.sync.read(readFileSync(`${root}/after.png`));
+          const visible = decodeUiScreenshot(image, 96, 96);
+          const entries = JSON.parse(readFileSync(`${root}/console.json`, 'utf8'));
+          const published = entries.flatMap(({ text }) => {
+            const sample = /TN_UI_SAMPLE:(\{[^\r\n]*\})/.exec(text)?.[1];
+            return sample ? [JSON.parse(sample).sequence] : [];
+          });
+          assert.ok(published.includes(visible.sequence), 'Visible React state was not published by this app');
+          writeFileSync(`${root}/visible-state.json`, JSON.stringify({ ...visible,
+            measurement: 'One simulator screenshot; cadence, latency and touch input remain unverified' }));
+          console.log(`TN_IOS_WEB_UI_VISIBLE:${JSON.stringify(visible)}`);
+          NODE
+      - name: Check iOS UI packaging and asset confinement on the Apple host
+        run: pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/ios-packaging.test.mjs tests/ui-layer-host-contract.test.mjs
       - run: >-
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts

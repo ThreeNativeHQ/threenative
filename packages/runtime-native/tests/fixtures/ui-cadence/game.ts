@@ -1,5 +1,6 @@
 import { type ICtx, Scene, defineGame } from "@threenative/core";
-import { BoxGeometry, Mesh, MeshBasicMaterial } from "three";
+import { playtest } from "@threenative/core/playtest";
+import { Mesh, MeshNormalMaterial, SphereGeometry } from "three";
 
 class Probe extends Scene {
   static initialState = { sequence: 0, at: 0 };
@@ -8,9 +9,9 @@ class Probe extends Scene {
 
   enter(ctx: ICtx) {
     ctx.camera.position.set(0, 0, 4);
-    const cube = ctx.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ color: 0x44aaff })));
+    const sphere = ctx.add(new Mesh(new SphereGeometry(), new MeshNormalMaterial()));
     return (_ctx: ICtx, dt: number) => {
-      cube.rotation.y += dt;
+      sphere.rotation.y += dt;
     };
   }
 
@@ -25,4 +26,9 @@ class Probe extends Scene {
 }
 
 // No explicit game.ui access: the ordinary startup path must connect and publish by default.
-export default defineGame({ display: { maxFps: 60 }, scenes: { probe: Probe }, start: "probe" });
+export default defineGame({
+  display: { maxFps: 60 },
+  plugins: [playtest()],
+  scenes: { probe: Probe },
+  start: "probe",
+});

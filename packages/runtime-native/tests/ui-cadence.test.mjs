@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
-import { analyzeUiCadence, decodeAndroidUiTimestamps, decodeUiSequence } from '../scripts/ui-cadence.mjs';
+import { analyzeUiCadence, decodeAndroidUiTimestamps, decodeUiSequence, decodeUiScreenshot } from '../scripts/ui-cadence.mjs';
 
 test.skipIf(process.platform !== 'linux')('failed reruns refuse a prior successful artifact directory before changing its evidence', () => {
   const directory = makeTempDirSync('tn-ui-cadence-');
@@ -125,4 +125,28 @@ test('pixel IDs require complementary bits and both fixed color markers', () => 
   assert.deepEqual(decodeUiSequence(frame, { tolerance: 32 }), { sequence: expected, valid: true });
   set(136, 6, 0);
   assert.equal(decodeUiSequence(frame, { tolerance: 32 }).valid, false);
+});
+
+test('retina screenshots decode visible state while rejecting blank and transparent pixels', () => {
+  for (const scale of [1, 2, 3]) {
+    const width = 300 * scale;
+    const height = 150 * scale;
+    const data = Buffer.alloc(width * height * 4);
+    const png = { width, height, data };
+    const set = (x, y, rgb) => {
+      const offset = (((96 + y) * scale + Math.floor(scale / 2)) * width +
+        (96 + x) * scale + Math.floor(scale / 2)) * 4;
+      data.writeUIntBE(rgb, offset, 3); data[offset + 3] = 255;
+    };
+    assert.throws(() => decodeUiScreenshot(png, 96, 96), /SCREENSHOT/u);
+    for (let bit = 0; bit < 16; bit += 1) {
+      const on = (321 & (1 << bit)) !== 0;
+      set(bit * 8 + 4, 6, on ? 0xffffff : 0);
+      set(bit * 8 + 4, 18, on ? 0 : 0xffffff);
+    }
+    set(136, 6, 0x00ffff); set(152, 6, 0xff00ff);
+    assert.deepEqual(decodeUiScreenshot(png, 96, 96), { sequence: 321, scale });
+    for (let offset = 3; offset < data.length; offset += 4) data[offset] = 0;
+    assert.throws(() => decodeUiScreenshot(png, 96, 96), /SCREENSHOT/u);
+  }
 });

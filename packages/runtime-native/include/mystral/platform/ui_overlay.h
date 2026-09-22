@@ -167,8 +167,8 @@ void detachDesktopUiOverlay();
 /**
  * The iOS overlay, in `ios/ui_overlay_ios.mm`.
  *
- * **UNPROVEN.** Never compiled, launched or touched — this repository has no macOS host. PRD-217's
- * acceptance criterion 6 asks for iOS to be proven or stated unproven, and this is the statement.
+ * **UNPROVEN WebUI execution.** Native-only simulator smoke does not qualify the overlay;
+ * the packaged React pixel proof and device input/presentation checks remain separate gates.
  */
 bool attachIosUiOverlay(const std::string& uiRoot);
 void detachIosUiOverlay();

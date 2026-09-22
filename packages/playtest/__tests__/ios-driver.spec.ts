@@ -20,6 +20,7 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
     calls.push({ args, env: options?.env });
     if (args[1] === "get_app_container") return `${container}\n`;
     if (args[1] === "launch") return `dev.threenative.runtime: ${process.pid}\n`;
+    if (args.includes("log")) return '[info] TN_UI_SAMPLE:{"sequence":321}\n[error] broken user script\n[info] {"failed":0}\n';
     return "";
   });
 
@@ -37,6 +38,12 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
   const launch = calls.at(-1);
   expect(launch?.env?.SIMCTL_CHILD_TN_PLAYTEST_ENDPOINT).toBe("http://127.0.0.1:41777/playtest");
   expect(launch?.env?.SIMCTL_CHILD_TN_PLAYTEST_MAILBOX_ROOT).toBe(join(container, "Documents"));
+  await expect(driver.captureConsole()).resolves.toEqual([
+    { text: '[info] TN_UI_SAMPLE:{"sequence":321}', type: "log" },
+    { text: "[error] broken user script", type: "error" },
+    { text: '[info] {"failed":0}', type: "log" },
+  ]);
+  expect(calls.at(-1)?.args).toContain(`processIdentifier == ${process.pid}`);
 });
 
 test("simulator mailbox paths are remapped after simctl resolves the container", async () => {
@@ -89,4 +96,5 @@ test("launch parsing and a missing app fail closed", async () => {
     transport: "simulator",
   }, async () => "");
   await expect(driver.prepare("http://127.0.0.1:41777/playtest")).rejects.toThrow(/not found/u);
+  await expect(driver.captureConsole()).rejects.toThrow(/launched process/u);
 });

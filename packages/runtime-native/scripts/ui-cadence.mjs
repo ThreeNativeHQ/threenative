@@ -21,6 +21,26 @@ export function decodeUiSequence(frame, { tolerance = 0 } = {}) {
   return { sequence, valid };
 }
 
+/** One screenshot proves state reached pixels, never cadence or presentation latency. */
+export function decodeUiScreenshot(png, left, top) {
+  const matches = [];
+  for (const scale of [1, 2, 3]) {
+    if (png.width < (left + 160) * scale || png.height < (top + 24) * scale) continue;
+    const frame = Buffer.alloc(160 * 24 * 3);
+    for (let y = 0; y < 24; y += 1) {
+      for (let x = 0; x < 160; x += 1) {
+        const source = (((top + y) * scale + Math.floor(scale / 2)) * png.width +
+          (left + x) * scale + Math.floor(scale / 2)) * 4;
+        if (png.data[source + 3] === 255) png.data.copy(frame, (y * 160 + x) * 3, source, source + 3);
+      }
+    }
+    const decoded = decodeUiSequence(frame, { tolerance: 32 });
+    if (decoded.valid && decoded.sequence > 0) matches.push({ sequence: decoded.sequence, scale });
+  }
+  requireObservation(matches.length === 1, 'SCREENSHOT', 'expected one visible state barcode at 1x, 2x or 3x');
+  return matches[0];
+}
+
 /** Android screenrecord's Winscope v2 data track, checked against each decoded frame's PTS. */
 export function decodeAndroidUiTimestamps(buffer, framePts) {
   const magic = Buffer.from('#VV1NSC0PET1ME2#');

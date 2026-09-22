@@ -68,21 +68,23 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
   }
 
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
+    if (this.pid === undefined) throw new Error("iOS console capture requires a launched process.");
+    const predicate = `processIdentifier == ${this.pid}`;
     const output = this.options.transport === "simulator"
       ? await this.run([
           "simctl", "spawn", this.device(), "log", "show", "--style", "compact", "--last", "5m",
-          "--predicate", `process == \"${this.processName()}\"`,
+          "--predicate", predicate,
         ])
       : await this.run([
           "devicectl", "device", "info", "logs", "--device", this.device(),
-          "--last", "5m", "--predicate", `process == \"${this.processName()}\"`,
+          "--last", "5m", "--predicate", predicate,
         ]);
     return output
       .split(/\r?\n/u)
-      .filter((line) => /ThreeNative|THREENATIVE|Mystral|TN_PLAYTEST/u.test(line))
+      .filter((line) => line.trim().length > 0)
       .map((text) => ({
         text,
-        type: /\b(?:Error|Fault|FATAL|FAILED|GPUValidationError)\b/u.test(text) ? "error" : "log",
+        type: /\[error\]|\b(?:Error|Fault|FATAL|FAILED|GPUValidationError)\b/u.test(text) ? "error" : "log",
       }));
   }
 
@@ -231,10 +233,6 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
 
   private device(): string {
     return this.options.device ?? "booted";
-  }
-
-  private processName(): string {
-    return basename(this.options.appPath, ".app");
   }
 
   private mailboxPath(path: string): string {

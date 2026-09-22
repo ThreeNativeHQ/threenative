@@ -375,6 +375,21 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
 });
 
+test('iOS builds selected React UI from installed packages and checks full-screen pixels', () => {
+  const step = workflow.match(
+    /- name: Scaffold the iOS React UI consumer from local tarballs\n([\s\S]*?)\n {6}- run: >-/u,
+  )?.[1];
+  assert.ok(step);
+  assert.match(step, /template: starter/u);
+  assert.match(step, /pnpm --dir "\$target" build:ios/u);
+  assert.match(step, /node "\$target\/node_modules\/@threenative\/playtest\/dist\/runner\/cli\.js"/u);
+  assert.match(step, /ui-state-ios\.playtest\.json/u);
+  assert.match(step, /--target ios --app "\$app" --bundle-id "\$bundle_id"/u);
+  assert.match(step, /decodeUiScreenshot\(image, 96, 96\)/u);
+  assert.match(step, /published\.includes\(visible\.sequence\)/u);
+  assert.match(step, /tests\/ui-layer-host-contract\.test\.mjs/u);
+});
+
 test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
   expect(workflow).toContain('ios_only:');
   expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);

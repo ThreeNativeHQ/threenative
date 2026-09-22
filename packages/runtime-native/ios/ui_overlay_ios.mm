@@ -1,4 +1,6 @@
 #include "mystral/platform/ui_overlay.h"
+#include "mystral/platform/window.h"
+#include <SDL3/SDL.h>
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -25,10 +27,9 @@
  *   gets from returning false out of `dispatchTouchEvent`, and the same rule X11 gets from an
  *   input shape. `pointer-events: none` is not the mechanism on any of the three.
  *
- * **UNPROVEN.** No part of this file has been executed. It has never been compiled, launched, or
- * touched on a simulator or a device, because this repository has no macOS host. PRD-217's
- * acceptance criterion 6 asks for iOS to be "either proven or stated unproven", and this is the
- * statement: treat every claim in these comments as a design intent until a run says otherwise.
+ * **UNPROVEN WebUI execution.** Native-only simulator smoke does not exercise this overlay.
+ * The packaged React pixel proof must pass before claiming visible iOS UI; simulator screenshots
+ * still do not establish physical-device input or presentation latency.
  */
 
 namespace {
@@ -39,6 +40,22 @@ NSString* const kHostObject = @"tnHost";
 NSString* const kHitRegions = @"tn:hit-regions";
 /** The origin the UI is served from, chosen to look like the web build's rather than like a file. */
 NSString* const kOrigin = @"threenative://localhost/";
+
+static NSString* resolveUiFile(NSString* root, NSURL* url) {
+    if (![url.scheme.lowercaseString isEqualToString:@"threenative"] ||
+        ![url.host.lowercaseString isEqualToString:@"localhost"] || url.port != nil || url.user != nil ||
+        url.password != nil)
+        return nil;
+    NSString* path = url.path;
+    while ([path hasPrefix:@"/"])
+        path = [path substringFromIndex:1];
+    if (path.length == 0)
+        path = @"index.html";
+    NSString* resolvedRoot = root.stringByStandardizingPath.stringByResolvingSymlinksInPath;
+    NSString* file =
+        [resolvedRoot stringByAppendingPathComponent:path].stringByStandardizingPath.stringByResolvingSymlinksInPath;
+    return [file hasPrefix:[resolvedRoot stringByAppendingString:@"/"]] ? file : nil;
+}
 
 }  // namespace
 
@@ -53,13 +70,14 @@ NSString* const kOrigin = @"threenative://localhost/";
 
 @implementation TnUiSchemeHandler
 
+- (void)dealloc {
+    [_root release];
+    [super dealloc];
+}
+
 - (void)webView:(WKWebView*)webView startURLSchemeTask:(id<WKURLSchemeTask>)task {
-    NSString* path = task.request.URL.path;
-    if (path.length <= 1) path = @"/index.html";
-    NSString* file = [self.root stringByAppendingPathComponent:path];
-    // Refuse to leave the staged UI directory. The page is local and still the least trusted thing
-    // in the process.
-    if (![file.stringByStandardizingPath hasPrefix:self.root.stringByStandardizingPath]) {
+    NSString* file = resolveUiFile(self.root, task.request.URL);
+    if (file == nil) {
         [task didFailWithError:[NSError errorWithDomain:@"TnUiOverlay" code:403 userInfo:nil]];
         return;
     }
@@ -73,6 +91,7 @@ NSString* const kOrigin = @"threenative://localhost/";
                                           expectedContentLength:body.length
                                                textEncodingName:@"utf-8"];
     [task didReceiveResponse:response];
+    [response release];
     [task didReceiveData:body];
     [task didFinish];
 }
@@ -97,6 +116,11 @@ NSString* const kOrigin = @"threenative://localhost/";
 @end
 
 @implementation TnUiOverlayView
+
+- (void)dealloc {
+    [_regions release];
+    [super dealloc];
+}
 
 /**
  * The hit test, and the only place ownership is decided.
@@ -181,15 +205,18 @@ namespace mystral {
 namespace platform {
 
 bool attachIosUiOverlay(const std::string& uiRoot) {
-    UIWindow* window = nil;
-    for (UIScene* scene in UIApplication.sharedApplication.connectedScenes.allObjects) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        for (UIWindow* candidate in ((UIWindowScene*)scene).windows) {
-            if (candidate.isKeyWindow) window = candidate;
-        }
+    if (![NSThread isMainThread]) {
+        NSLog(@"TN_UI_OVERLAY_FAILED: UIKit requires the main thread");
+        return false;
     }
-    if (window == nil) {
-        NSLog(@"TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"no key window\"}");
+    SDL_Window* sdlWindow = getSDLWindow();
+    UIWindow* window = sdlWindow == nullptr
+                           ? nil
+                           : (UIWindow*)SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow),
+                                                               SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr);
+    UIView* parent = window.rootViewController.view;
+    if (parent == nil) {
+        NSLog(@"TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"no SDL UIKit view\"}");
         return false;
     }
 
@@ -198,8 +225,12 @@ bool attachIosUiOverlay(const std::string& uiRoot) {
     handler.root = [NSString stringWithUTF8String:uiRoot.c_str()];
     [configuration setURLSchemeHandler:handler forURLScheme:@"threenative"];
 
-    TnUiOverlayView* overlay = [[TnUiOverlayView alloc] initWithFrame:window.bounds
-                                                        configuration:configuration];
+    TnUiOverlayView* overlay = [[TnUiOverlayView alloc] initWithFrame:parent.bounds configuration:configuration];
+    if (overlay == nil) {
+        [handler release];
+        [configuration release];
+        return false;
+    }
     TnUiOverlayBridge* bridge = [[TnUiOverlayBridge alloc] init];
     bridge.overlay = overlay;
     [configuration.userContentController addScriptMessageHandler:bridge name:kHostObject];
@@ -209,35 +240,42 @@ bool attachIosUiOverlay(const std::string& uiRoot) {
     overlay.scrollView.backgroundColor = UIColor.clearColor;
     overlay.scrollView.scrollEnabled = NO;
     overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [window addSubview:overlay];
+    [parent addSubview:overlay];
     [overlay loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:
         [kOrigin stringByAppendingString:@"index.html"]]]];
 
     g_overlay = overlay;
+    [bridge release];
+    [handler release];
+    [configuration release];
     setUiOverlayAttached(true);
     NSLog(@"TN_UI_OVERLAY:{\"attached\":true}");
     return true;
 }
 
 void detachIosUiOverlay() {
+    NSCAssert([NSThread isMainThread], @"UIKit requires the main thread");
     [g_overlay.configuration.userContentController removeScriptMessageHandlerForName:kHostObject];
     [g_overlay removeFromSuperview];
+    [g_overlay release];
     g_overlay = nil;
     setUiOverlayAttached(false);
 }
 
 /** Deliver one bridge frame to the page, through the global every host calls. */
 bool postIosUiMessage(const std::string& frame) {
+    NSCAssert([NSThread isMainThread], @"WebKit requires the main thread");
     if (g_overlay == nil) return false;
-    NSString* payload = [NSString stringWithUTF8String:frame.c_str()];
-    NSData* quoted = [NSJSONSerialization dataWithJSONObject:@[payload] options:0 error:nil];
-    NSString* literal = [[NSString alloc] initWithData:quoted encoding:NSUTF8StringEncoding];
-    // `[frame]` minus its brackets is the JSON string literal, so a quote or a newline in the
-    // payload cannot end the expression.
-    NSString* inner = [literal substringWithRange:NSMakeRange(1, literal.length - 2)];
-    NSString* script = [NSString stringWithFormat:
-        @"window.__tnUiReceive && window.__tnUiReceive(%@)", inner];
-    [g_overlay evaluateJavaScript:script completionHandler:nil];
+    @autoreleasepool {
+        NSString* payload = [NSString stringWithUTF8String:frame.c_str()];
+        NSData* quoted = [NSJSONSerialization dataWithJSONObject:@[ payload ] options:0 error:nil];
+        NSString* literal = [[[NSString alloc] initWithData:quoted encoding:NSUTF8StringEncoding] autorelease];
+        // `[frame]` minus its brackets is the JSON string literal, so a quote or a newline in the
+        // payload cannot end the expression.
+        NSString* inner = [literal substringWithRange:NSMakeRange(1, literal.length - 2)];
+        NSString* script = [NSString stringWithFormat:@"window.__tnUiReceive && window.__tnUiReceive(%@)", inner];
+        [g_overlay evaluateJavaScript:script completionHandler:nil];
+    }
     return true;
 }
 
