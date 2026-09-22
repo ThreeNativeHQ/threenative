@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, win32 } from 'node:path';
+import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 function compilerString(value) {
@@ -37,6 +37,25 @@ function checkPaths(files) {
       if (seen.has(parts.join('/'))) throw new Error(`TN_WINDOWS_INSTALLER_PATH_COLLISION: ${file}`);
     }
   }
+}
+
+/** Check removal of the sealed payload; runtime-created data belongs to the player. */
+export function verifyWindowsUninstall(directory, files) {
+  checkPaths(files);
+  for (const path of [...files.map((file) => join('game', file)), '.threenative-installer.ini']) {
+    if (lstatSync(join(directory, path), { throwIfNoEntry: false }))
+      throw new Error(`Uninstaller retained owned payload: ${path}`);
+  }
+  if (!existsSync(directory)) return [];
+  // Dirents let us inventory links without traversing their targets.
+  return readdirSync(directory, { recursive: true, withFileTypes: true })
+    .map((entry) => ({
+      path: relative(directory, join(entry.parentPath, entry.name)).replaceAll('\\', '/'),
+      type: entry.isSymbolicLink() ? 'link' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+    }))
+    // NSIS cannot remove its own running executable in synchronous _?= mode; the verifier does.
+    .filter((entry) => entry.path !== 'Uninstall.exe')
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 const ensureWebView = [

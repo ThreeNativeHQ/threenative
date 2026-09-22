@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { CONTAINER_MANIFEST, resolveContainer } from './desktop-distribution.mjs';
+import { verifyWindowsUninstall } from './windows-installer.mjs';
 
 // Exercise the exact final setup: no rebuilding or substitution of its executable.
 const { values } = parseArgs({ options: {
@@ -46,17 +47,15 @@ try {
   run(process.execPath, [cli, scenario, '--target', 'desktop', '--executable', executable,
     '--project', project, '--artifacts', artifacts, '--host-arg', '--windowed']);
   run(uninstaller, ['/S', `_?=${directory}`], { windowsVerbatimArguments: true, argv0: `"${uninstaller}"` });
-  for (const path of [...Object.keys(manifest.resources), CONTAINER_MANIFEST]) {
-    assert.equal(existsSync(join(container, path)), false, `Uninstaller retained owned payload: ${path}`);
-  }
-  assert.equal(existsSync(join(directory, '.threenative-installer.ini')), false, 'Uninstaller retained its ownership marker');
+  const remaining = verifyWindowsUninstall(directory, [...Object.keys(manifest.resources), CONTAINER_MANIFEST]);
   // _?= makes uninstall synchronous; Windows keeps the running uninstaller until it exits.
   rmSync(uninstaller, { force: true });
-  if (existsSync(directory)) {
-    assert.deepEqual(readdirSync(directory), [], 'Unexpected data retained: preserve it for inspection');
-    rmSync(directory, { recursive: true });
+  if (remaining.length) {
+    console.log(`TN_WINDOWS_INSTALLER_UNOWNED_RETAINED:${JSON.stringify({ directory, entries: remaining })}`);
+  } else {
+    if (existsSync(directory)) rmdirSync(directory);
+    rmdirSync(temporary);
   }
-  rmSync(temporary, { recursive: true });
   console.log(`TN_WINDOWS_INSTALLER_PASS: ${installer}; installed gameplay and uninstall passed`);
 } catch (error) {
   console.error(`TN_WINDOWS_INSTALLER_PROOF_RETAINED: ${temporary}`);

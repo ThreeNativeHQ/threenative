@@ -1,17 +1,44 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { test } from 'vitest';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
-import { buildWindowsInstaller, windowsInstallerScript } from '../scripts/windows-installer.mjs';
+import { buildWindowsInstaller, verifyWindowsUninstall, windowsInstallerScript } from '../scripts/windows-installer.mjs';
 import { packageDesktopContainer } from '../scripts/desktop-distribution.mjs';
 
 const app = { id: 'com.threenative.installertest', name: 'Orbit $INSTDIR ${NSIS_VERSION} "Game"', version: '1.0.0' };
 const manifest = { app, executable: 'game.exe' };
+
+test('uninstall verification preserves and inventories unowned data but refuses any owned remainder', () => {
+  const root = makeTempDirSync('tn-installer-remainder-');
+  const directory = join(root, 'Installed Game');
+  const profile = join(directory, 'game/profile');
+  const outside = join(root, 'outside');
+  const files = ['game.exe', 'assets/model.bin', 'container.json'];
+  try {
+    mkdirSync(profile, { recursive: true });
+    mkdirSync(outside);
+    writeFileSync(join(profile, 'save.dat'), 'player data');
+    writeFileSync(join(outside, 'sentinel'), 'outside data');
+    symlinkSync(outside, join(directory, 'linked'), 'junction');
+    const remaining = verifyWindowsUninstall(directory, files);
+    assert.ok(remaining.some((entry) => entry.path === 'game/profile/save.dat' && entry.type === 'file'));
+    assert.ok(remaining.some((entry) => entry.path === 'linked' && entry.type === 'link'));
+    assert.equal(remaining.some((entry) => entry.path.includes('sentinel')), false);
+    assert.equal(readFileSync(join(profile, 'save.dat'), 'utf8'), 'player data');
+    assert.equal(readFileSync(join(outside, 'sentinel'), 'utf8'), 'outside data');
+    for (const owned of ['game/game.exe', '.threenative-installer.ini']) {
+      writeFileSync(join(directory, owned), 'owned');
+      assert.throws(() => verifyWindowsUninstall(directory, files), /retained owned/u);
+      rmSync(join(directory, owned));
+    }
+    assert.throws(() => verifyWindowsUninstall(directory, []), /EMPTY/u);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('installer dependencies remain valid after Windows checkout line-ending conversion', async () => {
   const require = createRequire(import.meta.url);
@@ -151,6 +178,8 @@ test.skipIf(process.env.TN_WINDOWS_INSTALLER_INTEGRATION !== '1')('compiled inst
     install(join(directory, 'Uninstall.exe'), directory, true);
     assert.equal(existsSync(join(directory, 'game/game.exe')), false);
     assert.equal(readFileSync(join(directory, 'game/keep-me.txt'), 'utf8'), 'user data');
+    assert.ok(verifyWindowsUninstall(directory, ['game.exe'])
+      .some((entry) => entry.path === 'game/keep-me.txt' && entry.type === 'file'));
     execute('reg', ['query', registry], 1);
     // A real failed finalize command must stop NSIS, not merely print a diagnostic.
     const fail = join(root, 'fail-signing.mjs');

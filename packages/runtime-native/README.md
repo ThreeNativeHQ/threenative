@@ -143,8 +143,10 @@ node node_modules/@threenative/runtime-native/scripts/verify-windows-installer.m
 
 This command installs into a temporary directory containing spaces, checks the installed manifest,
 runs the existing playtest runner against that exact executable, and uninstalls it. Signed builds
-also require `signtool` to verify the setup, game and uninstaller signatures. Failures retain the
-temporary directory and print its path. In this repository, use `pnpm native:verify:windows:installer`
+also require `signtool` to verify the setup, game and uninstaller signatures. Every packaged file
+must be removed. Runtime-created files are preserved and their paths and retained directory are
+printed; directory links are listed without traversal. Failures also retain the temporary directory
+and print its path. In this repository, use `pnpm native:verify:windows:installer`
 with the same arguments. Add `--require-signed` to reject an unsigned release explicitly.
 
 ### Measure visible React UI latency
