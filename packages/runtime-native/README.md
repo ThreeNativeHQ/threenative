@@ -197,12 +197,28 @@ environment. Paths are resolved relative to the project; nothing is written into
 | `ORG_GRADLE_PROJECT_threenativeKeystorePassword` | Keystore password. |
 | `ORG_GRADLE_PROJECT_threenativeKeyPassword` | Key password. |
 
-Values are read only inside the signing subprocess and are never printed or serialized into
-packaging output. The final APK is verified with `apksigner`, and its packaged `targetSdkVersion`
-and non-debuggable state are read back with `aapt`; a release AAB is verified with `jarsigner`. A
+Passwords reach signing subprocesses through environment variables, including APK realignment;
+they are never placed in command arguments or packaging output. The final APK is verified with `apksigner`, and its packaged `targetSdkVersion`
+and non-debuggable state are read back with `aapt`; a release AAB is verified with `jarsigner -strict`.
+Missing signatures and unsigned entries fail; Android's self-signed upload certificates are accepted. A
 signature, target level or debuggable check that cannot be satisfied fails the build. Native symbols
 are stripped from the artifact by the Android Gradle plugin and are produced separately for symbol
 archives.
+
+The Android build uses AGP 8.11.1 and Gradle 8.13 for API 36 and 16 KB bundle packaging.
+Verify an APK's native libraries and archive offsets from the repository with
+`pnpm native:verify:android:artifact /path/to/game.apk`. For an AAB, the same command generates
+and inspects a universal APK using Google's [bundletool](https://github.com/google/bundletool/releases):
+
+```sh
+pnpm native:verify:android:artifact /path/to/game.aab --bundletool /path/to/bundletool-all.jar
+```
+
+Inside an installed game, replace `pnpm native:verify:android:artifact` with
+`node node_modules/@threenative/runtime-native/scripts/check-android-16kb-alignment.mjs`.
+The AAB stays unchanged; bundletool uses its standard debug key for the temporary inspection APK.
+This checks every packaged ABI's ELF alignment and APK offsets; it does not replace installing and
+playing the signed release on a 16 KB Android emulator or device.
 
 ## Links
 

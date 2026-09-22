@@ -1,6 +1,29 @@
 import { expect, test } from "vitest";
 
-import { parseAndroidConsole } from "../src/runner/android.js";
+import { AdbAndroidDriver, parseAndroidConsole } from "../src/runner/android.js";
+
+test("Android console starts after stopping the previous process and keeps new launch errors", async () => {
+  let log = "";
+  const launchError = "E/Mystral ( 8001): Error: current launch failed";
+  const driver = new AdbAndroidDriver({
+    activity: "com.threenative.runtime.MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    if (args.includes("force-stop")) {
+      log += "E/InputDispatcher( 658): channel 'com.example.game/MystralActivity' ~ Channel is unrecoverably broken and will be disposed!\n";
+    }
+    if (args[0] === "logcat" && args[1] === "-c") log = "";
+    if (args[0] === "logcat" && args[1] === "-d") return log;
+    if (args.includes("start")) log += launchError;
+    return "";
+  };
+
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  expect(await driver.captureConsole()).toEqual([{ text: launchError, type: "error" }]);
+});
 
 test("Android console ignores SurfaceSyncGroup framework noise that names MystralActivity", () => {
   const entries = parseAndroidConsole([

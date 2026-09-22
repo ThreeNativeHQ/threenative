@@ -79,6 +79,7 @@
     "native:verify:desktop": "node scripts/verify-desktop-audio.mjs && node scripts/verify-desktop-stability.mjs && node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs && sh ../../scripts/xvfb.sh node scripts/verify-native-contracts.mjs && pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs && vitest run --config vitest.config.ts tests/external-bundle-discovery.test.mjs",
     "native:verify:loading": "pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs",
     "native:verify:android:multitouch": "pnpm --dir ../playtest build && node scripts/verify-android-multitouch.mjs",
+    "native:verify:android:artifact": "node scripts/check-android-16kb-alignment.mjs",
     "profile:production": "node scripts/profile-production.mjs",
     "parity": "node conformance/run-conformance.mjs",
     "install": "node scripts/install-prebuilt.mjs",

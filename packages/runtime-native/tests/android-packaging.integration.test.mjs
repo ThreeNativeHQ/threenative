@@ -1181,6 +1181,36 @@ test('the real signature path rejects an artifact the signer refuses', () => {
   );
 });
 
+test('AAB verification accepts self-signed certificates but rejects unsigned entries and expired certificates', () => {
+  const root = makeTempDirSync('threenative-aab-signature-');
+  roots.push(root);
+  const archive = join(root, 'candidate.aab');
+  const payload = join(root, 'payload.txt');
+  const keystore = join(root, 'qualification.p12');
+  const env = { ...process.env, TN_TEST_STORE_PASSWORD: 'fixture-password' };
+  const run = (tool, args) => execFileSync(tool, args, { env, stdio: 'pipe' });
+  const verify = () => verifyAndroidReleaseArtifact(archive, androidBuildRequest('release', 'aab'), {
+    findBuildTool: (name) => name,
+  });
+  writeFileSync(payload, 'signed payload');
+  run('jar', ['--create', '--file', archive, '-C', root, 'payload.txt']);
+  assert.throws(verify, /TN_ANDROID_SIGNATURE_INVALID/u);
+  run('keytool', ['-genkeypair', '-keystore', keystore, '-alias', 'qualification',
+    '-storepass:env', 'TN_TEST_STORE_PASSWORD', '-keypass:env', 'TN_TEST_STORE_PASSWORD',
+    '-keyalg', 'RSA', '-keysize', '2048', '-validity', '3650', '-dname', 'CN=Local qualification']);
+  run('jarsigner', ['-keystore', keystore, '-storepass:env', 'TN_TEST_STORE_PASSWORD', archive, 'qualification']);
+  assert.doesNotThrow(verify);
+  writeFileSync(join(root, 'unsigned.txt'), 'unsigned addition');
+  run('jar', ['--update', '--file', archive, '-C', root, 'unsigned.txt']);
+  assert.throws(verify, /TN_ANDROID_SIGNATURE_INVALID/u);
+  run('keytool', ['-genkeypair', '-keystore', keystore, '-alias', 'expired',
+    '-storepass:env', 'TN_TEST_STORE_PASSWORD', '-keypass:env', 'TN_TEST_STORE_PASSWORD',
+    '-keyalg', 'RSA', '-keysize', '2048', '-startdate', '2000/01/01', '-validity', '1', '-dname', 'CN=Expired qualification']);
+  run('jar', ['--create', '--file', archive, '-C', root, 'payload.txt']);
+  run('jarsigner', ['-keystore', keystore, '-storepass:env', 'TN_TEST_STORE_PASSWORD', archive, 'expired']);
+  assert.throws(verify, /TN_ANDROID_SIGNATURE_INVALID/u);
+});
+
 test('the real path needs aapt and fails closed without it', () => {
   assert.throws(
     () =>
@@ -1487,8 +1517,8 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
   // what the test pins is that it runs, that it runs *before* the census, and that its arguments
   // ask for 16 KB.
   const calls = [];
-  const spawnAlign = (command, args) => {
-    calls.push({ args, command });
+  const spawnAlign = (command, args, options) => {
+    calls.push({ args, command, options });
     if (String(command).endsWith('zipalign'))
       writeArchive(`${String(args[args.length - 1])}`, compliantEntries());
     return { status: 0, stdout: '' };
@@ -1501,7 +1531,7 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
         entry.name === 'lib/arm64-v8a/libv8android.so' ? { ...entry, align: 4096 } : entry,
       ),
     ),
-    align: { keystore, spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+    align: { keystore, keystorePassword: 'store-fixture-secret', keyPassword: 'key-fixture-secret', spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
     artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
   });
   assert.deepEqual(
@@ -1509,6 +1539,11 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
     ['/fake/build-tools/zipalign', '/fake/build-tools/apksigner'],
   );
   assert.deepEqual(calls[0]?.args.slice(0, 4), ['-P', '16', '-f', '4']);
+  assert.ok(calls[1].args.includes('env:TN_ANDROID_KEYSTORE_PASSWORD'));
+  assert.ok(calls[1].args.includes('env:TN_ANDROID_KEY_PASSWORD'));
+  assert.ok(calls[1].args.every((value) => !String(value).includes('fixture-secret')));
+  assert.equal(calls[1].options.env.TN_ANDROID_KEYSTORE_PASSWORD, 'store-fixture-secret');
+  assert.equal(calls[1].options.env.TN_ANDROID_KEY_PASSWORD, 'key-fixture-secret');
   // The census passed on an archive Gradle wrote misaligned, which is only possible because the
   // aligner replaced it first.
 

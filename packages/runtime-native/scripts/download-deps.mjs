@@ -38,8 +38,8 @@ const NATIVE_DEPS_LOCK_PATH = join(ROOT, 'native-deps.lock.json');
 const LOCK_RECEIPT_DIRNAME = '.threenative-receipts';
 const REPO_ROOT = join(ROOT, '..', '..');
 const GRADLE_WRAPPER = join(ROOT, 'android', 'gradle', 'wrapper', 'gradle-wrapper.jar');
-const GRADLE_WRAPPER_URL = 'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
-const GRADLE_WRAPPER_SHA256 = 'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
+const GRADLE_WRAPPER_URL = 'https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar';
+const GRADLE_WRAPPER_SHA256 = '81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f';
 
 // Detect platform
 const PLATFORM = process.platform; // 'darwin', 'win32', 'linux'

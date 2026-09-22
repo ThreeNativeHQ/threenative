@@ -25,9 +25,9 @@ import {
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GRADLE_WRAPPER_URL =
-  'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
+  'https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar';
 export const GRADLE_WRAPPER_SHA256 =
-  'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
+  '81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f';
 
 export const ANDROID_ABIS = ['arm64-v8a', 'x86_64'];
 export const ANDROID_ENGINES = ['quickjs', 'v8'];
@@ -153,6 +153,16 @@ export function findAndroidBuildTool(name, environment = process.env) {
   return undefined;
 }
 
+function onlySelfSignedCertificateErrors(output) {
+  const errors = /^Error:[ \t]*\r?\n((?:[^\r\n]+\r?\n)+)/mu.exec(output)?.[1]
+    .trim().split(/\r?\n/u).map((line) => line.trim()) ?? [];
+  const selfSigned = 'This jar contains entries whose signer certificate is self-signed.';
+  return errors.includes(selfSigned) && errors.every((line) =>
+    line === selfSigned ||
+    /^This jar contains entries whose certificate chain is invalid\. Reason: PKIX path building failed: .*: unable to find valid certification path to requested target$/u.test(line),
+  );
+}
+
 /**
  * Prove a release artifact is really signed, targets the submission SDK and is not debuggable.
  *
@@ -180,11 +190,21 @@ export function verifyAndroidReleaseArtifact(artifact, request, options = {}) {
       `TN_ANDROID_SIGNATURE_TOOL_MISSING: ${tool} is unavailable, so the ${request.format} signature cannot be verified. Install the Android build-tools, or set ANDROID_HOME.`,
     );
   }
-  const args = tool === 'apksigner' ? ['verify', '--print-certs', artifact] : ['-verify', artifact];
+  const args = tool === 'apksigner'
+    ? ['verify', '--print-certs', artifact]
+    : ['-J-Duser.language=en', '-J-Duser.country=US', '-verify', '-strict', artifact];
   const result = run(executable, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (result.error) throw result.error;
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  if (result.status !== 0) {
+  // Android signing certificates are normally self-signed (jarsigner warning bit 4).
+  // That bit also covers expired certificates, so accept only the named self-signed errors.
+  // Strict verification still rejects unsigned entries (bit 16) and invalid signatures.
+  // An entirely unsigned archive can exit 0, so positive signature evidence is required too.
+  const signatureValid = tool === 'apksigner'
+    ? result.status === 0
+    : (result.status === 0 || (result.status === 4 && onlySelfSignedCertificateErrors(output))) &&
+      /^jar verified(?:\.|, with signer errors\.)\r?$/mu.test(output);
+  if (!signatureValid) {
     throw new Error(
       `TN_ANDROID_SIGNATURE_INVALID: ${tool} rejected ${artifact}: ${output.trim() || 'unknown reason'}`,
     );
@@ -922,14 +942,22 @@ function alignAndroidArchive(apkPath, options = {}) {
       '--ks',
       keystore,
       '--ks-pass',
-      `pass:${options.keystorePassword ?? 'android'}`,
+      'env:TN_ANDROID_KEYSTORE_PASSWORD',
       '--ks-key-alias',
       options.keystoreAlias ?? 'androiddebugkey',
       '--key-pass',
-      `pass:${options.keyPassword ?? 'android'}`,
+      'env:TN_ANDROID_KEY_PASSWORD',
       aligned,
     ],
-    { encoding: 'utf8', stdio: 'inherit' },
+    {
+      encoding: 'utf8',
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        TN_ANDROID_KEYSTORE_PASSWORD: options.keystorePassword ?? 'android',
+        TN_ANDROID_KEY_PASSWORD: options.keyPassword ?? 'android',
+      },
+    },
   );
   if (signResult.error) throw signResult.error;
   if (signResult.status !== 0)
