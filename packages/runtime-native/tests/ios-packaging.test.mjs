@@ -10,6 +10,7 @@ import { afterEach, test } from 'vitest';
 import {
   compileIosAssets,
   packageIosSimulator,
+  renderIosInfoPlist,
   runIosPackageCli,
   stageIosSimulatorApp,
 } from '../scripts/package-ios.mjs';
@@ -54,6 +55,39 @@ test('iOS actool receives a partial-info-plist output sink when compiling an app
   const partialInfoPlist = args.indexOf('--output-partial-info-plist');
   assert.notEqual(partialInfoPlist, -1);
   assert.equal(args[partialInfoPlist + 1], '/dev/null');
+});
+
+test('iOS launch screens reference named assets only when packaging compiles their catalog', () => {
+  const host = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.doesNotMatch(host, /<key>UI(?:Color|Image)Name<\/key>/u);
+  assert.doesNotMatch(renderIosInfoPlist(host), /<key>UI(?:Color|Image)Name<\/key>/u);
+  for (const config of [
+    { bootSplash: {} },
+    { app: { icon: 'icon.png' } },
+    { app: { icons: { ios: { dark: 'dark.png' } } } },
+  ]) {
+    const plist = renderIosInfoPlist(host, config);
+    assert.equal((plist.match(/<key>UILaunchScreen<\/key>/gu) ?? []).length, 1);
+    assert.match(plist, /<key>UIColorName<\/key>\s*<string>LaunchBackground<\/string>/u);
+  }
+});
+
+test('iOS names the app icon only when a branded icon source is actually compiled', () => {
+  const host = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.doesNotMatch(
+    renderIosInfoPlist(host, { app: { icons: { ios: {} } } }),
+    /<key>CFBundleIconName<\/key>/u,
+  );
+  for (const config of [
+    { app: { icon: 'icon.png' } },
+    { app: { icons: { ios: { dark: 'dark.png' } } } },
+    { app: { icons: { ios: { tinted: 'tinted.png' } } } },
+  ]) {
+    assert.match(
+      renderIosInfoPlist(host, config),
+      /<key>CFBundleIconName<\/key>\s*<string>AppIcon<\/string>/u,
+    );
+  }
 });
 
 test('iOS staging converts Xcode binary Info.plist archives before applying metadata', () => {
@@ -190,6 +224,7 @@ test('iOS no-config staging preserves the compatibility version in the artifact'
   const plist = readFileSync(join(output, 'Info.plist'), 'utf8');
   assert.match(plist, /<key>CFBundleShortVersionString<\/key>\s*<string>0\.1\.13<\/string>/u);
   assert.equal(report.version, '0.1.13');
+  assert.equal(report.launchBackground, undefined);
 });
 
 test('iOS staging allows missing assets, clears stale files, and rejects a file path', () => {
@@ -262,6 +297,16 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     output,
     templateApp,
     compileIcon: (catalog, compiled) => {
+      const plist = readFileSync(join(output, 'Info.plist'), 'utf8');
+      const colorName = /<key>UIColorName<\/key>\s*<string>([^<]+)<\/string>/u.exec(plist)?.[1];
+      assert.ok(colorName, 'the launch screen names its compiled background color');
+      const color = JSON.parse(readFileSync(join(catalog, `${colorName}.colorset/Contents.json`), 'utf8'));
+      assert.deepEqual(color.colors[0].color.components, {
+        alpha: 1,
+        blue: 42 / 255,
+        green: 27 / 255,
+        red: 13 / 255,
+      });
       assert.deepEqual(JSON.parse(readFileSync(join(catalog, 'Contents.json'), 'utf8')), {
         info: { author: 'xcode', version: 1 },
       });
@@ -309,7 +354,7 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     /<key>TNWindowHeight<\/key>\s*<integer>777<\/integer>/u,
     /<key>TNWindowResizable<\/key>\s*<false\/>/u,
     /<key>CFBundleIconName<\/key>\s*<string>AppIcon<\/string>/u,
-    /<key>UILaunchScreen<\/key>[\s\S]*?<key>UIColorName<\/key>\s*<string>TNLaunchBackground<\/string>/u,
+    /<key>UILaunchScreen<\/key>[\s\S]*?<key>UIColorName<\/key>\s*<string>LaunchBackground<\/string>/u,
     /<key>UIImageName<\/key>\s*<string>LaunchImage<\/string>/u,
   ]) {
     assert.match(plist, pattern);

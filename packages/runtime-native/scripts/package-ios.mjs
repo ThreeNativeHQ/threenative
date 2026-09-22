@@ -123,9 +123,10 @@ function plistInteger(source, key, value) {
 
 function plistLaunchScreen(source, config) {
   const image = config.bootSplash?.image === undefined ? undefined : 'LaunchImage';
+  const icon = config.app.icon ?? config.app.icons?.ios?.dark ?? config.app.icons?.ios?.tinted;
+  const hasCatalog = icon !== undefined || config.bootSplash !== undefined;
   const inner = [
-    '  <key>UIColorName</key>',
-    '  <string>TNLaunchBackground</string>',
+    ...(hasCatalog ? ['  <key>UIColorName</key>', '  <string>LaunchBackground</string>'] : []),
     ...(image === undefined ? [] : ['  <key>UIImageName</key>', `  <string>${image}</string>`]),
   ].join('\n');
   const rendered = `  <key>UILaunchScreen</key>\n  <dict>\n${inner}\n  </dict>`;
@@ -166,7 +167,8 @@ export function renderIosInfoPlist(source, orientation = 'landscape') {
   rendered = plistInteger(rendered, 'TNWindowWidth', config.window.width);
   rendered = plistInteger(rendered, 'TNWindowHeight', config.window.height);
   rendered = plistBoolean(rendered, 'TNWindowResizable', config.window.resizable);
-  if (config.app.icon !== undefined || config.app.icons?.ios !== undefined) {
+  const launchIcon = config.app.icon ?? config.app.icons?.ios?.dark ?? config.app.icons?.ios?.tinted;
+  if (launchIcon !== undefined) {
     rendered = plistKey(rendered, 'CFBundleIconName', 'AppIcon');
   }
   return plistLaunchScreen(rendered, config);
@@ -270,9 +272,9 @@ function assertIosIconSource(icon, label) {
 function colorComponents(value) {
   const hex = /^#([0-9a-f]{6})$/iu.exec(value ?? '')?.[1] ?? '000000';
   return {
-    blue: hex.slice(4, 6),
-    green: hex.slice(2, 4),
-    red: hex.slice(0, 2),
+    blue: Number.parseInt(hex.slice(4, 6), 16) / 255,
+    green: Number.parseInt(hex.slice(2, 4), 16) / 255,
+    red: Number.parseInt(hex.slice(0, 2), 16) / 255,
   };
 }
 
@@ -288,7 +290,7 @@ function writeLaunchColor(catalog, value) {
           {
             color: {
               'color-space': 'srgb',
-              components: { alpha: '1.000', ...components },
+              components: { alpha: 1, ...components },
             },
             idiom: 'universal',
           },
@@ -518,7 +520,9 @@ export function stageIosSimulatorApp({
     ...(icon === undefined ? {} : { icon }),
     ...(icon === undefined ? {} : { iconArtifact: 'Assets.car' }),
     ...(declared.bootSplash?.image === undefined ? {} : { launchImage: 'LaunchImage.png' }),
-    launchBackground: declared.bootSplash?.backgroundColor ?? '#000000',
+    ...(icon === undefined && declared.bootSplash === undefined
+      ? {}
+      : { launchBackground: declared.bootSplash?.backgroundColor ?? '#000000' }),
     output,
     outputBundleSha256: checksum(join(output, 'native-smoke.js')),
   };
