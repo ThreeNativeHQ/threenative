@@ -147,6 +147,28 @@ also require `signtool` to verify the setup, game and uninstaller signatures. Fa
 temporary directory and print its path. In this repository, use `pnpm native:verify:windows:installer`
 with the same arguments. Add `--require-signed` to reject an unsigned release explicitly.
 
+### Measure visible React UI latency
+
+From this engine checkout on Linux, use an installed game's dependencies and a built native host:
+
+```sh
+pnpm native:verify:ui --project /absolute/path/to/game --runtime packages/runtime-native/build/tn-linux/mystral
+```
+
+The command builds a small 60 FPS React fixture with the installed CLI's release command, extracts
+the final archive into a new location, checks its integrity, and captures its visible state IDs at
+240 Hz using Xvfb and FFmpeg. It requires p95 publication-to-visible latency at most 50 ms, at least
+50 visible updates in each measured active second, and two idle wake-ups within 67 ms. Capture
+delivery delay is included. An attached overlay or fast React commits alone cannot pass this check.
+This capture backend qualifies Linux/X11 only; it does not measure a physical monitor's refresh rate.
+
+Results, raw observations, a screenshot and the final archive are retained under
+`artifacts/ui-cadence/<timestamp>/`. Use `--artifacts <empty-directory>` to choose the location;
+nonempty directories are refused so a failed rerun cannot inherit a passing result. Successful runs
+remove their temporary fixture project; failures retain it and print its path. To repeat a packaged
+fixture, use `--executable <extracted-fixture-executable>` instead of `--project` and `--runtime`.
+The command requires `Xvfb` and `ffmpeg` on `PATH` and takes about 40 seconds after dependencies build.
+
 ### Signing and store/depot handoff
 
 A release container is complete but unsigned. Non-secret inputs come from the build environment,

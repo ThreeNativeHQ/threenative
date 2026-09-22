@@ -12,6 +12,10 @@ const allowedProductionCreators = new Map<string, string>([
   ],
   ["packages/playtest/src/runner/android.ts", "Android mailbox staging is removed in finally."],
   [
+    "packages/runtime-native/scripts/verify-ui-cadence.ts",
+    "The visible UI gate removes its owned probe after success and retains failed builds for diagnosis.",
+  ],
+  [
     "packages/playtest/src/runner/captureLock.ts",
     "The holder staging directory is removed immediately after the atomic rename.",
   ],
