@@ -16,10 +16,10 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { assertNativeAssetsDecodable, deriveIosWebpSupport } from './asset-preflight.mjs';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
-import { PNG } from 'pngjs';
 
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
 /**
@@ -274,6 +274,9 @@ function compileIosIcon(catalog, output) {
 }
 
 function assertIosIconSource(icon, label) {
+  // Loaded lazily so importing this module (e.g. download-deps.mjs reading SDL3_IOS_VERSION)
+  // does not require node_modules; the check still runs synchronously when it is reached.
+  const { PNG } = createRequire(import.meta.url)('pngjs');
   let image;
   try {
     image = PNG.sync.read(readFileSync(icon));
