@@ -1414,6 +1414,29 @@ jobs:
           node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \
             --container "$TN_RELEASE_CONTAINER_ROOT" \
             --project "$target"
+      - name: Play the relocated macOS release with React controls
+        if: matrix.platform == 'macOS'
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process';
+          import { join, resolve } from 'node:path';
+          import { pathToFileURL } from 'node:url';
+          const project = join(process.env.RUNNER_TEMP, 'threenative-starter-native');
+          const { resolveContainer } = await import(pathToFileURL(join(project,
+            'node_modules/@threenative/runtime-native/scripts/desktop-distribution.mjs')));
+          const container = process.env.TN_RELEASE_CONTAINER_ROOT;
+          const executable = join(container, resolveContainer(container).executable);
+          const result = spawnSync(process.execPath, [
+            join(project, 'node_modules/@threenative/playtest/dist/runner/cli.js'),
+            resolve('packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json'),
+            '--target', 'desktop', '--executable', executable, '--project', project,
+            '--artifacts', resolve('packages/runtime-native/artifacts/release-container-macOS/gameplay'),
+            '--host-arg', '--windowed',
+          ], { stdio: 'inherit', timeout: 180_000 });
+          if (result.error) throw result.error;
+          process.exit(result.status ?? 1);
+          NODE
       # The verifier writes its capture and report into the project, which the starter upload above
       # already passed by. Collect them into the release-container evidence so the frame is
       # retrievable and attributable to this exact candidate, not produced and then discarded.

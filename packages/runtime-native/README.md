@@ -126,14 +126,25 @@ bootstrapper and verifies its Authenticode signature before embedding it; this b
 ### Standard distribution recipe
 
 1. Build: `pnpm exec threenative build --target desktop --mode release`.
-2. Verify on a player image with no Node and no engine checkout:
-   `verify-starter-desktop.mjs --container <unpacked-directory> --config <project>/.threenative/build/config.json`.
+2. Verify the extracted container from the installed project:
+   `node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --container <unpacked-directory> --config <project>/.threenative/build/config.json`.
    `--config` points the verifier at the resolved consumer config the build already wrote, and the
    container's launcher name, embedded icon and declared loading sequence are then inspected before
    anything launches — on Windows by reading the executable's own `RT_GROUP_ICON`/`RT_ICON` and
    `RT_VERSION` resources, not the manifest beside it. Without `--config` the gate says
    `brand NOT inspected` rather than implying the identity was checked.
 3. Configure signing before building where required (below), then distribute the installer or archive.
+
+Run your game's input and gameplay assertions against the extracted executable on Linux, macOS or
+Windows with the installed runner:
+
+```sh
+node node_modules/@threenative/playtest/dist/runner/cli.js playtests/production-readiness.playtest.json --target desktop --executable <unpacked-executable> --project . --host-arg --windowed
+```
+
+For macOS, the executable is inside `<game>.app/Contents/MacOS/`. These verification commands need
+Node; launching the packaged game itself does not. CI also runs React pause/resume and movement
+assertions against the relocated macOS release and the installed Windows release.
 
 On Windows, test the actual installer with a scenario from your game:
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
@@ -287,6 +287,54 @@ test('desktop platform lanes build and retain executable evidence', () => {
     expect(source).toContain('where cl');
     expect(source).toContain('shell: cmd');
     expect(source).toContain("if: runner.os != 'Windows'");
+  }
+});
+
+test('macOS runs the installed playtest against the relocated release and propagates failure', () => {
+  const step = workflow.match(
+    /- name: Play the relocated macOS release with React controls\n([\s\S]*?)(?=\n {6}- name:)/u,
+  )?.[1];
+  assert.ok(step, 'The final macOS app needs interactive gameplay verification');
+  assert.match(step, /if: matrix.platform == 'macOS'/u);
+  const script = step.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n\s+NODE/u)?.[1];
+  assert.ok(script);
+  const root = makeTempDirSync('tn-macos-release-playtest-');
+  const project = join(root, 'threenative-starter-native');
+  const container = join(root, 'Relocated Game.app');
+  const distribution = join(project, 'node_modules/@threenative/runtime-native/scripts');
+  const runner = join(project, 'node_modules/@threenative/playtest/dist/runner');
+  const recorded = join(root, 'argv.json');
+  mkdirSync(distribution, { recursive: true });
+  mkdirSync(runner, { recursive: true });
+  writeFileSync(join(distribution, 'desktop-distribution.mjs'), `
+    import assert from 'node:assert/strict';
+    export function resolveContainer(root) {
+      assert.equal(root, process.env.TN_RELEASE_CONTAINER_ROOT);
+      return { executable: 'Contents/MacOS/Game With Spaces' };
+    }
+  `);
+  writeFileSync(join(runner, 'cli.js'), `
+    require('node:fs').writeFileSync(process.env.TN_TEST_ARGV, JSON.stringify(process.argv.slice(2)));
+    process.exit(Number(process.env.TN_TEST_EXIT));
+  `);
+  try {
+    for (const code of [0, 7]) {
+      const result = spawnSync(process.execPath, ['--input-type=module'], {
+        input: script, encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, RUNNER_TEMP: root, TN_RELEASE_CONTAINER_ROOT: container,
+          TN_TEST_ARGV: recorded, TN_TEST_EXIT: String(code) },
+      });
+      assert.equal(result.status, code, result.stderr);
+      assert.deepEqual(JSON.parse(readFileSync(recorded, 'utf8')), [
+        resolve('packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json'),
+        '--target', 'desktop', '--executable', join(container, 'Contents/MacOS/Game With Spaces'),
+        '--project', project, '--artifacts',
+        resolve('packages/runtime-native/artifacts/release-container-macOS/gameplay'),
+        '--host-arg', '--windowed',
+      ]);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
