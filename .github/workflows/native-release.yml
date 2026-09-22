@@ -116,7 +116,11 @@ jobs:
 
   gates:
     needs: validate-tag
-    if: ${{ !cancelled() && (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
+    # Scheduled/manual CI also completes on main, but only push CI qualifies a release.
+    if: >-
+      ${{ !cancelled() &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push') &&
+      (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
     runs-on: ubuntu-24.04
     # A verdict over the triggering CI completion, not a wait for it: the event payload
     # carries the conclusion and head SHA, and the required-job table is read once from
