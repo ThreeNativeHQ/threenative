@@ -298,6 +298,11 @@ After the resolution guard, typecheck and lint passed; focused production-profil
 58/58 and comparator tests 18/18. The full suite passed 5,520 tests but one browser runner test
 observed a closed page during the concurrent desktop capture; that exact test passed in isolation.
 Full matrix/Midway baselines, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
+Three identical native matrix runs at 1% mutation now preserve the step and projection series and
+bound their virtual-display run-median variation (`L0-11`). A direct host log exposed replay and
+present timing but no frame-budget or projection markers (`L0-12`), leaving three.js CPU and
+recorder JS unnamed. The Wayland session currently has zero active outputs, so the paced Midway
+presentation baseline remains unavailable; the virtual-display intervals are not FPS evidence.
 
 ### Phase 2 — Lane 1: scene projection
 
