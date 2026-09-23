@@ -2835,31 +2835,127 @@ describe("PRD-373 selective feature verification", () => {
     "packages/core/src/index.ts",
     "packages/playtest/src/runner/cli.ts",
     "packages/create-threenative/templates/starter/src/game.ts",
-    "packages/runtime-native/native/CMakeLists.txt",
     "packages/physics/src/index.ts",
     "examples/native-smoke/src/index.ts",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
     "site/package.json",
     "tsconfig.base.json",
     ".github/workflows/ci.yml",
-    "packages/runtime-native/AGENTS.md",
     "templates/topdown/CLAUDE.md",
-  ])("retains all consumers for %s without merging on native evidence", async (relative) => {
+  ])(
+    "retains all consumers for %s while exempting native on a clean develop diff",
+    async (relative) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("full");
+        expect(plan.jobs).toMatchObject({
+          "native-platforms": { required: false },
+          "test-native": { required: true },
+          "golden-path-template": { required: true },
+          "template-nonvisual": { required: true },
+          website: { required: true },
+        });
+        const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
+        expect(native?.reason.length).toBeGreaterThan(10);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    },
+  );
+
+  it.each([
+    "packages/runtime-native/native/CMakeLists.txt",
+    "packages/runtime-native/src/host.cpp",
+    "packages/runtime-native/AGENTS.md",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".github/workflows/native-platforms.yml",
+    ".github/actions/pnpm/action.yml",
+    ".github/actions/workspace-dist/action.yml",
+  ])("requires native evidence for %s on a clean develop diff", async (relative) => {
     const fixture = await scopeFixture();
     try {
-      const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
+      const head = await commitScopeChange(fixture, relative, "changed\n", "native dependency");
       const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
       expect(plan.selection).toBe("full");
-      expect(plan.jobs).toMatchObject({
-        "native-platforms": { required: false },
-        "test-native": { required: true },
-        "golden-path-template": { required: true },
-        "template-nonvisual": { required: true },
-        website: { required: true },
-      });
-      const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
-      expect(native?.reason.length).toBeGreaterThan(10);
+      expect(plan).toMatchObject({ native: true });
+      expect(plan.jobs).toMatchObject({ "native-platforms": { required: true } });
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it.each([
+    ["packages/core/src/x.ts", "develop", false],
+    ["packages/runtime-native/src/x.cpp", "develop", true],
+    ["pnpm-lock.yaml", "develop", true],
+    ["packages/core/src/x.ts", "main", true],
+  ])("requires native for %s targeting %s: %s", async (relative, target, required) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "changed\n", "target policy");
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", target]);
+      expect(plan.jobs).toMatchObject({ "native-platforms": { required } });
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it.each(["push", "schedule", "workflow_dispatch"])(
+    "requires native for the %s event however clean the diff is",
+    async (event) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, "docs/PRDs/inert.md", "prose\n", "prose");
+        const plan = classifyScope(fixture.root, fixture.base, head, [
+          "--target",
+          "develop",
+          "--event-name",
+          event,
+        ]);
+        expect(plan).toMatchObject({ selection: "full", native: true });
+        expect(plan.jobs).toMatchObject({ "native-platforms": { required: true } });
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    },
+  );
+
+  it("requires native for --full and for a diff the classifier cannot resolve", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, "docs/PRDs/inert.md", "prose\n", "prose");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop", "--full"]).jobs,
+      ).toMatchObject({ "native-platforms": { required: true } });
+      const fallback = classifyScope(fixture.root, "missing-base", head, ["--target", "develop"]);
+      expect(fallback).toMatchObject({ selection: "full", native: true });
+      expect(fallback.jobs).toMatchObject({ "native-platforms": { required: true } });
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("fails validation when a hand-edited plan flips the native requirement", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        "packages/core/src/x.ts",
+        "export {};\n",
+        "core",
+      );
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan).toMatchObject({ native: false });
+      plan.native = true;
+      const result = spawnSync(
+        process.execPath,
+        [path.join(repo, "scripts/ci-change-scope.mjs"), "--validate-plan", JSON.stringify(plan)],
+        { encoding: "utf8", env: isolatedGitEnvironment() },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("CI_SCOPE_INVALID_PLAN");
     } finally {
       await removeFixture(fixture.root);
     }

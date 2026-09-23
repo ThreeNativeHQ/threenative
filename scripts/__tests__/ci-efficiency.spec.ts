@@ -304,10 +304,11 @@ describe("PRD-373 fail-closed required verdict", () => {
       .filter((name) => !["scope", "ci-required", "run-summary"].includes(name))
       .sort();
     expect(Object.keys(jobs).sort()).toEqual(coverage);
-    // A gate voluntarily exempt from the merge verdict is reported but never a `needs` of
-    // ci-required; while it sat there GitHub withheld the verdict for the whole 50–180 minute
-    // native matrix. PRD-373 keeps native evidence out of the merge verdict.
-    expect(declaredNeeds(job("ci-required"))).not.toContain("native-platforms");
+    // The native matrix is a `needs` of ci-required because the plan can require it: a full
+    // selection that touches native code, targets main, or cannot prove a clean native-free diff.
+    // When the plan exempts it the job is skipped and ci-required.mjs treats an exempt skip as a
+    // pass, so the merge waits only for the cases the classifier could not clear.
+    expect(declaredNeeds(job("ci-required"))).toContain("native-platforms");
     const requiredCoverage = coverage.filter((name) => jobs[name]?.required);
     expect(
       declaredNeeds(job("ci-required"))

@@ -137,16 +137,17 @@ test('the protected build context requires scope and workspace evidence, not the
     expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
     expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
   }
-  // The native matrix is still required for the exact candidate, just not by the merge verdict:
-  // the release lane consumes the `native-platforms` rows and run-summary reports them, so a
-  // native failure cannot pass unnoticed. Waiting on it in ci-required withheld every develop
-  // verdict for the whole 50–180 minute matrix while the plan already marked it exempt.
+  // The native matrix is a required member of ci-required again: the scope plan requires it for a
+  // full selection that touches native code, targets main, or cannot prove a clean native-free
+  // pull request. When the plan exempts it, the job is skipped and ci-required.mjs counts an
+  // exempt skip as a pass; a required run that is not success fails the verdict. run-summary still
+  // reports the lane either way.
   const jobBlock = (name) =>
     ciWorkflow.match(
       new RegExp(`\\n\\x20{2}${name}:\\n[\\s\\S]*?(?=\\n\\x20{2}[a-z0-9-]+:|\\s*$)`, 'u'),
     )?.[0] ?? '';
   expect(jobBlock('ci-required')).toContain('needs: [scope,');
-  expect(jobBlock('ci-required')).not.toContain('native-platforms');
+  expect(jobBlock('ci-required')).toContain('native-platforms');
   expect(jobBlock('run-summary')).toContain('native-platforms');
 });
 
