@@ -356,6 +356,13 @@ runs the scene for diagnostics. The rebuilt host passed the focused packaging an
 checks; an Xvfb compositor run with a page that never reports ready exited 1, while the real
 Midway UI remained running beyond the deadline. Both physical display connectors disconnected
 during the flight-input probe, so no Midway paced FPS or gameplay baseline is claimed (`L0-21`).
+After rebasing onto `develop` with PRD-399's UI worker and native lock update, the three shipped
+Three patches apply together and the generated scaffold hashes match all ten templates. The
+rebuilt desktop host passes the authored loading playtest (913,920 startup loading pixels, zero
+settled loading pixels), the full local suite (457 files, 5,552 tests; 8 skipped), typecheck,
+lint and budgets. A rebased hosted-software collector smoke run returned `PASS` with 1,146 ms
+startup; its performance-budget advisory is expected for the short software-rendered probe.
+These checks verify integration only; the paced Midway and holdout baselines remain open.
 
 ### Phase 2 — Lane 1: scene projection
 
