@@ -206,10 +206,22 @@ pub struct Shared {
 
 impl Shared {
     pub fn push_command(&self, command: Command) {
-        self.commands
+        let mut queue = self
+            .commands
             .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .push_back(command);
+            .unwrap_or_else(|error| error.into_inner());
+        // A move that lands while an earlier move is still waiting replaces it: the page only needs
+        // the newest position, and a 1000 Hz mouse would otherwise queue an evaluation per sample
+        // against the snapshot work on the same thread. Only the command at the back is collapsed,
+        // so a press, release, resize or post queued after a move keeps that move in front of it and
+        // order is preserved; a move queued after one of those starts a new pending move.
+        let replace_back = matches!(&command, Command::Pointer { kind, .. } if kind == "pointermove")
+            && matches!(queue.back(), Some(Command::Pointer { kind, .. }) if kind == "pointermove");
+        if replace_back {
+            *queue.back_mut().expect("back() was Some") = command;
+        } else {
+            queue.push_back(command);
+        }
     }
 
     fn take_command(&self) -> Option<Command> {
@@ -1265,6 +1277,68 @@ mod tests {
             Some(Command::Resize { width, height }) => assert_eq!((width, height), (640, 480)),
             _ => panic!("the queue keeps its order"),
         }
+        assert!(shared.take_command().is_none());
+    }
+
+    fn pointer_move(nx: f32) -> Command {
+        Command::Pointer {
+            kind: "pointermove".to_string(),
+            nx,
+            ny: 0.0,
+            buttons: 0,
+            pointer_id: 1,
+        }
+    }
+
+    fn take_move(shared: &Shared) -> f32 {
+        match shared.take_command() {
+            Some(Command::Pointer { kind, nx, .. }) => {
+                assert_eq!(kind, "pointermove");
+                nx
+            }
+            _ => panic!("expected a pending pointermove"),
+        }
+    }
+
+    #[test]
+    fn consecutive_moves_collapse_to_the_newest_but_never_across_another_command() {
+        let shared = Shared::default();
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(pointer_move(0.2));
+        shared.push_command(pointer_move(0.3));
+        assert_eq!(take_move(&shared), 0.3, "three moves leave the newest");
+        assert!(shared.take_command().is_none());
+
+        // A move queued before a press stays in front of it: collapsing it would reorder the press
+        // ahead of a position the page had already been told about.
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(Command::Pointer {
+            kind: "pointerdown".to_string(),
+            nx: 0.1,
+            ny: 0.0,
+            buttons: 1,
+            pointer_id: 1,
+        });
+        shared.push_command(pointer_move(0.2));
+        shared.push_command(pointer_move(0.3));
+        assert_eq!(take_move(&shared), 0.1, "the move before the press is kept");
+        match shared.take_command() {
+            Some(Command::Pointer { kind, .. }) => assert_eq!(kind, "pointerdown"),
+            _ => panic!("the press follows the move it was queued after"),
+        }
+        assert_eq!(take_move(&shared), 0.3, "moves after the press collapse together");
+        assert!(shared.take_command().is_none());
+
+        // Any non-move command between two moves breaks the collapse as well.
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(Command::Post("state".to_string()));
+        shared.push_command(pointer_move(0.2));
+        assert_eq!(take_move(&shared), 0.1);
+        match shared.take_command() {
+            Some(Command::Post(frame)) => assert_eq!(frame, "state"),
+            _ => panic!("the post keeps its place"),
+        }
+        assert_eq!(take_move(&shared), 0.2);
         assert!(shared.take_command().is_none());
     }
 

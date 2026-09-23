@@ -412,6 +412,12 @@ bool pollEvents() {
                 case SDL_EVENT_MOUSE_BUTTON_UP:
                     if (routePointerToUi(event)) continue;
                     break;
+                case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+                    // The pointer left the window, so no further move will carry the hover off the
+                    // last element. One move outside the viewport makes the page's own hover machine
+                    // fire pointerout/pointerleave and clear `tn-hover`; the game sees no pointer.
+                    uiOverlayInjectPointer("pointermove", -1.0f, -1.0f, g_domButtons, 1);
+                    break;
                 case SDL_EVENT_KEY_DOWN:
                     if (routeKeyToUi(event.key, true)) continue;
                     break;
