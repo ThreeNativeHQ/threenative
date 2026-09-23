@@ -370,7 +370,9 @@ void reportUiComposite(BindingsState* state, const platform::UiOverlayFrame& fra
     std::cout << "TN_UI_COMPOSITE:{\"atMs\":" << coldStartNowMs()
               << ",\"uploads\":" << uploads << ",\"skipped\":" << skipped
               << ",\"uploadsPerSecond\":" << deltaUploads << ",\"skippedPerSecond\":" << deltaSkipped
-              << ",\"frame\":" << frame.width << "x" << frame.height
+              // Quoted, because every other field here is JSON and this one used to be the only
+              // thing making the whole payload unparseable: `"frame":1280x720` is not a value.
+              << ",\"frame\":\"" << frame.width << "x" << frame.height << "\""
               << ",\"counter\":" << frame.counter
               << ",\"uploadedCounter\":" << state->ui.uploadedCounter
               << ",\"format\":" << static_cast<int>(state->ui.pipelineFormat)
