@@ -824,7 +824,7 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
       if (stopping !== undefined) return stopping;
       stopping = (async () => {
         if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
-        const cleanupTimeoutMs = options.desktopCleanupTimeoutMs ?? 2_000;
+        const cleanupTimeoutMs = options.desktopCleanupTimeoutMs ?? 10_000;
         const waitForExit = new Promise((resolve, reject) => {
           let timer;
           let settled = false;

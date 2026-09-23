@@ -247,9 +247,9 @@ That game needs core's launch-failure and pending-asset API from `acef62180`; th
 implementation is included here so the unchanged snapshot builds against this branch.
 Desktop preflight reached the packaged game after fixing its embedded-entry launch, then exposed a
 judge-generated browser-only diagnostic assertion; native scenarios now assert supported startup
-readiness. The repeated live run reached Midway's flight workload, then native WebGPU rejected a
-4-sample depth texture bound to a single-sample layout; the later screenshot failure is secondary.
-Native Midway measurements remain blocked while the renderer binding is investigated.
+readiness. The later native 4x failure traced to Three.js reusing a pipeline and bind group when
+the active sample count changed. The Three patch now keys the render object and pipeline on that
+count and rebinds a refreshed GPU group; its three distributed copies apply in a clean consumer.
 The web preflight initially selected SwiftShader and lost its GPU instance because the judge
 launched Chromium headless. Headed WebGPU under the existing private display reached the flight
 workload; the playtest runner now excludes only failed POSTs to the judge's exact loopback marker
@@ -257,10 +257,17 @@ URL from its network assertion. A one-run preflight then returned `PASS` with 90
 startup and all three markers; Chromium `adapter.info` reported `nvidia / turing`. This is a
 preflight on a dirty checkout, not a pinned baseline or A/A noise result.
 The native generated flight scenario now converts an authored viewport-pixel click into the desktop
-pointer transport at the same normalized location; 57 focused judge tests pass. A short native 4x
-smoke still fails at pipeline creation: the shader declares a multisampled depth binding while its
-layout declares a single-sample binding at group 1, binding 11. Scratch tracing was confined to
-the ignored snapshot and removed after capture. Native measurements remain blocked.
+pointer transport at the same normalized location. The first full native run then passed the flight
+but failed the judge's two-second desktop shutdown. With a ten-second shutdown bound, a cold startup
+timed out on a one-frame mailbox `advance` (20,250 ms). The playtest startup wait now treats that
+specific operation timeout as a busy frame within its existing readiness deadline. On the dirty
+checkout, the next native preflight returned `PASS` with 875 frame samples, a 1,619 ms startup
+sample and no GPU validation errors. Its p50 was 6.13 ms, p95 56.35 ms, and worst frame 25.54 s;
+the large stall is retained in the result, not counted as an optimization. The 57 production judge
+tests, 19 startup tests, 8 packaging tests, typecheck, lint, and full `pnpm test` pass (454 test
+files, 5,520 tests; 8 skipped). The distributed patch intentionally moves all ten no-install
+scaffold hashes, and the renderer cache probe now supplies the renderer's active-target method.
+The native result is a preflight, not a pinned baseline or A/A noise result.
 The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
 the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
 `pnpm lint`, and `pnpm test` passed locally (454 files, 5,519 tests; 8 skipped).
