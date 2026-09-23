@@ -1521,8 +1521,17 @@ async function main() {
   if (requestedBackend === 'dawn') assertDawnAndroidArchive();
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
-  // Desktop deps (downloaded by default)
-  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
+  // Linux arm64 has no prebuilt for the x64 desktop stack: kuoruan/libv8 ships Linux x64 only,
+  // Dawn's `ubuntu-latest` release asset is x64, and skia/swc/libuv/quiche/webp publish no arm64
+  // Linux archive. A source V8 build is not allowed in CI. The arm64 desktop host is therefore
+  // built with the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt is already
+  // in the dependency lock; the CMake build disables the optional features whose libraries are
+  // absent (Canvas2D/Skia, WebTransport/quiche, TS/SWC, async libuv) instead of linking a foreign
+  // architecture. See scripts/native-build.mjs for the matching configure overrides.
+  const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
+  const desktopDeps = linuxArm64
+    ? ['wgpu', 'sdl3', 'quickjs', 'stb']
+    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
   const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios'];

@@ -1581,10 +1581,24 @@ jobs:
           if-no-files-found: error
 
   starter-linux:
-    name: Scaffolded starter desktop artifact
+    name: Scaffolded starter desktop artifact (${{ matrix.platform }})
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x64 and arm64 run the identical release-container proof. The arm64 leg is GitHub's
+          # free hosted `ubuntu-24.04-arm` runner: there is no V8 or Dawn prebuilt for Linux arm64
+          # (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64) and a source V8
+          # build is not allowed in CI, so the arm64 host is built with QuickJS over wgpu-native —
+          # the one WebGPU backend that publishes an arm64 Linux archive. scripts/download-deps.mjs
+          # and scripts/native-build.mjs select that route from `process.arch`.
+          - platform: linux-x64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1642,7 +1656,7 @@ jobs:
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
-          libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
       - name: Zero the compiler cache counters
         shell: bash
         run: ccache --zero-stats
@@ -1727,7 +1741,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="packages/runtime-native/artifacts/release-container-linux"
+          evidence="packages/runtime-native/artifacts/release-container-${{ matrix.platform }}"
           mkdir -p "$evidence"
           # git-bash carries sha256sum, macOS only shasum; do not assume either.
           if command -v shasum >/dev/null 2>&1; then
@@ -1766,30 +1780,46 @@ jobs:
           node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \
             --container "$TN_RELEASE_CONTAINER_ROOT" \
             --project "$target"
+      # The runner has no GPU, so the Vulkan ICD is Mesa lavapipe (llvmpipe software rasteriser).
+      # Record what the relocated release actually bound rather than assuming it: PRD-399 states
+      # "lavapipe software Vulkan" only because this evidence names it.
+      - name: Record the WebGPU adapter the relocated release bound
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-native"
+          evidence="packages/runtime-native/artifacts/release-container-${{ matrix.platform }}"
+          mkdir -p "$evidence"
+          log="$target/artifacts/native/starter-container.log"
+          [ -f "$log" ] || {
+            echo "TN_DESKTOP_ADAPTER_LOG_MISSING: the installed verifier wrote no $log." >&2; exit 1; }
+          grep -E '\[WebGPU\] (Adapter|Vendor|Backend):' "$log" | tee "$evidence/adapter.txt"
+          test -s "$evidence/adapter.txt" || {
+            echo "TN_DESKTOP_ADAPTER_MISSING: the relocated release recorded no WebGPU adapter." >&2; exit 1; }
       - name: Upload the release container evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: native-desktop-release-linux
+          name: native-desktop-release-${{ matrix.platform }}
           path: |
-            packages/runtime-native/artifacts/release-container-linux/
+            packages/runtime-native/artifacts/release-container-${{ matrix.platform }}/
             ${{ runner.temp }}/threenative-starter-native/artifacts/native/starter-container*
           if-no-files-found: warn
       - name: Collect starter evidence
         if: always()
         run: |
-          mkdir -p packages/runtime-native/artifacts/starter-linux
+          mkdir -p packages/runtime-native/artifacts/starter-${{ matrix.platform }}
           source="$RUNNER_TEMP/threenative-starter-native/artifacts/native"
           if [ -d "$source" ]; then
-            cp -a "$source/." packages/runtime-native/artifacts/starter-linux/
+            cp -a "$source/." packages/runtime-native/artifacts/starter-${{ matrix.platform }}/
           else
             echo "starter verifier produced no artifact directory: $source"
           fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: native-starter-linux
-          path: packages/runtime-native/artifacts/starter-linux/
+          name: native-starter-${{ matrix.platform }}
+          path: packages/runtime-native/artifacts/starter-${{ matrix.platform }}/
           if-no-files-found: error
 
   ios-simulator:

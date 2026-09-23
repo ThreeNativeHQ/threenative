@@ -496,7 +496,7 @@ const requiredCiJobs = [
   'typecheck', 'lint', 'test', 'budgets', 'build', 'test-native',
   'native-platforms / Windows desktop core',
   'native-platforms / macOS desktop core',
-  'native-platforms / Scaffolded starter desktop artifact',
+  'native-platforms / Scaffolded starter desktop artifact (linux-x64)',
   'native-platforms / Desktop web/native parity',
   'native-platforms / Android emulator visual parity',
 ];
