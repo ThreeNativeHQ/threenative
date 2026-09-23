@@ -1,7 +1,7 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PNG } from 'pngjs';
@@ -446,6 +446,63 @@ test('iOS packaging fails closed off darwin-arm64 and on a corrupt local host', 
     }),
     /checksum mismatch/u,
   );
+});
+
+test('iOS simulator packaging stages the UI bundle the build selected', async () => {
+  // The CLI hands the packager `--ui` for a web renderer; `packageIosSimulator` must carry it to
+  // staging. Dropping it made the packager declare `web` from the resolved config and then fail
+  // TN_UI_BUNDLE_MISSING with the bundle sitting on disk, which is the packaged-game defect.
+  const root = makeTempDirSync('threenative-ios-forward-ui-');
+  roots.push(root);
+  const templateApp = join(root, 'stub-host.app');
+  const bin = join(root, 'bin');
+  const archive = join(root, 'host.zip');
+  const bundle = join(root, 'game.js');
+  const ui = join(root, 'built-ui');
+  const output = join(root, 'dist', 'game.app');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  mkdirSync(ui, { recursive: true });
+  writeFileSync(join(ui, 'index.html'), '<script src="ui.js"></script>');
+  writeFileSync(join(ui, 'ui.js'), 'console.log("React bundle")');
+  // `ditto` is Apple-only; host extraction is not under test, so a stub copies the prepared app.
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'ditto'), `#!/usr/bin/env node
+const { cpSync } = require('node:fs');
+const { join } = require('node:path');
+const args = process.argv.slice(2);
+cpSync(process.env.TN_STUB_IOS_APP, join(args[args.length - 1], 'stub-host.app'), { recursive: true });
+`);
+  chmodSync(join(bin, 'ditto'), 0o755);
+  writeFileSync(archive, 'host-archive');
+
+  const previousPath = process.env.PATH;
+  const previousStub = process.env.TN_STUB_IOS_APP;
+  process.env.PATH = `${bin}:${previousPath ?? ''}`;
+  process.env.TN_STUB_IOS_APP = templateApp;
+  try {
+    const report = await packageIosSimulator({
+      arch: 'arm64',
+      archive,
+      bundle,
+      config: { ui: { renderer: 'web' } },
+      output,
+      platform: 'darwin',
+      sha256: createHash('sha256').update('host-archive').digest('hex'),
+      ui,
+    });
+    assert.equal(report.output, output);
+    assert.deepEqual(readFileSync(join(output, 'ui', 'index.html')), readFileSync(join(ui, 'index.html')));
+    assert.deepEqual(readFileSync(join(output, 'ui', 'ui.js')), readFileSync(join(ui, 'ui.js')));
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousStub === undefined) delete process.env.TN_STUB_IOS_APP;
+    else process.env.TN_STUB_IOS_APP = previousStub;
+  }
 });
 
 test('iOS CLI forwards the declared orientation before host validation', async () => {

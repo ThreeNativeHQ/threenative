@@ -607,6 +607,7 @@ export async function packageIosSimulator(options) {
     return stageIosSimulatorApp({
       assets: options.assets ? resolve(options.assets) : undefined,
       bundle: resolve(options.bundle),
+      ui: options.ui === undefined ? undefined : resolve(options.ui),
       output: resolve(options.output),
       templateApp,
       orientation,
