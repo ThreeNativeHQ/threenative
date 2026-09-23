@@ -24,13 +24,17 @@ export class LocalDeviceMailbox {
     try {
       return await readFile(path, "utf8");
     } catch (error) {
-      if (isMissingFile(error)) return undefined;
+      // Windows reports a file the game is replacing as EPERM/EBUSY; it is not written yet, so
+      // the poller retries. A lock that never clears still fails at the playtest's own timeout.
+      if (isMissingFile(error) || isTransientMailboxLock(error)) return undefined;
       throw error;
     }
   }
 
   async remove(path: string): Promise<void> {
-    await rm(path, { force: true });
+    // rm lstats first, which Windows rejects with EPERM while the game holds the file; Node's
+    // rm retries EPERM/EBUSY itself when asked to.
+    await rm(path, { force: true, maxRetries: 10, retryDelay: 20 });
   }
 
   async write(path: string, contents: string): Promise<void> {
@@ -248,6 +252,13 @@ function isProcessExited(child: ChildProcess): boolean {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isTransientMailboxLock(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return code === "EPERM" || code === "EBUSY";
 }
 
 function isMissingFile(error: unknown): boolean {
