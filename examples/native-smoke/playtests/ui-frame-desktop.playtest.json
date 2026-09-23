@@ -97,7 +97,7 @@
     },
     {
       "label": "game-running",
-      "waitTicks": 240,
+      "waitTicks": 320,
       "screenshot": "ui-frame"
     }
   ],

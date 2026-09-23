@@ -2060,8 +2060,29 @@ private:
         auto argv = jsEngine_->newArray();
         jsEngine_->setProperty(process, "argv", argv);
 
-        // process.env - environment variables (empty object for now, could populate later)
+        // process.env - the launch flags a game may read.
+        //
+        // Only the flags a host chooses to publish: handing over the whole environment would put
+        // the machine's variables in a game's hands, which is a leak nobody asked for. `DEV_MODE`
+        // is the one a developer sets on the command line to ask for the dev surfaces, and the
+        // engine reads it to decide whether they exist at all.
         auto env = jsEngine_->newObject();
+        const char* devMode = std::getenv("DEV_MODE");
+        if (devMode != nullptr && devMode[0] != '\0' && std::strcmp(devMode, "0") != 0 &&
+            std::strcmp(devMode, "false") != 0) {
+            jsEngine_->setProperty(env, "DEV_MODE", jsEngine_->newString("true"));
+        }
+        // The engine's own launch diagnostics, each off unless asked for. Forwarded verbatim
+        // rather than as booleans so the engine's reader stays the single place that decides what
+        // counts as on, and a host that publishes a flag never decides it twice. Listed rather
+        // than pattern-matched on a prefix: publishing every `TN_*` variable a machine happens to
+        // carry is a leak, and one line per flag is the price of not having one.
+        for (const char* flag : {"TN_FRAME_SPANS", "TN_RENDERLIST_VALIDATE"}) {
+            const char* value = std::getenv(flag);
+            if (value != nullptr && value[0] != '\0') {
+                jsEngine_->setProperty(env, flag, jsEngine_->newString(value));
+            }
+        }
         jsEngine_->setProperty(process, "env", env);
 
         jsEngine_->setGlobalProperty("process", process);
@@ -2872,9 +2893,16 @@ private:
 
     void processPendingFileCallbacks() {
         // Process pending file callbacks - these come from async file reads
-        // We process them on the main thread to ensure JS context safety
-
-        while (!pendingFileCallbacks_.empty()) {
+        // We process them on the main thread to ensure JS context safety.
+        //
+        // Bounded in time and count, the way `executeSchedulerCallbacks` below is: one frame must
+        // not own a whole asset burst. A native run of a real game measured a single `fileCallbacks`
+        // phase of 846-1527 ms during launch — the reads are issued in parallel, so every completed
+        // read arrives at once, and each callback copies its bytes into a fresh ArrayBuffer before
+        // the game can continue. The work is the same either way; what changes is that the loading
+        // screen gets a frame between batches instead of freezing through all of them.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+        for (int count = 0; running_ && count < 256 && !pendingFileCallbacks_.empty(); ++count) {
             auto pending = std::move(pendingFileCallbacks_.front());
             pendingFileCallbacks_.pop();
 
@@ -2894,6 +2922,9 @@ private:
 
             // Unprotect the callback now that we're done with it
             jsEngine_->freeHandle(pending.callback);
+            // A callback may enqueue the next read; let its continuation run before the next one.
+            processMicrotasks();
+            if (std::chrono::steady_clock::now() >= deadline) break;
         }
     }
 

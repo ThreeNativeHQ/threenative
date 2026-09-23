@@ -95,6 +95,13 @@ export interface IAssetLoader {
    * stay 0 for a game with no manifest, where no size is knowable before the bytes arrive.
    */
   readonly progress: {
+    /**
+     * The logical paths asked for and not yet settled, in request order. A loading screen that
+     * only shows a ratio cannot say *what* it is waiting for, which is the difference between
+     * "still loading" and "stuck on `akagi.glb`" — and a stall report that names nothing is a
+     * bug report nobody can act on.
+     */
+    readonly pending: readonly string[];
     readonly requested: number;
     readonly requestedBytes: number;
     readonly settled: number;
@@ -327,6 +334,15 @@ async function loadBitmapTexture(url: string, renderer: unknown): Promise<Textur
   texture.flipY = flipsAtUpload;
   texture.needsUpdate = true;
   return texture;
+}
+
+/** True when the caller asked for per-asset timing; read once per settle, not per frame. */
+function assetTraceEnabled(): boolean {
+  return (globalThis as { __TN_ASSET_TRACE__?: unknown }).__TN_ASSET_TRACE__ === true;
+}
+
+function performanceNow(): number {
+  return globalThis.performance?.now() ?? Date.now();
 }
 
 function resourcePathOf(url: string): string {
@@ -703,6 +719,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   let requestedBytes = 0;
   let settled = 0;
   let settledBytes = 0;
+  /** Logical paths asked for and not yet settled, in request order — what a loading view names. */
+  const pending = new Set<string>();
 
   /**
    * The compiled size of a logical path, or 0 when it is not knowable — no manifest, an external
@@ -733,6 +751,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       },
       () => undefined,
     );
+    // Opt-in per-asset timing, off by default and free when off: a launch that is slow because of
+    // *which* asset is slow cannot be told from the group totals a game logs, and the engine is the
+    // only place that sees every settle. Set `globalThis.__TN_ASSET_TRACE__ = true` before boot.
+    const traceStart = assetTraceEnabled() ? performanceNow() : 0;
     const entry: IAssetEntry = {
       disposed: false,
       kind: kind as AssetKind,
@@ -751,11 +773,23 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     entry.promise.catch(() => {
       if (cache.get(key) === entry) cache.delete(key);
     });
+    pending.add(path);
     const note = (): void => {
       settled += 1;
+      pending.delete(path);
       void weighed.then(() => {
         settledBytes += weight;
       });
+      if (traceStart !== 0) {
+        console.log(
+          `TN_ASSET:${JSON.stringify({
+            bytes: weight,
+            kind,
+            ms: Math.round((performanceNow() - traceStart) * 10) / 10,
+            path,
+          })}`,
+        );
+      }
     };
     entry.promise.then(note, note);
     cache.set(key, entry);
@@ -872,7 +906,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         return value;
       }),
     get progress() {
-      return { requested, requestedBytes, settled, settledBytes };
+      return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
     },
     resolve: (path) => resolveCandidates(path),
     release: (kind, path) => {

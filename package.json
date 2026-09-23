@@ -21,6 +21,7 @@
     "caps:recall": "tsx scripts/capability-recall.ts",
     "census": "tsx scripts/generate-native-census.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
+    "check:flight-cost": "tsx scripts/check-flight-cost.ts --max-mean-ms 0.35",
     "ci:fast": "bash scripts/ci-fast.sh",
     "ci:local": "bash scripts/ci-local.sh",
     "coverage": "vitest run --coverage",
@@ -78,7 +79,9 @@
     "visuals:baseline": "sh scripts/xvfb.sh tsx scripts/template-baseline.ts",
     "visuals:realism-effects": "sh scripts/xvfb.sh tsx scripts/realism-effects-visual.ts",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
-    "worktree:status": "tsx scripts/worktree-lifecycle.ts status"
+    "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
+    "census:content": "tsx scripts/content-census.ts",
+    "bench:host-boundary": "timeout 240 packages/runtime-native/build/tn-linux/mystral run packages/runtime-native/scripts/bench-host-boundary.js --headless"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

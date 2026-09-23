@@ -46,6 +46,13 @@ export interface IStartupReadinessOptions {
  * `compileAsync()` promise never settles.
  */
 export const STARTUP_COMPILE_BUDGET_MS = 15_000;
+/**
+ * How long `startup.progress` may stand completely still before the launch is reported as stalled.
+ * Generous on purpose: one large model legitimately holds the main thread for tens of seconds
+ * while it decodes (43 s for one measured aircraft), the bar only moves as assets settle, and a
+ * false stall report is worse than none. It is not a timeout — nothing is cancelled.
+ */
+export const STARTUP_STALL_MS = 45_000;
 export const STARTUP_FRAME_BUDGET_MS = 50;
 export const STARTUP_STABLE_FRAMES = 5;
 /**

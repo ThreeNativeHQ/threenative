@@ -1,6 +1,6 @@
 import { AudioContext, Object3D, PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { AudioBus, audioRuntimeSnapshot } from "../src/audio.js";
+import { AudioBus, audioRuntimeSnapshot, resetAudioCueLedger } from "../src/audio.js";
 
 interface IFakeAudioParam {
   value: number;
@@ -606,6 +606,80 @@ describe("AudioBus", () => {
       bus.play(buffer, { detune: 40, lowpassHz: 900 });
       expect(bus.unsupported).toEqual([]);
       expect(audioRuntimeSnapshot().unsupported).toEqual([]);
+    } finally {
+      bus.dispose();
+    }
+  });
+  it("counts labelled cues, so a scenario can prove a one-shot line sounded once", async () => {
+    audioContext(true);
+    resetAudioCueLedger();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.play(buffer, { cue: "P01" });
+      bus.play(buffer, { cue: "R10" });
+      bus.play(buffer, { cue: "R10" });
+      bus.play(buffer);
+
+      // Unlabelled cues are invisible here on purpose: a game opts a line in, and a count that
+      // silently included every footstep would answer a different question than the one asked.
+      expect(audioRuntimeSnapshot().cues).toEqual({ P01: 1, R10: 2 });
+      expect(audioRuntimeSnapshot().recentCues.map(({ cue }) => cue)).toEqual([
+        "P01",
+        "R10",
+        "R10",
+      ]);
+
+      // The ledger outlives the bus, because "did it play again after the scene restarted" is the
+      // question it exists to answer, and a scene change disposes the bus.
+      bus.dispose();
+      const replacement = new AudioBus({ camera: new PerspectiveCamera() });
+      await replacement.unlock();
+      replacement.play(buffer, { cue: "P01" });
+      expect(audioRuntimeSnapshot().cues.P01).toBe(2);
+      replacement.dispose();
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("refuses a cue label that is not a label, rather than miscounting under it", async () => {
+    audioContext(true);
+    resetAudioCueLedger();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      expect(() => bus.play(buffer, { cue: "" })).toThrow(/cue must be a non-empty string/u);
+      expect(() => bus.play(buffer, { cue: 7 as unknown as string })).toThrow(
+        /cue must be a non-empty string/u,
+      );
+      expect(audioRuntimeSnapshot().cues).toEqual({});
+    } finally {
+      bus.dispose();
+    }
+  });
+  it("keeps its registry on the realm, so a second copy of this module sees the same buses", async () => {
+    audioContext(true);
+    resetAudioCueLedger();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.play(buffer, { cue: "P01" });
+
+      // Core ships one bundle per entry with no shared chunks, so a game importing both
+      // `@threenative/core` and `@threenative/core/playtest` loads this module twice. The playtest
+      // bridge runs in the second copy: with module-level state it observed its own empty registry
+      // and reported zero voices and no cues for a game that was playing audio the whole time.
+      const path = new URL("../src/audio.js", import.meta.url).href;
+      const second = (await import(
+        /* @vite-ignore */ `${path}?copy=${Date.now()}`
+      )) as typeof import("../src/audio.js");
+      expect(second).not.toBe(await import("../src/audio.js"));
+      expect(second.audioRuntimeSnapshot().voices).toBe(audioRuntimeSnapshot().voices);
+      expect(second.audioRuntimeSnapshot().cues).toEqual({ P01: 1 });
     } finally {
       bus.dispose();
     }

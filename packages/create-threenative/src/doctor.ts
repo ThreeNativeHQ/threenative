@@ -103,6 +103,11 @@ export interface IProjectSnapshot {
   readonly runtimeFileExists?: (relative: string) => boolean;
   readonly runtimeManifestUrl?: string;
   readonly runtimeRoot?: string;
+  /**
+   * What the installed native host binary reports about itself, injected so the check is testable
+   * on a machine either way. Absent means doctor runs the host's own `--version` itself.
+   */
+  readonly nativeHost?: INativeHostProbe;
   /** Desktop UI overlay preflight, when the machine exposes a display to probe. */
   readonly desktopOverlay?: IDesktopOverlayProbe;
   /** Optional seams used by the diagnostic checks and by deterministic unit fixtures. */
@@ -1016,6 +1021,64 @@ function executePlaytestDoctor(
   });
 }
 
+/** The marker the engine prints when a frame's shape, not its device, is what costs the frame. */
+const SCENE_WARNING_MARKER = "TN_SCENE_WARNING";
+
+/**
+ * The engine's last scene-shape verdict, read out of whatever this project has already recorded.
+ *
+ * The verdict is produced by the running game and printed once per frame-budget window. An agent
+ * that has just run the game should not have to know which log line carries it, so doctor reads the
+ * recorded output and repeats the most recent one. No recorded run is an `ok` with a reason, never
+ * a failure: a project that has not been run yet has nothing wrong with it.
+ */
+function sceneShapeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  let latest: string | undefined;
+  for (const file of snapshot.files) {
+    if (!file.endsWith(".log") && !file.endsWith(".txt") && !file.endsWith(".json")) continue;
+    const text = snapshot.readText(file);
+    if (text === undefined || !text.includes(SCENE_WARNING_MARKER)) continue;
+    for (const line of text.split("\n")) {
+      const at = line.indexOf(`${SCENE_WARNING_MARKER}:`);
+      if (at >= 0) latest = line.slice(at + SCENE_WARNING_MARKER.length + 1).trim();
+    }
+  }
+  if (latest === undefined) {
+    return {
+      detail: "no recorded run carries a scene verdict yet",
+      name: "scene shape",
+      status: "ok",
+    };
+  }
+  let verdict: unknown;
+  try {
+    verdict = JSON.parse(latest);
+  } catch {
+    return {
+      detail: `a ${SCENE_WARNING_MARKER} line was recorded but could not be read: ${latest.slice(0, 120)}`,
+      fix: "Re-run the game and keep its stdout; the marker is one JSON object on one line.",
+      name: "scene shape",
+      status: "warn",
+    };
+  }
+  if (typeof verdict !== "object" || verdict === null || !("dominantTerm" in verdict)) {
+    return {
+      detail: `a ${SCENE_WARNING_MARKER} line was recorded without a verdict in it`,
+      name: "scene shape",
+      status: "warn",
+    };
+  }
+  const term = String(verdict.dominantTerm);
+  const renderMs = "renderMs" in verdict ? String(verdict.renderMs) : "?";
+  const gpuShare = "gpuShare" in verdict ? String(verdict.gpuShare) : "?";
+  return {
+    detail: `the last window was CPU-bound on scene shape: render ${renderMs} ms with the GPU at ${gpuShare} of the frame, dominated by ${term}`,
+    fix: "Reduce the dominant term before tuning the renderer: fewer objects and fewer draws, not different render settings.",
+    name: "scene shape",
+    status: "warn",
+  };
+}
+
 function playtestCheck(snapshot: IProjectSnapshot, capturePath?: string): IDoctorCheck {
   const runner = playtestRunner(snapshot);
   if (runner === undefined) return missingPlaytestCheck(snapshot);
@@ -1262,6 +1325,42 @@ function nativeRuntimeFilename(): string {
   return process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime";
 }
 
+/**
+ * What the installed host binary says it is.
+ *
+ * The prebuilt is not the package: a release tarball can ship a host older than the version on its
+ * own `package.json`, and its install status describes the download rather than the binary. The
+ * published `runtime-native-v0.3.2` prebuilt answers `Mystral Native Runtime v0.3.0`, which built
+ * every desktop binary whose UI never appeared (PRD-394 phase 4). Asking the host is the only
+ * reading that does not trust metadata about a binary it never ran.
+ */
+export interface INativeHostProbe {
+  /** Why the host could not be read, for the failure detail. */
+  readonly reason?: string;
+  /** The runtime version the host reports, absent when it did not name one. */
+  readonly runtimeVersion?: string;
+}
+
+/** How long the host's own `--version` may take. It answers without opening a window. */
+const NATIVE_HOST_PROBE_TIMEOUT_MS = 20_000;
+
+/** Runs the host's `--version`. Exported so a test can prove the failure shapes without a binary. */
+export function probeNativeHost(binary: string): INativeHostProbe {
+  try {
+    const output = execFileSync(binary, ["--version"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: NATIVE_HOST_PROBE_TIMEOUT_MS,
+    });
+    const runtimeVersion = output.match(/Native Runtime v(\d+\.\d+(?:\.\d+)?)/u)?.[1];
+    return runtimeVersion === undefined
+      ? { reason: "the host did not name its runtime version" }
+      : { runtimeVersion };
+  } catch (error) {
+    return { reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   const key = nativeRuntimeKey();
   if (snapshot.runtimeRoot === undefined || snapshot.readRuntimeText === undefined) {
@@ -1360,7 +1459,96 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
       status: "fail",
     };
   }
-  return { detail: `available (${key})`, name: "native runtime", status: "ok" };
+  // The package version is not the host's version, and only the host knows its own. This is the
+  // check that catches the stale published prebuilt: `runtime-native-v0.3.2` answered
+  // `Mystral Native Runtime v0.3.0`, its install status said 0.3.2, and every game built with it
+  // produced a desktop binary whose UI never appeared.
+  const host = snapshot.nativeHost ?? probeNativeHost(path.join(snapshot.runtimeRoot, binary));
+  const reported = host.runtimeVersion;
+  if (reported === undefined) {
+    return {
+      detail: `unavailable — the ${key} host did not report a runtime version (${host.reason ?? "no reason given"})`,
+      fix: "Reinstall the native runtime, or build it from source with `pnpm --filter @threenative/runtime-native native:build`: doctor cannot vouch for a host it cannot identify.",
+      name: "native runtime",
+      status: "fail",
+    };
+  }
+  const required = newestVersion([
+    snapshot.installedVersions.get(RUNTIME_PACKAGE),
+    snapshot.installedVersions.get(CORE_PACKAGE_NAME),
+  ]);
+  const lags = required === undefined ? undefined : hostIsOlder(reported, required);
+  if (lags !== false) {
+    return {
+      detail:
+        lags === true
+          ? `unavailable — the ${key} host reports runtime v${reported}, older than the installed engine ${String(required)}`
+          : `unavailable — the ${key} host reports runtime v${reported}, which cannot be compared with the installed engine ${String(required)}`,
+      fix: "Install a native runtime at least as new as the engine, or build one from source with `pnpm --filter @threenative/runtime-native native:build`. A host older than the engine builds a desktop binary whose UI never appears.",
+      name: "native runtime",
+      status: "fail",
+    };
+  }
+  return {
+    detail: `available (${key}, host runtime v${reported})`,
+    name: "native runtime",
+    status: "ok",
+  };
+}
+
+/** `major.minor.patch`, with any prerelease or build suffix, as numbers; `undefined` otherwise. */
+function versionParts(value: string): readonly [number, number, number] | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)/u.exec(value.trim());
+  if (match === null) return undefined;
+  const parts = [Number(match[1]), Number(match[2]), Number(match[3])] as const;
+  return parts.every(Number.isSafeInteger) ? parts : undefined;
+}
+
+/** The newest of the versions that are present, or `undefined` when none are readable. */
+function newestVersion(versions: readonly (string | undefined)[]): string | undefined {
+  let best: string | undefined;
+  let bestParts: readonly [number, number, number] | undefined;
+  for (const candidate of versions) {
+    if (candidate === undefined) continue;
+    const parts = versionParts(candidate);
+    if (parts === undefined) continue;
+    if (bestParts === undefined || isNewer(parts, bestParts)) {
+      best = candidate;
+      bestParts = parts;
+    }
+  }
+  return best;
+}
+
+function isNewer(
+  left: readonly [number, number, number],
+  right: readonly [number, number, number],
+): boolean {
+  const [leftMajor, leftMinor, leftPatch] = left;
+  const [rightMajor, rightMinor, rightPatch] = right;
+  if (leftMajor !== rightMajor) return leftMajor > rightMajor;
+  if (leftMinor !== rightMinor) return leftMinor > rightMinor;
+  return leftPatch > rightPatch;
+}
+
+/**
+ * Whether the host is older than what the engine requires.
+ *
+ * `undefined` when either side cannot be read as a version — a caller that cannot compare cannot
+ * pass, because the one release this check exists for reported a version the package metadata did
+ * not.
+ */
+function hostIsOlder(host: string, required: string): boolean | undefined {
+  const hostParts = versionParts(host);
+  const requiredParts = versionParts(required);
+  if (hostParts === undefined || requiredParts === undefined) return undefined;
+  const [hostMajor, hostMinor, hostPatch] = hostParts;
+  const [requiredMajor, requiredMinor, requiredPatch] = requiredParts;
+  if (hostMajor !== requiredMajor) return hostMajor < requiredMajor;
+  if (hostMinor !== requiredMinor) return hostMinor < requiredMinor;
+  if (hostPatch !== requiredPatch) return hostPatch < requiredPatch;
+  // Same release: a prerelease host is older than the release it precedes.
+  return /[-+]/u.test(host.trim()) && !/[-+]/u.test(required.trim());
 }
 
 function javaVersion(
@@ -1892,6 +2080,7 @@ export function diagnoseProject(
           name: "playtests",
           status: "warn",
         },
+    sceneShapeCheck(snapshot),
     ...capabilitySearchChecks(snapshot),
     editorActivationCheck(snapshot),
     ...(blender === undefined ? [] : [blender]),
@@ -2036,6 +2225,9 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
             }
           },
           runtimeFileExists: (relative: string) => existsSync(path.join(runtimeRoot, relative)),
+          nativeHost: probeNativeHost(
+            path.join(runtimeRoot, "prebuilt", nativeRuntimeKey(), nativeRuntimeFilename()),
+          ),
           ...(runtimeManifestUrl === undefined ? {} : { runtimeManifestUrl }),
           runtimeRoot,
         }),

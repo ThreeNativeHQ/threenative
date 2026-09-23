@@ -5,6 +5,7 @@
 #include "bindings_pipelines.h"
 #include "bindings_presentation.h"
 #include "bindings_state.h"
+#include "mystral/platform/window.h"
 #include "mystral/cold_start.h"
 #include "mystral/pump_silence.h"
 #include "mystral/js/engine.h"
@@ -462,6 +463,61 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
 }
 
 /**
+ * Names a frame the loop rendered and never presented, at most once a second.
+ *
+ * A present is suppressed silently by three separate conditions - no surface, no acquired
+ * swapchain texture, and a frame whose replay never ended a render pass on the surface - and none
+ * of them said anything. A real game hit the third one at the moment its first world frame
+ * replaced the loading screen: the JavaScript side went on rendering at 59 fps with a `render`
+ * phase of 16.5 ms per frame, presents stopped dead at 137, and the window showed the same
+ * five-second-old picture for the rest of the run with nothing in the log. Say which condition it
+ * is, once a second, so the next one is a grep and not an afternoon.
+ */
+static void reportUnpresentedFrame(BindingsState* state, bool pending) {
+    static uint64_t suppressed = 0;
+    static std::chrono::steady_clock::time_point lastReport{};
+    // Consecutive one-second reports, and whether this run's title currently carries the stall.
+    static uint64_t stalledSeconds = 0;
+    static bool titleCarriesStall = false;
+    // A stall this long is not a hitch: say it where a developer is already looking, because a
+    // marker in stdout is invisible to anyone watching the window, and a frozen picture with no
+    // explanation is the failure this escalation exists to end.
+    static constexpr uint64_t kStallSeconds = 3;
+    if (pending && state->presentation.currentTexture && state->surface) {
+        suppressed = 0;
+        stalledSeconds = 0;
+        if (titleCarriesStall) {
+            mystral::platform::setWindowTitle(nullptr);
+            titleCarriesStall = false;
+        }
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const bool first = lastReport.time_since_epoch().count() == 0;
+    if (!first && now - lastReport < std::chrono::seconds(1)) {
+        suppressed += 1;
+        return;
+    }
+    lastReport = now;
+    std::cout << "TN_FRAME_NOT_PRESENTED:{\"pending\":" << (pending ? "true" : "false")
+              << ",\"texture\":" << (state->presentation.currentTexture ? "true" : "false")
+              << ",\"surface\":" << (state->surface ? "true" : "false")
+              << ",\"renderPassEnded\":"
+              << (state->presentation.surfaceRenderPassEnded ? "true" : "false")
+              << ",\"suppressed\":" << suppressed << "}" << std::endl;
+    suppressed = 0;
+    stalledSeconds += 1;
+    if (stalledSeconds < kStallSeconds) return;
+    // Name the condition in the title, not just "stalled": the three conditions are different bugs.
+    const char* condition = !state->surface                 ? "no surface"
+                            : !state->presentation.currentTexture ? "no swapchain texture"
+                                                                  : "a render pass never ended";
+    std::string title = std::string("ThreeNative - no frames presented: ") + condition;
+    mystral::platform::setWindowTitle(title.c_str());
+    titleCarriesStall = true;
+}
+
+/**
  * Names a failed swapchain acquire, at most once a second and always the first one.
  *
  * `TN_SURFACE_ACQUIRE_FAILED` is the marker a logcat filter finds when a device shows a black
@@ -620,6 +676,7 @@ void presentPendingSurface(BindingsState* state) {
     captureFrameScreenshot(state);
     const bool pending = state->presentation.framePresentPending;
     state->presentation.framePresentPending = false;
+    reportUnpresentedFrame(state, pending);
     if (!state->presentation.currentTexture)
         return;
 
@@ -772,6 +829,16 @@ void reportPresentTick(BindingsState* state, uint64_t frames) {
     // place, so this stays in a .cpp.
     os_log(OS_LOG_DEFAULT, "%{public}s", marker.c_str());
 #endif
+}
+
+js::JSValueHandle handleWebGpuPresentedCount(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    // Read-only count of the frames that reached the display. The JavaScript frame budget needs it
+    // because its callback runs once per raf dispatch while `paceToPresentationCap` paces the
+    // **present**, never the loop: a window that counted dispatches reported 2631 fps beside a host
+    // that presented 133 frames in 1740. A private diagnostic seam, like `__tnPresentationCap`.
+    (void)bindingDestination;
+    (void)args;
+    return state->engine->newNumber(static_cast<double>(state->profiling.presentCount));
 }
 
 js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {

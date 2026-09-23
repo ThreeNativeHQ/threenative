@@ -381,6 +381,29 @@ function wrapRenderer(
     return { frame: sampled, ms: timestamp };
   };
 
+  let renderingFrame = 0;
+  const renderFrame = (scene: Object3D, camera: Camera): void => {
+    if (outputPipeline === undefined) raw.render(scene, camera);
+    else {
+      // RenderPipeline.render() has no scene argument and PassNode keeps the scene it captured
+      // when the graph was built. Retarget only the authored world pass at the root the wrapper
+      // is rendering so a projection mirror and its velocity history remain the same input.
+      setOutputPipelineRoot(outputPass, scene, camera);
+      outputPipeline.render();
+    }
+    pipelineCensus?.firstPresent();
+  };
+  const renderOverlayFrame = (scene: Object3D, camera: Camera): void => {
+    const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
+    const autoClear = raw.autoClear;
+    raw.autoClear = false;
+    try {
+      raw.render(scene, camera);
+    } finally {
+      if (hadOwnAutoClear) raw.autoClear = autoClear;
+      else Reflect.deleteProperty(raw, "autoClear");
+    }
+  };
   const wrapped: IRendererLike = {
     get compileCount() {
       return compileCount;
@@ -488,9 +511,19 @@ function wrapRenderer(
           ? raw._getFrameBufferTarget()
           : undefined;
       const hadOwnGetRenderTarget = Object.hasOwn(raw, "getRenderTarget");
+      const boundBeforeCompile =
+        (previousGetRenderTarget as (() => unknown) | undefined)?.call(raw) ?? null;
       if (overrideTarget !== undefined) {
+        // Only the compile may see it. A frame rendered inside this window must get the real
+        // answer, because three's own reflector saves `getRenderTarget()` at the top of its
+        // `updateBefore` and restores what it saved: handed the frame-buffer target, it puts the
+        // frame-buffer target back, and from that frame on the renderer draws into it instead of
+        // the swapchain. Measured on a game with a water reflection — the swapchain image was
+        // never acquired again, presents froze at 137 while the loop ran at 59 fps, and the window
+        // showed the same loading screen for the rest of the session.
         raw.getRenderTarget = () =>
-          (previousGetRenderTarget as () => unknown).call(raw) ?? overrideTarget;
+          (previousGetRenderTarget as () => unknown).call(raw) ??
+          (renderingFrame > 0 ? null : overrideTarget);
       }
       activeCompiles += 1;
       compileCount += 1;
@@ -508,6 +541,19 @@ function wrapRenderer(
         if (overrideTarget !== undefined) {
           if (hadOwnGetRenderTarget) raw.getRenderTarget = previousGetRenderTarget;
           else Reflect.deleteProperty(raw as object, "getRenderTarget");
+          // Put back the target that was bound when this compile started.
+          //
+          // three's compile runs node `updateBefore` hooks, and a reflector's saves
+          // `renderer.getRenderTarget()`, draws its mirror, and restores what it saved. Inside the
+          // window above that answer is the frame-buffer target, so the reflector *binds* it and
+          // leaves it bound: from the next frame on the renderer draws into that target instead of
+          // the swapchain, the swapchain image is never acquired again, and the window keeps
+          // showing whatever was on it. Measured on a game with a water reflection — presents
+          // frozen at 137 while the loop ran at 59 fps, with `TN_FRAME_NOT_PRESENTED`
+          // (`texture:false`) every frame for the rest of the session.
+          const boundNow = (previousGetRenderTarget as () => unknown).call(raw);
+          if (boundNow === overrideTarget && typeof raw.setRenderTarget === "function")
+            raw.setRenderTarget(boundBeforeCompile);
         }
         activeCompiles -= 1;
         if (activeCompiles === 0) {
@@ -552,25 +598,19 @@ function wrapRenderer(
       raw.dispose?.();
     },
     render: (scene, camera) => {
-      if (outputPipeline === undefined) raw.render(scene, camera);
-      else {
-        // RenderPipeline.render() has no scene argument and PassNode keeps the scene it captured
-        // when the graph was built. Retarget only the authored world pass at the root the wrapper
-        // is rendering so a projection mirror and its velocity history remain the same input.
-        setOutputPipelineRoot(outputPass, scene, camera);
-        outputPipeline.render();
+      renderingFrame += 1;
+      try {
+        renderFrame(scene, camera);
+      } finally {
+        renderingFrame -= 1;
       }
-      pipelineCensus?.firstPresent();
     },
     renderOverlay: (scene, camera) => {
-      const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
-      const autoClear = raw.autoClear;
-      raw.autoClear = false;
+      renderingFrame += 1;
       try {
-        raw.render(scene, camera);
+        renderOverlayFrame(scene, camera);
       } finally {
-        if (hadOwnAutoClear) raw.autoClear = autoClear;
-        else Reflect.deleteProperty(raw, "autoClear");
+        renderingFrame -= 1;
       }
     },
     setOutputNode: (node, worldPass) => {

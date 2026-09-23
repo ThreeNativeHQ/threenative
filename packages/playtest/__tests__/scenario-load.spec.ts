@@ -54,7 +54,7 @@ describe("scenario load characterization", () => {
     [
       "an unsupported assertion kind",
       { ...CANONICAL, assert: { teleports: {} } },
-      /Unknown key 'teleports' at assert\.teleports\. Supported keys: aerodynamics, animation, camera/u,
+      /Unknown key 'teleports' at assert\.teleports\. Supported keys: aerodynamics, animation, audio, camera/u,
     ],
     [
       "an unstable name",

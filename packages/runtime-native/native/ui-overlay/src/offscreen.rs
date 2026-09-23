@@ -56,7 +56,15 @@ const KEY_FOCUS_CHANNEL: &str = "tnKeyFocus";
 ///
 /// The page's own rAF runs at 60 Hz, so anything shorter than this re-rasterizes the same pixels.
 const BUSY_INTERVAL: Duration = Duration::from_millis(16);
-/// Where the backoff stops once the page has stopped changing.
+/// How long the page must show nothing new before the poll slows to this, and what it slows to.
+///
+/// One number, two jobs, on purpose: it is the quiet time that counts as "the page has stopped" and
+/// the interval an idle page is then polled at. Two constants here would let the poll drift slower
+/// than the threshold that asks for it.
+///
+/// The slow poll is what makes this affordable at all: a HUD that has not changed costs a CPU raster
+/// of the whole page and a full-frame comparison per poll, so polling it at the page's own frame rate
+/// spends a core re-drawing the same pixels, and at 250 ms it is noise.
 const IDLE_INTERVAL: Duration = Duration::from_millis(250);
 /// How often the web thread looks for work from the game. This is the ceiling on pointer latency.
 const SERVICE_INTERVAL: Duration = Duration::from_millis(8);
@@ -198,10 +206,22 @@ pub struct Shared {
 
 impl Shared {
     pub fn push_command(&self, command: Command) {
-        self.commands
+        let mut queue = self
+            .commands
             .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .push_back(command);
+            .unwrap_or_else(|error| error.into_inner());
+        // A move that lands while an earlier move is still waiting replaces it: the page only needs
+        // the newest position, and a 1000 Hz mouse would otherwise queue an evaluation per sample
+        // against the snapshot work on the same thread. Only the command at the back is collapsed,
+        // so a press, release, resize or post queued after a move keeps that move in front of it and
+        // order is preserved; a move queued after one of those starts a new pending move.
+        let replace_back = matches!(&command, Command::Pointer { kind, .. } if kind == "pointermove")
+            && matches!(queue.back(), Some(Command::Pointer { kind, .. }) if kind == "pointermove");
+        if replace_back {
+            *queue.back_mut().expect("back() was Some") = command;
+        } else {
+            queue.push_back(command);
+        }
     }
 
     fn take_command(&self) -> Option<Command> {
@@ -607,6 +627,108 @@ fn content_type(path: &str) -> &'static str {
     }
 }
 
+/// When the next snapshot is due, and why — the cadence, kept pure so it can be a unit test.
+///
+/// The driver owns the view and the asynchronous callback; every decision about *when* to ask
+/// again is made here. Three rules this type exists to state, all defects before they were tests:
+///
+/// - A capture is paced from a **deadline anchored at the request**, not from the previous answer.
+///   Asking again a full `interval` after each completion made the real period the snapshot's round
+///   trip *plus* the interval — about 30 ms for the measured 14 ms round trip against the page's own
+///   16 ms frame, half the rate the page was painting. With the deadline anchored at the request, a
+///   round trip shorter than a frame leaves the next ask already due.
+/// - A **wake during an in-flight request is not lost.** A post, an input or a resize that arrives
+///   before the answer used to have its urgent deadline overwritten by the completion's backoff, so
+///   the change the game just made waited out the idle poll. `settled` honours the pending wake.
+/// - The backoff is **how long the page has been quiet, not how many identical answers arrived.** A
+///   page painting at its own frame rate against a 16 ms poll legitimately answers with the same
+///   pixels whenever two asks land inside one of its frames, and counting that as idleness doubled
+///   the wait to 32 ms immediately: a hole wider than the frame it was pacing, in a stream that had
+///   nothing wrong with it. `IDLE_INTERVAL` is what the old chain of doublings summed to
+///   (16+32+64+128 ms), so a page that has genuinely stopped is polled as slowly as it was before.
+struct Cadence {
+    /// When the next snapshot may be asked for.
+    next_at: Instant,
+    /// When the page last had something new to show: a change, or a post that is about to be one.
+    changed_at: Instant,
+    /// A wake arrived while a request was in flight, so the next one is urgent.
+    wake_pending: bool,
+}
+
+impl Cadence {
+    fn new(now: Instant) -> Self {
+        Self {
+            next_at: now,
+            changed_at: now,
+            wake_pending: false,
+        }
+    }
+
+    /// A request arrived from the game: the page is about to change, so stop backing off.
+    fn wake(&mut self, now: Instant) {
+        self.changed_at = now;
+        self.wake_pending = true;
+        self.next_at = now;
+    }
+
+    /// A snapshot just went out: anchor the next deadline at the request, not at its answer.
+    fn requested(&mut self, now: Instant) {
+        self.wake_pending = false;
+        self.next_at = now + BUSY_INTERVAL;
+    }
+
+    /// A snapshot came back. `changed` is false for a byte-identical frame or a failed read.
+    fn settled(&mut self, now: Instant, changed: bool) {
+        if changed {
+            self.changed_at = now;
+        }
+        if self.wake_pending {
+            // The page moved since this request went out; do not make the change wait out a backoff.
+            self.wake_pending = false;
+            self.next_at = now;
+        } else if !changed {
+            self.next_at = now + self.wait(now);
+        }
+        // A change leaves the deadline `requested` set: a round trip shorter than a frame leaves the
+        // next ask already due, a longer one makes it due now. Either way no interval is added.
+    }
+
+    /// How long an unchanged page waits from this answer: one page frame while it is still moving,
+    /// the idle poll once it has been quiet for that long.
+    fn wait(&self, now: Instant) -> Duration {
+        if self.quiet(now) >= IDLE_INTERVAL {
+            IDLE_INTERVAL
+        } else {
+            BUSY_INTERVAL
+        }
+    }
+
+    /// How long the page has shown nothing new.
+    fn quiet(&self, now: Instant) -> Duration {
+        now.duration_since(self.changed_at)
+    }
+
+    fn due(&self, now: Instant) -> bool {
+        now >= self.next_at
+    }
+}
+
+/// One line per snapshot asked for and answered, only when `TN_UI_SNAPSHOT_TRACE` is set.
+///
+/// `TN_UI_SNAPSHOT` aggregates a second, and a second cannot separate the two reasons a gap appears
+/// in the composited frames: the cadence waiting between asks, or the page having nothing new to
+/// hand back. Those have opposite fixes, and the aggregate logs the same line for both. The durations
+/// here are what distinguishes them — but only durations, never an absolute time, because this runs
+/// on the web thread and its clock shares no origin with the game thread's composite trace.
+fn trace_snapshot(event: &str, request: u64, detail: &str) {
+    static ENABLED: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var_os("TN_UI_SNAPSHOT_TRACE").is_some());
+    if !*ENABLED {
+        return;
+    }
+    println!("TN_UI_SNAPSHOT_TRACE:{{\"event\":\"{event}\",\"n\":{request}{detail}}}");
+}
+
 /// The web thread's state machine: drain the game's requests, then take a snapshot if one is due.
 struct Driver {
     shared: Arc<Shared>,
@@ -618,9 +740,8 @@ struct Driver {
     in_flight: bool,
     /// When the outstanding request went out, so a request that never comes back is visible.
     in_flight_since: Instant,
-    next_at: Instant,
-    /// Consecutive snapshots that came back byte-identical, which is what the cadence backs off on.
-    unchanged: u32,
+    /// When the next capture is due, and the backoff/wake state behind it.
+    cadence: Cadence,
     /// Snapshots asked for, and how long the last one took to come back.
     ///
     /// A snapshot is asked for once and answered once, and the loop waits for the answer before
@@ -629,11 +750,22 @@ struct Driver {
     /// symptom a reader can act on.
     requests: u64,
     last_round_trip: Duration,
+    /// Time the last completion spent copying and comparing, so the trace can separate WebKit's
+    /// raster/IPC from this thread's own read of it.
+    last_read: Duration,
     last_report: Instant,
     /// The bytes published last, kept so an unchanged frame is not published at all.
     previous: Option<Arc<Vec<u8>>>,
     /// Buffers to write the next snapshot into, so a static HUD is not an allocation per tick.
     pool: Vec<Vec<u8>>,
+    /// Force one full invalidation before the next snapshot.
+    ///
+    /// Only the first request after create, and the first after a resize: at those points the page
+    /// may have painted nothing at the current size, so WebKit has no invalidated region to
+    /// snapshot and would hand back the previous (or blank) surface. Every later request relies on
+    /// the page's own rAF, which invalidates exactly what changed; forcing a full redraw per poll
+    /// makes WebKit re-raster the whole page on every ask, which is most of the measured round trip.
+    force_draw: bool,
 }
 
 impl Driver {
@@ -653,13 +785,14 @@ impl Driver {
             loaded: false,
             in_flight: false,
             in_flight_since: Instant::now(),
-            next_at: Instant::now(),
-            unchanged: 0,
+            cadence: Cadence::new(Instant::now()),
             requests: 0,
             last_round_trip: Duration::ZERO,
+            last_read: Duration::ZERO,
             last_report: Instant::now(),
             previous: None,
             pool: Vec::new(),
+            force_draw: true,
         }
     }
 
@@ -669,15 +802,16 @@ impl Driver {
             return;
         }
         self.last_report = Instant::now();
+        let now = self.last_report;
         let waiting = in_flight_since.map(|at| at.elapsed().as_millis()).unwrap_or(0);
         println!(
-            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"unchanged\":{},\"counter\":{}}}",
+            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{}}}",
             self.requests,
             in_flight_since.is_some(),
             waiting,
             self.last_round_trip.as_millis(),
-            interval(self.unchanged).as_millis(),
-            self.unchanged,
+            self.cadence.wait(now).as_millis(),
+            self.cadence.quiet(now).as_millis(),
             self.shared.frames.published()
         );
     }
@@ -686,8 +820,7 @@ impl Driver {
         self.loaded = true;
         // The first paint is worth asking for immediately: this is the frame that carries the
         // loading screen, and the game is still compiling modules behind it.
-        self.next_at = Instant::now();
-        self.unchanged = 0;
+        self.cadence.wake(Instant::now());
     }
 
     /// Drain the game's requests, then take a snapshot if one is due.
@@ -745,15 +878,14 @@ impl Driver {
         }
         let waiting = this.in_flight.then_some(this.in_flight_since);
         this.report(waiting);
-        if this.loaded && !this.in_flight && Instant::now() >= this.next_at {
+        if this.loaded && !this.in_flight && this.cadence.due(Instant::now()) {
             this.request(driver);
         }
     }
 
     /// A request arrived from the game: the page is about to change, so stop backing off.
     fn wake(&mut self) {
-        self.unchanged = 0;
-        self.next_at = Instant::now();
+        self.cadence.wake(Instant::now());
     }
 
     fn resize(&mut self, width: u32, height: u32) {
@@ -763,6 +895,9 @@ impl Driver {
         self.size = (width, height);
         self.window.set_size_request(width as i32, height as i32);
         self.view.set_size_request(width as i32, height as i32);
+        // The page has not painted at the new size, so the next snapshot needs one forced
+        // invalidation or it reads the old-size backing store.
+        self.force_draw = true;
         self.wake();
     }
 
@@ -782,8 +917,16 @@ impl Driver {
     fn request(&mut self, driver: &Rc<RefCell<Driver>>) {
         self.in_flight = true;
         self.in_flight_since = Instant::now();
+        self.cadence.requested(self.in_flight_since);
         self.requests += 1;
-        self.view.queue_draw();
+        trace_snapshot("request", self.requests, "");
+        // See `force_draw`: only the first ask after create, and the first after a resize, need a
+        // full invalidation. The page's own rAF invalidates every later change, and re-rasterizing
+        // the whole page on every poll is the cost this avoids.
+        if self.force_draw {
+            self.view.queue_draw();
+            self.force_draw = false;
+        }
         let driver = Rc::clone(driver);
         self.view.snapshot(
             SnapshotRegion::Visible,
@@ -795,21 +938,22 @@ impl Driver {
 
     fn complete(&mut self, result: Result<gtk::cairo::Surface, gtk::glib::Error>) {
         self.in_flight = false;
+        let now = Instant::now();
+        // Request -> callback: WebKit's raster and snapshot IPC. The copy and compare that follow
+        // are this thread's own work and are timed separately, so a run can say which dominates.
         self.last_round_trip = self.in_flight_since.elapsed();
-        let Some((width, height, stride, buffer)) = self.read(result) else {
+        let read_started = Instant::now();
+        let read = self.read(result);
+        self.last_read = read_started.elapsed();
+        let Some((width, height, stride, buffer, unchanged)) = read else {
             // A snapshot that failed or came back in a shape we cannot upload: try again, but not
             // in a tight loop, so a permanently broken web view cannot spin a core.
-            self.unchanged = self.unchanged.saturating_add(1);
-            self.next_at = Instant::now() + interval(self.unchanged);
+            self.cadence.settled(now, false);
+            self.trace_settled(now, false);
             return;
         };
-        let unchanged = self
-            .previous
-            .as_deref()
-            .is_some_and(|previous| previous.as_slice() == buffer.as_slice());
         if unchanged {
             self.pool.push(buffer);
-            self.unchanged = self.unchanged.saturating_add(1);
         } else {
             let published = Arc::new(buffer);
             self.shared
@@ -822,16 +966,36 @@ impl Driver {
                     self.pool.push(recycled);
                 }
             }
-            self.unchanged = 0;
         }
-        self.next_at = Instant::now() + interval(self.unchanged);
+        self.cadence.settled(now, !unchanged);
+        self.trace_settled(now, !unchanged);
+    }
+
+    /// The decision this completion bought, in the durations the composite trace can be read against.
+    fn trace_settled(&self, now: Instant, changed: bool) {
+        trace_snapshot(
+            "settled",
+            self.requests,
+            &format!(
+                ",\"changed\":{},\"snapshotMs\":{},\"readMs\":{},\"quietMs\":{},\"waitMs\":{}",
+                changed,
+                self.last_round_trip.as_millis(),
+                self.last_read.as_millis(),
+                self.cadence.quiet(now).as_millis(),
+                self.cadence.wait(now).as_millis()
+            ),
+        );
     }
 
     /// Read a completed snapshot into a pooled buffer, or `None` if it is not something we can use.
+    ///
+    /// The returned flag is the "unchanged" the cadence backs off on, decided in the same pass that
+    /// copies the pixels: the frame is compared against `previous` row by row as it is copied, so an
+    /// idle HUD no longer pays a second full sweep of an 8.3 MB `memcmp` after the copy.
     fn read(
         &mut self,
         result: Result<gtk::cairo::Surface, gtk::glib::Error>,
-    ) -> Option<(u32, u32, u32, Vec<u8>)> {
+    ) -> Option<(u32, u32, u32, Vec<u8>, bool)> {
         let surface = result.ok()?;
         surface.flush();
         let mut image = gtk::cairo::ImageSurface::try_from(surface).ok()?;
@@ -846,26 +1010,56 @@ impl Driver {
         if data.len() < length {
             return None;
         }
+        let previous = self.previous.clone();
         let mut buffer = self.pool.pop().unwrap_or_default();
-        buffer.clear();
-        buffer.extend_from_slice(&data[..length]);
-        Some((width as u32, height as u32, stride as u32, buffer))
+        let unchanged = copy_and_compare(
+            &data[..length],
+            stride as usize,
+            previous.as_deref().map(Vec::as_slice),
+            &mut buffer,
+        );
+        Some((
+            width as u32,
+            height as u32,
+            stride as u32,
+            buffer,
+            unchanged,
+        ))
     }
 }
 
-/// How long to wait before the next snapshot: the page's own frame time while it is changing,
-/// backing off to a slow poll once it has stopped.
+/// Copy `data` into `buffer` one row at a time, deciding equality against `previous` as it goes.
 ///
-/// Deliberately not a constant. A HUD that has not changed costs one CPU raster and one comparison
-/// per tick, and at 60 Hz that is a core spent re-drawing the same pixels; at 250 ms it is noise.
-/// The page's rAF runs at 60 Hz, so 16 ms is already the fastest a snapshot can be worth taking.
-fn interval(unchanged: u32) -> Duration {
-    let scaled = BUSY_INTERVAL.saturating_mul(1u32 << unchanged.min(4));
-    if scaled > IDLE_INTERVAL {
-        IDLE_INTERVAL
-    } else {
-        scaled
+/// `row` is the stride in bytes. Returns true only when every copied byte matches a `previous` of
+/// the same length — the exact "unchanged" the cadence used to derive from a second `memcmp`.
+/// A `previous` of a different length (a resize) is never unchanged. The comparison short-circuits
+/// the moment a row differs, but the copy never stops.
+fn copy_and_compare(
+    data: &[u8],
+    row: usize,
+    previous: Option<&[u8]>,
+    buffer: &mut Vec<u8>,
+) -> bool {
+    buffer.clear();
+    buffer.reserve(data.len());
+    let previous = previous.filter(|previous| previous.len() == data.len());
+    let mut unchanged = previous.is_some();
+    match previous {
+        Some(previous) => {
+            let mut start = 0;
+            while start < data.len() {
+                let end = (start + row).min(data.len());
+                let chunk = &data[start..end];
+                if unchanged && chunk != &previous[start..end] {
+                    unchanged = false;
+                }
+                buffer.extend_from_slice(chunk);
+                start = end;
+            }
+        }
+        None => buffer.extend_from_slice(data),
     }
+    unchanged
 }
 
 /// A JSON string literal holding `frame`, so a quote or a newline in the payload cannot end it.
@@ -892,15 +1086,99 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_interval_backs_off_from_the_page_frame_time_to_a_slow_poll() {
-        assert_eq!(interval(0), Duration::from_millis(16));
-        assert_eq!(interval(1), Duration::from_millis(32));
-        assert_eq!(interval(4), Duration::from_millis(250));
+    fn a_page_that_stopped_is_polled_slowly_and_one_that_has_not_is_not() {
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.wake(base);
         assert_eq!(
-            interval(40),
-            Duration::from_millis(250),
-            "a page that never changes polls, it does not stop"
+            cadence.wait(base + Duration::from_millis(249)),
+            BUSY_INTERVAL,
+            "a page still inside its own frame time is polled at the page's own rate"
         );
+        assert_eq!(
+            cadence.wait(base + IDLE_INTERVAL),
+            IDLE_INTERVAL,
+            "a page that has shown nothing for 250 ms is polled at the idle rate, and still polled"
+        );
+    }
+
+    #[test]
+    fn one_identical_answer_does_not_delay_a_page_that_is_still_painting() {
+        // The measured defect. An animating page answers identically whenever two asks land inside
+        // one of its frames, and counting that as idleness doubled the wait to 32 ms immediately — a
+        // hole wider than the frame it was pacing, and past `2T` for the game presents AC-2 measures
+        // against. A page that changed 17 ms ago is not idle, whatever this one answer says.
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.wake(base);
+        cadence.requested(base);
+        cadence.settled(base + Duration::from_millis(17), false);
+        assert!(
+            !cadence.due(base + Duration::from_millis(32)),
+            "an unchanged answer from a page that just moved waits one page frame, not two"
+        );
+        assert!(cadence.due(base + Duration::from_millis(33)));
+    }
+
+    #[test]
+    fn a_capture_is_paced_from_its_request_not_its_answer() {
+        // A 14 ms round trip against the page's own 16 ms frame. The next ask must be due one frame
+        // after the request, not one interval after the answer (14 + 16 = 30 ms, ~33 fps).
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.requested(base);
+        cadence.settled(base + Duration::from_millis(14), true);
+        assert!(!cadence.due(base + Duration::from_millis(15)));
+        assert!(
+            cadence.due(base + Duration::from_millis(16)),
+            "the next capture is due one page frame after the request, not after the answer"
+        );
+    }
+
+    #[test]
+    fn a_wake_during_an_in_flight_request_is_not_lost() {
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.requested(base);
+        // The game posts while the snapshot is out: urgent, so the backoff must not swallow it.
+        cadence.wake(base + Duration::from_millis(2));
+        cadence.settled(base + Duration::from_millis(14), false);
+        assert!(
+            cadence.due(base + Duration::from_millis(14)),
+            "the change the game just made is captured now, not after an idle poll"
+        );
+    }
+
+    #[test]
+    fn an_unchanged_page_still_backs_off_to_the_idle_poll() {
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.requested(base);
+        // One page frame after an unchanged answer while the page is still warm...
+        cadence.settled(base + Duration::from_millis(4), false);
+        assert!(!cadence.due(base + Duration::from_millis(19)));
+        assert!(cadence.due(base + Duration::from_millis(20)));
+        // ...and the slow poll once it has been quiet for the idle interval, which is the same
+        // quarter second the old chain of doublings (16+32+64+128) took to reach.
+        cadence.requested(base + Duration::from_millis(20));
+        cadence.settled(base + Duration::from_millis(300), false);
+        assert!(!cadence.due(base + Duration::from_millis(549)));
+        assert!(
+            cadence.due(base + Duration::from_millis(550)),
+            "an idle page waits the idle interval from the completion"
+        );
+    }
+
+    #[test]
+    fn a_request_consumes_the_wake_it_was_asked_for() {
+        // A wake served by a request that immediately follows must not leave a second urgent ask
+        // behind, or every game post would buy two captures instead of one.
+        let base = Instant::now();
+        let mut cadence = Cadence::new(base);
+        cadence.wake(base);
+        cadence.requested(base);
+        assert!(!cadence.wake_pending);
+        assert!(!cadence.due(base + Duration::from_millis(15)));
     }
 
     #[test]
@@ -1002,6 +1280,68 @@ mod tests {
         assert!(shared.take_command().is_none());
     }
 
+    fn pointer_move(nx: f32) -> Command {
+        Command::Pointer {
+            kind: "pointermove".to_string(),
+            nx,
+            ny: 0.0,
+            buttons: 0,
+            pointer_id: 1,
+        }
+    }
+
+    fn take_move(shared: &Shared) -> f32 {
+        match shared.take_command() {
+            Some(Command::Pointer { kind, nx, .. }) => {
+                assert_eq!(kind, "pointermove");
+                nx
+            }
+            _ => panic!("expected a pending pointermove"),
+        }
+    }
+
+    #[test]
+    fn consecutive_moves_collapse_to_the_newest_but_never_across_another_command() {
+        let shared = Shared::default();
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(pointer_move(0.2));
+        shared.push_command(pointer_move(0.3));
+        assert_eq!(take_move(&shared), 0.3, "three moves leave the newest");
+        assert!(shared.take_command().is_none());
+
+        // A move queued before a press stays in front of it: collapsing it would reorder the press
+        // ahead of a position the page had already been told about.
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(Command::Pointer {
+            kind: "pointerdown".to_string(),
+            nx: 0.1,
+            ny: 0.0,
+            buttons: 1,
+            pointer_id: 1,
+        });
+        shared.push_command(pointer_move(0.2));
+        shared.push_command(pointer_move(0.3));
+        assert_eq!(take_move(&shared), 0.1, "the move before the press is kept");
+        match shared.take_command() {
+            Some(Command::Pointer { kind, .. }) => assert_eq!(kind, "pointerdown"),
+            _ => panic!("the press follows the move it was queued after"),
+        }
+        assert_eq!(take_move(&shared), 0.3, "moves after the press collapse together");
+        assert!(shared.take_command().is_none());
+
+        // Any non-move command between two moves breaks the collapse as well.
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(Command::Post("state".to_string()));
+        shared.push_command(pointer_move(0.2));
+        assert_eq!(take_move(&shared), 0.1);
+        match shared.take_command() {
+            Some(Command::Post(frame)) => assert_eq!(frame, "state"),
+            _ => panic!("the post keeps its place"),
+        }
+        assert_eq!(take_move(&shared), 0.2);
+        assert!(shared.take_command().is_none());
+    }
+
     #[test]
     fn page_frames_are_served_oldest_first() {
         let shared = Shared::default();
@@ -1024,5 +1364,34 @@ mod tests {
         assert_eq!(serde_frame("a\"b"), "\"a\\\"b\"");
         assert_eq!(serde_frame("a\nb"), "\"a\\nb\"");
         assert_eq!(serde_frame("plain"), "\"plain\"");
+    }
+
+    #[test]
+    fn the_scan_says_unchanged_only_for_byte_identical_pixels() {
+        let frame = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        let mut buffer = Vec::new();
+        assert!(
+            copy_and_compare(&frame, 4, Some(frame.as_slice()), &mut buffer),
+            "a frame equal to the previous one is unchanged"
+        );
+        assert_eq!(buffer, frame, "the copy is the whole frame either way");
+
+        let mut changed = frame.clone();
+        changed[4] = 9;
+        assert!(
+            !copy_and_compare(&changed, 4, Some(frame.as_slice()), &mut buffer),
+            "one differing byte anywhere makes the frame changed"
+        );
+        assert_eq!(buffer, changed, "a changed frame is copied in full");
+    }
+
+    #[test]
+    fn a_previous_frame_of_another_size_is_never_unchanged() {
+        // A resize: the old buffer's length differs, which must publish, not back off.
+        let mut buffer = Vec::new();
+        let frame = vec![0u8; 8];
+        assert!(!copy_and_compare(&frame, 4, Some(&[0u8; 4]), &mut buffer));
+        assert!(!copy_and_compare(&frame, 4, None, &mut buffer));
+        assert_eq!(buffer, frame);
     }
 }

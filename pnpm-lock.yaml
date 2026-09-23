@@ -300,9 +300,21 @@ importers:
         specifier: 'catalog:'
         version: 0.185.1(patch_hash=490f9054342196f4354ad26da2de871cd4f4f771873728ddec6434afef497290)
     devDependencies:
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.0
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.0(@types/react@19.2.0)
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
+      react:
+        specifier: 'catalog:'
+        version: 19.2.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.0(react@19.2.0)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

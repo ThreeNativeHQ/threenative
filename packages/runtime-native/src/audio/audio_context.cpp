@@ -522,9 +522,8 @@ AudioVector3 AudioContext::listenerRight() const {
     return {x, y, z};
 }
 
-std::shared_ptr<AudioBuffer> AudioContext::decodeAudioDataSync(const uint8_t* data, size_t length) {
-    return decodeAudioFile(data, length, sampleRate_);
-}
+// The synchronous entry point is gone with its only caller: `decodeAudioData` now queues the
+// bytes for `AsyncAudioDecoder`, so no decode runs on the frame thread.
 
 void AudioContext::resume() {
     std::lock_guard<std::mutex> lock(lifecycleMutex_);
