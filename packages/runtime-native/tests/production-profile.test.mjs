@@ -41,6 +41,8 @@ import {
   webFrameInstrumentation,
   writeRunScenarios,
 } from '../scripts/profile-production.mjs';
+import { parseStandalonePlaytestArgs } from '../../playtest/src/runner/config.js';
+import { isJudgeMarkerRequestFailure } from '../../playtest/src/runner/runner-support.js';
 
 const temporary = [];
 const sourceSha = 'a'.repeat(64);
@@ -1021,6 +1023,24 @@ test('native scenarios use supported startup assertions while browser startup re
       assert.equal(scenario.assert.startup.maxReadyMs > 0, true);
     }
   }
+});
+
+test('web production runs headed on WebGPU and identifies its own marker endpoint', () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const webScenario = source.slice(source.indexOf('async function runWebScenario('), source.indexOf('async function collectNative('));
+  assert.match(webScenario, /'--browser-recipe', 'webgpu'/u);
+  assert.match(webScenario, /'--headed'/u);
+  assert.match(webScenario, /'--judge-marker-url', markerServer\.url/u);
+
+  const markerUrl = 'http://127.0.0.1:41777/first-frame';
+  const config = parseStandalonePlaytestArgs([
+    'playtests/workload.playtest.json',
+    '--judge-marker-url', markerUrl,
+  ], '/project');
+  assert.equal(config.judgeMarkerUrl, markerUrl);
+  assert.equal(isJudgeMarkerRequestFailure('POST', markerUrl, markerUrl), true);
+  assert.equal(isJudgeMarkerRequestFailure('POST', `${markerUrl}?game=1`, markerUrl), false);
+  assert.equal(isJudgeMarkerRequestFailure('GET', markerUrl, markerUrl), false);
 });
 
 test('generated production workload runs through the playtest validator and keeps source bounds out of band', async () => {

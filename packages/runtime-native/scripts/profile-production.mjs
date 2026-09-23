@@ -566,6 +566,8 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
     relative(project, scenarioPath),
     '--artifacts', relativeArtifact,
     '--browser-recipe', 'webgpu',
+    '--judge-marker-url', markerServer.url,
+    '--headed',
     '--project', project,
     '--server-command', `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     '--timeout', String(timeoutMs),

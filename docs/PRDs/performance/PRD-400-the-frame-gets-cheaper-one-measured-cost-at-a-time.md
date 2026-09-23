@@ -212,7 +212,7 @@ is never reported as a steady-state win.
 
 ## Execution Phases
 
-Work runs in `.claude/worktrees/prd-400-perf-loop/`, branched from `develop`, with one draft PR to
+Work runs in `.worktrees/prd-400-perf-loop/`, branched from `develop`, with one draft PR to
 `develop` opened before Phase 1. Run `pnpm prd:progress` on this file before starting and after each
 phase.
 
@@ -250,6 +250,12 @@ judge-generated browser-only diagnostic assertion; native scenarios now assert s
 readiness. The repeated live run reached Midway's flight workload, then native WebGPU rejected a
 4-sample depth texture bound to a single-sample layout; the later screenshot failure is secondary.
 Native Midway measurements remain blocked while the renderer binding is investigated.
+The web preflight initially selected SwiftShader and lost its GPU instance because the judge
+launched Chromium headless. Headed WebGPU under the existing private display reached the flight
+workload; the playtest runner now excludes only failed POSTs to the judge's exact loopback marker
+URL from its network assertion. A one-run preflight then returned `PASS` with 900 frame samples,
+startup and all three markers; Chromium `adapter.info` reported `nvidia / turing`. This is a
+preflight on a dirty checkout, not a pinned baseline or A/A noise result.
 The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
 the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
 `pnpm lint`, and `pnpm test` passed locally (454 files, 5,519 tests; 8 skipped).

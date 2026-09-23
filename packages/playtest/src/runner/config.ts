@@ -34,6 +34,7 @@ export interface IStandalonePlaytestConfig {
   endpoint?: string;
   headless: boolean;
   ios?: { appPath?: string; bundleId: string; transport: "device" | "simulator" };
+  judgeMarkerUrl?: string;
   mailboxRoot?: string;
   port?: number;
   projectPath: string;
@@ -75,6 +76,7 @@ export const PLAYTEST_FLAGS = {
   "--executable": { default: "required for desktop", summary: "native desktop game executable", takesValue: true },
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
+  "--judge-marker-url": { default: "none", summary: "judge-owned loopback marker URL whose POST failures are not network errors", takesValue: true },
   // `allowDashValue` so a host flag can be passed as one: `--host-arg --ui` is the UI root the
   // overlay serves, and the parser would otherwise read `--ui` as a playtest flag and reject it.
   "--host-arg": { allowDashValue: true, default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
@@ -220,6 +222,22 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     throw new PlaytestCliUsageError("Choose --browser-recipe or --browser-arg, not both.");
   }
   const device = flags.get("--device")?.[0];
+  const judgeMarkerUrl = flags.get("--judge-marker-url")?.[0];
+  if (judgeMarkerUrl !== undefined) {
+    let marker: URL;
+    try {
+      marker = new URL(judgeMarkerUrl);
+    } catch {
+      throw new PlaytestCliUsageError("--judge-marker-url must be a canonical http://127.0.0.1:<port>/first-frame URL for browser runs.");
+    }
+    if (
+      marker.href !== judgeMarkerUrl || marker.protocol !== "http:" || marker.hostname !== "127.0.0.1" ||
+      marker.port === "" || marker.pathname !== "/first-frame" || marker.search !== "" || marker.hash !== "" ||
+      marker.username !== "" || marker.password !== "" || target !== "browser" || device !== undefined
+    ) {
+      throw new PlaytestCliUsageError("--judge-marker-url must be a canonical http://127.0.0.1:<port>/first-frame URL for browser runs.");
+    }
+  }
   if (target === "browser" && device !== undefined) {
     if (browserRecipe !== undefined) {
       throw new PlaytestCliUsageError("Android Chrome device runs cannot honor --browser-recipe; remove it.");
@@ -289,6 +307,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
       bundleId: flags.get("--bundle-id")?.[0] ?? "dev.threenative.runtime",
       transport: iosTransport,
     },
+    ...(judgeMarkerUrl === undefined ? {} : { judgeMarkerUrl }),
     ...(flags.get("--mailbox-root")?.[0] === undefined ? {} : { mailboxRoot: flags.get("--mailbox-root")![0] }),
     ...(serverCommand === undefined
       ? effectivePort === undefined ? {} : { port: effectivePort }
