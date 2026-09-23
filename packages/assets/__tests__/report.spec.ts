@@ -193,3 +193,33 @@ describe("formatModelSizes join reporting", () => {
     ).toBe(true);
   });
 });
+
+describe("formatModelSizes compaction reporting", () => {
+  it("names the nodes flattened, the primitives joined and every protected node", () => {
+    const lines = formatModelSizes([
+      {
+        after: 100,
+        before: 200,
+        logicalPath: "carrier.glb",
+        compact: {
+          flatten: { enabled: true, nodesAfter: 34, nodesBefore: 146 },
+          instance: { batches: 0, enabled: true, instances: 0, reason: "no shared mesh" },
+          join: { enabled: true, primitivesAfter: 20, primitivesBefore: 40 },
+          nodesAfter: 34,
+          nodesBefore: 146,
+          primitivesAfter: 20,
+          primitivesBefore: 40,
+          protected: [
+            { name: "propeller_01", rule: "regex" },
+            { name: "Head", rule: "skin-joint" },
+          ],
+        },
+      },
+    ]);
+    const line = lines.find((entry) => entry.startsWith("compact carrier.glb:"));
+    expect(line).toContain("flatten 146 -> 34 nodes");
+    expect(line).toContain("join 40 -> 20 primitive(s)");
+    expect(line).toContain("instance none (no shared mesh)");
+    expect(line).toContain("protected propeller_01 (regex), Head (skin-joint)");
+  });
+});
