@@ -4638,3 +4638,21 @@ The next actionable step is to choose or rebuild a clean observer-carrying Bayvi
 rerun the prescribed three cold phone launches when a qualified device is reachable. See the
 [PRD-360 protocol](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md)
 and the [tracked evaluator source](prd-360-startup-2026-09-05/validate-evaluator.mjs.txt).
+
+## Performance loop — PRD-400
+
+Phase 1 judge contract, recorded before any optimization candidate. No baseline, noise band, or
+candidate verdict exists yet; AC-1 remains open. Measurements start only after the judge is frozen
+and the machine is uncontended.
+
+| id | contract item | pinned value or status |
+| --- | --- | --- |
+| L0-01 | Target | Native desktop frame p50 at 1280×720, sampleCount 4 on Midway, plus the attacked lane term; FPS is derived. Browser is a separate non-regression arm. |
+| L0-02 | Judge | `pnpm bench:engines --arm tn-desktop --ladder 10000 --modes L1,L3 --repeats 3 --source-sha <sha>` for matrix attribution; `pnpm profile:production --target desktop-pair --project <Midway> --scenario playtests/flight.playtest.json --render-size 1280x720` for the representative game; scaffolded platformer via the judge default. Exact flags and scenario hashes remain to be frozen after live preflight. |
+| L0-03 | Frozen evaluator paths | `scripts/engine-load-test/`, `examples/engine-load-test/src/{workload,game,main,native}.ts`, `examples/engine-load-test/vite.config.ts`, `packages/runtime-native/scripts/{profile-production,production-evidence}.mjs`, `packages/playtest/src/runner/{perf,config}.ts`, `packages/core/src/projection-marker.ts`, the selected playtest scenarios, their assertions, and performance budgets. A judge change re-baselines the lane. |
+| L0-04 | Candidate surface | Lane 1: `packages/core/src/{renderProjection,projection-plan,projection-apply}.ts`; lane 2: `patches/three@0.185.1.patch`; lane 3: `packages/runtime-native/src/runtime-scripts/frame-op-stream.js` and `packages/runtime-native/src/webgpu/{bindings_frame_stream,bindings_commands}.cpp`. |
+| L0-05 | Holdouts | Scaffolded platformer (`profile:production` default) and `sandbox/shadow-run` with `playtests/survives.playtest.json`, chosen before the first candidate. Neither is a tuning workload. |
+| L0-06 | Baseline and noise | Pending: commit, native host hash, installed tarball hashes, machine state, and three A/A runs per metric. No performance claim until recorded. |
+
+Candidate rows (`L1-*`, `L2-*`, `L3-*`) begin after `L0-06` is measured. Rejected and inconclusive
+candidates stay in this section with their measured values and commit ids.
