@@ -336,6 +336,11 @@ The opt-in rAF callback clock and native matrix timestamp join now close 99.97% 
 host period, with 180 scored matrix frames matching host timestamps (`L0-18`). Callback dispatch
 still combines Three.js, recorder and game work, so five-term attribution remains unverified.
 This changed frozen judge paths and requires a new baseline before any candidate verdict.
+A separate V8 profile sampled projection functions heavily and recorder functions lightly on the
+same native matrix cell (`L0-19`), but its sampled shares are not per-frame time. Recorder encode,
+reuse and upload bypass its drain timer, and there is no single existing wrapper around all of them.
+The five-term box remains open; recorder instrumentation and candidate selection wait for an
+uncontended, paced desktop baseline so the diagnostic cost can be justified against a real frame.
 
 ### Phase 2 — Lane 1: scene projection
 
