@@ -110,51 +110,6 @@ pub(crate) fn pointer_injection_script(
     )
 }
 
-/// The JavaScript a host evaluates to deliver one synthetic keyboard event into the page.
-///
-/// The event goes to whatever holds focus, which is the page's own model and not the host's: a
-/// control the player clicked owns the keys, and a page that has focused nothing falls back to the
-/// document. `text` is inserted through `insertText` so a key that types a character really types
-/// it — a synthesised `keydown` alone never inserts anything, and a text field in a HUD would
-/// otherwise take focus and silently ignore every press.
-///
-/// The keys are embedded as JSON string literals rather than interpolated, so a key name from a
-/// platform key table cannot end the script it is going into.
-pub(crate) fn key_injection_script(
-    kind: &str,
-    key: &str,
-    code: &str,
-    text: &str,
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-    meta: bool,
-) -> String {
-    let kind = json_string(kind);
-    let key = json_string(key);
-    let code = json_string(code);
-    let text = json_string(text);
-    format!(
-        "(function(){{var t=document.activeElement||document.body||document.documentElement;\
-         if(!t)return false;\
-         t.dispatchEvent(new KeyboardEvent({kind},{{key:{key},code:{code},\
-         ctrlKey:{ctrl},altKey:{alt},shiftKey:{shift},metaKey:{meta},bubbles:true,\
-         cancelable:true,composed:true}}));\
-         if({text}.length>0&&{kind}==='keydown'&&(t.isContentEditable||\
-         t instanceof HTMLInputElement||t instanceof HTMLTextAreaElement)){{\
-         document.execCommand('insertText',false,{text});}}\
-         return true;}})()",
-        kind = kind,
-        key = key,
-        code = code,
-        text = text,
-        ctrl = ctrl,
-        alt = alt,
-        shift = shift,
-        meta = meta,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::{json_string, point_in_regions, pointer_injection_script};
