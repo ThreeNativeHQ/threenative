@@ -325,6 +325,10 @@ and C++ object compile pass. A linked-host L3 probe parsed 300 detailed samples;
 period ending at frame N to the post-rAF segments of N−1 and pre-rAF segments of N accounts for
 81.2% of the mean period with zero negative residuals (`L0-16`). The remaining 18.8% still needs
 Three.js CPU and recorder JS attribution; this Xvfb probe is not presented FPS or Midway proof.
+Frozen Midway and an isolated `0.5` resolution copy each passed a native desktop profile with
+the same local host and authored scenario (`L0-17`). The records capture `auto` versus `0.5`,
+but these virtual-display runs lack the observed hardware identity required by the A/B comparator;
+neither the resolution-cut sensitivity verdict nor a paced baseline is verified.
 
 ### Phase 2 — Lane 1: scene projection
 
