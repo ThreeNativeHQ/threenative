@@ -34,6 +34,7 @@ import {
   collectionLaunchPlan,
   profileConfigPath,
   postWarmupFrameSamples,
+  rendererResolutionScaleSetting,
   runProductionProfile,
   runCommand,
   safeReport,
@@ -952,6 +953,13 @@ test('native profile reads the generated app identity when no config override is
     profileConfigPath('/tmp/platformer', '/tmp/custom-config.json'),
     '/tmp/custom-config.json',
   );
+});
+
+test('profile identity retains auto or the configured numeric resolution scale per platform', () => {
+  const config = { renderer: { android: { resolutionScale: 0.75 }, resolutionScale: 'auto' } };
+  assert.equal(rendererResolutionScaleSetting(config, 'desktop'), 'auto');
+  assert.equal(rendererResolutionScaleSetting(config, 'android'), '0.75');
+  assert.equal(rendererResolutionScaleSetting({ renderer: { resolutionScale: 0.5 } }, 'desktop'), '0.5');
 });
 
 test('regression collects one steady launch and five startup launches per paired arm', () => {

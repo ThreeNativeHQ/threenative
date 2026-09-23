@@ -590,7 +590,7 @@ export function productionEvidenceToPerformanceRun(
     nativeBinaryHash,
     operatingSystem: observedIdentity(identity.osClass, "osClass"),
     presentMode: observedIdentity(identity.presentMode, "presentMode"),
-    resolution: `${finitePositive(identity.renderWidth, "identity.renderWidth")}x${finitePositive(identity.renderHeight, "identity.renderHeight")}`,
+    resolution: `${finitePositive(identity.renderWidth, "identity.renderWidth")}x${finitePositive(identity.renderHeight, "identity.renderHeight")}${identity.resolutionScaleSetting === undefined ? "" : `; scale=${nonEmpty(identity.resolutionScaleSetting, "identity.resolutionScaleSetting")}`}`,
     sourceSha: nonEmpty(source.sha, "evidence.source.sha"),
     workloadHash: observedIdentity(identity.workloadHash, "workloadHash"),
   };

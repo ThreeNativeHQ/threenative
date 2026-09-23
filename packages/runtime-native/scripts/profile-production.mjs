@@ -271,12 +271,16 @@ export async function collectProduction(options, context, runId) {
     const native = nativeTargets.has(options.target) || options.target === 'desktop-pair'
       ? await collectNative(project, scenarios, artifactsRoot, options, tools)
       : undefined;
+    const resolutionScaleSetting = native === undefined
+      ? undefined
+      : await readResolutionScaleSetting(project, options);
     return assembleEvidence({
       context,
       native,
       options,
       performanceBounds: scenarios.performanceBounds,
       project,
+      resolutionScaleSetting,
       runId,
       startedAt,
       web,
@@ -789,6 +793,32 @@ export function profileConfigPath(project, configPath = undefined) {
   return configPath ?? join(project, '.threenative', 'build', 'config.json');
 }
 
+export function rendererResolutionScaleSetting(config, target) {
+  const renderer = config?.renderer ?? {};
+  const scale = target.startsWith('android')
+    ? renderer.android?.resolutionScale ?? renderer.resolutionScale
+    : renderer.resolutionScale;
+  if (scale === undefined) return 'unset';
+  if (scale === 'auto') return scale;
+  if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0 || scale > 1) {
+    throw new ProductionEvidenceError('TN_PROD_RENDERER_SCALE_INVALID', 'Built config has an invalid renderer resolutionScale.');
+  }
+  return String(scale);
+}
+
+async function readResolutionScaleSetting(project, options) {
+  let config;
+  try {
+    config = JSON.parse(await readFile(profileConfigPath(project, options.config), 'utf8'));
+  } catch (error) {
+    throw new ProductionEvidenceError(
+      'TN_PROD_RENDERER_SCALE_MISSING',
+      `Could not read the built renderer config: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return rendererResolutionScaleSetting(config, options.target);
+}
+
 function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   let child;
   let output = '';
@@ -1263,7 +1293,7 @@ function frameSeriesFromReport(report) {
   return series.length === 0 ? undefined : series;
 }
 
-export function assembleEvidence({ context, native, options, performanceBounds, project, runId, startedAt, web }) {
+export function assembleEvidence({ context, native, options, performanceBounds, project, resolutionScaleSetting, runId, startedAt, web }) {
   const arms = [web, native].filter((arm) => arm !== undefined);
   const regression = options.profile === REGRESSION_PROFILE;
   const expectedRuns = collectionLaunchPlan(options).filter((entry) => entry === 'steady').length;
@@ -1318,7 +1348,7 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
   }
   const artifactHashes = arms.map(({ artifactSha, bundleSha }) => `${artifactSha}:${bundleSha ?? artifactSha}`);
   const target = options.target;
-  const identity = identityFor(options, web, native, artifactHashes);
+  const identity = identityFor(options, web, native, artifactHashes, resolutionScaleSetting);
   const evidence = {
     artifact: {
       applicationClass: target === 'desktop-pair' ? 'platformer-desktop-pair' : arms[0]?.applicationClass ?? 'platformer-production',
@@ -1613,13 +1643,14 @@ function pairMetrics(metrics) {
   };
 }
 
-function identityFor(options, web, native, artifactHashes) {
+function identityFor(options, web, native, artifactHashes, resolutionScaleSetting) {
   const common = {
     // Only observed hardware data may certify a promoted comparison. Missing fields remain absent.
     ...(web?.runs[0]?.report?.observations?.hardwareIdentity ?? native?.runs[0]?.report?.observations?.hardwareIdentity ?? {}),
     workloadHash: web?.workloadHash ?? native?.workloadHash,
     renderHeight: options.renderSize.height,
     renderWidth: options.renderSize.width,
+    ...(resolutionScaleSetting === undefined ? {} : { resolutionScaleSetting }),
   };
   if (options.target === 'desktop-pair') {
     return {
