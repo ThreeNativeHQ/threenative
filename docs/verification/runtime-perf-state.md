@@ -10,6 +10,89 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Midway native probe — desktop steady state, the load stall, and a desktop perf-series gap — 2026-09-17
+
+**Subject:** the tarball sandbox game `sandbox/midway-open-pacific`, packaged desktop binary built
+2026-09-17 15:54 from `develop@dae7c94`; engine checkout `develop@feee5699c`. Machine: RTX 2080
+(Vulkan/Dawn), 59.96 Hz display. Every number below is the package's own instrument
+(`TN_FRAME_BUDGET`, `TN_HOST_GAP`, `TN_FRAME_HITCH`, `TN_STARTUP_WARMUP`, the startup timeline),
+plus `/proc/<tid>/stat` CPU sampling and gdb main-thread backtrace sampling of the packaged binary.
+The probe was asked to judge whether the native target is smooth, not to land a fix; nothing here
+has been changed.
+
+**Airborne steady state, real display, 1280×720, `resolutionScale 1` (auto), `sampleCount 4`,**
+both arms the same scenario, the same pixels and the same adapter (browser `adapter.info` =
+`nvidia/turing`):
+
+| arm | windows | fps | frame p50/p95 | render p50/p95 | update p50 | hostGap p50 | gpuMs |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| native desktop | 2–5 | 38.7–41.3 | 21.4–22.9 / 27.8–29.6 | 17.1–18.3 / 20.8–23.0 | 2.2–2.7 | 2.1–2.9 | 2.1–2.7 |
+| browser, private Xvfb, same game | 3 | 36.9 | 13.9 / 21.0 | 13.9 / 20.9 | 0.0 | 12.4 | 1.45 |
+
+The airborne native frame is **CPU-bound with the GPU ~89 % idle**: `render` owns 17–18 ms of a
+22 ms frame against a 2.2 ms GPU frame. Native is ~40 fps here, not the 60 the game's
+`display.maxFps` asks for. The two arms are not the same camera instant — the browser lane is
+stepped by the playtest bridge and reports `update 0.0` — so the *ratio* is not a parity verdict;
+the comparable claim is that native pays ~+3.3 ms of `render` at matched pixels, and that on both
+runtimes the frame is CPU work, not GPU work. PRD-329's matched-pixel pair remains open on desktop.
+
+Not a defect, but a comparability trap: on the briefing screen the native build renders the world
+behind the UI (frame p50 15.9 ms, render p50 12.7 ms, gpuMs ~2.2) while the web build draws nothing
+(frame p50 0.2 ms). `src/ui/native.css` makes `html, body, #tn-ui` transparent precisely so the
+world shows through the briefing, so the native frame is the visible one — an idle-screen comparison
+across the two targets measures two different pictures.
+
+**Load: 30–41 s to ready, all of it on one thread.** Startup timeline, same scenario:
+`loadStartedMs 598 → enteredMs 30607 → compileSettledMs 34062 → readyMs 34062` natively, and
+`790 → 5300 → 6575 → 6575` in the browser. The native main thread is at 98–99 % CPU for the whole
+load (`/proc` sampling at 0.5 s over 92 s) — it is not waiting on I/O. `TN_FRAME_HITCH` records
+25.6 s and 2.4 s gaps after the first presented frame at 3.6 s; `TN_STARTUP_WARMUP` then spends
+4.3 s on 1 680 candidates → 57 pipelines. 37 gdb backtraces of the main thread during the load
+classify as: **38 % inside `stbi_load_from_memory` / `VP8Decode`, every one reached through
+`handleWebGpuDecodeImageData`**; 8 % inside `stb_vorbis` via `mystral::audio::decodeAudioFile`;
+~14 % V8 GC/parse/allocation; 3 % canvas context creation; 38 % unresolvable V8 JIT frames.
+
+Both decoders are synchronous on the calling thread and are engine-owned: `__decodeImageData`
+(`webgpu/bindings.cpp:1086-1145`) calls `stbi_load_from_memory`/`WebPDecodeRGBA` inline, and
+`decodeAudioData` (`audio/audio_context.cpp:525` via `audio/audio_bindings.cpp:477-498`) calls
+`decodeAudioFile` inline. The run decodes 326 images totalling ~338 Mpx (222 bundle reads,
+172.9 MB, of which 25 GLB = 144.9 MB) and 146 Ogg clips (146 clips measured 5.2–6.3 ms each).
+Measured on this host: 2048×384 PNG 8.6 ms (89 Mpx/s), 2048×2048 WebP 38 ms, i.e. ≥ 3.4 s of image
+decode plus ~0.9 s of audio decode serialized on the main thread. `assets.ts:894` routes the native
+target through `createImageBitmap` into that inline decode; the same call in Chrome is off-thread
+and parallel, which is the shape of the 5–7× load gap. The remaining load time is not attributed:
+the game's own `rear-station.ts:398 normalFromHeight` is a per-pixel JS loop and is 8.5 % of the
+browser load (measured by CDP profile: `_copyImageToTexture` 15.2 %,
+`normalFromHeight` + its closures 8.5 %, GLTFLoader/`fromBufferAttribute`/`convertBufferAttribute`
+~5 %, idle 9.1 %), and identical JS microbenchmarks run at parity on both engines (native 3.03 /
+2.66 / 6.72 ms vs Chrome 3.42 / 2.62 / 4.83 ms), so the native load is not a V8 handicap.
+`webgpu/bindings.cpp:1509-1553 copyExternalImageToTexture` also does a full-image `std::vector`
+staging copy with a per-pixel premultiply/swap before `wgpuQueueWriteTexture`; it was not isolated.
+
+**Two engine defects found while probing, neither yet fixed.** `createOffscreenCanvas2D(w,h)
+.getContext('2d')` returns **null** — `handleOwnedHtmlCanvasElementGetContext`
+(`webgpu/bindings.cpp:1022-1026`) is a stub returning `newNull()`, while the comment above its
+installation says it "returns the pre-created context". And a native-only WebGPU validation error
+fires at startup: a 1×1 `Depth24Plus` dummy bound at fragment binding 9 where the layout expects a
+multisampled depth texture; it is 4 of the desktop run's console errors, so the game's native
+playtest currently fails its `diagnostics` assertion on desktop.
+
+**Harness gap: the desktop lane reports an empty `performanceSeries`.** A scenario carrying
+`assert.performance { minFps: 1 }` ran against `--target desktop`, advertised `runtime.performance`
+in its capability handshake, and failed the assertion with `sampleCount: 0, valid: false` and
+"observed unavailable"; the same assertion passes on the browser lane. The desktop run's own
+diagnostic points at "the `TN_FRAME_BUDGET` marker for this run", and that marker is not in the run's
+`observations.console` either (2 373 entries, 79 of them `TN_PIPELINE_EVENT`). Until a desktop run
+carries a live frame series, no native frame time is gateable and PRD-222 Tier 2's parity assertion
+cannot run on desktop.
+
+**Next bounded experiment, in order of what it closes:** (1) fix or wire the desktop
+`performanceSeries` so a native run can be bounded at all — the `assert.performance` path exists on
+web and desktop-alike in `packages/playtest`; (2) attribute the 38 % JIT share with a built host
+(`-DTN_ANDROID_JS_PROFILE=ON`, bridge/per-call attribution) rather than guessing; (3) only then
+pre-register the decode/packaging lever, since `method rule 6`'s `calls/frame × ns/call` predicts
+zero for a steady-state frame — its number is load time, not fps.
+
 ## Compiled frame plan transport (v3) — native compiled frame plans — 2026-09-17
 
 **The default-off v3 transport costs the JS recorder 35–41% less per frame and carries 94.8–99.5% fewer

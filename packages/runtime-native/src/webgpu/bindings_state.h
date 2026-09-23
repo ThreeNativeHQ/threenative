@@ -29,6 +29,20 @@
 
 namespace mystral::webgpu {
 
+// Async image work outlives the BindingsState that queued it. Results retain this owner, never
+// the raw state pointer. Teardown invalidates it and releases each still-live JS callback while
+// the engine is valid; a later decoder drain only observes an inert owner.
+struct AsyncImageDecodeCallback {
+    js::JSValueHandle handle{};
+    bool live = true;
+};
+
+struct AsyncImageDecodeOwner {
+    std::atomic<bool> alive{true};
+    js::Engine* engine = nullptr;
+    std::vector<std::shared_ptr<AsyncImageDecodeCallback>> callbacks;
+};
+
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 
 struct OffscreenCanvas {
@@ -511,6 +525,8 @@ struct BindingsState {
     WGPUSurface surface = nullptr;
     WGPUInstance instance = nullptr;
     js::Engine* engine = nullptr;
+    std::shared_ptr<AsyncImageDecodeOwner> imageDecodeOwner =
+        std::make_shared<AsyncImageDecodeOwner>();
 
     ResourceRegistries registries;
     PresentationState presentation;
@@ -532,6 +548,8 @@ uint64_t readRenderThreadCpuNs();
 struct BindingsState {
     bool verboseLogging = false;
     js::Engine* engine = nullptr;
+    std::shared_ptr<AsyncImageDecodeOwner> imageDecodeOwner =
+        std::make_shared<AsyncImageDecodeOwner>();
     std::vector<js::JSValueHandle> protectedHandles;
     std::vector<std::unique_ptr<canvas::Canvas2DContext>> canvas2DContexts;
 };
