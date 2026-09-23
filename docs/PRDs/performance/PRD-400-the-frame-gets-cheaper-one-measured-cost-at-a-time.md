@@ -250,7 +250,10 @@ judge-generated browser-only diagnostic assertion; native scenarios now assert s
 readiness. The repeated live run reached Midway's flight workload, then native WebGPU rejected a
 4-sample depth texture bound to a single-sample layout; the later screenshot failure is secondary.
 Native Midway measurements remain blocked while the renderer binding is investigated.
-Matrix/Midway runs, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
+The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
+the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
+`pnpm lint`, and `pnpm test` passed locally (454 files, 5,519 tests; 8 skipped).
+Full matrix/Midway baselines, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
 
 ### Phase 2 — Lane 1: scene projection
 
