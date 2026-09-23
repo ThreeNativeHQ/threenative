@@ -2,7 +2,7 @@
 // web entry against the same `game.ts`, and prints the §5.1 run report between two markers because
 // a native host has no `window` for the collector to read.
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH, createLoadTestHarness } from "./game.js";
-import { type RenderMode, percentile } from "./workload.js";
+import { type RenderMode, parseAxesRecord, percentile } from "./workload.js";
 
 declare global {
   var canvas: HTMLCanvasElement | undefined;
@@ -12,6 +12,7 @@ declare const __TN_PLATFORM__: string;
 
 declare const __TN_BENCH_CONFIG__: Readonly<{
   animate: boolean;
+  axes: Record<string, string | undefined>;
   frames: number;
   refreshHz: number;
   ladder: number[];
@@ -21,6 +22,7 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
 }>;
 
 const config = __TN_BENCH_CONFIG__;
+const axes = parseAxesRecord(config.axes);
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -29,7 +31,7 @@ function nextFrame(): Promise<void> {
 async function main(): Promise<void> {
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
-  const harness = await createLoadTestHarness(surface, "native host surface", config.animate);
+  const harness = await createLoadTestHarness(surface, "native host surface", config.animate, axes);
   const rungs: unknown[] = [];
 
   for (const objectCount of config.ladder) {
@@ -121,6 +123,7 @@ async function main(): Promise<void> {
       ?.presentMode ?? "fifo";
   const report = {
     arm: onAndroid ? "tn-android" : "tn-desktop",
+    axes,
     build: {
       notes:
         "owned C++ runtime, three/webgpu render path; defineGame loop not in the measured path",
