@@ -557,7 +557,7 @@ test('generated native profile exposes hosted software only to the profile entry
   assert.equal(normalContext.__THREENATIVE_PROFILE__.hostedSoftware, false);
 });
 
-test('desktop profiling switches web UI to native while mobile profiling preserves web UI', async () => {
+test('profiling preserves the authored web UI on desktop and mobile', async () => {
   const desktopProject = makeTempDirSync('tn-profile-desktop-ui-');
   const mobileProject = makeTempDirSync('tn-profile-mobile-ui-');
   temporary.push(desktopProject, mobileProject);
@@ -573,7 +573,7 @@ test('desktop profiling switches web UI to native while mobile profiling preserv
   await installNativeProfileEntry(desktopProject, 'desktop', { warmup: 1 });
   await installNativeProfileEntry(mobileProject, 'android', { warmup: 1 });
 
-  assert.match(readFileSync(join(desktopProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "native" \}/u);
+  assert.match(readFileSync(join(desktopProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "web" \}/u);
   assert.match(readFileSync(join(mobileProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "web" \}/u);
 });
 

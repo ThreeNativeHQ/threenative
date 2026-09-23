@@ -239,7 +239,8 @@ skill; the engine-load-test equivalence spec for `positionHash`; the judge's own
   `check-doc-links`, `sync-agent-docs`, `evidence-budget` specs 29/29, `instruction-budget` 9/9, 2026-09-22.
 
 **Checkpoint:** Project/scenario staging, workload axes and projection timing markers are on
-`perf/prd-400-ac1`; focused checks passed. The [L0 contract](../../verification/runtime-perf-state.md)
+`perf/prd-400-ac1`; the staged judge preserves the game's automatic resolution and authored UI
+renderer. Focused checks passed. The [L0 contract](../../verification/runtime-perf-state.md)
 names the frozen judge paths and holdouts. Matrix/Midway runs, A/A noise, sensitivity controls and
 AC-1's full iteration remain unverified.
 
