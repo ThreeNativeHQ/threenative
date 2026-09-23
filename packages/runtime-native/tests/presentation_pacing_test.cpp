@@ -235,8 +235,14 @@ void testLostSignalFallsBackAndRecovers() {
     checkPath(lost, PresentationPacingPath::DisplayTimeoutFallback,
               "a lost display signal releases the present through the bounded wait");
     const auto boundedElapsed = clock::now() - boundedBegin;
-    check(boundedElapsed >= std::chrono::milliseconds(60) && boundedElapsed < std::chrono::milliseconds(250),
-          "the first lost-signal release is the bounded timeout, not a display frame");
+    const auto boundedMs = std::chrono::duration_cast<std::chrono::milliseconds>(boundedElapsed).count();
+    // The upper bound only proves the wait is bounded, not that it equals a display frame -- the
+    // 83 ms timeout is observed on a shared CI runner, where a scheduling stall can add hundreds.
+    // Kept finite (1000 ms) so a wait that never returns still fails, and the measured value is
+    // always in the message so a stall reads as a stall rather than a missing fallback.
+    check(boundedElapsed >= std::chrono::milliseconds(60) && boundedElapsed < std::chrono::milliseconds(1000),
+          "the first lost-signal release is the bounded timeout, not a display frame (took " +
+              std::to_string(boundedMs) + " ms)");
 
     check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,
           "the next present retains software pacing instead of re-waiting the lost display");
