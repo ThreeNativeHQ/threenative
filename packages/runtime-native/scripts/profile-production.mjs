@@ -56,6 +56,26 @@ const NATIVE_FRAME_SAMPLE_BATCH_SIZE = 5;
 const DESKTOP_SCREENSHOT_TIMEOUT_MS = 5_000;
 const PRODUCTION_PROFILE = 'production';
 const REGRESSION_PROFILE = 'regression';
+// A selected scenario can be longer than the old fixed 30 s cap: the default scaffold alone runs
+// a 60 s warmup plus a 60 s window. The budget grows with the frames the written workload asks
+// for at the playtest runner's own per-tick allowance, and a base covers browser/host startup and
+// first-use compilation instead of capping the run at an arbitrary 30 s.
+const PLAYTEST_TIMEOUT_BASE_MS = 60_000;
+const PLAYTEST_FRAME_BUDGET_MS = 250;
+
+export function playtestTimeoutMs(scenario) {
+  const frameCount = (value) => (Number.isFinite(value) && value > 0 ? value : 0);
+  const warmupFrames = frameCount(scenario?.warmupFrames);
+  const frames = (Array.isArray(scenario?.steps) ? scenario.steps : []).reduce(
+    (total, step) => total
+      + frameCount(step?.holdFrames)
+      + frameCount(step?.waitFrames)
+      + frameCount(step?.holdTicks)
+      + frameCount(step?.waitTicks),
+    0,
+  );
+  return PLAYTEST_TIMEOUT_BASE_MS + (warmupFrames + frames) * PLAYTEST_FRAME_BUDGET_MS;
+}
 
 function installedPackageFile(packageName, file) {
   try {
@@ -438,14 +458,24 @@ export async function writeRunScenarios(project, options) {
   const { assert: _sourceAssertions, ...scenarioSource } = source;
   const workloadFrames = Math.max(1, Math.ceil(options.duration * 60));
   const warmupFrames = Math.max(0, Math.ceil(options.warmup * 60));
+  // An existing project's own scenario is the workload: its steps are what the game actually does
+  // (a menu click, a flight), and replacing them with a forward run exercises nothing. The
+  // scaffolded default has no authored workload, so it keeps the synthetic run the warmup and
+  // duration size.
+  const workloadSteps = options.project === undefined
+    ? [
+        { holdFrames: Math.min(60, workloadFrames), kind: 'input', press: 'ArrowRight', release: true },
+        { kind: 'wait', release: true, waitFrames: workloadFrames },
+      ]
+    : scenarioSource.steps;
+  if (!Array.isArray(workloadSteps) || workloadSteps.length === 0) {
+    throw new ProductionEvidenceError('TN_PROD_SCENARIO_STEPS_MISSING', `Production scenario '${basename(scenarioPath)}' defines no workload steps.`);
+  }
   const workload = {
     ...scenarioSource,
     assert: workloadAssertions,
     artifacts: { screenshots: 'after' },
-    steps: [
-      { holdFrames: Math.min(60, workloadFrames), kind: 'input', press: 'ArrowRight', release: true },
-      { kind: 'wait', release: true, waitFrames: workloadFrames },
-    ],
+    steps: workloadSteps,
     viewport: options.renderSize,
     warmupFrames,
   };
@@ -479,6 +509,7 @@ export async function writeRunScenarios(project, options) {
     steps: nativeWorkloadSteps,
   };
   const nativeStartup = { ...startup, assert: nativeDiagnostics(startup.assert), artifacts: { screenshots: 'after' } };
+  const timeoutMs = Math.max(playtestTimeoutMs(workload), playtestTimeoutMs(nativeWorkload));
   const workloadPath = join(project, 'playtests/production-performance.run.playtest.json');
   const startupPath = join(project, 'playtests/production-startup.run.playtest.json');
   const nativeWorkloadPath = join(project, 'playtests/production-performance.native.playtest.json');
@@ -492,6 +523,7 @@ export async function writeRunScenarios(project, options) {
     nativeStartupPath,
     nativeWorkloadPath,
     startupPath,
+    timeoutMs,
     workloadPath,
   };
 }
@@ -507,7 +539,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
     const runs = [];
     const startups = [];
     for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
-      const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), markerServer, tools.playtestCli);
+      const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), markerServer, tools.playtestCli, scenarios.timeoutMs);
       startups.push(startup);
       for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
         runs.push(await runWebScenario(
@@ -516,6 +548,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
           join(artifactsRoot, `web-${coldStart + 1}-${repetition + 1}`),
           markerServer,
           tools.playtestCli,
+          scenarios.timeoutMs,
         ));
       }
     }
@@ -533,7 +566,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
   }
 }
 
-async function runWebScenario(project, scenarioPath, artifactDirectory, markerServer, playtestCli) {
+async function runWebScenario(project, scenarioPath, artifactDirectory, markerServer, playtestCli, timeoutMs) {
   await mkdir(artifactDirectory, { recursive: true });
   const port = await availablePort();
   const relativeArtifact = relative(project, artifactDirectory);
@@ -544,13 +577,15 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
     '--browser-recipe', 'webgpu',
     '--project', project,
     '--server-command', `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
-    '--timeout', '30000',
+    '--timeout', String(timeoutMs),
     '--url', `http://127.0.0.1:${port}`,
   ];
   const command = await browserCommand(args);
   const markerIndex = markerServer.length;
   const startedAt = performance.now();
-  const result = await runCommand(command.command, command.args, commandRoot, undefined, 180_000);
+  // The outer process has to outlive the inner operation budget it hands the CLI, or a scenario
+  // the CLI is still legitimately running would be killed from outside.
+  const result = await runCommand(command.command, command.args, commandRoot, undefined, timeoutMs + PLAYTEST_TIMEOUT_BASE_MS);
   const markers = await markerServer.waitFor(markerIndex, 1_000);
   const report = parsePlaytestReport(result.stdout);
   return normalizeRun(
@@ -582,7 +617,7 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   const runs = [];
   const startups = [];
   for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
-    const startup = await runNativeScenario(project, target, scenarios.nativeStartupPath, join(artifactsRoot, `native-startup-${coldStart + 1}`), options, artifactPath, tools);
+    const startup = await runNativeScenario(project, target, scenarios.nativeStartupPath, join(artifactsRoot, `native-startup-${coldStart + 1}`), options, artifactPath, tools, scenarios.timeoutMs);
     startups.push(startup);
     for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
       runs.push(await runNativeScenario(
@@ -593,6 +628,7 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
         options,
         artifactPath,
         tools,
+        scenarios.timeoutMs,
       ));
     }
   }
@@ -608,10 +644,10 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   };
 }
 
-async function runNativeScenario(project, target, scenarioPath, artifactDirectory, options, artifactPath, tools) {
+async function runNativeScenario(project, target, scenarioPath, artifactDirectory, options, artifactPath, tools, timeoutMs) {
   await mkdir(artifactDirectory, { recursive: true });
   if (target === 'desktop') {
-    return await runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools);
+    return await runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools, timeoutMs);
   }
   const modulePath = await playtestRunnerPath(project, tools);
   if (modulePath === undefined) {
@@ -637,7 +673,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
     projectPath: project,
     scenarioPath: relative(project, scenarioPath),
     target,
-    timeoutMs: 30_000,
+    timeoutMs,
     trace: false,
     url: 'http://127.0.0.1:41777',
   };
@@ -661,7 +697,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
   }
 }
 
-async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools) {
+async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools, timeoutMs) {
   const modulePath = await playtestRunnerPath(project, tools);
   if (modulePath === undefined) {
     return { elapsedMs: undefined, report: undefined, screenshot: undefined, series: undefined, status: 2 };
@@ -673,7 +709,6 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   const responsePath = join(mailboxRoot, 'tn-playtest-response.json');
   const runner = await import(pathToFileURL(modulePath).href);
   const mailbox = new runner.LocalDeviceMailbox();
-  const timeoutMs = 30_000;
   const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath }, timeoutMs);
   const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
   const transport = {
@@ -1838,12 +1873,32 @@ async function readOptionalArtifact(path) {
   }
 }
 
-async function nativeArtifactPath(project, target) {
+export async function nativeArtifactPath(project, target) {
   const directory = join(project, 'dist-native');
-  const entries = await readdir(directory);
-  const candidate = entries.find((entry) => target === 'ios' ? entry.endsWith('.app') : target === 'android' ? entry.endsWith('.apk') : true);
+  const entries = (await readdir(directory, { withFileTypes: true }))
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const candidate = target === 'ios'
+    ? entries.find((entry) => entry.isDirectory() && entry.name.endsWith('.app'))
+    : target === 'android'
+      ? entries.find((entry) => entry.isFile() && entry.name.endsWith('.apk'))
+      : await desktopExecutableEntry(directory, entries);
   if (candidate === undefined) throw new ProductionEvidenceError('TN_PROD_NATIVE_ARTIFACT_MISSING', `The scaffolded ${target} build produced no native artifact.`);
-  return join(directory, candidate);
+  return join(directory, candidate.name);
+}
+
+// A desktop build stages the `ui/` web bundle beside the executable, so the artifact is the one
+// regular file the host can run - never the first directory that happens to sort first.
+async function desktopExecutableEntry(directory, entries) {
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (process.platform === 'win32') {
+      if (entry.name.endsWith('.exe')) return entry;
+      continue;
+    }
+    if (((await stat(join(directory, entry.name))).mode & 0o111) !== 0) return entry;
+  }
+  return undefined;
 }
 
 async function playtestRunnerPath(project, tools) {

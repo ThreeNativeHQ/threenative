@@ -1,7 +1,7 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -24,8 +24,10 @@ import {
   failureSuffix,
   isSuccessfulStartupSample,
   installNativeProfileEntry,
+  nativeArtifactPath,
   nativeFrameInstrumentation,
   parseProductionArgs,
+  playtestTimeoutMs,
   prepareNativeWorkload,
   collectionLaunchPlan,
   profileConfigPath,
@@ -802,6 +804,81 @@ test('staging dereferences symlinked sources and reads the scenario from the sta
   assert.equal(JSON.parse(readFileSync(paths.workloadPath, 'utf8')).snapshot, 'staged');
 });
 
+test('a project scenario keeps its own workload steps and a timeout that scales past the old 30s cap', async () => {
+  const project = makeTempDirSync('tn-profile-scenario-steps-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  const steps = [
+    { at: { x: 640, y: 360 }, kind: 'click', release: true },
+    { kind: 'wait', release: true, waitFrames: 240 },
+  ];
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance',
+    schemaVersion: 1,
+    steps,
+  }));
+
+  const paths = await writeRunScenarios(project, {
+    duration: 1,
+    project,
+    renderSize: { height: 1080, width: 1920 },
+    scenario: join(project, 'playtests/performance.playtest.json'),
+    target: 'desktop',
+    warmup: 1,
+  });
+  const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
+  const nativeWorkload = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
+  assert.deepEqual(workload.steps, steps);
+  assert.deepEqual(nativeWorkload.steps, steps);
+  assert.equal(paths.timeoutMs, playtestTimeoutMs(workload));
+  assert.ok(paths.timeoutMs > 30_000);
+  assert.ok(paths.timeoutMs >= 60_000 + (60 + 240) * 100);
+});
+
+test('the default scaffolded workload still drives ArrowRight whatever the template scenario says', async () => {
+  const project = makeTempDirSync('tn-profile-default-steps-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance',
+    schemaVersion: 1,
+    steps: [{ kind: 'wait', waitFrames: 1 }],
+  }));
+
+  const paths = await writeRunScenarios(project, {
+    duration: 2,
+    renderSize: { height: 1080, width: 1920 },
+    target: 'desktop',
+    warmup: 1,
+  });
+  const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
+  assert.deepEqual(workload.steps, [
+    { holdFrames: 60, kind: 'input', press: 'ArrowRight', release: true },
+    { kind: 'wait', release: true, waitFrames: 120 },
+  ]);
+  assert.ok(paths.timeoutMs > 30_000);
+});
+
+test('desktop artifact selection takes the executable regular file and fails closed without one', async () => {
+  const project = makeTempDirSync('tn-profile-native-artifact-');
+  temporary.push(project);
+  const directory = join(project, 'dist-native');
+  mkdirSync(join(directory, 'ui'), { recursive: true });
+  writeFileSync(join(directory, 'game.bundle'), 'not an executable');
+  await assert.rejects(
+    nativeArtifactPath(project, 'desktop'),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_NATIVE_ARTIFACT_MISSING',
+  );
+  mkdirSync(join(directory, 'Game.app'));
+  writeFileSync(join(directory, 'game.apk'), 'apk');
+  const executable = join(directory, 'platformer');
+  writeFileSync(executable, '#!/bin/sh\n');
+  chmodSync(executable, 0o755);
+  assert.equal(await nativeArtifactPath(project, 'desktop'), executable);
+  assert.equal(await nativeArtifactPath(project, 'ios'), join(directory, 'Game.app'));
+  assert.equal(await nativeArtifactPath(project, 'android'), join(directory, 'game.apk'));
+});
+
 test('a scenario outside --project is rejected instead of re-anchored out of staging', () => {
   const source = makeTempDirSync('tn-profile-scenario-guard-');
   temporary.push(source);
@@ -1197,11 +1274,12 @@ test('native screenshot mapping keeps asynchronous callback state alive after a 
   assert.doesNotMatch(context, /userdata1 = &mapData/u);
 });
 
-test('desktop production profiling forwards its 30-second operation timeout to the mailbox transport', () => {
+test('desktop production profiling forwards the scenario-derived operation timeout to the mailbox transport', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}, timeoutMs\)/u);
-  assert.match(profile, /const timeoutMs = 30_000;/u);
   assert.match(profile, /target: 'android',\n {4}timeoutMs,/u);
+  assert.doesNotMatch(profile, /const timeoutMs = 30_000;/u);
+  assert.match(profile, /scenarios\.timeoutMs/u);
 });
 
 test('playtest assertion failure cannot become a clean production run', () => {
