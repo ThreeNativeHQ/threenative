@@ -885,10 +885,7 @@ function privateDisplayCommand(executable, args) {
 }
 
 function spawnNative(artifactPath, project, options, mailboxRoot) {
-  const bundle = join(project, '.threenative/build/game.js');
   const nativeArgs = [
-    'run',
-    bundle,
     '--width', String(options.renderSize.width),
     '--height', String(options.renderSize.height),
     '--headless',

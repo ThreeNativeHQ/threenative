@@ -212,11 +212,13 @@ test('desktop child receives the transport mailbox root and writes a raw post-pr
   const mailboxRoot = join(project, '.runtime-mailbox');
   const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
   let childOptions;
+  let childArgs;
   const writes = [];
   const context = {
     join,
     process: { platform: 'linux', env: { DISPLAY: ':fixture', TN_PLAYTEST_MAILBOX_ROOT: '/wrong/inherited/root' } },
-    spawn: (_command, _args, options) => {
+    spawn: (_command, args, options) => {
+      childArgs = args;
       childOptions = options;
       const child = new EventEmitter();
       queueMicrotask(() => child.emit('spawn'));
@@ -232,6 +234,7 @@ test('desktop child receives the transport mailbox root and writes a raw post-pr
   await driver.launch();
   assert.equal(childOptions.env.TN_PLAYTEST_MAILBOX_ROOT, mailboxRoot);
   assert.equal(childOptions.cwd, project);
+  assert.deepEqual(Array.from(childArgs), ['--width', '1920', '--height', '1080', '--headless']);
   await driver.screenshot('/fixture/capture.png');
   assert.deepEqual(writes, [
     { contents: '/fixture/capture.png', path: `${screenshotRequestPath}.tmp` },
