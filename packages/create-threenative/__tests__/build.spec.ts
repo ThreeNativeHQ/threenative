@@ -14,6 +14,7 @@ import {
   buildWeb,
   nativeOrientation,
   parseBuildArgs,
+  runtimeHasWebAssembly,
   writePackagingConfig,
 } from "../src/build.js";
 import { ANDROID_RELEASE_SIGNING_ENV } from "../src/doctor.js";
@@ -582,5 +583,36 @@ describe("threenative build", () => {
     await expect(
       build({ cwd: "/unused", target: "ios", viteArgs: ["--device", "phone"] }),
     ).rejects.toThrow(/simulator-only.*device signing remains OPEN/u);
+  });
+});
+
+describe("runtime WebAssembly capability", () => {
+  const runtime = path.resolve("packages/create-threenative/src/build.ts");
+  const version = (engine: string): string =>
+    `TN_COLD_START:{"segment":"process","atMs":0.000}\nMystral Native Runtime v0.3.3\nNative WebGPU JS runtime - wgpu-native + ${engine} build\n`;
+
+  it("reads the engine from the runtime binary, not the target", () => {
+    const probe = (_binary: string, args: readonly string[]) => {
+      expect(args).toEqual(["--version"]);
+      return { status: 0, stdout: version("quickjs"), stderr: "" };
+    };
+    expect(runtimeHasWebAssembly(runtime, probe as never)).toBe(false);
+    expect(
+      runtimeHasWebAssembly(runtime, (() => ({ status: 0, stdout: version("jsc") })) as never),
+    ).toBe(false);
+    expect(
+      runtimeHasWebAssembly(runtime, (() => ({ status: 0, stdout: version("v8") })) as never),
+    ).toBe(true);
+  });
+
+  it("keeps the WASM desktop backend when the runtime is unknown or unreadable", () => {
+    expect(runtimeHasWebAssembly(undefined)).toBe(true);
+    expect(runtimeHasWebAssembly("/no/such/runtime")).toBe(true);
+    expect(runtimeHasWebAssembly(runtime, (() => ({ status: 1, stdout: "" })) as never)).toBe(true);
+    expect(
+      runtimeHasWebAssembly(runtime, (() => {
+        throw new Error("EACCES");
+      }) as never),
+    ).toBe(true);
   });
 });

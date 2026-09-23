@@ -1,5 +1,6 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -417,11 +418,39 @@ export async function writePackagingConfig(
   return output;
 }
 
+/**
+ * Whether the runtime that will execute this build has WebAssembly.
+ *
+ * The engine decides it, not the target: V8 compiles WebAssembly, QuickJS and JavaScriptCore do
+ * not. A desktop build is for either engine — Linux x64, Windows and macOS use V8, the Linux
+ * arm64 lane builds QuickJS over wgpu-native — so the target alone cannot answer it. The runtime
+ * binary the packager is handed (`THREENATIVE_RUNTIME_BINARY`, set by the same build invocation)
+ * is probed for its engine; absent or unreadable, the answer is the historical desktop one, true,
+ * because every published desktop prebuilt runs V8.
+ */
+export function runtimeHasWebAssembly(
+  binary: string | undefined = process.env.THREENATIVE_RUNTIME_BINARY,
+  probe: typeof spawnSync = spawnSync,
+): boolean {
+  if (binary === undefined || !existsSync(binary)) return true;
+  let result: ReturnType<typeof spawnSync>;
+  try {
+    result = probe(binary, ["--version"], { encoding: "utf8" });
+  } catch {
+    return true;
+  }
+  if (result.status !== 0) return true;
+  const engine = /\+ (\S+) build/u.exec(String(result.stdout ?? ""))?.[1] ?? "";
+  // The engine names are CMake's MYSTRAL_JS_ENGINE_NAME: v8, jsc or quickjs. Only V8 runs WASM.
+  return !/^(?:quickjs|jsc)$/iu.test(engine);
+}
+
 async function bundleNative(
   cwd: string,
   runtimeRoot: string,
   entry: string,
   target: NativeBuildTarget,
+  nativeBackend: boolean,
 ): Promise<string> {
   const output = path.join(cwd, ".threenative", "build", "game.js");
   await run(
@@ -436,6 +465,7 @@ async function bundleNative(
       target,
       "--output",
       output,
+      ...(nativeBackend ? ["--native-backend"] : []),
     ],
     cwd,
   );
@@ -451,17 +481,23 @@ async function buildNative(
 ): Promise<void> {
   const config = await loadConfig(cwd);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
-  // The target decides whether compression can ship: android and iOS carry no WebAssembly, so
-  // the compile step drops the passes they cannot decode instead of asking the author to pin a
-  // constant that would then follow their web build too. `assertNativeAssetsCompatible` stays
-  // below as the fail-closed backstop.
-  await compileAssets({ config: config.assets, cwd, platform: target });
+  // A native host without WebAssembly cannot run Rapier as WASM or decode meshopt/KTX2, so it
+  // takes the native physics backend and a decoder-free bake. The capability is the runtime
+  // engine, not the target: android and iOS are always QuickJS/JSC, and a desktop host is V8
+  // except on the Linux arm64 lane. `assertNativeAssetsCompatible` stays below as the backstop.
+  const webAssembly = runtimeHasWebAssembly();
+  await compileAssets({
+    config: config.assets,
+    cwd,
+    platform: target,
+    ...(webAssembly ? {} : { runtimeDecoders: { ktx2: false, meshopt: false } }),
+  });
   await assertNativeAssetsCompatible(cwd, target, config);
   const entry = await nativeEntry(cwd, config);
   const orientation = config.display.orientation;
   const configPath = await writePackagingConfig(cwd, config);
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  const bundle = await bundleNative(cwd, runtimeRoot, entry, target);
+  const bundle = await bundleNative(cwd, runtimeRoot, entry, target, !webAssembly);
   await assertNativeBundleCompatible(bundle, target);
   const assets = path.join(cwd, "public");
   // The UI is built only when the game asked for the web renderer, so a `native` game ships no

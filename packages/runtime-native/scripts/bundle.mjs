@@ -243,7 +243,7 @@ function mobileDecoderStub(id) {
 /**
  * Main
  */
-async function bundleProject(project, entryPoint, outputPath, target) {
+async function bundleProject(project, entryPoint, outputPath, target, nativeBackend) {
   const absoluteProject = resolve(project);
   const absoluteEntry = resolve(absoluteProject, entryPoint);
   const absoluteOutput = resolve(outputPath);
@@ -350,8 +350,13 @@ void game.start().catch((error) => console.error(
     // material is not the copy the renderer pushed onto, and the first material build on the phone
     // dies with "No stack defined for assign operation". `mergeConfig` concatenates arrays, so a
     // project that dedupes its own packages keeps every one of them.
+    // The native physics backend is selected where the runtime has no WebAssembly to run Rapier
+    // as WASM: every mobile target, and any desktop host whose engine is not V8. `threenative
+    // build` reads that capability from the runtime binary it will package and passes
+    // `--native-backend`; a direct call without it keeps the historical desktop backend. The
+    // choice is one export map here rather than a platform branch in game code.
     resolve:
-      target === 'desktop'
+      target === 'desktop' && !nativeBackend
         ? { dedupe: ['three'] }
         : { conditions: ['threenative-native'], dedupe: ['three'] },
     configFile: existsSync(join(absoluteProject, 'vite.config.ts'))
@@ -393,6 +398,7 @@ async function main() {
   let outputDir = 'dist';
   let project = null;
   let target = null;
+  let nativeBackend = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--entry' && args[i + 1]) {
@@ -405,6 +411,8 @@ async function main() {
       project = args[++i];
     } else if (args[i] === '--target' && args[i + 1]) {
       target = args[++i];
+    } else if (args[i] === '--native-backend') {
+      nativeBackend = true;
     }
   }
 
@@ -413,7 +421,7 @@ async function main() {
     if (!['android', 'desktop', 'ios'].includes(target)) {
       throw new Error('--project requires --target android|desktop|ios.');
     }
-    await bundleProject(project, entryPoint, outputDir, target);
+    await bundleProject(project, entryPoint, outputDir, target, nativeBackend);
     return;
   }
 

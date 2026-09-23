@@ -29,11 +29,23 @@ async function bundle(
   project: string,
   target: "android" | "desktop" | "ios",
   entry = "src/game.ts",
+  extraArgs: readonly string[] = [],
 ): Promise<string> {
   const output = path.join(project, `dist/${target}.js`);
   await run(
     process.execPath,
-    [bundler, "--project", project, "--entry", entry, "--target", target, "--output", output],
+    [
+      bundler,
+      "--project",
+      project,
+      "--entry",
+      entry,
+      "--target",
+      target,
+      "--output",
+      output,
+      ...extraArgs,
+    ],
     { cwd: project },
   );
   return output;
@@ -144,6 +156,15 @@ export default { start: async () => console.info(marker) };
     expect(desktop).not.toContain("NATIVE_BACKEND");
     expect(android).toContain("NATIVE_BACKEND");
     expect(android).not.toContain("WEB_BACKEND");
+
+    // A desktop host whose runtime has no WebAssembly (the Linux arm64 lane's QuickJS) is told so
+    // by `threenative build`; the same desktop target then takes the native exports too.
+    const nativeDesktop = await readFile(
+      await bundle(project, "desktop", "src/game.ts", ["--native-backend"]),
+      "utf8",
+    );
+    expect(nativeDesktop).toContain("NATIVE_BACKEND");
+    expect(nativeDesktop).not.toContain("WEB_BACKEND");
   }, 15_000);
 
   it("passes public assets to every native packager", async () => {
