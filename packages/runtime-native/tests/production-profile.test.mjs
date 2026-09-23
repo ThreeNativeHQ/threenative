@@ -1197,6 +1197,53 @@ test('generated production workload runs through the playtest validator and keep
   assert.ok(triangleFailure.codes.includes('TN_PROD_PERFORMANCE_BUDGET'));
 });
 
+test('an existing project baseline without an authored performance bound is not failed by the platformer budget', () => {
+  const frame = new PNG({ height: 2, width: 2 });
+  frame.data.fill(255);
+  frame.data[0] = 0;
+  const screenshot = PNG.sync.write(frame);
+  const series = Array.from({ length: 30 }, (_, index) => ({
+    clockMs: index * 25,
+    frameIndex: index + 1,
+    frameMs: 25,
+    presentationMs: index * 25,
+  }));
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: undefined,
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      profile: 'production',
+      project: '/fixture/existing-project',
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'web',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: '/fixture/existing-project',
+    runId: 'existing-project-baseline',
+    startedAt: new Date().toISOString(),
+    web: {
+      applicationClass: 'fixture',
+      artifactSha,
+      driverClass: 'fixture',
+      kind: 'web',
+      runs: [{ report: { pass: true }, screenshot, series, status: 0 }],
+      startups: [{ firstFrameMs: 100, report: { pass: true }, screenshot, status: 0 }],
+    },
+  });
+  assert.equal(Object.hasOwn(evidence.budget, 'maxP99FrameMs'), false);
+  assert.equal(Object.hasOwn(evidence.budget, 'maxStartupMs'), false);
+  assert.equal(Object.hasOwn(evidence.budget, 'minMeanFps'), false);
+  const result = evaluateProductionEvidence(evidence);
+  assert.equal(result.codes.includes('TN_PROD_PERFORMANCE_BUDGET'), false);
+  assert.equal(result.codes.includes('TN_PROD_STARTUP_BUDGET'), false);
+  assert.notEqual(result.status, 'FAIL');
+});
+
 test('post-warmup frame metrics exclude warmup samples from mean and percentiles', () => {
   const samples = [
     { frameIndex: 1, frameMs: 500 },

@@ -1313,9 +1313,14 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     },
     artifacts: [],
     budget: {
-      maxP99FrameMs: 33,
-      maxStartupMs: target.includes('physical') ? 8_000 : 5_000,
-      minMeanFps: target.includes('physical') ? 59.4 : 60,
+      // The scaffolded platformer is judged by the default steady-state budget. An existing project
+      // is judged only by the bounds its own scenario authors: a known ~40 fps game must not fail
+      // before A/B on a default it never claimed.
+      ...(options.project === undefined ? {
+        maxP99FrameMs: 33,
+        maxStartupMs: target.includes('physical') ? 8_000 : 5_000,
+        minMeanFps: target.includes('physical') ? 59.4 : 60,
+      } : {}),
       ...(regression ? {
         minDurationSeconds: REGRESSION_COLLECTION_PROFILE.durationSeconds,
         minFrameSamples: REGRESSION_COLLECTION_PROFILE.minFrameSamples,
