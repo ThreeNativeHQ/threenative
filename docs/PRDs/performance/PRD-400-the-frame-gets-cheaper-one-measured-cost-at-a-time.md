@@ -363,6 +363,10 @@ settled loading pixels), the full local suite (457 files, 5,552 tests; 8 skipped
 lint and budgets. A rebased hosted-software collector smoke run returned `PASS` with 1,146 ms
 startup; its performance-budget advisory is expected for the short software-rendered probe.
 These checks verify integration only; the paced Midway and holdout baselines remain open.
+The first rebased CI `test-native` collector blocked when headless GTK reported a missing AT-SPI
+session bus as a console error. The bounded collector step now sets `NO_AT_BRIDGE=1`, preserving
+the judge's strict diagnostic check; a local run with that exact environment returned `PASS`.
+The new CI verdict remains pending.
 
 ### Phase 2 — Lane 1: scene projection
 

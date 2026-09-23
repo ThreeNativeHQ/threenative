@@ -457,6 +457,8 @@ jobs:
       - name: Collect bounded native Linux performance evidence
         if: always()
         shell: bash
+        env:
+          NO_AT_BRIDGE: "1"
         run: |
           mkdir -p artifacts/native-performance/native-linux-contract
           set +e
