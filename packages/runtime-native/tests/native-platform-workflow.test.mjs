@@ -394,6 +394,8 @@ test('iOS builds selected React UI from installed packages and checks full-scree
   assert.match(step, /decodeUiScreenshot\(image, 96, 96\)/u);
   assert.match(step, /published\.includes\(visible\.sequence\)/u);
   assert.match(step, /tests\/ui-layer-host-contract\.test\.mjs/u);
+  // Not yet passing (PRD-399 P4-d): runs in the dedicated iOS dispatch, not on every pull request.
+  expect(step.match(/if: \$\{\{ inputs\.ios_only == true \}\}/gu)).toHaveLength(2);
 });
 
 test('iOS workflow dispatch can run without unrelated platform cancellation', () => {

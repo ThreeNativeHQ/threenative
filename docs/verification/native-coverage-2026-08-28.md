@@ -21,10 +21,10 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9472 | 7279 | 76.85% |
+| `src/webgpu/` | 9472 | 7288 | 76.94% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **23401** | **18527** | **79.17%** |
+| **TOTAL** | **23401** | **18536** | **79.21%** |
 
 Source digest: `sha256:5c5961bfa1fbe56f317f80f41453d3ece6cba2b7112a165b812443b801f5f4f7`
 
