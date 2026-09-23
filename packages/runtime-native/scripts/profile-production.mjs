@@ -864,6 +864,24 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   };
 }
 
+// `xvfb-run`'s cleanup kill can replace a successful child's status (xorg-server-xvfb 21.1.24),
+// reporting a run that rendered every frame as red. The packaged wrapper owns a private display and
+// hands back the child's own status. Fail closed when a private display is needed but the packaged
+// wrapper is missing, rather than running blind.
+function privateDisplayCommand(executable, args) {
+  if (process.platform !== 'linux' || process.env.DISPLAY !== undefined) {
+    return { args, command: executable };
+  }
+  const wrapper = join(scriptDirectory, 'xvfb.sh');
+  if (!existsSync(wrapper)) {
+    throw new ProductionEvidenceError(
+      'TN_PROD_XVFB_WRAPPER_UNAVAILABLE',
+      `Headless Linux profiling needs the packaged display wrapper '${wrapper}', which is missing.`,
+    );
+  }
+  return { args: [wrapper, executable, ...args], command: '/bin/sh' };
+}
+
 function spawnNative(artifactPath, project, options, mailboxRoot) {
   const bundle = join(project, '.threenative/build/game.js');
   const nativeArgs = [
@@ -873,9 +891,8 @@ function spawnNative(artifactPath, project, options, mailboxRoot) {
     '--height', String(options.renderSize.height),
     '--headless',
   ];
-  const command = process.platform === 'linux' && process.env.DISPLAY === undefined ? 'xvfb-run' : artifactPath;
-  const args = command === 'xvfb-run' ? ['-a', '-s', '-screen 0 1600x900x24', artifactPath, ...nativeArgs] : nativeArgs;
-  return spawn(command, args, {
+  const command = privateDisplayCommand(artifactPath, nativeArgs);
+  return spawn(command.command, command.args, {
     cwd: project,
     detached: process.platform !== 'win32',
     env: { ...process.env, TN_PLAYTEST_MAILBOX_ROOT: mailboxRoot, SDL_VIDEODRIVER: process.platform === 'linux' ? 'x11' : process.env.SDL_VIDEODRIVER },
@@ -1976,10 +1993,7 @@ function isNonBlankFrame(value) {
 }
 
 async function browserCommand(args) {
-  if (process.platform !== 'linux' || process.env.DISPLAY !== undefined) return { args, command: process.execPath };
-  const result = await runCommand('which', ['xvfb-run'], commandRoot);
-  if (result.status !== 0) return { args, command: process.execPath };
-  return { args: ['-a', '-s', '-screen 0 1600x900x24', process.execPath, ...args], command: 'xvfb-run' };
+  return privateDisplayCommand(process.execPath, args);
 }
 
 async function availablePort() {
