@@ -247,7 +247,9 @@ That game needs core's launch-failure and pending-asset API from `acef62180`; th
 implementation is included here so the unchanged snapshot builds against this branch.
 Desktop preflight reached the packaged game after fixing its embedded-entry launch, then exposed a
 judge-generated browser-only diagnostic assertion; native scenarios now assert supported startup
-readiness. The live desktop run still needs repeating.
+readiness. The repeated live run reached Midway's flight workload, then native WebGPU rejected a
+4-sample depth texture bound to a single-sample layout; the later screenshot failure is secondary.
+Native Midway measurements remain blocked while the renderer binding is investigated.
 Matrix/Midway runs, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
 
 ### Phase 2 — Lane 1: scene projection
