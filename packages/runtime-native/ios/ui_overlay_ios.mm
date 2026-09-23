@@ -38,8 +38,43 @@ namespace {
 NSString* const kHostObject = @"tnHost";
 /** Must match `HIT_REGIONS_MESSAGE`. */
 NSString* const kHitRegions = @"tn:hit-regions";
+/** Pageside diagnostics posted by the document-start probe; consumed by the host, never the game. */
+NSString* const kUiDiagnostic = @"tn:ui-diagnostic";
 /** The origin the UI is served from, chosen to look like the web build's rather than like a file. */
 NSString* const kOrigin = @"threenative://localhost/";
+
+/**
+ * Document-start probe: the only page-side observability iOS has. iOS captures no WebView JS
+ * console into console.json, so without this a bundle that never executes is a transparent view
+ * over a working game with zero errors. The probe forwards `console.error`, `window.onerror`
+ * and `unhandledrejection` plus one-shot `ready` (when `window.__tnUiReceive` is installed) and
+ * `first-state` (when the host first calls it) to the existing `tnHost` message handler; the
+ * host logs them as `TN_UI_PAGE` and never forwards them to the game.
+ */
+NSString* const kPageDiagnostics =
+    @"(function(){var T='tn:ui-diagnostic';"
+    @"var H=null;try{H=window.webkit.messageHandlers.tnHost;}catch(e){}"
+    @"var ready=false,state=false,queue=[];"
+    @"function send(o){var s;try{s=JSON.stringify(o);}catch(e){return;}"
+    @"if(H&&H.postMessage){try{H.postMessage(s);return;}catch(e){}}queue.push(s);}"
+    @"setInterval(function(){if(!queue.length)return;try{H=window.webkit.messageHandlers.tnHost;}catch(e){return;}"
+    @"if(!H||!H.postMessage)return;while(queue.length){try{H.postMessage(queue.shift());}catch(e){return;}}},500);"
+    @"function err(k,m,st){send({type:T,event:'error',kind:k,message:String(m),stack:String(st||'')});}"
+    @"var ce=console.error;console.error=function(){try{err('console.error',"
+    @"Array.prototype.map.call(arguments,function(a){try{return typeof a==='object'?JSON.stringify(a):String(a);}catch(e){return String(a);}}).join(' '),'');"
+    @"}catch(e){}return ce.apply(console,arguments);};"
+    @"window.addEventListener('error',function(e){try{err('onerror',e.message,(e.error&&e.error.stack)||'');}catch(x){}});"
+    @"window.addEventListener('unhandledrejection',function(e){var r=e.reason;"
+    @"try{err('unhandledrejection',(r&&r.message)||String(r),(r&&r.stack)||'');}catch(x){}});"
+    @"function noteReady(){if(!ready){ready=true;send({type:T,event:'ready'});}}"
+    @"function noteState(){if(!state){state=true;send({type:T,event:'first-state'});}}"
+    @"var cur=window.__tnUiReceive;"
+    @"function wrap(fn){return function(frame){try{noteState();}catch(e){}return fn.call(this,frame);};}"
+    @"if(typeof cur==='function'){noteReady();try{window.__tnUiReceive=wrap(cur);}catch(e){}}"
+    @"else{try{Object.defineProperty(window,'__tnUiReceive',{configurable:true,enumerable:true,"
+    @"get:function(){return cur;},set:function(fn){cur=(typeof fn==='function')?wrap(fn):fn;noteReady();}});}"
+    @"catch(e){var iv=setInterval(function(){if(typeof window.__tnUiReceive==='function'){clearInterval(iv);"
+    @"noteReady();try{window.__tnUiReceive=wrap(window.__tnUiReceive);}catch(x){}}},50);}}})();";
 
 static NSString* resolveUiFile(NSString* root, NSURL* url) {
     if (![url.scheme.lowercaseString isEqualToString:@"threenative"] ||
@@ -86,10 +121,20 @@ static NSString* resolveUiFile(NSString* root, NSURL* url) {
         [task didFailWithError:[NSError errorWithDomain:@"TnUiOverlay" code:404 userInfo:nil]];
         return;
     }
-    NSURLResponse* response = [[NSURLResponse alloc] initWithURL:task.request.URL
-                                                       MIMEType:[TnUiSchemeHandler mimeTypeFor:file]
-                                          expectedContentLength:body.length
-                                               textEncodingName:@"utf-8"];
+    // An HTTP response, not a bare URL response. The packager emits Vite bundles whose
+    // `index.html` carries `crossorigin` module scripts, and WebKit refuses a CORS-mode module
+    // on a custom scheme whose response carries no `Access-Control-Allow-Origin` — the script
+    // never executes, `__tnUiReceive` is never installed, yet `didFinishNavigation` still fires.
+    // That is a blank page with no error anywhere iOS captures, exactly what CI showed.
+    // Android never hits this: `WebViewAssetLoader` answers real HTTP semantics already.
+    NSHTTPURLResponse* response = [[NSHTTPURLResponse alloc] initWithURL:task.request.URL
+                                                              statusCode:200
+                                                             HTTPVersion:@"HTTP/1.1"
+                                                            headerFields:@{
+        @"Content-Type" : [TnUiSchemeHandler mimeTypeFor:file],
+        @"Content-Length" : [@(body.length) stringValue],
+        @"Access-Control-Allow-Origin" : @"*",
+    }];
     [task didReceiveResponse:response];
     [response release];
     [task didReceiveData:body];
@@ -105,7 +150,12 @@ static NSString* resolveUiFile(NSString* root, NSURL* url) {
     if ([extension isEqualToString:@"html"]) return @"text/html";
     if ([extension isEqualToString:@"js"] || [extension isEqualToString:@"mjs"]) return @"text/javascript";
     if ([extension isEqualToString:@"css"]) return @"text/css";
-    if ([extension isEqualToString:@"json"]) return @"application/json";
+    if ([extension isEqualToString:@"json"] || [extension isEqualToString:@"map"]) return @"application/json";
+    if ([extension isEqualToString:@"ico"]) return @"image/x-icon";
+    if ([extension isEqualToString:@"woff"]) return @"font/woff";
+    if ([extension isEqualToString:@"woff2"]) return @"font/woff2";
+    if ([extension isEqualToString:@"ttf"]) return @"font/ttf";
+    if ([extension isEqualToString:@"otf"]) return @"font/otf";
     if ([extension isEqualToString:@"svg"]) return @"image/svg+xml";
     if ([extension isEqualToString:@"png"]) return @"image/png";
     if ([extension isEqualToString:@"webp"]) return @"image/webp";
@@ -159,11 +209,40 @@ static NSString* resolveUiFile(NSString* root, NSURL* url) {
       didReceiveScriptMessage:(WKScriptMessage*)message {
     if (![message.body isKindOfClass:[NSString class]]) return;
     NSString* frame = (NSString*)message.body;
+    if ([frame containsString:kUiDiagnostic]) {
+        [self reportPageDiagnostic:frame];
+        return;
+    }
     if ([frame containsString:kHitRegions]) {
         [self applyHitRegions:frame];
         return;
     }
     mystral::platform::queueUiMessage(frame.UTF8String);
+}
+
+/**
+ * Page diagnostics from the document-start probe. Ready and first-state are plain `TN_UI_PAGE`
+ * lines for the next CI run to assert on; an error carries the `[error]` marker so the playtest
+ * console classification files it as an error and the run fails with the page's own message.
+ * Diagnostics stop here: forwarding them to the game would hand it frames outside the bridge
+ * contract, and a diagnostic the host cannot parse is itself the news, so it logs as an error.
+ */
+- (void)reportPageDiagnostic:(NSString*)frame {
+    NSString* event = nil;
+    NSDictionary* parsed = [NSJSONSerialization
+        JSONObjectWithData:[frame dataUsingEncoding:NSUTF8StringEncoding]
+                   options:0
+                     error:nil];
+    if ([parsed isKindOfClass:[NSDictionary class]] &&
+        [parsed[@"type"] isEqualToString:kUiDiagnostic] &&
+        [parsed[@"event"] isKindOfClass:[NSString class]]) {
+        event = parsed[@"event"];
+    }
+    if ([event isEqualToString:@"error"] || event == nil) {
+        NSLog(@"TN_UI_PAGE [error]: %@", frame);
+    } else {
+        NSLog(@"TN_UI_PAGE:%@", frame);
+    }
 }
 
 /**
@@ -232,6 +311,8 @@ TnUiOverlayView* g_overlay = nil;
  * handler can never dangle.
  */
 TnUiOverlayBridge* g_bridge = nil;
+/** Whether the current overlay has delivered state yet; reset on every attach. */
+bool g_uiFirstStateLogged = false;
 
 }  // namespace
 
@@ -267,6 +348,13 @@ bool attachIosUiOverlay(const std::string& uiRoot) {
     // shipped order, and the invisible overlay it produced.
     TnUiOverlayBridge* bridge = [[TnUiOverlayBridge alloc] init];
     [configuration.userContentController addScriptMessageHandler:bridge name:kHostObject];
+    // Document-start, so the probe is in place before any page script runs. Added here for the
+    // same reason as the message handler: the web view copies its configuration at init.
+    WKUserScript* probe = [[WKUserScript alloc] initWithSource:kPageDiagnostics
+                                                injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                             forMainFrameOnly:NO];
+    [configuration.userContentController addUserScript:probe];
+    [probe release];
 
     TnUiOverlayView* overlay = [[TnUiOverlayView alloc] initWithFrame:parent.bounds configuration:configuration];
     if (overlay == nil) {
@@ -282,14 +370,25 @@ bool attachIosUiOverlay(const std::string& uiRoot) {
     overlay.backgroundColor = UIColor.clearColor;
     overlay.scrollView.backgroundColor = UIColor.clearColor;
     overlay.scrollView.scrollEnabled = NO;
-    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    // Pinned to the parent, not sized from it. `parent.bounds` at attach time predates first
+    // layout — CI showed a landscape frame on a portrait app — and an autoresizing mask only
+    // follows if the parent lays its subviews out again, which SDL's root view did not do before
+    // the page finished loading. Constraints follow every layout pass instead.
+    overlay.translatesAutoresizingMaskIntoConstraints = NO;
     // `addSubview:` puts the overlay above SDL's view; nothing later adds a sibling above it.
     [parent addSubview:overlay];
+    [NSLayoutConstraint activateConstraints:@[
+        [overlay.topAnchor constraintEqualToAnchor:parent.topAnchor],
+        [overlay.leadingAnchor constraintEqualToAnchor:parent.leadingAnchor],
+        [overlay.trailingAnchor constraintEqualToAnchor:parent.trailingAnchor],
+        [overlay.bottomAnchor constraintEqualToAnchor:parent.bottomAnchor],
+    ]];
     [overlay loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:
         [kOrigin stringByAppendingString:@"index.html"]]]];
 
     g_overlay = overlay;
     g_bridge = bridge;
+    g_uiFirstStateLogged = false;
     [handler release];
     [configuration release];
     setUiOverlayAttached(true);
@@ -312,6 +411,12 @@ void detachIosUiOverlay() {
 bool postIosUiMessage(const std::string& frame) {
     NSCAssert([NSThread isMainThread], @"WebKit requires the main thread");
     if (g_overlay == nil) return false;
+    if (!g_uiFirstStateLogged) {
+        g_uiFirstStateLogged = true;
+        // The frame at first state delivery, next to the one at navigation finish: together they
+        // say whether the overlay tracked the parent through rotation or froze at attach size.
+        NSLog(@"TN_UI_OVERLAY:{\"firstState\":true,\"frame\":\"%@\"}", NSStringFromCGRect(g_overlay.frame));
+    }
     @autoreleasepool {
         NSString* payload = [NSString stringWithUTF8String:frame.c_str()];
         NSData* quoted = [NSJSONSerialization dataWithJSONObject:@[ payload ] options:0 error:nil];

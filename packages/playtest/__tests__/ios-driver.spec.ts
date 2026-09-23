@@ -86,6 +86,14 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     "2026-09-23 11:39:52.815 F  threenative-ios[85320:32404] [com.apple.WebKit:Process] GPU process (0x1111741e0) took 3.295754 seconds to launch";
   const appleFault =
     "2026-09-22 15:07:19.400 F  threenative-ios[40455:17a9f] [com.apple.Metal:device] Execution of the command buffer was aborted due to an error during execution";
+  // The iOS overlay's document-start probe: ready/first-state are plain logs, while a page error
+  // carries the `[error]` marker so the run fails with the page's own message.
+  const uiPageReady =
+    '2026-09-23 14:10:45.300 Df threenative-ios[61943:23880] TN_UI_PAGE:{"type":"tn:ui-diagnostic","event":"ready"}';
+  const uiPageFirstState =
+    '2026-09-23 14:10:45.301 Df threenative-ios[61943:23880] TN_UI_PAGE:{"type":"tn:ui-diagnostic","event":"first-state"}';
+  const uiPageError =
+    '2026-09-23 14:10:45.302 Df threenative-ios[61943:23880] TN_UI_PAGE [error]: {"type":"tn:ui-diagnostic","event":"error","kind":"onerror","message":"Uncaught ReferenceError: React is not defined"}';
 
   const driver = new XcrunIosDriver({
     appPath,
@@ -109,6 +117,9 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
         uncaughtException,
         appleFault,
         slowWebKitLaunch,
+        uiPageReady,
+        uiPageFirstState,
+        uiPageError,
       ].join("\n")}\n`;
     }
     return "";
@@ -128,6 +139,9 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     { text: uncaughtException, type: "error" },
     { text: appleFault, type: "error" },
     { text: slowWebKitLaunch, type: "log" },
+    { text: uiPageReady, type: "log" },
+    { text: uiPageFirstState, type: "log" },
+    { text: uiPageError, type: "error" },
   ]);
 });
 

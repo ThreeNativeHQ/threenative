@@ -173,6 +173,56 @@ test('the iOS host reports page load finish/failure with the webview frame', () 
   assert.match(ios, /TN_UI_OVERLAY:\{\\"loaded\\":false/u);
 });
 
+test('the iOS scheme handler answers HTTP 200 with CORS and a JavaScript MIME', () => {
+  // The packager emits Vite bundles whose `index.html` carries `crossorigin` module scripts.
+  // Served from the custom scheme with a bare NSURLResponse, WebKit refuses the module, the
+  // bundle never executes, yet `didFinishNavigation` still fires — a blank page with no error
+  // anywhere iOS captures, exactly what the packaged pixel proof showed. Android never hits
+  // this: `WebViewAssetLoader` answers real HTTP semantics already.
+  assert.match(ios, /NSHTTPURLResponse alloc/u);
+  assert.match(ios, /statusCode:200/u);
+  assert.match(ios, /Access-Control-Allow-Origin/u);
+  assert.match(ios, /Access-Control-Allow-Origin" : @"\*"/u);
+  assert.match(ios, /text\/javascript/u);
+  assert.match(ios, /text\/css/u);
+  assert.doesNotMatch(ios, /\[\[NSURLResponse alloc/u);
+  assert.doesNotMatch(ios, /autoresizingMask/u);
+});
+
+test('the iOS overlay is pinned to its parent with constraints', () => {
+  // `parent.bounds` at attach time predates first layout — CI logged a landscape frame on a
+  // portrait app — so the overlay follows the parent through every layout pass instead.
+  assert.match(ios, /translatesAutoresizingMaskIntoConstraints = NO/u);
+  for (const edge of ['topAnchor', 'leadingAnchor', 'trailingAnchor', 'bottomAnchor']) {
+    assert.match(ios, new RegExp(`overlay\\.${edge} constraintEqualToAnchor:parent`, 'u'));
+  }
+});
+
+test('the iOS host probes the page and logs its diagnostics', () => {
+  // iOS captures no WebView JS console, so a bundle that never executes is otherwise invisible.
+  // The document-start probe forwards page errors plus one-shot ready/first-state to the same
+  // `tnHost` handler; the host logs them as `TN_UI_PAGE` and never forwards them to the game.
+  // An error carries the `[error]` marker so the playtest console classification files it as an
+  // error and the run fails with the page's own message.
+  assert.match(ios, /WKUserScript/u);
+  assert.match(ios, /WKUserScriptInjectionTimeAtDocumentStart/u);
+  assert.match(ios, /addUserScript:probe/u);
+  assert.match(ios, /__tnUiReceive/u);
+  assert.match(ios, /first-state/u);
+  assert.match(ios, /unhandledrejection/u);
+  assert.match(ios, /tn:ui-diagnostic/u);
+  assert.match(ios, /TN_UI_PAGE:%@/u);
+  assert.match(ios, /TN_UI_PAGE \[error\]/u);
+});
+
+test('the iOS host logs the overlay frame again on first state delivery', () => {
+  // The frame at navigation finish plus the frame at first state delivery say together whether
+  // the overlay tracked the parent through rotation or froze at attach size.
+  const post = ios.slice(ios.indexOf('bool postIosUiMessage('));
+  assert.match(post, /TN_UI_OVERLAY:\{\\"firstState\\":true/u);
+  assert.match(post, /NSStringFromCGRect\(g_overlay\.frame\)/u);
+});
+
 test('the MRC iOS bridge keeps a non-owning overlay link only while its handler is registered', () => {
   assert.match(ios, /@property\(nonatomic, assign\) TnUiOverlayView\* overlay;/u);
   assert.doesNotMatch(ios, /@property\(nonatomic, weak\) TnUiOverlayView\* overlay;/u);
