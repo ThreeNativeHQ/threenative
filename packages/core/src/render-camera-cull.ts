@@ -179,9 +179,13 @@ export class RenderCameraCull {
   /**
    * Hides every renderable under `root` that this camera resolves to fewer than the threshold,
    * then calls `restore` implicitly on the next call. Call {@link restore} after the render.
+   *
+   * The walk visits only visible subtrees — a game-hidden LOD level or stand-in is already not
+   * submitted, so descending into it would waste the walk and could hide/restore a node the game
+   * deliberately left out.
    */
   apply(
-    root: { traverse(callback: (object: Object3D) => void): void },
+    root: { traverseVisible(callback: (object: Object3D) => void): void },
     camera: Camera,
     viewportHeight: number,
   ): void {
@@ -223,7 +227,7 @@ export class RenderCameraCull {
       this.#projectionScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       this.#frustum.setFromProjectionMatrix(this.#projectionScreen);
     }
-    root.traverse(this.#visitor);
+    root.traverseVisible(this.#visitor);
   }
 
   /** Undoes every hide this gate made, leaving the authored scene as the game left it. */
@@ -242,8 +246,6 @@ export class RenderCameraCull {
   #visit(object: Object3D): void {
     if (!isRenderable(object)) return;
     this.#considered += 1;
-    // The game's own hidden object is already not submitted; never reveal it here.
-    if (object.visible === false) return;
     if (this.#isCameraAttached(object)) {
       this.#exemptCameraAttached += 1;
       return;
