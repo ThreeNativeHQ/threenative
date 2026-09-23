@@ -1,6 +1,6 @@
 # PRD-444 — Built-in native profiling, and the Midway CPU attack list
 
-**Status:** PARTIAL (Phases 1–2 done)
+**Status:** PARTIAL (Phases 1–3 done)
 **Complexity:** 6 (MEDIUM)
 **Owner:** Joao Furtado (play sign-off); agent (implementation)
 **Depends on:** PRD-442 (`docs/PRDs/native/PRD-442-native-frame-costs-engine-defaults.md`),
@@ -98,8 +98,8 @@ GPU-wait paths.
 - [x] AC-2 [local; actor: agent]: `TN_JS_CPU_PROFILE=1` still starts the profiler on a desktop build and the profiler is absent from a shipping mobile build (no compile-time cost) — Evidence: env run printed `[V8] CPU profiler started` + `TN_JS_CPU_PROFILE_TOTAL:35142`; a `TN_JS_PROFILE=0 TN_ANDROID_JS_PROFILE=0` object has no `CpuProfiler`/`CpuProfile::` symbols (`nm`).
 - [x] AC-3 [local; actor: agent]: `threenative-playtest <scenario> --url … --cpu-prof out.cpuprofile` on the browser target writes a loadable `.cpuprofile` via CDP, through the real CLI entry point — Evidence: `node packages/playtest/dist/runner/cli.js … --cpu-prof /tmp/playtest.cpuprofile` wrote 2,833 samples / 2,833 timeDeltas naming `tick` and `work`; stderr printed `{"cpuProfile":"/tmp/playtest.cpuprofile"}`.
 - [x] AC-4 [local; actor: agent]: The desktop playtest target forwards `--cpu-prof` to the host (`--host-arg`) and the file appears; an unsupported target fails closed with a named error rather than silently skipping — Evidence: `desktop-playtest.spec.ts` asserts the host args `["--cpu-prof=/project/out.cpuprofile"]`; a SIGTERM'd `mystral` host wrote 22,546 samples (`TN_CPU_PROFILE_WRITTEN`); `--target android --cpu-prof` exited 2 with `TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED`.
-- [ ] AC-5 [local; actor: agent]: `GainNode::process` computes one gain for an `Immediate` param over a block (unit test asserts one `valueAtTime` for the block, N for a linear ramp) — Evidence: pending.
-- [ ] AC-6 [local; actor: agent]: A per-frame-rewritten geometry no longer triggers a full `computeBoundingSphere` in the cull gate (unit test on `boundsOf`/`render-camera-cull`) — Evidence: pending.
+- [x] AC-5 [local; actor: agent]: `GainNode::process` computes one gain for an `Immediate` param over a block (unit test asserts one `valueAtTime` for the block, N for a linear ramp) — Evidence: `threenative-audio-graph-test` passes; a 4-frame block samples `valueAtTime` 1× for `Immediate` and 4× for a linear ramp.
+- [x] AC-6 [local; actor: agent]: A per-frame-rewritten geometry no longer triggers a full `computeBoundingSphere` in the cull gate (unit test on `boundsOf`/`render-camera-cull`) — Evidence: `render-camera-cull.spec.ts` spies one `computeBoundingSphere` call across 40 rewritten frames, keeps the object drawn and reports `exemptDynamicBounds: 1`; 123 core spec files pass.
 - [x] AC-7 [local; actor: agent]: `threenative-performance` skill documents `--cpu-prof` and the "never install a system profiler" promise, and the generated `.claude` mirror matches (`pnpm sync:agents --check`) — Evidence: `.agents` and `.claude` SKILL.md are byte-identical; `pnpm sync:agents --check` reports 19 mirrors in sync.
 - [ ] AC-8 [shared; actor: CI]: `pnpm typecheck && pnpm lint && pnpm test` plus the template docs lane pass on the PR — Evidence: pending.
 - [ ] AC-9 [owner; actor: Joao]: plays native Midway with `--cpu-prof` and confirms the file opens in Chrome DevTools and names a real hot function — Evidence: pending.
@@ -156,20 +156,28 @@ positional argv (`android_main.cpp`), not named flags, so there is no `--host-ar
 than skipping it; wiring a profile path through the Android host belongs to a follow-up.
 
 #### Phase 3: Engine-owned CPU fixes
-**Status:** NOT STARTED
+**Status:** DONE
 **ACs:** AC-5, AC-6
 **Files:** `packages/runtime-native/src/audio/audio_context.cpp` (`GainNode::process`),
-`packages/core/src/render-camera-cull.ts` (`boundsOf`), plus their `__tests__`.
-**Implementation:** block-hoist the gain for `Immediate`; update the cached sphere from known
-extents / exempt a rewritten buffer instead of a full scan. Midway items 2 and 7 are recorded in
-this PRD and handled in the game lane; items 3 and 6 cross-reference PRD-442/PRD-443.
-- [ ] `GainNode::process` computes one gain for an `Immediate` param over a block
-- [ ] `boundsOf` no longer rescans a per-frame-rewritten geometry every frame
-- [ ] Unit tests cover both, and the cull path has no regression
+`packages/runtime-native/include/mystral/audio/audio_context.h`, `packages/core/src/render-camera-cull.ts` (`boundsOf`),
+`packages/core/src/projection-marker.ts`, plus their `__tests__`.
+**Implementation:** block-hoist the gain for `Immediate`; once a rewritten buffer changes on two
+consecutive consults, treat its bound as untrustworthy and keep the object drawn instead of a full
+scan every frame. Midway items 2 and 7 are recorded in this PRD and handled in the game lane;
+items 3 and 6 cross-reference PRD-442/PRD-443.
+- [x] `GainNode::process` computes one gain for an `Immediate` param over a block — `audio_graph_test.cpp` counts 1 `valueAtTime` for a 4-frame block and 4 for a linear ramp
+- [x] `boundsOf` no longer rescans a per-frame-rewritten geometry every frame — `render-camera-cull.spec.ts`: one `computeBoundingSphere` across 40 rewritten frames
+- [x] Unit tests cover both, and the cull path has no regression — 123 core spec files pass
 
 **Verification:** E3 — unit tests for the block gain and the cull-bound path; a playtest on the
 nearest example confirms no culling regression. Covers AC-5, AC-6.
 **Checkpoint:** pending
+
+**Note — the example playtest could not run here.** Building the in-repo examples needs every
+workspace package; `@threenative/assets` and `@threenative/core` build scripts fail in this
+worktree on a missing `threenative-blender-mcp` dist, so no scaffolded example serves. The cull
+path is covered by the unit test instead; the playtest lane stays for a machine with the full
+workspace.
 
 #### Phase 4: Full gate and close
 **Status:** NOT STARTED

@@ -66,6 +66,52 @@ int main() {
         return 1;
     }
 
+    // PRD-444: a constant gain is read once for the whole block; a ramp still varies per sample.
+    auto blockGain = context.createGain();
+    blockGain->gain().setValue(0.25f);
+    if (!blockGain->gain().isConstant()) {
+        std::cerr << "an Immediate gain must read as constant\n";
+        return 1;
+    }
+    auto blockSource = context.createBufferSource();
+    blockSource->setBuffer(constantBuffer(context));
+    blockSource->connect(blockGain.get());
+    blockGain->connect(context.destination());
+    blockSource->start();
+    const uint64_t blockCallsBefore = blockGain->gain().valueAtTimeCalls();
+    float block[8] = {};
+    blockSource->process(block, 4, 2);
+    const uint64_t blockCalls = blockGain->gain().valueAtTimeCalls() - blockCallsBefore;
+    if (blockCalls != 1) {
+        std::cerr << "a constant gain sampled " << blockCalls << " times for a 4-frame block, want 1\n";
+        return 1;
+    }
+    if (!closeTo(block[0], 0.25f) || !closeTo(block[6], 0.25f)) {
+        std::cerr << "block gain failed: " << block[0] << ", " << block[6] << '\n';
+        return 1;
+    }
+
+    auto rampGain = context.createGain();
+    rampGain->gain().setValueAtTime(0.0f, 0.0);
+    rampGain->gain().linearRampToValueAtTime(1.0f, 1.0);
+    if (rampGain->gain().isConstant()) {
+        std::cerr << "a linear ramp must not read as constant\n";
+        return 1;
+    }
+    auto rampSource = context.createBufferSource();
+    rampSource->setBuffer(constantBuffer(context));
+    rampSource->connect(rampGain.get());
+    rampGain->connect(context.destination());
+    rampSource->start();
+    const uint64_t rampCallsBefore = rampGain->gain().valueAtTimeCalls();
+    float ramped[8] = {};
+    rampSource->process(ramped, 4, 2);
+    const uint64_t rampCalls = rampGain->gain().valueAtTimeCalls() - rampCallsBefore;
+    if (rampCalls != 4) {
+        std::cerr << "a ramp sampled " << rampCalls << " times for a 4-frame block, want 4\n";
+        return 1;
+    }
+
     auto rightSource = context.createBufferSource();
     auto panner = context.createPanner();
     rightSource->setBuffer(constantBuffer(context));

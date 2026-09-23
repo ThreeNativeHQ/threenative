@@ -76,6 +76,20 @@ public:
     void setTargetAtTime(float value, double startTime, double timeConstant);
     float valueAtTime(double time) const;
 
+    /**
+     * True when the value does not change across a block, so a caller may read it once instead of
+     * per sample. `Automation::Immediate` is the common case for a node's static gain; a ramp or a
+     * scheduled change is not.
+     */
+    bool isConstant() const {
+        return automation_.load(std::memory_order_acquire) == Automation::Immediate;
+    }
+
+    /** How many times `valueAtTime` was sampled. A readout for a block-hoist test, not a signal. */
+    uint64_t valueAtTimeCalls() const {
+        return valueAtTimeCalls_.load(std::memory_order_relaxed);
+    }
+
 private:
     enum class Automation { Immediate, Scheduled, Linear, Target };
 
@@ -84,6 +98,7 @@ private:
     std::atomic<double> startTime_{0.0};
     std::atomic<double> endOrConstant_{0.0};
     std::atomic<Automation> automation_{Automation::Immediate};
+    mutable std::atomic<uint64_t> valueAtTimeCalls_{0};
 };
 
 /**

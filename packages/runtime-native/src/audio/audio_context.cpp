@@ -95,6 +95,7 @@ void AudioParam::setTargetAtTime(float value, double startTime, double timeConst
 }
 
 float AudioParam::valueAtTime(double time) const {
+    valueAtTimeCalls_.fetch_add(1, std::memory_order_relaxed);
     const float start = startValue_.load(std::memory_order_relaxed);
     const float target = targetValue_.load(std::memory_order_relaxed);
     const double startTime = startTime_.load(std::memory_order_relaxed);
@@ -164,11 +165,22 @@ GainNode::GainNode(AudioContext* context)
 
 void GainNode::process(float* output, size_t numFrames, int numChannels) {
     const double startTime = context_->currentTime();
-    const double secondsPerFrame = 1.0 / context_->sampleRate();
-    for (size_t frame = 0; frame < numFrames; frame++) {
-        const float gainValue = gain_.valueAtTime(startTime + frame * secondsPerFrame);
-        for (int channel = 0; channel < numChannels; channel++) {
-            output[frame * numChannels + channel] *= gainValue;
+    if (gain_.isConstant()) {
+        // An Immediate param is the common case (a static volume) and does not change across the
+        // block, so one read replaces four atomic loads and a switch per sample.
+        const float gainValue = gain_.valueAtTime(startTime);
+        for (size_t frame = 0; frame < numFrames; frame++) {
+            for (int channel = 0; channel < numChannels; channel++) {
+                output[frame * numChannels + channel] *= gainValue;
+            }
+        }
+    } else {
+        const double secondsPerFrame = 1.0 / context_->sampleRate();
+        for (size_t frame = 0; frame < numFrames; frame++) {
+            const float gainValue = gain_.valueAtTime(startTime + frame * secondsPerFrame);
+            for (int channel = 0; channel < numChannels; channel++) {
+                output[frame * numChannels + channel] *= gainValue;
+            }
         }
     }
     AudioNode::process(output, numFrames, numChannels);
