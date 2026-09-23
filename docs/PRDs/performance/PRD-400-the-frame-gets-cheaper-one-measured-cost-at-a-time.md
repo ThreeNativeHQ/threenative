@@ -366,7 +366,10 @@ These checks verify integration only; the paced Midway and holdout baselines rem
 The first rebased CI `test-native` collector blocked when headless GTK reported a missing AT-SPI
 session bus as a console error. The bounded collector step now sets `NO_AT_BRIDGE=1`, preserving
 the judge's strict diagnostic check; a local run with that exact environment returned `PASS`.
-The new CI verdict remains pending.
+The `test-native` check passed on the first fixed CI head. After #292's Windows mailbox retry
+merged into `develop`, this branch rebased without conflict. Its mailbox regression passed 3/3,
+the authored desktop loading playtest again settled to zero loading pixels, and typecheck, lint and
+the full suite passed (457 files, 5,553 tests; 8 skipped). The rebased CI verdict remains pending.
 
 ### Phase 2 — Lane 1: scene projection
 
