@@ -363,28 +363,21 @@ async function delayUntil(deadline: number): Promise<void> {
 }
 
 // Windows returns a transient EPERM/EBUSY/EACCES from `lstat`/`read` while another process (the
-// game host, or an AV scanner) has the mailbox file briefly open, and the poll then dies on a
-// file that is present and correct. A retry is safe because a missing file stays `undefined` and
-// every non-lock error still throws on the first try.
-const kMailboxLockRetryLimit = 5;
-const kMailboxLockRetryDelayMs = 50;
+// game host, or an AV scanner) has the mailbox file briefly open. A locked file is a response that
+// is not readable yet, exactly like a missing one, so both callers' poll loops keep trying until
+// their own deadline -- however long the lock lasts -- and every non-lock error still throws.
 const kMailboxLockCodes = new Set(["EPERM", "EBUSY", "EACCES"]);
 
 async function readMailboxFile(
   mailbox: IDeviceMailbox,
   path: string,
 ): Promise<string | undefined> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < kMailboxLockRetryLimit; attempt += 1) {
-    try {
-      return await mailbox.read(path);
-    } catch (error) {
-      if (!isMailboxLockError(error)) throw error;
-      lastError = error;
-      await new Promise<void>((resolve) => setTimeout(resolve, kMailboxLockRetryDelayMs));
-    }
+  try {
+    return await mailbox.read(path);
+  } catch (error) {
+    if (isMailboxLockError(error)) return undefined;
+    throw error;
   }
-  throw lastError;
 }
 
 function isMailboxLockError(error: unknown): boolean {

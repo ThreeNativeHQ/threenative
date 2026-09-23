@@ -154,16 +154,30 @@ test("a Windows-style EPERM on the mailbox read is retried until the file is rea
   }
 });
 
-test("a persistent EPERM on the mailbox read rethrows the last error", async () => {
+test("a lock that outlasts a short retry burst still clears before the operation deadline", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/slow-locked-device-files");
+  // An AV scan can hold the file for longer than any fixed burst of retries; the poll's own
+  // deadline, not a separate retry budget, decides when the read has taken too long.
+  const mailbox = new LockingMailbox(paths, { lockedReads: 8 });
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(2_000)).resolves.toBe(true);
+    expect(mailbox.readAttempts).toBeGreaterThan(8);
+  } finally {
+    await transport.close();
+  }
+});
+
+test("a lock that never clears ends as the poll's own timeout, not a raw EPERM", async () => {
   const paths = androidMailboxPaths("com.example.game", "/stuck-device-files");
   const mailbox = new LockingMailbox(paths, { lockedReads: Number.POSITIVE_INFINITY });
   const transport = new DeviceMailboxTransport(mailbox, paths);
   await transport.start();
   try {
     await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
-    await expect(transport.waitForBridge(1_000)).rejects.toMatchObject({ code: "EPERM" });
-    // Bounded: five tries, then the last error, never an unbounded spin.
-    expect(mailbox.readAttempts).toBe(5);
+    await expect(transport.waitForBridge(300)).resolves.toBe(false);
   } finally {
     await transport.close();
   }
