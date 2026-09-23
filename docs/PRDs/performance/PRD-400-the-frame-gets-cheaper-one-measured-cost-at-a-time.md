@@ -266,9 +266,11 @@ sample and no GPU validation errors. Its p50 was 6.13 ms, p95 56.35 ms, and wors
 Inspection of all six resource snapshots showed `status: briefing`, `airborne: false`, and unchanged
 altitude and airspeed: the web flight scenario's viewport click did not enter native gameplay, and
 its diagnostics-only assertion could not catch that. These frame numbers describe the briefing
-scene and cannot be used as a Midway baseline. The native baseline will instead run the already
-authored `native-playtests/launch.playtest.json`, which requires flight status, airborne state, and
-altitude and airspeed changes. The 57 production judge
+scene, and the playtest's accelerated tick advance is not a normal paced presentation window; they
+cannot be used as a Midway FPS baseline. The native gameplay check will run the already authored
+`native-playtests/launch.playtest.json`, which requires flight status, airborne state, and altitude
+and airspeed changes. The steady-state baseline then uses the `measure-steady-state-fps` skill on a
+normal paced, hardware backed window after loading and compilation settle. The 57 production judge
 tests, 19 startup tests, 8 packaging tests, typecheck, lint, and full `pnpm test` pass (454 test
 files, 5,520 tests; 8 skipped). The distributed patch intentionally moves all ten no-install
 scaffold hashes, and the renderer cache probe now supplies the renderer's active-target method.
