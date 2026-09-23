@@ -353,12 +353,6 @@ export async function stageProductionProject(options, project, tools, dependenci
       return top === '' || !PROJECT_SKIP_ENTRIES.has(top);
     },
   });
-  const configPath = join(project, 'threenative.config.ts');
-  const config = await readFile(configPath, 'utf8').catch(() => undefined);
-  if (config !== undefined) {
-    const pinned = config.replace(/(\bresolutionScale\s*:\s*)["']auto["']/gmu, (_, prefix) => `${prefix}1`);
-    if (pinned !== config) await writeFile(configPath, pinned);
-  }
   // node_modules is skipped by the filter above and linked wholesale, never copied or instrumented.
   if (existsSync(join(source, 'node_modules'))) {
     await link(join(source, 'node_modules'), join(project, 'node_modules'));
