@@ -106,6 +106,13 @@ bool testCrashAndLifecycle() {
     queueUiMessage("{\"type\":\"tn:hit-regions\",\"regions\":[{\"x\":0,\"y\":0,\"width\":100,\"height\":100}]}");
     std::string frame;
     takeUiMessage(frame);
+    if (uiReadyIntentReceived()) return false;
+    queueUiMessage("{\"payload\":{\"type\":\"tn:intent\",\"intent\":\"tn:ready\"}}");
+    if (uiReadyIntentReceived()) return false;
+    takeUiMessage(frame);
+    queueUiMessage("{\"type\":\"tn:intent\",\"intent\":\"tn:ready\",\"payload\":2}");
+    if (!uiReadyIntentReceived()) return false;
+    takeUiMessage(frame);
     droppedUiMessages();
     postUiMessage("test");
     uiOverlayAttached();

@@ -36,6 +36,7 @@
 #include <queue>
 #include <array>
 #include <cmath>
+#include <atomic>
 
 #if defined(__APPLE__)
 #include <dlfcn.h>
@@ -444,6 +445,7 @@ RUN OPTIONS:
     --maximized           Start maximized (implies windowed)
     --fullscreen           Start fullscreen (overrides the embedded config)
     --headless            Run with hidden window (background mode)
+    --bypass-ui-loading   Run a web-UI game without attaching or waiting for its UI (diagnostic)
     --no-sdl              Run without SDL (headless GPU, no window system required)
     --watch, -w           Watch mode: reload script on file changes
     --screenshot <file>   Take screenshot after N frames and quit
@@ -590,6 +592,7 @@ struct CLIOptions {
 
     // The built UI bundle to render over the game surface, or empty for the native renderer.
     std::string uiRoot;
+    bool bypassUiLoading = false;
 
     // Bake options
     int bakeResolution = 2048;   // Max lightmap atlas size
@@ -667,6 +670,8 @@ CLIOptions parseArgs(int argc, char* argv[]) {
             opts.rootDir = argv[++i];
         } else if (arg == "--ui" && i + 1 < argc) {
             opts.uiRoot = argv[++i];
+        } else if (arg == "--bypass-ui-loading") {
+            opts.bypassUiLoading = true;
         } else if (arg == "--entry" && i + 1 < argc) {
             opts.scriptPath = argv[++i];
         } else if (arg == "--screenshot" && i + 1 < argc) {
@@ -1146,6 +1151,7 @@ static bool attachUiOverlayIfConfigured(const CLIOptions& opts, mystral::Runtime
     //
     // A game whose `ui.renderer` is `native` never reaches here and links no overlay at all.
     if (!opts.uiRoot.empty()) {
+        if (opts.bypassUiLoading) return true;
         std::filesystem::path uiRoot(opts.uiRoot);
         if (uiRoot.is_relative()) {
             // Next to the executable, which is where the packager stages it. Resolving against the
@@ -1160,12 +1166,11 @@ static bool attachUiOverlayIfConfigured(const CLIOptions& opts, mystral::Runtime
                       << uiRoot.string() << " is not a directory." << std::endl;
             return false;
         }
-        // Deliberately not returned. Every false this can produce is a property of the machine,
-        // not of the game — no display, no compositing manager, a window the X server does not
-        // own, and in any build without TN_ENABLE_UI_OVERLAY it is false always. The overlay
-        // already says which on stdout as TN_UI_OVERLAY, and a game that cannot have its HUD
-        // composited still runs. Returning it here made main's startup gate exit 1 instead.
-        mystral::platform::attachDesktopUiOverlay(uiRoot.string());
+        if (!mystral::platform::attachDesktopUiOverlay(uiRoot.string())) {
+            std::cerr << "TN_UI_LOAD_FAILED: the requested web UI overlay could not attach. "
+                      << "Use --bypass-ui-loading only for scene diagnostics." << std::endl;
+            return false;
+        }
     }
     return true;
 }
@@ -1682,6 +1687,11 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
     }
 
     int exitCode = runtime.getExitCode();
+    if (!opts.uiRoot.empty() && !opts.bypassUiLoading &&
+        !mystral::platform::uiReadyIntentReceived()) {
+        std::cerr << "TN_UI_LOAD_FAILED: the web UI exited before its tn:ready intent." << std::endl;
+        exitCode = 1;
+    }
     if (!opts.quiet) std::cout << "=== Script finished ===" << std::endl;
 #ifndef MYSTRAL_CLI_NO_MAIN
 #ifdef __APPLE__
@@ -1729,15 +1739,41 @@ int runScript(const CLIOptions& opts) {
     mystral::coldStartMark("runtime_created");
     if (!attachUiOverlayIfConfigured(opts, *runtime)) return 1;
     if (!wirePlaytestMailboxBridge(runtime)) return 1;
+    std::atomic<bool> stopUiDeadline{false};
+    std::thread uiDeadline;
+    if (!opts.uiRoot.empty() && !opts.bypassUiLoading) {
+        uiDeadline = std::thread([&] {
+            constexpr auto deadline = std::chrono::seconds(15);
+            const auto expiresAt = std::chrono::steady_clock::now() + deadline;
+            while (!stopUiDeadline.load(std::memory_order_acquire) &&
+                   !mystral::platform::uiReadyIntentReceived() &&
+                   std::chrono::steady_clock::now() < expiresAt) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            if (stopUiDeadline.load(std::memory_order_acquire) ||
+                mystral::platform::uiReadyIntentReceived()) return;
+            std::cerr << "TN_UI_LOAD_FAILED: the web UI did not send its tn:ready intent within "
+                      << "15 seconds." << std::endl;
+            std::_Exit(1);
+        });
+    }
+    auto stopUiDeadlineAndReport = [&] {
+        stopUiDeadline.store(true, std::memory_order_release);
+        if (uiDeadline.joinable()) uiDeadline.join();
+        return !opts.uiRoot.empty() && !opts.bypassUiLoading &&
+               !mystral::platform::uiReadyIntentReceived();
+    };
     // Load and execute the script after host bridges exist and before mode dispatch starts.
     // The runtime evaluates its own bootstrap scripts first, so the engine's compile markers fire
     // more than once a launch. This brackets the one that is the game.
     mystral::coldStartMark("game_eval_begin");
     if (!runtime->loadScript(opts.scriptPath)) {
+        stopUiDeadlineAndReport();
         std::cerr << "Error: Failed to evaluate script!" << std::endl;
         return 1;
     }
-    return driveMainLoop(opts, runtime);
+    const int exitCode = driveMainLoop(opts, runtime);
+    return stopUiDeadlineAndReport() ? 1 : exitCode;
 }
 
 namespace mystral::cli {

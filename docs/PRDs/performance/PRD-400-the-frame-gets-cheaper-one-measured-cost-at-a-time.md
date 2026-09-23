@@ -348,6 +348,14 @@ display floor, so three identical real-display A/A runs used 40,000 objects: fra
 26.975/26.650/28.258 ms, noise band 1.608 ms; projection p50 band 1.490 ms (`L0-20`). This is
 an uncapped matrix throughput baseline only. The Phase 1 baseline checkbox remains open until
 Midway native/browser and both holdouts have matching pinned A/A evidence.
+The live Midway scene initially showed no HUD despite `TN_UI_OVERLAY` reporting attachment.
+Disabling WebKit's DMA-buffer renderer made the authored briefing screen visible, so the Linux
+overlay now applies that fallback by default. A requested web UI now fails startup if attachment
+fails or if the page does not send `tn:ready` within 15 seconds; `--bypass-ui-loading` explicitly
+runs the scene for diagnostics. The rebuilt host passed the focused packaging and native queue
+checks; an Xvfb compositor run with a page that never reports ready exited 1, while the real
+Midway UI remained running beyond the deadline. Both physical display connectors disconnected
+during the flight-input probe, so no Midway paced FPS or gameplay baseline is claimed (`L0-21`).
 
 ### Phase 2 — Lane 1: scene projection
 
