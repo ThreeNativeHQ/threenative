@@ -151,7 +151,7 @@ test("native profiling reports direct and bundled render commands per submit", (
   assert.match(marker, /state->profiling\.androidJsNativeProfile = \{\};/u);
   assert.ok(marker.includes('\\"engine\\":\\"" << state->engine->getName()'));
 
-  const replay = nativeDefinition("replayFrameRecords").text;
+  const replay = nativeDefinition("replayPackedFrameOpStream").text;
   for (const command of ["WriteBuffer", "SetPipeline", "DrawIndexed", "Submit", "DevicePoll"]) {
     assert.match(
       replay,

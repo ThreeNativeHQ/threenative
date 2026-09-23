@@ -91,7 +91,6 @@ export {
   PLAYTEST_FROZEN_MARKER,
   PLAYTEST_ADVANCE_TICK_BUDGET_MS,
   PLAYTEST_STARTUP_COMPILE_BUDGET_MS,
-  PLAYTEST_FRAME_PASS_KINDS,
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   PLAYTEST_STARTUP_READY_TIMEOUT_MS,
@@ -105,7 +104,6 @@ export type {
   IPlaytestContactObservation,
   IPlaytestDeviceRequest,
   IPlaytestDeviceResponse,
-  IPlaytestFramePassSample,
   IPlaytestGameplayObservation,
   IPlaytestObservationSnapshot,
   IPlaytestPerformanceObservation,
@@ -124,7 +122,6 @@ export type {
   IPlaytestWorldObservation,
   IPlaytestWorldRuntimeObservation,
   JsonValue,
-  PlaytestFramePassKind,
 } from "./protocol.js";
 // The replay wire protocol moved to @threenative/core (PRD-181); playtest no longer ships
 // its own copy. Import it from `@threenative/core` if a harness needs the parser.
@@ -138,55 +135,20 @@ export type {
   PlaytestVec3,
 } from "./report.js";
 /**
- * Carry a structured scenario validation diagnostic as an error.
- * @situation catch a structured playtest scenario validation error
- * @constraint the diagnostic describes a failed load, not a successfully executed scenario
- * @example import { PlaytestScenarioError } from "@threenative/playtest";
- * const error = new PlaytestScenarioError({ code: "TN_PLAYTEST_SCENARIO_INVALID", message: "Invalid fixture", severity: "error", suggestion: "Fix the fixture" });
- */
-export { PlaytestScenarioError } from "./scenario.js";
-/**
- * Construct a named invalid-scenario error without loading or executing a scenario.
- * @situation construct a validation error for malformed scenario input
- * @constraint returns an error; the caller must throw it
- * @example import { invalidScenario } from "@threenative/playtest";
- * throw invalidScenario("smoke.playtest.json", "Expected a non-empty assertion set");
- */
-export { invalidScenario } from "./scenario.js";
-/**
- * Load and validate a scenario and its referenced evidence before running it.
+ * Load and validate a scenario, then control its tick steps.
  * @situation create a browser or device playtest scenario
- * @situation load a deterministic tick-based playtest scenario
- * @constraint unknown scenario keys and missing referenced evidence fail closed
- * @constraint loading validates the fixture; use the runner to execute it
- * @example import { loadPlaytestScenario } from "@threenative/playtest";
- * const scenario = await loadPlaytestScenario(process.cwd(), "playtests/smoke.playtest.json");
- */
-export { loadPlaytestScenario } from "./scenario.js";
-/**
- * Read a validated step's input-hold duration in simulation ticks.
- * @situation read the deterministic number of ticks to hold a playtest input
- * @constraint reads the duration only; the runner advances the simulation
- * @example import { playtestStepHoldTicks } from "@threenative/playtest";
- * const ticks = playtestStepHoldTicks({ kind: "input", press: "KeyW", holdTicks: 30, release: true });
- */
-export { playtestStepHoldTicks } from "./scenario.js";
-/**
- * Read a validated step's no-input duration in simulation ticks.
  * @situation wait or hold a game for a deterministic number of ticks
- * @constraint reads the wait duration only; the runner advances the simulation
- * @example import { playtestStepWaitTicks } from "@threenative/playtest";
- * const ticks = playtestStepWaitTicks({ kind: "wait", waitTicks: 30, release: true });
+ * @constraint unknown scenario keys fail closed
+ * @example const scenario = await loadPlaytestScenario(project, file);
  */
-export { playtestStepWaitTicks } from "./scenario.js";
-/**
- * Reject object keys outside the explicitly allowed scenario fields.
- * @situation reject an unknown field while validating a scenario object
- * @constraint throws an invalid-scenario error on the first unknown key
- * @example import { rejectUnknownKeys } from "@threenative/playtest";
- * rejectUnknownKeys({ name: "smoke" }, ["name"], "smoke.playtest.json", "scenario");
- */
-export { rejectUnknownKeys } from "./scenario.js";
+export {
+  PlaytestScenarioError,
+  invalidScenario,
+  loadPlaytestScenario,
+  playtestStepHoldTicks,
+  playtestStepWaitTicks,
+  rejectUnknownKeys,
+} from "./scenario.js";
 export type {
   IPlaytestArtifactRequest,
   IPlaytestPathAssertion,

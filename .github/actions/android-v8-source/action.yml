@@ -10,32 +10,7 @@ inputs:
 runs:
   using: composite
   steps:
-    # The recipe decides whether a cached payload is still valid. Compute it once here so every
-    # cache key below agrees, and leave this action's own plumbing out of the inputs: editing the
-    # workflow that restores V8 must not throw away a built V8.
-    - name: Compute the pinned V8 recipe hash
-      id: recipe
-      shell: bash
-      env:
-        RECIPE_HASH: >-
-          ${{ hashFiles(
-            'packages/runtime-native/scripts/build-android-v8.mjs',
-            'packages/runtime-native/scripts/check-android-16kb-alignment.mjs',
-            'packages/runtime-native/scripts/download-deps.mjs',
-            'packages/runtime-native/android/gradle.properties') }}
-      run: echo "hash=$RECIPE_HASH" >> "$GITHUB_OUTPUT"
-    # The built payload is the expensive thing and it is stable per recipe. Its key carries no run
-    # id, so every run of the same recipe restores it instead of cold-building V8 into the timeout.
-    - name: Restore the pinned Android V8 payload
-      id: payload
-      uses: actions/cache/restore@v4
-      with:
-        path: ${{ inputs.runtime-root }}/third_party/v8-android
-        key: android-v8-payload-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}
-    # Only a payload miss needs the resumable source state. Its key keeps a per-run suffix because
-    # a resumed build must save to a unique key rather than collide with the run that produced it.
-    - name: Restore the resumable V8 source state
-      if: steps.payload.outputs.cache-hit != 'true'
+    - name: Restore the recipe-keyed V8 source state
       uses: actions/cache/restore@v4
       with:
         path: |
@@ -43,13 +18,22 @@ runs:
           ${{ inputs.runtime-root }}/third_party/v8-android
         key: >-
           android-v8-source-${{ runner.os }}-${{ runner.arch }}-
-          ${{ steps.recipe.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+          ${{ hashFiles(
+            '.github/actions/android-v8-source/action.yml',
+            'packages/runtime-native/scripts/build-android-v8.mjs',
+            'packages/runtime-native/scripts/check-android-16kb-alignment.mjs',
+            'packages/runtime-native/scripts/download-deps.mjs',
+            'packages/runtime-native/android/gradle.properties') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: >-
           android-v8-source-${{ runner.os }}-${{ runner.arch }}-
-          ${{ steps.recipe.outputs.hash }}-
+          ${{ hashFiles(
+            '.github/actions/android-v8-source/action.yml',
+            'packages/runtime-native/scripts/build-android-v8.mjs',
+            'packages/runtime-native/scripts/check-android-16kb-alignment.mjs',
+            'packages/runtime-native/scripts/download-deps.mjs',
+            'packages/runtime-native/android/gradle.properties') }}-
     - name: Build the pinned Android V8 payload
       id: build
-      if: steps.payload.outputs.cache-hit != 'true'
       working-directory: ${{ inputs.runtime-root }}
       shell: bash
       run: |
@@ -60,27 +44,15 @@ runs:
         # the next run restores this exact recipe and continues instead of starting over.
         timeout --signal=TERM --kill-after=30s 120m \
           node scripts/download-deps.mjs --only v8-android
-    # Payload-only verification is valid: `--verify` inspects the installed payload and its receipt
-    # under third_party/v8-android and never reads third_party/.v8-source.
     - name: Verify the complete Android V8 payload
-      id: verify
-      if: steps.payload.outputs.cache-hit == 'true' || steps.build.outcome == 'success'
+      if: steps.build.outcome == 'success'
       working-directory: ${{ inputs.runtime-root }}
       shell: bash
       run: |
         set -euo pipefail
         node scripts/build-android-v8.mjs --verify
-    - name: Save the prebuilt Android V8 payload
-      if: steps.payload.outputs.cache-hit != 'true' && steps.verify.outcome == 'success'
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ inputs.runtime-root }}/third_party/v8-android
-        key: android-v8-payload-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}
-    # The 3.2 GB source state only ever saves when the build was cut off mid-compile (timeout or
-    # cancel); a successful build saves the payload alone. Saving it always is what evicted every
-    # other repo cache entry.
     - name: Save resumable V8 source state
-      if: always() && steps.payload.outputs.cache-hit != 'true' && (steps.build.outcome == 'failure' || steps.build.outcome == 'cancelled')
+      if: always()
       uses: actions/cache/save@v4
       with:
         path: |
@@ -88,4 +60,9 @@ runs:
           ${{ inputs.runtime-root }}/third_party/v8-android
         key: >-
           android-v8-source-${{ runner.os }}-${{ runner.arch }}-
-          ${{ steps.recipe.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+          ${{ hashFiles(
+            '.github/actions/android-v8-source/action.yml',
+            'packages/runtime-native/scripts/build-android-v8.mjs',
+            'packages/runtime-native/scripts/check-android-16kb-alignment.mjs',
+            'packages/runtime-native/scripts/download-deps.mjs',
+            'packages/runtime-native/android/gradle.properties') }}-${{ github.run_id }}-${{ github.run_attempt }}

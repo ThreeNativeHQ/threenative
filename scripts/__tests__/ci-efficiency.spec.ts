@@ -297,23 +297,16 @@ describe("PRD-373 fail-closed required verdict", () => {
   });
 
   it("maps every coverage job to the required verdict and rejects unregistered additions", () => {
-    const plan = fullPlan();
-    const jobs = plan.jobs as Record<string, { required: boolean }>;
     const coverage = ciJobGraph(source)
       .map(({ name }) => name)
       .filter((name) => !["scope", "ci-required", "run-summary"].includes(name))
       .sort();
-    expect(Object.keys(jobs).sort()).toEqual(coverage);
-    // A gate voluntarily exempt from the merge verdict is reported but never a `needs` of
-    // ci-required; while it sat there GitHub withheld the verdict for the whole 50–180 minute
-    // native matrix. PRD-373 keeps native evidence out of the merge verdict.
-    expect(declaredNeeds(job("ci-required"))).not.toContain("native-platforms");
-    const requiredCoverage = coverage.filter((name) => jobs[name]?.required);
+    expect(Object.keys(fullPlan().jobs as object).sort()).toEqual(coverage);
     expect(
       declaredNeeds(job("ci-required"))
         .filter((name) => name !== "scope")
         .sort(),
-    ).toEqual(requiredCoverage);
+    ).toEqual(coverage);
   });
 
   it("always evaluates and does not depend on advisory summary work", () => {

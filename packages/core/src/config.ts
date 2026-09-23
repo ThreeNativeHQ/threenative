@@ -177,82 +177,6 @@ export interface IThreeNativeModelsConfig {
       };
 }
 
-/** Quality policy for automatic discrete LOD; it picks the projected pixel-error budget. */
-export type ThreeNativeLodPreset = "aggressive" | "balanced" | "quality";
-
-/** What the `minTriangles` pre-filter is measured against. */
-export type ThreeNativeLodMinTrianglesScope = "primitive" | "asset";
-
-/** Generation knobs shared by every preset. All are ceilings or filters, not promises. */
-export interface IThreeNativeLodGenerationConfig {
-  /**
-   * Increasing geometric-error targets in normalized mesh-extent units; 1–16 positive finite
-   * numbers that strictly increase. Default `[0.002, 0.006, 0.02, 0.06]`. Each is simplified from
-   * LOD0 independently and a target that cannot reduce is dropped.
-   */
-  readonly errorTargets?: readonly number[];
-  /** Levels in the chain **including LOD0**; integer 1–8, default 4. `1` emits nothing derived. */
-  readonly maxLevels?: number;
-  /**
-   * Fraction of its predecessor's triangles a derived level must save to be kept; finite in
-   * `[0, 1)`, default `0.2`. This is the benefit gate — a mesh that cannot reach it is skipped
-   * with `insufficient-reduction`, which is a normal outcome, not an error.
-   */
-  readonly minSaving?: number;
-  /**
-   * Cheap pre-filter floor in triangles; positive integer, default `128`. It only avoids
-   * clearly-pointless work (the simplifier's fixed per-call cost); `minSaving` is the real gate.
-   */
-  readonly minTriangles?: number;
-  /**
-   * What `minTriangles` is measured against; `"primitive"` or `"asset"`, default `"asset"`. The
-   * asset scope measures the whole model, so a model split into many small primitives is still
-   * eligible on its total.
-   */
-  readonly minTrianglesScope?: ThreeNativeLodMinTrianglesScope;
-  /**
-   * Opt-in far rung that joins a mesh's same-material primitives into one draw per material group.
-   * Default `false`: with no option the cook is byte-identical to today. A join never crosses a
-   * material, never touches a skinned, morph-target or animated node, and never leaves the mesh's
-   * own node, so authored LOD0, node identity, per-node visibility, picking and transforms are
-   * untouched; the joined geometry is an additional far rung beside LOD0.
-   */
-  readonly join?: boolean;
-}
-
-/** Screen-space selection knobs. */
-export interface IThreeNativeLodRuntimeConfig {
-  /** Projected geometric-error budget in raster pixels; positive finite. Default by preset. */
-  readonly maxPixelError?: number;
-  /** Fraction in `[0, 0.5)`, default 0.15, that stabilizes coarsening at a boundary. */
-  readonly hysteresis?: number;
-}
-
-/** A partial override for one asset; nested objects overlay, they never replace. */
-export interface IThreeNativeLodOverride {
-  readonly enabled?: boolean;
-  readonly generation?: IThreeNativeLodGenerationConfig;
-  readonly preset?: ThreeNativeLodPreset;
-  readonly runtime?: IThreeNativeLodRuntimeConfig;
-}
-
-/**
- * Automatic discrete LOD policy. `{}` resolves to enabled/balanced and any explicit block turns
- * generation on; `false` and `{ enabled: false }` are equivalent absolute kill switches that no
- * per-asset override can re-enable. Overrides are keyed by canonical project-relative source asset
- * (`/` separators).
- *
- * Omission currently bakes nothing: the default-on front door opens only after the qualification
- * phase passes. Until then `assets.lod: {}` is the opt-in that resolves to enabled/balanced.
- */
-export interface IThreeNativeLodConfig {
-  readonly enabled?: boolean;
-  readonly generation?: IThreeNativeLodGenerationConfig;
-  readonly overrides?: Readonly<Record<string, boolean | IThreeNativeLodOverride>>;
-  readonly preset?: ThreeNativeLodPreset;
-  readonly runtime?: IThreeNativeLodRuntimeConfig;
-}
-
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -313,13 +237,6 @@ export interface IThreeNativeConfig {
         };
     /** Source-relative globs omitted from builds; excluded bytes are still reported. */
     readonly exclude?: readonly string[];
-    /**
-     * Automatic discrete LOD. `assets.lod: {}` opts in with the balanced default; `false` or
-     * `{ enabled: false }` is the absolute kill switch, and per-asset overrides key off canonical
-     * source asset paths. Omission currently bakes nothing — the default-on front door opens only
-     * after the qualification phase passes. See {@link IThreeNativeLodConfig}.
-     */
-    readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;
@@ -354,28 +271,6 @@ export interface IThreeNativeConfig {
      * surface, and says so in `TN_ALPHA_ANTIALIASING` rather than reporting itself applied.
      */
     readonly alphaAntialiasing?: boolean;
-    /**
-     * Whether the engine may render an internal mirror of the scene to collapse repeated draws.
-     *
-     * On by default, which is the shipping behaviour and is what an unset option means. The mirror
-     * is opportunistic and correctness-preserving, but it pays a reconciliation cost per frame, so
-     * a game that has measured it as a loss — a scene whose draw count falls without its frame time
-     * following — can decline it with `false`. An opted-out game builds no mirror and runs no
-     * eligibility scan, so the opt-out costs nothing rather than declining each frame; the authored
-     * scene is what renders. The `TN_RENDER_PROJECTION` marker still reports it, with its own
-     * reason code rather than one of the measured declines.
-     */
-    readonly projection?: boolean;
-    /**
-     * Projected diameter, in raster pixels, below which the engine does not submit an object to
-     * the render camera. On by default at a conservative **0.5 px**: an object under half a pixel
-     * cannot light a whole pixel of the frame, so only unresolvable geometry is removed. Set a
-     * larger number for a tuned cut — a shipped game's ladder chose 2 px — or `false` to leave
-     * every object drawn. The measurement still runs with `false`; `TN_PROJECTION` reports how many
-     * objects were considered and skipped. Exempt a single object with `alwaysRender` from
-     * `@threenative/core`; the player's camera-attached objects and shadow casters are already kept.
-     */
-    readonly minimumProjectedPixels?: number | false;
     /**
      * Android-only rendering overrides selected by the engine.
      *

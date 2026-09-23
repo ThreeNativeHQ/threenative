@@ -7,15 +7,9 @@
  */
 export { GameCanvas } from "./GameCanvas.js";
 /**
- * Show framework diagnostics while developing a game. Backtick opens it; the Entities tab lists
- * registered entity fields, and the Geometry tab captures one frame and ranks the objects that
- * submitted its triangles beside their projected size on screen.
+ * Show framework diagnostics while developing a game.
  * @situation display runtime and playtest diagnostics in a React HUD
  * @situation inspect a game without changing its scene
- * @situation find out which scene object is submitting the frame's triangles
- * @situation tell a cheap foreground character from an expensive distant prop
- * @constraint the Geometry tab captures only on an explicit press; nothing is collected while idle
- * @constraint per-object numbers are measured submissions reconciled against the frame's own pass totals, and the remainder is reported rather than hidden
  * @example <DebugOverlay />
  */
 export { DebugOverlay } from "./DebugOverlay.js";

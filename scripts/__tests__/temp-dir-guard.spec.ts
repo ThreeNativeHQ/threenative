@@ -84,16 +84,8 @@ const allowedProductionCreators = new Map<string, string>([
     "The Blender subprocess gets a private TMPDIR so its scratch files cannot outlive it; the directory is removed in finally.",
   ],
   [
-    "packages/runtime-native/tests/async-image-decode.test.mjs",
-    "The decode contract compiles a standalone probe with the system compiler into a scratch root and removes it in afterAll; the test runs under `node --test` as well as vitest, so it cannot import the workspace temp-dir helper.",
-  ],
-  [
     "scripts/capture-blender-mcp-tools.ts",
     "The tool-snapshot gate packs and installs into scratch roots removed in finally.",
-  ],
-  [
-    "scripts/capture-asset-mcp-tools.ts",
-    "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the Blender one above.",
   ],
 ]);
 

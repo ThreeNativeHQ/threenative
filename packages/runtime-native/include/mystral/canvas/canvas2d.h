@@ -45,13 +45,6 @@ struct ImageData {
 
 struct CanvasGradient {
     float x0, y0, x1, y1;
-    /** Start and end radii. Meaningful only when `radial`; a linear gradient leaves both at 0. */
-    float r0 = 0.0f, r1 = 0.0f;
-    /**
-     * True for `createRadialGradient`, which is the two-point conical form: colour runs between
-     * the (x0,y0,r0) circle and the (x1,y1,r1) circle, and the two circles need not be concentric.
-     */
-    bool radial = false;
     struct Stop { float offset; uint32_t color; };
     std::vector<Stop> stops;
     bool addColorStop(float offset, const std::string& color);
@@ -84,17 +77,9 @@ public:
     void setStrokeStyle(const std::string& color);
     void setGradient(bool stroke, std::shared_ptr<CanvasGradient> gradient);
     size_t createLinearGradient(float x0, float y0, float x1, float y1);
-    size_t createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1);
     std::shared_ptr<CanvasGradient> getGradient(size_t index) const;
     void setLineWidth(float width);
     void setLineCap(const std::string& cap);
-    void setLineJoin(const std::string& join);
-    std::string getLineJoin() const;
-    /** Canvas `setLineDash`: an empty vector restores a solid line. */
-    void setLineDash(const std::vector<float>& segments);
-    std::vector<float> getLineDash() const;
-    /** Intersect the clip with the current path, scoped by the enclosing save()/restore(). */
-    void clip();
     void setGlobalAlpha(float alpha);
 
     std::string getFillStyle() const;

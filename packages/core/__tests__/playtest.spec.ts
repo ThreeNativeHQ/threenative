@@ -68,7 +68,6 @@ describe("playtest plugin", () => {
         "runtime.audio",
         "runtime.world",
         "runtime.pipelineCensus",
-        "runtime.geometry",
       ]);
     } finally {
       game.stop();
@@ -119,7 +118,6 @@ describe("playtest plugin", () => {
         "runtime.world",
         "runtime.components",
         "runtime.pipelineCensus",
-        "runtime.geometry",
       ]);
       expect(unknownPlaytestCapabilities(description.capabilities)).toEqual([]);
       const request = { label: "after-step" } as IPlaytestSampleRequest & { label: string };
@@ -233,7 +231,7 @@ describe("playtest plugin", () => {
       const series = (await bridge().sample({})).runtimeDiagnosticsSeries ?? [];
       // The frame budget is on by default, so each sample also carries its phase split.
       expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
-      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
+      expect(series.map(({ phases: _phases, ...sample }) => sample)).toEqual([
         { drawCalls: 7, frameMs: 16, triangles: 42 },
       ]);
     } finally {
@@ -309,7 +307,6 @@ describe("playtest plugin", () => {
         "runtime.audio",
         "runtime.world",
         "runtime.pipelineCensus",
-        "runtime.geometry",
       ];
 
       expect(description.capabilities).toEqual(expected);
@@ -767,77 +764,6 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
-  it("collects per-frame render samples for a native endpoint run", async () => {
-    // The device and desktop lanes never set the browser's runner-expected global: a native host
-    // announces itself through `TN_PLAYTEST_ENDPOINT`, which is why this run carries one and not
-    // the other. Collection used to key off the browser half alone, so a `--target desktop` run
-    // answered an advertised `runtime.performance` with an empty series and every
-    // `assert.performance` on a native target failed as unobserved. Nothing here calls
-    // `enableRuntimeDiagnostics`; the announcement is the only switch.
-    const host = globalThis as Record<string, unknown>;
-    const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
-    host.TN_PLAYTEST_ENDPOINT = "native://test-mailbox";
-    const canvas = testCanvas();
-    const callbacks: Array<(time: number) => void> = [];
-    const requestFrame = globalThis.requestAnimationFrame;
-    const cancelFrame = globalThis.cancelAnimationFrame;
-    Object.defineProperty(globalThis, "requestAnimationFrame", {
-      configurable: true,
-      value: (callback: (time: number) => void) => {
-        callbacks.push(callback);
-        return callbacks.length;
-      },
-    });
-    Object.defineProperty(globalThis, "cancelAnimationFrame", {
-      configurable: true,
-      value: () => undefined,
-    });
-    const game = defineGame({
-      initialState: {},
-      // The boot hold is the neighbouring test's subject; this one is about collection, and
-      // holding would need a describe handshake to release it.
-      plugins: [playtest({ holdUntilAttached: false })],
-      renderer: {
-        canvas,
-        preferWebGPU: false,
-        webgl2Factory: () => ({
-          dispose: () => undefined,
-          domElement: canvas,
-          info: { render: { calls: 99, drawCalls: 7, triangles: 42 } },
-          render: () => undefined,
-          setSize: () => undefined,
-          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
-        }),
-      },
-      scenes: { test: class extends Scene {} },
-      start: "test",
-    });
-
-    try {
-      await game.start();
-      // Enough frames to leave the first (zero-delta) frame behind: the series is one sample per
-      // presented frame with a positive delta, so a single frame proves nothing either way.
-      for (let i = 0; i < 6; i++) callbacks.shift()?.(i * 16);
-      const series = (await bridge().sample({})).runtimeDiagnosticsSeries ?? [];
-      // A non-empty series, not `every(...)` on an empty array: a vacuous green here is the
-      // defect this test exists for.
-      expect(series.length).toBeGreaterThan(0);
-      expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
-    } finally {
-      game.stop();
-      Object.defineProperty(globalThis, "requestAnimationFrame", {
-        configurable: true,
-        value: requestFrame,
-      });
-      Object.defineProperty(globalThis, "cancelAnimationFrame", {
-        configurable: true,
-        value: cancelFrame,
-      });
-      if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
-      else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
-    }
-  });
-
   it("fails the held start immediately when setup application fails", async () => {
     let entered = false;
     class FailingSetupScene extends Scene {
@@ -926,52 +852,6 @@ describe("playtest holdUntilAttached", () => {
     });
     await expect(game.start()).rejects.toThrow(/TN_PLAYTEST_ATTACH_TIMEOUT_INVALID/u);
     await game.stop();
-  });
-
-  it("answers a geometry capture through the real bridge without disturbing other observations", async () => {
-    const canvas = testCanvas();
-    class TestScene extends Scene<{ score: number }> {
-      override enter(ctx: ICtx<{ score: number }>): void {
-        const player = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
-        ctx.add(player);
-        ctx.entities.add("player", { mesh: player });
-      }
-    }
-    const game = defineGame<{ score: number }>({
-      initialState: { score: 0 },
-      plugins: [playtest()],
-      renderer: stubRenderer(canvas),
-      scenes: { test: TestScene },
-      start: "test",
-    });
-
-    await game.start();
-    try {
-      const installed = bridge();
-      const description = await installed.describe();
-      expect(description.capabilities).toContain("runtime.geometry");
-
-      const withoutCapture = await installed.sample({});
-      // Absent means absent: a sample that did not ask for a capture must not carry an empty one.
-      expect(Object.hasOwn(withoutCapture, "geometry")).toBe(false);
-      expect(withoutCapture.entities?.map(({ id }) => id)).toContain("player");
-
-      const requested = (await installed.sample({
-        geometry: { limit: 10, timeoutMs: 40 },
-      } as IPlaytestSampleRequest)) as typeof withoutCapture & {
-        geometry?: { status?: string; reason?: string };
-      };
-      // Whether this stub presents a world frame or not, the report contract is the same one the
-      // overlay reads, and an unavailable capture names its reason instead of reporting zero.
-      expect(requested.geometry).toBeDefined();
-      expect(["captured", "unavailable"]).toContain(requested.geometry?.status);
-      if (requested.geometry?.status === "unavailable") {
-        expect(requested.geometry.reason).toMatch(/TN_GEOMETRY_CAPTURE_/u);
-      }
-      expect(requested.entities?.map(({ id }) => id)).toContain("player");
-    } finally {
-      game.stop();
-    }
   });
 
   it("does not hold by default", async () => {

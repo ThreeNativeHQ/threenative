@@ -161,37 +161,29 @@ describe("threenative doctor", () => {
       detail: expect.stringContaining("no compositing manager is running"),
       status: "fail",
     });
-    // Naming them is the difference between a blocker and a fix: these are the three the
-    // repository's own private displays start, so a reader can install one and move on.
-    expect(formatDoctorReport(report)).toContain(
-      "Start a compositing manager (xcompmgr -n, picom or compton",
-    );
+    expect(formatDoctorReport(report)).toContain("Start a compositing manager");
   });
 
-  it("reports a Wayland/Xwayland session as supported and a Wayland one without Xwayland as blocked", () => {
-    const supported = probeDesktopOverlay(
+  it("names the Wayland transparent-container blocker before a build", () => {
+    const probe = probeDesktopOverlay(
       { DISPLAY: ":0", WAYLAND_DISPLAY: "wayland-0", XDG_SESSION_TYPE: "wayland" },
       () => true,
     );
     const report = diagnoseProject(
       snapshot({
         config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
-        desktopOverlay: supported,
+        desktopOverlay: probe,
       }),
     );
 
-    expect(supported).toMatchObject({
-      detail: expect.stringContaining("Xwayland"),
-      status: "ok",
+    expect(probe).toMatchObject({
+      detail: expect.stringContaining("transparent container could not be created"),
+      status: "fail",
     });
-    expect(check(report, "desktop overlay")).toMatchObject({ status: "ok" });
-
-    const blocked = probeDesktopOverlay(
-      { WAYLAND_DISPLAY: "wayland-0", XDG_SESSION_TYPE: "wayland" },
-      () => true,
-    );
-    expect(blocked).toMatchObject({ status: "fail" });
-    expect(blocked.detail).toContain("Xwayland");
+    expect(check(report, "desktop overlay")).toMatchObject({
+      detail: expect.stringContaining("transparent container could not be created"),
+      status: "fail",
+    });
   });
 
   it("does not report a desktop overlay blocker for native UI", () => {
@@ -944,24 +936,21 @@ describe("threenative doctor command", () => {
 });
 
 describe("threenative doctor edge coverage", () => {
-  it("reports every compositor probe outcome, including a missing display and python3", () => {
+  it("reports every compositor probe outcome, including a missing display and xprop", () => {
     expect([undefined, false, true]).toContain(detectX11Compositor());
 
-    execFileSyncMock.mockReturnValueOnce("1\n");
+    execFileSyncMock.mockReturnValueOnce("_NET_WM_CM_S0: window id # 0x123");
     expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(true);
-    execFileSyncMock.mockReturnValueOnce("0\n");
+    execFileSyncMock.mockReturnValueOnce("_NET_WM_CM_S0: absent");
     expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(false);
-    // The shim prints `unknown` when it cannot measure; that is not a false "no compositor".
-    execFileSyncMock.mockReturnValueOnce("unknown\n");
-    expect(detectX11Compositor({ DISPLAY: ":99" })).toBeUndefined();
     execFileSyncMock.mockImplementationOnce(() => {
-      throw Object.assign(new Error("python3 missing"), { code: "ENOENT" });
+      throw Object.assign(new Error("xprop missing"), { code: "ENOENT" });
     });
     expect(detectX11Compositor({ DISPLAY: ":99" })).toBeUndefined();
     execFileSyncMock.mockImplementationOnce(() => {
-      throw Object.assign(new Error("python3 failed"), { code: "EPIPE" });
+      throw Object.assign(new Error("xprop failed"), { code: "EPIPE" });
     });
-    expect(detectX11Compositor({ DISPLAY: ":99" })).toBeUndefined();
+    expect(detectX11Compositor({ DISPLAY: ":99" })).toBe(false);
   });
 
   it("distinguishes an unprobed, healthy, and unknown desktop overlay", () => {
@@ -973,9 +962,6 @@ describe("threenative doctor edge coverage", () => {
     expect(probeDesktopOverlay({ XDG_SESSION_TYPE: "wayland" }, () => true)).toMatchObject({
       status: "fail",
     });
-    expect(
-      probeDesktopOverlay({ DISPLAY: ":0", XDG_SESSION_TYPE: "wayland" }, () => false),
-    ).toMatchObject({ status: "ok" });
   });
 
   it("handles empty manifests and configured target arrays and strings", () => {

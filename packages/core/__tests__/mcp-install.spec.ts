@@ -81,18 +81,9 @@ describe("MCP_SERVERS", () => {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
-    // Derived from MCP_PACKAGES, not retyped: the shim and the manifest name one pin, and a
-    // literal here is how they came apart — the PRD-383 bump to the asset server moved
-    // `package.json` and left this spec asserting the version before it. `servers.mjs` is
-    // JavaScript, so its record is typed as possibly-missing; a missing entry is a broken shim,
-    // which fails here rather than quietly asserting nothing.
-    const { assets, sculpt } = MCP_PACKAGES;
-    if (assets === undefined || sculpt === undefined) {
-      throw new Error("MCP_PACKAGES must declare the asset and sculpt servers.");
-    }
     expect(manifest.dependencies).toMatchObject({
-      [assets.name]: assets.version,
-      [sculpt.name]: sculpt.version,
+      "threenative-asset-mcp": "0.8.0",
+      "threenative-sculpt-mcp": "0.1.1",
     });
     // The blender server rides inside core as a built copy, exactly as the engine server does, so
     // it is a devDependency and never a registry dependency. A published `@threenative/core` that

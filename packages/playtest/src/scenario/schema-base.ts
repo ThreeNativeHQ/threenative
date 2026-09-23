@@ -1,4 +1,4 @@
-import type { IPlaytestGeometryCaptureRequest, PlaytestFramePassKind, PlaytestFramePhase } from "../protocol.js";
+import type { PlaytestFramePhase } from "../protocol.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -377,14 +377,6 @@ export interface IPlaytestPerformanceAssertion {
    * names are the engine's frame-budget phases: hostGap, update, render, overlay, residual.
    */
   maxPhaseMsP95?: Readonly<Partial<Record<PlaytestFramePhase, number>>>;
-  /**
-   * Per-pass draw-call ceilings, keyed by pass kind: main, shadow, reflection, nested. The bound
-   * is the largest draw count that kind submitted in a sampled frame, so a shadow lane folded into
-   * the whole-frame `maxDrawCalls` is bounded on its own.
-   */
-  maxPassDrawCalls?: Readonly<Partial<Record<PlaytestFramePassKind, number>>>;
-  /** Per-pass triangle ceilings, keyed by pass kind: main, shadow, reflection, nested. */
-  maxPassTriangles?: Readonly<Partial<Record<PlaytestFramePassKind, number>>>;
 }
 
 export interface IPlaytestRenderChainAssertion {
@@ -520,12 +512,6 @@ export interface IPlaytestScenarioAssertions {
   deviceMetrics?: IPlaytestDeviceMetricsAssertion;
   diagnostics?: IPlaytestDiagnosticsAssertion;
   framebufferCoverage?: IPlaytestFramebufferCoverageAssertion;
-  /**
-   * Arms one per-object geometry capture and reports it as the `geometry` observation. This is a
-   * request rather than a comparison: it bounds nothing, and the report is read from
-   * `observations.geometry`, exactly as `pipelineCensus` is read from `observations.pipelineCensus`.
-   */
-  geometry?: IPlaytestGeometryCaptureRequest;
   hud?: IPlaytestPathAssertion[];
   movement?: IPlaytestMovementAssertion;
   occluded?: IPlaytestOccludedAssertion[];

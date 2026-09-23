@@ -27,7 +27,6 @@
 #include "mystral/stall_budget.h"
 #include "runtime_scripts.h"
 #include "mystral/webgpu/checked_handle.h"
-#include "mystral/webgpu/async_image_decode.h"
 #include "bindings_presentation.h"
 #include <ctime>
 #include <iostream>
@@ -38,7 +37,6 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
-#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <limits>
@@ -367,10 +365,6 @@ bool stageWriteInUploadStaging(
 
 void destroyBindingsState(BindingsState*& state) {
     if (!state) return;
-    // Decoder workers never touch JS, but deferred completions may outlive this state. Invalidate
-    // their shared owner before any engine/state teardown; a later drain becomes a no-op.
-    auto imageDecodeOwner = state->imageDecodeOwner;
-    if (imageDecodeOwner) imageDecodeOwner->alive.store(false, std::memory_order_release);
     // Join the compile pool before anything it touches goes away. A worker holds `state` and the
     // device; letting one run past this point is a use-after-free with a two-thread window.
     shutdownAsyncBufferMaps(state);
@@ -381,16 +375,6 @@ void destroyBindingsState(BindingsState*& state) {
         BindingsState* state = ownedState;
         if (state->engine) {
             js::Engine* engine = state->engine;
-            if (imageDecodeOwner) {
-                for (const auto& callback : imageDecodeOwner->callbacks) {
-                    if (callback && callback->live) {
-                        engine->freeHandle(callback->handle);
-                        callback->live = false;
-                    }
-                }
-                imageDecodeOwner->callbacks.clear();
-                imageDecodeOwner->engine = nullptr;
-            }
             state->engine = nullptr;
             for (auto it = state->registries.protectedHandles.rbegin(); it != state->registries.protectedHandles.rend();
                  ++it) {
@@ -1035,6 +1019,12 @@ static bool installWebGPUBindingSurfaces(BindingsState* state, js::Engine* engin
 }
 /** Every migrated WebGPU method is a BindingRegistration row in this table unit. */
 
+static js::JSValueHandle handleOwnedHtmlCanvasElementGetContext(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& a) {
+                    // Get the stored context from the global (we need a way to access it)
+                    // For now, return null and let callers use the _context directly
+                    return state->engine->newNull();
+}
+
 static js::JSValueHandle handleWebGpuCreateOffscreenCanvas2d(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
             int width = 800;
             int height = 600;
@@ -1052,16 +1042,10 @@ static js::JSValueHandle handleWebGpuCreateOffscreenCanvas2d(BindingsState* stat
             // Create the 2D context
             auto ctx2d = createOwnedCanvas2DContext(state, width, height);
             state->engine->setProperty(canvasWrapper, "_context", ctx2d);
-            // getContext('2d') returns the pre-created context. Captured rather than looked up on
-            // the receiver: a binding-table handler's destination is not a live JS value to read
-            // properties from, and answering null here was a stub — the same call on a canvas
-            // element answered a context, and the only way through was the undocumented
-            // `_context` property.
+            // getContext('2d') returns the pre-created context
             if (!installBindingTable(state->engine, state, bindingTable({
                 {"HTMLCanvasElement", "getContext", 0, nullptr,
-                [ctx2d](BindingsState*, BindingDestination, const std::vector<js::JSValueHandle>&) {
-                    return ctx2d;
-                }
+                &handleOwnedHtmlCanvasElementGetContext
             , canvasWrapper}}))) {
                 rollbackOwnedCanvas2DContext(state, ctx2d);
                 return state->engine->newUndefined();
@@ -1110,59 +1094,71 @@ static js::JSValueHandle handleWebGpuNativeGetContext2d(BindingsState* state, Bi
             return canvas->context2d;
 }
 static js::JSValueHandle handleWebGpuDecodeImageData(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
-            // `__decodeImageDataAsync(arrayBuffer, callback)` — the decode runs on the decoder's
-            // pool and the callback is invoked from `AsyncImageDecoder::drain()` on this thread,
-            // as `(bitmap, error)`. It used to decode inline here, which stopped the frame loop for
-            // the whole of a texture load; see async_image_decode.h.
-            if (args.size() < 2) {
-                state->engine->throwException("__decodeImageDataAsync requires an ArrayBuffer and a callback");
+            if (args.empty()) {
+                state->engine->throwException("__decodeImageData requires an ArrayBuffer argument");
                 return state->engine->newUndefined();
             }
+            // Get ArrayBuffer data
             size_t inputSize = 0;
             void* inputData = state->engine->getArrayBufferData(args[0], &inputSize);
             if (!inputData || inputSize == 0) {
-                state->engine->throwException("__decodeImageDataAsync: invalid ArrayBuffer");
+                state->engine->throwException("__decodeImageData: invalid ArrayBuffer");
                 return state->engine->newUndefined();
             }
-            // The bytes are copied before they are queued: the ArrayBuffer belongs to JS and may be
-            // detached or collected long before a worker reaches it.
-            const unsigned char* inputBytes = static_cast<const unsigned char*>(inputData);
-            std::vector<uint8_t> bytes(inputBytes, inputBytes + inputSize);
-            auto callback = std::make_shared<AsyncImageDecodeCallback>();
-            callback->handle = state->engine->retainHandle(args[1]);
-            auto owner = state->imageDecodeOwner;
-            owner->engine = state->engine;
-            owner->callbacks.push_back(callback);
-            AsyncImageDecoder::instance().decode(
-                std::move(bytes),
-                [owner, callback](DecodedImage image) {
-                    // Never dereference the old BindingsState: teardown can happen after queueing
-                    // and before this completion is drained, including across runtime recreation.
-                    if (!owner->alive.load(std::memory_order_acquire)) return;
-                    auto* engine = owner->engine;
-                    if (!engine || !callback->live) return;
-                    js::JSValueHandle result = engine->newUndefined();
-                    js::JSValueHandle error = image.error.empty()
-                        ? engine->newNull()
-                        : engine->newString(image.error.c_str());
-                    if (image.error.empty()) {
-                        // The ImageBitmap-like object the polyfill wraps: dimensions and the RGBA
-                        // payload as an ArrayBuffer, built here because only this thread owns V8.
-                        result = engine->newObject();
-                        auto arrayBuffer = engine->newArrayBuffer(image.rgba.data(), image.rgba.size());
-                        engine->setProperty(result, "width", engine->newNumber(image.width));
-                        engine->setProperty(result, "height", engine->newNumber(image.height));
-                        engine->setProperty(result, "_data", arrayBuffer);
-                        engine->setProperty(result, "_closed", engine->newBoolean(false));
-                    }
-                    engine->call(callback->handle, engine->newUndefined(), {result, error});
-                    // JS may synchronously destroy the runtime. Teardown then releases this handle
-                    // while the engine is still valid and marks the record dead.
-                    if (!owner->alive.load(std::memory_order_acquire) || !callback->live) return;
-                    engine->freeHandle(callback->handle);
-                    callback->live = false;
-                });
-            return state->engine->newUndefined();
+            const unsigned char* inputBytes = (const unsigned char*)inputData;
+            int width = 0, height = 0;
+            unsigned char* data = nullptr;
+            bool isWebP = false;
+            // Check if this is a WebP image (starts with "RIFF" and has "WEBP" at offset 8)
+            if (inputSize >= 12 &&
+                inputBytes[0] == 'R' && inputBytes[1] == 'I' &&
+                inputBytes[2] == 'F' && inputBytes[3] == 'F' &&
+                inputBytes[8] == 'W' && inputBytes[9] == 'E' &&
+                inputBytes[10] == 'B' && inputBytes[11] == 'P') {
+                isWebP = true;
+            }
+            if (isWebP) {
+#ifdef MYSTRAL_HAS_WEBP
+                // Decode WebP using libwebp
+                data = WebPDecodeRGBA(inputBytes, inputSize, &width, &height);
+                if (!data) {
+                    state->engine->throwException("Failed to decode WebP image");
+                    return state->engine->newUndefined();
+                }
+                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded WebP " << width << "x" << height << " image" << std::endl;
+#else
+                state->engine->throwException("WebP image detected but libwebp support not compiled in. Rebuild with MYSTRAL_HAS_WEBP.");
+                return state->engine->newUndefined();
+#endif
+            } else {
+                // Decode using stb_image (PNG, JPEG, etc.)
+                int channels;
+                data = stbi_load_from_memory(inputBytes, (int)inputSize, &width, &height, &channels, 4);
+                if (!data) {
+                    std::string error = std::string("Failed to decode image: ") + stbi_failure_reason();
+                    state->engine->throwException(error.c_str());
+                    return state->engine->newUndefined();
+                }
+                if (state->verboseLogging) std::cout << "[createImageBitmap] Decoded " << width << "x" << height << " image" << std::endl;
+            }
+            // Create ImageBitmap-like object
+            auto result = state->engine->newObject();
+            // Create ArrayBuffer with RGBA pixel data
+            size_t dataSize = width * height * 4;
+            auto arrayBuffer = state->engine->newArrayBuffer(data, dataSize);
+            state->engine->setProperty(result, "width", state->engine->newNumber(width));
+            state->engine->setProperty(result, "height", state->engine->newNumber(height));
+            state->engine->setProperty(result, "_data", arrayBuffer);  // Internal pixel data
+            state->engine->setProperty(result, "_closed", state->engine->newBoolean(false));
+            // Free decoded data (we copied it to ArrayBuffer)
+            if (isWebP) {
+#ifdef MYSTRAL_HAS_WEBP
+                WebPFree(data);
+#endif
+            } else {
+                stbi_image_free(data);
+            }
+            return result;
 }
 
 static js::JSValueHandle handleGpuGetPreferredCanvasFormat(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
@@ -2041,15 +2037,6 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         const auto host = state->engine->newObject();
                         state->engine->setProperty(host, "device", device);
                         state->engine->setProperty(host, "queue", queue);
-                        // Production leaves selection automatic: an absent property starts on
-                        // direct v2 and promotes only when the recorder's bounded heuristics say a
-                        // retained plan is useful. TN_FRAME_PLANS=1 is a diagnostic/reference
-                        // override that forces the v3 arm; games do not need to set it.
-                        if (const char* plans = std::getenv("TN_FRAME_PLANS")) {
-                            if (plans[0] == '1' && plans[1] == '\0') {
-                                state->engine->setProperty(host, "compiledFramePlans", state->engine->newBoolean(true));
-                            }
-                        }
                         const auto drain = state->engine->call(
                             installer, state->engine->newUndefined(), {host});
                         if (!drain.ptr || state->engine->isNull(drain) || state->engine->hasException()) {
@@ -2433,27 +2420,18 @@ static js::JSValueHandle handleHtmlCanvasElementGetContext(BindingsState* state,
             std::string contextType = state->engine->toString(args[0]);
             // Handle Canvas 2D context
             if (contextType == "2d") {
-                // One canvas answers with one context, the same rule the offscreen path follows.
-                // A repeat call built a second Skia surface and a second set of method closures,
-                // so a game that asked again — per frame, or twice for the same canvas — paid an
-                // allocation and left the earlier context orphaned.
-                auto canvas = state->engine->getGlobalProperty("canvas");
-                auto cached = state->engine->getProperty(canvas, "__tnCanvas2dContext");
-                if (!state->engine->isUndefined(cached) && !state->engine->isNull(cached)) {
-                    return cached;
-                }
                 if (state->verboseLogging)
                     std::cout << "[Canvas] Creating 2D context (" << state->presentation.canvasWidth << "x"
                               << state->presentation.canvasHeight << ")" << std::endl;
                 auto ctx2d = createOwnedCanvas2DContext(state, state->presentation.canvasWidth,
                                                         state->presentation.canvasHeight);
                 // Set reference back to canvas
+                auto canvas = state->engine->getGlobalProperty("canvas");
                 state->engine->setProperty(ctx2d, "canvas", canvas);
                 if (state->engine->hasException()) {
                     rollbackOwnedCanvas2DContext(state, ctx2d);
                     return state->engine->newUndefined();
                 }
-                state->engine->setProperty(canvas, "__tnCanvas2dContext", ctx2d);
                 // Store the native context for Canvas 2D to WebGPU compositing
                 state->canvas2D.mainCanvas2DContext =
                     static_cast<canvas::Canvas2DContext*>(state->engine->getPrivateData(ctx2d));
@@ -2710,12 +2688,12 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     , globalBindingHost}})) ||
         !copyGlobalBinding(globalBindingHost, "__tnPresentationCap")) return false;
 
-    // Native helper that decodes image data off the frame thread
+    // Native helper that decodes image data synchronously
     if (!installBindingTable(state->engine, state, bindingTable({
-        {"WebGPU", "__decodeImageDataAsync", 0, nullptr,
+        {"WebGPU", "__decodeImageData", 0, nullptr,
         &handleWebGpuDecodeImageData
     , globalBindingHost}})) ||
-        !copyGlobalBinding(globalBindingHost, "__decodeImageDataAsync")) return false;
+        !copyGlobalBinding(globalBindingHost, "__decodeImageData")) return false;
 
     // JavaScript polyfill for createImageBitmap
     if (!evalEmbeddedRuntimeScript(*engine, "image-bitmap-polyfill", "image-bitmap-polyfill.js")) {
@@ -2867,13 +2845,7 @@ void endDawnFrame(BindingsState* state) {
 #if TN_ANDROID_JS_PROFILE
         const uint64_t drainStartCpuNs = readRenderThreadCpuNs();
 #endif
-        // The frame boundary passes no `partial` and hands the recorder the retained-plan epoch:
-        // it patches only while the plan it holds is still the one native has, and recaptures the
-        // moment that stops being true. One number per frame is the whole recovery protocol.
-        const auto frame = state->engine->call(
-            state->profiling.frameOpStreamDrain, state->engine->newUndefined(),
-            {state->engine->newUndefined(),
-             state->engine->newNumber(static_cast<double>(state->framePlan.epoch))});
+        const auto frame = state->engine->call(state->profiling.frameOpStreamDrain, state->engine->newUndefined(), {});
         const uint64_t drainNs = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - drainBegin)
                 .count());

@@ -10,8 +10,6 @@ import {
   type TextureLoader,
 } from "three";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
-import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
-import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
 
 export interface IAssetLoaderOptions {
   readonly basePath?: string;
@@ -622,27 +620,6 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   // Cache keys stay on the logical path so `release` matches whatever was loaded with or
   // without a manifest; loaders always receive the fully resolved url.
   /**
-   * The resolved runtime selection budget an asset was cooked with, read from the manifest entry.
-   * Absent — no manifest, an older cook, or a disabled asset — selects the built-in default budget
-   * so an extension-bearing file still refines and coarsens sensibly.
-   */
-  const discretePolicy = async (logicalPath: string): Promise<IModelLodPolicy | undefined> => {
-    if (isExternalAssetPath(logicalPath)) return undefined;
-    const manifest = await manifestOnce();
-    const entry = manifest?.entries[logicalPath];
-    const lod = isRecord(entry) ? entry.lod : undefined;
-    const runtime = isRecord(lod) ? lod.runtime : undefined;
-    if (
-      !isRecord(runtime) ||
-      typeof runtime.maxPixelError !== "number" ||
-      typeof runtime.hysteresis !== "number"
-    ) {
-      return undefined;
-    }
-    return { hysteresis: runtime.hysteresis, maxPixelError: runtime.maxPixelError };
-  };
-
-  /**
    * Where a logical path might live, in the order worth trying.
    *
    * With a manifest there is exactly one answer, and a path the manifest does not list is an
@@ -789,7 +766,6 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       cached<T>("model", path, async (url) => {
         if (options.model !== undefined) {
           const value = (await options.model(url)) as T;
-          stampAssetProvenance(value, path);
           await attachCompiledLightmaps(path, value);
           return value;
         }
@@ -825,17 +801,6 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         if (extensions.has(TN_VIRTUAL_GEOMETRY)) {
           loader.register((parser) => new VirtualGeometryPlugin(parser as never) as never);
         }
-        // The discrete chain the asset pipeline baked in. Registered only when the file declares it,
-        // so a game with no auto LOD never pays for the plugin. Levels are built after the quantized
-        // positions are widened, so the derived geometries share the widened attributes.
-        const discreteLod = extensions.has(TN_DISCRETE_LOD) ? new DiscreteLodPlugin() : undefined;
-        if (discreteLod !== undefined) {
-          const plugin = discreteLod;
-          loader.register((parser) => {
-            plugin.setParser(parser as never);
-            return plugin as never;
-          });
-        }
         if (extensions.has(DRACO_EXTENSION)) {
           const { DRACOLoader } = await import("three/addons/loaders/DRACOLoader.js");
           const dracoLoader = new DRACOLoader();
@@ -849,10 +814,6 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // three.js geometry call. See `widenQuantizedPositions`.
         const root = modelRoot(value);
         if (root !== undefined) widenQuantizedPositions(root);
-        // Built here, after `widenQuantizedPositions`, so the derived levels share the widened base
-        // attributes instead of pinning the quantized ones.
-        if (root !== undefined && discreteLod !== undefined)
-          discreteLod.attach(root, await discretePolicy(path));
         // Before the game ever sees it: clips z-mirrored against their own bind pose play every
         // animal backwards, silently. See `reconcileMirroredClips`.
         const clips = modelClips(value);
@@ -867,7 +828,6 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             "current converter and this stops.";
           console.warn(`TN_ASSETS_MIRRORED_CLIPS_REPAIRED ${path} — ${cause}`);
         }
-        stampAssetProvenance(value, path);
         await attachCompiledLightmaps(path, value);
         return value;
       }),
@@ -922,24 +882,6 @@ function modelRoots(value: unknown): Object3D[] {
   if (!isRecord(value)) return [];
   const roots = [value.scene, ...(Array.isArray(value.scenes) ? value.scenes : [])];
   return roots.filter((root): root is Object3D => root instanceof Object3D);
-}
-
-/**
- * Stamp the logical path the caller asked for onto the model roots a game adds to the scene.
- *
- * The stamp lives on the root and never on its descendants: three's `Object3D.copy` deep-copies
- * `userData`, so one stamp survives `.clone()` and every skeleton-safe clone an animation helper
- * makes — a clone keeps its provenance without the game annotating anything by hand. A result that
- * is a bare `Object3D` is stamped directly; a `Texture` or `AudioBuffer` is no `Object3D` root and
- * gets nothing. An existing non-empty stamp is never overwritten.
- */
-function stampAssetProvenance(value: unknown, logicalPath: string): void {
-  for (const root of modelRoots(value)) {
-    const userData = root.userData as Record<string, unknown>;
-    const existing = userData[GEOMETRY_ASSET_KEY];
-    if (typeof existing === "string" && existing !== "") continue;
-    userData[GEOMETRY_ASSET_KEY] = logicalPath;
-  }
 }
 
 function disposeSurface(value: unknown, disposed: IResourceDisposalSets): void {

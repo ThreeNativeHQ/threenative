@@ -9,17 +9,11 @@ import {
   type VectorKeyframeTrack,
 } from "three";
 import { clipTrackBindings } from "./clip-audit.js";
-import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
 export interface IAnimationPlayerOptions {
   readonly clips: readonly AnimationClip[];
   readonly root: Object3D;
   readonly requiredClips?: readonly string[] | Readonly<Record<string, string>>;
-  /**
-   * Shared preparation for clones of one source rig. Set by `SkeletalMesh3D`; a standalone
-   * player leaves it undefined and keeps the per-instance binding audit and stride sample.
-   */
-  readonly preparation?: RigPreparation;
   /**
    * Match a travelling clip's playback rate to the ground the body actually covers.
    *
@@ -239,24 +233,23 @@ export class AnimationPlayer {
   #fadeDuration = 0;
   #clips = new Map<string, AnimationClip>();
   #clipGroundSpeed = new Map<string, IClipStride>();
-  #preparation: RigPreparation | undefined;
   #strideSync: boolean;
   #strideRoot: Object3D;
   #lastRootPosition = new Vector3();
   #hasLastRootPosition = false;
-  // The last update's numbers, kept as scalars so a frame that never reads `.stride` builds no
-  // report. A read materializes a fresh snapshot, so a retained report never changes under it.
-  #strideGroundSpeed = 0;
-  #strideRate = 1;
-  #strideSynced = false;
-  #strideOverridden = false;
-  #strideInPlace = false;
+  #stride: IStrideReport = {
+    clipGroundSpeed: 0,
+    groundSpeed: 0,
+    inPlace: false,
+    overridden: false,
+    rate: 1,
+    synced: false,
+  };
 
   constructor(options: IAnimationPlayerOptions) {
     const owner = new.target.name || "AnimationPlayer";
     this.root = options.root;
     this.mixer = new AnimationMixer(options.root);
-    this.#preparation = options.preparation;
     this.#strideSync = options.strideSync ?? true;
     this.#strideRoot = options.strideRoot ?? options.root;
     for (const clip of options.clips) {
@@ -280,12 +273,7 @@ export class AnimationPlayer {
         throw new Error(
           `${owner}: missing required clip '${name}'. Available clips: ${options.clips.map((item) => `'${item.name}'`).join(", ") || "(none)"}.`,
         );
-      let bound = this.#preparation?.boundCount(options.root, clip);
-      if (bound === undefined) {
-        bound = clipTrackBindings(options.root, clip).bound;
-        this.#preparation?.rememberBound(options.root, clip, bound);
-      }
-      if (bound === 0)
+      if (clipTrackBindings(options.root, clip).bound === 0)
         throw new Error(
           `${owner}: clip '${name}' binds 0 tracks to '${options.root.name || options.root.type}'.`,
         );
@@ -317,17 +305,14 @@ export class AnimationPlayer {
    */
   get stride(): IStrideReport {
     const name = this.#current;
-    const measured = name === undefined ? undefined : this.#measureOf(name);
-    // A fresh snapshot each read: what the last update stored, with the clip's own ground speed
-    // derived so it is answerable the moment it is played, before any frame has advanced.
-    return {
-      clipGroundSpeed: measured?.groundSpeed ?? 0,
-      groundSpeed: this.#strideGroundSpeed,
-      inPlace: measured?.inPlace ?? this.#strideInPlace,
-      overridden: this.#strideOverridden,
-      rate: this.#strideRate,
-      synced: this.#strideSynced,
-    };
+    if (name === undefined) return this.#stride;
+    // Derived on read so a clip's own ground speed is answerable the moment it is played, before
+    // any frame has advanced. It is a property of the asset, and cached.
+    const measured = this.#measureOf(name);
+    return measured.groundSpeed === this.#stride.clipGroundSpeed &&
+      measured.inPlace === this.#stride.inPlace
+      ? this.#stride
+      : { ...this.#stride, clipGroundSpeed: measured.groundSpeed, inPlace: measured.inPlace };
   }
 
   /** The clip behind a name, for a game that wants the action or the raw `AnimationClip`. */
@@ -353,55 +338,14 @@ export class AnimationPlayer {
     const clip = this.#clips.get(name);
     let measured: IClipStride = { groundSpeed: 0, inPlace: true };
     if (clip !== undefined && clip.duration > 0) {
-      const shared = this.#sharedStride(clip);
-      if (shared !== undefined) {
-        measured = {
-          groundSpeed: shared.groundSpeed * this.#trackScale(),
-          inPlace: shared.inPlace,
-        };
-      } else {
-        const rootMotion = clipRootMotionSpeed(clip);
-        measured =
-          rootMotion >= CLIP_GROUND_FLOOR
-            ? { groundSpeed: rootMotion * this.#trackScale(), inPlace: false }
-            : {
-                groundSpeed: footPlantSpeed(this.mixer.getRoot() as Object3D, clip),
-                inPlace: true,
-              };
-        this.#rememberSharedStride(clip, measured);
-      }
+      const rootMotion = clipRootMotionSpeed(clip);
+      measured =
+        rootMotion >= CLIP_GROUND_FLOOR
+          ? { groundSpeed: rootMotion * this.#trackScale(), inPlace: false }
+          : { groundSpeed: footPlantSpeed(this.mixer.getRoot() as Object3D, clip), inPlace: true };
     }
     this.#clipGroundSpeed.set(name, measured);
     return measured;
-  }
-
-  /**
-   * A stride already measured for an equivalent clone, rescaled into this clone's world.
-   *
-   * Only a yaw-only, uniformly scaled rig is eligible: the sampled value normalizes for scale and
-   * translation, so a tilted, mirrored or non-uniformly scaled instance keeps its own sample.
-   */
-  #sharedStride(clip: AnimationClip): ISharedStride | undefined {
-    if (this.#preparation === undefined) return undefined;
-    if (this.#uniformWorldScale() === undefined) return undefined;
-    return this.#preparation.stride(this.mixer.getRoot() as Object3D, clip);
-  }
-
-  #rememberSharedStride(clip: AnimationClip, measured: IClipStride): void {
-    if (this.#preparation === undefined) return;
-    const scale = this.#uniformWorldScale();
-    if (scale === undefined) return;
-    this.#preparation.rememberStride(this.mixer.getRoot() as Object3D, clip, {
-      groundSpeed: measured.groundSpeed / scale,
-      inPlace: measured.inPlace,
-    });
-  }
-
-  #uniformWorldScale(): number | undefined {
-    const root = this.mixer.getRoot() as Object3D;
-    const owner = root.parent ?? root;
-    owner.updateWorldMatrix(true, false);
-    return uniformYawScale(owner.matrixWorld);
   }
 
   #groundSpeedOf(name: string): number {
@@ -449,11 +393,14 @@ export class AnimationPlayer {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
       // and warping it by how fast the body happens to be sliding is a bug, not a convention.
       if (action.getEffectiveTimeScale() !== 1) action.setEffectiveTimeScale(1);
-      this.#strideGroundSpeed = groundSpeed;
-      this.#strideRate = 1;
-      this.#strideSynced = false;
-      this.#strideOverridden = false;
-      this.#strideInPlace = measured.inPlace;
+      this.#stride = {
+        clipGroundSpeed,
+        groundSpeed,
+        inPlace: measured.inPlace,
+        overridden: false,
+        rate: 1,
+        synced: false,
+      };
       return;
     }
     const wanted =
@@ -465,11 +412,14 @@ export class AnimationPlayer {
     // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
     const applies = this.#strideSync && this.#mode === "loop";
     if (applies) action.setEffectiveTimeScale(rate);
-    this.#strideGroundSpeed = groundSpeed;
-    this.#strideRate = rate;
-    this.#strideSynced = applies;
-    this.#strideOverridden = !this.#strideSync;
-    this.#strideInPlace = measured.inPlace;
+    this.#stride = {
+      clipGroundSpeed,
+      groundSpeed,
+      inPlace: measured.inPlace,
+      overridden: !this.#strideSync,
+      rate,
+      synced: applies,
+    };
   }
 
   #playAction(action: AnimationAction, mode: AnimationMode, weight: number): void {
@@ -592,11 +542,14 @@ export class AnimationPlayer {
 
   #resetStride(): void {
     this.#hasLastRootPosition = false;
-    this.#strideGroundSpeed = 0;
-    this.#strideRate = 1;
-    this.#strideSynced = false;
-    this.#strideOverridden = false;
-    this.#strideInPlace = false;
+    this.#stride = {
+      clipGroundSpeed: 0,
+      groundSpeed: 0,
+      inPlace: false,
+      overridden: false,
+      rate: 1,
+      synced: false,
+    };
   }
 
   dispose(): void {

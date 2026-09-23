@@ -185,47 +185,6 @@ int main() {
     check(canvas.hasDirtyPixels(), "resize dirties");
     check(canvas.consumeDirtyPixels(), "consume after resize");
 
-    // What the UI actually draws with: a radial gradient, a dashed stroke and a clip. Each one is
-    // read back as pixels, because a binding can accept all three and paint none of them.
-    Canvas2DContext radialCanvas(64, 64);
-    const auto radialId = radialCanvas.createRadialGradient(32, 32, 0, 32, 32, 32);
-    const auto radial = radialCanvas.getGradient(radialId);
-    check(radial->addColorStop(0, "#ff0000"), "radial gradient accepts its centre stop");
-    check(radial->addColorStop(1, "#0000ff"), "radial gradient accepts its edge stop");
-    radialCanvas.setGradient(false, radial);
-    radialCanvas.fillRect(0, 0, 64, 64);
-    const auto centre = radialCanvas.getImageData(32, 32, 1, 1).data;
-    const auto edge = radialCanvas.getImageData(62, 32, 1, 1).data;
-    check(centre[0] > 200 && centre[2] < 60, "radial gradient is its first colour at the centre");
-    check(edge[2] > 150 && edge[0] < 105, "radial gradient reaches its second colour at the rim");
-
-    Canvas2DContext dashCanvas(64, 16);
-    dashCanvas.setStrokeStyle("#ff0000");
-    dashCanvas.setLineWidth(8);
-    dashCanvas.setLineDash({8.0f, 8.0f});
-    dashCanvas.beginPath();
-    dashCanvas.moveTo(0, 8);
-    dashCanvas.lineTo(64, 8);
-    dashCanvas.stroke();
-    check(dashCanvas.getImageData(4, 8, 1, 1).data[3] > 200, "a dashed stroke paints its first dash");
-    check(dashCanvas.getImageData(12, 8, 1, 1).data[3] == 0, "a dashed stroke leaves its gap empty");
-    check(dashCanvas.getImageData(20, 8, 1, 1).data[3] > 200, "a dashed stroke resumes after the gap");
-    // An odd pattern repeats itself, so it reads back the way it strokes, as in a browser.
-    dashCanvas.setLineDash({5.0f});
-    const auto odd = dashCanvas.getLineDash();
-    check(odd.size() == 2 && odd[0] == 5.0f && odd[1] == 5.0f, "an odd dash list reads back doubled");
-    dashCanvas.setLineDash({});
-    check(dashCanvas.getLineDash().empty(), "an empty dash list restores a solid line");
-
-    Canvas2DContext clipCanvas(64, 64);
-    clipCanvas.setFillStyle("#00ff00");
-    clipCanvas.beginPath();
-    clipCanvas.rect(0, 0, 16, 16);
-    clipCanvas.clip();
-    clipCanvas.fillRect(0, 0, 64, 64);
-    check(clipCanvas.getImageData(8, 8, 1, 1).data[3] > 200, "a clipped fill paints inside the region");
-    check(clipCanvas.getImageData(32, 32, 1, 1).data[3] == 0, "a clipped fill paints nothing outside it");
-
     if (failures == 0) {
         std::printf("canvas2d dirty tracking passed\n");
         return 0;

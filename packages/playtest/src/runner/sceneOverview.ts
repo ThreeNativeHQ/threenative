@@ -92,8 +92,6 @@ export interface ISceneOverview {
     drawCalls?: number;
     fps?: number;
     frameMs?: number;
-    /** The last sampled frame's draw calls and triangles per render pass. */
-    passes?: readonly { draws: number; kind: string; triangles: number }[];
     triangles?: number;
     /** True when the frame time sits on a display refresh interval, so it is a cap, not a cost. */
     vsyncLocked?: boolean;
@@ -278,7 +276,6 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
   const points = positions(entities);
   const frames = (snapshot.runtimeDiagnosticsSeries ?? []).map(({ frameMs }) => frameMs);
   const frameMs = median(frames);
-  const passSplit = (snapshot.runtimeDiagnosticsSeries ?? []).at(-1)?.passes;
   const world = snapshot.gameplay?.world;
   const clips = Object.entries(snapshot.gameplay?.animation ?? {})
     .filter(([, animation]) => animation.advancedFrames > 0)
@@ -331,9 +328,6 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
       drawCalls: snapshot.performance?.drawCalls,
       fps: frameMs === undefined || frameMs <= 0 ? undefined : Math.round(1000 / frameMs),
       frameMs,
-      ...(passSplit === undefined || passSplit.length === 0
-        ? {}
-        : { passes: passSplit.map(({ draws, kind, triangles }) => ({ draws, kind, triangles })) }),
       triangles: snapshot.performance?.triangles,
       ...(frameMs === undefined ? {} : { vsyncLocked: onVsyncInterval(frameMs) }),
     },
@@ -405,19 +399,6 @@ function renderablesLine(overview: ISceneOverview): string | undefined {
   return `  renderables  ${projection.renderables.toLocaleString("en-US")} handed to the renderer · ${state}`;
 }
 
-/**
- * The per-pass split, so a one-shot look says whether the frame is really a colour pass or a
- * shadow/reflection lane the whole-frame draw count hid. Absent when the bridge reports no split.
- */
-function passesLine(overview: ISceneOverview): string | undefined {
-  const passes = overview.render.passes;
-  if (passes === undefined) return undefined;
-  const parts = passes.map(
-    (pass) => `${pass.kind} ${pass.draws.toLocaleString("en-US")} draws / ${pass.triangles.toLocaleString("en-US")} tris`,
-  );
-  return `  passes       ${parts.join(" · ")}`;
-}
-
 function livenessLine(overview: ISceneOverview): string | undefined {
   const { liveness: state } = overview;
   if (state.ticks === undefined && state.moved === 0) return undefined;
@@ -475,7 +456,6 @@ export function formatSceneOverview(overview: ISceneOverview): string {
         : ` · ${render.frameMs.toFixed(1)} ms/frame (${render.fps} fps)`
     }`,
     renderablesLine(overview),
-    passesLine(overview),
     ...(overview.room === undefined ? [] : formatRoomLines(overview.room)),
     livenessLine(overview),
     `  gameplay     ${gameplay.states} states · ${

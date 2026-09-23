@@ -15,15 +15,11 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
 import { installPrebuilt } from './install-prebuilt.mjs';
-
-// The container helper is imported lazily by the release path only, so a debug build never loads
-// it, and it ships in package.json `files` so a published `--mode release` run resolves it.
-const loadDistribution = () => import('./desktop-distribution.mjs');
 
 const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -51,44 +47,6 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
   return installPrebuilt({ ...options.install, reuse: true });
 }
 
-/**
- * Non-secret signing inputs, from the build environment the way Android signing already works.
- *
- * `THREENATIVE_DESKTOP_SIGN=1` requests signing; the identity/certificate/profile/timestamp values
- * name the developer's credentials but never carry the secret itself — the private key and the
- * notarytool password stay in the OS keychain. No inputs and no request means unsigned preparation,
- * which is recorded as `signed: false`.
- */
-export function desktopSigningFromEnvironment(env = process.env) {
-  const requested = env.THREENATIVE_DESKTOP_SIGN === '1' || env.THREENATIVE_DESKTOP_SIGN === 'true';
-  // A CI job writing `SUBJECT: ${{ secrets.WIN_SIGN_SUBJECT }}` with the secret unset hands us the
-  // empty string, not undefined. Treating that as "signing requested" turns a release that used to
-  // produce an unsigned container into a hard failure, so blank reads the same as absent.
-  const set = (value) => (typeof value === 'string' && value.trim() !== '' ? value : undefined);
-  const identity = set(env.THREENATIVE_DESKTOP_CODESIGN_IDENTITY);
-  const certificate = set(env.THREENATIVE_DESKTOP_SIGN_CERTIFICATE);
-  const subject = set(env.THREENATIVE_DESKTOP_SIGN_SUBJECT);
-  const keychainProfile = set(env.THREENATIVE_DESKTOP_NOTARY_PROFILE);
-  const timestampUrl = set(env.THREENATIVE_DESKTOP_TIMESTAMP_URL);
-  if (!requested && identity === undefined && certificate === undefined && subject === undefined &&
-    keychainProfile === undefined) {
-    return undefined;
-  }
-  // Knowable here, so refuse here: the same clash inside signDesktopArtifact costs a whole release
-  // build first. That check stays as well, because `signing` can be passed in directly.
-  if (certificate !== undefined && subject !== undefined) {
-    throw new Error('TN_DESKTOP_SIGNING_CREDENTIALS_AMBIGUOUS: THREENATIVE_DESKTOP_SIGN_CERTIFICATE and THREENATIVE_DESKTOP_SIGN_SUBJECT are both set; one of them would be silently ignored.');
-  }
-  return {
-    ...(requested ? { requested: true } : {}),
-    ...(identity === undefined ? {} : { identity }),
-    ...(certificate === undefined ? {} : { certificate }),
-    ...(subject === undefined ? {} : { subject }),
-    ...(timestampUrl === undefined ? {} : { timestampUrl }),
-    ...(keychainProfile === undefined ? {} : { keychainProfile, notarize: true }),
-  };
-}
-
 export const DEFAULT_DESKTOP_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
@@ -109,14 +67,10 @@ export function parseArgs(args) {
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!['--assets', '--bundle', '--config', '--mode', '--output', '--runtime', '--ui'].includes(flag) || !value) {
-      throw new Error('Usage: package-desktop.mjs --bundle FILE --output FILE [--runtime FILE] [--assets DIR] [--ui DIR] [--config FILE] [--mode debug|release]');
+    if (!['--assets', '--bundle', '--config', '--output', '--runtime', '--ui'].includes(flag) || !value) {
+      throw new Error('Usage: package-desktop.mjs --bundle FILE --output FILE [--runtime FILE] [--assets DIR] [--ui DIR] [--config FILE]');
     }
-    // `--mode` is a word, not a path; every other flag names a filesystem location.
-    options[flag.slice(2)] = flag === '--mode' ? value : resolve(value);
-  }
-  if (options.mode !== undefined && options.mode !== 'debug' && options.mode !== 'release') {
-    throw new Error(`Unknown build mode '${options.mode}'. Choose debug or release.`);
+    options[flag.slice(2)] = resolve(value);
   }
   // `--runtime` is optional: a consumer build with no `--runtime` installs the verified
   // prebuilt from the release manifest via resolveDesktopRuntime. A maintainer build passes
@@ -141,86 +95,18 @@ export function packageDesktop(options) {
     if (!existsSync(options.runtime)) {
       throw new Error(`Missing prebuilt runtime for '${key}': ${options.runtime}`);
     }
-    return compileOrPackage(options, options.runtime);
+    return compileDesktopArtifact(options, options.runtime);
   }
   return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource, install: options.install }).then((runtime) =>
-    compileOrPackage(options, runtime),
+    compileDesktopArtifact(options, runtime),
   );
 }
 
-function compileOrPackage(options, runtime) {
-  if (options.mode === 'release') return packageDesktopRelease(options, runtime);
-  return compileDesktopArtifact(options, runtime);
-}
-
-/**
- * Wrap the compiled executable in the complete desktop container for the host OS (PRD-365).
- *
- * The runtime compiler only knows how to produce a raw executable and stage `ui/` beside it; the
- * container layout, OS metadata and dependency census are OS operations and live in
- * `desktop-distribution.mjs`. The raw debug path above is untouched.
- */
-async function packageDesktopRelease(options, runtime) {
-  const { classifyDependencies, containerSlug, discoverRuntimeDependencies, packageDesktopContainer } =
-    await loadDistribution();
-  const staging = mkdtempSync(join(tmpdir(), 'threenative-desktop-release-'));
-  try {
-    const config = options.config === undefined ? DEFAULT_DESKTOP_CONFIG : readConfig(options.config);
-    // Signing inputs are non-secret identity/options from the build environment; secrets stay in
-    // the OS keychain. Without them, release stays an unsigned-but-complete container.
-    const signing = desktopSigningFromEnvironment();
-    const rawOutput = join(staging, containerSlug(basename(options.output)));
-    const { bundle, executable } = compileDesktopArtifact({ ...options, output: rawOutput }, runtime, {
-      sidecar: true,
-    });
-    const uiRenderer = config.ui?.renderer === 'web' ? 'web' : 'native';
-    const uiDirectory = uiRenderer === 'web' ? join(dirname(executable), 'ui') : undefined;
-    const discovered = options.dependencies === undefined
-      ? classifyDependencies(discoverRuntimeDependencies(executable, { platform: process.platform, run: options.run }), {
-          platform: process.platform,
-        })
-      : { bundled: options.dependencies, prerequisites: options.prerequisites ?? [] };
-    const icon = config.app?.icon === undefined ? undefined : resolve(config.app.icon);
-    const result = packageDesktopContainer({
-      arch: process.arch,
-      bundle,
-      config,
-      dependencies: discovered.bundled,
-      executable,
-      icon,
-      output: options.output,
-      platform: process.platform,
-      prerequisites: discovered.prerequisites,
-      run: options.run,
-      signing,
-      uiDirectory,
-      uiRenderer,
-    });
-    console.log(`ThreeNative desktop container${result.signed ? ' (signed)' : ' (unsigned)'}: ${result.archive}`);
-    return result.archive;
-  } finally {
-    rmSync(staging, { force: true, recursive: true });
-  }
-}
-
-/**
- * Build the desktop artifact.
- *
- * Debug appends the game to a copy of the runtime, which is one self-contained file. Release takes
- * `sidecar`, which writes the game to `game.bundle` and leaves the executable a bare runtime copy:
- * anything that rewrites the executable afterwards - rcedit embedding the icon, `signtool` adding
- * the certificate table, `codesign` sealing a bundle - moves or discards data appended past the
- * end of the image, and the loader finds its footer only at physical EOF. Keeping the game beside
- * the executable instead of inside it is what makes release resource-editing and signing safe.
- */
-function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
+function compileDesktopArtifact(options, runtime) {
   const output = process.platform === 'win32' && !options.output.endsWith('.exe')
     ? `${options.output}.exe`
     : options.output;
   mkdirSync(dirname(output), { recursive: true });
-  // Named `game.bundle` because that is what the runtime's own `findExternalBundle` looks for
-  // beside the executable; the container places it where each platform's loader searches.
-  const bundle = join(dirname(output), 'game.bundle');
   const staging = mkdtempSync(join(tmpdir(), 'threenative-desktop-'));
   try {
     const stagedEntry = stageDesktopFiles(
@@ -229,9 +115,6 @@ function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
       staging,
       options.config === undefined ? undefined : readConfig(options.config),
       process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
-      // Installed from a tarball there is no CMakeLists to read, so the decoder preflight asks
-      // this binary — the one the container is about to ship — instead of guessing.
-      runtime,
     );
     // The UI bundle sits beside the executable rather than inside it. Desktop compiles to one
     // file, but the overlay's web view reads its page from a real path — that is what gives it a
@@ -251,27 +134,18 @@ function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
       '--include',
       staging,
       '--out',
-      sidecar ? bundle : output,
+      output,
     ];
-    // `--bundle-only` writes the bundle alone and copies no executable, so the runtime copy below
-    // carries no appended payload for a later PE or Mach-O rewrite to lose.
-    if (sidecar) args.push('--bundle-only');
     const result = spawnSync(runtime, args, { encoding: 'utf8', stdio: 'inherit' });
     if (result.error) throw result.error;
     if (result.status !== 0)
       throw new Error(`Runtime packager exited with code ${result.status ?? 'unknown'}.`);
-    if (sidecar) {
-      if (!existsSync(bundle)) {
-        throw new Error(`TN_DESKTOP_BUNDLE_MISSING: the runtime packager wrote no bundle at ${bundle}.`);
-      }
-      copyFileSync(runtime, output);
-    }
   } finally {
     rmSync(staging, { force: true, recursive: true });
   }
   if (process.platform !== 'win32') chmodSync(output, 0o755);
   console.log(`ThreeNative desktop artifact: ${output}`);
-  return sidecar ? { bundle, executable: output } : output;
+  return output;
 }
 
 /**
@@ -315,7 +189,6 @@ export function stageDesktopFiles(
   staging,
   config = undefined,
   runtimeSource = runtimeRoot,
-  runtimeExecutable = undefined,
 ) {
   mkdirSync(staging, { recursive: true });
   if (assets && existsSync(assets)) {
@@ -327,7 +200,7 @@ export function stageDesktopFiles(
     // read the bytes on its way past. Same gate, desktop's own derived capabilities.
     assertNativeAssetsDecodable(assets, {
       target: 'desktop',
-      capabilities: { webp: deriveDesktopWebpSupport(runtimeSource, runtimeExecutable) },
+      capabilities: { webp: deriveDesktopWebpSupport(runtimeSource) },
     });
     for (const entry of readdirSync(assets)) {
       if (entry === '.threenative') {

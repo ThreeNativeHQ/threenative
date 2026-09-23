@@ -332,16 +332,14 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "It evaluates captured error and readiness channels across the run; no initial scalar value can satisfy those diagnostics by itself.",
   },
   {
-    description: "Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, whole-frame or per-pass draw calls and triangles.",
-    example: { performance: { maxPassDrawCalls: { shadow: 400 }, maxPhaseMsP95: { render: 12 }, minFps: 30 } },
+    description: "Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, draw calls, and triangles.",
+    example: { performance: { maxPhaseMsP95: { render: 12 }, minFps: 30 } },
     fields: [
       { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds.", name: "maxFrameMsP95", type: "number" },
       { description: "Minimum sustained frames per second, from the median sampled frame.", name: "minFps", type: "number" },
       { description: "Per-phase millisecond ceilings at nearest-rank p95. Phases: hostGap, update, render, overlay, residual.", name: "maxPhaseMsP95", type: "{ [phase]: number }" },
-      { description: "Maximum observed renderer draw-call count across every pass combined.", name: "maxDrawCalls", type: "number" },
-      { description: "Per-pass draw-call ceilings, keyed by pass kind: main, shadow, reflection, nested. Fails closed when a sampled frame carries no pass split or omits the declared kind.", name: "maxPassDrawCalls", type: "{ [pass: 'main' | 'shadow' | 'reflection' | 'nested']: number }" },
-      { description: "Per-pass triangle ceilings, keyed by pass kind: main, shadow, reflection, nested. Fails closed when a sampled frame carries no pass split or omits the declared kind.", name: "maxPassTriangles", type: "{ [pass: 'main' | 'shadow' | 'reflection' | 'nested']: number }" },
-      { description: "Maximum observed renderer triangle count across every pass combined.", name: "maxTriangles", type: "number" },
+      { description: "Maximum observed renderer draw-call count.", name: "maxDrawCalls", type: "number" },
+      { description: "Maximum observed renderer triangle count.", name: "maxTriangles", type: "number" },
     ],
     cardinality: "object",
     kind: "performance",
@@ -642,11 +640,6 @@ export function requiredPlaytestCapabilities(
   // An aimAt step steers the subject through the bridge's setup channel.
   if (scenario.steps.some((step) => step.kind === "aimAt")) {
     required.add("entity.setup");
-  }
-  // The geometry request carries no registry entry, so its capability requirement is added here;
-  // without it a bridge that never armed a capture would answer with no observation, silently.
-  if (scenario.assert?.geometry !== undefined) {
-    required.add("runtime.geometry");
   }
   if (scenario.artifacts?.screenshots !== false) {
     required.add("browser.screenshot");

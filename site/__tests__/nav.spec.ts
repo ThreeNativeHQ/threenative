@@ -17,16 +17,11 @@ describe("navigation is one model with three renderers", () => {
     const labels = navLabels([...primaryNav, ...utilityNav]);
     expect(labels.length).toBeGreaterThan(0);
     for (const label of labels) {
-      // Menu items live behind a click; only top-level labels must be in the initial markup.
+      // Menu items live behind a click, so only the top-level labels have to be in the markup;
+      // the drawer and the dropdowns read the same list this assertion walks.
       if (!primaryNav.concat(utilityNav).some((entry) => entry.label === label)) continue;
       expect(page.includes(label), `the header never renders ${label}`).toBe(true);
     }
-  });
-
-  it("should keep the primary nav compact while making docs a first-party route", () => {
-    expect(primaryNav).toHaveLength(3);
-    const docs = primaryNav.find((entry) => entry.label === "Docs");
-    expect(docs?.target).toEqual({ kind: "internal", path: "/docs" });
   });
 
   it("should never link a nav entry to a route that does not prerender", () => {

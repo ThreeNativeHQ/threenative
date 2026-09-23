@@ -151,7 +151,6 @@ export const MANDATORY_INLINE_PROBES: ReadonlyArray<{
   readonly pattern: RegExp;
 }> = [
   { label: "first-use capability search", pattern: /engine_search_capabilities/u },
-  { label: "lazy-first ponytail gate", pattern: /ponytail/u },
   {
     label: "fallback to plain Three.js",
     pattern: /When the framework blocks you, write plain Three\.js/u,

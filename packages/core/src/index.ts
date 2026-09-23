@@ -6,7 +6,7 @@
  * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
  * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
  */
-export const version = "0.3.3";
+export const version = "0.3.2";
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -121,14 +121,8 @@ export type {
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,
-  IThreeNativeLodConfig,
-  IThreeNativeLodGenerationConfig,
-  IThreeNativeLodOverride,
-  IThreeNativeLodRuntimeConfig,
   IThreeNativeTexturesConfig,
   ThreeNativeBackgroundMode,
-  ThreeNativeLodMinTrianglesScope,
-  ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "./config.js";
@@ -239,38 +233,28 @@ export type {
   IInstancedPlacement,
 } from "./instanced-batch.js";
 /**
- * Merge pieces a game authored out of primitives into one buffer, keeping each piece's own look.
+ * Merge pieces a game authored out of primitives into one buffer, keeping each piece's own colour.
  *
  * `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that
- * never move relative to each other — a building, a ship, a character built from boxes, or the
- * static parts of an imported glTF model. Two things go wrong every time and neither is about how
- * any of it looks. `mergeGeometries` hands back `null` on mismatched inputs instead of throwing,
- * and the usual mismatch is invisible: one `ExtrudeGeometry` is non-indexed while every other
- * primitive is indexed, so the merge fails at the first piece and the scene never loads. And a
- * merged buffer draws with one surface, so per-piece colour is gone unless every piece carries a
- * flat `color` attribute written before the merge. Both are mechanical. By default every part is
- * stripped to position and the normals are recomputed from the merged buffer; pass `preserve` to
- * keep authored normals and texture UVs while baking each part's object transform. Geometry,
- * placement, colour and the surface it draws with all stay the game's.
+ * never move relative to each other — a building, a ship, a character built from boxes. Two things
+ * go wrong every time and neither is about how any of it looks. `mergeGeometries` hands back
+ * `null` on mismatched inputs instead of throwing, and the usual mismatch is invisible: one
+ * `ExtrudeGeometry` is non-indexed while every other primitive is indexed, so the merge fails at
+ * the first piece and the scene never loads. And a merged buffer draws with one surface, so
+ * per-piece colour is gone unless every piece carries a flat `color` attribute written before the
+ * merge. Both are mechanical. Geometry, placement, colour and the surface it draws with all stay
+ * the game's.
  *
  * @situation bake a building, ship or character authored out of primitives into one draw call
- * @situation merge multiple static Three.js meshes into one mesh per material
- * @situation consolidate the static parts of an imported glTF model into one buffer
- * @situation preserve texture UV coordinates and authored normals while baking object transforms
  * @situation merge many small geometries and keep each piece's own colour
  * @situation stop mergeGeometries from silently returning null on an extruded shape
- * @constraint every part is de-indexed; without preserve it is stripped to position and normals are recomputed from the merged buffer
- * @constraint preserve keeps the listed channels, transforming position and normal by the part's placement matrix while UV values are retained unchanged
- * @constraint a part that does not carry a listed preserve channel throws naming the label, the part and the channel
+ * @constraint every part is de-indexed and stripped to position, so UVs and authored normals do not survive; normals are recomputed from the merged buffer
  * @constraint either every part names a color or none does, and a mix throws
  * @constraint an empty part list throws, and a merge three.js refuses throws naming the label
  * @override color is per part and optional; without it no colour attribute is written and the surface alone decides
- * @override preserve is optional and empty by default: position-only merge with recomputed normals, exactly as before
  * @example const wall = new Mesh(mergeParts(pieces, { label: "gatehouse" }), stone);
  * // pieces are meshes, or { geometry, matrix, color } when the colour is per piece:
  * const banner = mergeParts([{ color: 0x8b2f1a, geometry: cloth, matrix: placement }], { label: "banner" });
- * // keep a model's texture UVs and authored normals while baking its transforms:
- * const hull = mergeParts(hullParts, { label: "hull", preserve: ["uv", "normal"] });
  */
 export { mergeParts } from "./merge-parts.js";
 export type { IMergePart, IMergePartsOptions } from "./merge-parts.js";
@@ -341,76 +325,10 @@ export { updateClusteredMeshes } from "./clustered-mesh.js";
 // to call them would be re-implementing the cut rather than using it.
 export type { IClusteredMeshOptions, IClusterTable } from "./clustered-mesh.js";
 /**
- * Draw a model at the detail its projected geometric error earns, from a chain the asset cook baked.
- *
- * **This is engine-owned, and a game does not call it.** `assets.lod: {}` opts in — the default-on
- * front door opens after qualification — the `model` pass bakes `TN_discrete_lod` into eligible
- * models, the loader registers the reader, and the engine runs the selection every frame before it
- * renders. Each frame the mesh picks the cheapest baked level whose measured error projects to fewer
- * than the resolved pixel budget, taking the camera's own projection, zoom, viewport and a
- * conservative nearest depth into account. Refinement is immediate; coarsening waits for the
- * resolved hysteresis. A mesh with no baked chain draws its full geometry.
- *
- * @situation draw a vehicle or hull built from many small meshes at distance without its full triangles
- * @situation stop a distant model from costing its authored mesh count and triangle count
- * @situation one source model, right detail by default, no hand-authored LOD files
- * @constraint the chain is baked by the asset cook; there is no runtime generation and no runtime flag
- * @constraint `assets.lod: false` opts out globally and `assets.lod.overrides` per asset, with no runtime controller installed
- * @constraint only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail
- * @constraint the real gate is measured benefit: a level must save at least `minSaving` (20% default) of its predecessor, and a mesh that cannot is skipped, not forced
- * @override `assets.lod.generation.maxLevels`, `.minTriangles`, `.minTrianglesScope`, `.minSaving` and `.errorTargets` move the bake's ceiling, pre-filter, its scope, its saving rule and its error ladder; `assets.lod.runtime.maxPixelError` and `.hysteresis` move the runtime budget and coarsen band; all by project, preset or asset
- * @example
- * // Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.
- * const hull = await ctx.assets.model("hull.glb");
- * ctx.scene.add(hull.scene);
- */
-export { updateModelLods } from "./model-lod.js";
-/**
- * The full-detail geometry of a mesh the loader gave an automatic LOD chain.
- *
- * Selection swaps `mesh.geometry`, so a ray test or a collision body built from the current geometry
- * would change with the camera. Framework picking and gameplay collide against this instead: the
- * authored LOD0, which never changes as the camera moves.
- *
- * @situation collide or ray-test the authored geometry of a mesh whose render detail changes with distance
- * @example const geometry = baseGeometryOf(mesh);
- */
-export { baseGeometryOf } from "./model-lod.js";
-/**
- * Keep an object drawn even when the render camera cannot resolve it.
- *
- * The engine's projected-size gate is on by default: an object whose world bounding sphere
- * projects to fewer than 0.5 raster pixels in the camera about to render it is not submitted, per
- * camera. Mark the player's own cockpit, a nameplate, a quest marker, or anything a game never
- * wants to pop out of the frame. `alwaysRender(object, false)` removes the marker. Camera-attached
- * objects and shadow casters are already kept, and the number of marked objects is reported beside
- * the cull in the `TN_PROJECTION` window rather than hidden. The threshold itself is
- * `renderer.minimumProjectedPixels` — a larger number cuts more aggressively, `false` leaves
- * every object drawn while still measuring.
- *
- * @situation keep a small object drawn when the engine would skip it as too far to resolve
- * @situation stop my cockpit, marker or player model popping out at distance
- * @situation a tiny object disappeared at range and I need it always visible
- * @situation widen or narrow the projected-size cull with a named threshold
- * @constraint the marker is per object and is reported as `exemptMarked` in the projection window
- * @constraint `renderer.minimumProjectedPixels: false` leaves the scene drawn and keeps the measurement on
- * @override renderer.minimumProjectedPixels sets the projected-pixel threshold, default 0.5
- * @example import { alwaysRender } from "@threenative/core";
- * alwaysRender(ctx.camera.children[0]); // a camera-attached cockpit stays drawn
- */
-export { alwaysRender } from "./render-camera-cull.js";
-/**
- * Read where the frame's milliseconds went, per presented frame, on any platform; each
- * `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and
- * triangles each render pass submitted.
+ * Read where the frame's milliseconds went, per presented frame, on any platform.
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay
- * @situation tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp
- * @situation split a frame's draw calls and triangles per render pass (main, shadow, reflection)
- * @situation tell a shadow or reflection pass's cost from the main colour pass
  * @constraint on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
- * @constraint per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main
- * @constraint GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
  * @example defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
  */
 export {
@@ -422,29 +340,10 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
-  IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
-export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
-export {
-  GEOMETRY_CAPTURE_DEFAULT_LIMIT,
-  GEOMETRY_CAPTURE_MAX_LIMIT,
-  GEOMETRY_CAPTURE_SORTS,
-  GEOMETRY_CAPTURE_TIMEOUT_MS,
-  GEOMETRY_CAPTURE_WALK_CAP,
-  GEOMETRY_ASSET_KEY,
-} from "./geometry-capture.js";
-export type {
-  GeometryCaptureSort,
-  IGeometryCaptureAsset,
-  IGeometryCaptureMesh,
-  IGeometryCapturePass,
-  IGeometryCaptureReport,
-  IGeometryCaptureRequest,
-  IGeometryCaptureRow,
-} from "./geometry-capture.js";
 /**
  * Register work that reads a body or camera after physics has moved it and before this frame draws.
  * The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
@@ -689,37 +588,14 @@ export { GPUParticles3D } from "./particles.js";
 export { FluidField2D } from "./fluid-field.js";
 export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from "./fluid-field.js";
 /**
- * Propagate a disturbance across a patch of water surface and let it fade.
- * @situation make a splash or explosion ripple outward across water
- * @situation show the sea reacting to a bomb, shell, or torpedo hitting it
- * @situation leave a foam trail behind something moving through water
- * @situation disturb a water surface the player can see respond
- * @situation spread and drift foam on a water surface over time
- * @constraint it draws nothing; the game supplies the mesh, the material and every colour
- * @constraint add its height to an analytic swell, never in place of one
- * @constraint the patch is finite and its rim absorbs; call recenter to keep it over the action
- * @constraint there is no obstacle mask, because a mask is only correct for a body that never moves
- * @override speed, damping, foamHalfLife, current, step and maxSteps tune the solve; the default
- * step is 1/60s or the CFL stability limit for the given resolution and speed, whichever is smaller
- * @example const ripples = new RippleField({ resolution: 128, size: 400 });
- * ripples.impulse(hit.x, hit.z, 6, -40, 0.5);
- * ripples.advance(dt);
- * const lift = ripples.heightAt(boat.x, boat.z);
- */
-export { RippleField } from "./ripple-field.js";
-export type { IRippleFieldFlow, IRippleFieldOptions } from "./ripple-field.js";
-/**
  * Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.
  * @situation float a boat on waves
  * @situation make water move
  * @situation find the water surface height at a point
  * @constraint supply every wave amplitude, wavelength, direction, speed and warp value
  * @constraint call setTime for the default graph clock when the game advances its own time
- * @constraint sample allocates a result and a normal vector; ask heightAt when only the height is
- * wanted, and the warp jacobian, every slope and both allocations are skipped
  * @example const field = new WaveField({ waves });
  * const { height, normal } = field.sample(x, z, elapsed);
- * const lift = field.heightAt(x, z, elapsed);
  */
 export { WaveField } from "./wave-field.js";
 export type {
@@ -737,17 +613,12 @@ export type {
  * @situation see the bed through the water and have the shallows fade at the shore
  * @situation know how deep the water is under a pixel without a second render pass
  * @situation stop a water surface repeating in visible bands or stripes
- * @situation keep a crowd of small actors out of the water's reflection so the frame can afford it
- * @situation stop the water reflection redrawing the whole world every frame
  * @constraint it draws nothing; the game supplies the mesh, the material and every colour
  * @constraint the material must be transparent so the frame beneath it is already drawn
  * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
- * @constraint one reflection is a second draw of the world; resolutionScale is its pixels only
- * @constraint on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice
- * @constraint reflection.refreshInterval is in presented frames; 1 is every frame, and the default
+ * @constraint one reflection is a second draw of the world, so resolutionScale is the whole cost
  * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
- * @example const REFLECTED = 1; // the layer the big silhouettes sit on
- * const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });
+ * @example const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
  * material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
  */
 export { WaterSurface3D } from "./water-surface.js";
@@ -788,39 +659,6 @@ export { PathFollow3D } from "./path-follow.js";
  * const snap = new GroundSnap(character, { enabled: true });
  */
 export { GroundSnap } from "./grounding.js";
-/**
- * Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
- * @situation fly an airplane with lift, drag, stall and control authority
- * @situation launch an aircraft off a moving carrier deck
- * @situation apply component damage or a loadout to an aircraft's performance
- * @constraint every mass, area, power and inertia value comes from the game's airframe
- * @constraint damage, stores and configuration arrive as the game's own modifier sample
- * @example const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
- * model.step(1 / 60, { turn: -1, pitch: 0.4 });
- */
-export {
-  FlightModel,
-  NEUTRAL_FLIGHT_MODIFIERS,
-  aerodynamicCoefficients,
-  airDensity,
-  aircraftMass,
-  attitudeAxes,
-  gearClearance,
-  setAttitude,
-} from "./flight.js";
-export type {
-  IAircraftAirframe,
-  IFlightAxes,
-  IFlightControls,
-  IFlightDeck,
-  IFlightEnvironment,
-  IFlightForces,
-  IFlightModelOptions,
-  IFlightModifiers,
-  IFlightQuaternion,
-  IFlightState,
-  IFlightVector3,
-} from "./flight.js";
 export type { IGroundSnapOptions } from "./grounding.js";
 /**
  * Measure a Three.js pose for grounded or attachment-aware checks.
@@ -928,10 +766,8 @@ export type { ITweenOptions, ScheduleHandle } from "./schedule.js";
  * Implement a portable Godot-shaped game scene lifecycle.
  * @situation add a playable level or menu scene
  * @situation move scene setup and per-frame gameplay out of the entry point
- * @situation run scene work once per actual world draw, after the frame's last fixed update and before the projection packs
  * @constraint scene code must stay portable across web and native
  * @example class Play extends Scene { update(ctx, dt) {} }
- * @example ctx.beforeRender(() => packBatches()); // cleared on scene change and stop, like ctx.afterPhysics
  */
 export { Scene } from "./scene.js";
 export type { ICtx, SceneFrame } from "./scene.js";

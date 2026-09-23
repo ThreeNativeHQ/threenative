@@ -136,7 +136,7 @@ test("every packager runs the gate, and each names its own target", () => {
   );
   assert.match(
     read("scripts/package-desktop.mjs"),
-    /assertNativeAssetsDecodable\(assets, \{\s*target: 'desktop',\s*capabilities: \{ webp: deriveDesktopWebpSupport\(runtimeSource, runtimeExecutable\) \},\s*\}\);/u,
+    /assertNativeAssetsDecodable\(assets, \{\s*target: 'desktop',\s*capabilities: \{ webp: deriveDesktopWebpSupport\(runtimeSource\) \},\s*\}\);/u,
   );
   assert.match(
     read("scripts/package-ios.mjs"),

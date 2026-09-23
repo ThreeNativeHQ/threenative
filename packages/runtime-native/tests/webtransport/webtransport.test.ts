@@ -35,7 +35,6 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeTempDirSync } from "../../../../test-support/temp-dir.js";
 import {
   RUNTIME_EXECUTABLE_ENV,
   desktopBuildPreset,
@@ -55,10 +54,7 @@ const SERVER_EXECUTABLE = join(
   "build/webtransport",
   process.platform === "win32" ? "tn-network-server.exe" : "tn-network-server",
 );
-const TEST_DIR = makeTempDirSync("tn-webtransport-");
-afterAll(() => {
-  rmSync(TEST_DIR, { recursive: true, force: true });
-});
+const TEST_DIR = join(runtimeRoot, ".test-tmp/webtransport");
 const SERVER_LISTEN = "127.0.0.1:4433";
 const SERVER_PORT = 4433;
 const SERVER_URL = `https://${SERVER_LISTEN}/echo`;

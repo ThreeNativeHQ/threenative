@@ -183,19 +183,10 @@ function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
   // send explicitly labelled warnings to stderr. Keep every line and fail closed on
   // unclassified stderr instead of dropping platform diagnostics to make a run pass.
   if (/^(?:\[error\]|(?:error|fatal):)/iu.test(text)) return "error";
-  if (
-    /^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|libEGL\s+warning:|\*\* \([^)]*\): WARNING \*\*:|\([^)]*\): dbind-WARNING \*\*:)/iu.test(
-      text,
-    )
-  ) {
+  if (/^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|\*\* \([^)]*\): WARNING \*\*:)/iu.test(text)) {
     return "warning";
   }
-  // A hosted headless runner has no sound card and no accessibility bus, so ALSA and AT-SPI
-  // complain about the host, not the game. The same policy Android applies to platform WebView
-  // noise (isPlatformWebViewNoise): keep the line, decide only its severity here so a soundless
-  // host cannot fail a gameplay qualification. The audio lifecycle is proven by
-  // verify-desktop-audio.mjs against real AudioContexts, not by this line.
-  if (/^ALSA lib\b|^\[Audio\] Failed to open audio device: ALSA:|^Gtk-Message:/u.test(text)) return "log";
+  if (/^Gtk-Message:/u.test(text)) return "log";
   return stream === "stderr" ? "error" : "log";
 }
 

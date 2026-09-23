@@ -1,5 +1,3 @@
-import { docsPages } from "./content/docs.js";
-
 /**
  * The one route table. `app.tsx` renders from it, `scripts/prerender.ts` builds from it, the
  * header and footer navigate from it, and the sitemap is emitted from it. A page that is not
@@ -30,16 +28,6 @@ export const routes: readonly IRoute[] = [
     ogImage: "/og/home.svg",
     indexable: true,
   },
-  ...docsPages.map(
-    (page): IRoute => ({
-      path: page.path,
-      label: page.label,
-      title: page.title,
-      description: page.description,
-      ogImage: "/og/home.svg",
-      indexable: true,
-    }),
-  ),
   {
     path: "/404",
     label: "Page not found",

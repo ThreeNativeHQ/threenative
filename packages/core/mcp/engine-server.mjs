@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { realpathSync, readFileSync, existsSync, mkdirSync, appendFileSync } from 'fs';
+import { realpathSync, readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
@@ -417,22 +417,6 @@ var TOOL_DEFINITIONS = [
 function toolDefinitions() {
   return TOOL_DEFINITIONS;
 }
-var DEFAULT_LOG_FILE = path.join(".threenative", "engine-mcp.log");
-var logBroken = false;
-function logToolCall(entry) {
-  if (logBroken) return;
-  const target = process.env.THREENATIVE_ENGINE_MCP_LOG ?? DEFAULT_LOG_FILE;
-  if (target === "off") return;
-  try {
-    mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
-    appendFileSync(target, `${JSON.stringify({ time: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
-`);
-  } catch (error) {
-    logBroken = true;
-    process.stderr.write(`engine-mcp log disabled (${target}): ${String(error)}
-`);
-  }
-}
 function jsonRpcError(id, code, message) {
   return JSON.stringify({ id, jsonrpc: "2.0", error: { code, message } });
 }
@@ -455,22 +439,12 @@ function handleToolCall(params, manifestFile) {
     const scope = argumentsValue.scope ?? "mechanic";
     if (scope !== "request" && scope !== "mechanic")
       throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
-    const response = searchCapabilities(argumentsValue.situation, manifestFile, scope);
-    logToolCall({
-      results: response.results.map((result) => result.symbol),
-      scope,
-      situation: argumentsValue.situation,
-      tool: name,
-      verdict: response.verdict
-    });
-    return toolText(response);
+    return toolText(searchCapabilities(argumentsValue.situation, manifestFile, scope));
   }
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
       throw new Error("engine_capability_detail requires a string 'symbol' argument.");
-    const detail = capabilityDetail(argumentsValue.symbol, manifestFile);
-    logToolCall({ symbol: argumentsValue.symbol, tool: name });
-    return toolText(detail);
+    return toolText(capabilityDetail(argumentsValue.symbol, manifestFile));
   }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
 }
@@ -490,7 +464,7 @@ function handleLine(line, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.3" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.2" }
       });
     }
     if (request.method === "tools/list") {
@@ -502,9 +476,7 @@ function handleLine(line, manifestFile) {
     }
     return jsonRpcError(request.id, -32601, `Method not found: ${request.method}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (request.method === "tools/call") logToolCall({ error: message, request: request.params });
-    return jsonRpcError(request.id, -32e3, message);
+    return jsonRpcError(request.id, -32e3, error instanceof Error ? error.message : String(error));
   }
 }
 function runServer(manifestFile = defaultManifestPath()) {

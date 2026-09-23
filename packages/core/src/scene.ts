@@ -109,10 +109,6 @@ export interface IStartupStatus {
    * 0 to 1, monotonic and honest: the loader's settled/requested ratio carries the first 0.7
    * while the start scene loads, 0.8 once the world is entered, 0.9 once first-use compilation
    * settled, 1 when `whenReady()` resolves.
-   *
-   * Monotonic is enforced, not assumed: this is a high-water mark over the measured load state,
-   * because that state can fall — requesting an asset after an earlier one settled shrinks the
-   * ratio, and a bar that jumps backwards reads to a player as the load restarting.
    */
   readonly progress: number;
   /** When each milestone happened; members appear as they are reached. */
@@ -181,12 +177,6 @@ export interface ICtx<
   readonly after: (delay: number, callback: () => void) => ScheduleHandle;
   /** Register a callback for the engine-owned phase after physics writes solved transforms. */
   readonly afterPhysics: (callback: AfterPhysicsCallback) => () => void;
-  /**
-   * Register work that runs once per actual world render, after the frame's last fixed update and
-   * before the projection reconciles and the renderer draws. A held, loader-only frame has no world
-   * draw and therefore dispatches nothing.
-   */
-  readonly beforeRender: (callback: () => void) => () => void;
   readonly every: (callback: (dt: number) => void) => ScheduleHandle;
   readonly state: GameStore<TState>;
   readonly tween: <T extends object>(

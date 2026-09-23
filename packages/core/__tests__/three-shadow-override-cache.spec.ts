@@ -119,7 +119,6 @@ interface IRenderObjectProbe {
   readonly version: number;
   readonly needsUpdate: boolean;
   getCacheKey: () => number;
-  dispose: () => void;
 }
 
 interface IRenderObjectsProbe {
@@ -242,25 +241,6 @@ describe("three RenderObjects source invalidation", () => {
 
     expect(probe.get(object, source)).toBe(renderObject);
     expect(getCacheKey).not.toHaveBeenCalled();
-  });
-
-  it("keeps material groups alive until their shadow commands are submitted", () => {
-    const probe = renderObjectsProbe();
-    const top = probe.makeSource(0);
-    const bottom = probe.makeSource(0);
-    const wing = probe.makeObject(top);
-    wing.material = [top, bottom];
-    const topDraw = probe.get(wing, top);
-    const dispose = vi.spyOn(topDraw, "dispose");
-    const bottomDraw = probe.get(wing, bottom);
-
-    expect(dispose).not.toHaveBeenCalled();
-    expect(bottomDraw).not.toBe(topDraw);
-    expect(probe.get(wing, top)).toBe(topDraw);
-    expect(probe.get(wing, bottom)).toBe(bottomDraw);
-    topDraw.dispose();
-    expect(probe.get(wing, top)).not.toBe(topDraw);
-    expect(probe.get(wing, bottom)).toBe(bottomDraw);
   });
 
   it("validates and recreates when source alpha-test state changes", () => {

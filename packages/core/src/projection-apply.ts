@@ -6,8 +6,6 @@ import {
   LOD,
   type Light,
   Line,
-  LineLoop,
-  LineSegments,
   type Material,
   Matrix4,
   Mesh,
@@ -21,7 +19,6 @@ import {
   type SpriteMaterial,
 } from "three";
 
-import type { IGeometryOwnership } from "./geometry-capture.js";
 import { MIN_BATCH_MEMBERS, isLight } from "./projection-plan.js";
 import type {
   IProjectionBatchGroup,
@@ -148,8 +145,6 @@ function shallowProxy(object: Object3D): Object3D {
     isSprite?: boolean;
     isPoints?: boolean;
     isLine?: boolean;
-    isLineSegments?: boolean;
-    isLineLoop?: boolean;
     isLOD?: boolean;
     count?: number;
   };
@@ -168,10 +163,6 @@ function shallowProxy(object: Object3D): Object3D {
   if (source.isSkinnedMesh === true) return new SkinnedMesh(source.geometry, source.material);
   if (source.isSprite === true) return new Sprite(source.material as SpriteMaterial);
   if (source.isPoints === true) return new Points(source.geometry, source.material);
-  // `LineSegments` and `LineLoop` both set `isLine`, so the flag alone would flatten either into
-  // a plain `Line` and draw its separate segments joined end to end.
-  if (source.isLineSegments === true) return new LineSegments(source.geometry, source.material);
-  if (source.isLineLoop === true) return new LineLoop(source.geometry, source.material);
   if (source.isLine === true) return new Line(source.geometry, source.material);
   if (source.isLOD === true) return new LOD();
   return new Mesh(source.geometry, source.material);
@@ -220,18 +211,6 @@ export class ProjectionMirror {
   /** Exact-lane stand-ins, keyed by the source they mirror. */
   readonly #proxies = new Map<Object3D, Object3D>();
   readonly #lightProxies = new Map<Light, Light>();
-  /**
-   * Each source light's own `shadow.autoUpdate`, captured the frame the mirror took that light's
-   * map offline.
-   *
-   * While the mirror is what draws, the authored scene is not rendered, so the authored light's
-   * shadow map is never sampled: three builds a render's lighting from the scene it is handed,
-   * which holds the clone, not the source. The clone carries its own `LightShadow` and keeps
-   * updating; the source's map is dead work. Three reads `shadow.autoUpdate` per light in
-   * `ShadowNode.updateBefore`, so switching the source's off drops that map without touching the
-   * shadow camera, map size, bias or flags. The exact authored value comes back in `releaseAll`.
-   */
-  readonly #lightShadowAutoUpdate = new Map<Light, boolean>();
   readonly #exact = new Map<ProjectionExactReason, number>();
   readonly #exactLane: IProjectionExactEntry[] = [];
   readonly #extraExactPool: IProjectionExactEntry[] = [];
@@ -424,34 +403,6 @@ export class ProjectionMirror {
     }
   }
 
-  /**
-   * Who owns each object this mirror hands the renderer, built on demand for a diagnostic.
-   *
-   * The mirror is what the renderer sees, so a per-object cost report reading the authored scene
-   * would attribute the frame to objects that were never submitted. Keyed by the rendered object:
-   * an exact stand-in names its one source, a batch names every source it folded. Nothing is
-   * retained — the map is the caller's, and building it costs one pass over the live entries.
-   */
-  describeOwnership(): Map<Object3D, IGeometryOwnership> {
-    const ownership = new Map<Object3D, IGeometryOwnership>();
-    for (const [source, proxy] of this.#proxies) {
-      ownership.set(proxy, { kind: "exact", sources: [source] });
-    }
-    for (const batch of this.#batches.values()) {
-      ownership.set(batch.mesh, {
-        kind: "instancedBatch",
-        sources: [...batch.instances.keys()],
-      });
-    }
-    for (const batch of this.#materialBatches.values()) {
-      ownership.set(batch.mesh, {
-        kind: "materialBatch",
-        sources: [...batch.instances.keys()],
-      });
-    }
-    return ownership;
-  }
-
   /** Drops sources that have left the authored scene, so nothing draws what the game removed. */
   #retire(
     seen: { has(object: Object3D): boolean },
@@ -520,19 +471,7 @@ export class ProjectionMirror {
       const proxy = this.#lightProxies.get(light) as Light;
       this.scene.remove(proxy);
       this.#lightProxies.delete(light);
-      // A light that leaves the mirror gets its shadow update back now, so a light that returns
-      // later is cloned from a source that still updates rather than from the offline state.
-      this.#restoreLightShadow(light);
     }
-  }
-
-  /** Puts a source light's own shadow-update state back and forgets it. */
-  #restoreLightShadow(light: Light): void {
-    const original = this.#lightShadowAutoUpdate.get(light);
-    if (original === undefined) return;
-    this.#lightShadowAutoUpdate.delete(light);
-    const shadow = (light as Light & { shadow?: { autoUpdate: boolean } }).shadow;
-    if (shadow !== undefined) shadow.autoUpdate = original;
   }
 
   /**
@@ -588,17 +527,6 @@ export class ProjectionMirror {
         pointProxy.distance = point.distance;
         pointProxy.decay = point.decay;
         pointProxy.power = point.power;
-      }
-      // The clone above copied `autoUpdate` before it was switched off, so the drawn light keeps
-      // its shadow. Only the source — whose map nothing samples this frame — is taken offline.
-      const shadow = (light as Light & { shadow?: { autoUpdate: boolean } }).shadow;
-      if (
-        shadow !== undefined &&
-        shadow.autoUpdate === true &&
-        !this.#lightShadowAutoUpdate.has(light)
-      ) {
-        this.#lightShadowAutoUpdate.set(light, shadow.autoUpdate);
-        shadow.autoUpdate = false;
       }
     }
     return undefined;
@@ -1057,7 +985,6 @@ export class ProjectionMirror {
     this.#proxies.clear();
     for (const proxy of this.#lightProxies.values()) this.scene.remove(proxy);
     this.#lightProxies.clear();
-    for (const light of this.#lightShadowAutoUpdate.keys()) this.#restoreLightShadow(light);
     this.#state.clear();
     this.#exact.clear();
     this.#clearExactScratch();
