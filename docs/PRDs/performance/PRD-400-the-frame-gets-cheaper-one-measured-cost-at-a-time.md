@@ -262,8 +262,13 @@ but failed the judge's two-second desktop shutdown. With a ten-second shutdown b
 timed out on a one-frame mailbox `advance` (20,250 ms). The playtest startup wait now treats that
 specific operation timeout as a busy frame within its existing readiness deadline. On the dirty
 checkout, the next native preflight returned `PASS` with 875 frame samples, a 1,619 ms startup
-sample and no GPU validation errors. Its p50 was 6.13 ms, p95 56.35 ms, and worst frame 25.54 s;
-the large stall is retained in the result, not counted as an optimization. The 57 production judge
+sample and no GPU validation errors. Its p50 was 6.13 ms, p95 56.35 ms, and worst frame 25.54 s.
+Inspection of all six resource snapshots showed `status: briefing`, `airborne: false`, and unchanged
+altitude and airspeed: the web flight scenario's viewport click did not enter native gameplay, and
+its diagnostics-only assertion could not catch that. These frame numbers describe the briefing
+scene and cannot be used as a Midway baseline. The native baseline will instead run the already
+authored `native-playtests/launch.playtest.json`, which requires flight status, airborne state, and
+altitude and airspeed changes. The 57 production judge
 tests, 19 startup tests, 8 packaging tests, typecheck, lint, and full `pnpm test` pass (454 test
 files, 5,520 tests; 8 skipped). The distributed patch intentionally moves all ten no-install
 scaffold hashes, and the renderer cache probe now supplies the renderer's active-target method.
