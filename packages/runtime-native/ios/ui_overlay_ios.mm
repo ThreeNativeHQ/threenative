@@ -149,7 +149,7 @@ static NSString* resolveUiFile(NSString* root, NSURL* url) {
 
 @end
 
-@interface TnUiOverlayBridge : NSObject <WKScriptMessageHandler>
+@interface TnUiOverlayBridge : NSObject <WKScriptMessageHandler, WKNavigationDelegate>
 @property(nonatomic, assign) TnUiOverlayView* overlay;
 @end
 
@@ -164,6 +164,33 @@ static NSString* resolveUiFile(NSString* root, NSURL* url) {
         return;
     }
     mystral::platform::queueUiMessage(frame.UTF8String);
+}
+
+/**
+ * Load observability. iOS captures no WebView JS console into console.json, so without these a
+ * missing bundle, a 404 from the scheme handler, or a module that never parses is a transparent
+ * view over a working game with zero errors — exactly the failure that was shipped. One CI run
+ * now discriminates: `loaded:true` plus the frame, or `loaded:false` plus the reason.
+ */
+- (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation {
+    (void)navigation;
+    NSLog(@"TN_UI_OVERLAY:{\"loaded\":true,\"frame\":\"%@\"}", NSStringFromCGRect(webView.frame));
+}
+
+- (void)webView:(WKWebView*)webView
+    didFailProvisionalNavigation:(WKNavigation*)navigation
+                       withError:(NSError*)error {
+    (void)webView;
+    (void)navigation;
+    NSLog(@"TN_UI_OVERLAY:{\"loaded\":false,\"error\":\"%@ %ld\"}", error.domain, (long)error.code);
+}
+
+- (void)webView:(WKWebView*)webView
+    didFailNavigation:(WKNavigation*)navigation
+            withError:(NSError*)error {
+    (void)webView;
+    (void)navigation;
+    NSLog(@"TN_UI_OVERLAY:{\"loaded\":false,\"error\":\"%@ %ld\"}", error.domain, (long)error.code);
 }
 
 /**
@@ -198,6 +225,13 @@ static NSString* resolveUiFile(NSString* root, NSURL* url) {
 namespace {
 
 TnUiOverlayView* g_overlay = nil;
+/**
+ * The bridge outlives the configuration object it was registered on: `attach` releases that
+ * object, and whether the web view's own copy shares or copies the user-content controller is
+ * WebKit's business. One explicit retain, balanced in detach, so the delegate and the message
+ * handler can never dangle.
+ */
+TnUiOverlayBridge* g_bridge = nil;
 
 }  // namespace
 
@@ -225,27 +259,37 @@ bool attachIosUiOverlay(const std::string& uiRoot) {
     handler.root = [NSString stringWithUTF8String:uiRoot.c_str()];
     [configuration setURLSchemeHandler:handler forURLScheme:@"threenative"];
 
+    // Registered BEFORE the web view exists. The web view copies its configuration at init, so a
+    // handler added to the original object afterwards never reaches the page: then
+    // `webkit.messageHandlers.tnHost` is undefined there, core finds no outbound channel, falls
+    // back to the in-process broker, never installs `window.__tnUiReceive`, and the page mirrors
+    // no state — a transparent view over a working game, with no error anywhere. That was the
+    // shipped order, and the invisible overlay it produced.
+    TnUiOverlayBridge* bridge = [[TnUiOverlayBridge alloc] init];
+    [configuration.userContentController addScriptMessageHandler:bridge name:kHostObject];
+
     TnUiOverlayView* overlay = [[TnUiOverlayView alloc] initWithFrame:parent.bounds configuration:configuration];
     if (overlay == nil) {
+        [bridge release];
         [handler release];
         [configuration release];
         return false;
     }
-    TnUiOverlayBridge* bridge = [[TnUiOverlayBridge alloc] init];
     bridge.overlay = overlay;
-    [configuration.userContentController addScriptMessageHandler:bridge name:kHostObject];
+    overlay.navigationDelegate = bridge;
 
     overlay.opaque = NO;
     overlay.backgroundColor = UIColor.clearColor;
     overlay.scrollView.backgroundColor = UIColor.clearColor;
     overlay.scrollView.scrollEnabled = NO;
     overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    // `addSubview:` puts the overlay above SDL's view; nothing later adds a sibling above it.
     [parent addSubview:overlay];
     [overlay loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:
         [kOrigin stringByAppendingString:@"index.html"]]]];
 
     g_overlay = overlay;
-    [bridge release];
+    g_bridge = bridge;
     [handler release];
     [configuration release];
     setUiOverlayAttached(true);
@@ -259,6 +303,8 @@ void detachIosUiOverlay() {
     [g_overlay removeFromSuperview];
     [g_overlay release];
     g_overlay = nil;
+    [g_bridge release];
+    g_bridge = nil;
     setUiOverlayAttached(false);
 }
 

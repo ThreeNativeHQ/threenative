@@ -149,6 +149,30 @@ int main(int argc, char** argv) {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('the iOS bridge is registered before the web view copies its configuration', () => {
+  // The web view copies its configuration at init, so a handler added to the original object
+  // afterwards never reaches the page: `webkit.messageHandlers.tnHost` stays undefined, core
+  // falls back to the in-process broker, `__tnUiReceive` is never installed, and the page is a
+  // transparent view over a working game with no error anywhere. That order shipped and failed
+  // the packaged iOS pixel proof with only the game visible.
+  const attach = ios.slice(ios.indexOf('bool attachIosUiOverlay('));
+  const registered = attach.indexOf('addScriptMessageHandler:bridge');
+  const created = attach.indexOf('initWithFrame:');
+  assert.ok(registered >= 0 && created >= 0 && registered < created,
+    'addScriptMessageHandler must come before initWithFrame:configuration:');
+});
+
+test('the iOS host reports page load finish/failure with the webview frame', () => {
+  // iOS captures no WebView JS console into console.json, so a page that never loads is
+  // otherwise invisible. One CI run now discriminates via `loaded:true` (+ frame) or
+  // `loaded:false` (+ reason).
+  assert.match(ios, /WKNavigationDelegate/u);
+  assert.match(ios, /navigationDelegate = bridge/u);
+  assert.match(ios, /TN_UI_OVERLAY:\{\\"loaded\\":true/u);
+  assert.match(ios, /didFailProvisionalNavigation/u);
+  assert.match(ios, /TN_UI_OVERLAY:\{\\"loaded\\":false/u);
+});
+
 test('the MRC iOS bridge keeps a non-owning overlay link only while its handler is registered', () => {
   assert.match(ios, /@property\(nonatomic, assign\) TnUiOverlayView\* overlay;/u);
   assert.doesNotMatch(ios, /@property\(nonatomic, weak\) TnUiOverlayView\* overlay;/u);
