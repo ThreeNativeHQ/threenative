@@ -218,7 +218,7 @@ export interface IGamePlatformSource {
  * module". That is a game that never starts, so the literal access is load-bearing, not style.
  */
 function bundlerDevFlag(): boolean {
-  return (import.meta as unknown as IImportMeta).env?.DEV === true;
+  return (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
 }
 
 function isDevLaunch(): boolean {
