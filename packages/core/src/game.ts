@@ -248,7 +248,10 @@ function installDevTools(
   // Late-bound: the capture is constructed with the render loop, after this install runs.
   geometry: () => GeometryCapture | undefined,
 ): PluginCleanup {
-  const isDev = isDevLaunch();
+  // Written out here, not through `isDevLaunch()`: the bundler must see the literal flag to strip
+  // this whole install from a production build, and a runtime `DEV_MODE` check cannot be stripped.
+  const isDev =
+    (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
   if (!isDev || host === undefined) return () => undefined;
   const devTools: IDevTools = {
     ...(host.__THREENATIVE__ as (IDevTools & Record<string, unknown>) | undefined),
