@@ -284,9 +284,16 @@ its `src`/`public` workload hash stayed `a764771af3a8b96b2b5780cd4badb67050ae106
 The authored native launch then returned `PASS` on a clean engine checkout with all six assertions,
 including actual airborne and changing altitude/IAS state. Its screenshot shows the plane above
 the water. It proves gameplay and the packaged patch, not a real-time frame baseline.
+The comparison now includes the authored resolution-scale setting from the packaged native config.
+Its no-GPU control blocks `auto` → `0.5` even when frame time improves, while `auto` → `auto`
+and matching numeric escape-hatch settings pass (`L0-09`). The packaged Midway config remains
+`auto`. The live `slow-native` control is still required before ticking sensitivity.
 The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
 the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
 `pnpm lint`, and `pnpm test` passed locally (454 files, 5,520 tests; 8 skipped).
+After the resolution guard, typecheck and lint passed; focused production-profile tests passed
+58/58 and comparator tests 18/18. The full suite passed 5,520 tests but one browser runner test
+observed a closed page during the concurrent desktop capture; that exact test passed in isolation.
 Full matrix/Midway baselines, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
 
 ### Phase 2 — Lane 1: scene projection
