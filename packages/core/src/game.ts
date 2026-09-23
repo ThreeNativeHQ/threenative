@@ -13,6 +13,12 @@ import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
 import type { IThreeNativeConfig } from "./config.js";
 import { type EntitySnapshot, Registry } from "./entities.js";
 import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "./frame-budget.js";
+import {
+  GeometryCapture,
+  type IGeometryCaptureReport,
+  type IGeometryCaptureRequest,
+  rendererBackendIdentity,
+} from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
@@ -21,12 +27,15 @@ import {
   type IRenderPerformanceSample,
   createAfterPhysicsPhase,
 } from "./loop.js";
+import { updateModelLods } from "./model-lod.js";
 import { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
+import { RenderCameraCull } from "./render-camera-cull.js";
+import { RenderPassBudget } from "./render-pass-budget.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveRendererAlphaAntialiasing,
@@ -64,6 +73,8 @@ export type PluginCleanup = () => void;
 
 export interface IGameObservationSampleRequest {
   readonly entities?: readonly string[];
+  /** Asks for one armed per-object geometry capture. Absent means no capture is collected. */
+  readonly geometry?: IGeometryCaptureRequest;
   readonly include?: readonly string[];
   readonly label?: string;
   readonly resources?: readonly string[];
@@ -71,7 +82,13 @@ export interface IGameObservationSampleRequest {
 
 export interface IGameObservationContribution {
   readonly capabilities: readonly string[];
-  readonly sample: (request: IGameObservationSampleRequest) => Readonly<Record<string, unknown>>;
+  /**
+   * May answer a promise: an observation that has to wait for the renderer — a geometry capture
+   * waits for one presented world frame — cannot be produced inside the request that asked for it.
+   */
+  readonly sample: (
+    request: IGameObservationSampleRequest,
+  ) => Readonly<Record<string, unknown>> | Promise<Readonly<Record<string, unknown>>>;
 }
 
 export interface IGameRuntimeObservations {
@@ -117,11 +134,21 @@ export interface IGamePluginRuntime {
   readonly startupTimeline?: () => IStartupTimeline;
   /** The renderer-owned bounded pipeline capture, when the renderer has not been opted out. */
   readonly pipelineCensus?: () => IPipelineCensus;
+  /**
+   * Arms one per-object geometry capture and answers its report after the next presented world
+   * frame. Absent on a runtime with no render loop to arm.
+   */
+  readonly geometryCapture?: (request?: IGeometryCaptureRequest) => Promise<IGeometryCaptureReport>;
   readonly step: number;
 }
 
 interface IDevTools {
   snapshot(): EntitySnapshot;
+  /**
+   * Arms one per-object geometry capture for a development overlay. Absent until the game has a
+   * render loop; the overlay treats that as "not ready", never as an empty scene.
+   */
+  geometry?(request?: IGeometryCaptureRequest): Promise<IGeometryCaptureReport>;
 }
 
 type DevToolsHost = Record<string, unknown> & Partial<Record<"__THREENATIVE__", IDevTools>>;
@@ -136,19 +163,34 @@ export interface IGamePlatformSource {
   unmountCanvas(canvas: HTMLCanvasElement): void;
 }
 
-function installDevTools(entities: Registry, host: DevToolsHost | undefined): PluginCleanup {
+function installDevTools(
+  entities: Registry,
+  host: DevToolsHost | undefined,
+  // Late-bound: the capture is constructed with the render loop, after this install runs.
+  geometry: () => GeometryCapture | undefined,
+): PluginCleanup {
   const isDev =
     (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
   if (!isDev || host === undefined) return () => undefined;
   const devTools: IDevTools = {
     ...(host.__THREENATIVE__ as (IDevTools & Record<string, unknown>) | undefined),
+    geometry: async (request) => {
+      const capture = geometry();
+      if (capture === undefined) {
+        return {
+          reason: "TN_GEOMETRY_CAPTURE_NO_LOOP: the game has no running render loop to capture.",
+          status: "unavailable",
+        };
+      }
+      return capture.request(request);
+    },
     snapshot: () => entities.snapshot(),
   };
   host.__THREENATIVE__ = devTools;
   return () => {
     if (host.__THREENATIVE__ !== devTools) return;
     const remaining = Object.fromEntries(
-      Object.entries(devTools).filter(([key]) => key !== "snapshot"),
+      Object.entries(devTools).filter(([key]) => key !== "snapshot" && key !== "geometry"),
     );
     host.__THREENATIVE__ =
       Object.keys(remaining).length === 0 ? undefined : (remaining as unknown as IDevTools);
@@ -405,6 +447,18 @@ function clearScene(scene: ThreeScene, computeDriven: ComputeDrivenRegistry): vo
   scene.fog = null;
 }
 
+/** The measured draw count on its own, for the projection line that reads it every frame. */
+function rendererDrawCallCount(raw: unknown): number | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const info = (raw as { info?: unknown }).info;
+  if (typeof info !== "object" || info === null) return undefined;
+  const render = (info as { render?: unknown }).render;
+  if (typeof render !== "object" || render === null) return undefined;
+  const drawCalls = (render as { drawCalls?: unknown }).drawCalls;
+  const calls = drawCalls ?? (render as { calls?: unknown }).calls;
+  return typeof calls === "number" && Number.isFinite(calls) && calls >= 0 ? calls : undefined;
+}
+
 function rendererPerformanceMetrics(raw: unknown): {
   drawCalls?: number;
   triangles?: number;
@@ -414,13 +468,10 @@ function rendererPerformanceMetrics(raw: unknown): {
   if (typeof info !== "object" || info === null) return {};
   const render = (info as { render?: unknown }).render;
   if (typeof render !== "object" || render === null) return {};
-  const drawCalls = (render as { drawCalls?: unknown }).drawCalls;
-  const calls = drawCalls ?? (render as { calls?: unknown }).calls;
   const triangles = (render as { triangles?: unknown }).triangles;
+  const drawCalls = rendererDrawCallCount(raw);
   return {
-    ...(typeof calls === "number" && Number.isFinite(calls) && calls >= 0
-      ? { drawCalls: calls }
-      : {}),
+    ...(drawCalls === undefined ? {} : { drawCalls }),
     ...(typeof triangles === "number" && Number.isFinite(triangles) && triangles >= 0
       ? { triangles }
       : {}),
@@ -511,6 +562,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #initialState: TState;
   #loop: FixedStepLoop | undefined;
   #projection: SceneRenderProjection | undefined;
+  #cameraCull: RenderCameraCull | undefined;
   #cleanup: Array<() => void> = [];
   #computeDriven = new ComputeDrivenRegistry();
   #entities: Registry | undefined;
@@ -519,7 +571,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pointerEvents: PointerEvents3D | undefined;
   #scheduler: Scheduler | undefined;
   #afterPhysicsPhase: IAfterPhysicsPhase | undefined;
+  // Unlike afterPhysics, this seam's frame boundary is the world-render block below, so it is a
+  // plain scene-owned set rather than a phase on the loop.
+  #beforeRenderCallbacks = new Set<() => void>();
+  // Reused snapshot buffers, one per nesting depth, so a steady frame allocates no callback array.
+  #beforeRenderSnapshots: Array<Array<() => void>> = [];
+  #beforeRenderDepth = 0;
   #frameBudget: FrameBudget | undefined;
+  #geometryCapture: GeometryCapture | undefined;
+  /** Bumped on every scene change, so a row id is stable exactly as long as the scene is. */
+  #sceneGeneration = 0;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
   #pendingStart: Promise<void> | undefined;
@@ -638,8 +699,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (SceneType === undefined) throw new Error(`Unknown scene '${name}'.`);
 
     this.#hasDepthCoupledOutput = false;
+    this.#sceneGeneration += 1;
+    // The objects a pending capture armed are leaving the graph; a report about them would be
+    // about a scene that no longer exists.
+    this.#geometryCapture?.cancel("TN_GEOMETRY_CAPTURE_SCENE_EXIT: the scene changed mid-capture.");
     this.#sceneFrame = undefined;
     this.#afterPhysicsPhase?.clear();
+    this.#beforeRenderCallbacks.clear();
     this.#scene?.exit(ctx);
     this.#pointerEvents?.clear();
     this.#sceneEntered = false;
@@ -652,6 +718,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // scene is cleared, so a scene change cannot leave the next level drawing the last one's
     // props — and released rather than rebuilt, because every source it referenced is about to go.
     this.#projection?.dispose();
+    // Put back anything the cull hid before the outgoing scene is cleared, so a scene change never
+    // leaves an object invisible if the game keeps a reference to it.
+    this.#cameraCull?.restore();
     clearScene(ctx.scene, this.#computeDriven);
     const scene = new SceneType();
     this.#scene = scene;
@@ -834,10 +903,48 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
     const projection = new SceneRenderProjection(threeScene, {
+      enabled: this.#config.render?.projection !== false,
       velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
     });
     this.#projection = projection;
+    // Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 px,
+    // and measured whether or not the game narrows or declines it. Its decision is per camera, so
+    // a shadow caster and anything attached to the camera are never dropped on the main view alone.
+    const cameraCull = new RenderCameraCull({
+      minimumPixels: this.#config.render?.minimumProjectedPixels,
+    });
+    this.#cameraCull = cameraCull;
     let projectionSettled = false;
+    /**
+     * Progress is a high-water mark over the measured load state, never a value that can fall.
+     *
+     * The ratio's denominator grows: a request registered after an earlier one settled shrinks
+     * `settled / requested`, and the file-count and byte branches can disagree across the switch
+     * the first weighed manifest entry triggers. Both make the bar jump backwards, which a player
+     * reads as the load restarting. Measured: a second texture requested after the first settled
+     * took the reported value from 0.7 to 0.35.
+     */
+    let reportedProgress = 0;
+    /** What the load state says right now. This may fall; `startup.progress` is what never does. */
+    const measuredProgress = (): number => {
+      if (projectionSettled) return 1;
+      // A registered hold owns the last tenth. Without this the bar sat at 0.9 for the whole
+      // of the game's own tier and then jumped, which is the reading a player calls frozen.
+      if (startupReadiness.frameworkReady) {
+        const held = startupReadiness.holdReport.length;
+        if (held === 0) return 0.9;
+        const settled = held - startupReadiness.pendingHolds.length;
+        return 0.9 + 0.1 * (settled / held);
+      }
+      if (startupReadiness.compileSettled) return 0.9;
+      if (timeline.enteredMs !== undefined) return 0.8;
+      const { requested, requestedBytes, settled, settledBytes } = assets.progress;
+      // Bytes when the manifest knows them, files when it does not. A file count spends the
+      // same travel on a 4 KB icon as on a 710 MB model, which is how a bar reaches 92% and
+      // then stands still for the rest of the download.
+      if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
+      return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
+    };
     let worldRendered = false;
     let loadingFramePresented = false;
     let markProjectionSettled: () => void = () => undefined;
@@ -973,6 +1080,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       assets,
       after: (delay, callback) => scheduler.after(delay, callback),
       afterPhysics: (callback) => afterPhysicsPhase.register(callback),
+      beforeRender: (callback) => {
+        if (typeof callback !== "function")
+          throw new Error("beforeRender requires a callback function.");
+        this.#beforeRenderCallbacks.add(callback);
+        return () => this.#beforeRenderCallbacks.delete(callback);
+      },
       camera,
       canvasLayer,
       entities,
@@ -1010,24 +1123,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         },
         // Honest and monotonic: the asset ratio carries the first 70% while the start scene
         // loads, entering the world is 80%, compile settling 90%, and only readiness is 1.
+        // Monotonicity is enforced rather than assumed — see the high-water mark above.
         get progress() {
-          if (projectionSettled) return 1;
-          // A registered hold owns the last tenth. Without this the bar sat at 0.9 for the whole
-          // of the game's own tier and then jumped, which is the reading a player calls frozen.
-          if (startupReadiness.frameworkReady) {
-            const held = startupReadiness.holdReport.length;
-            if (held === 0) return 0.9;
-            const settled = held - startupReadiness.pendingHolds.length;
-            return 0.9 + 0.1 * (settled / held);
-          }
-          if (startupReadiness.compileSettled) return 0.9;
-          if (timeline.enteredMs !== undefined) return 0.8;
-          const { requested, requestedBytes, settled, settledBytes } = assets.progress;
-          // Bytes when the manifest knows them, files when it does not. A file count spends the
-          // same travel on a 4 KB icon as on a 710 MB model, which is how a bar reaches 92% and
-          // then stands still for the rest of the download.
-          if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
-          return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
+          reportedProgress = Math.max(reportedProgress, measuredProgress());
+          return reportedProgress;
         },
         hold: (label, work, budgetMs) => {
           startupReadiness.hold(label, work, budgetMs);
@@ -1056,7 +1155,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           ? undefined
           : window
         : platform.devToolsHost;
-    this.#cleanup.push(installDevTools(entities, devToolsHost as DevToolsHost | undefined));
+    this.#cleanup.push(
+      installDevTools(
+        entities,
+        devToolsHost as DevToolsHost | undefined,
+        () => this.#geometryCapture,
+      ),
+    );
     this.#scene = new SceneType();
     this.#sceneName = bootSceneName;
     // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
@@ -1098,7 +1203,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               // the exact lane and whether the renderer agrees with the plan.
               if (projection !== undefined) {
                 console.info(
-                  formatProjectionWindow(projection.report, reported.window, lastWorldDrawCalls),
+                  formatProjectionWindow(
+                    projection.report,
+                    reported.window,
+                    lastWorldDrawCalls,
+                    this.#cameraCull?.report,
+                  ),
                 );
               }
               if (this.#config.frameBudget !== false)
@@ -1126,7 +1236,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // Last, so the engine's own renderer answers this and a game cannot report a
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
-            readGpuMs: () => renderer.gpuFrameMs(),
             readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
             readSurface: () => {
               observeCompilation();
@@ -1138,6 +1247,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             },
           });
     this.#frameBudget = frameBudget;
+    // Per-pass draws and triangles ride the frame budget's window by default. The same property
+    // that makes `info.render` an aggregate — one reset per frame before the world render, and
+    // nested shadow/reflection renders sharing that counter — is what this recorder unwinds.
+    const renderPassBudget =
+      frameBudget === undefined
+        ? undefined
+        : RenderPassBudget.install(renderer.raw as Parameters<typeof RenderPassBudget.install>[0]);
+    // Holds no hook and does no work between requests, so an idle game pays nothing for it.
+    const geometryCapture = new GeometryCapture();
+    this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
@@ -1149,6 +1268,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // a concurrent internal renderer callback can otherwise leave stale work in the first
         // sample after a held playtest start.
         resetRendererPerformanceMetrics(renderer.raw);
+        renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
         // before the render, inside the same frame, so a change the game made this tick reaches
@@ -1197,6 +1317,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const waitingForFirstUse =
           firstWorldPass &&
           (explicitWarmUpPending || (startupCoverActive() && !startupReadiness.compileSettled));
+        let worldPasses: ReturnType<RenderPassBudget["passes"]> | undefined;
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
@@ -1209,6 +1330,23 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // sync are render-path work, and a frame budget that hid it in `residual` made the
           // optimizer's own cost unmeasurable exactly where the optimizer is engaged.
           const renderStart = frameBudget === undefined ? 0 : budgetNow();
+          // Scene prep that must read the frame's last solved state before the projection packs and
+          // the renderer draws. Inside the world-render block it cannot land on a held loader frame.
+          if (this.#beforeRenderCallbacks.size > 0) {
+            let snapshot = this.#beforeRenderSnapshots[this.#beforeRenderDepth];
+            if (snapshot === undefined) {
+              snapshot = [];
+              this.#beforeRenderSnapshots[this.#beforeRenderDepth] = snapshot;
+            }
+            this.#beforeRenderDepth += 1;
+            snapshot.length = 0;
+            for (const callback of this.#beforeRenderCallbacks) snapshot.push(callback);
+            try {
+              for (const callback of snapshot) callback();
+            } finally {
+              this.#beforeRenderDepth -= 1;
+            }
+          }
           // Let a depth-coupled scene update its output node while the scene pass is still the
           // next render. Ordinary scenes keep the historical hook order and timing.
           const depthCoupledOutput = this.#hasDepthCoupledOutput;
@@ -1217,16 +1355,65 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // Virtual geometry ships on by default, so the engine takes the cut rather than waiting
           // for a game to know it should. It runs here, before the render and after the reconcile,
           // because an empty cut has to skip its draw rather than submit a zero-count one — and a
-          // scene holding no clustered mesh pays one traversal that finds nothing.
+          // scene holding no clustered mesh pays no traversal at all, only the tracked set.
           updateClusteredMeshes(
+            this.#projection?.root ?? threeScene,
+            camera,
+            renderer.surfaceDrawingBufferHeight?.() ?? renderer.surface().drawingBufferHeight,
+          );
+          // Automatic discrete LOD ships on with the pipeline, so the engine takes the selection
+          // too. It shares the render root and the same drawing-buffer height, and a scene with no
+          // managed mesh pays only the tracked-set walk.
+          updateModelLods(
             this.#projection?.root ?? threeScene,
             camera,
             renderer.surface().drawingBufferHeight,
           );
+          // Projected-size cull, per render camera, default on. It writes only `object.visible` —
+          // the one per-frame flag the projection's batch key ignores — and restores what it hid
+          // immediately after the draw, so the authored scene is untouched between frames. The
+          // renderer walks the same root the projection is about to draw, so a declined projection
+          // and an active one both get the gate.
+          const drawingBufferHeight = renderer.surface().drawingBufferHeight;
+          this.#cameraCull?.apply(
+            this.#projection?.root ?? threeScene,
+            camera,
+            drawingBufferHeight,
+          );
+          const capturing = geometryCapture.armed();
+          if (capturing) {
+            // The mirror is what the renderer sees; arming the authored scene would attribute the
+            // frame to objects that were never submitted.
+            geometryCapture.beginFrame({
+              camera,
+              generation: this.#sceneGeneration,
+              root: this.#projection?.root ?? threeScene,
+              tick: gameLoop.tick(),
+              viewportHeight: renderer.surface().drawingBufferHeight,
+              viewportWidth: renderer.surface().drawingBufferWidth,
+              ...(renderPassBudget === undefined
+                ? {}
+                : { activePassKind: () => renderPassBudget.activeKind() }),
+              ...(this.#projection === undefined
+                ? {}
+                : { ownership: this.#projection.describeOwnership() }),
+              ...(rendererBackendIdentity(renderer.raw) === undefined
+                ? {}
+                : { backend: rendererBackendIdentity(renderer.raw) as string }),
+            });
+          }
           renderer.render(this.#projection?.root ?? threeScene, camera);
+          this.#cameraCull?.restore();
           this.#projection?.commit();
           renderer.observeRenderChainFrame?.();
           frameBudget?.addRender(budgetNow() - renderStart);
+          // Read the split before the overlay renders: the overlay is its own draw, not part of the
+          // world pass, and the budget window already accounts for it in its own phase.
+          worldPasses = renderPassBudget?.passes();
+          if (worldPasses !== undefined && worldPasses.length > 0)
+            frameBudget?.addRenderPasses(worldPasses);
+          // After the passes are read, so the rows reconcile against this frame's own totals.
+          if (capturing) geometryCapture.finishFrame(worldPasses ?? []);
           // Resolve the GPU timestamps every frame, not once per reported window.
           //
           // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
@@ -1242,15 +1429,27 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // fire-and-forget and already catch-guarded, which was the original cadence's only
           // stated concern.
           renderer.resolveGpuFrame();
+          // The budget's GPU series is fed every frame, not read once per reported window. A
+          // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
+          // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
+          // resolved frame id so a resolve still in flight is counted stale, not measured twice.
+          const gpuSample = renderer.gpuFrameSample?.();
+          frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;
           }
-          if (this.#renderMetricsEnabled) worldMetrics = rendererPerformanceMetrics(renderer.raw);
+          if (this.#renderMetricsEnabled) {
+            const metrics = rendererPerformanceMetrics(renderer.raw);
+            worldMetrics =
+              worldPasses === undefined || worldPasses.length === 0
+                ? metrics
+                : { ...metrics, passes: worldPasses.map((pass) => ({ ...pass })) };
+          }
           // Read whether or not the game asked for render metrics: the projection line reports
           // the measured draw count, and a convention's measurement does not switch off with the
           // convention that happens to sit beside it.
-          lastWorldDrawCalls = rendererPerformanceMetrics(renderer.raw).drawCalls;
+          lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
         }
         if (mustPresentLoader) loadingFramePresented = true;
         if (canvasLayer.scene.children.length > 0) {
@@ -1319,6 +1518,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         startGates.push({ gate, rejectEntered, resolveEntered });
         return entered;
       },
+      geometryCapture: (request) => geometryCapture.request(request),
       observations: createRuntimeObservations(),
       ...(renderer.pipelineCensus === undefined ? {} : { pipelineCensus: renderer.pipelineCensus }),
       tick: gameLoop.tick,
@@ -1486,6 +1686,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   stop(): void {
     this.#aborted = true;
+    this.#geometryCapture?.cancel("TN_GEOMETRY_CAPTURE_STOPPED: the game stopped mid-capture.");
     this.#teardown();
   }
 
@@ -1508,6 +1709,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#uiBridge = undefined;
     this.#loop?.stop();
     this.#afterPhysicsPhase?.clear();
+    this.#beforeRenderCallbacks.clear();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
     this.#sceneFrame = undefined;
     this.#sceneEntered = false;
@@ -1531,6 +1733,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     if (ctx !== undefined) clearScene(ctx.scene, this.#computeDriven);
+    this.#cameraCull?.dispose();
+    this.#cameraCull = undefined;
     this.#input?.dispose();
     this.#state.stop();
     ctx?.canvasLayer.dispose();

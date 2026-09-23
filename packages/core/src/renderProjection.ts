@@ -1,5 +1,6 @@
 import type { Camera, Material, Matrix4, Object3D, Scene } from "three";
 
+import type { IGeometryOwnership } from "./geometry-capture.js";
 import { ProjectionMirror } from "./projection-apply.js";
 import {
   createProjectionScanWorkspace,
@@ -47,7 +48,8 @@ export type ProjectionReasonCode =
   | "renderHook"
   | "unsupportedLight"
   | "unsupportedObject"
-  | "notWorthwhile";
+  | "notWorthwhile"
+  | "disabled";
 
 export type ProjectionExactReason =
   | "instanced"
@@ -114,6 +116,14 @@ export interface IRenderProjectionOptions {
    * the authored scene is rendered directly and nothing is built.
    */
   readonly minMeshes?: number;
+  /**
+   * Whether the projection may run at all. Defaults true, the shipping behaviour; `false` is the
+   * game's named opt-out. An opted-out projection builds no mirror and runs no eligibility scan —
+   * the authored scene is handed to the renderer every frame — so declining costs nothing rather
+   * than being re-judged each frame. The verdict is reported as `disabled`, not as one of the
+   * measured declines.
+   */
+  readonly enabled?: boolean;
   /** Allocates per-sub-draw previous matrices for the material-batching lane. */
   readonly velocity?: boolean | (() => boolean);
   readonly onReport?: (report: IRenderProjectionReport) => void;
@@ -133,8 +143,10 @@ const DECLINE_RESCAN_FRAMES = 60;
 export class SceneRenderProjection {
   readonly #source: Scene;
   readonly #minMeshes: number;
+  readonly #enabled: boolean;
   readonly #onReport: ((report: IRenderProjectionReport) => void) | undefined;
-  readonly #mirror: ProjectionMirror;
+  /** Absent when the game opted out: an opted-out projection never builds one. */
+  readonly #mirror: ProjectionMirror | undefined;
   readonly #velocity: boolean | (() => boolean);
   readonly #velocityTracker = new VelocityTracker();
   readonly #scanWorkspace = createProjectionScanWorkspace();
@@ -156,9 +168,10 @@ export class SceneRenderProjection {
       throw new Error("SceneRenderProjection.minMeshes must be a positive integer.");
     this.#source = source;
     this.#minMeshes = minMeshes;
+    this.#enabled = options.enabled ?? true;
     this.#velocity = options.velocity ?? false;
     this.#velocityActive = resolveVelocityEnabled(this.#velocity);
-    this.#mirror = new ProjectionMirror(this.#velocityActive);
+    this.#mirror = this.#enabled ? new ProjectionMirror(this.#velocityActive) : undefined;
     this.#onReport = options.onReport;
   }
 
@@ -171,8 +184,19 @@ export class SceneRenderProjection {
    * The scene to draw this frame — the mirror when it is faithful, the authored scene when it is
    * not. Callers render whatever this returns and never branch on which one it was.
    */
+  /**
+   * Who owns each object the renderer is handed, for a per-object diagnostic. Empty when the
+   * mirror is off or deoptimized — the authored scene is then what rendered, and every object
+   * already is its own source. Built on demand and retained by nobody.
+   */
+  describeOwnership(): ReadonlyMap<Object3D, IGeometryOwnership> {
+    if (this.#deoptimized || this.#mirror === undefined) return new Map();
+    return this.#mirror.describeOwnership();
+  }
+
   get root(): Scene {
-    return this.#deoptimized ? this.#source : this.#mirror.scene;
+    if (this.#deoptimized || this.#mirror === undefined) return this.#source;
+    return this.#mirror.scene;
   }
 
   /**
@@ -189,19 +213,29 @@ export class SceneRenderProjection {
    * scene is not what renders and nothing else refreshes it.
    */
   reconcile(): void {
+    if (!this.#enabled) {
+      // The game declined the projection: report the verdict once, then do nothing at all. No
+      // mirror is built, no eligibility scan runs, and `root` is the authored scene — the opt-out
+      // costs a compare, not a re-judged decline.
+      this.#deoptimize("disabled", "the game set renderer.projection to false");
+      this.#publish();
+      return;
+    }
+    const mirror = this.#mirror;
+    if (mirror === undefined) return;
     const startedAt = globalThis.performance?.now() ?? 0;
     const velocityEnabled = resolveVelocityEnabled(this.#velocity);
     if (this.#velocityActive !== velocityEnabled) {
       this.#velocityTracker.clear();
       this.#velocityActive = velocityEnabled;
     }
-    if (this.#mirror.setVelocityEnabled(velocityEnabled)) {
+    if (mirror.setVelocityEnabled(velocityEnabled)) {
       this.#deoptimized = true;
       this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
     }
     // Re-read every frame, not once at construction: a game that swaps its sky or turns fog on
     // mid-level would otherwise keep the look it happened to have when the mirror was built.
-    const mirrorScene = this.#mirror.scene;
+    const mirrorScene = mirror.scene;
     mirrorScene.background = this.#source.background;
     mirrorScene.environment = this.#source.environment;
     mirrorScene.fog = this.#source.fog;
@@ -209,6 +243,12 @@ export class SceneRenderProjection {
     mirrorScene.backgroundIntensity = this.#source.backgroundIntensity;
     mirrorScene.environmentIntensity = this.#source.environmentIntensity;
     mirrorScene.overrideMaterial = this.#source.overrideMaterial;
+    // A fresh `Scene` defaults both rotations to zero, so a game that turns its sky or its
+    // environment lighting had that yaw snap back to zero the moment the mirror drew it — a
+    // whole-image change with no frame where the game did anything. Copy value and order, into the
+    // mirror's own Euler, so the source the game still mutates is never aliased.
+    mirrorScene.backgroundRotation.copy(this.#source.backgroundRotation);
+    mirrorScene.environmentRotation.copy(this.#source.environmentRotation);
 
     // A settled decline re-judges on a cadence, not per frame: most agent-built scenes sit below
     // the floor forever, and re-walking one every frame bought nothing. The counter starts at the
@@ -229,14 +269,18 @@ export class SceneRenderProjection {
       this.#sourceRenderables = scan.renderables;
       this.#framesSinceDeclineScan = 0;
       if (scan.plan.action === "decline") {
-        this.#mirror.releaseAll();
+        mirror.releaseAll();
         this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
       } else {
-        // The authored scene is not what the renderer is given while projecting, so nothing else
-        // refreshes its world matrices. Every world transform the mirror copies is read after this.
-        this.#source.updateMatrixWorld(true);
-        this.#mirror.prepare(scan.exactLane, scan.exactLaneCount);
-        const lightFailure = this.#mirror.apply(scan.plan);
+        // The renderer is handed the mirror, so the authored scene's world matrices are refreshed
+        // here. Forcing (`updateMatrixWorld(true)`) overrode a game's deliberate static marking and
+        // recomposed every node every frame; honouring `matrixWorldAutoUpdate` and Three's own
+        // `matrixWorldNeedsUpdate` propagation is the contract every Three renderer uses. A game
+        // that turns the flag off has promised to update the scene itself, and a subtree marked
+        // `matrixWorldAutoUpdate = false` under a still parent is skipped instead of walked.
+        if (this.#source.matrixWorldAutoUpdate === true) this.#source.updateMatrixWorld();
+        mirror.prepare(scan.exactLane, scan.exactLaneCount);
+        const lightFailure = mirror.apply(scan.plan);
         if (lightFailure !== undefined) {
           this.#deoptimize("unsupportedLight", lightFailure);
         } else {
@@ -250,7 +294,7 @@ export class SceneRenderProjection {
     }
 
     if (velocityEnabled)
-      this.#velocityTracker.update(this.#deoptimized ? this.#source : this.#mirror.scene);
+      this.#velocityTracker.update(this.#deoptimized ? this.#source : mirror.scene);
     else this.#velocityTracker.clear();
 
     const elapsed = (globalThis.performance?.now() ?? 0) - startedAt;
@@ -262,7 +306,7 @@ export class SceneRenderProjection {
 
   /** Commits the rendered transform snapshot after the colour and velocity passes consume it. */
   commit(): void {
-    if (!this.#velocityActive) return;
+    if (!this.#enabled || !this.#velocityActive) return;
     this.#velocityTracker.commit(this.root);
   }
 
@@ -309,15 +353,15 @@ export class SceneRenderProjection {
 
   get report(): IRenderProjectionReport {
     const exact: Partial<Record<ProjectionExactReason, number>> = {};
-    for (const [reason, count] of this.#mirror.exactCounts) exact[reason] = count;
+    for (const [reason, count] of this.#mirror?.exactCounts ?? []) exact[reason] = count;
     let resultDrawCandidates = 0;
     // Counted from the scene the renderer is actually handed. Anything else is this class marking
     // its own homework.
     this.root.traverse((object) => {
       if (isRenderable(object)) resultDrawCandidates += 1;
     });
-    const batches = this.#deoptimized ? 0 : this.#mirror.batchCount;
-    const exactObjects = this.#deoptimized ? 0 : this.#mirror.proxyCount;
+    const batches = this.#deoptimized ? 0 : (this.#mirror?.batchCount ?? 0);
+    const exactObjects = this.#deoptimized ? 0 : (this.#mirror?.proxyCount ?? 0);
     return {
       schemaVersion: 1,
       projecting: !this.#deoptimized,
@@ -325,17 +369,17 @@ export class SceneRenderProjection {
       ...(this.#reason === undefined ? {} : { reason: this.#reason }),
       sourceRenderables: this.#sourceRenderables,
       resultDrawCandidates,
-      projectedObjects: this.#deoptimized ? 0 : this.#mirror.projectedObjects,
+      projectedObjects: this.#deoptimized ? 0 : (this.#mirror?.projectedObjects ?? 0),
       batches,
-      instancedBatches: this.#deoptimized ? 0 : this.#mirror.instancedBatchCount,
-      materialBatches: this.#deoptimized ? 0 : this.#mirror.materialBatchCount,
+      instancedBatches: this.#deoptimized ? 0 : (this.#mirror?.instancedBatchCount ?? 0),
+      materialBatches: this.#deoptimized ? 0 : (this.#mirror?.materialBatchCount ?? 0),
       exactObjects,
       // A declined frame renders the authored scene, so its plan is one draw per authored
       // renderable — the number the projection is trying to beat, not zero.
       drawsPlanned: this.#deoptimized ? this.#sourceRenderables : batches + exactObjects,
       exact,
       timings: {
-        compileMs: this.#mirror.compileMs,
+        compileMs: this.#mirror?.compileMs ?? 0,
         reconcileMs: this.#reconcileMs,
         lastReconcileMs: this.#lastReconcileMs,
         maxReconcileMs: this.#maxReconcileMs,
@@ -355,12 +399,12 @@ export class SceneRenderProjection {
   inspect(
     object: Object3D,
   ): { lane: "batched" | "exact"; matrixWorld: Matrix4; visible: boolean } | undefined {
-    return this.#mirror.inspect(object);
+    return this.#mirror?.inspect(object);
   }
 
   /** True when some batch in the mirror draws with this exact material instance. */
   drawsWith(material: Material): boolean {
-    return this.#mirror.drawsWith(material);
+    return this.#mirror?.drawsWith(material) ?? false;
   }
 
   /** Hands this frame back to the authored scene, naming why. */
@@ -377,7 +421,7 @@ export class SceneRenderProjection {
    * still the game's — disposing those would take a scene change down with it.
    */
   dispose(): void {
-    this.#mirror.releaseAll();
+    this.#mirror?.releaseAll();
     this.#velocityTracker.clear();
     this.#deoptimized = true;
     this.#reasonCode = "belowMeshFloor";

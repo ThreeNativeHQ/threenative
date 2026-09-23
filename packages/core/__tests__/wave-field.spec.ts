@@ -386,3 +386,135 @@ describe("WaveField", () => {
     ).toThrow(/wavelength/i);
   });
 });
+
+describe("WaveField.heightAt", () => {
+  /** The same warp count the shader graph exercises, plus a second, ordered warp. */
+  const warped = {
+    waves: options.waves,
+    domainWarp: [
+      ...options.domainWarp,
+      {
+        waveVector: [0.3, -0.9] as const,
+        displacement: [-0.22, 0.11] as const,
+        speed: -0.4,
+        phase: 1.3,
+      },
+    ],
+  };
+
+  it("returns exactly what sample returns, with and without domain warps", () => {
+    for (const config of [{ waves: options.waves }, options, warped]) {
+      const field = new WaveField(config);
+      for (const [x, z, time] of [
+        [0, 0, 0],
+        [3.5, -8.25, 1.75],
+        [-140.125, 91.5, 37.0625],
+        [1e4, -1e4, 900],
+      ] as const)
+        expect(field.heightAt(x, z, time)).toBeCloseTo(field.sample(x, z, time).height, 10);
+    }
+  });
+
+  it("rejects the same invalid arguments sample rejects, before doing any work", () => {
+    const field = new WaveField(warped);
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => field.heightAt(bad, 0, 0)).toThrow(/sample\.x/);
+      expect(() => field.heightAt(0, bad, 0)).toThrow(/sample\.z/);
+      expect(() => field.heightAt(0, 0, bad)).toThrow(/sample\.time/);
+    }
+  });
+
+  it("computes no gradient and builds no result object for a scalar query", () => {
+    const field = new WaveField(warped);
+    // Every derivative on this path goes through `Math.cos`: the warp jacobian and each wave's
+    // slope. Counting it is a direct observation that the scalar query computes no normal at all,
+    // rather than a claim about it. `Math.sin` is the height itself and must be unchanged.
+    const cos = Math.cos;
+    const sin = Math.sin;
+    let cosines = 0;
+    let sines = 0;
+    Math.cos = (v: number) => {
+      cosines += 1;
+      return cos(v);
+    };
+    Math.sin = (v: number) => {
+      sines += 1;
+      return sin(v);
+    };
+    try {
+      field.sample(1, 2, 3);
+      const sampleCosines = cosines;
+      const sampleSines = sines;
+      expect(sampleCosines).toBeGreaterThan(0);
+      cosines = 0;
+      sines = 0;
+      const scalar = field.heightAt(1, 2, 3);
+      expect(typeof scalar).toBe("number");
+      expect(cosines).toBe(0);
+      expect(sines).toBe(sampleSines);
+    } finally {
+      Math.cos = cos;
+      Math.sin = sin;
+    }
+    // The vector path still hands every caller its own vector, never a shared scratch one.
+    const first = field.sample(1, 2, 3).normal;
+    const second = field.sample(1, 2, 3).normal;
+    expect(first).not.toBe(second);
+    expect(first.equals(second)).toBe(true);
+  });
+
+  it("leaves the old sample normals exactly as they were", () => {
+    const field = new WaveField(warped);
+    // Regression guard on the refactor: the normal is still the normalised analytic gradient,
+    // rotated back out through the warp jacobian, and still unit length.
+    for (const [x, z, time] of [
+      [0, 0, 0],
+      [12.5, 4.25, 3.5],
+      [-77, 33, 12],
+    ] as const) {
+      const { normal } = field.sample(x, z, time);
+      expect(normal.length()).toBeCloseTo(1, 12);
+      expect(normal.y).toBeGreaterThan(0);
+      // Central differences of the scalar path reproduce the same slope the normal encodes.
+      const h = 1e-4;
+      const dx = (field.heightAt(x + h, z, time) - field.heightAt(x - h, z, time)) / (2 * h);
+      const dz = (field.heightAt(x, z + h, time) - field.heightAt(x, z - h, time)) / (2 * h);
+      expect(normal.x / normal.y).toBeCloseTo(-dx, 4);
+      expect(normal.z / normal.y).toBeCloseTo(-dz, 4);
+    }
+  });
+  // `#evaluateCpu` reads a per-wave amplitude precomputed in the constructor instead of dividing
+  // per wave per call. That is only free if the stored double is the one the divide produced, so
+  // check the height against the original inline expression rather than against itself. No domain
+  // warp here: the warp never touched the amplitude, and leaving it out keeps the oracle the wave
+  // loop alone.
+  it("matches the pre-hoist amplitude expression bit for bit", () => {
+    const field = new WaveField({ waves: options.waves });
+    const stride = field.parameters.length / field.waves.length;
+    const reference = (x: number, z: number, time: number): number => {
+      let height = 0;
+      for (let index = 0; index < field.waves.length; index += 1) {
+        const offset = index * stride;
+        const directionX = field.parameters[offset] as number;
+        const directionZ = field.parameters[offset + 1] as number;
+        const waveNumber = field.parameters[offset + 3] as number;
+        const phase =
+          waveNumber * (directionX * x + directionZ * z) -
+          time * (field.parameters[offset + 4] as number) +
+          (field.parameters[offset + 5] as number);
+        const amplitude =
+          (field.parameters[offset + 2] as number) +
+          (field.parameters[offset + 6] as number) / waveNumber;
+        height += amplitude * Math.sin(phase);
+      }
+      return height;
+    };
+    expect(stride).toBe(8);
+    for (let i = 0; i < 60; i++) {
+      const x = -400 + i * 13.37;
+      const z = 250 - i * 7.91;
+      const t = i * 0.37;
+      expect(field.heightAt(x, z, t)).toBe(reference(x, z, t));
+    }
+  });
+});

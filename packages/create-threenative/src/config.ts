@@ -8,7 +8,11 @@ import type {
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,
+  IThreeNativeLodConfig,
+  IThreeNativeLodOverride,
   IThreeNativeTexturesConfig,
+  ThreeNativeLodMinTrianglesScope,
+  ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "@threenative/core";
@@ -19,7 +23,13 @@ export type {
   IThreeNativeAudioOverride,
   IThreeNativeAudioSpectrum,
   IThreeNativeConfig,
+  IThreeNativeLodConfig,
+  IThreeNativeLodGenerationConfig,
+  IThreeNativeLodOverride,
+  IThreeNativeLodRuntimeConfig,
   IThreeNativeTexturesConfig,
+  ThreeNativeLodMinTrianglesScope,
+  ThreeNativeLodPreset,
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "@threenative/core";
@@ -54,6 +64,8 @@ export interface IResolvedThreeNativeConfig {
     readonly resolutionScale?: number | "auto";
     readonly antialias?: boolean;
     readonly alphaAntialiasing?: boolean;
+    readonly projection?: boolean;
+    readonly minimumProjectedPixels?: number | false;
     readonly android?: {
       readonly resolutionScale?: number | "auto";
       readonly antialias?: boolean;
@@ -70,6 +82,8 @@ export interface IResolvedThreeNativeConfig {
     readonly exclude?: readonly string[];
     /** The bound on how many workers a bake may use; absent means the driver's default. */
     readonly concurrency?: number;
+    /** Validated, not yet resolved: per-asset resolution happens where the asset is known. */
+    readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;
@@ -909,6 +923,8 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     "resolutionScale",
     "antialias",
     "alphaAntialiasing",
+    "projection",
+    "minimumProjectedPixels",
     "android",
   ]);
   const android = assertRecord(renderer.android, "renderer.android");
@@ -940,6 +956,11 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     android.alphaAntialiasing,
     "renderer.android.alphaAntialiasing",
   );
+  const projection = booleanOrUndefined(renderer.projection, "renderer.projection");
+  const minimumProjectedPixels = numberOrFalse(
+    renderer.minimumProjectedPixels,
+    "renderer.minimumProjectedPixels",
+  );
   const androidOverrides = {
     ...(androidResolutionScale === undefined
       ? {}
@@ -958,6 +979,8 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     ),
     ...(antialias === undefined ? {} : { antialias }),
     ...(alphaAntialiasing === undefined ? {} : { alphaAntialiasing }),
+    ...(projection === undefined ? {} : { projection }),
+    ...(minimumProjectedPixels === undefined ? {} : { minimumProjectedPixels }),
     ...(resolutionScale === undefined
       ? {}
       : { resolutionScale: resolutionScale as number | "auto" }),
@@ -969,6 +992,14 @@ function booleanOrUndefined(value: unknown, name: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") fail("TN_CONFIG_RENDERER_INVALID", `${name} must be a boolean.`);
   return value as boolean;
+}
+
+function numberOrFalse(value: unknown, name: string): number | false | undefined {
+  if (value === undefined || value === false) return value;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    fail("TN_CONFIG_RENDERER_INVALID", `${name} must be false or a positive finite number.`);
+  }
+  return value as number;
 }
 
 const ASSET_TARGET_KEYS: readonly string[] = [
@@ -1226,6 +1257,208 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   };
 }
 
+const LOD_PRESETS: readonly ThreeNativeLodPreset[] = ["aggressive", "balanced", "quality"];
+const LOD_MIN_TRIANGLES_SCOPES: readonly ThreeNativeLodMinTrianglesScope[] = ["primitive", "asset"];
+const LOD_KEYS: readonly string[] = ["enabled", "generation", "overrides", "preset", "runtime"];
+const LOD_GENERATION_KEYS: readonly string[] = [
+  "errorTargets",
+  "join",
+  "maxLevels",
+  "minSaving",
+  "minTriangles",
+  "minTrianglesScope",
+];
+const LOD_RUNTIME_KEYS: readonly string[] = ["hysteresis", "maxPixelError"];
+const LOD_OVERRIDE_KEYS: readonly string[] = ["enabled", "generation", "preset", "runtime"];
+
+function lodGeneration(raw: unknown, label: string): IThreeNativeLodConfig["generation"] {
+  const value = assertRecord(raw, label);
+  assertKeys(value, label, LOD_GENERATION_KEYS);
+  const generation: {
+    errorTargets?: readonly number[];
+    join?: boolean;
+    maxLevels?: number;
+    minSaving?: number;
+    minTriangles?: number;
+    minTrianglesScope?: ThreeNativeLodMinTrianglesScope;
+  } = {};
+  if (value.join !== undefined) {
+    if (typeof value.join !== "boolean") {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.join must be a boolean.`);
+    }
+    generation.join = value.join;
+  }
+  if (value.maxLevels !== undefined) {
+    if (
+      !Number.isSafeInteger(value.maxLevels) ||
+      (value.maxLevels as number) < 1 ||
+      (value.maxLevels as number) > 8
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.maxLevels must be an integer between 1 and 8.`);
+    }
+    generation.maxLevels = value.maxLevels as number;
+  }
+  if (value.minTriangles !== undefined) {
+    generation.minTriangles = positiveInteger(
+      value.minTriangles,
+      1,
+      "TN_CONFIG_ASSETS_INVALID",
+      `${label}.minTriangles`,
+    );
+  }
+  if (value.minTrianglesScope !== undefined) {
+    if (
+      typeof value.minTrianglesScope !== "string" ||
+      !LOD_MIN_TRIANGLES_SCOPES.includes(value.minTrianglesScope as ThreeNativeLodMinTrianglesScope)
+    ) {
+      fail(
+        "TN_CONFIG_ASSETS_INVALID",
+        `${label}.minTrianglesScope must be one of ${LOD_MIN_TRIANGLES_SCOPES.join(", ")}.`,
+      );
+    }
+    generation.minTrianglesScope = value.minTrianglesScope as ThreeNativeLodMinTrianglesScope;
+  }
+  if (value.minSaving !== undefined) {
+    if (
+      typeof value.minSaving !== "number" ||
+      !Number.isFinite(value.minSaving) ||
+      value.minSaving < 0 ||
+      value.minSaving >= 1
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.minSaving must be a finite number in [0, 1).`);
+    }
+    generation.minSaving = value.minSaving;
+  }
+  if (value.errorTargets !== undefined) {
+    const targets = value.errorTargets;
+    if (!Array.isArray(targets) || targets.length === 0 || targets.length > 16) {
+      fail(
+        "TN_CONFIG_ASSETS_INVALID",
+        `${label}.errorTargets must be 1 to 16 geometric-error targets.`,
+      );
+    }
+    let previous = -1;
+    for (const target of targets) {
+      if (typeof target !== "number" || !Number.isFinite(target) || target <= 0) {
+        fail("TN_CONFIG_ASSETS_INVALID", `${label}.errorTargets must be positive finite numbers.`);
+      }
+      if (target <= previous) {
+        fail("TN_CONFIG_ASSETS_INVALID", `${label}.errorTargets must increase strictly.`);
+      }
+      previous = target;
+    }
+    generation.errorTargets = [...targets];
+  }
+  return generation;
+}
+
+function lodRuntime(raw: unknown, label: string): IThreeNativeLodConfig["runtime"] {
+  const value = assertRecord(raw, label);
+  assertKeys(value, label, LOD_RUNTIME_KEYS);
+  const runtime: { hysteresis?: number; maxPixelError?: number } = {};
+  if (value.maxPixelError !== undefined) {
+    if (
+      typeof value.maxPixelError !== "number" ||
+      !Number.isFinite(value.maxPixelError) ||
+      value.maxPixelError <= 0
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.maxPixelError must be a positive finite number.`);
+    }
+    runtime.maxPixelError = value.maxPixelError;
+  }
+  if (value.hysteresis !== undefined) {
+    if (
+      typeof value.hysteresis !== "number" ||
+      !Number.isFinite(value.hysteresis) ||
+      value.hysteresis < 0 ||
+      value.hysteresis >= 0.5
+    ) {
+      fail("TN_CONFIG_ASSETS_INVALID", `${label}.hysteresis must be a finite number in [0, 0.5).`);
+    }
+    runtime.hysteresis = value.hysteresis;
+  }
+  return runtime;
+}
+
+function lodPreset(raw: unknown, label: string): ThreeNativeLodPreset {
+  if (typeof raw !== "string" || !LOD_PRESETS.includes(raw as ThreeNativeLodPreset)) {
+    fail("TN_CONFIG_ASSETS_INVALID", `${label} must be one of ${LOD_PRESETS.join(", ")}.`);
+  }
+  return raw as ThreeNativeLodPreset;
+}
+
+function lodOverride(raw: unknown, label: string): boolean | IThreeNativeLodOverride {
+  if (typeof raw === "boolean") return raw;
+  const value = assertRecord(raw, label);
+  assertKeys(value, label, LOD_OVERRIDE_KEYS);
+  return {
+    ...(value.enabled === undefined
+      ? {}
+      : {
+          enabled: booleanValue(
+            value.enabled,
+            true,
+            "TN_CONFIG_ASSETS_INVALID",
+            `${label}.enabled`,
+          ),
+        }),
+    ...(value.generation === undefined
+      ? {}
+      : { generation: lodGeneration(value.generation, `${label}.generation`) }),
+    ...(value.preset === undefined ? {} : { preset: lodPreset(value.preset, `${label}.preset`) }),
+    ...(value.runtime === undefined
+      ? {}
+      : { runtime: lodRuntime(value.runtime, `${label}.runtime`) }),
+  };
+}
+
+/**
+ * Validates and normalizes `assets.lod` without resolving it: resolution is per asset (the
+ * override table is keyed by source asset), so it happens where the asset is known. Unknown
+ * fields, non-finite numbers, invalid enums and out-of-range values name their config path and
+ * throw rather than silently falling back.
+ */
+function validateLod(raw: unknown): boolean | IThreeNativeLodConfig {
+  if (typeof raw === "boolean") return raw;
+  const value = assertRecord(raw, "assets.lod");
+  assertKeys(value, "assets.lod", LOD_KEYS);
+  const overrides: Record<string, boolean | IThreeNativeLodOverride> = {};
+  if (value.overrides !== undefined) {
+    if (!isRecord(value.overrides)) {
+      fail("TN_CONFIG_ASSETS_INVALID", "assets.lod.overrides must be an object.");
+    }
+    for (const [key, entry] of Object.entries(value.overrides)) {
+      if (key.trim() === "") {
+        fail(
+          "TN_CONFIG_ASSETS_INVALID",
+          "assets.lod.overrides keys must be non-empty source asset paths.",
+        );
+      }
+      overrides[key] = lodOverride(entry, `assets.lod.overrides['${key}']`);
+    }
+  }
+  return {
+    ...(value.enabled === undefined
+      ? {}
+      : {
+          enabled: booleanValue(
+            value.enabled,
+            true,
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.lod.enabled",
+          ),
+        }),
+    ...(value.generation === undefined
+      ? {}
+      : { generation: lodGeneration(value.generation, "assets.lod.generation") }),
+    ...(Object.keys(overrides).length === 0 ? {} : { overrides }),
+    ...(value.preset === undefined ? {} : { preset: lodPreset(value.preset, "assets.lod.preset") }),
+    ...(value.runtime === undefined
+      ? {}
+      : { runtime: lodRuntime(value.runtime, "assets.lod.runtime") }),
+  };
+}
+
 function validateBudget(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["budget"] {
   const limit = (value: unknown): value is number | "none" =>
     value === "none" || (typeof value === "number" && Number.isSafeInteger(value) && value > 0);
@@ -1272,6 +1505,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     "budget",
     "exclude",
     "concurrency",
+    "lod",
     "models",
     "source",
     "output",
@@ -1279,6 +1513,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     "textures",
   ]);
   const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
+  const lod = assets.lod === undefined ? undefined : validateLod(assets.lod);
   const models = assets.models === undefined ? undefined : validateModels(assets.models);
   const textures = assets.textures === undefined ? undefined : validateTextures(assets.textures);
   if (
@@ -1312,6 +1547,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
       ? {}
       : { output: nonEmptyString(assets.output, "TN_CONFIG_ASSETS_INVALID", "assets.output") }),
     ...(targets === undefined ? {} : { targets }),
+    ...(lod === undefined ? {} : { lod }),
     ...(models === undefined ? {} : { models }),
     ...(textures === undefined ? {} : { textures }),
   };

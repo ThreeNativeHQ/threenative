@@ -250,6 +250,12 @@ async function runDevicePlaytestInternal(
         scenario.assert?.settled === undefined
           ? []
           : ["physicsDebugSeries"]),
+        // The same two fields the browser lane requests, for the same reason: the bridge answers
+        // only what it was asked for, so a `performance` or `renderChain` assertion on a device or
+        // desktop target used to evaluate against an empty series and fail as "unobserved" even
+        // though the handshake advertises `runtime.performance` and `runtime.renderChain`.
+        ...(scenario.assert?.performance === undefined ? [] : ["runtimeDiagnosticsSeries"]),
+        ...(scenario.assert?.renderChain === undefined ? [] : ["renderChain"]),
       ],
       resources: observedResourceIds(scenario),
       // One selector per assertion in scenario order: the evaluator reads observation `i` for
@@ -257,6 +263,8 @@ async function runDevicePlaytestInternal(
       ...(scenario.assert?.sceneNodes === undefined
         ? {}
         : { sceneNodes: scenario.assert.sceneNodes.map(({ select }) => select) }),
+      // One armed capture per sample; absent means the bridge does no geometry work at all.
+      ...(scenario.assert?.geometry === undefined ? {} : { geometry: scenario.assert.geometry }),
     } as const;
     const before = await bridge.sample(sampleRequest);
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
@@ -273,6 +281,14 @@ async function runDevicePlaytestInternal(
     const heldKeys = new Set<string>();
     let pointerButtons = 0;
     let pointerCount = 0;
+    // Last viewport-pixel point the native host was told about. Release at the last point so the
+    // native WebView receives the complete gesture; the host exposes no position to read back.
+    let pointerX = 0;
+    let pointerY = 0;
+    // A buttons-0 move clears the mask but does not close the native gesture — only an explicit
+    // `up` does. Track the open gesture separately from the button mask so a step that clears to
+    // zero *and* asks for release still emits its close at the last point.
+    let pointerHeld = false;
     for (const [index, step] of scenario.steps.entries()) {
       await throwIfAborted(target);
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
@@ -324,11 +340,14 @@ async function runDevicePlaytestInternal(
         if (step.pointerPosition !== undefined) {
           const previousPointerButtons = pointerButtons;
           pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
+          if (pointerButtons !== 0) pointerHeld = true;
+          pointerX = step.pointerPosition.x * scenario.viewport.width;
+          pointerY = step.pointerPosition.y * scenario.viewport.height;
           await transport.call("input.pointer", {
             buttons: pointerButtons,
             type: pointerButtons === 0 ? "move" : previousPointerButtons === 0 ? "down" : "move",
-            x: step.pointerPosition.x * scenario.viewport.width,
-            y: step.pointerPosition.y * scenario.viewport.height,
+            x: pointerX,
+            y: pointerY,
           });
         }
         if (step.pointers !== undefined) {
@@ -404,9 +423,13 @@ async function runDevicePlaytestInternal(
           if (capturesAnonymousMovement) afterStep = await bridge.sample(sampleRequest);
         }
       }
-      if (step.pointerPosition?.buttons !== undefined && step.release) {
+      // A pure `wait` advance never tears down a gesture it did not declare; its `release:true` is
+      // the schema default, and the held aim has to survive the settles between its press and its
+      // explicit release. Any other step closes the open gesture it carried or inherited.
+      if (pointerHeld && step.release && step.kind !== "wait") {
         pointerButtons = 0;
-        await transport.call("input.pointer", { buttons: 0, type: "up", x: 0, y: 0 });
+        pointerHeld = false;
+        await transport.call("input.pointer", { buttons: 0, type: "up", x: pointerX, y: pointerY });
       }
       if (step.pointers !== undefined && step.release) {
         await setDevicePointers(target, transport, [], scenario.viewport);
@@ -603,10 +626,11 @@ async function setDevicePointers(
   pointers: NonNullable<IPlaytestScenario["steps"][number]["pointers"]>,
   viewport: IPlaytestScenario["viewport"],
 ): Promise<void> {
-  if (target.name === "ios") {
-    // iOS simulator and device transports already carry playtest requests into the native host.
-    // The host's touch PointerEvent seam preserves the complete held set without depending on an
-    // external HID injector that is unavailable on the supported Xcode transport.
+  if (target.name === "ios" || target.name === "desktop") {
+    // iOS and desktop transports carry playtest requests into the native host, whose own hit
+    // routing is the mechanism these scenarios test: the host dispatches each pointer to the UI
+    // page or to the game exactly where the OS would. The held set is preserved without an
+    // external HID injector, which the hosted macOS runner cannot use at all.
     await transport.call("input.pointers", {
       pointers: pointers.map((pointer) => ({
         ...(pointer.buttons === undefined ? {} : { buttons: pointer.buttons }),
@@ -726,14 +750,10 @@ function unsupportedAssertion(
       target,
     );
   }
-  const hasMultiPointerInput = scenario.steps.some((step) => step.pointers !== undefined);
-  if (hasMultiPointerInput && target === "desktop") {
-    return unsupportedDiagnostic(
-      "complete held-pointer input",
-      "Run this scenario on --target browser or --target android; the desktop mailbox host exposes one pointer.",
-      target,
-    );
-  }
+  // Desktop now carries the complete held-pointer set through its mailbox host (see
+  // `setDevicePointers`), which routes each pointer through the overlay's published hit regions,
+  // so held-pointer steps are no longer unsupported there. Android still needs its emulator
+  // driver, checked above.
   if (scenario.assert?.deviceMetrics !== undefined && target !== "android") {
     return unsupportedDiagnostic(
       "device thermal and power assertions",
