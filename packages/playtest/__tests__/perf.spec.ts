@@ -321,6 +321,12 @@ const declinedProjectionLine =
   '"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more ' +
   'than it saves","reasonCode":"belowMeshFloor","sourceRenderables":40,"window":2}';
 
+const timedProjectionLine =
+  'TN_PROJECTION:{"drawsActual":315,"drawsPlanned":118,' +
+  '"exact":{"skinned":96},"exactObjects":96,"projecting":true,"reasonCode":"projected",' +
+  '"sourceRenderables":780,"timings":{"compileMs":0,"reconcileMs":12.5,' +
+  '"lastReconcileMs":0.42,"maxReconcileMs":1.1},"window":2}';
+
 describe("projection markers in the perf report", () => {
   it("should rank reasons by draw count", () => {
     expect(rankExactReasons({ instanced: 6, lod: 4, multiMaterial: 12, skinned: 96 })).toEqual([
@@ -372,6 +378,37 @@ describe("projection markers in the perf report", () => {
     expect(() => parsePerformanceMarkers('ok\nTN_PROJECTION:{"window":1,')).toThrow(
       /TN_PERF_MARKER_MALFORMED/u,
     );
+  });
+
+  it("should carry the projection's reconcile timing through the parser", () => {
+    const parsed = parsePerformanceMarkers(`${timedProjectionLine}\n`);
+    expect(parsed.projections[0]?.timings?.reconcileMs).toBeCloseTo(12.5);
+    expect(parsed.projections[0]?.timings?.lastReconcileMs).toBeCloseTo(0.42);
+  });
+
+  it("should print the per-frame reconcile term and name its absence", () => {
+    const timed = parsePerformanceMarkers(
+      `${budgetLine(1, 30, 40, 20)}\n${budgetLine(2, 53, 20, 10)}\n${timedProjectionLine}\n`,
+    );
+    expect(formatPerfReport(assessPerfMarkers(timed, { requireWindows: 1 }, "log"))).toContain(
+      "reconcile: 0.420 ms last frame, 12.500 ms cumulative",
+    );
+
+    // A line from a runtime older than the timing field must say so, never imply zero reconcile.
+    const legacy = parsePerformanceMarkers(
+      `${budgetLine(1, 30, 40, 20)}\n${budgetLine(2, 53, 20, 10)}\n${projectionLine}\n`,
+    );
+    expect(formatPerfReport(assessPerfMarkers(legacy, { requireWindows: 1 }, "log"))).toContain(
+      "reconcile: unreported",
+    );
+  });
+
+  it("should reject a projection line whose timing is not a finite number", () => {
+    const malformed = projectionLine.replace(
+      '"window":2',
+      '"timings":{"compileMs":0,"reconcileMs":"fast","lastReconcileMs":0.4,"maxReconcileMs":1},"window":2',
+    );
+    expect(() => parsePerformanceMarkers(malformed)).toThrow(/TN_PERF_MARKER_MALFORMED/u);
   });
 });
 

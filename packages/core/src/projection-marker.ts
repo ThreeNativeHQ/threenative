@@ -31,6 +31,14 @@ export interface IProjectionWindowJson {
   readonly reasonCode: string;
   readonly sourceRenderables: number;
   /**
+   * What the projection spent reconciling, straight from the report.
+   *
+   * `lastReconcileMs` is this window's last frame — the per-frame attribution term the perf loop
+   * reads. `reconcileMs` is the run's running total and `maxReconcileMs` its worst frame. Carried
+   * per window rather than once, because reconcile is paid per frame, not at startup.
+   */
+  readonly timings?: IRenderProjectionReport["timings"];
+  /**
    * The projected-size gate's own count for this window.
    *
    * Present whenever the engine ran the gate, whether it is enabled or the game declined it — a
@@ -105,6 +113,7 @@ export function formatProjectionWindow(
     ...(report.reason === undefined ? {} : { reason: report.reason }),
     reasonCode: report.reasonCode,
     sourceRenderables: report.sourceRenderables,
+    timings: report.timings,
     window,
   };
   return `${PROJECTION_MARKER}:${JSON.stringify(payload)}`;
