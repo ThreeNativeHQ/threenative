@@ -227,7 +227,10 @@ phase.
 **Verification:** `pnpm check:docs` plus the instruction-budget and `sync-agent-docs` specs for the
 skill; the engine-load-test equivalence spec for `positionHash`; the judge's own sensitivity controls.
 
-- [ ] Judge accepts matrix cells and Midway; `positionHash` unchanged at the default axes.
+- [x] Judge accepts matrix cells and Midway; `positionHash` unchanged at the default axes —
+  desktop matrix mutation 0 and 1% both reported `992067d3` (`L0-07`); web Midway preflight
+  returned `PASS` on NVIDIA/Turing with 900 samples; clean native launch preflight returned `PASS`
+  with all six assertions, `airborne: true`, altitude 22 → 55 and IAS 19 → 55 (`L0-08`).
 - [ ] Five-term attribution closes to at least 95% of the native desktop frame on one matrix cell and
   on Midway.
 - [ ] A/A noise band and pinned baseline recorded as ledger rows `L0-*`: matrix cells, Midway native
@@ -275,9 +278,15 @@ tests, 19 startup tests, 8 packaging tests, typecheck, lint, and full `pnpm test
 files, 5,520 tests; 8 skipped). The distributed patch intentionally moves all ten no-install
 scaffold hashes, and the renderer cache probe now supplies the renderer's active-target method.
 The native result is a preflight, not a pinned baseline or A/A noise result.
+The ignored snapshot then installed core tarball SHA-256 `934e6b39a94b18fe7d38fd5e380a64e0274477e4364e57dd1419a979673a102f`
+and Three patch SHA-256 `6bb97e8e730a8cf10433456a382a2701996c86bf4cc3a07e8f3e80e7c9b0c799`;
+its `src`/`public` workload hash stayed `a764771af3a8b96b2b5780cd4badb67050ae10656b7ba8df99cb0cb2dadf3ae8`.
+The authored native launch then returned `PASS` on a clean engine checkout with all six assertions,
+including actual airborne and changing altitude/IAS state. Its screenshot shows the plane above
+the water. It proves gameplay and the packaged patch, not a real-time frame baseline.
 The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
 the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
-`pnpm lint`, and `pnpm test` passed locally (454 files, 5,519 tests; 8 skipped).
+`pnpm lint`, and `pnpm test` passed locally (454 files, 5,520 tests; 8 skipped).
 Full matrix/Midway baselines, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
 
 ### Phase 2 — Lane 1: scene projection
