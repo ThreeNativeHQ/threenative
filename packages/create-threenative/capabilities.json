@@ -1347,6 +1347,23 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "const off = onLaunchFailure((failure) => shell.loading({ failure: failure.message }));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function onLaunchFailure(listener: (failure: ILaunchFailure) => void): () => void { … }",
+      "situations": [
+        "show the player why the game stopped loading instead of leaving the loading screen up",
+        "report a stalled launch or a lost GPU device in the game's own UI"
+      ],
+      "summary": "Called for every launch failure the engine notices, with the message to show the player.",
+      "supersedes": [],
+      "symbol": "onLaunchFailure"
+    },
+    {
+      "aliases": [],
       "constraints": ["recordings are version 1; the parser fails closed with TN_REPLAY_* codes"],
       "example": "const recording = parseReplayRecording(rawRecording);",
       "importPath": "@threenative/core",

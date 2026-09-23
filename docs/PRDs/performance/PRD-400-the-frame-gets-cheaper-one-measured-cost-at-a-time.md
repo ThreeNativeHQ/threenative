@@ -243,6 +243,8 @@ skill; the engine-load-test equivalence spec for `positionHash`; the judge's own
 renderer. Focused checks passed. The [L0 contract](../../verification/runtime-perf-state.md)
 names the frozen judge paths and holdouts. Midway's tracked `c277aee` game source is snapshotted at
 `sandbox/.afk/prd400-midway-source` so its separate package changes cannot enter the baseline.
+That game needs core's launch-failure and pending-asset API from `acef62180`; the existing engine
+implementation is included here so the unchanged snapshot builds against this branch.
 Matrix/Midway runs, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
 
 ### Phase 2 — Lane 1: scene projection

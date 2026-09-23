@@ -95,6 +95,13 @@ export interface IAssetLoader {
    * stay 0 for a game with no manifest, where no size is knowable before the bytes arrive.
    */
   readonly progress: {
+    /**
+     * The logical paths asked for and not yet settled, in request order. A loading screen that
+     * only shows a ratio cannot say *what* it is waiting for, which is the difference between
+     * "still loading" and "stuck on `akagi.glb`" — and a stall report that names nothing is a
+     * bug report nobody can act on.
+     */
+    readonly pending: readonly string[];
     readonly requested: number;
     readonly requestedBytes: number;
     readonly settled: number;
@@ -703,6 +710,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   let requestedBytes = 0;
   let settled = 0;
   let settledBytes = 0;
+  /** Logical paths asked for and not yet settled, in request order — what a loading view names. */
+  const pending = new Set<string>();
 
   /**
    * The compiled size of a logical path, or 0 when it is not knowable — no manifest, an external
@@ -751,8 +760,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     entry.promise.catch(() => {
       if (cache.get(key) === entry) cache.delete(key);
     });
+    pending.add(path);
     const note = (): void => {
       settled += 1;
+      pending.delete(path);
       void weighed.then(() => {
         settledBytes += weight;
       });
@@ -872,7 +883,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         return value;
       }),
     get progress() {
-      return { requested, requestedBytes, settled, settledBytes };
+      return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
     },
     resolve: (path) => resolveCandidates(path),
     release: (kind, path) => {

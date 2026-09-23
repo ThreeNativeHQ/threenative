@@ -20,6 +20,7 @@ import {
   rendererBackendIdentity,
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
+import { watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
   type IAfterPhysicsPhase,
@@ -55,6 +56,7 @@ import type {
 import { Scheduler } from "./schedule.js";
 import {
   STARTUP_COMPILE_BUDGET_MS,
+  STARTUP_STALL_MS,
   type StartupCompile,
   StartupReadiness,
 } from "./startup-readiness.js";
@@ -1001,6 +1003,23 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     let warmUpStatus: IStartupStatus["warmup"];
     const now = (): number => globalThis.performance?.now() ?? Date.now();
+    /**
+     * A launch that stops making progress says so, on the page, instead of leaving a loading
+     * screen up forever. Measured on `midway-open-pacific`: a 104 s launch and then a lost GPU
+     * device, with the only account of either on a terminal the player does not have.
+     */
+    const stopStallWatch = watchStartupStall({
+      pending: () => assets.progress.pending,
+      progress: () => this.#ctx?.startup.progress ?? 0,
+      stallMs: STARTUP_STALL_MS,
+    });
+    watchDeviceLoss(
+      (
+        renderer.raw as {
+          backend?: { device?: { lost?: Promise<{ reason?: string; message?: string }> } };
+        }
+      ).backend?.device,
+    );
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
     // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
     // framework cost" and "what the player waited for", and collapsing them is how a valley that
@@ -1010,6 +1029,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.frameworkReadyMs ??= now();
     });
     void startupReadiness.whenReady().then(() => {
+      stopStallWatch();
       // A renderer without first-use compilation settles without running the compile closure
       // below, so the settle stamp is guaranteed here at the latest.
       timeline.compileSettledMs ??= now();

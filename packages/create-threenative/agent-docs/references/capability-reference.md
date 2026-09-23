@@ -1058,6 +1058,20 @@ export function normaliseToMetres(object: Object3D, options: INormaliseToMetresO
 normaliseToMetres(character, { metres: 1.8, axis: "height" });
 ```
 
+### `onLaunchFailure`
+
+`function` — Called for every launch failure the engine notices, with the message to show the player.
+
+```ts
+export function onLaunchFailure(listener: (failure: ILaunchFailure) => void): () => void { … }
+```
+
+- **Use when:** show the player why the game stopped loading instead of leaving the loading screen up · report a stalled launch or a lost GPU device in the game's own UI
+
+```ts
+const off = onLaunchFailure((failure) => shell.loading({ failure: failure.message }));
+```
+
 ### `parseReplayRecording`
 
 `function` — Validate and parse a replay recording file.

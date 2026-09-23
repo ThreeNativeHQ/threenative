@@ -92,6 +92,8 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * const rock = await assets.texture("rock.png");
  */
 export { createAssetLoader } from "./assets.js";
+export { onLaunchFailure } from "./launch-diagnostics.js";
+export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
 export type { IAssetLoader, IAssetLoaderOptions } from "./assets.js";
 export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
 /**
