@@ -223,9 +223,12 @@ void testAlreadyArrivedFrameCarriesSchedule() {
 
 // Lifecycle: pause must unblock a render thread parked on the display wait, well before the
 // bounded timeout would, so the loop can reach Android's own lifecycle wait. A stop is exactly
-// what the activity sends before it removes the callback.
+// what the activity sends before it removes the callback. The timeout is widened to seconds: a
+// runner stall longer than the production 83 ms would otherwise release the waiter before the
+// pause, and a pause that failed to unblock now shows as seconds, not as a 20 ms difference.
 void testPauseUnblocksWaiter() {
-    resetPacing(60);  // timeout is 2 intervals + 50 ms == 83 ms
+    resetPacing(60);
+    widenDisplayReleaseTimeout();
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // target 16,666,666
@@ -235,7 +238,7 @@ void testPauseUnblocksWaiter() {
     notePresentationFramesStopped();
     checkPath(work, PresentationPacingPath::SoftwareDeadline, "pause unblocks the parked render thread");
     const auto elapsed = clock::now() - begin;
-    check(elapsed < std::chrono::milliseconds(60),
+    check(elapsed < std::chrono::milliseconds(1000),
           "pause unblocks before the wait timeout (took " +
               std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()) +
               " ms)");
@@ -254,8 +257,9 @@ void testLostSignalFallsBackAndRecovers() {
     // stall between that call and a clock taken afterwards would consume the timeout before it is
     // measured. Taken first, elapsed >= 83 ms holds by construction.
     const auto boundedBegin = clock::now();
+    // No "still parked" probe here: under a runner stall it races the very timeout being measured,
+    // and the fallback path plus elapsed >= 60 ms from before the wait already prove it waited.
     auto lost = runPaceAsync();
-    check(!paceReturned(lost, 8), "the present is parked waiting for the display frame");
     checkPath(lost, PresentationPacingPath::DisplayTimeoutFallback,
               "a lost display signal releases the present through the bounded wait");
     const auto boundedElapsed = clock::now() - boundedBegin;
