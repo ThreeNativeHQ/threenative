@@ -2049,23 +2049,32 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "g_object_ref and g_object_ref_sink as globals that would shadow GObject's."
             )
         endif()
-        # PRE_LINK on `mystral` rather than POST_BUILD on SDL: `add_custom_command(TARGET)` has to
-        # live in the directory that created the target, and SDL is added as a subdirectory. This
-        # also re-applies itself whenever SDL is rebuilt, which a one-shot patch would not.
-        # Made at configure time: a command's WORKING_DIRECTORY has to exist before the shell
-        # enters it, so creating it as the first step of that same command is too late.
+        # One ordered step, not PRE_LINK on `mystral`: the rewrite edits libSDL3.a in place, and a
+        # PRE_LINK hook ran while `mystral-tools` and the contract tests linked that same archive in
+        # parallel ("libSDL3.a: error adding symbols: no more archived files"). A custom target that
+        # depends on SDL and that `mystral-runtime` depends on puts every executable linking the
+        # runtime after the rewrite. `add_custom_command(TARGET)` cannot reach SDL's own target (it
+        # lives in SDL's subdirectory), so the stamp tracks SDL's archive instead and re-applies the
+        # rename whenever SDL is rebuilt; the stamp is touched last so an unchanged SDL skips it.
+        # The working directory is made at configure time: a command cannot create the directory
+        # its shell has to enter first.
         file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray")
-        add_custom_command(TARGET mystral PRE_LINK
+        set(TN_SDL_TRAY_STAMP "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray/renamed.stamp")
+        add_custom_command(OUTPUT "${TN_SDL_TRAY_STAMP}"
             COMMAND "${CMAKE_AR}" x "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
             COMMAND "${TN_OBJCOPY}"
                 --redefine-sym g_object_ref=tn_sdl_tray_g_object_ref
                 --redefine-sym g_object_ref_sink=tn_sdl_tray_g_object_ref_sink
                 SDL_tray.c.o SDL_tray.c.o
             COMMAND "${CMAKE_AR}" r "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
+            COMMAND "${CMAKE_COMMAND}" -E touch "${TN_SDL_TRAY_STAMP}"
+            DEPENDS SDL3-static
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray"
             COMMENT "Renaming SDL3 tray's GObject globals so the UI overlay's GTK calls survive"
             VERBATIM
         )
+        add_custom_target(tn-sdl-tray-rename DEPENDS "${TN_SDL_TRAY_STAMP}")
+        add_dependencies(mystral-runtime tn-sdl-tray-rename)
     endif()
 
     target_link_libraries(mystral PRIVATE mystral-runtime)
