@@ -312,6 +312,10 @@ lint, and the full test gate pass (457 files, 5,526 tests; 8 skipped).
 The full-SHA live retry did produce complete web metrics over 48.548 seconds, but the desktop
 playtest hit the 1 MB device-bridge payload limit before native metrics were complete (`L0-14`).
 The control remains `BLOCKED`; no slow-native sensitivity verdict is claimed.
+The bridge snapshot now includes `runtimeDiagnosticsSeries` only when the sample request asks for
+it; the 1 MB payload limit is unchanged. The full test run exposed three core tests that relied
+on the old implicit series. Those callers now request it explicitly, and the focused core/playtest
+rerun passes 56/56. The full suite has not been rerun after those test-only caller changes.
 
 ### Phase 2 — Lane 1: scene projection
 

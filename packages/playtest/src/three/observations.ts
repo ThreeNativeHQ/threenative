@@ -56,7 +56,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
     ...(input.gameplay === undefined ? {} : { gameplay: input.gameplay() }),
     ...(renderPerformance === undefined ? {} : { performance: renderPerformance }),
     ...(renderChain === undefined ? {} : { renderChain }),
-    ...(input.runtimeDiagnosticsSeries === undefined
+    ...(input.runtimeDiagnosticsSeries === undefined || request.include?.includes("runtimeDiagnosticsSeries") !== true
       ? {}
       : { runtimeDiagnosticsSeries: input.runtimeDiagnosticsSeries().map((sample) => ({ ...sample })) }),
     ...(input.resources === undefined ? {} : { resources: input.resources() }),
