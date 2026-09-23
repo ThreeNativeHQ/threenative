@@ -80,6 +80,10 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     "2026-09-22 15:07:19.300 E  threenative-ios[40455:17a9f] [dev.threenative.runtime:game] Uncaught TypeError: cannot read properties of undefined";
   // A fault is never launch noise: an OS subsystem faulting inside the app's process (Metal,
   // WebKit) is the game breaking, so `F` stays an error even under `com.apple.*`.
+  // WebKit stamps slow helper-process launches `F` on a loaded simulator; that is the OS reporting
+  // its own timing, not the game failing, so an Apple fault needs a failure word to count.
+  const slowWebKitLaunch =
+    "2026-09-23 11:39:52.815 F  threenative-ios[85320:32404] [com.apple.WebKit:Process] GPU process (0x1111741e0) took 3.295754 seconds to launch";
   const appleFault =
     "2026-09-22 15:07:19.400 F  threenative-ios[40455:17a9f] [com.apple.Metal:device] Execution of the command buffer was aborted due to an error during execution";
 
@@ -104,6 +108,7 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
         appMarkerInDefault,
         uncaughtException,
         appleFault,
+        slowWebKitLaunch,
       ].join("\n")}\n`;
     }
     return "";
@@ -122,6 +127,7 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     { text: appMarkerInDefault, type: "error" },
     { text: uncaughtException, type: "error" },
     { text: appleFault, type: "error" },
+    { text: slowWebKitLaunch, type: "log" },
   ]);
 });
 
