@@ -78,9 +78,10 @@ flowchart TB
     game --> gpu
 ```
 
-**UI boundary — already built this way.** `createGameStore` coalesces writes and flushes on an
-interval (default 100 ms), so `ctx.state.set()` may run at 60 Hz while React re-renders at ~10 Hz
-through `useSyncExternalStore`. React receives small semantic events — `health-changed`,
+**UI boundary.** `createGameStore` coalesces simulation writes and the game publishes once per
+rendered frame, so React follows live gameplay through `useSyncExternalStore`. A game can select
+a slower publication interval with `stateFlushMs`; no interval is imposed by default.
+React receives small semantic events — `health-changed`,
 `coins-changed`, `pause-requested`, `game-over` — never thousands of transforms per frame. The UI
 renders the HUD; it never touches `THREE.Scene`.
 

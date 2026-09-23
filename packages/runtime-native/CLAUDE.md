@@ -12,12 +12,17 @@ It is **a host, not a renderer**: upstream Three.js `WebGPURenderer` stays the p
 renderer, at exactly the workspace catalog version.
 
 **The scene never enters a web view; the UI may.** As of PRD-217 a game can render `src/ui/`
-through the platform's own browser-class renderer — a transparent `WebView` composited over the
-game surface — so one `src/ui/` runs unchanged on web and native. That is the platform's browser,
-attached at the composition layer, not a browser this package ships: measured free on a Pixel 8,
-and about 6% of one game's memory in a process the OS can reclaim. `ui.renderer: "native"` is the
+through the platform's own browser-class renderer, so one `src/ui/` runs unchanged on web and native.
+Linux runs WebKitGTK on a dedicated thread, takes snapshots into a latest-frame mailbox and blends
+them into the game surface before presentation. Its SDL/X11 input route uses GDK events, preserving
+native text editing and keyboard layouts. Windows, macOS, Android and iOS use a transparent child
+WebView above the game surface. `ui.renderer: "web"` is the default; `ui.renderer: "native"` is the
 opt-out and ships no overlay and no extra process. `TnUiOverlay` owns the input hit test; the
 contract is in `include/mystral/platform/ui_overlay.h` and `@threenative/core/ui-layer`.
+
+Run `pnpm test:ui-native` from the repository root for Linux WebKit focus, keyboard-layout and
+editing regressions. It provisions its own Xvfb and requires Rust, WebKitGTK development files and
+`setxkbmap`. This control check does not replace a packaged-game playtest or visible-cadence proof.
 
 Runtime internals may keep Mystral names recognizable during the fork, but public contracts expose
 ThreeNative names.
@@ -126,8 +131,8 @@ Report what ran, per platform, and never write mobile-ready while a row below is
   measured on hardware, not only on an emulator.
 - **Android emulator** — a separate result from the phone, and the two have disagreed. A green on
   one does not carry to the other; say which you ran.
-- **iOS on physical hardware** — open. arm64 with real Metal, signing, touch input, thermal and
-  battery still need a phone.
+- **iOS on physical hardware** — outside CI qualification. If tested separately, report arm64
+  Metal, signing, touch input, thermal and battery evidence as device-only results.
 - **Android 16 KB pages** — green on the local 16 KB AVD as of 2026-09-11. Android 15+ can run with
   16 KB memory pages, where a 4 KB-aligned shared library cannot be loaded at all. Everything this
   repository controls is aligned — `libmystral-runtime.so` by a link option, `libSDL3.so` by the

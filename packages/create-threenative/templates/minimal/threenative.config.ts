@@ -26,6 +26,7 @@ const config: IThreeNativeConfig = {
     backgroundColor: "#0d1b2a",
   },
   nativeEntry: "src/game.ts",
+  ui: { renderer: "native" }, // This template draws its HUD in the scene and has no src/ui/.
   renderer: {
     preferWebGPU: true, // Use WebGPU when the host exposes it.
     // The engine holds the `display.maxFps` budget by scaling the 3D drawing buffer, and reports

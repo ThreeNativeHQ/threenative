@@ -2452,7 +2452,7 @@
     {
       "aliases": ["journal objective panel", "readable HUD"],
       "constraints": [
-        "publishes at the store's throttled cadence, and not at all with no UI listening"
+        "publishes once per rendered frame unless stateFlushMs selects a slower interval, and not at all with no UI listening"
       ],
       "example": "publishUiState(bridge, game.state);",
       "importPath": "@threenative/core/ui-layer",
@@ -2464,7 +2464,7 @@
         "show score or health in a UI rendered over the game surface",
         "keep a HUD in step with the game without re-rendering on the loop",
         "publish game state to a HUD in another realm",
-        "keep a web and native UI mirror on the same throttled state stream"
+        "keep a web and native UI mirror on the same coalesced state stream"
       ],
       "summary": "Publish the game's state so a UI in another process can mirror it.",
       "supersedes": [],
@@ -5185,7 +5185,7 @@
         "bind a HUD component to game state",
         "select a slice of state for a React panel"
       ],
-      "summary": "Read throttled game state from React.",
+      "summary": "Read the game's coalesced frame snapshot from React.",
       "supersedes": [],
       "symbol": "useGameState"
     },

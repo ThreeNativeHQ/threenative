@@ -27,6 +27,7 @@ import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
+import { SDL3_IOS_VERSION } from './package-ios.mjs';
 import { provisionAndroidV8 } from './build-android-v8.mjs';
 import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
 import { resolveWgpuCacheToolchain } from './wgpu-cache-toolchain.mjs';
@@ -38,8 +39,8 @@ const NATIVE_DEPS_LOCK_PATH = join(ROOT, 'native-deps.lock.json');
 const LOCK_RECEIPT_DIRNAME = '.threenative-receipts';
 const REPO_ROOT = join(ROOT, '..', '..');
 const GRADLE_WRAPPER = join(ROOT, 'android', 'gradle', 'wrapper', 'gradle-wrapper.jar');
-const GRADLE_WRAPPER_URL = 'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
-const GRADLE_WRAPPER_SHA256 = 'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
+const GRADLE_WRAPPER_URL = 'https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar';
+const GRADLE_WRAPPER_SHA256 = '81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f';
 
 // Detect platform
 const PLATFORM = process.platform; // 'darwin', 'win32', 'linux'
@@ -128,6 +129,16 @@ const DEPS = {
       return `https://github.com/libsdl-org/SDL/releases/download/release-${DEPS.sdl3.version}/SDL3-${DEPS.sdl3.version}.tar.gz`;
     },
     extractTo: 'sdl3',
+  },
+  'sdl3-ios': {
+    // SDL3 source for iOS ONLY. Upstream 3.4.16 ships SDLUIKitSceneDelegate, which owns
+    // startup/lifecycle/window attachment on iOS 13+ (TN3187 scene opt-in). Desktop and
+    // Android stay on DEPS.sdl3 / sdl3-android at 3.2.30 with the matching Android Java/AAR.
+    version: SDL3_IOS_VERSION,
+    getUrl: () => {
+      return `https://github.com/libsdl-org/SDL/releases/download/release-${DEPS['sdl3-ios'].version}/SDL3-${DEPS['sdl3-ios'].version}.tar.gz`;
+    },
+    extractTo: 'sdl3-ios',
   },
   dawn: {
     // Dawn prebuilts from official releases: https://github.com/google/dawn/releases
@@ -390,10 +401,11 @@ const DEPS = {
     extractTo: 'libuv',
   },
   'libuv-source': {
-    // libuv upstream source, matching the prebuilt's 1.51.0. Only the sanitizer configuration
-    // consumes it: AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a
+    // libuv upstream source, matching the prebuilt's 1.51.0. Consumed wherever the prebuilt cannot
+    // be used: under AddressSanitizer (which cannot instrument inside the prebuilt libuv.a, so a
     // write-after-free on libuv's own closing list is invisible to the lane that exists to catch
-    // exactly that. PRD-177 and PRD-184 are parked on this.
+    // exactly that - PRD-177 and PRD-184 are parked on this), and on Linux arm64, which has no
+    // arm64 prebuilt. The source is architecture-independent, so one payload serves both.
     version: '1.51.0',
     getUrl: () => `https://github.com/libuv/libuv/archive/refs/tags/v${DEPS['libuv-source'].version}.tar.gz`,
     extractTo: 'libuv-src',
@@ -1424,15 +1436,43 @@ function copyTree(from, to) {
   }
 }
 
+function printHelp() {
+  // Read-only: stdout only, no directory, acquisition, or network side effects.
+  console.log(`Mystral Native Runtime - Dependency Downloader
+
+Usage:
+  node scripts/download-deps.mjs                                # desktop deps for the current platform
+  node scripts/download-deps.mjs --android                      # Android cross-compilation deps
+  node scripts/download-deps.mjs --ios                          # iOS dependencies for macOS builds
+  node scripts/download-deps.mjs --all                          # everything (desktop + iOS + Android)
+  node scripts/download-deps.mjs --only <name>                  # one dependency (e.g. --only stb, --only v8-android)
+  node scripts/download-deps.mjs --check-lock                   # list locked payloads; no fetch, no toolchain
+
+Options:
+  --only <name>                 fetch a single dependency
+  --force                       re-fetch even if the cache exists
+  --backend <auto|dawn|wgpu>    Android WebGPU backend (only with --android)
+  --wgpu-version <version>      wgpu-native regression version (isolated under .runtime/wgpu-version-matrix)
+  --rebuild-wgpu-cache-api [--wgpu-source-archive <path>] [--wgpu-cache-target <target>]
+  --only skia-android [--source <dir>] [--dest <dir>] [--jobs <n>]
+  --check-lock                  show locked payloads without downloading
+  --help, -h                    print this usage and exit without touching caches or network`);
+}
+
 async function main() {
+  // Parse arguments
+  const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    // Read-only usage: return before any directory mutation, acquisition, or network.
+    printHelp();
+    return;
+  }
   console.log(`Platform: ${platformName}-${archName}`);
   // Ensure third_party directory exists
   if (!existsSync(THIRD_PARTY)) {
     mkdirSync(THIRD_PARTY, { recursive: true });
   }
 
-  // Parse arguments
-  const args = process.argv.slice(2);
   if (args.includes('--check-lock')) {
     // PRD-059 Phase 1 user verification: report every locked payload without
     // downloading, extracting, or invoking any toolchain. No network access.
@@ -1482,11 +1522,22 @@ async function main() {
   if (requestedBackend === 'dawn') assertDawnAndroidArchive();
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
-  // Desktop deps (downloaded by default)
-  const desktopDeps = ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
+  // Linux arm64 has no prebuilt for the x64 desktop stack: kuoruan/libv8 ships Linux x64 only,
+  // Dawn's `ubuntu-latest` release asset is x64, and skia/swc/quiche/webp publish no arm64 Linux
+  // archive. A source V8 build is not allowed in CI. The arm64 desktop host is therefore built with
+  // the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt is already in the
+  // dependency lock; the CMake build disables the optional features whose libraries are absent
+  // (Canvas2D/Skia, WebTransport/quiche, TS/SWC) instead of linking a foreign architecture. libuv
+  // has no arm64 prebuilt either, so arm64 also fetches the architecture-independent `libuv-source`
+  // and CMake builds it from that pinned source (see CMakeLists.txt). See scripts/native-build.mjs
+  // for the matching configure overrides.
+  const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
+  const desktopDeps = linuxArm64
+    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'libuv-source']
+    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
-  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios'];
+  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios'];
 
   // Android deps (only downloaded with --only or --android)
   const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'];

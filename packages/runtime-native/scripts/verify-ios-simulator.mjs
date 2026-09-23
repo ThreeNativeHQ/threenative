@@ -14,6 +14,7 @@ import {
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
+import { hasIosSceneManifestFields } from './package-ios.mjs';
 import { assertIosRuntime, bundleIsRegistered, selectIosSimulator } from './select-ios-simulator.mjs';
 // The same two assertions the desktop and Android gates run, from one source. A third copy would
 // drift, and the copy that drifts is always the lane nobody runs by hand.
@@ -140,6 +141,9 @@ function validateScaffold() {
     !plist.includes('<string>metal</string>')
   ) {
     throw new Error('iOS Info.plist is missing its bundle identifier or Metal requirement.');
+  }
+  if (!hasIosSceneManifestFields(plist)) {
+    throw new Error('iOS Info.plist is missing the TN3187 scene manifest (SDLUIKitSceneDelegate).');
   }
 }
 
@@ -303,7 +307,7 @@ if (process.platform !== 'darwin') {
 
 run('pnpm', ['--filter', 'threenative-native-smoke', 'build']);
 run('pnpm', ['--filter', '@threenative/playtest', 'build']);
-run(process.execPath, ['scripts/download-deps.mjs', '--only', 'sdl3'], { cwd: runtimeRoot });
+run(process.execPath, ['scripts/download-deps.mjs', '--only', 'sdl3-ios'], { cwd: runtimeRoot });
 run(process.execPath, ['scripts/download-deps.mjs', '--only', 'wgpu-ios'], { cwd: runtimeRoot });
 run(process.execPath, ['scripts/download-deps.mjs', '--only', 'stb'], { cwd: runtimeRoot });
 run(process.execPath, ['scripts/build-native-physics.mjs', '--ios-simulator'], { cwd: runtimeRoot });

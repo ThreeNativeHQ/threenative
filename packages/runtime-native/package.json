@@ -1,6 +1,6 @@
 {
   "name": "@threenative/runtime-native",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "ThreeNative-owned native host for desktop, Android, and iOS",
   "keywords": [
     "threenative",
@@ -47,6 +47,8 @@
     "scripts/check-android-16kb-alignment.mjs",
     "scripts/check-source-list.mjs",
     "scripts/desktop-distribution.mjs",
+    "scripts/windows-installer.mjs",
+    "scripts/windows-installer.nsi",
     "scripts/device-preflight.mjs",
     "scripts/inspect-container-brand.mjs",
     "scripts/install-prebuilt.mjs",
@@ -60,6 +62,7 @@
     "scripts/verify-starter-consumer.mjs",
     "scripts/verify-starter-desktop-base.mjs",
     "scripts/verify-starter-desktop.mjs",
+    "scripts/verify-windows-installer.mjs",
     "scripts/xvfb.sh"
   ],
   "scripts": {
@@ -79,6 +82,7 @@
     "native:verify:desktop": "node scripts/verify-desktop-audio.mjs && node scripts/verify-desktop-stability.mjs && node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs && sh ../../scripts/xvfb.sh node scripts/verify-native-contracts.mjs && pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs && vitest run --config vitest.config.ts tests/external-bundle-discovery.test.mjs",
     "native:verify:loading": "pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs",
     "native:verify:android:multitouch": "pnpm --dir ../playtest build && node scripts/verify-android-multitouch.mjs",
+    "native:verify:android:artifact": "node scripts/check-android-16kb-alignment.mjs",
     "profile:production": "node scripts/profile-production.mjs",
     "parity": "node conformance/run-conformance.mjs",
     "install": "node scripts/install-prebuilt.mjs",

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
@@ -137,12 +137,18 @@ test('the protected build context requires scope and workspace evidence, not the
     expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
     expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
   }
-  // The native matrix is still required for the exact candidate, just not by this join: the
-  // release lane consumes the `native-platforms` rows, so a native failure cannot pass unnoticed.
-  const required = ciWorkflow.match(
-    /\n\x20{2}ci-required:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
-  )?.[0] ?? '';
-  expect(required).toContain('native-platforms');
+  // The native matrix is a required member of ci-required again: the scope plan requires it for a
+  // full selection that touches native code, targets main, or cannot prove a clean native-free
+  // pull request. When the plan exempts it, the job is skipped and ci-required.mjs counts an
+  // exempt skip as a pass; a required run that is not success fails the verdict. run-summary still
+  // reports the lane either way.
+  const jobBlock = (name) =>
+    ciWorkflow.match(
+      new RegExp(`\\n\\x20{2}${name}:\\n[\\s\\S]*?(?=\\n\\x20{2}[a-z0-9-]+:|\\s*$)`, 'u'),
+    )?.[0] ?? '';
+  expect(jobBlock('ci-required')).toContain('needs: [scope,');
+  expect(jobBlock('ci-required')).toContain('native-platforms');
+  expect(jobBlock('run-summary')).toContain('native-platforms');
 });
 
 test('the desktop parity job keeps the name the release gate requires', () => {
@@ -290,6 +296,54 @@ test('desktop platform lanes build and retain executable evidence', () => {
   }
 });
 
+test('macOS runs the installed playtest against the relocated release and propagates failure', () => {
+  const step = workflow.match(
+    /- name: Play the relocated macOS release with React controls\n([\s\S]*?)(?=\n {6}- name:)/u,
+  )?.[1];
+  assert.ok(step, 'The final macOS app needs interactive gameplay verification');
+  assert.match(step, /if: matrix.platform == 'macOS'/u);
+  const script = step.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n\s+NODE/u)?.[1];
+  assert.ok(script);
+  const root = makeTempDirSync('tn-macos-release-playtest-');
+  const project = join(root, 'threenative-starter-native');
+  const container = join(root, 'Relocated Game.app');
+  const distribution = join(project, 'node_modules/@threenative/runtime-native/scripts');
+  const runner = join(project, 'node_modules/@threenative/playtest/dist/runner');
+  const recorded = join(root, 'argv.json');
+  mkdirSync(distribution, { recursive: true });
+  mkdirSync(runner, { recursive: true });
+  writeFileSync(join(distribution, 'desktop-distribution.mjs'), `
+    import assert from 'node:assert/strict';
+    export function resolveContainer(root) {
+      assert.equal(root, process.env.TN_RELEASE_CONTAINER_ROOT);
+      return { executable: 'Contents/MacOS/Game With Spaces' };
+    }
+  `);
+  writeFileSync(join(runner, 'cli.js'), `
+    require('node:fs').writeFileSync(process.env.TN_TEST_ARGV, JSON.stringify(process.argv.slice(2)));
+    process.exit(Number(process.env.TN_TEST_EXIT));
+  `);
+  try {
+    for (const code of [0, 7]) {
+      const result = spawnSync(process.execPath, ['--input-type=module'], {
+        input: script, encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, RUNNER_TEMP: root, TN_RELEASE_CONTAINER_ROOT: container,
+          TN_TEST_ARGV: recorded, TN_TEST_EXIT: String(code) },
+      });
+      assert.equal(result.status, code, result.stderr);
+      assert.deepEqual(JSON.parse(readFileSync(recorded, 'utf8')), [
+        resolve('packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json'),
+        '--target', 'desktop', '--executable', join(container, 'Contents/MacOS/Game With Spaces'),
+        '--project', project, '--artifacts',
+        resolve('packages/runtime-native/artifacts/release-container-macOS/gameplay'),
+        '--host-arg', '--windowed',
+      ]);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('iOS lane executes simulator proof and negative-control tests on an Apple runner', () => {
   expect(workflow).toMatch(/ios-simulator:[\s\S]*runs-on: macos-15/);
   expect(workflow).toContain('rustup target add aarch64-apple-ios-sim');
@@ -325,6 +379,23 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).toContain('report="$app.json"');
   expect(workflow).toContain('--bundle-id "$bundle_id"');
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
+});
+
+test('iOS builds selected React UI from installed packages and checks full-screen pixels', () => {
+  const step = workflow.match(
+    /- name: Scaffold the iOS React UI consumer from local tarballs\n([\s\S]*?)\n {6}- run: >-/u,
+  )?.[1];
+  assert.ok(step);
+  assert.match(step, /template: starter/u);
+  assert.match(step, /pnpm --dir "\$target" build:ios/u);
+  assert.match(step, /node "\$target\/node_modules\/@threenative\/playtest\/dist\/runner\/cli\.js"/u);
+  assert.match(step, /ui-state-ios\.playtest\.json/u);
+  assert.match(step, /--target ios --app "\$app" --bundle-id "\$bundle_id"/u);
+  assert.match(step, /decodeUiScreenshot\(image, 96, 96\)/u);
+  assert.match(step, /published\.includes\(visible\.sequence\)/u);
+  assert.match(step, /tests\/ui-layer-host-contract\.test\.mjs/u);
+  // Not yet passing (PRD-399 P4-d): runs in the dedicated iOS dispatch, not on every pull request.
+  expect(step.match(/if: \$\{\{ inputs\.ios_only == true \}\}/gu)).toHaveLength(2);
 });
 
 test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
@@ -427,7 +498,7 @@ const requiredCiJobs = [
   'typecheck', 'lint', 'test', 'budgets', 'build', 'test-native',
   'native-platforms / Windows desktop core',
   'native-platforms / macOS desktop core',
-  'native-platforms / Scaffolded starter desktop artifact',
+  'native-platforms / Scaffolded starter desktop artifact (linux-x64)',
   'native-platforms / Desktop web/native parity',
   'native-platforms / Android emulator visual parity',
 ];

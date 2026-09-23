@@ -25,7 +25,7 @@ test('should lock every selectable payload when the full target matrix is resolv
   const components = new Set(lock.components.map((component) => component.name));
   for (const expected of [
     'wgpu', 'wgpu-regression', 'wgpu-ios', 'wgpu-android', 'dawn', 'v8', 'v8-android',
-    'quickjs', 'sdl3', 'sdl3-android', 'quiche', 'quiche-ios', 'quiche-android',
+    'quickjs', 'sdl3', 'sdl3-ios', 'sdl3-android', 'quiche', 'quiche-ios', 'quiche-android',
     'stb', 'webp', 'webp-source', 'skia', 'skia-ios', 'skia-win-static',
     'swc', 'libuv', 'libuv-source', 'gradle-wrapper',
   ]) {
@@ -41,6 +41,28 @@ test('should lock every selectable payload when the full target matrix is resolv
   // Negative control: delete one selected entry in the fixture; the lock reader
   // must refuse the tampered lock (exercised below against a copy).
   assert.ok(ids.length >= 60, `expected the complete matrix, found ${ids.length} payloads`);
+});
+
+test('Linux arm64 fetches libuv source where no prebuilt exists, and CMake builds it', () => {
+  // Linux arm64 has no libuv prebuilt (library-builder ships libuv-linux-x64 only), so the arm64
+  // desktop set must carry the architecture-independent source and CMake must build it there,
+  // while every target that does have the prebuilt keeps linking that first.
+  const downloader = readFileSync(DOWNLOADER, 'utf8');
+  const arm64 = downloader.match(/const desktopDeps = linuxArm64\n\s*\? \[([^\]]*)\]/u)?.[1];
+  assert.ok(arm64, 'download-deps must keep an explicit Linux arm64 desktop set');
+  assert.match(arm64, /'libuv-source'/u);
+
+  const cmake = readFileSync(join(PACKAGE_ROOT, 'CMakeLists.txt'), 'utf8');
+  assert.match(
+    cmake,
+    /if\(LIBUV_SOURCE_AVAILABLE AND \(TN_ENABLE_SANITIZERS OR NOT EXISTS \$\{LIBUV_DIR\}\)\)/u,
+    'CMake must build libuv from source under sanitizers or where the prebuilt is absent',
+  );
+  assert.match(
+    cmake,
+    /elseif\(EXISTS \$\{LIBUV_DIR\} AND NOT IOS AND NOT ANDROID\)/u,
+    'the prebuilt branch must remain the fallback that the source path only bypasses',
+  );
 });
 
 test('should reject a tampered archive before extraction when downloaded bytes differ', () => {
@@ -96,7 +118,38 @@ test('should report the locked matrix without network access', () => {
   // PRD-059 Phase 1 user verification: deps:verify lists every selectable
   // payload and performs no download, extraction, or toolchain invocation.
   const output = execFileSync(process.execPath, [DOWNLOADER, '--check-lock'], { encoding: 'utf8' });
-  assert.match(output, /payloads: 61/);
+  assert.match(output, /payloads: 62/);
   assert.match(output, /wgpu:/);
   assert.match(output, /gradle-wrapper:/);
+});
+
+test('should print usage and exit without touching caches for --help', () => {
+  // Block acquisition before importing the downloader, even if the help guard regresses.
+  const denyNetwork = `
+    import { syncBuiltinESMExports } from 'node:module';
+    import http from 'node:http'; import https from 'node:https';
+    import net from 'node:net'; import tls from 'node:tls';
+    const deny = () => { throw new Error('Downloader help attempted network access'); };
+    for (const protocol of [http, https]) { protocol.get = deny; protocol.request = deny; }
+    net.connect = deny; net.createConnection = deny; net.Socket.prototype.connect = deny;
+    tls.connect = deny; globalThis.fetch = deny;
+    syncBuiltinESMExports();
+  `;
+  const readOnly = [
+    '--experimental-permission', '--allow-fs-read=*',
+    '--import', `data:text/javascript,${encodeURIComponent(denyNetwork)}`,
+  ];
+  for (const flag of ['--help', '-h']) {
+    const output = execFileSync(process.execPath, [...readOnly, DOWNLOADER, flag], {
+      encoding: 'utf8', timeout: 5000, env: { ...process.env, NODE_OPTIONS: '' },
+    });
+    assert.match(output, /Usage:/);
+    assert.match(output, /--only <name>/);
+    assert.match(output, /--android/);
+    assert.match(output, /--ios/);
+    assert.match(output, /--all/);
+    assert.match(output, /--force/);
+    assert.match(output, /--check-lock/);
+    assert.match(output, /--backend <auto\|dawn\|wgpu>/);
+  }
 });

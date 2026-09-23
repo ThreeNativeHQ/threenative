@@ -16,7 +16,6 @@
 #if TN_ENABLE_UI_OVERLAY
 extern "C" {
 int tn_ui_overlay_attach(unsigned long parent, const char* url, uint32_t width, uint32_t height);
-int tn_ui_overlay_pump();
 int tn_ui_overlay_post(const char* frame);
 char* tn_ui_overlay_take();
 void tn_ui_overlay_free(char* frame);
@@ -25,8 +24,38 @@ int tn_ui_overlay_set_hit_regions(const float* regions, uint32_t count);
 int tn_ui_overlay_hit_test(float nx, float ny);
 int tn_ui_overlay_inject_pointer(const char* type, float nx, float ny, int buttons,
                                  int pointer_id);
+#if defined(__linux__) && !defined(__ANDROID__)
+int tn_ui_overlay_inject_key(uint32_t keycode, uint32_t modifiers, uint32_t group,
+                             uint32_t time, int down);
+int tn_ui_overlay_keyboard_captured();
+#endif
 void tn_ui_overlay_detach();
+#if defined(_WIN32) || defined(__APPLE__)
+int tn_ui_overlay_pump();
+#endif
 }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+/**
+ * The frame mailbox, on the Linux backend only.
+ *
+ * Windows and macOS composite a child web view themselves and have no frame to hand over, so the
+ * declarations and the implementations below are gated rather than stubbed: a stub returning a
+ * frame would be a lie the compositor could act on.
+ */
+extern "C" {
+struct TnUiFrameLayout {
+    const uint8_t* pixels;
+    size_t length;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;
+    uint64_t counter;
+};
+int tn_ui_overlay_frame(TnUiFrameLayout* out);
+uint64_t tn_ui_overlay_frames_published();
+}
+#endif
 #include "mystral/platform/window.h"
 #include <SDL3/SDL.h>
 #endif
@@ -97,9 +126,10 @@ const char* attachFailure(int code) {
     switch (code) {
         case -5: return "invalid argument";
 #if defined(__linux__) && !defined(__ANDROID__)
+        // The offscreen backend has no window and no compositor to need, so the only failures left
+        // are "the web engine never came up" and "the game window is not an X11 window" (reported
+        // above, before the call, because SDL is what knows it).
         case -1: return "no display, or GTK could not start";
-        case -2: return "no compositing manager is running, so nothing would blend the overlay";
-        case -3: return "the transparent container could not be created";
         case -4: return "the web view could not be built";
 #else
         case -1: return "the overlay is not attached";
@@ -157,22 +187,59 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
 
 void pumpUiOverlay() {
     if (!uiOverlayAttached()) return;
-    // The overlay follows the game window through whatever the platform gives it — the X server's
-    // own events on Linux, the child window or view hierarchy on Windows and macOS — so nothing
-    // here pushes SDL's rectangle at it. A game window that has gone away reports back once, and
-    // the overlay comes down with it rather than outliving its game.
+#if defined(_WIN32) || defined(__APPLE__)
+    // Windows and macOS still attach a child web view to the window SDL owns, and both still need
+    // their service point here. Windows re-cuts its container's input region when a resize changes
+    // its pixels; both notice through this that the game window has gone away. Linux has neither a
+    // window to follow nor work to do: the offscreen web view runs on its own thread and the only
+    // thing left on this one is the queue below.
     if (tn_ui_overlay_pump() != 0) {
         std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"reason\":\"the game window went away\"}"
                   << std::endl;
         detachDesktopUiOverlay();
         return;
     }
-    // The page's frames arrive on this thread through the pump, so draining here keeps the whole
-    // desktop path single-threaded and the queue below is only ever touched from one side.
+#endif
+    // Handing the page's frames to the game's own message queue. JavaScript may only be touched
+    // from this thread, so this is the one crossing and the queue is the only thing it needs.
     while (char* frame = tn_ui_overlay_take()) {
         queueUiMessage(std::string(frame));
         tn_ui_overlay_free(frame);
     }
+}
+
+bool uiOverlayFrame(UiOverlayFrame& frame) {
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (!uiOverlayAttached()) return false;
+    TnUiFrameLayout layout{};
+    if (tn_ui_overlay_frame(&layout) != 1) return false;
+    frame.pixels = layout.pixels;
+    frame.length = layout.length;
+    frame.width = layout.width;
+    frame.height = layout.height;
+    frame.stride = layout.stride;
+    frame.counter = layout.counter;
+    return frame.pixels != nullptr && frame.length > 0;
+#else
+    (void)frame;
+    return false;
+#endif
+}
+
+uint64_t uiOverlayFramesPublished() {
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (!uiOverlayAttached()) return 0;
+    return tn_ui_overlay_frames_published();
+#else
+    return 0;
+#endif
+}
+
+void uiOverlaySetSize(int width, int height) {
+    if (!uiOverlayAttached() || width <= 0 || height <= 0) return;
+    // The offscreen view is placed by its own size, not by a position: there is no window, so x and
+    // y have nothing to move.
+    tn_ui_overlay_set_bounds(0, 0, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 }
 
 void setUiHitRegions(const std::vector<float>& regions) {
@@ -183,6 +250,8 @@ void setUiHitRegions(const std::vector<float>& regions) {
 
 void detachDesktopUiOverlay() {
     if (!uiOverlayAttached()) return;
+    uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1);
+    resetUiOverlayKeyboard();
     tn_ui_overlay_detach();
     setUiOverlayAttached(false);
 }
@@ -196,12 +265,109 @@ bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, i
     if (!uiOverlayAttached()) return false;
     return tn_ui_overlay_inject_pointer(type, nx, ny, buttons, pointerId) == 0;
 }
+
+bool uiOverlayInjectKey(uint32_t keycode, uint32_t modifiers, uint32_t group,
+                        uint32_t time, bool down) {
+#if TN_ENABLE_UI_OVERLAY && defined(__linux__) && !defined(__ANDROID__)
+    if (!uiOverlayAttached()) return false;
+    return tn_ui_overlay_inject_key(keycode, modifiers, group, time, down ? 1 : 0) == 0;
+#else
+    (void)keycode; (void)modifiers; (void)group; (void)time; (void)down;
+    return false;
+#endif
+}
+
+/**
+ * Which side owns the pointer gesture in progress, and where it last was.
+ *
+ * Lives here rather than in either caller because there are two callers — the OS event loop on
+ * Linux and the playtest bridge's synthetic input — and they must not be able to disagree. Nothing
+ * else in this file is stateful.
+ */
+struct UiPointerGesture {
+    bool uiOwned = false;
+    bool gameOwned = false;
+    float lastX = 0.0f;
+    float lastY = 0.0f;
+
+    bool route(const char* type, float nx, float ny, int buttons, int pointerId) {
+        const std::string kind(type);
+        if (kind == "pointercancel") {
+            const bool owned = uiOwned;
+            uiOverlayInjectPointer(type, lastX, lastY, 0, pointerId);
+            uiOwned = false;
+            gameOwned = false;
+            return owned;
+        }
+        if (kind == "pointerdown" && !uiOwned && !gameOwned) {
+            if (!uiOverlayHitTest(nx, ny)) {
+                uiOverlayInjectPointer("pointercancel", nx, ny, 0, pointerId);
+                gameOwned = true;
+                return false;
+            }
+            uiOwned = true;
+            lastX = nx;
+            lastY = ny;
+            uiOverlayInjectPointer(type, nx, ny, buttons, pointerId);
+            return true;
+        }
+        if (kind == "pointerup") {
+            if (!uiOwned) {
+                if (buttons == 0) gameOwned = false;
+                return false;
+            }
+            // Where the press landed, not where the release was reported. A synthetic release can
+            // arrive with no position at all, and gating it on a hit test dropped the press the
+            // page was already holding — measured as a loadout button that never activated.
+            uiOverlayInjectPointer(nx < 0 || nx > 1 || ny < 0 || ny > 1 ? "pointercancel" : type,
+                                   lastX, lastY, buttons, pointerId);
+            if (buttons == 0) uiOwned = false;
+            return true;
+        }
+        if (uiOwned) {
+            lastX = nx;
+            lastY = ny;
+            uiOverlayInjectPointer(type, nx, ny, buttons, pointerId);
+            return true;
+        }
+        if (gameOwned) return false;
+        if (!uiOverlayHitTest(nx, ny)) return false;
+        lastX = nx;
+        lastY = ny;
+        uiOverlayInjectPointer(type, nx, ny, buttons, pointerId);
+        return true;
+    }
+};
+UiPointerGesture g_uiGesture;
+
+bool uiOverlayKeyboardCaptured() {
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (!uiOverlayAttached()) return false;
+    return tn_ui_overlay_keyboard_captured() == 1;
+#else
+    return false;
+#endif
+}
+
+bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId) {
+    if (!uiOverlayAttached() || type == nullptr) return false;
+    return g_uiGesture.route(type, nx, ny, buttons, pointerId);
+}
 #else
 bool attachDesktopUiOverlay(const std::string& uiRoot) {
     (void)uiRoot;
     return false;
 }
 void pumpUiOverlay() {}
+bool uiOverlayFrame(UiOverlayFrame& frame) {
+    (void)frame;
+    return false;
+}
+uint64_t uiOverlayFramesPublished() { return 0; }
+void uiOverlaySetSize(int width, int height) {
+    (void)width;
+    (void)height;
+}
 void setUiHitRegions(const std::vector<float>& regions) { (void)regions; }
 void detachDesktopUiOverlay() {}
 bool uiOverlayHitTest(float nx, float ny) {
@@ -210,6 +376,25 @@ bool uiOverlayHitTest(float nx, float ny) {
     return false;
 }
 bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, int pointerId) {
+    (void)type;
+    (void)nx;
+    (void)ny;
+    (void)buttons;
+    (void)pointerId;
+    return false;
+}
+bool uiOverlayInjectKey(uint32_t keycode, uint32_t modifiers, uint32_t group,
+                        uint32_t time, bool down) {
+#if TN_ENABLE_UI_OVERLAY && defined(__linux__) && !defined(__ANDROID__)
+    if (!uiOverlayAttached()) return false;
+    return tn_ui_overlay_inject_key(keycode, modifiers, group, time, down ? 1 : 0) == 0;
+#else
+    (void)keycode; (void)modifiers; (void)group; (void)time; (void)down;
+    return false;
+#endif
+}
+bool uiOverlayKeyboardCaptured() { return false; }
+bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId) {
     (void)type;
     (void)nx;
     (void)ny;

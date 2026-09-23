@@ -60,9 +60,9 @@ describe("documented runtime contracts", () => {
     }
   });
 
-  it("keeps the default state flush interval at the documented 100ms", () => {
+  it("preserves the explicitly selected 100ms state flush interval", () => {
     vi.useFakeTimers();
-    const store = createGameStore({ score: 0 });
+    const store = createGameStore({ score: 0 }, DOCUMENTED_FLUSH_INTERVAL_MS);
     let notifications = 0;
     const unsubscribe = store.subscribe(() => notifications++);
     store.start();

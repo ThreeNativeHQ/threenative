@@ -1878,6 +1878,12 @@ test('a successful Windows signature records the signing scheme', () => {
       writeFileSync(args[2], 'archive bytes');
       return { status: 0, stdout: '', stderr: '' };
     }
+    if (command === 'makensis') {
+      const output = /^OutFile "([^"]+)"$/mu.exec(readFileSync(args.at(-1), 'utf8'))?.[1];
+      assert.ok(output);
+      writeFileSync(output, 'MZ installer fixture');
+      return { status: 0, stdout: '', stderr: '' };
+    }
     throw new Error(`unexpected tool ${command}`);
   };
   const result = packageDesktopContainer({ bundle: stageBundle(directory),
@@ -1930,4 +1936,3 @@ test('macOS notarization staples and re-archives the signed bundle', () => {
   assert.ok(calls.includes('xcrun stapler'));
   assert.equal(archiveWrites, 2, 'the stapled bundle is archived again');
 });
-

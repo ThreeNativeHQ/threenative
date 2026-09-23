@@ -42,6 +42,40 @@ afterEach(() => {
 });
 
 describe("local native payload assembler", () => {
+  it("stages current Android AGP outputs even when stale old-layout files exist", async () => {
+    const root = makeTempDirSync("release-native-local-android-");
+    roots.push(root);
+    const stripped = path.join(
+      root,
+      "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release",
+    );
+    for (const abi of ["arm64-v8a", "x86_64"]) {
+      for (const [layout, content] of [
+        ["stripReleaseDebugSymbols/out", "current"],
+        ["out", "stale"],
+      ] as const) {
+        const output = path.join(stripped, layout, "lib", abi);
+        mkdirSync(output, { recursive: true });
+        writeFileSync(path.join(output, "libmystral-runtime.so"), `${content} ${abi}`);
+      }
+    }
+    const { stageLocalPayload } = await loadAssembler();
+    const staged = stageLocalPayload({
+      repo: root,
+      platform: "linux",
+      arch: "x64",
+      sourceSha: "a".repeat(40),
+      keys: ["android-arm64-v8a-runtime-v8", "android-x86_64-runtime-v8"],
+    });
+    for (const abi of ["arm64-v8a", "x86_64"])
+      expect(
+        readFileSync(
+          path.join(staged.directory, `threenative-runtime-android-${abi}-v8.so`),
+          "utf8",
+        ),
+      ).toBe(`current ${abi}`);
+  });
+
   it("stages exactly the declared host keys and writes a scoped lock", async () => {
     const root = makeTempDirSync("release-native-local-");
     roots.push(root);

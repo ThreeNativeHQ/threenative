@@ -20,7 +20,7 @@ export { GameCanvas } from "./GameCanvas.js";
  */
 export { DebugOverlay } from "./DebugOverlay.js";
 /**
- * Read throttled game state from React.
+ * Read the game's coalesced frame snapshot from React.
  * @situation bind a HUD component to game state
  * @situation select a slice of state for a React panel
  * @constraint use this hook only from the web UI entry

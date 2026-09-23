@@ -59,6 +59,16 @@ void endDawnFrame(BindingsState* state);
 // Set the process presentation ceiling before frames begin. Returns false for unsupported values.
 bool setPresentationCapHz(uint32_t hz);
 
+// PRD-399 display-synchronized pacing. The platform's display-frame signal feeds these: `started`
+// and `stopped` bracket the signal's registration around the activity lifecycle, and each `frame`
+// carries that display frame's timestamp. While frames are live, `paceToPresentationCap()` aligns
+// the cap to the measured display cadence instead of sleeping on the render thread's clock; with
+// no signal it falls back to the pre-existing software deadline. Declared here so the executable
+// pacing regression can drive the same owner the activity does.
+void notePresentationFramesStarted();
+void notePresentationFramesStopped();
+void notePresentationFrame(int64_t frameTimeNs);
+
 void* getCurrentRenderedTexture(BindingsState* state);
 uint32_t getCurrentTextureWidth(BindingsState* state);
 uint32_t getCurrentTextureHeight(BindingsState* state);
@@ -73,6 +83,15 @@ void clearScreenshotReady(BindingsState* state);
 void requestFrameScreenshot(BindingsState* state);
 
 void compositeCanvas2DToWebGPU(BindingsState* state);
+
+/**
+ * Draw the attached native UI layer over this frame's colour target. Returns true when a quad was
+ * drawn; false when there is no overlay, nothing has been painted yet, or the frame has no target.
+ *
+ * PRD-393. Called after the frame's own passes and before `presentPendingSurface()`, so the UI is
+ * carried by the same present as the world.
+ */
+bool compositeUiOverlayToWebGPU(BindingsState* state);
 
 using VideoCaptureCallback = void (*)(void* texture, uint32_t width, uint32_t height, void* userData);
 void setVideoCaptureCallback(BindingsState* state, VideoCaptureCallback callback, void* userData);

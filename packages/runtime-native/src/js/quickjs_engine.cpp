@@ -1220,7 +1220,10 @@ private:
         std::string msg = buildConsoleMessage(ctx, argc, argv);
         std::cout << "[log] " << msg << std::endl;
 #ifdef __ANDROID__
-        LOGI("[log] %s", msg.c_str());
+        // __android_log_write, not LOGI/__android_log_print: the print formatter caps at
+        // LOG_BUF_SIZE 1024 (1023 bytes), which truncated TN_FRAME_BUDGET windows.
+        const std::string full = "[log] " + msg;
+        __android_log_write(ANDROID_LOG_INFO, ANDROID_LOG_TAG, full.c_str());
 #endif
         return JS_UNDEFINED;
     }
@@ -1229,7 +1232,8 @@ private:
         std::string msg = buildConsoleMessage(ctx, argc, argv);
         std::cout << "[warn] " << msg << std::endl;
 #ifdef __ANDROID__
-        LOGW("[warn] %s", msg.c_str());
+        const std::string full = "[warn] " + msg;
+        __android_log_write(ANDROID_LOG_WARN, ANDROID_LOG_TAG, full.c_str());
 #endif
         return JS_UNDEFINED;
     }
@@ -1238,7 +1242,8 @@ private:
         std::string msg = buildConsoleMessage(ctx, argc, argv);
         std::cerr << "[error] " << msg << std::endl;
 #ifdef __ANDROID__
-        LOGE("[error] %s", msg.c_str());
+        const std::string full = "[error] " + msg;
+        __android_log_write(ANDROID_LOG_ERROR, ANDROID_LOG_TAG, full.c_str());
 #endif
         return JS_UNDEFINED;
     }

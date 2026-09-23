@@ -71,6 +71,14 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false, config
     if (command === 'rcedit') writeFileSync(args[0], 'executable with PE resources');
     else if (command === 'sips') writeFileSync(args.at(-1), 'resized icon');
     else if (command === 'iconutil') writeFileSync(args.at(-1), 'converted icns');
+    else if (command === 'powershell.exe') writeFileSync(options.env.TN_WEBVIEW_BOOTSTRAPPER_OUTPUT, 'MZ bootstrapper fixture');
+    else if (command === 'makensis') {
+      const script = readFileSync(args.at(-1), 'utf8');
+      invocations.at(-1).script = script;
+      const output = /^OutFile "([^"]+)"$/mu.exec(script)?.[1];
+      assert.ok(output);
+      writeFileSync(output, 'MZ installer fixture');
+    }
     else {
       assert.ok(command === 'tar' || command === 'zip', `unexpected tool: ${command}`);
       const staging = command === 'tar' ? args[args.indexOf('-C') + 1] : options.cwd;
@@ -111,6 +119,13 @@ test('Windows hashes the executable after PE resource editing', () => {
   assert.equal(readFileSync(join(root, manifest.executable), 'utf8'), 'executable with PE resources');
   assert.equal(manifest.resources[manifest.executable].sha256, digest(join(root, manifest.executable)));
   assert.deepEqual(resolveContainer(root, { platform: 'win32' }), manifest);
+});
+
+test('Windows release also produces a standard installer beside its portable ZIP', () => {
+  const packed = fixture('win32');
+  assert.equal(packed.installer, join(packed.directory, 'game-setup.exe'));
+  assert.ok(existsSync(packed.installer));
+  assert.ok(existsSync(packed.archive));
 });
 
 test('macOS stages Info.plist at the application bundle root, not under Resources', () => {

@@ -397,7 +397,7 @@ export interface IThreeNativeConfig {
   };
   readonly ui?: {
     /**
-     * Which renderer draws `src/ui/`.
+     * Which renderer draws `src/ui/`. Defaults to `"web"`.
      *
      * `"web"` runs the same React DOM, Tailwind, CSS, SVG and fonts on every target, through
      * that platform's own browser-class renderer composited over the game surface. What is

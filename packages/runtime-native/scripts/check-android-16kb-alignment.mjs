@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { extname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 import { inflateRawSync } from 'node:zlib';
 
 export const ANDROID_16KB_ABIS = Object.freeze(['arm64-v8a', 'x86_64']);
@@ -350,5 +352,57 @@ export function assertAndroidArtifact16KbAlignment(artifactPath, options = {}) {
     return { artifactPath, libraries: inspected, zipalign };
   } finally {
     rmSync(scratch, { force: true, recursive: true });
+  }
+}
+
+/** Check the APK Google bundletool actually produces, not the AAB's compressed library entries. */
+export function assertAndroidBundle16KbAlignment(artifactPath, bundletoolPath) {
+  if (!bundletoolPath || !existsSync(bundletoolPath)) {
+    throw new Error('AAB verification requires --bundletool /path/to/bundletool-all.jar');
+  }
+  const scratch = mkdtempSync(join(tmpdir(), 'tn-16kb-bundle-'));
+  try {
+    const archive = join(scratch, 'game.apks');
+    const java = process.env.JAVA_HOME
+      ? join(process.env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
+      : 'java';
+    const args = ['-jar', resolve(bundletoolPath)];
+    execFileSync(java, [...args, 'validate', `--bundle=${resolve(artifactPath)}`], { stdio: 'inherit' });
+    // Bundletool's standard debug signing is only for inspection; the input AAB is untouched.
+    execFileSync(java, [...args, 'build-apks', `--bundle=${resolve(artifactPath)}`,
+      `--output=${archive}`, '--mode=universal'], { stdio: 'inherit' });
+    const { bytes, entries } = readZipEntries(archive);
+    const apks = entries.filter((entry) => entry.name === 'universal.apk');
+    if (apks.length !== 1) throw new Error('Bundletool output must contain exactly one universal.apk');
+    const entry = apks[0];
+    const raw = bytes.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize);
+    if (entry.compression !== ZIP_STORED && entry.compression !== ZIP_DEFLATED) {
+      throw new Error(`Unsupported universal.apk ZIP compression: ${entry.compression}`);
+    }
+    const apk = join(scratch, 'universal.apk');
+    writeFileSync(apk, entry.compression === ZIP_STORED ? raw : inflateRawSync(raw));
+    return { ...assertAndroidArtifact16KbAlignment(apk), artifactPath };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] && existsSync(process.argv[1]) &&
+    import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  try {
+    const { values, positionals } = parseArgs({
+      options: { bundletool: { type: 'string' } }, allowPositionals: true,
+    });
+    if (positionals.length !== 1 || !['.apk', '.aab'].includes(extname(positionals[0]))) {
+      throw new Error('Usage: check-android-16kb-alignment.mjs <game.apk|game.aab> [--bundletool <jar>]');
+    }
+    const artifact = resolve(positionals[0]);
+    const result = extname(artifact) === '.aab'
+      ? assertAndroidBundle16KbAlignment(artifact, values.bundletool)
+      : assertAndroidArtifact16KbAlignment(artifact);
+    console.log(`Android 16 KB check passed: ${artifact} (${result.libraries.length} native libraries)`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
   }
 }
