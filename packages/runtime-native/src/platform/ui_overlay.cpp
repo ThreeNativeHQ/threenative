@@ -77,6 +77,9 @@ std::deque<std::string> g_inbound;
 std::atomic<uint64_t> g_dropped{0};
 std::atomic<bool> g_attached{false};
 
+/** How many interactive rectangles the page last published, for the OS press verdict line. */
+std::atomic<size_t> g_hitRegionCount{0};
+
 /**
  * A HUD publishes its rectangles on layout change and its intents on a tap, so a healthy run
  * queues single-digit frames per tick. A backlog past this means the game stopped draining —
@@ -118,6 +121,8 @@ void setUiOverlayAttached(bool attached) {
     if (attached) mystral::coldStartMark("ui_overlay_attached");
     else mystral::coldStartMark("ui_overlay_detached");
 }
+
+size_t uiOverlayHitRegionCount() { return g_hitRegionCount.load(std::memory_order_relaxed); }
 
 #if TN_ENABLE_UI_OVERLAY
 namespace {
@@ -244,6 +249,7 @@ void uiOverlaySetSize(int width, int height) {
 }
 
 void setUiHitRegions(const std::vector<float>& regions) {
+    g_hitRegionCount.store(regions.size() / 4, std::memory_order_relaxed);
     if (!uiOverlayAttached()) return;
     tn_ui_overlay_set_hit_regions(regions.empty() ? nullptr : regions.data(),
                                   static_cast<uint32_t>(regions.size() / 4));
@@ -329,6 +335,23 @@ struct UiPointerGesture {
             // page was already holding — measured as a loadout button that never activated.
             uiOverlayInjectPointer(type, lastX, lastY, buttons, pointerId);
             uiOwned = false;
+            return true;
+        }
+        if (kind == "pointermove") {
+            // The page observes every move, inside a UI island or not: an offscreen view has no
+            // cursor, so hover is only ever what the host forwards. This is a side effect, not a
+            // claim — the ownership rules below still decide whether the game also sees the move,
+            // so motion is never stolen from it.
+            uiOverlayInjectPointer(type, nx, ny, buttons, pointerId);
+            if (uiOwned) {
+                lastX = nx;
+                lastY = ny;
+                return true;
+            }
+            if (gameOwned) return false;
+            if (!uiOverlayHitTest(nx, ny)) return false;
+            lastX = nx;
+            lastY = ny;
             return true;
         }
         if (uiOwned) {

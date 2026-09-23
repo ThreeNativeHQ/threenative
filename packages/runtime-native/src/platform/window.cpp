@@ -296,10 +296,20 @@ bool routePointerToUi(const SDL_Event& event) {
     float nx = 0.0f;
     float ny = 0.0f;
     if (!uiViewportPoint(x, y, nx, ny)) return false;
+    const bool pressed = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
     const char* type = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown"
         : event.type == SDL_EVENT_MOUSE_BUTTON_UP               ? "pointerup"
                                                                 : "pointermove";
-    return uiOverlayRoutePointer(type, nx, ny, g_domButtons, 1);
+    const bool hit = uiOverlayRoutePointer(type, nx, ny, g_domButtons, 1);
+    // The synthetic bridge already logs every routed pointer (`TN_UI_POINTER_ROUTE` in runtime.cpp);
+    // this is the same verdict for a real press, which otherwise leaves no trace at all. Presses
+    // only — a move is not a decision, and logging each one would drown the line it belongs to.
+    if (pressed) {
+        std::cout << "TN_UI_POINTER_ROUTE:{\"source\":\"os\",\"hit\":" << (hit ? "true" : "false")
+                  << ",\"x\":" << nx << ",\"y\":" << ny
+                  << ",\"regions\":" << uiOverlayHitRegionCount() << "}" << std::endl;
+    }
+    return hit;
 }
 
 /**

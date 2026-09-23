@@ -72,12 +72,45 @@ pub(crate) fn json_string(value: &str) -> String {
     out
 }
 
+/// The hover state machine the pointer script runs on every move.
+///
+/// An offscreen web view has no cursor, so the browser never fires `:hover` or the
+/// `mouseenter`/`pointerenter` family. This synthesises them from the point the host reports,
+/// with `document.elementFromPoint`: `over`/`out` bubble and fire on the target, `enter`/`leave`
+/// do not bubble and fire on each ancestor the pointer did not share, and `tn-hover` stays on the
+/// hovered element and its ancestors so a project can style hover without `:hover`. It sets no
+/// appearance itself.
+const POINTER_HOVER_JS: &str = "var last=window.__tnHoverTarget;\
+ if(t!==last){\
+ var chain=function(el){var c=[];while(el){c.push(el);el=el.parentElement;}return c;};\
+ var oldChain=last?chain(last):[];var newChain=chain(t);\
+ var inChain=function(c,el){return c.indexOf(el)>=0;};\
+ var fire=function(el,type,pointer,bubbles,related){\
+ if(!el||!el.dispatchEvent)return;\
+ var init={bubbles:bubbles,cancelable:false,composed:true,clientX:x,clientY:y,relatedTarget:related||null};\
+ if(pointer){init.pointerType='mouse';init.pointerId=1;init.isPrimary=true;}\
+ el.dispatchEvent(pointer?new PointerEvent(type,init):new MouseEvent(type,init));};\
+ for(var i=0;i<oldChain.length;i++){var el=oldChain[i];if(inChain(newChain,el))continue;\
+ if(el.classList)el.classList.remove('tn-hover');}\
+ if(last){fire(last,'pointerout',true,true,t);fire(last,'mouseout',false,true,t);}\
+ for(var i=0;i<oldChain.length;i++){var el=oldChain[i];if(inChain(newChain,el))continue;\
+ fire(el,'pointerleave',true,false,t);fire(el,'mouseleave',false,false,t);}\
+ for(var i=0;i<newChain.length;i++){var el=newChain[i];if(inChain(oldChain,el))continue;\
+ if(el.classList)el.classList.add('tn-hover');}\
+ fire(t,'pointerover',true,true,last);fire(t,'mouseover',false,true,last);\
+ for(var i=0;i<newChain.length;i++){var el=newChain[i];if(inChain(oldChain,el))continue;\
+ fire(el,'pointerenter',true,false,last);fire(el,'mouseenter',false,false,last);}\
+ window.__tnHoverTarget=t;}";
+
 /// The JavaScript a host evaluates to deliver one synthetic pointer event into the page.
 ///
 /// Built once so both desktop backends dispatch identically: the normalized point becomes a pixel
 /// position in the page's own viewport, and the event is dispatched on whatever element is there,
 /// so a control's own handlers run exactly as they would for an OS-routed press. Playtest input
 /// only; a real OS pointer needs no help.
+///
+/// A `pointermove` also carries [`POINTER_HOVER_JS`], because it is the only event the page gets
+/// often enough to track what the pointer is over on a view with no cursor.
 pub(crate) fn pointer_injection_script(
     kind: &str,
     nx: f32,
@@ -85,11 +118,13 @@ pub(crate) fn pointer_injection_script(
     buttons: i32,
     pointer_id: i32,
 ) -> String {
+    let hover = if kind == "pointermove" { POINTER_HOVER_JS } else { "" };
     let kind = json_string(kind);
     format!(
         "(function(){{var x={nx}*window.innerWidth;var y={ny}*window.innerHeight;\
          var t=document.elementFromPoint(x,y)||document.body||document.documentElement;\
          if(!t)return false;\
+         {hover}\
          t.dispatchEvent(new PointerEvent({kind},{{bubbles:true,cancelable:true,composed:true,\
          clientX:x,clientY:y,buttons:{buttons},pointerId:{pointer_id},pointerType:'touch',\
          isPrimary:true,width:1,height:1,pressure:{pressure}}}));\
@@ -191,6 +226,40 @@ mod tests {
             script.contains(r#"new PointerEvent("pointerdown'); alert(1); //","#),
             "the kind is a JSON string literal: {script}"
         );
+    }
+
+    #[test]
+    fn a_move_synthesises_the_hover_a_view_with_no_cursor_never_fires() {
+        let script = pointer_injection_script("pointermove", 0.5, 0.5, 0, 1);
+        for needle in [
+            "pointerover",
+            "pointerenter",
+            "pointerout",
+            "pointerleave",
+            "mouseover",
+            "mouseenter",
+            "mouseout",
+            "mouseleave",
+            "tn-hover",
+        ] {
+            assert!(script.contains(needle), "a move must synthesise {needle}: {script}");
+        }
+        assert!(
+            script.contains("classList.add('tn-hover')")
+                && script.contains("classList.remove('tn-hover')"),
+            "the class is toggled on the chain entered and removed from the one left: {script}"
+        );
+    }
+
+    #[test]
+    fn a_press_does_not_run_the_hover_state_machine() {
+        for kind in ["pointerdown", "pointerup"] {
+            let script = pointer_injection_script(kind, 0.5, 0.5, 1, 1);
+            assert!(
+                !script.contains("tn-hover"),
+                "{kind} is not a move and must not touch hover state: {script}"
+            );
+        }
     }
 
     #[test]
