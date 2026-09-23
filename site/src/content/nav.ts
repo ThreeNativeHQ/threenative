@@ -2,11 +2,7 @@ import { findRoute } from "../routes.js";
 
 const REPOSITORY = "https://github.com/ThreeNativeHQ/threenative";
 
-/**
- * Where a navigation entry points. `pending` is the only entry that does not navigate, and it
- * must carry the reason it does not — a nav item that silently goes nowhere is the thing this
- * union exists to make impossible.
- */
+/** Every entry has a destination or an explicit explanation; menu parents may be pending. */
 export type NavTarget =
   | { readonly kind: "anchor"; readonly hash: string }
   | { readonly kind: "external"; readonly href: string }
@@ -22,15 +18,14 @@ export interface INavItem {
 export interface INavEntry {
   readonly label: string;
   readonly target: NavTarget;
-  /** Present when the entry opens a menu; the chevron in the reference marks exactly these. */
   readonly items?: readonly INavItem[];
 }
 
-/** The centre nav from the reference, in the reference's order. */
+/** Comparisons and benchmarks live under Docs, never as extra top-level navigation. */
 export const primaryNav: readonly INavEntry[] = [
   {
     label: "Product",
-    target: { kind: "pending", reason: "The product overview page is not written yet." },
+    target: { kind: "pending", reason: "Choose a product destination from the menu." },
     items: [
       {
         label: "Engine",
@@ -39,7 +34,7 @@ export const primaryNav: readonly INavEntry[] = [
       },
       {
         label: "Templates",
-        summary: "Eight scaffolds that produce a running game, a HUD, and a playtest scenario.",
+        summary: "Scaffolds with a running game, a HUD, and a playtest scenario.",
         target: {
           kind: "external",
           href: `${REPOSITORY}/blob/main/packages/create-threenative/README.md`,
@@ -47,7 +42,7 @@ export const primaryNav: readonly INavEntry[] = [
       },
       {
         label: "Native runtime",
-        summary: "The owned C++ host for desktop, Android and iOS. No WebView.",
+        summary: "The owned C++ host for desktop, Android and iOS. No WebView game surface.",
         target: { kind: "external", href: `${REPOSITORY}/tree/main/packages/runtime-native` },
       },
       {
@@ -57,17 +52,7 @@ export const primaryNav: readonly INavEntry[] = [
       },
     ],
   },
-  {
-    label: "Solutions",
-    target: {
-      kind: "pending",
-      reason: "Nothing is written here yet, and an empty page is worse than an honest one.",
-    },
-  },
-  {
-    label: "Docs",
-    target: { kind: "external", href: `${REPOSITORY}/tree/main/docs` },
-  },
+  { label: "Docs", target: { kind: "internal", path: "/docs" } },
   {
     label: "Community",
     target: { kind: "pending", reason: "Pick a destination from the menu." },
@@ -89,16 +74,8 @@ export const primaryNav: readonly INavEntry[] = [
       },
     ],
   },
-  {
-    label: "Pricing",
-    target: {
-      kind: "pending",
-      reason: "ThreeNative is MIT-licensed. There is nothing to price.",
-    },
-  },
 ];
 
-/** The right-hand cluster. The reference shows a magnifier, an account link and the accent CTA. */
 export const utilityNav: readonly INavEntry[] = [
   {
     label: "Search the source",
@@ -107,14 +84,8 @@ export const utilityNav: readonly INavEntry[] = [
       href: "https://github.com/search?q=repo%3AThreeNativeHQ%2Fthreenative&type=code",
     },
   },
-  {
-    label: "GitHub",
-    target: { kind: "external", href: REPOSITORY },
-  },
-  {
-    label: "Get Started",
-    target: { kind: "anchor", hash: "#install" },
-  },
+  { label: "GitHub", target: { kind: "external", href: REPOSITORY } },
+  { label: "Get Started", target: { kind: "anchor", hash: "#install" } },
 ];
 
 export const footerNav: readonly INavEntry[] = [
@@ -146,13 +117,12 @@ export const footerNav: readonly INavEntry[] = [
 ];
 
 export function navHref(target: NavTarget): string | undefined {
-  if (target.kind === "anchor") return target.hash;
+  if (target.kind === "anchor") return `/${target.hash}`;
   if (target.kind === "external") return target.href;
   if (target.kind === "internal") return target.path;
   return undefined;
 }
 
-/** Internal targets reachable from navigation, so a spec can prove each one prerenders. */
 export function internalNavPaths(entries: readonly INavEntry[]): readonly string[] {
   const paths: string[] = [];
   for (const entry of entries) {
@@ -163,7 +133,6 @@ export function internalNavPaths(entries: readonly INavEntry[]): readonly string
   return [...new Set(paths)];
 }
 
-/** Every label a renderer must be able to show, used as the header's coverage assertion. */
 export function navLabels(entries: readonly INavEntry[]): readonly string[] {
   return entries.flatMap((entry) => [
     entry.label,

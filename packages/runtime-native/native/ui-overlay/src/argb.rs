@@ -587,7 +587,11 @@ impl ArgbContainer {
                         }
                     }
                     xlib::FocusOut => {
-                        if event.focus_change.window == self.parent {
+                        if focus_out_hides_overlay(
+                            event.focus_change.window,
+                            self.parent,
+                            event.focus_change.mode,
+                        ) {
                             self.set_mapped(false);
                         }
                     }
@@ -667,8 +671,12 @@ impl ArgbContainer {
                         .collect::<Vec<_>>()
                 );
             }
-            // ShapeInput = 2, ShapeSet = 0, YXBanded = 1. An empty set is a window that takes no
+            // ShapeInput = 2, ShapeSet = 0, Unsorted = 0. An empty set is a window that takes no
             // pointer events at all, which is exactly right for a UI with no interactive islands.
+            // The ordering must be Unsorted, not a sorted one: the page publishes its islands in
+            // DOM order, and the server answers `BadMatch` for a list that does not satisfy the
+            // order it declares (`VerifyRectOrder` in `Xext/shape.c`), which GDK's error handler
+            // turns into a process exit.
             combine(
                 self.display,
                 self.x11_window,
@@ -678,7 +686,7 @@ impl ArgbContainer {
                 rectangles.as_mut_ptr(),
                 rectangles.len() as i32,
                 0,
-                1,
+                0,
             );
             (self.xlib.XFlush)(self.display);
         }
@@ -1032,6 +1040,17 @@ fn read_drawable(window: c_ulong, redirected: bool) -> Result<RedirectedImage, S
 
 
 
+/// Whether a `FocusOut` on the game window means the player really left the game.
+///
+/// Measured on a private X server: a native popup's keyboard grab sends the game `FocusOut`
+/// mode=`NotifyGrab` while `XGetInputFocus` still names the game, so that one mode is not a
+/// real loss and hiding on it unmapped the whole HUD behind the popup. A genuine switch — even
+/// one made while a grab is active, which reports `NotifyWhileGrabbed` and moves the real focus
+/// to the other window — must still hide; only `NotifyGrab` is suppressed.
+fn focus_out_hides_overlay(window: c_ulong, parent: c_ulong, mode: i32) -> bool {
+    window == parent && mode != xlib::NotifyGrab
+}
+
 /// Whether the overlay belongs on screen, given whatever `XGetInputFocus` just reported.
 ///
 /// Split out from the call so it can be tested: the two constants below are unreachable on a
@@ -1051,7 +1070,10 @@ pub(crate) fn should_show_overlay(focused: c_ulong, belongs_to_game: impl Fn(c_u
 
 #[cfg(test)]
 mod tests {
-    use super::should_show_overlay;
+    use super::{focus_out_hides_overlay, should_show_overlay, xlib};
+
+    const GAME: u64 = 42;
+    const OTHER: u64 = 99;
 
     #[test]
     fn shows_the_overlay_while_the_game_holds_focus() {
@@ -1073,5 +1095,24 @@ mod tests {
     #[test]
     fn shows_the_overlay_when_nothing_holds_focus() {
         assert!(should_show_overlay(0, |_| panic!("None is not a window id to walk")));
+    }
+
+    #[test]
+    fn a_native_popup_keyboard_grab_does_not_hide_the_overlay() {
+        // Measured: the popup's grab sends the game FocusOut mode=NotifyGrab while XGetInputFocus
+        // still names the game. Hiding here is the regression — the HUD vanished behind the popup.
+        assert!(!focus_out_hides_overlay(GAME, GAME, xlib::NotifyGrab));
+    }
+
+    #[test]
+    fn a_real_focus_switch_still_hides_the_overlay() {
+        // Measured: a real switch to a foreign window is mode=NotifyNormal without a grab, and
+        // mode=NotifyWhileGrabbed when that switch happens while a grab is active (the real focus
+        // moves to the other window). Both are genuine losses; neither may be suppressed.
+        assert!(focus_out_hides_overlay(GAME, GAME, xlib::NotifyNormal));
+        assert!(focus_out_hides_overlay(GAME, GAME, xlib::NotifyWhileGrabbed));
+        assert!(focus_out_hides_overlay(GAME, GAME, xlib::NotifyUngrab));
+        // A focus change reported on some other window is not the game's.
+        assert!(!focus_out_hides_overlay(OTHER, GAME, xlib::NotifyNormal));
     }
 }

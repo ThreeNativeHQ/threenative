@@ -1,4 +1,5 @@
 import type { PlaytestFramePhase } from "../protocol.js";
+import { PLAYTEST_FRAME_PASS_KINDS, type PlaytestFramePassKind } from "../protocol.js";
 import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, IPlaytestPerformanceAssertion } from "../scenario.js";
 import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
@@ -184,6 +185,43 @@ export function evaluatePerformanceAssertion(
       samplesPass && triangles.length === samples.length && maxObservedTriangles !== undefined && maxObservedTriangles <= assertion.maxTriangles,
     );
   }
+  const addPassBound = (
+    unit: "draws" | "triangles",
+    kind: PlaytestFramePassKind,
+    ceiling: number,
+  ): void => {
+    const noun = unit === "draws" ? "draw calls" : "triangles";
+    // Fails closed twice over, like the phase bounds: a series carrying no pass split cannot
+    // satisfy a per-pass ceiling, and neither can a frame that omitted the declared kind.
+    const measured = observed.flatMap((sample) => {
+      const pass = sample.passes?.find((candidate) => candidate.kind === kind);
+      return pass === undefined ? [] : [pass[unit]];
+    });
+    const actual = measured.length === samples.length ? Math.max(...measured) : undefined;
+    const id = unit === "draws"
+      ? `performance.maxPassDrawCalls.${kind}`
+      : `performance.maxPassTriangles.${kind}`;
+    const pass = samplesPass && actual !== undefined && actual <= ceiling;
+    results.push({
+      details: { actual: actual ?? null, expected: ceiling, pass: kind, sampleCount: samples.length, unit: noun },
+      id,
+      pass,
+    });
+    if (!pass) diagnostics.push({
+      code: "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+      message: actual === undefined
+        ? `${id} received no per-pass samples for '${kind}'; ${measured.length} of ${samples.length} frames carried that pass.`
+        : `${id} expected at most ${ceiling} ${noun}, observed ${actual}.`,
+      observedRuntimePath: path,
+      severity: "error",
+      sourcePath,
+      suggestion: "Keep the engine frame budget installed so the run carries a per-pass split; a renderer that reports no split cannot satisfy a per-pass ceiling.",
+    });
+  };
+  for (const [kind, ceiling] of Object.entries(assertion.maxPassDrawCalls ?? {}) as [PlaytestFramePassKind, number][])
+    addPassBound("draws", kind, ceiling);
+  for (const [kind, ceiling] of Object.entries(assertion.maxPassTriangles ?? {}) as [PlaytestFramePassKind, number][])
+    addPassBound("triangles", kind, ceiling);
   return { assertions: results, diagnostics };
 }
 
@@ -196,7 +234,28 @@ export function isRuntimeDiagnosticsSample(value: unknown): value is IPlaytestRu
   }
   return (value.drawCalls === undefined || (typeof value.drawCalls === "number" && Number.isFinite(value.drawCalls) && value.drawCalls >= 0))
     && (value.triangles === undefined || (typeof value.triangles === "number" && Number.isFinite(value.triangles) && value.triangles >= 0))
-    && isFramePhaseSplit(value.phases);
+    && isFramePhaseSplit(value.phases)
+    && isFramePassSplit(value.passes);
+}
+
+/**
+ * A per-pass split is optional, but a malformed one is not tolerated: an unknown pass kind or a
+ * negative count would otherwise be counted as a valid sample whose pass bound silently evaluated
+ * against nothing.
+ */
+function isFramePassSplit(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every((pass) =>
+    isRecord(pass)
+    && (PLAYTEST_FRAME_PASS_KINDS as readonly string[]).includes(pass.kind as string)
+    && typeof pass.draws === "number"
+    && Number.isFinite(pass.draws)
+    && pass.draws >= 0
+    && typeof pass.triangles === "number"
+    && Number.isFinite(pass.triangles)
+    && pass.triangles >= 0,
+  );
 }
 
 /**

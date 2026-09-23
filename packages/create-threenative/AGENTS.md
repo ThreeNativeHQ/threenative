@@ -42,7 +42,13 @@ same treatment in `renderTemplate`. `pnpm budgets` reports each template's LOC b
 it.
 
 Reusable workflows live in `agent-files/.agents/skills/` and `agent-files/.claude/skills/`; each
-template links both adapters, and the scaffolder copies them unchanged. Long recipes live in
+template links both adapters, and the scaffolder copies them unchanged. Every scaffold also gets
+`ponytail` — the lazy-first skill whose reuse rung *is* the mandatory capability search — and a
+project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`, both launching
+`.claude/hooks/ponytail-context.mjs`) that re-injects its ruleset every session, prompt and
+subagent. The hook is deliberately local to the project: no mode file, no statusline, no
+machine-wide state, `PONYTAIL=off` to opt out, and Codex needs `/hooks` trust before it runs.
+Long recipes live in
 `agent-docs/references/*.md`, not in the templates. The scaffolder copies that bundle to
 `<project>/agent-docs/` with placeholder substitution and fails closed when a template names a
 page it does not ship. Keep each template `AGENTS.md` under 100 lines; `scripts/instruction-budget.ts`

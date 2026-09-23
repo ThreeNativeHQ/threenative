@@ -1,4 +1,5 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
+import type { IRenderPassSample } from "./render-pass-budget.js";
 
 export type AfterPhysicsCallback = (dt: number) => void;
 
@@ -14,6 +15,10 @@ export interface IAfterPhysicsPhase {
 
 export function createAfterPhysicsPhase(): IAfterPhysicsPhase {
   const callbacks = new Set<AfterPhysicsCallback>();
+  // Snapshot storage reused across frames, with one array per nesting level so a dispatch
+  // started from inside a running callback cannot clobber its parent's snapshot.
+  const snapshots: AfterPhysicsCallback[][] = [];
+  let depth = 0;
   return {
     clear: () => callbacks.clear(),
     register: (callback) => {
@@ -25,7 +30,22 @@ export function createAfterPhysicsPhase(): IAfterPhysicsPhase {
     run: (dt) => {
       if (!Number.isFinite(dt) || dt <= 0)
         throw new Error(`afterPhysics requires a positive finite dt, received ${String(dt)}.`);
-      for (const callback of [...callbacks]) callback(dt);
+      if (callbacks.size === 0) return;
+      let snapshot = snapshots[depth];
+      if (snapshot === undefined) {
+        snapshot = [];
+        snapshots[depth] = snapshot;
+      }
+      depth += 1;
+      snapshot.length = 0;
+      // Snapshot before running: a callback that registers or removes work affects the next
+      // dispatch, not this one, and one already snapshotted still runs after a later removal.
+      for (const callback of callbacks) snapshot.push(callback);
+      try {
+        for (let index = 0; index < snapshot.length; index += 1) snapshot[index]?.(dt);
+      } finally {
+        depth -= 1;
+      }
     },
   };
 }
@@ -65,6 +85,7 @@ export interface IFixedStepLoopOptions {
 
 export interface IRenderPerformanceMetrics {
   readonly drawCalls?: number;
+  readonly passes?: readonly IRenderPassSample[];
   readonly triangles?: number;
 }
 
@@ -257,6 +278,9 @@ export class FixedStepLoop {
         ...(metrics === undefined || metrics.drawCalls === undefined
           ? {}
           : { drawCalls: metrics.drawCalls }),
+        ...(metrics?.passes === undefined || metrics.passes.length === 0
+          ? {}
+          : { passes: metrics.passes.map((pass) => ({ ...pass })) }),
         ...(phases === undefined ? {} : { phases }),
         ...(metrics === undefined || metrics.triangles === undefined
           ? {}
