@@ -221,6 +221,30 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  		}
  
+@@ -78999,15 +78999,22 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 		let snippet;
+ 
+ 		if ( depthSnippet ) {
+ 
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ depthSnippet }, u32( ${ levelSnippet } ) )`;
+ 
+ 		} else {
+ 
+-			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, u32( ${ levelSnippet } ) )`;
++			// naga v25 (wgpu-native v25.0.2.2) rejects a u32 sample index on a
++			// multisampled textureLoad; i32 is accepted by every backend. Mip-level
++			// operands (including the array form above) stay u32.
++			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
++			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
++			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
++			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+ 
+ 				snippet += '.x';
+ 
+ 			}
 @@ -79586,7 +79641,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
@@ -578,6 +602,30 @@ diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgp
 index be07536301cd47ef2544e4a54f6abe17407f52af..3b064a25a73fb35bcaed653794bda420bb004dec 100644
 --- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
 +++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+@@ -736,15 +736,22 @@ generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
+ 		let snippet;
+ 
+ 		if ( depthSnippet ) {
+ 
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ depthSnippet }, u32( ${ levelSnippet } ) )`;
+ 
+ 		} else {
+ 
+-			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, u32( ${ levelSnippet } ) )`;
++			// naga v25 (wgpu-native v25.0.2.2) rejects a u32 sample index on a
++			// multisampled textureLoad; i32 is accepted by every backend. Mip-level
++			// operands (including the array form above) stay u32.
++			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
++			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
++			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
++			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+ 
+ 				snippet += '.x';
+ 
+ 			}
 @@ -1323,7 +1323,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
@@ -604,3 +652,31 @@ index be07536301cd47ef2544e4a54f6abe17407f52af..3b064a25a73fb35bcaed653794bda420
  
  				if ( needsSampler ) {
  
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index f707acc24f5711fdae065ce920b08435b0869c1b..4c679d417f79af7994f296c005fcfaf3416c3f7a 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -78999,15 +78999,22 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 		let snippet;
+ 
+ 		if ( depthSnippet ) {
+ 
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ depthSnippet }, u32( ${ levelSnippet } ) )`;
+ 
+ 		} else {
+ 
+-			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, u32( ${ levelSnippet } ) )`;
++			// naga v25 (wgpu-native v25.0.2.2) rejects a u32 sample index on a
++			// multisampled textureLoad; i32 is accepted by every backend. Mip-level
++			// operands (including the array form above) stay u32.
++			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
++			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
++			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
++			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+ 
+ 				snippet += '.x';
+ 
+ 			}

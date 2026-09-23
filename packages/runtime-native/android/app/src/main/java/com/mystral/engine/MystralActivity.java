@@ -7,6 +7,7 @@ import android.graphics.Insets;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Choreographer;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.View;
@@ -32,6 +33,34 @@ public class MystralActivity extends SDLActivity {
 
     /** The transparent WebView the UI renders into, or null when this game ships no overlay. */
     private TnUiOverlay uiOverlay;
+
+    /**
+     * The display-frame signal the native presentation cap aligns to (PRD-399). The native side
+     * sleeps to a deadline that has no relation to the display, so a state submitted just after
+     * the WebView's frame waits an extra vsync. Each doFrame hands the runtime that display
+     * frame's timestamp; the runtime paces to the measured cadence rather than an assumed 60 Hz.
+     *
+     * The callback is armed on resume and removed on pause, and it re-posts itself only while
+     * armed, so it can never outlive the activity that would receive its native call.
+     */
+    private static native void nativeOnPresentationFrame(long frameTimeNanos);
+
+    private static native void nativeOnPresentationFramesStarted();
+
+    private static native void nativeOnPresentationFramesStopped();
+
+    private boolean presentationFramesArmed = false;
+
+    private final Choreographer.FrameCallback presentationFrame =
+        new Choreographer.FrameCallback() {
+            @Override
+            public void doFrame(long frameTimeNanos) {
+                nativeOnPresentationFrame(frameTimeNanos);
+                if (presentationFramesArmed) {
+                    Choreographer.getInstance().postFrameCallback(this);
+                }
+            }
+        };
 
     /** Reapply the preference whenever Android replaces the drawable surface. */
     private final SurfaceHolder.Callback frameRateCallback = new SurfaceHolder.Callback() {
@@ -89,7 +118,40 @@ public class MystralActivity extends SDLActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        armPresentationFrames();
         if (mSurface != null) requestPreferredFrameRate(mSurface.getHolder(), applicationMetadata());
+    }
+
+    @Override
+    protected void onPause() {
+        // Notify the native waiter before removing the callback that would wake it: a render
+        // thread inside paceToPresentationCap() must fall back rather than wait out its timeout.
+        disarmPresentationFrames();
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        // Belt and braces: a callback left registered when the native library unloads would call
+        // into freed code. onPause normally precedes this, so the guard makes it a no-op.
+        disarmPresentationFrames();
+        super.onDestroy();
+    }
+
+    /** Arm the display-frame callback once per foreground stretch, never twice. */
+    private void armPresentationFrames() {
+        if (presentationFramesArmed) return;
+        presentationFramesArmed = true;
+        nativeOnPresentationFramesStarted();
+        Choreographer.getInstance().postFrameCallback(presentationFrame);
+    }
+
+    /** Unblock the native waiter, then stop the callback that feeds it. */
+    private void disarmPresentationFrames() {
+        if (!presentationFramesArmed) return;
+        presentationFramesArmed = false;
+        nativeOnPresentationFramesStopped();
+        Choreographer.getInstance().removeFrameCallback(presentationFrame);
     }
 
     @Override

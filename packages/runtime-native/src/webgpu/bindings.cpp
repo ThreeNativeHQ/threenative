@@ -2861,6 +2861,7 @@ void endDawnFrame(BindingsState* state) {
     state->profiling.framePhasePresentNs = 0;
     state->profiling.framePhaseGpuDrainNs = 0;
     state->profiling.framePhasePollNs = 0;
+    state->profiling.framePhaseUiNs = 0;
     state->profiling.framePhaseOtherNs = 0;
     if (state->profiling.frameOpStreamDrain.ptr) {
         const steady::time_point drainBegin = steady::now();
@@ -2913,6 +2914,16 @@ void endDawnFrame(BindingsState* state) {
 #endif
     // Composite Canvas 2D content to WebGPU if the main canvas uses 2D context
     compositeCanvas2DToWebGPU(state);
+
+    // The native UI layer, over whatever the world left in the frame's colour target and before
+    // the present, so one swapchain carries both. Its own phase, not the remainder: this is the
+    // whole cost PRD-393 adds to a frame, and AC-6 measures it on its own.
+    {
+        const steady::time_point uiBegin = steady::now();
+        compositeUiOverlayToWebGPU(state);
+        state->profiling.framePhaseUiNs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - uiBegin).count());
+    }
 
     // Every pass this frame has been submitted; put the one image on screen.
     const uint64_t presentsBefore = state->profiling.presentCount;
@@ -2981,7 +2992,7 @@ void endDawnFrame(BindingsState* state) {
         std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now() - phaseBegin).count());
     const uint64_t namedNs = state->profiling.framePhaseDrainNs + state->profiling.framePhaseReplayNs +
                              state->profiling.framePhasePresentNs + state->profiling.framePhaseGpuDrainNs +
-                             state->profiling.framePhasePollNs;
+                             state->profiling.framePhasePollNs + state->profiling.framePhaseUiNs;
     state->profiling.framePhaseOtherNs = phaseTotalNs > namedNs ? phaseTotalNs - namedNs : 0;
 }
 

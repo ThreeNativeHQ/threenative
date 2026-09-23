@@ -1604,8 +1604,10 @@ private:
                 }
                 std::cout << "[" << *prefixUtf8 << "] " << line << std::endl;
 #if defined(__ANDROID__)
-                __android_log_print(ANDROID_LOG_INFO, "MystralJS", "[%s] %s", *prefixUtf8,
-                                    line.c_str());
+                // __android_log_write, not __android_log_print: the print formatter caps at
+                // LOG_BUF_SIZE 1024 (1023 bytes), which truncated TN_FRAME_BUDGET windows.
+                const std::string full = std::string("[") + *prefixUtf8 + "] " + line;
+                __android_log_write(ANDROID_LOG_INFO, "MystralJS", full.c_str());
 #endif
             }, v8::String::NewFromUtf8(isolate_, prefix).ToLocalChecked())->GetFunction(context).ToLocalChecked();
         };

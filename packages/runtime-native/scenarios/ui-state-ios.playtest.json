@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "ui-state-ios",
+  "target": "web",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 120,
+  "steps": [{ "waitTicks": 120 }],
+  "assert": {
+    "resources": [{ "id": "GameState", "path": "sequence", "changed": true }]
+  }
+}

@@ -80,6 +80,9 @@ describe("starter playtest proof", () => {
       expect(packageJson.scripts.test).toContain('--scenario "playtests/*.playtest.json"');
       expect(packageJson.scripts.test).toContain("--browser-recipe webgpu");
       expect(packageJson.scripts.test).toContain("--headed");
+      expect(packageJson.scripts.test).toContain("pnpm build:web &&");
+      expect(packageJson.scripts.test).toContain("vite preview --host");
+      expect(packageJson.scripts.test).not.toContain("pnpm dev");
       expect(packageJson.scripts.test).not.toContain("4173");
     },
   );

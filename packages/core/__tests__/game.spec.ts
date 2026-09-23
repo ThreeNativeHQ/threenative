@@ -13,6 +13,7 @@ import { InputMap } from "../src/input.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
+import { subscribeUiState } from "../src/ui-state.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -57,6 +58,105 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it.each([false, true])(
+    "releases the UI bridge when renderer startup fails (host: %s)",
+    async (host) => {
+      if (host) {
+        vi.stubGlobal("__tnUiPost", () => undefined);
+        vi.stubGlobal("__tnUiOverlayAttached", () => true);
+      }
+      const ui = connectUiBridge({ end: "ui" });
+      const boom = new Error("renderer failed");
+      const game = defineGame({
+        renderer: {
+          ...renderer(testCanvas()),
+          webgl2Factory: () => {
+            throw boom;
+          },
+        },
+        scenes: { test: EmptyScene },
+        start: "test",
+      });
+      try {
+        await expect(game.start()).rejects.toBe(boom);
+        if (host) {
+          expect((globalThis as Record<string, unknown>).__tnUiGameReceive).toBeUndefined();
+        } else {
+          expect(ui.hasPeer()).toBe(false);
+        }
+      } finally {
+        game.stop();
+        ui.close();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it.each([undefined, 100])(
+    "publishes UI state at the selected frame/interval cadence (%s)",
+    async (stateFlushMs) => {
+      vi.useFakeTimers();
+      let frame: FrameRequestCallback | undefined;
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+        frame = callback;
+        return 1;
+      });
+      let renderedFrames = 0;
+      let animateUi = true;
+      class LiveUiScene extends Scene<{ score: number }> {
+        override render(ctx: ICtx<{ score: number }>): void {
+          if (!animateUi) return;
+          renderedFrames += 1;
+          ctx.state.set({ score: -renderedFrames });
+          ctx.state.set({ score: renderedFrames });
+        }
+      }
+      const game = defineGame({
+        initialState: { score: 0 },
+        renderer: renderer(testCanvas()),
+        scenes: { test: LiveUiScene },
+        start: "test",
+        ...(stateFlushMs === undefined ? {} : { stateFlushMs }),
+      });
+      const ui = connectUiBridge({ end: "ui" });
+      const mirror = subscribeUiState<{ score: number }>(ui);
+      const observed: number[] = [];
+      mirror.subscribe(() => observed.push(mirror.get()?.score ?? -1));
+      ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+      try {
+        await game.start();
+        await Promise.resolve();
+        observed.length = 0;
+        if (frame === undefined) throw new Error("Game did not start its loop.");
+        for (let count = 1; count <= 64; count++) {
+          frame(count * 16);
+          if (stateFlushMs === undefined) expect(mirror.get()?.score).toBe(renderedFrames);
+          await Promise.resolve();
+        }
+        // Startup may hold the world while still presenting loader frames. Count actual renders.
+        expect(renderedFrames).toBeGreaterThanOrEqual(8);
+        if (stateFlushMs === undefined) {
+          expect(observed).toEqual(Array.from({ length: renderedFrames }, (_, index) => index + 1));
+          animateUi = false;
+          frame(1_040);
+          await Promise.resolve();
+          expect(observed).toHaveLength(renderedFrames);
+        } else {
+          expect(observed).toEqual([]);
+          await vi.advanceTimersByTimeAsync(stateFlushMs);
+          expect(observed).toEqual([renderedFrames]);
+        }
+        expect(mirror.get()).toEqual({ score: renderedFrames });
+      } finally {
+        game.stop();
+        mirror.stop();
+        ui.close();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("executes the ordinary no-overlay render path with diagnostics disabled", async () => {
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;

@@ -1992,8 +1992,8 @@ publishHitRegions({ bridge });
 export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }
 ```
 
-- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop · publish game state to a HUD in another realm · keep a web and native UI mirror on the same throttled state stream
-- **Constraints:** publishes at the store's throttled cadence, and not at all with no UI listening
+- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop · publish game state to a HUD in another realm · keep a web and native UI mirror on the same coalesced state stream
+- **Constraints:** publishes once per rendered frame unless stateFlushMs selects a slower interval, and not at all with no UI listening
 
 ```ts
 publishUiState(bridge, game.state);
@@ -4350,7 +4350,7 @@ export function UiLayer( { … }
 
 ### `useGameState`
 
-`function` — Read throttled game state from React.
+`function` — Read the game's coalesced frame snapshot from React.
 
 ```ts
 export function useGameState<TState extends Record<string, unknown>, TPhysics, TSelected>( game: IGame<TState, TPhysics>, selector: GameSelector<TState, TSelected>, ): TSelected;

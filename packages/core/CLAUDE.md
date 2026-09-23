@@ -9,7 +9,7 @@ Read `/AGENTS.md` first. This file covers only what is different here.
 The wiring every game repeats and no game should write: renderer bootstrap and WebGPU
 fallback, the fixed-step loop, scene lifecycle, plugin wiring, input mapping, asset loading,
 animation playback, skinned-pose measurement and clip conformance diagnostics, hot-reload state
-preservation, the throttled state store, accelerated scene ray queries, queryable heightfield
+preservation, the coalesced state store, accelerated scene ray queries, queryable heightfield
 storage shared by rendering and physics, and the entity registry that makes a running game
 inspectable.
 
@@ -100,8 +100,8 @@ particular, Godot-borrowed node names stay unchanged.
 - `ICtx` hands out the real objects: `ctx.scene` is a `THREE.Scene`, `ctx.camera` is a real
   camera, `ctx.physics` is whatever the plugin installed. There is no wrapper to unwrap, and
   none may be introduced.
-- `ctx.state.set()` is called at loop rate and coalesces; the store flushes on an interval
-  (100ms default) so React never re-renders at 60Hz. Never flush per frame.
+- `ctx.state.set()` coalesces simulation and render-hook writes; the game publishes the latest
+  snapshot once per rendered frame. `stateFlushMs` explicitly selects a slower interval.
 - `Registry.snapshot()` prefers an entity's own `debug()` and falls back to `autoFields`. It
   is exposed as `window.__THREENATIVE__` in dev builds only, and playtest reads it.
 - Scene-owned time lives behind `ctx.after`, `ctx.every`, `ctx.tween`; `Scheduler` and

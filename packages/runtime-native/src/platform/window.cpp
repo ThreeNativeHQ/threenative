@@ -6,9 +6,16 @@
  */
 
 #include "mystral/platform/input.h"
+#include "mystral/platform/ui_overlay.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include <iostream>
+
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <X11/Xlib.h>
+#include <SDL3/SDL_system.h>
+#endif
 #include <cstdlib>
+#include <array>
 #include <vector>
 #include <SDL3/SDL.h>
 #include "stb_image.h"
@@ -42,6 +49,74 @@ struct Window {
 
 static Window g_window;
 
+#if defined(__linux__) && !defined(__ANDROID__)
+struct UiKeyOwnership {
+    bool held = false;
+    bool ui = false;
+    bool cancelled = false;
+    uint32_t keycode = 0, modifiers = 0, group = 0;
+
+    bool route(bool down, bool captured) {
+        if (down && !held) {
+            ui = captured;
+            cancelled = false;
+        }
+        held = down;
+        return ui;
+    }
+};
+static std::array<UiKeyOwnership, SDL_SCANCODE_COUNT> g_uiKeys{};
+static SDL_ThreadID g_uiEventThread = 0;
+static thread_local XKeyEvent g_xKey{};
+static thread_local bool g_xKeyValid = false;
+
+// Capture metadata only. SDL must update its keyboard state before filtering UI-owned input.
+static bool forwardUiX11Key(void*, XEvent* event) {
+    g_xKeyValid = event->type == KeyPress || event->type == KeyRelease;
+    if (g_xKeyValid) g_xKey = event->xkey;
+    return true;
+}
+
+static bool filterUiKey(void*, SDL_Event* event) {
+    if (SDL_GetCurrentThreadID() != g_uiEventThread || g_window.sdlWindow == nullptr ||
+        (event->type != SDL_EVENT_KEY_DOWN && event->type != SDL_EVENT_KEY_UP) ||
+        event->key.windowID != SDL_GetWindowID(g_window.sdlWindow)) return true;
+    const auto& key = event->key;
+    if (key.scancode <= SDL_SCANCODE_UNKNOWN || key.scancode >= SDL_SCANCODE_COUNT) return true;
+    const bool down = event->type == SDL_EVENT_KEY_DOWN;
+    auto& owner = g_uiKeys[key.scancode];
+    const bool native = g_xKeyValid && key.raw == g_xKey.keycode &&
+        down == (g_xKey.type == KeyPress) && g_xKey.window == SDL_GetNumberProperty(
+            SDL_GetWindowProperties(g_window.sdlWindow), SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+    // ResetKeyboard supplies raw=0 releases. Other injected SDL events carry no X11 metadata.
+    if (!native && !(key.raw == 0 && !down && owner.held)) return true;
+    uint32_t time = 0;
+    if (native) {
+        owner.keycode = g_xKey.keycode;
+        owner.modifiers = g_xKey.state;
+        owner.group = (g_xKey.state >> 13) & 3;
+        time = static_cast<uint32_t>(g_xKey.time);
+        g_xKeyValid = false;
+    }
+    if (!owner.route(down, uiOverlayKeyboardCaptured())) return true;
+    if (!owner.cancelled) uiOverlayInjectKey(owner.keycode, owner.modifiers, owner.group, time, down);
+    return false; // SDL state is current; only delivery to gameplay is filtered.
+}
+#endif
+
+void resetUiOverlayKeyboard() {
+#if defined(__linux__) && !defined(__ANDROID__)
+    for (auto& key : g_uiKeys) {
+        if (key.held && key.ui && !key.cancelled) {
+            uiOverlayInjectKey(key.keycode, key.modifiers, key.group, 0, false);
+            // Keep ownership through physical release; repeats must not reach the game or a
+            // newly attached UI after the original control was cancelled.
+            key.cancelled = true;
+        }
+    }
+#endif
+}
+
 static void applyEmbeddedWindowIcon() {
     const char* configured = std::getenv("THREENATIVE_WINDOW_ICON_BUNDLE");
     const std::string path = configured && configured[0] != '\0'
@@ -72,6 +147,67 @@ static void applyEmbeddedWindowIcon() {
     }
     if (surface != nullptr) SDL_DestroySurface(surface);
     stbi_image_free(pixels);
+}
+
+
+/**
+ * Paint the window the game's own `bootSplash.backgroundColor` before the first frame exists.
+ *
+ * A freshly created X window has no background, so the server shows whatever was behind it — in
+ * practice a flat grey — for every second between the window appearing and the GPU's first
+ * present. On this game that gap is about four seconds, and it read as a "grey screen before
+ * everything loads" that no loading screen could cover, because the UI overlay cannot paint that
+ * early either.
+ *
+ * `bootSplash` was already resolved, validated and embedded in the config; only web, Android and
+ * iOS ever read it, so the desktop window was the one target that ignored the colour the game had
+ * already chosen. X11 only: Windows and macOS have their own launch-image paths and are NOT
+ * covered here — do not claim them.
+ */
+static void applyEmbeddedBootSplash() {
+#if defined(__linux__) && !defined(__ANDROID__)
+    std::vector<uint8_t> bytes;
+    if (!vfs::readEmbeddedFile(".threenative/config.json", bytes)) return;
+    const std::string config(bytes.begin(), bytes.end());
+    // Anchored, not flattened. `uiRenderer` is flattened because `renderer` already exists at the
+    // top level and a flat scan would find the wrong one; `backgroundColor` has no such twin, and
+    // the two packaging paths — `threenative build` and the release packager — do not both flatten,
+    // so a flattened key was present in one artifact and absent in the other. Find `bootSplash`
+    // first and read the colour after it: correct on both, and still no JSON parser.
+    const auto section = config.find("\"bootSplash\"");
+    if (section == std::string::npos) return;
+    const auto at = config.find("\"backgroundColor\"", section);
+    if (at == std::string::npos) return;
+    const auto open = config.find('"', config.find(':', at));
+    if (open == std::string::npos) return;
+    const auto close = config.find('"', open + 1);
+    if (close == std::string::npos) return;
+    const std::string color = config.substr(open + 1, close - open - 1);
+    // `#rrggbb`, which is the only form the packager's brand-colour validator accepts.
+    if (color.size() != 7 || color[0] != '#') return;
+    unsigned long rgb = 0;
+    for (size_t i = 1; i < color.size(); ++i) {
+        const char c = color[i];
+        const int digit = c >= '0' && c <= '9' ? c - '0'
+            : c >= 'a' && c <= 'f' ? c - 'a' + 10
+            : c >= 'A' && c <= 'F' ? c - 'A' + 10
+            : -1;
+        if (digit < 0) return;
+        rgb = (rgb << 4) | static_cast<unsigned long>(digit);
+    }
+    auto* display = static_cast<Display*>(SDL_GetPointerProperty(
+        SDL_GetWindowProperties(g_window.sdlWindow), SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr));
+    const auto window = static_cast<::Window>(SDL_GetNumberProperty(
+        SDL_GetWindowProperties(g_window.sdlWindow), SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+    if (display == nullptr || window == 0) return;
+    // Truecolor 24/32-bit visuals take a packed pixel directly, which is every visual SDL picks
+    // for a Vulkan window here; a colormap allocation would be the general answer and is not
+    // needed for one background.
+    XSetWindowBackground(display, window, rgb);
+    XClearWindow(display, window);
+    XFlush(display);
+    std::cout << "[Window] Boot splash background applied: " << color << std::endl;
+#endif
 }
 
 /**
@@ -138,7 +274,13 @@ bool createWindow(
     g_window.fullscreen = fullscreen;
     g_window.shouldQuit = false;
 
+#if defined(__linux__) && !defined(__ANDROID__)
+    g_uiEventThread = SDL_GetCurrentThreadID();
+    SDL_SetX11EventHook(forwardUiX11Key, nullptr);
+    SDL_SetEventFilter(filterUiKey, nullptr);
+#endif
     applyEmbeddedWindowIcon();
+    applyEmbeddedBootSplash();
 
     std::cout << "[Window] Actual window size: " << g_window.width << "x" << g_window.height << std::endl;
 
@@ -182,6 +324,77 @@ void destroyWindow() {
     std::cout << "[Window] SDL video shutdown complete" << std::endl;
 }
 
+/** SDL's button index as the DOM's `buttons` bit. Returns 0 for a button the DOM does not name. */
+int domButtonBit(Uint8 sdlButton) {
+    switch (sdlButton) {
+        case SDL_BUTTON_LEFT: return 1;
+        case SDL_BUTTON_RIGHT: return 2;
+        case SDL_BUTTON_MIDDLE: return 4;
+        default: return 0;
+    }
+}
+
+/** The DOM `buttons` bitmask across a gesture, which is not SDL's: DOM is 1=left, 2=right, 4=middle. */
+int g_domButtons = 0;
+
+/** A normalized viewport point from SDL's window-relative one, or false when it cannot be one. */
+bool uiViewportPoint(float x, float y, float& nx, float& ny) {
+    int width = 0;
+    int height = 0;
+    if (g_window.sdlWindow == nullptr) return false;
+    SDL_GetWindowSize(g_window.sdlWindow, &width, &height);
+    if (width <= 0 || height <= 0) return false;
+    nx = x / static_cast<float>(width);
+    ny = y / static_cast<float>(height);
+    return true;
+}
+
+/**
+ * Offer one real OS pointer event to the page.
+ *
+ * A thin wrapper: which side owns the gesture and where it last was is decided in
+ * `platform::uiOverlayRoutePointer`, so a real press and a synthetic playtest press cannot be
+ * routed by different rules. All this adds is the SDL-to-DOM button mask, which is not the same
+ * numbering (SDL is left/middle/right, the DOM is 1/2/4).
+ */
+bool routePointerToUi(const SDL_Event& event) {
+    float x = 0.0f;
+    float y = 0.0f;
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        x = event.motion.x;
+        y = event.motion.y;
+    } else {
+        x = event.button.x;
+        y = event.button.y;
+    }
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (!uiViewportPoint(x, y, nx, ny)) return false;
+    const char* type = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown"
+        : event.type == SDL_EVENT_MOUSE_BUTTON_UP               ? "pointerup"
+                                                                : "pointermove";
+    return uiOverlayRoutePointer(type, nx, ny, g_domButtons, 1);
+}
+
+/**
+ * Tell the offscreen UI how many pixels the game window has now.
+ *
+ * The web view has no window to follow, so this is the only thing that re-lays it out: the page's
+ * viewport is what its CSS sees, and the composite draws the frame it produces across the whole
+ * swapchain. Skip it and the HUD is a stretched copy of the layout it was attached at.
+ *
+ * Pixels, not logical points: the page is sized in device pixels, which is what the swapchain is
+ * measured in too, so the two agree at any scale factor.
+ */
+void uiOverlayResizeToWindow() {
+    if (g_window.sdlWindow == nullptr) return;
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSizeInPixels(g_window.sdlWindow, &width, &height);
+    if (width <= 0 || height <= 0) return;
+    uiOverlaySetSize(width, height);
+}
+
 /**
  * Poll SDL events
  * @return false if quit event received
@@ -189,6 +402,33 @@ void destroyWindow() {
 bool pollEvents() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // The UI is offered every pointer event before the game sees it, and either takes it or
+        // declines. `uiOverlayAttached()` is false for a `renderer: "native"` game and on every
+        // platform without an offscreen UI, which is what keeps those targets on the exact path
+        // they had.
+        if (uiOverlayAttached()) {
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                const int bit = domButtonBit(event.button.button);
+                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+                    g_domButtons |= bit;
+                else
+                    g_domButtons &= ~bit;
+            }
+            switch (event.type) {
+                case SDL_EVENT_MOUSE_MOTION:
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                case SDL_EVENT_MOUSE_BUTTON_UP:
+                    if (routePointerToUi(event)) continue;
+                    break;
+                case SDL_EVENT_WINDOW_FOCUS_LOST:
+                    uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1);
+                    resetUiOverlayKeyboard();
+                    g_domButtons = 0;
+                    break;
+                default:
+                    break;
+            }
+        }
         switch (event.type) {
             case SDL_EVENT_QUIT:
                 std::cout << "[Window] Quit event received" << std::endl;
@@ -200,6 +440,17 @@ bool pollEvents() {
                 g_window.height = event.window.data2;
                 std::cout << "[Window] Resized to " << g_window.width << "x" << g_window.height << std::endl;
                 processResize(g_window.width, g_window.height);
+                // The offscreen UI has no window of its own to follow, so nothing tells it the game
+                // changed size unless this does. Without it the web view keeps the layout it was
+                // attached at and the composite scales that onto the new swapchain, which a player
+                // sees as a stretched HUD rather than a re-laid-out one.
+                uiOverlayResizeToWindow();
+                break;
+
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                // A different scale factor is a different number of pixels for the same logical size,
+                // and the page's viewport is measured in pixels.
+                uiOverlayResizeToWindow();
                 break;
 
             case SDL_EVENT_KEY_DOWN:

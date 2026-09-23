@@ -251,6 +251,16 @@ export interface IAssetCompileOptions {
    * build uncompressed too. The build knows its target; it decides.
    */
   readonly platform?: "android" | "desktop" | "ios" | "web";
+  /**
+   * What the runtime that will execute this bake can decode, when the caller has probed it.
+   *
+   * `platform` is a proxy: it answers "android and iOS have no WebAssembly" for the targets this
+   * repository ships. A desktop host can also lack WebAssembly — the Linux arm64 lane builds
+   * QuickJS over wgpu-native — and then the same meshopt/KTX2 passes it would keep produce an
+   * asset nothing can decode. `threenative build` reads the engine from the runtime binary it will
+   * package and passes the real capability here; absent, the platform-derived default stands.
+   */
+  readonly runtimeDecoders?: IAssetRuntimeDecoderCapabilities;
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
@@ -1280,7 +1290,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   // Android and iOS have no WebAssembly and therefore no Basis transcoder and no Meshopt
   // decoder. The registry uses each pass's declaration below, so decoder-free work in the mixed
   // model pass survives on those targets.
-  const runtimeDecoderCapabilities: IAssetRuntimeDecoderCapabilities = {
+  const runtimeDecoderCapabilities: IAssetRuntimeDecoderCapabilities = options.runtimeDecoders ?? {
     ktx2: options.platform !== "android" && options.platform !== "ios",
     meshopt: options.platform !== "android" && options.platform !== "ios",
   };

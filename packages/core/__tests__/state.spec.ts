@@ -4,7 +4,7 @@ import { createGameStore } from "../src/state.js";
 describe("createGameStore", () => {
   it("should notify at most 11 times when set is called 600 times in one second", () => {
     vi.useFakeTimers();
-    const store = createGameStore({ score: 0 });
+    const store = createGameStore({ score: 0 }, 100);
     let notifications = 0;
     const unsubscribe = store.subscribe(() => notifications++);
     store.start();

@@ -29,6 +29,10 @@ async function callerFixture(): Promise<{ root: string; log: string }> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await mkdir(path.join(runtime, "scripts"), { recursive: true });
   await writeFile(path.join(root, "package.json"), '{"name":"consumer-test","type":"module"}');
+  await writeFile(
+    path.join(root, "threenative.config.ts"),
+    'export default { ui: { renderer: "native" } };\n',
+  );
   await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
   await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
   await writeFile(

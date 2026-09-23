@@ -156,6 +156,11 @@ option(TN_ENABLE_CLANG_TIDY "Run clang-tidy over ThreeNative native sources" OFF
 # PRD-226 ablation arms. Measurement builds only — a build with either flag ON renders the wrong
 # picture by construction and must never ship. Asserted absent from every shipped preset.
 option(TN_ABLATE_BACKEND "PRD-226 arm A2: no-op the hot backend command entry points, keeping JS, trampoline and argument parsing intact" OFF)
+# PRD-393 arm: the UI composite's upload and quad disappear, and nothing else does. The frame is
+# still structurally valid and still presents; it simply carries no UI. This is the "quad disabled"
+# arm AC-6's interleaved pairs are measured against — without it the phase's p95 could be
+# attributing something other than the compositing, and there would be no way to tell.
+option(TN_ABLATE_UI_COMPOSITE "PRD-393 arm: skip the native UI upload and quad, keeping the phase measurement" OFF)
 set(THREENATIVE_PHYSICS_LIBRARY "" CACHE FILEPATH "Prebuilt ThreeNative native physics static library")
 
 if(TN_ENABLE_NATIVE_GLTF)
@@ -212,12 +217,19 @@ add_compile_definitions(
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
     TN_ABLATE_BACKEND=$<BOOL:${TN_ABLATE_BACKEND}>
+    TN_ABLATE_UI_COMPOSITE=$<BOOL:${TN_ABLATE_UI_COMPOSITE}>
 )
 
 if(TN_ABLATE_BACKEND)
     message(WARNING
         "TN_ABLATE_BACKEND is ON: this is a PRD-226 measurement build. It renders an incorrect "
         "picture by construction and must not be shipped or used for any visual gate.")
+endif()
+
+if(TN_ABLATE_UI_COMPOSITE)
+    message(WARNING
+        "TN_ABLATE_UI_COMPOSITE is ON: this is a PRD-393 measurement build. It draws no UI at all "
+        "and must not be shipped or used for any visual gate.")
 endif()
 
 # ============================================================================
@@ -287,7 +299,13 @@ if(TN_REQUIRE_WEBTRANSPORT AND NOT TN_ENABLE_WEBTRANSPORT)
 endif()
 
 # SDL3 - Build from source as static library for single-binary distribution
-set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3)
+# iOS builds against upstream 3.4.16 (sdl3-ios), whose SDLUIKitSceneDelegate owns the
+# UIWindowScene lifecycle; every other platform stays on 3.2.30 (sdl3) with Android Java/AAR.
+if(MYSTRAL_PLATFORM STREQUAL "ios")
+    set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3-ios)
+else()
+    set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3)
+endif()
 set(SDL3_FOUND OFF)
 
 # Find SDL3 source directory (SDL3-{version}/)
@@ -1160,12 +1178,19 @@ endif()
 # Note: libuv is only used on desktop platforms; iOS/Android use platform-native async APIs
 set(LIBUV_DIR ${THIRD_PARTY_DIR}/libuv)
 set(LIBUV_SOURCE_DIR ${THIRD_PARTY_DIR}/libuv-src/libuv-1.51.0)
-# AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a write-after-free on libuv's
-# own closing list - the exact defect PRD-177 and PRD-184 exist to prove - is invisible to the
-# sanitizer lane. Under TN_ENABLE_SANITIZERS, build libuv from the matching 1.51.0 source instead,
-# so the lane's instrumentation reaches into it. Every other configuration keeps the prebuilt.
-if(TN_ENABLE_SANITIZERS AND EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID)
-    set(LIBUV_BUILD_SHARED OFF CACHE BOOL "libuv static under sanitizers" FORCE)
+# Two reasons to build libuv from the pinned 1.51.0 source rather than link the prebuilt:
+#   1. AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a write-after-free on
+#      libuv's own closing list - the exact defect PRD-177 and PRD-184 exist to prove - is invisible
+#      to the lane that exists to catch it.
+#   2. No prebuilt exists for every target: Linux arm64 publishes only an x64 libuv.a, and
+#      download-deps.mjs fetches the arch-independent libuv-source there instead.
+# The prebuilt stays first choice whenever it exists, so x64/macOS/Windows linking is unchanged.
+set(LIBUV_SOURCE_AVAILABLE FALSE)
+if(EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID)
+    set(LIBUV_SOURCE_AVAILABLE TRUE)
+endif()
+if(LIBUV_SOURCE_AVAILABLE AND (TN_ENABLE_SANITIZERS OR NOT EXISTS ${LIBUV_DIR}))
+    set(LIBUV_BUILD_SHARED OFF CACHE BOOL "libuv static when built from source" FORCE)
     set(LIBUV_BUILD_TESTS OFF CACHE BOOL "libuv tests are not ours to run" FORCE)
     set(LIBUV_BUILD_BENCH OFF CACHE BOOL "libuv benchmarks are not ours to run" FORCE)
     # libuv's own CMakeLists defines the libuv::libuv alias over its selected library; with
@@ -1176,11 +1201,11 @@ if(TN_ENABLE_SANITIZERS AND EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IO
         if(UNIX AND NOT APPLE)
             set(LIBUV_SYSTEM_LIBS pthread dl)
         endif()
-        message(STATUS "libuv: source build under sanitizers (${LIBUV_SOURCE_DIR})")
+        message(STATUS "libuv: source build (${LIBUV_SOURCE_DIR})")
     else()
         message(FATAL_ERROR
-            "libuv source at ${LIBUV_SOURCE_DIR} defined no libuv::libuv target; the sanitizer "
-            "lane must not fall back to the prebuilt and silently lose instrumentation inside libuv")
+            "libuv source at ${LIBUV_SOURCE_DIR} defined no libuv::libuv target; the build must "
+            "not fall back to the prebuilt and silently lose async I/O (or sanitizer coverage)")
     endif()
 elseif(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID)
     # Headers are directly in include/
@@ -1429,6 +1454,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_pipeline_cache.cpp
     src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
+    src/webgpu/bindings_ui_composite.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp
     src/webgpu/registration_table.cpp
@@ -1654,6 +1680,14 @@ if(TN_ENABLE_UI_OVERLAY)
     endif()
 endif()
 
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    # `window.cpp` paints the window's X background with the game's `bootSplash.backgroundColor`
+    # before the first GPU present, which is two direct Xlib calls. SDL reaches X11 through its own
+    # dynamic loading and publishes no such API, so the link has to name X11 itself.
+    find_package(X11 REQUIRED)
+    target_link_libraries(mystral-runtime PRIVATE X11::X11)
+endif()
+
 
 if(TN_ENABLE_NATIVE_PHYSICS)
     target_link_libraries(mystral-runtime PRIVATE threenative-native-physics)
@@ -1852,7 +1886,9 @@ endif()
 # That is why "contract tests only link in build/tn-linux" was true, and it made wgpu-native — the
 # backend Android ships — the one backend no contract test could be run against. PUBLIC so every
 # consumer inherits it rather than each target restating it.
-if(MYSTRAL_USE_WGPU AND SWC_LIBRARY AND UNIX AND NOT APPLE)
+# The desktop UI overlay is a Rust staticlib too, so it collides with wgpu-native the same way
+# whenever SWC is absent (the Linux arm64 QuickJS + wgpu host builds no SWC).
+if(MYSTRAL_USE_WGPU AND (SWC_LIBRARY OR TN_ENABLE_UI_OVERLAY) AND UNIX AND NOT APPLE)
     target_link_options(mystral-runtime PUBLIC "-Wl,--allow-multiple-definition")
 endif()
 
@@ -2013,23 +2049,32 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "g_object_ref and g_object_ref_sink as globals that would shadow GObject's."
             )
         endif()
-        # PRE_LINK on `mystral` rather than POST_BUILD on SDL: `add_custom_command(TARGET)` has to
-        # live in the directory that created the target, and SDL is added as a subdirectory. This
-        # also re-applies itself whenever SDL is rebuilt, which a one-shot patch would not.
-        # Made at configure time: a command's WORKING_DIRECTORY has to exist before the shell
-        # enters it, so creating it as the first step of that same command is too late.
+        # One ordered step, not PRE_LINK on `mystral`: the rewrite edits libSDL3.a in place, and a
+        # PRE_LINK hook ran while `mystral-tools` and the contract tests linked that same archive in
+        # parallel ("libSDL3.a: error adding symbols: no more archived files"). A custom target that
+        # depends on SDL and that `mystral-runtime` depends on puts every executable linking the
+        # runtime after the rewrite. `add_custom_command(TARGET)` cannot reach SDL's own target (it
+        # lives in SDL's subdirectory), so the stamp tracks SDL's archive instead and re-applies the
+        # rename whenever SDL is rebuilt; the stamp is touched last so an unchanged SDL skips it.
+        # The working directory is made at configure time: a command cannot create the directory
+        # its shell has to enter first.
         file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray")
-        add_custom_command(TARGET mystral PRE_LINK
+        set(TN_SDL_TRAY_STAMP "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray/renamed.stamp")
+        add_custom_command(OUTPUT "${TN_SDL_TRAY_STAMP}"
             COMMAND "${CMAKE_AR}" x "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
             COMMAND "${TN_OBJCOPY}"
                 --redefine-sym g_object_ref=tn_sdl_tray_g_object_ref
                 --redefine-sym g_object_ref_sink=tn_sdl_tray_g_object_ref_sink
                 SDL_tray.c.o SDL_tray.c.o
             COMMAND "${CMAKE_AR}" r "$<TARGET_FILE:SDL3-static>" SDL_tray.c.o
+            COMMAND "${CMAKE_COMMAND}" -E touch "${TN_SDL_TRAY_STAMP}"
+            DEPENDS SDL3-static
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tn-sdl-tray"
             COMMENT "Renaming SDL3 tray's GObject globals so the UI overlay's GTK calls survive"
             VERBATIM
         )
+        add_custom_target(tn-sdl-tray-rename DEPENDS "${TN_SDL_TRAY_STAMP}")
+        add_dependencies(mystral-runtime tn-sdl-tray-rename)
     endif()
 
     target_link_libraries(mystral PRIVATE mystral-runtime)
@@ -2343,6 +2388,20 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/lifecycle_policy_test.cpp)
     target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
 
+    # PRD-399. Drives the real presentation-pacing owner with the same feed the Android
+    # Choreographer callback calls, so the display-aligned scheduling and the lifecycle unblock are
+    # exercised without a device.
+    add_executable(threenative-presentation-pacing-test EXCLUDE_FROM_ALL
+        tests/presentation_pacing_test.cpp)
+    target_link_libraries(threenative-presentation-pacing-test PRIVATE mystral-runtime)
+    # It includes `../src/webgpu/bindings_presentation.h`, whose state header needs the backend
+    # header; `mystral-runtime` links the backend PRIVATE, so its includes do not propagate.
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-presentation-pacing-test PRIVATE ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-presentation-pacing-test PRIVATE ${WGPU_TEST_INCLUDES})
+    endif()
+
     add_executable(threenative-webgpu-comprehensive-test EXCLUDE_FROM_ALL
         tests/webgpu_comprehensive_test.cpp)
     target_link_libraries(threenative-webgpu-comprehensive-test PRIVATE mystral-runtime)
@@ -2468,6 +2527,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-rg11b10-renderable-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
     tn_register_contract_test(threenative-surface-format-selection-test)
+    tn_register_contract_test(threenative-presentation-pacing-test)
     tn_register_contract_test(threenative-webgpu-comprehensive-test)
     tn_register_contract_test(threenative-js-module-comprehensive-test)
     tn_register_contract_test(threenative-runtime-platform-comprehensive-test)

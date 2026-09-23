@@ -233,6 +233,40 @@ describe("compileAssets", () => {
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
   });
 
+  it("should let a caller that probed the runtime drop decoders on desktop too", async () => {
+    // A desktop host is V8 except on the Linux arm64 lane, which builds QuickJS over wgpu-native.
+    // `platform: "desktop"` alone would keep meshopt/KTX2 and ship an asset the runtime cannot
+    // decode; the build reads the engine from the runtime binary and passes the real capability.
+    const root = await makeTempDir("threenative-compile-runtime-decoders-");
+    await mkdir(path.join(root, "assets"));
+    const source = rgbaPng({
+      blue: (x, y) => (x * 3 + y * 5) % 256,
+      green: (x, y) => (x * 11 + y * 7) % 256,
+      height: 32,
+      red: (x, y) => (x * 17 + y * 13) % 256,
+      width: 32,
+    });
+    await writeFile(path.join(root, "assets", "rock.png"), source);
+
+    const result = await compileAssets({
+      cwd: root,
+      platform: "desktop",
+      runtimeDecoders: { ktx2: false, meshopt: false },
+      transcoder: TRANSCODER,
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+
+    expect(manifest.entries["rock.png"]?.output).toMatch(/\.png$/u);
+    expect(result.skippedCompression).toContainEqual({
+      bytes: source.length,
+      files: 1,
+      kind: "texture",
+      reason: "platform",
+    });
+  });
+
   it("should write separate model attribute buffers for desktop native output", async () => {
     const root = await makeTempDir("threenative-compile-desktop-layout-");
     await mkdir(path.join(root, "assets"));

@@ -9,33 +9,34 @@ Read `/AGENTS.md` first. This file covers only what is different here.
 No JSX for meshes, lights, materials, or cameras. No R3F dependency. If a component would
 render something the camera sees, it belongs in a scene, not here.
 
-## This package is web-only, and that constrains what may live in it
+## The UI has its own realm on native
 
-The native host has no DOM and no React Native layer — `document` is a Three.js
-compatibility stub whose `body.appendChild` is a no-op, so neither `react-dom` nor NativeWind
-applies. **A native build ships the game without this package.** The native UI stack is a
-deliberately open question; do not answer it in a feature.
+The native game host has no DOM: its `document` is a Three.js compatibility stub.
+With the default `ui.renderer: "web"`, the build ships `src/ui/` and this package in a separate
+React DOM bundle loaded by the platform WebView. Import React DOM only from the UI entry;
+the portable game entry must stay independent. Explicit `ui.renderer: "native"` opts out.
 
 That makes one mistake fatal: gameplay, state transitions, or scoring written inside a
 component are simply missing on native, with no gate reporting it. Components read state and
 draw; the game writes state. A HUD is a view of `ctx.state`, never its owner.
 
-## The 60fps problem
+## State follows the rendered frame
 
-React must not re-render on the game loop. The bridge is a plain external store the game
-writes to and React subscribes to via `useSyncExternalStore` (zustand backs it):
+The game coalesces simulation writes and publishes once per rendered frame. React subscribes
+through `useSyncExternalStore`; the native UI consumes a mirror in its own realm:
 
 ```tsx
-const { hull, score } = useGameState();   // throttled, ~10Hz, not 60Hz
+const state = useUiState<GameState>(); // undefined until the first game snapshot arrives
 ```
 
-`ctx.state.set()` writes at whatever rate the game wants; the store coalesces and notifies on
-an interval. Any change that makes a subscriber fire per frame is a regression — even if the
-profiler still looks fine on a small scene.
+`ctx.state.set()` can run many times in a frame without sending intermediate snapshots. A game
+may select a slower publication interval with `stateFlushMs`; no interval is imposed by default.
+Measure native delivery and visible UI cadence separately: an attached WebView is not proof of
+responsive presentation.
 
 ## Surface
 
-`GameCanvas`, `DebugOverlay`, `useGameState`. Keep it that small. HUD styling belongs in the
+`GameCanvas`, `DebugOverlay`, `useGameState`, `UiLayer`, `useUiState`, `useUiIntent`. HUD styling belongs in the
 user's generated `src/ui/`, in Tailwind classes they own — the framework must not ship a
 styled HUD, for the same reason it must not ship a lighting rig.
 

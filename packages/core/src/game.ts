@@ -311,6 +311,7 @@ export interface IGameConfig<
    */
   readonly step?: number;
   readonly start: string;
+  /** Optional slower UI publication interval. Omitted publishes once per rendered frame. */
   readonly stateFlushMs?: number;
 }
 
@@ -339,7 +340,7 @@ export type CameraConfig = IPerspectiveCameraConfig | IOrthogonalCameraConfig;
  * two channels through an in-process broker, which is what keeps one `src/ui/` honest: a HUD
  * that works here works on a phone.
  *
- * Publication is automatic and throttled to the store's own published cadence, and it stops
+ * Publication is automatic at the rendered frame cadence (or the named stateFlushMs override), and it stops
  * entirely when nothing is listening — a game whose `ui.renderer` is `native` pays nothing.
  */
 export interface IGameUi {
@@ -647,8 +648,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   }
 
   /**
-   * The UI seam. Connected lazily, because a game that never touches it — and every game whose
-   * `ui.renderer` is `native` — must not pay for a channel nobody reads.
+   * The UI seam. Startup connects it even for a read-only HUD; accessing it before startup
+   * connects early so the game can register intents. No state is serialized without a UI peer.
    */
   get ui(): IGameUi {
     const bridge = this.#connectUi();
@@ -666,7 +667,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#uiBridge !== undefined) return this.#uiBridge;
     const bridge = connectUiBridge({ end: "game" });
     this.#uiBridge = bridge;
-    this.#uiPublisher = publishUiState(bridge, this.#state);
+    // The store already coalesces writes at flush. Deferring this again waits for the native
+    // host's next microtask pump, after that frame's WebView event pump has already passed.
+    this.#uiPublisher = publishUiState(bridge, this.#state, { schedule: (flush) => flush() });
     onUiIntent(bridge, (intent) => {
       if (intent !== UI_READY_INTENT) return;
       this.#uiReady = true;
@@ -675,6 +678,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       this.#uiPublisher?.publish();
     });
     return bridge;
+  }
+
+  #disconnectUi(): void {
+    this.#uiPublisher?.stop();
+    this.#uiPublisher = undefined;
+    this.#uiReady = false;
+    this.#uiBridge?.close();
+    this.#uiBridge = undefined;
   }
 
   goto(name: string, options?: IGotoOptions<TState>): Promise<void> {
@@ -779,7 +790,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#started) return Promise.resolve();
     if (this.#pendingStart !== undefined) return this.#pendingStart;
     this.#aborted = false;
-    const pendingStart = this.#boot();
+    const pendingStart = this.#boot().catch((error: unknown) => {
+      this.#disconnectUi();
+      throw error;
+    });
     this.#pendingStart = pendingStart;
     void pendingStart.then(
       () => {
@@ -797,6 +811,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#resumeScene = undefined;
     const SceneType = this.#config.scenes[bootSceneName];
     if (SceneType === undefined) throw new Error(`Unknown start scene '${bootSceneName}'.`);
+    this.#connectUi();
 
     const renderer = await createRenderer({
       ...this.#config.renderer,
@@ -1452,6 +1467,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
         }
         if (mustPresentLoader) loadingFramePresented = true;
+        // Include state written by beforeRender and Scene.render in this frame's UI snapshot.
+        if (this.#config.stateFlushMs === undefined) this.#state.flush();
         if (canvasLayer.scene.children.length > 0) {
           const overlayStart = frameBudget === undefined ? 0 : budgetNow();
           renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
@@ -1702,11 +1719,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // Every attempt runs, errors are collected, and the first — the original cause — is thrown
     // once all attempts and the final leak check have completed.
     const failures: unknown[] = [];
-    this.#uiPublisher?.stop();
-    this.#uiPublisher = undefined;
-    this.#uiReady = false;
-    this.#uiBridge?.close();
-    this.#uiBridge = undefined;
+    this.#disconnectUi();
     this.#loop?.stop();
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
