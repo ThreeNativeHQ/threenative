@@ -27,7 +27,16 @@ test("a Windows mailbox lock reads as not-yet-written so the poller retries", as
   await expect(mailbox.read("response.json")).rejects.toThrow("EACCES");
 });
 
-test("removing the mailbox file asks rm to retry a Windows lock", async () => {
+test("removing the mailbox file retries a Windows lock without recursive deletion", async () => {
+  fs.rm.mockRejectedValueOnce(coded("EPERM")).mockResolvedValueOnce(undefined);
   await new LocalDeviceMailbox().remove("response.json");
-  expect(fs.rm).toHaveBeenCalledWith("response.json", expect.objectContaining({ force: true, maxRetries: expect.any(Number) }));
+  expect(fs.rm).toHaveBeenNthCalledWith(1, "response.json", { force: true });
+  expect(fs.rm).toHaveBeenNthCalledWith(2, "response.json", { force: true });
+});
+
+test("removing the mailbox file surfaces a permanent error without retrying", async () => {
+  fs.rm.mockRejectedValueOnce(coded("EACCES"));
+  await expect(new LocalDeviceMailbox().remove("response.json")).rejects.toMatchObject({ code: "EACCES" });
+  expect(fs.rm).toHaveBeenCalledTimes(1);
+  expect(fs.rm).toHaveBeenCalledWith("response.json", { force: true });
 });
