@@ -454,7 +454,14 @@ describe("FrameBudget pass split", () => {
 });
 
 describe("the display's own present counter", () => {
-  const CAP_60_FRAME = { ...DEVICE_FRAME, hostGap: 0.4, update: 0.2, render: 0.1, overlay: 0, residual: 0.1 };
+  const CAP_60_FRAME = {
+    ...DEVICE_FRAME,
+    hostGap: 0.4,
+    update: 0.2,
+    render: 0.1,
+    overlay: 0,
+    residual: 0.1,
+  };
 
   /**
    * Drives one window of `frameCount` loop frames spanning `spanMs` of clock, while the display

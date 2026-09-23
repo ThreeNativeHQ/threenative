@@ -1395,7 +1395,7 @@ test('the file-callback drain is bounded, so one asset burst cannot own a frame'
   // same either way; the bound is what gives the loading screen a frame between batches. This keeps
   // an unbounded `while (!pendingFileCallbacks_.empty())` from coming back.
   const runtime = read('src/runtime.cpp');
-  const drain = /void processPendingFileCallbacks\(\) \{[\s\S]*?\n    \}/u.exec(runtime);
+  const drain = /void processPendingFileCallbacks\(\) \{[\s\S]*?\n {4}\}/u.exec(runtime);
   assert.ok(drain, 'processPendingFileCallbacks must exist');
   assert.match(drain[0], /const auto deadline = std::chrono::steady_clock::now\(\) \+/u,
     'the drain must carry a time budget');

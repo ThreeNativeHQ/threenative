@@ -130,7 +130,7 @@ describe("IAssetLoader", () => {
       expect(payload).toMatchObject({ kind: "model", path: "traced.glb" });
       expect(Number.isFinite(payload.ms)).toBe(true);
     } finally {
-      delete (globalThis as { __TN_ASSET_TRACE__?: boolean }).__TN_ASSET_TRACE__;
+      Reflect.deleteProperty(globalThis, "__TN_ASSET_TRACE__");
       spy.mockRestore();
     }
   });

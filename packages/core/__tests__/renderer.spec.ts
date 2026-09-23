@@ -318,7 +318,7 @@ describe("createRenderer", () => {
       release?.();
       await first;
       // The renderer must be exactly as it was found: a frame that renders now goes to the screen.
-      expect(renderer.raw.getRenderTarget()).toBe(null);
+      expect((renderer.raw as { getRenderTarget: () => unknown }).getRenderTarget()).toBe(null);
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
@@ -345,8 +345,7 @@ describe("createRenderer", () => {
       let bound: unknown = null;
       const seenByCompile: unknown[] = [];
       const seenByFrame: unknown[] = [];
-      let renderDuringCompile: (() => void) | undefined;
-      let reflectInsideFrame: (() => void) | undefined;
+      const hooks: { renderDuringCompile?: () => void; reflectInsideFrame?: () => void } = {};
       const renderer = await createRenderer({
         canvas,
         preferWebGPU: false,
@@ -362,17 +361,17 @@ describe("createRenderer", () => {
               (renderer.raw as { getRenderTarget: () => unknown }).getRenderTarget(),
             );
             // The yield three's compile makes between objects: a frame lands here.
-            renderDuringCompile?.();
+            hooks.renderDuringCompile?.();
             await Promise.resolve();
           },
           domElement: canvas,
-          render: () => reflectInsideFrame?.(),
+          render: () => hooks.reflectInsideFrame?.(),
           setSize: () => undefined,
         }),
       });
       // A frame, through the renderer the game holds — and inside it, what three's reflector does
       // exactly: save the bound target, draw its mirror elsewhere, put back what it saved.
-      reflectInsideFrame = () => {
+      hooks.reflectInsideFrame = () => {
         const raw = renderer.raw as {
           getRenderTarget: () => unknown;
           setRenderTarget: (target: unknown) => void;
@@ -382,14 +381,14 @@ describe("createRenderer", () => {
         raw.setRenderTarget({ mirror: true });
         raw.setRenderTarget(saved);
       };
-      renderDuringCompile = () => renderer.render({} as never, {} as never);
+      hooks.renderDuringCompile = () => renderer.render({} as never, {} as never);
       await renderer.compileAsync({} as never, {} as never);
 
       // The compile still gets its answer...
       expect(seenByCompile).toEqual([frameBufferTarget]);
       // ...and a frame running inside the same window sees the screen, and restores the screen.
       expect(seenByFrame).toEqual([null]);
-      expect(renderer.raw.getRenderTarget()).toBe(null);
+      expect((renderer.raw as { getRenderTarget: () => unknown }).getRenderTarget()).toBe(null);
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

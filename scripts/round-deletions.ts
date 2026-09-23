@@ -123,7 +123,7 @@ function frameworkArms(
     const measurement = measureSandbox(archive);
     return {
       archive: path.relative(repo, archive) || ".",
-      arm: "framework",
+      arm: "framework" as const,
       genre: manifest.genre,
       round,
       unusedExports: measurement.unusedExports,

@@ -218,6 +218,7 @@ export interface IGamePlatformSource {
  * module". That is a game that never starts, so the literal access is load-bearing, not style.
  */
 function bundlerDevFlag(): boolean {
+  // biome-ignore lint/style/useNamingConvention: the bundler's own flag name.
   return (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
 }
 

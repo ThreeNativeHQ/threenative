@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  autoFields,
   assertNotIterating,
+  autoFields,
   disposeEntity,
   snapshotEntities,
 } from "../src/entity-snapshot.js";
@@ -51,8 +51,7 @@ describe("autoFields", () => {
       dropAgain: null,
       keep1: 1,
       keep2: "two",
-      ...Object.fromEntries(
-        Array.from({ length: 24 }, (_, i) => [`k${i}`, i])),
+      ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`k${i}`, i])),
       k25: 99,
       k26: 99,
       k27: 99,
@@ -74,7 +73,7 @@ describe("autoFields", () => {
 
 describe("disposeEntity", () => {
   it("calls dispose when it is a function", () => {
-    const entity = { disposed: 0 };
+    const entity: { disposed: number; dispose?: () => void } = { disposed: 0 };
     entity.dispose = () => {
       entity.disposed += 1;
     };
@@ -136,12 +135,12 @@ describe("snapshotEntities", () => {
     const snap = snapshotEntities(named);
     const originalTags = entity.tags;
 
-    expect(snap.a.tags).toEqual(originalTags);
-    expect(snap.a.tags).not.toBe(originalTags);
+    expect(snap.a?.tags).toEqual(originalTags);
+    expect(snap.a?.tags).not.toBe(originalTags);
 
     // Mutating the entity's array after the snapshot must not change it.
     originalTags.push("extra");
-    expect(snap.a.tags).toEqual(["coin", "spawn"]);
+    expect(snap.a?.tags).toEqual(["coin", "spawn"]);
   });
 
   it("omits tags when the entity has no tags", () => {
