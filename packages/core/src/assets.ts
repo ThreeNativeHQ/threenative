@@ -338,6 +338,7 @@ async function loadBitmapTexture(url: string, renderer: unknown): Promise<Textur
 
 /** True when the caller asked for per-asset timing; read once per settle, not per frame. */
 function assetTraceEnabled(): boolean {
+  // quality-allow: the playtest runner sets this global by its exact name.
   // biome-ignore lint/style/useNamingConvention: a global the playtest runner sets by this exact name.
   return (globalThis as { __TN_ASSET_TRACE__?: unknown }).__TN_ASSET_TRACE__ === true;
 }

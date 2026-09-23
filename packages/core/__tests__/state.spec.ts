@@ -4,7 +4,7 @@ import { createGameStore } from "../src/state.js";
 describe("createGameStore", () => {
   it("should publish nothing on a timer when no interval was named, and one frame of writes once", () => {
     vi.useFakeTimers();
-    const store = createGameStore({ score: 0 }, 100);
+    const store = createGameStore({ score: 0 });
     let notifications = 0;
     const unsubscribe = store.subscribe(() => notifications++);
     store.start();

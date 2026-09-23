@@ -218,6 +218,7 @@ export interface IGamePlatformSource {
  * module". That is a game that never starts, so the literal access is load-bearing, not style.
  */
 function bundlerDevFlag(): boolean {
+  // quality-allow: DEV is the bundler's own name for the flag, so the name rule cannot apply.
   // biome-ignore lint/style/useNamingConvention: the bundler's own flag name.
   return (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
 }
@@ -270,6 +271,7 @@ function installDevTools(
       Object.entries(devTools).filter(([key]) => key !== "snapshot" && key !== "geometry"),
     );
     host.__THREENATIVE__ =
+      // quality-allow: what other dev tools left on the shared global after this game removed its own.
       Object.keys(remaining).length === 0 ? undefined : (remaining as unknown as IDevTools);
   };
 }

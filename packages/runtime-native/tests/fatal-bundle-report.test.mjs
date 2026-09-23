@@ -13,21 +13,15 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { afterEach, test } from 'vitest';
+import { test } from 'vitest';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const hostBinary = join(repoRoot, 'packages/runtime-native/build/tn-linux/mystral');
-
-const created = [];
-
-afterEach(() => {
-  while (created.length > 0) rmSync(created.pop(), { recursive: true, force: true });
-});
 
 /** Run the built host on `bundle`, returning its exit code and combined output. */
 function runHost(bundle) {
@@ -50,8 +44,7 @@ function runHost(bundle) {
 test.skipIf(!existsSync(hostBinary))(
   'a bundle that cannot compile exits non-zero, names itself, and never starts the loop',
   () => {
-    const dir = mkdtempSync(join(tmpdir(), 'tn-fatal-'));
-    created.push(dir);
+    const dir = makeTempDirSync('tn-fatal-');
     const bundle = join(dir, 'cannot-compile.js');
     // Exactly the shape that shipped: a bare `import.meta` in a script that is not a module.
     writeFileSync(bundle, 'const meta = import.meta;\nconsole.log("unreachable", meta);\n');
