@@ -321,8 +321,10 @@ comparison metrics and all required markers are complete (`L0-15`). The slow-nat
 verified, while the Phase 1 sensitivity box remains open for the live resolution-cut candidate.
 The host-gap meter now has an opt-in detailed sample (`TN_HOST_GAP_DETAIL=1`) with its existing
 per-frame segment times and rAF period. The default marker shape stays small. Focused source test
-and C++ object compile pass; a linked-host runtime sample and the JS/host frame join are still
-required before claiming five-term attribution.
+and C++ object compile pass. A linked-host L3 probe parsed 300 detailed samples; joining the
+period ending at frame N to the post-rAF segments of N−1 and pre-rAF segments of N accounts for
+81.2% of the mean period with zero negative residuals (`L0-16`). The remaining 18.8% still needs
+Three.js CPU and recorder JS attribution; this Xvfb probe is not presented FPS or Midway proof.
 
 ### Phase 2 — Lane 1: scene projection
 
