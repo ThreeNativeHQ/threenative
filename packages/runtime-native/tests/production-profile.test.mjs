@@ -1,9 +1,11 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { chmodSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { afterEach, test } from 'vitest';
 import { PNG } from 'pngjs';
@@ -1401,6 +1403,75 @@ test('slow-startup delays the live fixture launch beyond the five-second budget'
   assert.ok(result.codes.includes('TN_PROD_STARTUP_BUDGET'));
   assert.ok(result.metrics.startupP95Ms > 5_000);
   assert.ok(result.markers.includes('clean-end'));
+});
+
+// Loads the real `privateDisplayCommand` selection out of the judge so a revert to `xvfb-run`
+// (whose cleanup kill replaces the child's status) fails here rather than in a production run.
+function loadPrivateDisplayCommand({ display, platform, wrapperPresent = true }) {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const helper = source.slice(source.indexOf('function privateDisplayCommand('), source.indexOf('function spawnNative('));
+  assert.notEqual(helper.length, 0, 'profile-production.mjs must select its display through privateDisplayCommand');
+  const scripts = fileURLToPath(new URL('../scripts/', import.meta.url));
+  const context = {
+    ProductionEvidenceError,
+    existsSync: () => wrapperPresent,
+    join,
+    process: { env: display === undefined ? {} : { DISPLAY: display }, platform },
+    scriptDirectory: scripts,
+  };
+  runInNewContext(helper, context);
+  return { command: context.privateDisplayCommand, scripts };
+}
+
+// A PATH whose `Xvfb` reports a display on fd 3 and stays alive, so the wrapper's exit-code
+// propagation is exercised with no GPU and no real display.
+function privateDisplaySandbox() {
+  const root = makeTempDirSync('tn-prod-xvfb-');
+  temporary.push(root);
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  for (const tool of ['mktemp', 'tr', 'sleep', 'rm', 'cat', 'sh']) {
+    const resolved = spawnSync('command', ['-v', tool], { encoding: 'utf8', shell: true }).stdout.trim();
+    if (resolved.length > 0) symlinkSync(resolved, join(bin, tool));
+  }
+  writeFileSync(join(bin, 'uname'), '#!/bin/sh\necho Linux\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'Xvfb'), '#!/bin/sh\necho 91 >&3\nexec sleep 30\n', { mode: 0o755 });
+  return bin;
+}
+
+test('headless Linux profiling uses the packaged display wrapper, never xvfb-run', () => {
+  const { command, scripts } = loadPrivateDisplayCommand({ display: undefined, platform: 'linux' });
+  const selected = command('/tmp/mystral', ['run', 'game.js']);
+  assert.equal(selected.command, '/bin/sh');
+  assert.deepEqual([...selected.args], [join(scripts, 'xvfb.sh'), '/tmp/mystral', 'run', 'game.js']);
+  assert.equal(selected.args.some((arg) => /xvfb-run/u.test(arg)), false);
+
+  // A display the operator already owns, and a non-Linux host, run the executable directly.
+  const withDisplay = loadPrivateDisplayCommand({ display: ':0', platform: 'linux' }).command('/tmp/mystral', ['run']);
+  assert.equal(withDisplay.command, '/tmp/mystral');
+  assert.deepEqual([...withDisplay.args], ['run']);
+  const macos = loadPrivateDisplayCommand({ display: undefined, platform: 'darwin' }).command('/tmp/mystral', ['run']);
+  assert.equal(macos.command, '/tmp/mystral');
+  assert.deepEqual([...macos.args], ['run']);
+});
+
+test('headless Linux profiling fails closed when the packaged display wrapper is missing', () => {
+  const { command } = loadPrivateDisplayCommand({ display: undefined, platform: 'linux', wrapperPresent: false });
+  assert.throws(
+    () => command('/tmp/mystral', ['run']),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_XVFB_WRAPPER_UNAVAILABLE',
+  );
+});
+
+test('the selected display wrapper hands back the child exit code without a real GPU', () => {
+  const { command } = loadPrivateDisplayCommand({ display: undefined, platform: 'linux' });
+  const selected = command('/bin/sh', ['-c', 'exit 9']);
+  const result = spawnSync(selected.command, selected.args, {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: privateDisplaySandbox() },
+    timeout: 30_000,
+  });
+  assert.equal(result.status, 9, result.stderr);
 });
 
 test('repository collection sentinel is red only when explicitly enabled', () => {
