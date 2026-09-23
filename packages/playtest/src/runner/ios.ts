@@ -23,8 +23,9 @@ const kIosTextError = /\[error\]|\b(?:Error|Fault|FATAL|FAILED|GPUValidationErro
 
 // An Apple-subsystem record is the OS talking about itself. The simulator writes a handful of
 // them at every launch -- `com.apple.app_launch_measurement` even stamps its FirstFramePresentation
-// record `E` -- and none is the game failing, so the severity token of an OS record is not a
-// console error. The app's own subsystem keeps the severity token as authoritative: an `E`/`F`
+// record `E` -- and none is the game failing, so an OS record's `E` token is not a console
+// error; its `F` (fault) token still is, since an OS subsystem faulting in the app's process is
+// the game breaking. The app's own subsystem keeps the severity token as authoritative: an `E`/`F`
 // line the app itself logged is an error even when its message carries no error keyword. An
 // explicit app/JS marker (`[error]`, FATAL, a validation error, an uncaught exception) always
 // wins, however the unified log transported it. Unknown format keeps the conservative text scan.
@@ -32,8 +33,9 @@ function classifyIosConsoleLine(text: string): "error" | "log" {
   const compact = kIosCompactAppleRecord.exec(text);
   if (compact !== null) {
     if (kIosExplicitErrorMarker.test(text)) return "error";
+    if (compact[1] === "F") return "error";
     if (compact[2]!.startsWith("com.apple.")) return "log";
-    if (compact[1] === "E" || compact[1] === "F") return "error";
+    if (compact[1] === "E") return "error";
     return kIosTextError.test(text) ? "error" : "log";
   }
   return kIosTextError.test(text) ? "error" : "log";

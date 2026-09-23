@@ -78,6 +78,10 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     "2026-09-22 15:07:19.200 Df threenative-ios[40455:17a9f] [com.apple.Foundation:general] [error] TN_UI bridge failed";
   const uncaughtException =
     "2026-09-22 15:07:19.300 E  threenative-ios[40455:17a9f] [dev.threenative.runtime:game] Uncaught TypeError: cannot read properties of undefined";
+  // A fault is never launch noise: an OS subsystem faulting inside the app's process (Metal,
+  // WebKit) is the game breaking, so `F` stays an error even under `com.apple.*`.
+  const appleFault =
+    "2026-09-22 15:07:19.400 F  threenative-ios[40455:17a9f] [com.apple.Metal:device] Execution of the command buffer was aborted due to an error during execution";
 
   const driver = new XcrunIosDriver({
     appPath,
@@ -99,6 +103,7 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
         appErrorNoKeyword,
         appMarkerInDefault,
         uncaughtException,
+        appleFault,
       ].join("\n")}\n`;
     }
     return "";
@@ -116,6 +121,7 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     { text: appErrorNoKeyword, type: "error" },
     { text: appMarkerInDefault, type: "error" },
     { text: uncaughtException, type: "error" },
+    { text: appleFault, type: "error" },
   ]);
 });
 
