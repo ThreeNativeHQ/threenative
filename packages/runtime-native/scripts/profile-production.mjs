@@ -911,10 +911,10 @@ export async function installNativeProfileEntry(project, target, options) {
   const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options))}\n${mailbox}export default game;\n`;
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
-  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target);
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts');
 }
 
-export async function setNativeProfileEntry(project, entry, target) {
+export async function setNativeProfileEntry(project, entry) {
   const configPath = join(project, 'threenative.config.ts');
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
@@ -923,14 +923,8 @@ export async function setNativeProfileEntry(project, entry, target) {
       /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
       `$1"${entry}"$2`,
     );
-    const rendered = target === 'desktop'
-      ? withEntry.replace(
-          /(\bui\s*:\s*\{\s*renderer\s*:\s*)["'][^"']*["']/mu,
-          `$1"native"`,
-        )
-      : withEntry;
-    if (rendered !== config) {
-      await writeFile(configPath, rendered);
+    if (withEntry !== config) {
+      await writeFile(configPath, withEntry);
     }
     if (withEntry !== config) {
       const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
