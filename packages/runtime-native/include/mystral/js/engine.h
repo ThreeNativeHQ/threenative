@@ -12,6 +12,7 @@
 #include <functional>
 #include <vector>
 #include <unordered_map>
+#include <csignal>
 #include <ctime>
 #include <cstdint>
 #include <cstddef>
@@ -53,6 +54,9 @@ inline std::string g_cpuProfilePath;
 // Set when a requested profile could not be written, so the host exits non-zero instead of
 // reporting a green run whose artifact is missing.
 inline bool g_cpuProfileFailed = false;
+// Set from a SIGTERM handler, which may only touch a signal-safe flag: the render loop notices it
+// on the next frame and flushes the profile from a normal context, where calling V8 is safe.
+inline volatile std::sig_atomic_t g_cpuProfileStopRequested = 0;
 // Render-thread CPU clock, matching the threadCpuNs field the frame marker reports, so JS/bridge
 // shares are comparable with the frame's work figure instead of mixing wall and CPU time.
 inline uint64_t threadCpuNs() {

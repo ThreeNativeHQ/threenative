@@ -41,6 +41,15 @@ test("--cpu-prof writes a DevTools .cpuprofile through V8's own serializer", () 
   assert.match(engineHeader, /inline bool g_cpuProfileFailed = false;/u);
 });
 
+test("a SIGTERM run flushes the profile from the frame boundary, not the signal handler", () => {
+  // A playtest stops the host with SIGTERM, which runs no destructor. The handler may only set a
+  // signal-safe flag; the render loop dumps from a normal context where V8 is safe to call.
+  assert.match(engineHeader, /inline volatile std::sig_atomic_t g_cpuProfileStopRequested = 0;/u);
+  assert.match(main, /std::signal\(SIGTERM, \[\]\(int\) \{ mystral::js::g_cpuProfileStopRequested = 1; \}\)/u);
+  assert.match(bindings, /js::g_cpuProfileStopRequested && js::g_dumpCpuProfile/u);
+  assert.doesNotMatch(main, /SIGTERM[\s\S]{0,200}g_dumpCpuProfile/u);
+});
+
 test("the host CLI parses --cpu-prof, forwards the path and fails closed without the profiler", () => {
   assert.match(main, /arg == "--cpu-prof" && i \+ 1 < argc/u);
   assert.match(main, /arg\.rfind\("--cpu-prof=", 0\) == 0/u);

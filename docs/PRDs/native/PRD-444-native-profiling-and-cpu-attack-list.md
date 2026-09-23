@@ -1,6 +1,6 @@
 # PRD-444 — Built-in native profiling, and the Midway CPU attack list
 
-**Status:** PARTIAL (Phase 1 done)
+**Status:** PARTIAL (Phases 1–2 done)
 **Complexity:** 6 (MEDIUM)
 **Owner:** Joao Furtado (play sign-off); agent (implementation)
 **Depends on:** PRD-442 (`docs/PRDs/native/PRD-442-native-frame-costs-engine-defaults.md`),
@@ -96,11 +96,11 @@ GPU-wait paths.
 
 - [x] AC-1 [local; actor: agent]: On desktop, `--cpu-prof out.cpuprofile` writes a file that parses as DevTools format (`nodes`, `samples`, `timeDeltas` non-empty) and the run also prints the top self-time summary — Evidence: `mystral run /tmp/tn-prof-test.js --cpu-prof /tmp/tn-prof-out.cpuprofile --frames 40 --no-sdl` wrote 160,686 bytes; parsed keys `nodes`/`samples`/`timeDeltas`/`startTime`/`endTime`, 12 nodes, 24,094 samples; top self time `tick` 8,416, `spin` 1,051; printed `TN_CPU_PROFILE_WRITTEN`.
 - [x] AC-2 [local; actor: agent]: `TN_JS_CPU_PROFILE=1` still starts the profiler on a desktop build and the profiler is absent from a shipping mobile build (no compile-time cost) — Evidence: env run printed `[V8] CPU profiler started` + `TN_JS_CPU_PROFILE_TOTAL:35142`; a `TN_JS_PROFILE=0 TN_ANDROID_JS_PROFILE=0` object has no `CpuProfiler`/`CpuProfile::` symbols (`nm`).
-- [ ] AC-3 [local; actor: agent]: `threenative-playtest <scenario> --url … --cpu-prof out.cpuprofile` on the browser target writes a loadable `.cpuprofile` via CDP, through the real CLI entry point — Evidence: pending.
-- [ ] AC-4 [local; actor: agent]: The desktop playtest target forwards `--cpu-prof` to the host (`--host-arg`) and the file appears; an unsupported target fails closed with a named error rather than silently skipping — Evidence: pending.
+- [x] AC-3 [local; actor: agent]: `threenative-playtest <scenario> --url … --cpu-prof out.cpuprofile` on the browser target writes a loadable `.cpuprofile` via CDP, through the real CLI entry point — Evidence: `node packages/playtest/dist/runner/cli.js … --cpu-prof /tmp/playtest.cpuprofile` wrote 2,833 samples / 2,833 timeDeltas naming `tick` and `work`; stderr printed `{"cpuProfile":"/tmp/playtest.cpuprofile"}`.
+- [x] AC-4 [local; actor: agent]: The desktop playtest target forwards `--cpu-prof` to the host (`--host-arg`) and the file appears; an unsupported target fails closed with a named error rather than silently skipping — Evidence: `desktop-playtest.spec.ts` asserts the host args `["--cpu-prof=/project/out.cpuprofile"]`; a SIGTERM'd `mystral` host wrote 22,546 samples (`TN_CPU_PROFILE_WRITTEN`); `--target android --cpu-prof` exited 2 with `TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED`.
 - [ ] AC-5 [local; actor: agent]: `GainNode::process` computes one gain for an `Immediate` param over a block (unit test asserts one `valueAtTime` for the block, N for a linear ramp) — Evidence: pending.
 - [ ] AC-6 [local; actor: agent]: A per-frame-rewritten geometry no longer triggers a full `computeBoundingSphere` in the cull gate (unit test on `boundsOf`/`render-camera-cull`) — Evidence: pending.
-- [ ] AC-7 [local; actor: agent]: `threenative-performance` skill documents `--cpu-prof` and the "never install a system profiler" promise, and the generated `.claude` mirror matches (`pnpm sync:agents --check`) — Evidence: pending.
+- [x] AC-7 [local; actor: agent]: `threenative-performance` skill documents `--cpu-prof` and the "never install a system profiler" promise, and the generated `.claude` mirror matches (`pnpm sync:agents --check`) — Evidence: `.agents` and `.claude` SKILL.md are byte-identical; `pnpm sync:agents --check` reports 19 mirrors in sync.
 - [ ] AC-8 [shared; actor: CI]: `pnpm typecheck && pnpm lint && pnpm test` plus the template docs lane pass on the PR — Evidence: pending.
 - [ ] AC-9 [owner; actor: Joao]: plays native Midway with `--cpu-prof` and confirms the file opens in Chrome DevTools and names a real hot function — Evidence: pending.
 
@@ -134,21 +134,26 @@ profiler symbol. Covers AC-1, AC-2.
 **Checkpoint:** pending
 
 #### Phase 2: Playtest `--cpu-prof`
-**Status:** NOT STARTED
+**Status:** DONE
 **ACs:** AC-3, AC-4
-**Files:** `packages/playtest/src/runner/config.ts` (flag), `cli.ts` (dispatch),
-`browser.ts` (CDP `Profiler.start/stop`), `desktopRunner.ts`/`androidRunner.ts` (`--host-arg`),
-`packages/create-threenative/agent-files/**/threenative-performance/SKILL.md` + mirror.
+**Files:** `packages/playtest/src/runner/config.ts` (flag), `cli.ts` (dispatch + fail-closed),
+`cpuProfile.ts` (CDP `Profiler.start/stop`), `runner.ts` (browser hook),
+`desktopRunner.ts` (`--host-arg`), `packages/create-threenative/agent-files/**/threenative-performance/SKILL.md` + mirror.
 **Implementation:** browser writes `.cpuprofile` via CDP; desktop/android forward to the host flag;
 an unsupported target throws a named `TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED`.
-- [ ] `--cpu-prof <path>` is in the playtest flag registry and config
-- [ ] The browser target writes a loadable `.cpuprofile` via CDP
-- [ ] The desktop target forwards `--cpu-prof` to the host; an unsupported target fails `TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED`
-- [ ] `threenative-performance` documents the flag and the no-system-profiler promise; the `.claude` mirror matches
+- [x] `--cpu-prof <path>` is in the playtest flag registry and config (`cpu-profile.spec.ts`)
+- [x] The browser target writes a loadable `.cpuprofile` via CDP — real CLI run wrote 2,833 samples naming `tick`/`work`
+- [x] The desktop target forwards `--cpu-prof` to the host (`desktop-playtest.spec.ts`); an unsupported target fails `TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED` through the real CLI
+- [x] `threenative-performance` documents the flag and the no-system-profiler promise; the `.claude` mirror matches (`diff` + `pnpm sync:agents --check`)
 
 **Verification:** E2 — real CLI run on the browser target writes a loadable file; desktop target
 forwards the flag; the unsupported case fails closed. Covers AC-3, AC-4, AC-7.
 **Checkpoint:** pending
+
+**Note — Android is fail-closed, not forwarded.** The Android host is launched by Java with
+positional argv (`android_main.cpp`), not named flags, so there is no `--host-arg` seam to carry
+`--cpu-prof`. The target refuses the flag by name (`TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED`) rather
+than skipping it; wiring a profile path through the Android host belongs to a follow-up.
 
 #### Phase 3: Engine-owned CPU fixes
 **Status:** NOT STARTED

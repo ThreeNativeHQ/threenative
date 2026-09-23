@@ -43,3 +43,19 @@ per-pass split, so keep the frame budget installed.
 On Android, budget roughly a 500 MiB driver floor before your own textures; a dual-use
 equirectangular environment adds about 48 MiB. Fix it with `agent-docs/mobile-memory-budget.md`,
 which carries the measurement conditions behind both numbers.
+
+## Name the hot function without installing a profiler
+
+A frame meter says a frame was slow; it cannot say which function. On native, run the game with
+`--cpu-prof <file>` to write a Chrome DevTools `.cpuprofile` and print the top self-time functions
+on exit — there is no system profiler to install, no `perf`, no `--call-graph dwarf`:
+
+```sh
+./game --cpu-prof out.cpuprofile    # then open out.cpuprofile in Chrome DevTools' Performance panel
+```
+
+`TN_JS_CPU_PROFILE=1` is the same profiler with the printed summary only, started after the loading
+tier settles. On a playtest, `threenative-playtest <scenario> --cpu-prof <file>` writes the same
+artifact on the browser and desktop targets; the device targets refuse it by name rather than
+silently skipping. `trace` stays the interactive summary — reach for it when you want the numbers,
+and for `--cpu-prof` when you want a file to load.

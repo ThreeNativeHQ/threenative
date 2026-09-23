@@ -2964,6 +2964,14 @@ void endDawnFrame(BindingsState* state) {
     // at the same frame the Android probe uses. One hook for both lanes (PRD-444).
     if (state->profiling.frameEndCount == 226 && js::g_startCpuProfile)
         js::g_startCpuProfile();
+    // A SIGTERM asked for the profile to be flushed. Done here, on the render thread between
+    // frames, because a signal handler may not call V8.
+    if (js::g_cpuProfileStopRequested && js::g_dumpCpuProfile) {
+        js::g_cpuProfileStopRequested = 0;
+        js::g_dumpCpuProfile();
+        std::cout.flush();
+        std::_Exit(js::g_cpuProfileFailed ? 1 : 0);
+    }
 #endif
     if (state->profiling.frameEndCount % 60 == 0) {
         using clock = std::chrono::steady_clock;

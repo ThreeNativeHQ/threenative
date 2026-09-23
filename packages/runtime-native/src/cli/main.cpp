@@ -1739,16 +1739,7 @@ int runScript(const CLIOptions& opts) {
 
     setupHeadlessEnvironment(opts);
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
-    if (!opts.cpuProfilePath.empty()) {
-        mystral::js::g_cpuProfilePath = opts.cpuProfilePath;
-        // A desktop playtest stops the host with SIGTERM, and a signal runs no destructor, so a
-        // requested profile would silently never be written. Flush it here. `ponytail:` this calls
-        // V8 from a signal handler — unsafe in general, acceptable on the terminating path.
-        std::signal(SIGTERM, [](int) {
-            if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
-            std::_Exit(mystral::js::g_cpuProfileFailed ? 1 : 0);
-        });
-    }
+    if (!opts.cpuProfilePath.empty()) mystral::js::g_cpuProfilePath = opts.cpuProfilePath;
 #else
     if (!opts.cpuProfilePath.empty()) {
         std::cerr << "Error: --cpu-prof requires a build compiled with TN_JS_PROFILE=ON."
@@ -1779,6 +1770,14 @@ int runScript(const CLIOptions& opts) {
         std::cerr << "Error: Failed to evaluate script!" << std::endl;
         return 1;
     }
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    // Installed after the runtime exists: SDL and the host install their own dispositions during
+    // startup and would otherwise reset this one. A desktop playtest stops the host with SIGTERM,
+    // which runs no destructor; the handler sets a signal-safe flag and the render loop flushes the
+    // profile from a normal context (the frame boundary in bindings.cpp), where calling V8 is safe.
+    if (!opts.cpuProfilePath.empty())
+        std::signal(SIGTERM, [](int) { mystral::js::g_cpuProfileStopRequested = 1; });
+#endif
     return driveMainLoop(opts, runtime);
 }
 
