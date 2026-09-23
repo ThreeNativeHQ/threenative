@@ -311,11 +311,14 @@ and counts one web sample per RAF presentation. Focused sampling tests pass 4/4,
 lint, and the full test gate pass (457 files, 5,526 tests; 8 skipped).
 The full-SHA live retry did produce complete web metrics over 48.548 seconds, but the desktop
 playtest hit the 1 MB device-bridge payload limit before native metrics were complete (`L0-14`).
-The control remains `BLOCKED`; no slow-native sensitivity verdict is claimed.
+That retry remained `BLOCKED`; it did not establish slow-native sensitivity.
 The bridge snapshot now includes `runtimeDiagnosticsSeries` only when the sample request asks for
 it; the 1 MB payload limit is unchanged. The full test run exposed three core tests that relied
 on the old implicit series. Those callers now request it explicitly, and the focused core/playtest
-rerun passes 56/56. The full suite has not been rerun after those test-only caller changes.
+rerun passes 56/56. The full suite then passed (457 files, 5,526 tests; 8 skipped).
+A clean live retry now returns `FAIL` with only `TN_PROD_PERFORMANCE_BUDGET`; web and native
+comparison metrics and all required markers are complete (`L0-15`). The slow-native control is
+verified, while the Phase 1 sensitivity box remains open for the live resolution-cut candidate.
 
 ### Phase 2 — Lane 1: scene projection
 
