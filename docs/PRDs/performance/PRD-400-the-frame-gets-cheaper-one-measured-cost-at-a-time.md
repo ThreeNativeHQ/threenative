@@ -245,6 +245,9 @@ names the frozen judge paths and holdouts. Midway's tracked `c277aee` game sourc
 `sandbox/.afk/prd400-midway-source` so its separate package changes cannot enter the baseline.
 That game needs core's launch-failure and pending-asset API from `acef62180`; the existing engine
 implementation is included here so the unchanged snapshot builds against this branch.
+Desktop preflight reached the packaged game after fixing its embedded-entry launch, then exposed a
+judge-generated browser-only diagnostic assertion; native scenarios now assert supported startup
+readiness. The live desktop run still needs repeating.
 Matrix/Midway runs, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
 
 ### Phase 2 — Lane 1: scene projection

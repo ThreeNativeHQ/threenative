@@ -997,7 +997,7 @@ test('startup aggregation rejects failed reports and blank first frames', () => 
   assert.equal(metrics.startupP95Ms, undefined);
 });
 
-test('native scenarios explicitly waive browser network observation while browser startup retains it', async () => {
+test('native scenarios use supported startup assertions while browser startup retains diagnostics', async () => {
   const project = makeTempDirSync('tn-native-diagnostics-');
   temporary.push(project);
   mkdirSync(join(project, 'playtests'));
@@ -1016,13 +1016,9 @@ test('native scenarios explicitly waive browser network observation while browse
     }
     for (const path of [paths.nativeStartupPath, paths.nativeWorkloadPath]) {
       const scenario = await playtest.loadPlaytestScenario(project, path);
-      const policy = scenario.assert.diagnostics;
-      assert.equal(policy.noNetworkErrors, false);
+      assert.equal(scenario.assert.diagnostics, undefined);
       assert.equal(playtest.requiredPlaytestCapabilities(scenario).includes('browser.network'), false);
-      assert.match(policy.networkErrorsOptOutReason, /native.*network/i);
-      assert.equal(policy.noConsoleErrors, true);
-      assert.equal(policy.noRuntimeDiagnostics, true);
-      assert.equal(policy.runtimeReady, true);
+      assert.equal(scenario.assert.startup.maxReadyMs > 0, true);
     }
   }
 });
@@ -1049,8 +1045,8 @@ test('generated production workload runs through the playtest validator and keep
   const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
   const nativeWorkload = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
   assert.deepEqual(workload.assert, { diagnostics: { noConsoleErrors: true, runtimeReady: true } });
-  assert.equal(nativeWorkload.assert.diagnostics.noNetworkErrors, false);
-  assert.equal(nativeWorkload.assert.diagnostics.noConsoleErrors, true);
+  assert.equal(nativeWorkload.assert.diagnostics, undefined);
+  assert.equal(nativeWorkload.assert.startup.maxReadyMs > 0, true);
   assert.equal(workload.assert.performance, undefined);
   assert.deepEqual(paths.performanceBounds, assertion.performance);
   assert.equal(nativeWorkload.artifacts.screenshots, 'after');

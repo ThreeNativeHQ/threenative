@@ -426,18 +426,9 @@ function packageSourceFlag(name) {
   throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
-function nativeDiagnostics(assertions) {
-  return {
-    ...assertions,
-    diagnostics: {
-      ...assertions.diagnostics,
-      noConsoleErrors: true,
-      noRuntimeDiagnostics: true,
-      runtimeReady: true,
-      noNetworkErrors: false,
-      networkErrorsOptOutReason: 'Native mailbox transports have no browser network observer; console and runtime diagnostics remain required.',
-    },
-  };
+function nativeAssertions(assertions, timeoutMs) {
+  const { diagnostics: _browserOnly, ...supported } = assertions;
+  return { ...supported, startup: supported.startup ?? { maxReadyMs: timeoutMs } };
 }
 
 export async function writeRunScenarios(project, options) {
@@ -498,9 +489,10 @@ export async function writeRunScenarios(project, options) {
     viewport: options.renderSize,
     warmupFrames: 0,
   };
+  const timeoutMs = playtestTimeoutMs(workload);
   const nativeWorkload = {
     ...workload,
-    assert: nativeDiagnostics(workload.assert),
+    assert: nativeAssertions(workload.assert, timeoutMs),
     artifacts: {
       screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
         ? 'after'
@@ -508,8 +500,7 @@ export async function writeRunScenarios(project, options) {
     },
     steps: nativeWorkloadSteps,
   };
-  const nativeStartup = { ...startup, assert: nativeDiagnostics(startup.assert), artifacts: { screenshots: 'after' } };
-  const timeoutMs = Math.max(playtestTimeoutMs(workload), playtestTimeoutMs(nativeWorkload));
+  const nativeStartup = { ...startup, assert: nativeAssertions(startup.assert, timeoutMs), artifacts: { screenshots: 'after' } };
   const workloadPath = join(project, 'playtests/production-performance.run.playtest.json');
   const startupPath = join(project, 'playtests/production-startup.run.playtest.json');
   const nativeWorkloadPath = join(project, 'playtests/production-performance.native.playtest.json');
