@@ -26,6 +26,10 @@ function assertHostGapPeriodRecording(source) {
   assert.match(source, /kWebTransport\s*,/u);
   assert.match(source, /"webtransport"/u);
   assert.match(source, /uint64_t\s+frameId\s*=\s*0;/u);
+  // The two detail-only values the rAF join adds: the monotonic timestamp the callbacks received
+  // and the wall duration of dispatching them. Both live in the sample, never in the summary.
+  assert.match(source, /double\s+rafTimestampMs\s*=\s*0\.0;/u);
+  assert.match(source, /uint64_t\s+rafCallbacksMicros\s*=\s*0;/u);
   assert.match(source, /\\"samples\\":\[\s*[\s\S]*\\"frame\\"/u);
   // The default per-frame sample stays the old frame + webtransportMs shape, so routine
   // desktop/Android TN_HOST_GAP log lines do not grow.
@@ -48,6 +52,10 @@ function assertHostGapPeriodRecording(source) {
     source,
     /\\"periodMs\\":\s*"[\s\S]*?sample\.periodMicros/u,
   );
+  // The rAF join: the exact timestamp the JavaScript callbacks saw, and the wall time spent
+  // inside the dispatch loop. Detail-only, so the default shape above cannot grow.
+  assert.match(source, /\\"rafTimestampMs\\":\s*"[\s\S]*?sample\.rafTimestampMs/u);
+  assert.match(source, /\\"rafCallbacksMs\\":\s*"[\s\S]*?sample\.rafCallbacksMicros/u);
 
   const poll = functionBody(source, "bool pollEvents() override");
   assert.match(
@@ -60,7 +68,24 @@ function assertHostGapPeriodRecording(source) {
     /TN_NETWORKING_TEST_PROCESS_EVENTS_DELAY_MS[\s\S]*?sleep_for\(std::chrono::milliseconds\(milliseconds\)\)/u,
   );
 
-  const noteRafBegin = functionBody(source, "void noteRafBegin()");
+  const execute = functionBody(source, "void executeAnimationFrameCallbacks()");
+  const timestampComputed = execute.search(/const\s+double\s+timestamp\s*=/u);
+  const rafBegin = execute.search(/hostGapMeter_\.noteRafBegin\(timestamp\)/u);
+  assert.ok(timestampComputed >= 0, "execute must compute the rAF timestamp it hands the callbacks");
+  assert.ok(rafBegin > timestampComputed, "the timestamp must be computed before noteRafBegin");
+  assert.match(
+    execute,
+    /const\s+auto\s+dispatchStart\s*=\s*HostGapMeter::Clock::now\(\);/u,
+  );
+  assert.match(execute, /hostGapMeter_\.noteRafCallbacks\(dispatchStart\);/u);
+
+  const noteRafCallbacks = functionBody(
+    source,
+    "void noteRafCallbacks(Clock::time_point dispatchStart)",
+  );
+  assert.match(noteRafCallbacks, /current_\.rafCallbacksMicros\s*\+=\s*[\s\S]*?\.count\(\)/u);
+
+  const noteRafBegin = functionBody(source, "void noteRafBegin(double timestampMs)");
   const closeFrame = functionBody(source, "void closeFrame()");
   const report = functionBody(source, "void report()");
   const positiveGuard = noteRafBegin.search(/period\.count\(\)\s*>\s*0/u);
@@ -71,6 +96,7 @@ function assertHostGapPeriodRecording(source) {
   assert.ok(positiveGuard >= 0, "noteRafBegin must recognize a positive elapsed period");
   assert.ok(assignment >= 0, "noteRafBegin must assign the positive period to current_.periodMicros");
   assert.ok(assignment > positiveGuard, "the period assignment must stay behind the positive guard");
+  assert.match(noteRafBegin, /current_\.rafTimestampMs\s*=\s*timestampMs;/u);
   assert.match(closeFrame, /current_\.periodMicros\s*==\s*0/u);
   assert.match(
     closeFrame,

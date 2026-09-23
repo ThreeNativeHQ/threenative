@@ -332,6 +332,10 @@ Frozen Midway and an isolated `0.5` resolution copy each passed a native desktop
 the same local host and authored scenario (`L0-17`). The records capture `auto` versus `0.5`,
 but these virtual-display runs lack the observed hardware identity required by the A/B comparator;
 neither the resolution-cut sensitivity verdict nor a paced baseline is verified.
+The opt-in rAF callback clock and native matrix timestamp join now close 99.97% of a diagnostic
+host period, with 180 scored matrix frames matching host timestamps (`L0-18`). Callback dispatch
+still combines Three.js, recorder and game work, so five-term attribution remains unverified.
+This changed frozen judge paths and requires a new baseline before any candidate verdict.
 
 ### Phase 2 — Lane 1: scene projection
 
