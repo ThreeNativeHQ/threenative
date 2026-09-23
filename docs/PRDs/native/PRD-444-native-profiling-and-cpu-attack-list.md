@@ -180,12 +180,12 @@ path is covered by the unit test instead; the playtest lane stays for a machine 
 workspace.
 
 #### Phase 4: Full gate and close
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **ACs:** AC-8, AC-9
 **Files:** none (gate + owner sign-off).
 **Implementation:** run the repository gate; hand AC-9 to the owner.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` and the template docs lane pass
-- [ ] The owner opens a native `.cpuprofile` in Chrome DevTools and confirms a real hot function (AC-9, owner)
+- [ ] `pnpm typecheck && pnpm lint && pnpm test` and the template docs lane pass — local: `pnpm typecheck` ✅, `pnpm lint` ✅ (warnings only), `pnpm check:docs` ✅ (2199 links), the six docs/CI specs ✅ (177 tests). `pnpm test` is red only in `@threenative/runtime-native` on native-contract tests whose executables this worktree never built (`threenative-crash-handler-policy-test`, the rg11b10/timestamp-query/runtime-next lanes) plus the Windows/network cases; the two source-contract tests this change touched (`js-engine-fast-path`, `runtime-next-contract` screenshot mode) were fixed and pass. `pnpm test` needs `NODE_COMPILE_CACHE` set here because a full `/tmp` makes pnpm drop a `node-compile-cache` directory into the suite namespace, which the playtest orphan gate reads as a leak.
+- [ ] The owner opens a native `.cpuprofile` in Chrome DevTools and confirms a real hot function (AC-9, owner) — pending owner
 
 **Verification:** E4 — `pnpm typecheck && pnpm lint && pnpm test` and the template docs lane; owner
 opens the `.cpuprofile`. Covers AC-8; AC-9 stays open until the owner confirms.

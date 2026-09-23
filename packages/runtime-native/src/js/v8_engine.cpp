@@ -106,6 +106,31 @@ static bool initializeV8() {
     return true;
 }
 
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+// V8 serializes a `CpuProfile` to the Chrome DevTools `.cpuprofile` JSON itself, so the embedder
+// only supplies the sink. Writing the bytes straight through keeps the format V8's problem instead
+// of re-implementing the node/sample walk, and the printed self-time summary stays beside it.
+class CpuProfileFileStream final : public v8::OutputStream {
+public:
+    explicit CpuProfileFileStream(const std::string& path)
+        : out_(path, std::ios::binary) {}
+
+    bool ok() const { return out_.good(); }
+
+    void EndOfStream() override { out_.flush(); }
+
+    int GetChunkSize() override { return 65536; }
+
+    WriteResult WriteAsciiChunk(char* data, int size) override {
+        out_.write(data, static_cast<std::streamsize>(size));
+        return out_.good() ? kContinue : kAbort;
+    }
+
+private:
+    std::ofstream out_;
+};
+#endif
+
 class V8EntryScope {
 public:
     explicit V8EntryScope(v8::Isolate* isolate)
@@ -136,31 +161,6 @@ class V8WakeTask final : public v8::Task {
 public:
     void Run() override {}
 };
-
-#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
-// V8 serializes a `CpuProfile` to the Chrome DevTools `.cpuprofile` JSON itself, so the embedder
-// only supplies the sink. Writing the bytes straight through keeps the format V8's problem instead
-// of re-implementing the node/sample walk, and the printed self-time summary stays beside it.
-class CpuProfileFileStream final : public v8::OutputStream {
-public:
-    explicit CpuProfileFileStream(const std::string& path)
-        : out_(path, std::ios::binary) {}
-
-    bool ok() const { return out_.good(); }
-
-    void EndOfStream() override { out_.flush(); }
-
-    int GetChunkSize() override { return 65536; }
-
-    WriteResult WriteAsciiChunk(char* data, int size) override {
-        out_.write(data, static_cast<std::streamsize>(size));
-        return out_.good() ? kContinue : kAbort;
-    }
-
-private:
-    std::ofstream out_;
-};
-#endif
 
 class V8Engine : public Engine {
 public:

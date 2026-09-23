@@ -953,11 +953,11 @@ test('screenshot mode finalizes pipeline capture before the platform-safe exit p
   assert.ok(screenshotEnd > screenshotStart, 'screenshot mode boundary is missing');
   const screenshot = cli.slice(screenshotStart, screenshotEnd);
   const finalize = screenshot.indexOf('host.finalizePipelineCapture();');
-  const exit = screenshot.indexOf('_exit(success ? 0 : 1);');
+  const exit = screenshot.indexOf('_exit(finalizeCpuProfile(success ? 0 : 1));');
   assert.ok(finalize >= 0, 'screenshot mode must finalize native pipeline capture');
   assert.ok(exit > finalize, 'capture finalization must precede the immediate exit');
-  assert.match(screenshot, /#ifndef MYSTRAL_CLI_NO_MAIN[\s\S]*_exit\(success \? 0 : 1\);/u);
-  assert.match(screenshot, /#else[\s\S]*runtime\.reset\(\);[\s\S]*return success/u);
+  assert.match(screenshot, /#ifndef MYSTRAL_CLI_NO_MAIN[\s\S]*_exit\(finalizeCpuProfile\(success \? 0 : 1\)\);/u);
+  assert.match(screenshot, /#else[\s\S]*runtime\.reset\(\);[\s\S]*return finalizeCpuProfile\(success/u);
 
   const withoutFinalization = screenshot.replace('host.finalizePipelineCapture();', '');
   assert.throws(
