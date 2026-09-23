@@ -1,6 +1,6 @@
 # PRD-444 — Built-in native profiling, and the Midway CPU attack list
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (Phase 1 done)
 **Complexity:** 6 (MEDIUM)
 **Owner:** Joao Furtado (play sign-off); agent (implementation)
 **Depends on:** PRD-442 (`docs/PRDs/native/PRD-442-native-frame-costs-engine-defaults.md`),
@@ -94,8 +94,8 @@ GPU-wait paths.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: agent]: On desktop, `--cpu-prof out.cpuprofile` writes a file that parses as DevTools format (`nodes`, `samples`, `timeDeltas` non-empty) and the run also prints the top self-time summary — Evidence: pending.
-- [ ] AC-2 [local; actor: agent]: `TN_JS_CPU_PROFILE=1` still starts the profiler on a desktop build and the profiler is absent from a shipping mobile build (no compile-time cost) — Evidence: pending.
+- [x] AC-1 [local; actor: agent]: On desktop, `--cpu-prof out.cpuprofile` writes a file that parses as DevTools format (`nodes`, `samples`, `timeDeltas` non-empty) and the run also prints the top self-time summary — Evidence: `mystral run /tmp/tn-prof-test.js --cpu-prof /tmp/tn-prof-out.cpuprofile --frames 40 --no-sdl` wrote 160,686 bytes; parsed keys `nodes`/`samples`/`timeDeltas`/`startTime`/`endTime`, 12 nodes, 24,094 samples; top self time `tick` 8,416, `spin` 1,051; printed `TN_CPU_PROFILE_WRITTEN`.
+- [x] AC-2 [local; actor: agent]: `TN_JS_CPU_PROFILE=1` still starts the profiler on a desktop build and the profiler is absent from a shipping mobile build (no compile-time cost) — Evidence: env run printed `[V8] CPU profiler started` + `TN_JS_CPU_PROFILE_TOTAL:35142`; a `TN_JS_PROFILE=0 TN_ANDROID_JS_PROFILE=0` object has no `CpuProfiler`/`CpuProfile::` symbols (`nm`).
 - [ ] AC-3 [local; actor: agent]: `threenative-playtest <scenario> --url … --cpu-prof out.cpuprofile` on the browser target writes a loadable `.cpuprofile` via CDP, through the real CLI entry point — Evidence: pending.
 - [ ] AC-4 [local; actor: agent]: The desktop playtest target forwards `--cpu-prof` to the host (`--host-arg`) and the file appears; an unsupported target fails closed with a named error rather than silently skipping — Evidence: pending.
 - [ ] AC-5 [local; actor: agent]: `GainNode::process` computes one gain for an `Immediate` param over a block (unit test asserts one `valueAtTime` for the block, N for a linear ramp) — Evidence: pending.
@@ -117,16 +117,16 @@ GPU-wait paths.
 ## Execution Phases
 
 #### Phase 1: Native `.cpuprofile` from the host
-**Status:** NOT STARTED
+**Status:** DONE
 **ACs:** AC-1, AC-2
 **Files:** `packages/runtime-native/src/js/v8_engine.cpp` (serialize + keep summary),
 `packages/runtime-native/CMakeLists.txt` (desktop include), `packages/runtime-native/src/cli/main.cpp`
 (`--cpu-prof`), `packages/runtime-native/include/mystral/js/engine.h` (path sink).
 **Implementation:** compile the profiler on desktop, add a `GetJSON`-shaped serializer over the
 existing node walk, write on exit or at `--cpu-prof` stop; fail closed on an unwritable path.
-- [ ] The V8 `CpuProfiler` compiles into a desktop build (`TN_JS_PROFILE` default ON) and stays out of a shipping mobile build
-- [ ] `--cpu-prof <path>` writes a file that parses as DevTools format and still prints the self-time summary
-- [ ] `TN_JS_CPU_PROFILE=1` still starts the profiler; an unwritable path fails closed
+- [x] The V8 `CpuProfiler` compiles into a desktop build (`TN_JS_PROFILE` default ON) and stays out of a shipping mobile build — `nm` on a `TN_JS_PROFILE=0 TN_ANDROID_JS_PROFILE=0` object shows no `CpuProfiler` symbol
+- [x] `--cpu-prof <path>` writes a file that parses as DevTools format and still prints the self-time summary — 160,686-byte file, `nodes` 12 / `samples` 24,094 / `timeDeltas` 24,094, names `tick`/`spin`
+- [x] `TN_JS_CPU_PROFILE=1` still starts the profiler; an unwritable path fails closed — env run printed `TN_JS_CPU_PROFILE_TOTAL:35142`; `/nonexistent-dir-xyz/out.cpuprofile` printed `TN_CPU_PROFILE_WRITE_FAILED` and exited 1
 
 **Verification:** E1 — run the desktop host with `--cpu-prof`, parse the JSON and assert
 `nodes`/`samples`/`timeDeltas`; run with the env var too; build the mobile config and assert no

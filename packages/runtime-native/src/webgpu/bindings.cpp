@@ -605,8 +605,6 @@ uint64_t endProfiledBinding(
 }
 
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
-    if (state->profiling.frameEndCount == 226 && js::g_startCpuProfile)
-        js::g_startCpuProfile();
     const uint64_t nowCpuNs = readRenderThreadCpuNs();
     const uint64_t renderThreadCpuNs =
         (state->profiling.lastRenderThreadCpuNs != 0 && nowCpuNs > state->profiling.lastRenderThreadCpuNs)
@@ -2961,6 +2959,12 @@ void endDawnFrame(BindingsState* state) {
     // desktop and device gates keep their `minTicks` guarantee; every tick after it waits a
     // second of wall clock, whatever the loop is doing.
     state->profiling.frameEndCount += 1;
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    // The steady-state JavaScript sample starts after startup's shader compiles and asset decode,
+    // at the same frame the Android probe uses. One hook for both lanes (PRD-444).
+    if (state->profiling.frameEndCount == 226 && js::g_startCpuProfile)
+        js::g_startCpuProfile();
+#endif
     if (state->profiling.frameEndCount % 60 == 0) {
         using clock = std::chrono::steady_clock;
         const clock::time_point now = clock::now();
