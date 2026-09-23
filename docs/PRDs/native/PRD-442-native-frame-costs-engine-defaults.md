@@ -1,6 +1,6 @@
 # PRD-442 — Engine defaults that stop a native game paying for what it cannot see
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Complexity:** 4 (MEDIUM)
 **Owner:** Joao Paulo Furtado (play sign-off); agent (implementation)
 **Depends on:** PRD-398 (the native UI cadence Phase 3 builds on; landing on `develop` through
@@ -154,12 +154,34 @@ plus `compare-frames` and a native V8 profile.
 **Checkpoint:** pending
 
 #### Phase 2: A warm-up that covers every pass
-**Status:** NOT STARTED
+**Status:** PARTIAL
+**Progress:** core's warm-up performs one hidden render after `compileAsync` when a shadow-casting
+light or a reflector is present, forcing the shadow map and restoring every state it touched. The
+named `renderPasses` option (default on) and the `passes`/`passPipelines` report are in. Unit test
+red then green; engine gates pass apart from the pre-existing unbuilt-native package-test failures.
+Core packed for the sandbox as
+`.packages/threenative-core-0.3.2-prd442warm-71fa6d0775a0.tgz` (sha256
+`71fa6d0775a0931cbddd01dbcb5cf81dd147e10abaf7f1088a66275280a8b504`). The native bench (AC-4) has
+not been run here.
 **ACs:** AC-4
 **Files:** `packages/core/src/warmup.ts` (+ unit test); sandbox Midway `src/render/world.ts`,
 `src/scenes/Midway.ts`.
 **Verification:** E2: native bench (3 interleaved pairs) — `pipelinesAfterStart`, ready time.
 **Checkpoint:** pending
+**Checklist:**
+- [x] `warmUpScene` renders the warm scene once after `compileAsync` when a shadow-casting light or
+  a reflector is present, forces `shadowMap.needsUpdate`, and restores render target, `autoClear`,
+  `shadowMap.needsUpdate` and `scene.visible` (`packages/core/src/warmup.ts`)
+- [x] Named `renderPasses` option on `IWarmUpOptions`, default `true`, documented beside the other
+  warm-up options and honoured by the default startup warm-up (`packages/core/src/game.ts`)
+- [x] `TN_STARTUP_WARMUP` / `TN_WARMUP` report `passes` and `passPipelines`
+- [x] Red then green unit test in `packages/core/__tests__/warmup.spec.ts` — red: 3 failed;
+  green: 24 passed
+- [x] Engine gates — `pnpm typecheck` (error list identical to a clean stash), `pnpm lint` (exit 0),
+  `pnpm test` unit phase 5538 passed / 5 skipped; the `package-test` phase fails only on unbuilt
+  native executables, identical on a clean stash
+- [ ] Native bench (AC-4): `pipelinesAfterStart` = 0 over a 150 s flight, "ready" no later than
+  stock + 3 s
 
 #### Phase 3: UI overlay landing and HUD ≥ 30/s
 **Status:** IN PROGRESS

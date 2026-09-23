@@ -1032,6 +1032,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         report = await warmUpScene(renderer, projection.root, camera, {
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
+          renderPasses: this.#warmUpOptions().renderPasses,
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
@@ -1065,6 +1066,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
+                passes: report.passes,
+                passPipelines: report.passPipelines,
                 cache: report.cache,
               },
         )}`,
@@ -1677,6 +1680,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
+                passes: report.passes,
+                passPipelines: report.passPipelines,
                 cache: report.cache,
               },
         )}`,

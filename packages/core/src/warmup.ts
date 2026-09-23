@@ -97,6 +97,21 @@ export interface IWarmUpOptions {
    * This is opt-in because WebGPU does not expose a portable pipeline-serialization API.
    */
   readonly cache?: IWarmUpCacheOptions;
+  /**
+   * Render the warm scene once after compiling, so every pass's pipelines exist before the first
+   * frame. Default `true`.
+   *
+   * `compileAsync` builds only the main-pass pipelines. A shadow-casting light's shadow map and a
+   * reflection pass each need their own variants, created synchronously on first use — on a native
+   * Midway launch that was **44–107 pipelines after "ready"**, with freezes up to 615 ms. One
+   * hidden render of the warm scene, with the shadow map forced to update, builds them while the
+   * startup cover is still up. The render is invisible (it does not clear, and its output is
+   * behind the loading layer) and restores every renderer and scene state it touches.
+   *
+   * Set `false` to skip it. The warm-up still reports `passes: []` and `passPipelines: 0`, because
+   * turning a convention off must not turn its measurement off.
+   */
+  readonly renderPasses?: boolean;
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
@@ -166,6 +181,15 @@ export interface IWarmUpReport {
   readonly computeTimedOut?: boolean;
   /** The optional persistent warm-up hint's outcome. */
   readonly cache?: WarmUpCacheStatus;
+  /**
+   * The passes the hidden warm render exercised: `main` always, plus `shadow` when a shadow-casting
+   * light is present and `reflection` when a reflector node is reachable from a material. Empty when
+   * `renderPasses` was off, so an overridden convention still reports what it did. Absent when the
+   * renderer exposes no `render` at all.
+   */
+  readonly passes?: readonly string[];
+  /** Backend pipelines observed created by the hidden warm render alone. Absent with `passes`. */
+  readonly passPipelines?: number;
 }
 
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
@@ -173,6 +197,8 @@ export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
+  /** The renderer's own render path, used to build every pass's pipelines once. */
+  render?: (scene: Object3D, camera: Camera) => void;
   raw?: unknown;
 }
 
@@ -534,6 +560,155 @@ function reconcileWarmUpObservation(report: IWarmUpReport): IWarmUpReport {
 }
 
 /**
+ * The renderer state the hidden warm render touches, read structurally so a fake needs no renderer.
+ *
+ * `autoClear`, `shadowMap.needsUpdate` and the current render target are the three things a render
+ * can leave changed; every one of them is restored in a `finally`, so a warm-up can never alter
+ * what the game's first real frame draws.
+ */
+interface IWarmRenderHost {
+  autoClear?: boolean;
+  shadowMap?: { enabled?: boolean; needsUpdate?: boolean };
+  getRenderTarget?: () => unknown;
+  setRenderTarget?: (target: unknown) => void;
+}
+
+interface IWarmPassRender {
+  readonly passes: readonly string[];
+  readonly created: number;
+  readonly elapsedMs: number;
+}
+
+/** A shadow map is rendered for every shadow-casting light; nothing else triggers that pass. */
+function hasShadowCaster(scene: Object3D): boolean {
+  const stack: Object3D[] = [scene];
+  while (stack.length > 0) {
+    const object = stack.pop() as Object3D & { isLight?: boolean; castShadow?: boolean };
+    if (object.isLight === true && object.castShadow === true) return true;
+    const children = object.children ?? [];
+    for (const child of children) stack.push(child as Object3D);
+  }
+  return false;
+}
+
+interface IReflectorNodeLike {
+  readonly isNode?: boolean;
+  readonly _reflectorBaseNode?: unknown;
+  getChildren?: () => Iterable<unknown>;
+}
+
+/**
+ * Whether a TSL node graph contains a reflector.
+ *
+ * Three's `reflector()` hangs a `_reflectorBaseNode` off a `ReflectorNode` that a material's
+ * `colorNode` (or a node composed around it) references. The walk is bounded and only descends
+ * real nodes, so a material with no reflector costs one shallow pass.
+ */
+function nodeHasReflector(root: unknown, depth: number): boolean {
+  if (depth > 64 || typeof root !== "object" || root === null) return false;
+  const node = root as IReflectorNodeLike;
+  if (node._reflectorBaseNode !== undefined) return true;
+  if (node.isNode !== true || typeof node.getChildren !== "function") return false;
+  try {
+    for (const child of node.getChildren()) {
+      if (nodeHasReflector(child, depth + 1)) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function hasReflector(scene: Object3D): boolean {
+  const stack: Object3D[] = [scene];
+  while (stack.length > 0) {
+    const object = stack.pop() as Object3D & { material?: unknown };
+    const material = object.material;
+    if (
+      typeof material === "object" &&
+      material !== null &&
+      (material as { isNodeMaterial?: boolean }).isNodeMaterial === true
+    ) {
+      for (const value of Object.values(material as Record<string, unknown>)) {
+        if (nodeHasReflector(value, 0)) return true;
+      }
+    }
+    const children = object.children ?? [];
+    for (const child of children) stack.push(child as Object3D);
+  }
+  return false;
+}
+
+/**
+ * One hidden render of the warm scene, so every pass three will run builds its pipelines now.
+ *
+ * `compileAsync` covers the main pass only. The shadow map for each shadow-casting light and each
+ * reflection pass are created synchronously the first time the scene is drawn — mid-game, on the
+ * main thread, inside a frame the player watches. Rendering the scene once here moves that cost
+ * behind the startup cover. The render is invisible: `autoClear` is turned off so it cannot wipe a
+ * loading frame, and the output stays behind the opaque cover. `shadowMap.needsUpdate` is forced
+ * so a game that renders its shadows once (`autoUpdate = false`) still builds them.
+ *
+ * Returns `undefined` when the renderer exposes no `render`, so a stub renderer is skipped rather
+ * than reported as a pass render that did nothing.
+ */
+function renderWarmPasses(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+  camera: Camera,
+  enabled: boolean,
+): IWarmPassRender | undefined {
+  const render = renderer.render;
+  if (typeof render !== "function") return undefined;
+  if (!enabled) return { passes: [], created: 0, elapsedMs: 0 };
+  const raw =
+    typeof renderer.raw === "object" && renderer.raw !== null
+      ? (renderer.raw as IWarmRenderHost)
+      : undefined;
+  const shadowMap = raw?.shadowMap;
+  const passes: string[] = ["main"];
+  if (shadowMap?.enabled !== false && hasShadowCaster(scene)) passes.push("shadow");
+  if (hasReflector(scene)) passes.push("reflection");
+  // `compileAsync` already built the main pass. A scene with neither a shadow map nor a reflection
+  // has no second pass to build, so rendering it again would only draw a frame the cover hides for
+  // nothing. Skip the draw and report the one pass that was compiled.
+  if (passes.length === 1) return { passes, created: 0, elapsedMs: 0 };
+
+  const censusBefore = readPipelineCensus(renderer);
+  const sceneVisible = (scene as { visible?: boolean }).visible;
+  const hadOwnAutoClear = raw !== undefined && Object.hasOwn(raw, "autoClear");
+  const autoClear = raw?.autoClear;
+  const shadowNeedsUpdate = shadowMap?.needsUpdate;
+  const previousTarget = raw?.getRenderTarget?.();
+  const startedAt = globalThis.performance?.now() ?? Date.now();
+  try {
+    // The render is the mechanism; nothing about the frame it would have drawn is kept.
+    if (sceneVisible === false) (scene as { visible: boolean }).visible = true;
+    if (raw !== undefined) raw.autoClear = false;
+    if (shadowMap !== undefined) shadowMap.needsUpdate = true;
+    render(scene, camera);
+  } finally {
+    if (raw !== undefined) {
+      if (hadOwnAutoClear) raw.autoClear = autoClear;
+      else Reflect.deleteProperty(raw, "autoClear");
+      if (
+        raw.setRenderTarget !== undefined &&
+        previousTarget !== undefined &&
+        previousTarget !== null
+      )
+        raw.setRenderTarget(previousTarget);
+    }
+    if (shadowMap !== undefined) shadowMap.needsUpdate = shadowNeedsUpdate;
+    if (sceneVisible === false) (scene as { visible: boolean }).visible = false;
+  }
+  return {
+    passes,
+    created: censusDelta(censusBefore, readPipelineCensus(renderer), "creations"),
+    elapsedMs: (globalThis.performance?.now() ?? Date.now()) - startedAt,
+  };
+}
+
+/**
  * Warms up `scene` for `camera`, in slices, presenting a frame between each.
  *
  * Fail closed on a nonsensical slice size rather than quietly choosing one: a zero or negative
@@ -665,6 +840,33 @@ export async function warmUpScene(
     return reconcileWarmUpObservation({ ...report, cache: finalCache });
   };
 
+  // The hidden pass render runs once, after the compile and before the ending census snapshot, so
+  // the pipelines it builds are counted in `observed` and named beside them. A warm-up that is out
+  // of budget does not start it: a render cannot be sliced, and one that overran the launch would
+  // be worse than the stall it exists to prevent.
+  let passResult: IWarmPassRender | undefined;
+  let passRendered = false;
+  const renderWarmPassesOnce = (): IWarmPassRender | undefined => {
+    if (passRendered) return passResult;
+    passRendered = true;
+    if (now() >= startedAt + budgetMs) return undefined;
+    try {
+      passResult = renderWarmPasses(renderer, scene, camera, options.renderPasses !== false);
+    } catch {
+      passResult = undefined;
+    }
+    return passResult;
+  };
+  const withPasses = (report: IWarmUpReport): IWarmUpReport =>
+    passResult === undefined
+      ? report
+      : {
+          ...report,
+          passes: passResult.passes,
+          passPipelines: passResult.created,
+          elapsedMs: report.elapsedMs + passResult.elapsedMs,
+        };
+
   // One call, the whole scene: the default, and the only granularity measured to be affordable.
   // It buys no per-pipeline progress reporting because the renderer does not surface any, but an
   // unresolved native promise still yields through `within()` so pollEvents() can settle it. The
@@ -673,26 +875,9 @@ export async function warmUpScene(
     if (compute === undefined) {
       const finished = await within(invokeCompile(scene), budgetMs, yieldFrame, now);
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-      return finish({
-        compiled: finished ? 1 : 0,
-        pipelines: candidates,
-        candidates,
-        attempted,
-        observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
-        slices: 1,
-        elapsedMs: now() - startedAt,
-        unsupported: false,
-        abandoned: finished ? 0 : 1,
-        timedOut: !finished,
-      });
-    }
-    const remaining = Math.max(0, startedAt + budgetMs - now());
-    const finished =
-      remaining > 0 ? await within(invokeCompile(scene), remaining, yieldFrame, now) : false;
-    options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-    return finish(
-      withComputeReport(
-        {
+      renderWarmPassesOnce();
+      return finish(
+        withPasses({
           compiled: finished ? 1 : 0,
           pipelines: candidates,
           candidates,
@@ -702,9 +887,32 @@ export async function warmUpScene(
           elapsedMs: now() - startedAt,
           unsupported: false,
           abandoned: finished ? 0 : 1,
-          timedOut: compute.timedOut || (!finished && now() >= startedAt + budgetMs),
-        },
-        compute,
+          timedOut: !finished,
+        }),
+      );
+    }
+    const remaining = Math.max(0, startedAt + budgetMs - now());
+    const finished =
+      remaining > 0 ? await within(invokeCompile(scene), remaining, yieldFrame, now) : false;
+    options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
+    renderWarmPassesOnce();
+    return finish(
+      withPasses(
+        withComputeReport(
+          {
+            compiled: finished ? 1 : 0,
+            pipelines: candidates,
+            candidates,
+            attempted,
+            observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
+            slices: 1,
+            elapsedMs: now() - startedAt,
+            unsupported: false,
+            abandoned: finished ? 0 : 1,
+            timedOut: compute.timedOut || (!finished && now() >= startedAt + budgetMs),
+          },
+          compute,
+        ),
       ),
     );
   }
@@ -765,6 +973,7 @@ export async function warmUpScene(
     }
   }
 
+  renderWarmPassesOnce();
   const report: IWarmUpReport = {
     compiled,
     pipelines: candidates,
@@ -778,6 +987,10 @@ export async function warmUpScene(
     timedOut,
   };
   return compute === undefined
-    ? finish(report)
-    : finish(withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute));
+    ? finish(withPasses(report))
+    : finish(
+        withPasses(
+          withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute),
+        ),
+      );
 }

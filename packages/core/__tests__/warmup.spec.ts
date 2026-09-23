@@ -18,6 +18,9 @@ interface IFakeObject {
   name: string;
   /** Set on the fakes that stand in for a pipeline variant sharing another object's material. */
   isSkinnedMesh?: boolean;
+  /** Set on the fakes that stand in for a shadow-casting light. */
+  isLight?: boolean;
+  castShadow?: boolean;
 }
 
 const mesh = (name: string): IFakeObject => ({ children: [], material: {}, name });
@@ -428,4 +431,98 @@ describe("scene warm-up", () => {
     });
     expect(report).toMatchObject({ compiled: 0, abandoned: 1, timedOut: true });
   }, 10_000);
+
+  test("should render every pass once so shadow pipelines exist before the first frame", async () => {
+    // compileAsync builds only the main-pass pipelines. The shadow map's depth variants are built
+    // synchronously on first use, mid-game — 44-107 pipelines after "ready" on a native Midway
+    // launch, with freezes up to 615 ms. One render here builds them behind the startup cover.
+    const rendered: unknown[] = [];
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: (scene: unknown) => {
+        rendered.push(scene);
+      },
+      raw: { shadowMap: { enabled: true, autoUpdate: true, needsUpdate: false } },
+    };
+    const sun = { children: [], isLight: true, castShadow: true, name: "sun" };
+    const scene = group("scene", [mesh("ground"), sun]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(rendered).toEqual([scene]);
+    expect(report.passes).toEqual(["main", "shadow"]);
+    expect(report.passPipelines).toBe(0);
+  });
+
+  test("should name a reflection pass when a material carries a reflector node", async () => {
+    const reflectorNode = { isNode: true, _reflectorBaseNode: {}, getChildren: () => [] };
+    const material = {
+      isNodeMaterial: true,
+      colorNode: { isNode: true, getChildren: () => [reflectorNode] },
+    };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: true } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main", "reflection"]);
+  });
+
+  test("should not render passes when renderPasses is false", async () => {
+    const render = vi.fn();
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render,
+      raw: { shadowMap: { enabled: true } },
+    };
+    const scene = group("scene", [
+      mesh("ground"),
+      { children: [], isLight: true, castShadow: true, name: "sun" },
+    ]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      renderPasses: false,
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(render).not.toHaveBeenCalled();
+    expect(report.passes).toEqual([]);
+    expect(report.passPipelines).toBe(0);
+  });
+
+  test("should restore every renderer and scene state the pass render touched", async () => {
+    let during: { autoClear: unknown; needsUpdate: unknown; visible: unknown } | undefined;
+    const raw = {
+      autoClear: true,
+      shadowMap: { enabled: true, autoUpdate: false, needsUpdate: false },
+    };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => {
+        during = {
+          autoClear: raw.autoClear,
+          needsUpdate: raw.shadowMap.needsUpdate,
+          visible: scene.visible,
+        };
+      },
+      raw,
+    };
+    const scene = {
+      children: [mesh("ground"), { children: [], isLight: true, castShadow: true, name: "sun" }],
+      material: undefined,
+      name: "scene",
+      visible: false,
+    };
+    await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    // Forced on for the render so a game that draws its shadows once still builds them...
+    expect(during).toEqual({ autoClear: false, needsUpdate: true, visible: true });
+    // ...and every one of them is back exactly as the game left it.
+    expect(raw.autoClear).toBe(true);
+    expect(raw.shadowMap.needsUpdate).toBe(false);
+    expect(scene.visible).toBe(false);
+  });
 });
