@@ -1963,6 +1963,17 @@ describe("engine load test scorer", () => {
     );
   });
 
+  it("preserves native step and projection timing series with matching frames", () => {
+    const measured = rung({ collapseMs: series(2), stepMs: series(3) });
+    expect(parseRunReport(report({ rungs: [measured] })).rungs[0]).toMatchObject({
+      collapseMs: series(2),
+      stepMs: series(3),
+    });
+    expect(() => parseRunReport(report({ rungs: [rung({ stepMs: series(3, 7) })] }))).toThrow(
+      /TN_BENCH_BAD_SHAPE/,
+    );
+  });
+
   it("should reject a report missing its driver line", () => {
     const missing = report() as unknown as Record<string, unknown>;
     // biome-ignore lint/performance/noDelete: the point of the test is an absent key.

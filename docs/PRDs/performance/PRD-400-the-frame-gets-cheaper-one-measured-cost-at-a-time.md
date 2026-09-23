@@ -288,6 +288,9 @@ The comparison now includes the authored resolution-scale setting from the packa
 Its no-GPU control blocks `auto` → `0.5` even when frame time improves, while `auto` → `auto`
 and matching numeric escape-hatch settings pass (`L0-09`). The packaged Midway config remains
 `auto`. The live `slow-native` control is still required before ticking sensitivity.
+The matrix report parser now retains its already emitted per-frame `stepMs` and projection
+`collapseMs` series, with sample-count and finite-value checks. Its 102 scorer tests and typecheck
+pass; these two terms alone do not close the five-term attribution box.
 The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
 the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
 `pnpm lint`, and `pnpm test` passed locally (454 files, 5,520 tests; 8 skipped).

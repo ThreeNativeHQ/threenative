@@ -49,12 +49,14 @@ export interface IPerformancePromotionPolicy {
 }
 
 export interface IRunReportRung {
+  collapseMs?: number[];
   drawCalls: number;
   frameMs: number[];
   mode: RenderMode;
   objectCount: number;
   positionHash: string;
   repeat: number;
+  stepMs?: number[];
   triangles: number;
   visibleObjects: number;
 }
@@ -390,9 +392,27 @@ export function parseRunReport(value: unknown): IRunReport {
       if (typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
         throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.frameMs holds a non-finite sample`);
     }
+    const timingSeries: Partial<Pick<IRunReportRung, "stepMs" | "collapseMs">> = {};
+    for (const field of ["stepMs", "collapseMs"] as const) {
+      const samples = rung[field];
+      if (samples === undefined) continue;
+      if (
+        !Array.isArray(samples) ||
+        samples.length !== frameMs.length ||
+        samples.some(
+          (sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0,
+        )
+      )
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `${path}.${field} must match frameMs with finite nonnegative samples`,
+        );
+      timingSeries[field] = samples as number[];
+    }
     return {
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
+      ...timingSeries,
       mode: mode as RenderMode,
       objectCount: requireNumber(rung, "objectCount", path),
       positionHash: requireString(rung, "positionHash", path),
