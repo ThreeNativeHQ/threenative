@@ -101,6 +101,29 @@ describe("render camera cull", () => {
     expect(cull.report.culled).toBe(1);
   });
 
+  it("does not walk a hidden subtree, and culls the visible one as before", () => {
+    // The game's own hidden subtree — an unused LOD level, a merged stand-in, a hidden hull body —
+    // is already not submitted. The walk must not descend into it at all: visiting it wastes the
+    // walk and can hide/restore a node the game deliberately left out.
+    const hidden = new Group();
+    hidden.visible = false;
+    const unreachable = ball(0.1, -1_000);
+    hidden.add(unreachable);
+    const tiny = ball(0.1, -1_000);
+    const scene = sceneWith(hidden, tiny);
+    const cull = new RenderCameraCull();
+
+    cull.apply(scene, camera(), 720);
+
+    // Only the visible tiny mesh is considered and culled; the hidden child is never visited.
+    expect(cull.report.considered).toBe(1);
+    expect(cull.report.culled).toBe(1);
+    expect(tiny.visible).toBe(false);
+    expect(unreachable.visible).toBe(true);
+    cull.restore();
+    expect(unreachable.visible).toBe(true);
+  });
+
   it("decides per render camera, not from a player-relative range", () => {
     const far = ball(1, -1_000);
     const scene = sceneWith(far);
