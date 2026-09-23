@@ -490,7 +490,7 @@ function handleLine(line, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.2" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.3" }
       });
     }
     if (request.method === "tools/list") {
