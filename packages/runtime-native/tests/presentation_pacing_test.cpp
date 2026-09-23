@@ -272,6 +272,8 @@ void testLostSignalFallsBackAndRecovers() {
           "the next present retains software pacing instead of re-waiting the lost display");
 
     // A fresh callback re-arms display pacing; the first present schedules from it, the next waits.
+    // The timeout is measured above; the re-armed release below is a display handoff like any other.
+    widenDisplayReleaseTimeout();
     notePresentationFrame(frameMs(1000));
     check(paceToPresentationCap() == PresentationPacingPath::Display,
           "a fresh display frame schedules display pacing");
