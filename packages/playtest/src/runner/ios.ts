@@ -13,25 +13,28 @@ export type IosTransportKind = "device" | "simulator";
 
 // `log show --style compact` puts the OS's own severity token before the process, e.g.
 // `2026-09-22 15:07:18.517 Df threenative-ios[40455:17a9f] [com.apple.UIKit:AssetManager] ...`.
-// Only a record this exact shape -- timestamp, a recognised severity, the `process[pid:thread]`
-// field, and the subsystem:category field immediately after it -- gets severity-aware handling.
-// The Apple field must sit in the prefix, never be quoted from the message body: a non-Apple log
-// whose text embeds an Apple-looking `[com.apple....:...]` is not an OS record. Anything that does
-// not match keeps the textual fallback so an unrecognised format cannot turn a real error green.
+// The shape is split so the two fields a verdict depends on are captured: the severity token and
+// the subsystem. Anything that does not match keeps the textual fallback, so an unrecognised
+// format cannot turn a real error green.
 const kIosCompactAppleRecord =
-  /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ (Df|Db|A|I|E|F) +\S+\[\d+:[0-9a-f]+\] \[com\.apple\.[^\]:]+:[^\]]+\]/u;
-const kIosExplicitErrorMarker = /\[error\]|\bFATAL\b|GPUValidationError/u;
-const kIosTextError = /\[error\]|\b(?:Error|Fault|FATAL|FAILED|GPUValidationError)\b/u;
+  /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ (Df|Db|A|I|E|F) +\S+\[\d+:[0-9a-f]+\] \[([^\]:]+):[^\]]+\]/u;
+const kIosExplicitErrorMarker = /\[error\]|\bFATAL\b|GPUValidationError|uncaught/iu;
+const kIosTextError = /\[error\]|\b(?:Error|Fault|FATAL|FAILED|GPUValidationError|uncaught)\b/u;
 
-// The compact record's own severity is authoritative: `E`/`F` is an error even when the message
-// carries no error keyword, and a Default record whose text merely mentions an error domain is a
-// log. An explicit app/JS marker (`[error]`, FATAL, a validation error) always wins, however the
-// unified log transported it. Unknown format/severity/subsystem keeps the conservative text scan.
+// An Apple-subsystem record is the OS talking about itself. The simulator writes a handful of
+// them at every launch -- `com.apple.app_launch_measurement` even stamps its FirstFramePresentation
+// record `E` -- and none is the game failing, so the severity token of an OS record is not a
+// console error. The app's own subsystem keeps the severity token as authoritative: an `E`/`F`
+// line the app itself logged is an error even when its message carries no error keyword. An
+// explicit app/JS marker (`[error]`, FATAL, a validation error, an uncaught exception) always
+// wins, however the unified log transported it. Unknown format keeps the conservative text scan.
 function classifyIosConsoleLine(text: string): "error" | "log" {
   const compact = kIosCompactAppleRecord.exec(text);
   if (compact !== null) {
+    if (kIosExplicitErrorMarker.test(text)) return "error";
+    if (compact[2]!.startsWith("com.apple.")) return "log";
     if (compact[1] === "E" || compact[1] === "F") return "error";
-    return kIosExplicitErrorMarker.test(text) ? "error" : "log";
+    return kIosTextError.test(text) ? "error" : "log";
   }
   return kIosTextError.test(text) ? "error" : "log";
 }
