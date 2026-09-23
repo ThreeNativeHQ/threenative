@@ -731,6 +731,7 @@ test('an existing project and scenario parse and stage without mutating the sour
   mkdirSync(join(source, 'playtests'));
   mkdirSync(join(source, 'node_modules'));
   writeFileSync(join(source, 'src/main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(source, 'threenative.config.ts'), 'renderer: { resolutionScale: "auto" }\n');
   writeFileSync(join(source, 'playtests/performance.playtest.json'), JSON.stringify({
     assert: { performance: { maxFrameMsP95: 15 } },
     name: 'production-performance',
@@ -762,6 +763,8 @@ test('an existing project and scenario parse and stage without mutating the sour
   assert.equal(readFileSync(join(staged, 'src/main.ts'), 'utf8'), 'export const value = 1;\n');
   assert.equal(readFileSync(join(staged, 'playtests/performance.playtest.json'), 'utf8').length > 0, true);
   assert.equal(readFileSync(join(staged, 'node_modules/installed.txt'), 'utf8'), 'installed\n');
+  assert.equal(readFileSync(join(staged, 'threenative.config.ts'), 'utf8'), 'renderer: { resolutionScale: 1 }\n');
+  assert.equal(readFileSync(join(source, 'threenative.config.ts'), 'utf8'), 'renderer: { resolutionScale: "auto" }\n');
   writeFileSync(join(staged, 'src/main.ts'), 'export const value = 2;\n');
   assert.equal(readFileSync(join(source, 'src/main.ts'), 'utf8'), 'export const value = 1;\n');
 });
