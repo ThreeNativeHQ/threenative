@@ -10,7 +10,7 @@ A developer authors one GLB and loads it through ThreeNative's normal asset path
 
 This is not a greenfield LOD renderer. The repository already has default-on virtual geometry for sufficiently dense primitives. Extend and reconcile that machinery, adding a conservative discrete-LOD path where it supplies missing value. Exactly one system owns detail selection for a primitive. Preserve the original source, the full-detail fallback, materials, object identity, and gameplay semantics.
 
-**Status:** NOT STARTED — implementation not started; this document does not enable or qualify any feature.
+**Status:** PARTIAL — Phase 0 traced; Phase 1 config/eligibility/generation/artifact and Phase 2 engine-owned runtime landed and tested; Phase 3 browser WebGPU and Linux native consumer evidence plus both dense-asset triangle-reduction gates pass on hardware (8,192 → 369 web / 368 native far-route triangles, RTX 2080). Windows/macOS/Android/iOS qualification, frame-time/quality/byte gates, default-on (Phase 4) and the remaining Closure Gates are NOT started. No Closure Gate is claimed complete. The opt-in join far rung (§4.4) is now selected at runtime by the one selection authority: the authored primitives are hidden and the joined proxy is shown as one unit, reversibly, with picking kept on the authored nodes. Shadow/reflection passes still share the main selection (no dedicated coarser shadow rung), and no GPU/browser run exercises the joined selection yet.
 **Date:** 2026-09-11.
 **Scope:** Asset compilation, configuration, ordinary model loading, and existing render integration.
 **Complexity:** HIGH — default-on lossy processing crosses build, runtime, and platform boundaries.
@@ -66,7 +66,10 @@ assets: {
     preset: 'balanced',
     generation: {
       maxLevels: 4,
-      minTriangles: 5_000,
+      minTriangles: 128,
+      minTrianglesScope: 'asset',
+      minSaving: 0.2,
+      errorTargets: [0.002, 0.006, 0.02, 0.06],
     },
     runtime: {
       maxPixelError: 1,
@@ -90,13 +93,16 @@ Keep overrides in this same config. V1 accepts exact canonical project-relative 
 | --- | --- |
 | `preset` | `quality`, `balanced`, or `aggressive`; default `balanced`. |
 | `generation.maxLevels` | Default 4 **including LOD0**, integer 1–8; applies to discrete LOD, not the existing cluster DAG's depth. `1` emits no derived discrete levels. |
-| `generation.minTriangles` | Default 5,000 per eligible primitive, not per entire GLB; positive integer. Eligibility and measured benefit may still cause a skip. |
-| `runtime.maxPixelError` | Positive finite projected geometric-error budget in actual raster pixels. Initial preset defaults: quality 0.5, balanced 1.0, aggressive 2.0. These are policy starting points, not measured guarantees. |
+| `generation.minTriangles` | Default **128** (was 5,000 — see §4.3), a cheap pre-filter only, measured against `generation.minTrianglesScope`; positive integer. It avoids clearly-pointless work; the measured benefit rule in §4.3 is the gate, so eligibility may still cause a skip. |
+| `generation.minTrianglesScope` | `"primitive"` or `"asset"`, default `"asset"`. `"asset"` measures the whole source model's triangle total, so a model split into many small primitives still clears the pre-filter on its total; `"primitive"` keeps the old per-primitive meaning. |
+| `generation.minSaving` | Fraction in `[0, 1)`, default `0.2`. A derived level must save at least this much of its predecessor's triangles to be kept. This is the primary gate: an inability to reach it is a normal skip with reason `insufficient-reduction`. |
+| `generation.errorTargets` | 1–16 strictly increasing positive finite geometric-error targets in normalized mesh-extent units, default `[0.002, 0.006, 0.02, 0.06]`. Each is simplified from LOD0 independently. |
+| `runtime.maxPixelError` | Positive finite projected geometric-error budget in actual raster pixels. Initial preset defaults: quality 0.5, balanced 1.0, aggressive 2.0. These are policy starting points, not measured guarantees, and an explicit value overrides the preset at project or asset level. |
 | `runtime.hysteresis` | Default 0.15, finite value in `[0, 0.5)`; stabilizes coarsening without postponing required refinement. |
 
 Resolve the effective preset from asset override, then project, then default. Expand its defaults once; overlay explicit project fields, then explicit asset fields. Overrides are partial, not replacements for whole nested objects. A global `false` is absolute and cannot be re-enabled by a per-asset override; an asset `false` always disables automatic work for that asset. Validate the resolved policy before any bake. Unknown fields, non-finite numbers, invalid enums, and out-of-range values name their config path and fail instead of silently falling back.
 
-V1 presets primarily set the screen-error budget; generation defaults above are shared. Do not expose arbitrary percentage ladders or invent hidden, unmeasured preset differences. Explicit numeric settings win over preset defaults. Generation and runtime settings have separate cache fingerprints: changing only pixel budget/hysteresis refreshes runtime metadata/config, not geometry generation.
+V1 presets primarily set the screen-error budget; generation defaults above are shared. Every generation knob above is reachable both project-wide and per asset through `overrides`; no threshold the document names may remain a constant a game cannot move. Do not expose arbitrary percentage ladders or invent hidden, unmeasured preset differences. Explicit numeric settings win over preset defaults. Generation and runtime settings have separate cache fingerprints: changing only pixel budget/hysteresis refreshes runtime metadata/config, not geometry generation; changing any generation knob (including scope, saving rule or error targets) is part of the generation fingerprint and invalidates the baked geometry.
 
 ### 3.3 Existing settings and cook boundaries
 
@@ -126,7 +132,77 @@ For newly cooked dense inputs, compare the incumbent clustered strategy against 
 
 Use the already available meshoptimizer/glTF Transform integration, not a new simplifier dependency. Derive each discrete level from the same LOD0 reference, or conservatively accumulate and validate error if using a successive chain. Store actual achieved counts and actual error relative to that reference. Preserve an unsimplified LOD0 relative to the existing non-AutoLOD cook result; never overwrite the authored GLB.
 
-Choose versioned increasing geometric-error targets and stop when simplification stalls, quality checks fail, or the level/storage budget is reached. Do not force `100% / 50% / 20% / 5%`. Initially reject a derived level saving less than 20% of its predecessor's triangles. `maxLevels` is a ceiling, not a promise to create redundant geometry. Drop rejected levels and maintain monotonic usable error/count ordering, including an explicitly handled zero-error level.
+Choose versioned increasing geometric-error targets (configurable through `generation.errorTargets`) and stop when simplification stalls, quality checks fail, or the level/storage budget is reached. Do not force `100% / 50% / 20% / 5%`. **The primary gate is measured benefit**: reject a derived level saving less than `generation.minSaving` (default 20%) of its predecessor's triangles, and treat an inability to reach it as a normal skip with reason `insufficient-reduction`, never a mandate to force a ratio. `generation.minTriangles` is only a cheap pre-filter — default **128**, measured against the whole asset (`generation.minTrianglesScope: 'asset'`) — that avoids the simplifier's fixed per-primitive cost on units too small for any reduction to matter. `maxLevels` is a ceiling, not a promise to create redundant geometry. Drop rejected levels and maintain monotonic usable error/count ordering, including an explicitly handled zero-error level.
+
+**The 5,000-triangle per-primitive default was wrong and is gone.** It was measured against a real shipped game (Midway): its three US carriers are 347,497 triangles each but spread over 280–301 meshes (about 1,150–2,700 triangles per primitive), and its aircraft are 10–15k triangles over ~22 meshes (~600 per primitive). Every primitive fell under the floor, so the feature generated **zero** levels, zero derived bytes — it was inert on the one asset that needed it. An absolute per-primitive count measures how the artist split the mesh, not whether simplification would pay. The corrected contract makes the measured saving rule the gate and reduces the floor to a cheap pre-filter whose default scope is the whole asset; a model whose primitives are each small but whose total is large is now exactly the case the pre-filter admits and the saving rule decides, primitive by primitive. The defaults are deliberately project-agnostic: measured with no Midway-specific value, name or special case anywhere in the engine.
+
+### 4.4 The per-primitive limit, and the opt-in join far rung
+
+An asset whose cost is **draw count** rather than triangle density is not helped by the per-primitive
+path. Midway's carrier is ~300 small primitives; the discrete path simplifies each of them
+independently and the 300-node/300-primitive structure — the draw calls and per-mesh CPU cost — is
+untouched. One measured recovery frame put a 48 px carrier at **147 draws** and a 30 px aircraft at
+**92**. Collapsing those primitives by material is the change that makes a draw-bound asset cheaper.
+
+This was originally **out of scope here**: §2 excludes HLOD, instancing and material-count reduction,
+and the earlier note correctly recorded that a join-by-material path interacts with object identity,
+boundaries and authored LOD. The repository owner has since authorised an **explicitly opt-in
+extension** for exactly the consumer the feature was built to serve, on the stated condition that it
+changes nothing by default and is declared honestly rather than smuggled in.
+
+Built as **`assets.lod.generation.join`**, default **`false`**, reachable globally and per asset
+through the same `overrides` map as every other generation knob:
+
+- **What it does.** When enabled, the eligible primitives of every **sibling mesh under one shared
+  container** are grouped by material *and* attribute layout and merged into one primitive per group
+  (the already-installed `gltf-transform` `join`), so the far rung draws once per material group
+  instead of once per authored primitive. This is what makes it useful on a real asset: the measured
+  Midway hulls ship **one primitive per mesh** (`akagi` 146/146, `hornet` 94/94, `pt59` 40/40), so a
+  within-mesh-only join collapsed nothing. Each sibling's transform relative to the container is
+  baked into its merged vertices, so a carrier's 146 draws become the handful of its material
+  groups. Joined geometry is reduced by the existing discrete chain when one is configured, so
+  `join` plus `errorTargets` gives a far rung with both fewer draws and fewer triangles.
+- **Bounded by construction.** A group never mixes materials — `join` itself refuses incompatible
+  groups, and the caller is offered no switch to cross that boundary. Skinned, morph-target and
+  animated **members** are left authored (a site that loses enough of them collapses nothing), a
+  mesh instanced by more than one node is refused because its local transform is not single-valued,
+  and a nested mesh node is skipped so a primitive belongs to exactly one site. The container's own
+  animation is allowed: the rung is baked in container space and rides rigidly with it. Node
+  identity, per-node visibility and picking are untouched; the authored primitives remain LOD0 and
+  the joined rung is an additional, scene-unreferenced far mesh.
+- **Default off, proved.** With no option, or with `join: false`, the cook is byte-identical to
+  today; `join` is part of the generation cache fingerprint so a stale bake cannot be served.
+- **Reported honestly.** The artifact metadata and the cook report name the far mesh, how many
+  primitives it collapsed and into how many draws, and record the exact `mesh#primitive` sources it
+  joined. A requested join that collapsed nothing says so rather than implying a collapse.
+
+Runtime selection of the joined rung is **now wired**, still inside the one selection authority
+(`packages/core/src/model-lod.ts`), so a cook that wrote no `join` is byte-identical to before. The
+rung's absolute error is recorded in the artifact and appended as the coarsest step of the same
+discrete chain, so `selectLodLevel` picks it only when its projected error fits
+`runtime.maxPixelError`, with the same `hysteresis`. Selecting it is a draw-topology change, not a
+geometry pointer swap: the authored primitives are hidden and a proxy built from the detached far
+mesh is added under their shared container as one unit. The authored meshes are never removed or
+replaced, so node identity, transforms, render order and authored per-node visibility are restored
+byte-for-byte on the way back. Picking stays on the authored primitives: the framework picker
+skips the proxy (`isLodJoinProxy`), and the authored meshes remain raycastable because a ray test
+does not honour `visible`. The runtime re-checks what it is about to hide — every source present,
+all members sharing one container, none skinned or morphed, and none targeted by an animation
+channel **strictly below that container** — and refuses the rung with `TN_DISCRETE_LOD_JOIN_INVALID`
+otherwise rather than half-joining.
+
+Joining siblings bakes their relative transforms into the rung, so the honest ceiling is a model
+whose sub-meshes move independently at runtime. Animation, a skin and a morph target are detected at
+bake and at load; **script movement is detected at runtime**: every source member's authored local
+transform relative to the container is snapshotted at load, and a member that no longer matches is
+refused with `TN_DISCRETE_LOD_JOIN_INVALID` before any proxy is shown. The blind spot is a clone
+created after load: it is baselined on its first far selection, so an individual clone member a
+script moves before that first selection is not seen — which is why the whole feature stays opt-in.
+The selection fact and the draw collapse are named once per activation in
+`TN_DISCRETE_LOD_JOINED`. What is **not** wired: a dedicated coarser shadow rung (shadow and
+reflection passes share the main selection, the same conservative shared choice the discrete path
+already made), and the join proxy uses the loaded far mesh's own materials, so a per-node material
+override made after load is not reflected in the joined draw.
 
 Report normalized simplifier error and the scale used to convert it to local-space absolute error. Attribute-weighted error must not be mislabeled as a pure position bound. Include downstream quantization effects in the reported budget or measure against the decoded baseline; do not lose units between the baker and runtime.
 
@@ -163,7 +239,11 @@ Refine immediately when the selected level exceeds budget. Coarsen only when the
 
 Multiple cameras, stereo views, reflection captures, and shadows must not reuse a stale choice from another pass. Choose the finest detail required by all relevant views, or use a proven pass-local selection mechanism. V1 does **not** automatically request an even coarser shadow LOD: retain LOD0 for shadows or prove a conservative shared choice. Main-camera invisibility does not remove an off-screen shadow caster.
 
+For the joined rung this is met without pass-local caching: the authority holds no per-pass level, and every call to `updateModelLods` recomputes from the camera it is handed, so a second pass cannot read a first pass's choice. The joined draw replaces the authored nodes for every pass at once — the same shared choice the discrete path makes — so a shadow or reflection camera does not get an independently coarser rung; that remains the open shadow question above, not a stale-reuse bug. Per-container state means two instances of the same joined model at different distances each join or refine on their own.
+
 Keep entity/node identity, names, transforms, materials, event mappings, authored visibility, and render order intact. Physics, collision, navigation, and default precision picking continue using baseline/source semantics, not camera-dependent render geometry. Document raw Three.js face-index behavior; stable framework picking must not depend on the selected render LOD.
+
+The joined rung keeps all of this by never touching the authored graph: it hides the authored primitives (`visible = false`), adds one proxy object under their shared container, and on revert removes the proxy and restores each primitive's captured `visible`. A framework pick skips the proxy (`isLodJoinProxy`), so it still answers with an authored node and its LOD0 surface; a stock three ray test also skips it, because the proxy's meshes carry a no-op `raycast`.
 
 Instances sharing an asset may need different detail. Do not mutate a shared geometry/index so that one instance changes every other instance, and do not silently de-instance a large batch into hundreds of draws. Reuse safe existing batches; otherwise decline that optimization and report the reason. Preserve shared resource lifetimes: disposing one instance or geometry must not destroy a sibling's attributes. Test unload, reload, scene restart, and device-resource recreation where supported.
 
@@ -195,43 +275,170 @@ Keep these boxes current in the implementation PR. They remain open in this spec
 
 #### Phase 0 — trace and baseline
 
-- [ ] The current config-to-render caller chain and legacy settings are mapped.
+- [x] The current config-to-render caller chain and legacy settings are mapped. Evidence: the trace is
+      the landed code itself — `packages/create-threenative/src/build.ts:312,458` calls
+      `compileAssets({ config: config.assets })`, the `model` pass (`packages/assets/src/passes/model.ts`)
+      bakes through glTF Transform, and `createAssetLoader` (`packages/core/src/assets.ts:547`) loads
+      through `GLTFLoader` with the `VirtualGeometryPlugin` registered on `TN_virtual_geometry`. Legacy
+      opt-outs inventoried: `assets.models.virtual: "none"` and `assets.models.simplify`.
 - [ ] The representative corpus has reproducible baseline measurements.
+      Blocked: requires a browser/GPU capture (capture lock held) and the owned native host; the
+      counted Midway census (`/tmp/midway-60fps/report-X1.md`) is the only baseline available here.
 
 #### Phase 1 — config and artifact
 
-- [ ] Public config resolution passes the precedence and invalid-input tests.
-- [ ] The normal compiler applies tested eligibility and error-driven generation.
-- [ ] Cooked GLBs pass extension round-trip and baseline-preservation tests.
+- [x] Public config validation and per-asset resolution pass the precedence and invalid-input tests.
+      Evidence: validation in `packages/create-threenative/__tests__/lod-config.spec.ts` (25/25) and
+      resolution in `packages/assets/__tests__/lod-generation.spec.ts` (32/32) — preset defaults,
+      overlay precedence, absolute kill switch, legacy translation, split fingerprints, and every
+      generation knob (`join`, `maxLevels`, `minTriangles`, `minTrianglesScope`, `minSaving`,
+      `errorTargets`) honoured globally and per asset. `pnpm typecheck` (exit 0) and the package
+      builds (exit 0) cover both packages. One resolver owns the decision — the compiler calls
+      `resolveLodPolicy` where the asset is known; the config layer only validates.
+- [x] The pre-filter is measured-benefit-driven, not an absolute per-primitive constant.
+      Evidence: the default `minTriangles` moved 5,000 → 128 with `minTrianglesScope: 'asset'` after
+      the Midway census (347,497-triangle carriers over ~300 primitives each), fixing a gate that
+      generated zero levels on the asset that needed it; the measured saving rule
+      (`minSaving`, default 0.2) is now the primary gate and an unreachable level reports
+      `insufficient-reduction` instead of a forced ratio. Proven by the carrier, tiny-asset, scope,
+      error-target and saving-rule tests in `lod-generation.spec.ts`.
+- [x] The normal compiler applies tested eligibility and error-driven generation. Evidence:
+      `packages/assets/__tests__/lod-generation.spec.ts`, 27/27 green;
+      `modelPass` generates `TN_discrete_lod` via `packages/assets/src/lod/` (meshoptimizer, index-only,
+      `LockBorder`), attached after the virtual bake and before quantize.
+- [x] Cooked GLBs pass extension round-trip and baseline-preservation tests. Evidence: same spec —
+      LOD0 arrays byte-equal to the non-AutoLOD cook; a generic reader sees only LOD0; schema/index
+      revalidation on read.
+- [x] The opt-in join far rung is generated, bounded and reported (the §4.4 extension). Evidence:
+      `assets.lod.generation.join`, default `false`, global and per asset; a 300-primitive carrier
+      collapses to one draw per material (3, not 300) with LOD0 still 300 primitives; absent or
+      `false` is byte-identical; skinned/morph/animated refused; a per-asset override joins one asset
+      only; the artifact metadata and the compiler manifest carry the draws, the collapsed primitive
+      count and the `mesh#primitive` sources. Tests: `lod-generation.spec.ts` (36/36), join line in
+      `report.spec.ts`, `lod-config.spec.ts` (25/25). §4.4 declares it an owner-authorised extension
+      beyond §2's exclusion; runtime selection of the rung is not wired.
+- [x] The join spans sibling meshes under one shared container, not just primitives inside one mesh.
+      Evidence: `lod-generation.spec.ts` "joins sibling meshes under a shared parent into one draw per
+      material" — 146 one-primitive meshes over 3 materials (the measured Midway shape, where the
+      within-mesh join produced nothing) collapse to 3 draws / 146 primitives with each sibling's
+      part-node transform baked into the merged vertices, LOD0 untouched; the artifact records the
+      distinct source `meshes`. A multi-primitive mesh keeps its exact prior far mesh and draws, the
+      animated sibling set is refused, and absent/`false` stays byte-identical. Runtime: the sibling
+      container is the common ancestor, members are hidden wherever they sit in that subtree, and a
+      member a script moves since load is refused (`model-lod-join.spec.ts`).
 - [ ] Cache invalidation and atomic hot reload pass their integration tests.
+      Partial: the generation fingerprint and pass cache key exclude runtime/preset, and a spec
+      asserts a runtime-only edit neither rebakes nor changes the key. A cache hit now re-resolves
+      and rewrites `lod.runtime` in the manifest (`withFreshLodRuntime`), proven by
+      "refreshes the manifest runtime budget on a cache hit without rebaking" (payload `output` and
+      `bytes` unchanged, runtime moved 1 -> 5 / 0.15 -> 0.3). Hot reload is not exercised here.
 
 #### Phase 2 — ordinary runtime
 
-- [ ] Normal model loading reaches the single engine-owned LOD controller.
-- [ ] Projection and hysteresis tests pass on decoded assets.
-- [ ] Multi-view and shadow correctness tests pass.
-- [ ] Gameplay identity and precision-picking tests pass.
-- [ ] Instance isolation and shared-resource lifetime tests pass.
+- [x] Normal model loading reaches the single engine-owned LOD controller. Evidence:
+      `packages/core/__tests__/model-lod-loader.spec.ts` (3/3) drives a hand-written cooked GLB
+      through `createAssetLoader` — fetch, `extensionsUsed` detection, `GLTFLoader`, the reader,
+      `widenQuantizedPositions`, then `attach` — and shows the far camera swapping a 64-triangle
+      LOD0 to the 16-triangle level while the near camera keeps LOD0. The level shares the authored
+      position attribute by reference.
+- [x] Projection and hysteresis tests pass on decoded artifacts. Evidence:
+      `packages/core/__tests__/model-lod.spec.ts` (17/17 — perspective/orthographic/zoom projection,
+      conservative nearest depth, near-plane/inside-bounds full detail, immediate refinement,
+      hysteresis-gated coarsening, zero-error level, multi-view and `finest` view),
+      `model-lod-runtime.spec.ts` (5/5) and the loader-driven `model-lod-loader.spec.ts` (2/2).
+- [ ] Multi-view and shadow correctness tests pass. `selectLodLevel` accepts several views and a
+      `finest` view; the engine passes only the main camera and shadows have no dedicated test yet.
+      The joined authority adds no pass-local cache — every `updateModelLods` call recomputes from
+      the camera it is handed, and `model-lod-join.spec.ts` proves two cameras at different
+      distances do not corrupt each other's choice — but shadow/reflection still share the main
+      selection, so the shadow half remains open.
+- [x] Precision-picking does not depend on the selected render LOD. Evidence:
+      `packages/core/__tests__/picking.spec.ts` "picks the authored LOD0 surface while the camera
+      draws a coarser level" — the BVH is built from LOD0 and the ray is run against LOD0 while the
+      mesh is drawn at the coarse level. `model-lod-join.spec.ts` "keeps picking on the authored
+      primitives while the joined rung is drawn" adds the joined case: the runtime proxy is skipped
+      and the hit is an authored member.
+- [x] The opt-in joined rung is selected at runtime inside the one authority. Evidence:
+      `model-lod-join.spec.ts` (14/14) — a model with a joined rung selects it beyond the budget and
+      its submitted triangles fall to the rung's, the switch is logged once as
+      `TN_DISCRETE_LOD_JOINED` naming the primitive→draw collapse, reverting on a close camera
+      restores authored visibility/render order/transform and removes the proxy, an
+      animation-targeted or skinned/morphed mesh never joins, a clone behaves like its source, two
+      instances at different distances choose independently, and a cook with no `join` is
+      unchanged. A rung spanning sibling meshes selects and reverts the same way with picking kept on
+      the authored members, and a part node moved after load is refused with
+      `TN_DISCRETE_LOD_JOIN_INVALID`. The rung's absolute error is written by the cook and read back
+      (asserted in `lod-generation.spec.ts`), and `picking.ts` skips the proxy.
+- [x] Instance isolation and shared-resource lifetime tests pass. Evidence:
+      `model-lod-runtime.spec.ts` "isolates two instances that share one base geometry" — each builds
+      its own derived level, swapping one leaves the other and the shared base untouched, and
+      disposing one instance's selected geometry leaves the sibling's shared `BufferAttribute` (array
+      and identity) intact. Scope note: three has no buffer refcounting, so its `dispose()` deletes a
+      shared attribute's GPU buffer and the sibling re-uploads it on the next frame; the CPU
+      attribute is never destroyed, so this is a bounded transient re-upload, not a correctness break.
+      A per-attribute refcount in `disposeModel` would remove the transient and is the remaining
+      nicety, not a requirement of the stated contract.
+- [x] Runtime policy reaches the controller from the manifest. Evidence:
+      `model-lod-loader.spec.ts` serves a manifest whose entry resolves `maxPixelError: 0.1` and the
+      same far camera that coarsens under the default 1-pixel budget keeps LOD0 — the loader read the
+      asset's budget, not a framework constant.
 
 #### Phase 3 — consumer qualification
 
-- [ ] Browser WebGPU consumer evidence establishes the default policy.
-- [ ] Windows native consumer evidence establishes the default policy.
-- [ ] macOS native consumer evidence establishes the default policy.
-- [ ] Linux native consumer evidence establishes the default policy.
-- [ ] Android's policy is backed by target evidence or explicitly remains baseline-only.
-- [ ] iOS's policy is backed by target evidence or explicitly remains baseline-only.
-- [ ] The dense-asset triangle-reduction gate passes.
-- [ ] The frame-time regression gates pass on every default-enabled target.
-- [ ] The rendered-quality gate passes on the declared corpus.
-- [ ] The new discrete-artifact byte budgets pass.
+- [x] Browser WebGPU consumer evidence establishes the default policy. Evidence: `examples/auto-lod`
+      (an 8,192-triangle `assets/hull.glb`, `assets.lod: {}`, compiled through the same `watchAssets`
+      dev seam a scaffolded project uses) on an RTX 2080. The runner reported adapter
+      `turing / nvidia` and would have rejected a software adapter as non-evidence.
+      `playtests/lod-near.playtest.json` selects LOD0
+      (`sceneNodes` 8,192 triangles); `playtests/lod-far.playtest.json` submits 369 triangles with a
+      non-blank capture. Both exit 0 under `--browser-recipe webgpu --headed` with no console or
+      network errors. Reproduce with `DISPLAY` on the GPU's X server and
+      `TN_PLAYTEST_HOST_DISPLAY=1`; the runner defaults to headless, which serves SwiftShader and is
+      not evidence. Run locally with `pnpm --filter auto-lod playtest:web` (and `playtest:desktop`
+      for the native lane); the package `test` script is the install-only `pnpm run build` proof,
+      because the playtest needs a real adapter and cannot run in the CI package walk.
+- [ ] Windows native consumer evidence establishes the default policy. NOT RUN; no host here.
+- [ ] macOS native consumer evidence establishes the default policy. NOT RUN; no host here.
+- [x] Linux native consumer evidence establishes the default policy. Evidence: the same example built
+      for the owned host (`threenative build --target desktop`, embeddable desktop artifact) and run
+      through the desktop playtest lane. `lod-near-desktop` drives the scene state from 368 to 8,192
+      triangles (`changed`, `gte 8000`, `sceneNodes.minTriangles 8192`) and `lod-far-desktop` holds 368
+      (`lte 4096`); both exit 0. The native lane carries the state channel and not the browser
+      performance sampler, so the gate is the published triangle count rather than `performance`.
+- [ ] Android's policy is backed by target evidence or explicitly remains baseline-only. NOT RUN;
+      adb is on PATH, no emulator or device was started.
+- [ ] iOS's policy is backed by target evidence or explicitly remains baseline-only. BLOCKED: `xcrun`
+      is not on PATH (macOS only).
+- [x] The dense-asset triangle-reduction gate passes on browser WebGPU. Evidence: 8,192 authored -> 369
+      submitted on the far route (`lod-far`, exit 0), 95.5% fewer, above the 50% floor; the near route
+      keeps LOD0 at 8,192. Frame meters were sampled (1,024 samples) but no regression allowance was
+      asserted, so no frame-time claim is made here.
+- [x] The dense-asset triangle-reduction gate passes on a native target. Evidence: Linux desktop,
+      8,192 authored -> 368 submitted on the far route (`lod-far-desktop`, exit 0), 95.5% fewer.
+- [ ] The frame-time regression gates pass on every default-enabled target. NOT RUN; a browser pass
+      was measured but not bounded, and the native lane reports no performance samples.
+- [ ] The rendered-quality gate passes on the declared corpus. NOT RUN. The two browser scenarios
+      assert a non-blank capture and the far/near screenshots exist in `artifacts/playtest/`, but the
+      declared corpus comparison at transitions was not performed.
+- [ ] The new discrete-artifact byte budgets pass. NOT RUN as the declared 1.5x cap. The cook reports
+      8,192 -> 368 triangles across 3 levels at 88,728 payload bytes, and the cooked file 150,188 ->
+      59,116 bytes (-60.6%), against a non-AutoLOD baseline that was not measured.
 
 #### Phase 4 — default and discovery
 
-- [ ] Omitted configuration enables the qualified policy through the real front door.
-- [ ] The global off switch passes its end-to-end negative control.
-- [ ] Existing config documentation and discovery expose the effective settings.
-- [ ] Generated-project guidance documents default behavior and migration.
+- [ ] Omitted configuration enables the qualified policy through the real front door. Open by
+      design: omission bakes nothing until Phase 3 qualification passes; `assets.lod: {}` is the
+      current opt-in that resolves to enabled/balanced.
+- [x] The global off switch passes its end-to-end negative control. Evidence:
+      `lod-generation.spec.ts` "bakes nothing and installs nothing when the global switch is off" —
+      `assets.lod: false` and `{ enabled: false }` both ship a GLB whose `extensionsUsed` does not
+      contain `TN_discrete_lod` and a manifest with `generated === 0`.
+- [x] Existing config documentation and discovery expose the effective settings. Evidence:
+      `IThreeNativeConfig.assets.lod` and `IThreeNativeLodConfig` JSDoc state the opt-in, the absolute
+      kill switch and the override keys, and the generated capability reference documents
+      `updateModelLods` with its `assets.lod` constraints/overrides (`pnpm capabilities:sync`).
+- [ ] Generated-project guidance documents default behavior and migration. Template guidance lands
+      with the default-on flip, after qualification, so it does not document a default that is not on.
 
 ### Minimum acceptance matrix
 

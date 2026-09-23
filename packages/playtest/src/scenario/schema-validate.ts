@@ -2,6 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
+import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
 import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
@@ -797,7 +798,9 @@ export function playtestStepWaitTicks(step: IPlaytestStep): number {
 }
 
 export function validateAssertions(value: Record<string, unknown>, scenarioPath: string): IPlaytestScenarioAssertions {
-  rejectUnknownKeys(value, PLAYTEST_ASSERTION_REGISTRY.map((entry) => entry.kind), scenarioPath, "assert");
+  // `geometry` is a capture request, not a comparison assertion, so it carries no registry entry
+  // and no result id; it is still a valid `assert` key and is validated fail-closed below.
+  rejectUnknownKeys(value, [...PLAYTEST_ASSERTION_REGISTRY.map((entry) => entry.kind), "geometry"], scenarioPath, "assert");
   validateAssertionShapes(value, scenarioPath);
   validateAssertionKeys(value, scenarioPath);
   if (Array.isArray(value.signals) && value.signals.length === 0) {
@@ -847,6 +850,9 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   const scene = value.scene === undefined
     ? undefined
     : validateSceneAssertion(value.scene, scenarioPath, "assert.scene");
+  const geometry = value.geometry === undefined
+    ? undefined
+    : validateGeometryCaptureRequest(value.geometry, scenarioPath, "assert.geometry");
   const world = isRecord(value.world) ? value.world : undefined;
   const optOuts = [
     ["noConsoleErrors", "consoleErrorsOptOutReason"],
@@ -906,6 +912,7 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
     ...(renderChain === undefined ? {} : { renderChain }),
     ...(startup === undefined ? {} : { startup }),
     ...(scene === undefined ? {} : { scene }),
+    ...(geometry === undefined ? {} : { geometry }),
     ...(hasKey(value, "causedBy")
       ? {
           causedBy: requireArray(value, "causedBy", scenarioPath, "assert.causedBy").map((entry, index) =>
@@ -1181,5 +1188,33 @@ export function validateOccludedAssertion(value: unknown, scenarioPath: string, 
     ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     ...present("target", optionalString(record, "target", scenarioPath, objectPath)),
+  };
+}
+
+/**
+ * One armed per-object geometry capture request. Fail-closed like every other key path: an unknown
+ * key, a limit outside 1..500, a sort outside the three literals, or a non-positive timeout throws
+ * and names the field, rather than silently dropping the capture the scenario asked for.
+ */
+export function validateGeometryCaptureRequest(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestGeometryCaptureRequest {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["limit", "sort", "timeoutMs"], scenarioPath, objectPath);
+  if (record.limit !== undefined && (typeof record.limit !== "number" || !Number.isInteger(record.limit) || record.limit < 1 || record.limit > 500)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.limit' must be an integer from 1 to 500, received ${describeValue(record.limit)}.`);
+  }
+  if (record.sort !== undefined && record.sort !== "triangles" && record.sort !== "draws" && record.sort !== "projected") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.sort' must be one of triangles, draws, projected, received ${describeValue(record.sort)}.`);
+  }
+  if (record.timeoutMs !== undefined && (typeof record.timeoutMs !== "number" || !Number.isFinite(record.timeoutMs) || record.timeoutMs <= 0)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.timeoutMs' must be a positive finite number, received ${describeValue(record.timeoutMs)}.`);
+  }
+  return {
+    ...(record.limit === undefined ? {} : { limit: record.limit as number }),
+    ...(record.sort === undefined ? {} : { sort: record.sort as NonNullable<IPlaytestGeometryCaptureRequest["sort"]> }),
+    ...(record.timeoutMs === undefined ? {} : { timeoutMs: record.timeoutMs as number }),
   };
 }

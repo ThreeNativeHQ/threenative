@@ -12,6 +12,15 @@
     set: (value) => ctx.__nativeSetLineCap(value),
   });
 
+  Object.defineProperty(ctx, 'lineJoin', {
+    get: () => ctx.__nativeGetLineJoin(),
+    set: (value) => ctx.__nativeSetLineJoin(value),
+  });
+
+  // `setLineDash` is a native method; `getLineDash` must hand back a real Array, and the spec
+  // says it is a copy — mutating it must not change the context's pattern.
+  ctx.getLineDash = () => Array.prototype.slice.call(ctx.__nativeGetLineDash());
+
   Object.defineProperty(ctx, 'fillStyle', {
     get: () => fillStyle,
     set: (value) => {

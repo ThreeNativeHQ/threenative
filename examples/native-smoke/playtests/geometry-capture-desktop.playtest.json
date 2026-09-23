@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "native-geometry-capture-desktop",
+  "target": "desktop",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitFrames": 120, "label": "presented" }],
+  "artifacts": { "screenshots": false },
+  "assert": {
+    "geometry": { "limit": 25, "sort": "triangles" }
+  }
+}

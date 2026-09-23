@@ -18,7 +18,10 @@ export interface IBuildOptions {
   cwd?: string;
   target: BuildTarget;
   allowSourceBuild?: boolean;
-  /** Android only. Omitted keeps the current debug APK behavior. */
+  /**
+   * Android and desktop. Desktop `release` wraps the executable in a complete OS container;
+   * omitted keeps the raw-binary debug behavior.
+   */
   mode?: BuildMode;
   /** Android only. `aab` requires `mode: "release"`. */
   format?: BuildFormat;
@@ -92,8 +95,11 @@ export async function assertNativeBundleCompatible(
 }
 
 /**
- * Refuse a web UI target before native packaging can silently discard its bundle. Android and
- * iOS own platform overlays; the desktop overlay currently exists on Linux only.
+ * Refuse a web UI target before native packaging can silently discard its bundle. Android and iOS
+ * own platform overlays, and the desktop overlay now ships its Windows (WebView2), macOS (WKWebView)
+ * and Linux (X11/Wayland) backends behind the one ABI — proved by the hosted `windows-2025`/
+ * `macos-15` starter lanes and the Linux session proofs. A host without one of those desktop window
+ * systems still refuses rather than shipping a bundle nothing can render.
  */
 export function assertNativeUiRendererCompatible(
   target: NativeBuildTarget,
@@ -101,7 +107,12 @@ export function assertNativeUiRendererCompatible(
   platform: NodeJS.Platform = process.platform,
 ): void {
   if (renderer === "native" || target === "android" || target === "ios") return;
-  if (target === "desktop" && platform === "linux") return;
+  if (
+    target === "desktop" &&
+    (platform === "linux" || platform === "darwin" || platform === "win32")
+  ) {
+    return;
+  }
   const platformName =
     platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform;
   throw new Error(
@@ -521,6 +532,8 @@ async function buildNative(
     process.execPath,
     [
       path.join(runtimeRoot, "scripts", "package-desktop.mjs"),
+      "--mode",
+      mode,
       "--bundle",
       bundle,
       "--assets",
@@ -543,10 +556,12 @@ export async function build(options: IBuildOptions): Promise<void> {
     throw new Error("--allow-source-build is supported only for --target android.");
   }
   if (
-    (options.mode !== undefined || options.format !== undefined) &&
-    options.target !== "android"
+    (options.mode !== undefined && options.target !== "android" && options.target !== "desktop") ||
+    (options.format !== undefined && options.target !== "android")
   ) {
-    throw new Error("--mode and --format are supported only for --target android.");
+    throw new Error(
+      "--mode is supported only for --target android or desktop; --format only for --target android.",
+    );
   }
   const mode = options.mode ?? "debug";
   const format = options.format ?? "apk";
@@ -572,7 +587,7 @@ export function buildHelp(): string {
     "",
     "Options:",
     "  --target <target>  Choose web, desktop, android, or ios (default: web).",
-    "  --mode <mode>      Android only: debug (default) or release.",
+    "  --mode <mode>      debug (default) or release. Desktop release wraps the executable in one complete OS container.",
     "  --format <format>  Android only: apk (default) or aab. aab requires --mode release.",
     "  --allow-source-build  Explicitly allow Android maintainer source compilation.",
     "  --help             Show this help.",
@@ -600,8 +615,13 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   if (format !== undefined && format !== "apk" && format !== "aab") {
     throw new Error(`Unknown build format '${format}'. Choose apk or aab.`);
   }
-  if ((mode !== undefined || format !== undefined) && value !== "android") {
-    throw new Error("--mode and --format are supported only for --target android.");
+  if (
+    (mode !== undefined && value !== "android" && value !== "desktop") ||
+    (format !== undefined && value !== "android")
+  ) {
+    throw new Error(
+      "--mode is supported only for --target android or desktop; --format only for --target android.",
+    );
   }
   if (format === "aab" && (mode ?? "debug") !== "release") {
     throw new Error("--format aab requires --mode release.");

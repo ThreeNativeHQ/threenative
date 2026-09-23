@@ -56,6 +56,125 @@ inside that checkout.
 If you have no engine checkout, the prebuilt path above is your path — `THREENATIVE_RUNTIME_SOURCE`
 is not a way around a failing download.
 
+## Desktop release containers and player prerequisites
+
+`build --target desktop` produces the raw host executable by default. `--mode release` wraps the
+compiled executable, the built `ui/` bundle and the shared libraries that executable actually loads
+into one relocatable container for the host OS:
+
+```sh
+pnpm exec threenative build --target desktop --mode release
+```
+
+- **Linux** — a `tar.gz` with the executable, `ui/`, non-system libraries under `lib/`, and a
+  `.desktop` entry plus icon under `share/`.
+- **macOS** — a `<Name>.app` inside a ZIP, with `Contents/MacOS/<exe>`, `Contents/Resources` and an
+  `Info.plist` carrying the game's id, name, version and build.
+- **Windows** — a ZIP with `<Name>.exe` (icon and version embedded), `ui/` and non-system DLLs.
+
+Each container carries `threenative-container.json`: the app identity, the executable, every
+bundled dependency with a SHA-256, and every system library recorded as a player prerequisite. All
+of it resolves relative to the container root, so a container can be unpacked and moved anywhere; a
+resource that is missing or whose bytes changed is refused. Release containers are **unsigned** —
+signing and notarization are a separate step.
+
+### Player prerequisites
+
+The container does not ship the platform's WebView or windowing stack. The player machine provides:
+
+| OS | Prerequisite | Install |
+| --- | --- | --- |
+| Linux | WebKitGTK 4.1 and GTK 3 | Debian/Ubuntu: `sudo apt-get install -y libwebkit2gtk-4.1-0 libgtk-3-0`; Fedora: `sudo dnf install webkit2gtk4.1 gtk3`; Arch: `sudo pacman -S webkit2gtk-4.1 gtk3` |
+| Windows | Microsoft Edge WebView2 Evergreen Runtime | <https://developer.microsoft.com/microsoft-edge/webview2/> |
+| macOS | System WebKit | included with macOS |
+
+The verifier inspects an unpacked container and resolves its integrity records first. On Linux it
+also resolves every shared library the executable loads and refuses to launch when a recorded
+prerequisite is missing, naming the library with its install step rather than a bare loader error.
+On Windows and macOS the prerequisites above are documented and provided by the OS; the verifier
+does not machine-check them here.
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --container <unpacked-directory>
+```
+
+### Packaging prerequisites (the developer's machine)
+
+`--mode release` shells out to OS tools to build the container and stamp the game's identity into
+it. They are needed on the machine that packages the game, never on the player's:
+
+| OS | Tool | Needed for | Install |
+| --- | --- | --- | --- |
+| Linux | `tar` | the `tar.gz` container | included with the distribution |
+| macOS | `zip` | the `.zip` container | included with macOS |
+| macOS | `sips`, `iconutil` | converting `app.icon` into the `.icns` the `.app` bundle carries | included with macOS |
+| Windows | `zip` | the `.zip` container | `choco install zip` |
+| Windows | `rcedit` | embedding `app.icon` and the version strings into the executable's PE resources | <https://github.com/electron/rcedit/releases>, with `rcedit.exe` on `PATH` |
+| Windows | `dumpbin` | listing the DLLs the executable imports, so the container records them and stays relocatable | ships with Visual Studio; run the release build from a Developer Command Prompt |
+
+A missing tool refuses the release with `TN_DESKTOP_ARCHIVE_TOOL_MISSING` or
+`TN_DESKTOP_RESOURCE_TOOL_MISSING` naming the tool, rather than shipping a container without the
+identity it claims. The icon tools are required only when `app.icon` is configured.
+
+### Standard distribution recipe
+
+1. Build: `pnpm exec threenative build --target desktop --mode release`.
+2. Verify on a player image with no Node and no engine checkout:
+   `verify-starter-desktop.mjs --container <unpacked-directory> --config <project>/.threenative/build/config.json`.
+   `--config` points the verifier at the resolved consumer config the build already wrote, and the
+   container's launcher name, embedded icon and declared loading sequence are then inspected before
+   anything launches — on Windows by reading the executable's own `RT_GROUP_ICON`/`RT_ICON` and
+   `RT_VERSION` resources, not the manifest beside it. Without `--config` the gate says
+   `brand NOT inspected` rather than implying the identity was checked.
+3. Sign where the store requires it (below), then hand the archive to your installer or store depot.
+
+### Signing and store/depot handoff
+
+A release container is complete but unsigned. Non-secret inputs come from the build environment,
+while the private key and the notarytool password stay in the OS keychain and are never written into
+the container. Setting `THREENATIVE_DESKTOP_SIGN=1`, or providing an identity, certificate, store subject or
+notary profile, requests signing; with none of them, release stays unsigned. A variable set to
+an empty or blank value counts as absent, so an unset CI secret leaves an unsigned container
+rather than failing the release.
+
+| Variable | Meaning |
+| --- | --- |
+| `THREENATIVE_DESKTOP_SIGN` | `1`/`true` requests a signed release; macOS/Windows without the matching inputs fail as PENDING. |
+| `THREENATIVE_DESKTOP_CODESIGN_IDENTITY` | macOS `codesign` Developer ID identity. |
+| `THREENATIVE_DESKTOP_NOTARY_PROFILE` | macOS `notarytool` keychain profile; enables notarization and stapling. |
+| `THREENATIVE_DESKTOP_SIGN_CERTIFICATE` | Windows code-signing certificate (`.pfx`), password-less. |
+| `THREENATIVE_DESKTOP_SIGN_SUBJECT` | Windows certificate-store subject name; the private key stays in the store. |
+| `THREENATIVE_DESKTOP_TIMESTAMP_URL` | Windows Authenticode timestamp server. |
+
+Windows `signtool` signs then verifies the executable. Prefer
+`THREENATIVE_DESKTOP_SIGN_SUBJECT`: it signs with `/n`, so the private key never leaves the store.
+`THREENATIVE_DESKTOP_SIGN_CERTIFICATE` uses `/f` and is passed no password, so it only works for a
+password-less `.pfx`. Setting both is refused rather than silently resolved.
+
+**There is deliberately no password variable.** Since the CA/Browser Forum tightened its code-signing
+requirements in 2023, a publicly trusted code-signing key has to be generated and held on certified
+hardware — a token, an HSM, or a cloud signing service — so a certificate authority does not hand
+over a `.pfx` for you to protect with a password in the first place. Adding `/p` would carry a
+secret through the build environment to serve a case that modern issuance does not produce. The
+store subject is the supported route; the `/f` form remains for a self-signed or internally issued
+password-less file.
+
+Two things about `/n` that decide whether a build machine can sign at all. It searches the
+**`CurrentUser\My`** store only — a certificate imported into `LocalMachine` is not found, and
+signtool reports `No certificates were found that met all the given criteria`. And the subject is
+matched as a **substring**, so a value that hits several certificates lets signtool pick among them;
+give a subject specific enough to match one. The machine store (`/sm`) and cloud or HSM signing
+(`/csp` with `/kc`, or `/dlib` for Azure Trusted Signing and similar) are not reachable through this
+contract. macOS `codesign` signs and verifies the
+bundle, `notarytool` notarizes the archive and `stapler` staples the ticket; a notarization Apple did
+not accept is refused, and an evidence record whose artifact hash is not the produced artifact is
+rejected. Linux has no Authenticode or notarization, so it proceeds unsigned with integrity metadata
+only and is handed to the package/depot step as-is. A signing failure refuses the release and leaves
+no archive, and the manifest records `signed` so an unsigned preparation is never mistaken for a
+signed one. These toolchains run only on their own OS: the repository's Linux tests exercise them
+through fixture transport, so a real signed or notarized artifact must be produced and verified on a
+Windows or macOS host.
+
 ## Release builds and signing
 
 `build --target android` produces a debug APK by default. Release output is an explicit request:

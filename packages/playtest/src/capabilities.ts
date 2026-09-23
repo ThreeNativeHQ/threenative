@@ -18,6 +18,7 @@ export type PlaytestCapability =
   | "runtime.diagnostics"
   | "runtime.events"
   | "runtime.fixedStep"
+  | "runtime.geometry"
   | "runtime.physics"
   | "runtime.performance"
   | "runtime.pipelineCensus"
@@ -58,6 +59,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("runtime.diagnostics", "Captures application runtime errors."),
   capability("runtime.events", "Drains bounded application event observations."),
   capability("runtime.fixedStep", "Advances an application-owned deterministic tick."),
+  capability("runtime.geometry", "Answers one armed per-object geometry capture for the frame it was requested on."),
   capability("runtime.physics", "Samples bounded application-owned physics observations."),
   capability("runtime.performance", "Samples bounded per-render frame cost and renderer counts."),
   capability("runtime.pipelineCensus", "Samples bounded shader and pipeline creation observations."),

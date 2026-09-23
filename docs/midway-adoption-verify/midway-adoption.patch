@@ -1,0 +1,757 @@
+From 8cacb94f80b164d13b8627a6671ccbb8ac61d600 Mon Sep 17 00:00:00 2001
+From: Joao Paulo Furtado <jfurtado141@gmail.com>
+Date: Mon, 14 Sep 2026 19:15:14 -0700
+Subject: [PATCH 1/3] perf(midway): adopt the engine transform-ownership fix
+ and prepare transforms in beforeRender
+
+Install the content-hashed core projdirty-12c96c25114f tarball (honours
+matrixWorldAutoUpdate instead of forcing updateMatrixWorld(true)) and move the
+once-per-world-draw world-matrix walk off the scene onBeforeRender hook onto
+ctx.beforeRender, which fires on the projected and declined paths alike. The
+old hook left every world matrix stale while the projection mirror rendered.
+
+Verified: typecheck and vite build exit 0; check-frame-transforms red on the
+old hook (max diff 0.66794) and green with the refactor (ratio 1.0, correct,
+moving, no errors); all four browser playtests pass; two live-combat profiles
+exit 0 with the player alive and the 99-batch projection census unchanged.
+---
+ .../PRDs/PRD-midway-flak-hunt-20260914.md     | 210 +++++++++++++++++-
+ midway-open-pacific/package.json              |   4 +-
+ midway-open-pacific/src/scenes/Midway.ts      |  37 ++-
+ .../tools/capture-battle-profile.mjs          |  23 ++
+ 4 files changed, 251 insertions(+), 23 deletions(-)
+
+diff --git a/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md b/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md
+index f947840..f124089 100644
+--- a/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md
++++ b/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md
+@@ -251,4 +251,212 @@ Both final game frames were inspected: separate tracer segments, retained flak a
+ 
+ Previous goal turn made progress: engine `b1cae8803` and game `6089a35` were pushed, topology and particle preparation were verified, and an execution handoff was recorded. Current checkouts still match those commits and are clean; the isolated server is live on port 5396. Stable 60 remains open.
+ 
+-- [ ] Run one current live timing baseline and a separate CPU profile; include actual engine frame-budget markers and identify the largest remaining CPU contributor before another optimization.
++- [x] Run one current live timing baseline and a separate CPU profile; include actual engine frame-budget markers and identify the largest remaining CPU contributor before another optimization. Done 2026-09-14; see below.
++
++### Baseline and CPU attribution (2026-09-14)
++
++`tools/capture-battle-profile.mjs` now parses the engine's own `TN_FRAME_BUDGET`, `TN_FRAME_HITCH`
++and `TN_RENDER_PROJECTION` console markers into the report (fail-closed on a malformed marker), so
++the whole presented frame is recorded, not only the custom wraps. Three 30 s close-combat runs
++(NVIDIA/Turing, 1920x1080, DPR 1, `resolutionScale 1`, `atFloor false`, live AA/flak/damage, player
++alive) exited 0: `/tmp/midway-flak-hunt/cpu-next-{off,on,off2}/`.
++
++**GPU is not the budget.** Whole-frame `render` mean was 121.19 / 63.31 / 49.96 ms while GPU was
++10.40 / 8.42 / 2.98 ms; `overlay` and `residual` were ~0 and simulation `update` 7.8-16.7 ms. CPU
++draw submission and projection, not GPU execution, own the frame.
++
++**Absolute FPS on this host is not usable.** Identical configuration gave 5.95 / 7.35 / 8.31 fps
++with load average 12.9 -> 25.5 on 24 cores (other lanes plus a long-running qemu VM). The user
++observes 40-50 fps on the same machine unloaded. Only relative CPU shares, counts and
++draw/triangle totals are treated as evidence here; no absolute frame-time claim is made from these
++runs, and the `TN_FRAME_BUDGET` window spans startup plus warm-up at this marker cadence.
++
++CPU profile (`cpu-next-on`, 33.76 s, active 36.8 %, gc 0.2 %): inclusive `onRender` 29.8 % (81 % of
++active CPU), `three render` 20.8 %, `reconcile` 8.7 % (~24 % of active), `game update` 6.7 %. The
++single largest self function is Three's `updateMatrixWorld` at 1072.3 ms, ahead of
++`three update` 501.7, native `writeBuffer` 415.3, engine `walkProjection` 374.3 and
++`_renderObjectDirect` 335.2. `TN_RENDER_PROJECTION` reports `projecting true`, 2189 source
++renderables, 1565 projected, 99 batches, 723 draw candidates, so the decline cadence guard never
++engages and the full scan plus the forced matrix pass are paid every frame.
++
++The earlier `closecombat-uncapped` ranking (`_projectObject` 12.3 %, `updateMatrixWorld` 7.9 %)
++does not reproduce: `_projectObject` is now 0.7 % self. That old run carried sampler and host
++drift and is not a baseline.
++
++### Candidate 1: stop force-recomputing static world matrices
++
++`renderProjection.ts:237` calls `this.#source.updateMatrixWorld(true)` on every projecting frame.
++The force is required to be *some* update - the renderer is handed the mirror, so nothing else
++refreshes the authored scene - but the `true` also defeats any subtree a game has deliberately
++marked static, recomposing and recomputing all ~2189 renderables (including the ~1983 parked
++deck-load nodes and the atoll) every frame. Three's own `matrixWorldNeedsUpdate` propagation
++already refreshes every default auto-updating object, so a non-forced call is identical for them.
++
++Two halves, measured together: the engine drops the force, and the game marks its measured-static
++subtrees `matrixAutoUpdate = false`. Falsifier: matrix composes per frame fall, while
++`TN_RENDER_PROJECTION` keeps `projecting true` with unchanged draw candidates, and draws,
++triangles and the rendered frame are unchanged. If draws or the verdict move, the gate is wrong.
++
++### Candidate 1 corrected: the forced matrix pass was a second whole-scene walk
++
++The first attempt — simply dropping the `true` — was **disproven before it was applied**. In Three
++0.185 a `Scene` keeps `matrixAutoUpdate = true`, so `updateMatrixWorld()` composes the root's own
++matrix, sets `matrixWorldNeedsUpdate`, and forces the whole subtree exactly as `updateMatrixWorld(true)`
++does. The two call forms are indistinguishable unless the root is marked static, and the proposed
++unit test could not be made to fail on the original code. Recorded rather than shipped.
++
++The real finding is one level up. `src/scenes/Midway.ts:74-88` already sets
++`scene.matrixWorldAutoUpdate = false` on the scene root and performs its own **unforced**
++`scene.updateMatrixWorld()` in `scene.onBeforeRender`, restoring the flag on exit. The engine then
++ignored that flag and ran a second, **forced**, whole-scene walk in
++`renderProjection.reconcile`. So the authored scene was walked twice per frame, the second time
++overriding the game's deliberate static marking.
++
++Engine change (worktree `.worktrees/projection-dirty`, branch `perf/projection-dirty`, base
++`b1cae8803`): `renderProjection.ts` now honours the same contract every Three renderer uses —
++`if (this.#source.matrixWorldAutoUpdate === true) this.#source.updateMatrixWorld();`. A game that
++turns the flag off has promised to update the scene itself; a subtree marked
++`matrixWorldAutoUpdate = false` under a still parent is skipped rather than walked.
++
++RED→GREEN in `packages/core/__tests__/renderProjection.spec.ts`: four cases — a moving projected
++object still reaches the mirror (passes both sides), a static subtree's world matrices survive
++reconcile (**failed before**, `expected [0,0,0] to deeply equal [999,0,0]`), a source scene marking
++its world static is not walked at all (**failed before**, `updateMatrixWorld ... called 1 times
++[true]`), and a static-marked subtree whose parent moved this frame is still refreshed (passes both
++sides — the safety case). After the fix, 66/66 pass. Whole core suite 113 files / 1276 tests exit 0,
++`pnpm --filter ./packages/core build` exits 0; both only after building the unbuilt workspace deps
++(`@threenative/playtest`, the MCP packages, `@threenative/assets`) — the first runs failed on those,
++not on this change. `pnpm typecheck` ends at 2 errors, both `examples/fps-friction` missing the
++unbuilt WASM `@threenative/physics`, neither in a changed file. Packed but **not yet installed**:
++`.packages/threenative-core-0.3.2-projdirty-12c96c25114f.tgz`
++(sha256 `12c96c25114f91335895102fc7f50c58719782c7a445d97a777dd01618bdd858`).
++
++Scene-node census supporting it: over 120 consecutive live-battle frames, **6527 of 6636 nodes
++(98.4 %) never changed their local matrix**. The 109 that move are aircraft and ship roots, propeller
++and control-surface pivots, the ocean plane and the sun. Largest never-moving subtrees: AI Zero
++2072/2088, ship hulls 2019/2047, carrier + parked deck load + crew 1201/1207, SBD 1025/1059, Midway
++Atoll 40/40, coupled whitewater 26/26. Probe and per-subtree counts:
++`/tmp/midway-60fps/report-B.md`, `/tmp/midway-60fps/probe-matrix-120.mjs`.
++
++### Candidate 2: the shadow pass draws a fleet into an empty 160 m box
++
++Measured on a live cockpit frame (350 m altitude, 1500 m astern of Akagi, 19 ships / 22 aircraft):
++
++- Exactly one shadow-casting light, the sun `DirectionalLight` (`world.ts:280-288`), with a
++  **160 m x 160 m** orthographic shadow camera (2048², near 1, far 850) that **follows the player**
++  (`world.ts:627-628`). Metres per texel 0.078.
++- The renderer is handed the projection mirror: 518 shadow-casting renderables, of which 94 are lane
++  batches (40 instanced + 54 material) and 424 exact proxies. **All 94 lane batches carry
++  `frustumCulled = false`**, hard-coded by the lane, and each carries one bounding sphere spanning
++  every instance across the map.
++- Per-pass counts, instrumented from the page and equal to the renderer's own combined counters:
++  main **1418 draws / 4,727,398 triangles**, shadow **316 draws / 1,814,234 triangles** — the shadow
++  pass is **18.2 % of draws and 27.7 % of triangles**.
++- Three's own object frustum test finds **0 of those 316 submissions outside** the shadow camera,
++  because the map-spanning batch spheres always intersect the box. **Restoring `frustumCulled` would
++  cull nothing.** `BatchedMesh` per-instance culling does not apply to `InstancedMesh`.
++- In the captured frame **no cast shadow is identifiable anywhere** — the player is 350 m up, the
++  nearest ship is ~1.5 km away, and nothing is inside the 160 m volume.
++
++So the second draw of the fleet produces an empty shadow map in airborne combat. The cut is
++game-side and distance-shaped: cast only within the volume the shadow camera can actually reach,
++keeping the deck case (hull, parked load and crew are inside ±80 m when the player is on deck) and
++always keeping the player. Evidence: `/tmp/midway-60fps/report-C.md`,
++`/tmp/midway-60fps/report-C-frame.png`.
++
++This also re-ranks PRD step 3. Offscreen instanced geometry is real, but **triangles are not the
++budget**: GPU p95 was 3-10 ms against 50-121 ms of CPU. Its cost lands on the CPU through the shadow
++pass's draw submissions, which is what this candidate removes.
++
++### Candidate 2 rejected as implemented, and what it exposed
++
++Per-object distance-gating of `castShadow` on ships, deck load, AI aircraft, projectiles and scouts
++(player always casting, hysteresis on the boundary) was implemented in `src/render/world.ts` and
++**reverted**. A/B/B/A with frozen camera, battle time and population, gate toggled at runtime:
++
++| fixture | gate | projecting | main draws | main tris | shadow draws | shadow tris |
++| --- | --- | --- | ---: | ---: | ---: | ---: |
++| airborne 350 m | off | true | 1426 | 4,808,475 | 316 | 1,788,928 |
++| airborne 350 m | on | **false** | 1606 | 4,503,022 | 135 | 413,614 |
++| deck | off | false | 371 | 2,204,888 | 321 | 817,087 |
++| deck | on | false | 371 | 2,204,888 | 321 | 817,087 |
++
++Legs were reversible (A1 == A2, B1 == B2). The deck fixture was **pixel-identical, 0 of 2,073,600
++px** — the gate kept every shadow a player actually sees. The airborne fixture changed by 96.6 % of
++pixels, and the shadow saving was not the gate's doing.
++
++**`castShadow` is part of the engine's batch group key.** Gating it per object split the groups and
++pushed the projection's own prediction from 723 to 1661 draw candidates of 2189, past its 0.75
++worthwhile ratio, so the engine declined projection for the entire scene and rendered the authored
++graph instead. The shadow drop was that decline's ordinary frustum culling. `pnpm typecheck`,
++`pnpm exec vite build` and `check-particle-render` all exited 0; the change was still wrong.
++Evidence: `/tmp/midway-60fps/report-D.md`, `trace-D.mjs`, `probe-report-D-settle.mjs`.
++
++Two findings worth more than the rejected change:
++
++**1. At this roster, batching is a draw wash and a triangle loss.** Counting both passes, projected
++totals 1742 draws / 6.60 M triangles against 1741 draws / 4.92 M triangles declined. Projection
++saves 180 main-pass draws and gives back 181 shadow-pass draws, because its batches hard-code
++`frustumCulled = false` and carry one map-spanning bounding sphere, so the shadow camera cannot cull
++them. `projection-plan.ts` `predictDraws` prices the main pass only; it does not know that batching
++removes the shadow pass's culling, so its "worthwhile" verdict is computed against a draw count the
++frame does not actually have. This does not generalise to the 68-aircraft roster, where an earlier
++capture measured projection clearly ahead (renderer p95 39.5 ms projected against 67.8 ms declined);
++it is a prediction-accuracy problem at moderate rosters, not a reason to disable batching.
++
++**2. The rendered image is not the same with projection on and off.** The same frozen camera, battle
++time and population differ by 96.6 % of pixels between the projected and declined paths, the sea
++losing its wave and reflection detail. Projection is supposed to be a drawing optimisation and
++should be visually transparent. This is tracked as a separate correctness question, not a
++performance one, and it is not waived.
++
++
++### Candidate 1 integrated: the game now runs the transform-ownership engine fix
++
++The `perf/projection-dirty` engine fix is adopted (2026-09-14). Content-hashed core
++`threenative-core-0.3.2-projdirty-12c96c25114f.tgz` (sha256 `12c96c25...bdd858`, packed from
++`.worktrees/projection-dirty`, base `b1cae8803`) replaces `battle-fix-27e4fce23867` in
++`package.json` (dependency and `pnpm.overrides`) and `pnpm-lock.yaml`; `pnpm install` exit 0. The
++installed `dist/index.js:5995` now reads
++`if (this.#source.matrixWorldAutoUpdate === true) this.#source.updateMatrixWorld();`.
++
++The engine upgrade makes the old game hook unsafe, and the refactor that absorbs it is in
++`src/scenes/Midway.ts`: `scene.matrixWorldAutoUpdate` stays `false`, but the once-per-world-draw
++world-matrix walk moved off the scene `onBeforeRender` hook and onto `ctx.beforeRender`. When
++batching is active the projection mirror is what renders, so the authored scene's `onBeforeRender`
++never fires and the old hook left every world matrix stale. The same `ctx.beforeRender` callback now
++does both the walk and the particle `prepare`, and the flag is restored on scene exit.
++
++RED → GREEN on the real renderer, hardware WebGPU (NVIDIA Turing), 1600×900, private Xvfb:
++
++- **RED** — old hook + new engine, `tools/check-frame-transforms.mjs`:
++  `airborne-cockpit: world matrices match the independent ancestor multiply (max diff 0.66794)`.
++  The stale-matrix failure is exactly the projection-path bug.
++- **GREEN** — refactor + new engine: all five phases ratio `1.0`
++  (`briefing` 45/45, `deck` 46/46, `airborne-cockpit` 13/13, `airborne-chase` 45/45,
++  `airborne-wide` 42/42), `maxWorldDiff 0`, `finite true`, `changed true`, no console/page errors:
++  `PASS: one root world traversal per presented frame, transforms finite and correct, no errors`.
++  Reports `/tmp/midway-flak-hunt/projdirty/frame2/frame-check.json` (green) and
++  `/tmp/midway-flak-hunt/projdirty/red-old-hook/frame-check.json` (red).
++
++`pnpm typecheck` exit 0; `pnpm exec vite build` exit 0 (only pre-existing three-mesh-bvh namespace
++and chunk-size warnings). The four browser playtests against the new engine all pass
++(`midway-audio-realism`, `midway-briefing`, `midway-flight`, `midway-launches`; top-level
++`"pass": true`, exit 0); log `/tmp/midway-flak-hunt/projdirty/playtests.log`.
++
++Two live close-combat profiles (altitude 350 m, standoff 1500 m, CPU sampler off so the CDP
++profiler does not add load) exit 0 with the player alive and no errors; the host was contended by
++other lanes, so absolute FPS is not evidence (as before):
++
++| run | sim advanced | AA / flak / damage | render p95 | GPU p95 | update | projection | residual |
++| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
++| after-1 | 18.10 s | 174 / 96 / 14 | 30.2 ms | 8.83 ms | 6.62 ms | projecting true · 99 batches (40 inst / 59 mat) · 624 exact | 0.05 ms |
++| after-2 | 19.13 s | 177 / 100 / 13 | 25.7 ms | 6.82 ms | 6.70 ms | projecting true · 99 batches (40 inst / 59 mat) · 624 exact | 0.04 ms |
++
++The projection verdict and batch census are unchanged from the doc's record (99 batches, 40
++instanced, 59 material, 624 exact), so the adopted fix is correct and stable but does not by itself
++change the CPU-bound frame: the authored scene still walks once per world draw. The per-frame saving
++the engine fix enables needs a game that marks its measured-static subtrees
++(`matrixWorldAutoUpdate = false`); Midway does not request a static list here, and the doc's
++execution order keeps that behind the structural-plan work. Stable 60 remains unmet, and the two
++correctness questions above (per-pass batching, projected/declined image parity) remain open.
+diff --git a/midway-open-pacific/package.json b/midway-open-pacific/package.json
+index 25300c8..5ea8912 100644
+--- a/midway-open-pacific/package.json
++++ b/midway-open-pacific/package.json
+@@ -18,7 +18,7 @@
+     "verify": "pnpm typecheck && pnpm verify:audio"
+   },
+   "dependencies": {
+-    "@threenative/core": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-core-0.3.2-battle-fix-27e4fce23867.tgz",
++    "@threenative/core": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-core-0.3.2-projdirty-12c96c25114f.tgz",
+     "@threenative/physics": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-physics-0.3.2-midway-d5f4b4747fc7.tgz",
+     "@threenative/ui": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-ui-0.3.2-midway-68eb08c22fc6.tgz",
+     "react": "19.2.0",
+@@ -53,7 +53,7 @@
+     },
+     "overrides": {
+       "@threenative/assets": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-assets-0.3.2-midway-31630a90db89.tgz",
+-      "@threenative/core": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-core-0.3.2-battle-fix-27e4fce23867.tgz",
++      "@threenative/core": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-core-0.3.2-projdirty-12c96c25114f.tgz",
+       "@threenative/physics": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-physics-0.3.2-midway-d5f4b4747fc7.tgz",
+       "@threenative/playtest": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-playtest-0.3.2-midway-aa6bc3176af6.tgz",
+       "@threenative/runtime-native": "file:/home/joao/projects/threenative/sandbox/.packages/threenative-runtime-native-0.3.2-midway-4662ac5aa85a.tgz",
+diff --git a/midway-open-pacific/src/scenes/Midway.ts b/midway-open-pacific/src/scenes/Midway.ts
+index b35f8b2..78bde19 100644
+--- a/midway-open-pacific/src/scenes/Midway.ts
++++ b/midway-open-pacific/src/scenes/Midway.ts
+@@ -65,28 +65,25 @@ export class Midway extends Scene<GameState, undefined> {
+     this.ctx = ctx;
+     this.battle = new Battle();
+     this.world = new WorldView({ scene: ctx.scene, camera: ctx.camera as T.PerspectiveCamera, renderer: ctx.renderer, add: (object) => ctx.add(object) }, this.battle);
+-    // The combat particle buffers are repacked for the camera once per actual world draw. The
+-    // engine's own beforeRender phase keeps the packing off the particle meshes: an own mesh
+-    // onBeforeRender marks the whole scene un-batchable at the full roster.
+-    this.cleanups.push(ctx.beforeRender(() => this.world.particles.prepare(this.world.camera.position)));
+-    // Midway has one main camera and buffer-only draw hooks. Prepare world transforms once,
+-    // then reuse them in shadow and reflection passes (which draw through their own cameras).
++    // Prepare the frame once per actual world draw, in the engine's before-render phase: it runs
++    // after the last fixed update and before projection reconciles, on the projected and the
++    // declined path alike. The authored scene has one main camera but a reflection pass re-renders
++    // it, so `matrixWorldAutoUpdate` stays off and this single walk replaces three's per-render
++    // walk; the particle buffers repack here too, because an own mesh `onBeforeRender` would mark
++    // the whole scene un-batchable at the full roster. A scene `onBeforeRender` walk is wrong: the
++    // projection mirror is what renders when batching is active, so that hook never fires there.
+     const scene = ctx.scene;
+     const savedAutoUpdate = scene.matrixWorldAutoUpdate;
+-    if (savedAutoUpdate) {
+-      const savedOnBeforeRender = scene.onBeforeRender;
+-      const hadOwnHook = Object.hasOwn(scene, "onBeforeRender");
+-      scene.matrixWorldAutoUpdate = false;
+-      scene.onBeforeRender = (...args) => {
+-        if (args[2] === ctx.camera) scene.updateMatrixWorld();
+-        savedOnBeforeRender.apply(scene, args);
+-      };
+-      this.cleanups.push(() => {
+-        if (hadOwnHook) scene.onBeforeRender = savedOnBeforeRender;
+-        else Reflect.deleteProperty(scene, "onBeforeRender");
+-        scene.matrixWorldAutoUpdate = savedAutoUpdate;
+-      });
+-    }
++    scene.matrixWorldAutoUpdate = false;
++    this.cleanups.push(() => {
++      scene.matrixWorldAutoUpdate = savedAutoUpdate;
++    });
++    this.cleanups.push(
++      ctx.beforeRender(() => {
++        scene.updateMatrixWorld();
++        this.world.particles.prepare(this.world.camera.position);
++      }),
++    );
+     this.hud = new Hud(this.battle, this.world);
+     this.audio = new Soundscape(
+       this.audioBuffers,
+diff --git a/midway-open-pacific/tools/capture-battle-profile.mjs b/midway-open-pacific/tools/capture-battle-profile.mjs
+index 8b570d4..4bdb0cf 100644
+--- a/midway-open-pacific/tools/capture-battle-profile.mjs
++++ b/midway-open-pacific/tools/capture-battle-profile.mjs
+@@ -84,6 +84,7 @@ const errors = [];
+ const frameBudgetWindows = [];
+ const frameHitches = [];
+ let frameBudgetLatest = null;
++const projectionReports = [];
+ const report = {
+   tool: "capture-battle-profile",
+   realCombat: true,
+@@ -127,6 +128,14 @@ try {
+       } catch {
+         errors.push(`unparseable TN_FRAME_HITCH line: ${text}`);
+       }
++    } else if (text.startsWith("TN_RENDER_PROJECTION:")) {
++      // The engine's own render-projection verdict: whether the authored scene was re-batched or
++      // declined, and why. Emitted once per verdict change; the same no-API console contract.
++      try {
++        projectionReports.push({ atMs: Date.now(), ...JSON.parse(text.slice("TN_RENDER_PROJECTION:".length)) });
++      } catch {
++        errors.push(`unparseable TN_RENDER_PROJECTION line: ${text}`);
++      }
+     }
+   });
+ 
+@@ -746,6 +755,20 @@ try {
+     hitches: frameHitches,
+     unavailableReason: frameBudgetWindows.length ? null : "no completed TN_FRAME_BUDGET window arrived (default report window is 300 presented frames)",
+   };
++  // The engine's own render-projection verdict: active batching or a declined authored scene.
++  report.renderProjection = {
++    marker: "TN_RENDER_PROJECTION",
++    reports: projectionReports,
++    latest: projectionReports.length ? projectionReports[projectionReports.length - 1] : null,
++  };
++  if (projectionReports.length) {
++    const p = projectionReports[projectionReports.length - 1];
++    console.log(
++      `render projection: projecting ${p.projecting} reason ${p.reasonCode}${p.reason ? ` (${p.reason})` : ""} sourceRenderables ${p.sourceRenderables} drawsPlanned ${p.drawsPlanned} batches ${p.batches} instanced ${p.instancedBatches} material ${p.materialBatches} exact ${p.exactObjects}`,
++    );
++  } else {
++    console.log("render projection: no TN_RENDER_PROJECTION marker captured (verdict may not have changed during the run)");
++  }
+   if (frameBudgetLatest) {
+     const p = frameBudgetLatest.phases || {};
+     const su = frameBudgetLatest.surface || {};
+-- 
+2.55.0
+
+
+From 7b7ef21d1768a03311b2cd67fa2ce95432512fda Mon Sep 17 00:00:00 2001
+From: Joao Paulo Furtado <jfurtado141@gmail.com>
+Date: Mon, 14 Sep 2026 19:15:45 -0700
+Subject: [PATCH 2/3] docs(midway): record the adopted transform-fix
+ verification evidence
+
+Machine-readable green/red frame-transform phases, the four passing playtests
+and two zero-error live-combat profiles for the projdirty core adoption.
+---
+ .../adopted-transform-fix-2026-09-14.json     | 342 ++++++++++++++++++
+ 1 file changed, 342 insertions(+)
+ create mode 100644 midway-open-pacific/docs/perf/adopted-transform-fix-2026-09-14.json
+
+diff --git a/midway-open-pacific/docs/perf/adopted-transform-fix-2026-09-14.json b/midway-open-pacific/docs/perf/adopted-transform-fix-2026-09-14.json
+new file mode 100644
+index 0000000..369122c
+--- /dev/null
++++ b/midway-open-pacific/docs/perf/adopted-transform-fix-2026-09-14.json
+@@ -0,0 +1,342 @@
++{
++  "date": "2026-09-14",
++  "engine": {
++    "tarball": "threenative-core-0.3.2-projdirty-12c96c25114f.tgz",
++    "sha256": "12c96c25114f91335895102fc7f50c58719782c7a445d97a777dd01618bdd858",
++    "fix": "renderProjection reconcile honours matrixWorldAutoUpdate instead of forcing updateMatrixWorld(true)",
++    "installedMarker": "node_modules/@threenative/core/dist/index.js:5995"
++  },
++  "adapter": {
++    "vendor": "nvidia",
++    "architecture": "turing"
++  },
++  "green": {
++    "command": "MIDWAY_URL=http://127.0.0.1:5399 bash tools/capture-lock.sh node tools/check-frame-transforms.mjs",
++    "errors": [],
++    "phases": {
++      "briefing": {
++        "rootWalks": 45,
++        "frames": 45,
++        "ratio": 1,
++        "maxDiff": 0,
++        "allFinite": true,
++        "changed": true
++      },
++      "deck": {
++        "rootWalks": 46,
++        "frames": 46,
++        "ratio": 1,
++        "maxDiff": 0,
++        "allFinite": true,
++        "changed": true
++      },
++      "airborne-cockpit": {
++        "rootWalks": 13,
++        "frames": 13,
++        "ratio": 1,
++        "maxDiff": 0,
++        "allFinite": true,
++        "changed": true
++      },
++      "airborne-chase": {
++        "rootWalks": 45,
++        "frames": 45,
++        "ratio": 1,
++        "maxDiff": 0,
++        "allFinite": true,
++        "changed": true
++      },
++      "airborne-wide": {
++        "rootWalks": 42,
++        "frames": 42,
++        "ratio": 1,
++        "maxDiff": 0,
++        "allFinite": true,
++        "changed": true
++      }
++    }
++  },
++  "red": {
++    "why": "old scene onBeforeRender hook + new engine leaves world matrices stale",
++    "errors": [
++      "FAIL: airborne-cockpit: world matrices match the independent ancestor multiply (max diff 0.66794)"
++    ],
++    "phases": {
++      "briefing": {
++        "rootWalks": 43,
++        "frames": 43,
++        "ratio": 1,
++        "maxDiff": 0,
++        "allFinite": true,
++        "changed": true
++      },
++      "deck": {
++        "rootWalks": 47,
++        "frames": 47,
++        "ratio": 1,
++        "maxDiff": 0,
++        "allFinite": true,
++        "changed": true
++      },
++      "airborne-cockpit": {
++        "rootWalks": 15,
++        "frames": 16,
++        "ratio": 0.9375,
++        "maxDiff": 0.66794,
++        "allFinite": true,
++        "changed": true
++      },
++      "airborne-chase": {
++        "rootWalks": 0,
++        "frames": 50,
++        "ratio": 0,
++        "maxDiff": 54.8,
++        "allFinite": true,
++        "changed": true
++      },
++      "airborne-wide": {
++        "rootWalks": 0,
++        "frames": 48,
++        "ratio": 0,
++        "maxDiff": 109.066667,
++        "allFinite": true,
++        "changed": true
++      }
++    }
++  },
++  "playtests": {
++    "command": "bash tools/capture-lock.sh node node_modules/@threenative/playtest/dist/runner/cli.js --scenario \"playtests/*.playtest.json\" --url http://127.0.0.1:5399 --browser-recipe webgpu --headed --timeout 60000",
++    "exit": 0,
++    "scenarios": [
++      "midway-audio-realism",
++      "midway-briefing",
++      "midway-flight",
++      "midway-launches"
++    ],
++    "topLevelPass": true
++  },
++  "battleProfiles": {
++    "command": "MIDWAY_URL=http://127.0.0.1:5399 MIDWAY_CPU_PROFILE=0 MIDWAY_BATTLE_ALTITUDE=350 MIDWAY_BATTLE_STANDOFF=1500 bash tools/capture-lock.sh node tools/capture-battle-profile.mjs",
++    "note": "host contended by other lanes; absolute FPS is not evidence, the live-combat advance and zero-error exit are",
++    "runs": [
++      {
++        "exit": 0,
++        "qualified": true,
++        "consoleErrors": 0,
++        "adapter": {
++          "vendor": "nvidia",
++          "architecture": "turing",
++          "device": "",
++          "description": ""
++        },
++        "fixture": {
++          "label": "repositioned-astern-of-enemy-carrier",
++          "note": "player placed 1500 m astern of a live enemy carrier at 350 m with a real flight attitude and the carrier designated; all Battle rules run untouched afterwards",
++          "requested": {
++            "altitude": 350,
++            "standoff": 1500
++          },
++          "ship": {
++            "name": "Akagi",
++            "id": "ship-8",
++            "team": "jp",
++            "kind": "carrier",
++            "aa": 1,
++            "x": -4230.9,
++            "z": -8969.6,
++            "heading": 2.85
++          },
++          "player": {
++            "x": -4662.1,
++            "y": 350,
++            "z": -10406.3,
++            "heading": 2.85,
++            "standoff": 1500
++          }
++        },
++        "sampleSeconds": 20,
++        "end": {
++          "time": 51.78,
++          "status": "playing",
++          "player": {
++            "hp": 65.37438549631668,
++            "mode": "flight",
++            "y": 494.5,
++            "x": -3983.8,
++            "z": -8389.4
++          },
++          "aircraftAlive": 22,
++          "shipsAlive": 19,
++          "shipsBurning": 0,
++          "bullets": 34,
++          "flakBullets": 18,
++          "aaBullets": 16,
++          "effects": 45,
++          "effectsByType": {
++            "flak": 42,
++            "hit": 2,
++            "muzzle": 1
++          },
++          "draws": 1439,
++          "triangles": 5815704,
++          "drawingBuffer": {
++            "width": 1600,
++            "height": 900
++          },
++          "layerMasks": {
++            "1": 6056,
++            "3": 575
++          }
++        },
++        "projection": {
++          "projecting": true,
++          "reasonCode": "projected",
++          "sourceRenderables": 2189,
++          "resultDrawCandidates": 723,
++          "batches": 99,
++          "instancedBatches": 40,
++          "materialBatches": 59,
++          "exactObjects": 624
++        },
++        "frameBudget": {
++          "fps": 9.66,
++          "frames": 300,
++          "hitches": 2,
++          "render": {
++            "max": 4973.1,
++            "mean": 58.14,
++            "p50": 32.3,
++            "p95": 45.2,
++            "p99": 151.9,
++            "samples": 300
++          },
++          "update": {
++            "max": 67.8,
++            "mean": 6.62,
++            "p50": 6.8,
++            "p95": 10.7,
++            "p99": 13.5,
++            "samples": 300
++          },
++          "residual": {
++            "max": 0.6,
++            "mean": 0.05,
++            "p50": 0,
++            "p95": 0.2,
++            "p99": 0.2,
++            "samples": 300
++          }
++        }
++      },
++      {
++        "exit": 0,
++        "qualified": true,
++        "consoleErrors": 0,
++        "adapter": {
++          "vendor": "nvidia",
++          "architecture": "turing",
++          "device": "",
++          "description": ""
++        },
++        "fixture": {
++          "label": "repositioned-astern-of-enemy-carrier",
++          "note": "player placed 1500 m astern of a live enemy carrier at 350 m with a real flight attitude and the carrier designated; all Battle rules run untouched afterwards",
++          "requested": {
++            "altitude": 350,
++            "standoff": 1500
++          },
++          "ship": {
++            "name": "Akagi",
++            "id": "ship-8",
++            "team": "jp",
++            "kind": "carrier",
++            "aa": 1,
++            "x": -4230.8,
++            "z": -8969.5,
++            "heading": 2.85
++          },
++          "player": {
++            "x": -4662,
++            "y": 350,
++            "z": -10406.2,
++            "heading": 2.85,
++            "standoff": 1500
++          }
++        },
++        "sampleSeconds": 20,
++        "end": {
++          "time": 51.7,
++          "status": "playing",
++          "player": {
++            "hp": 66.64786501736364,
++            "mode": "flight",
++            "y": 489.5,
++            "x": -3986.8,
++            "z": -8399.3
++          },
++          "aircraftAlive": 22,
++          "shipsAlive": 19,
++          "shipsBurning": 0,
++          "bullets": 34,
++          "flakBullets": 18,
++          "aaBullets": 16,
++          "effects": 44,
++          "effectsByType": {
++            "flak": 42,
++            "hit": 1,
++            "muzzle": 1
++          },
++          "draws": 1437,
++          "triangles": 5815638,
++          "drawingBuffer": {
++            "width": 1600,
++            "height": 900
++          },
++          "layerMasks": {
++            "1": 6056,
++            "3": 575
++          }
++        },
++        "projection": {
++          "projecting": true,
++          "reasonCode": "projected",
++          "sourceRenderables": 2189,
++          "resultDrawCandidates": 723,
++          "batches": 99,
++          "instancedBatches": 40,
++          "materialBatches": 59,
++          "exactObjects": 624
++        },
++        "frameBudget": {
++          "fps": 10.04,
++          "frames": 300,
++          "hitches": 3,
++          "render": {
++            "max": 2663.2,
++            "mean": 45.7,
++            "p50": 29.5,
++            "p95": 39.1,
++            "p99": 134,
++            "samples": 300
++          },
++          "update": {
++            "max": 171.3,
++            "mean": 6.7,
++            "p50": 6.1,
++            "p95": 9.9,
++            "p99": 12.5,
++            "samples": 300
++          },
++          "residual": {
++            "max": 0.5,
++            "mean": 0.04,
++            "p50": 0,
++            "p95": 0.2,
++            "p99": 0.2,
++            "samples": 300
++          }
++        }
++      }
++    ]
++  }
++}
+-- 
+2.55.0
+
+
+From da2830801472011c0cf0aecd898553a91006c908 Mon Sep 17 00:00:00 2001
+From: Joao Paulo Furtado <jfurtado141@gmail.com>
+Date: Mon, 14 Sep 2026 19:16:30 -0700
+Subject: [PATCH 3/3] docs(midway): trace the adopted core tarball to engine
+ commit f7c64c5fc
+
+---
+ midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md b/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md
+index f124089..23baca2 100644
+--- a/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md
++++ b/midway-open-pacific/docs/PRDs/PRD-midway-flak-hunt-20260914.md
+@@ -415,7 +415,8 @@ performance one, and it is not waived.
+ 
+ The `perf/projection-dirty` engine fix is adopted (2026-09-14). Content-hashed core
+ `threenative-core-0.3.2-projdirty-12c96c25114f.tgz` (sha256 `12c96c25...bdd858`, packed from
+-`.worktrees/projection-dirty`, base `b1cae8803`) replaces `battle-fix-27e4fce23867` in
++`.worktrees/projection-dirty`, base `b1cae8803`, committed there as `f7c64c5fc`; focused core
++regression `renderProjection.spec.ts` 66/66) replaces `battle-fix-27e4fce23867` in
+ `package.json` (dependency and `pnpm.overrides`) and `pnpm-lock.yaml`; `pnpm install` exit 0. The
+ installed `dist/index.js:5995` now reads
+ `if (this.#source.matrixWorldAutoUpdate === true) this.#source.updateMatrixWorld();`.
+-- 
+2.55.0
+
