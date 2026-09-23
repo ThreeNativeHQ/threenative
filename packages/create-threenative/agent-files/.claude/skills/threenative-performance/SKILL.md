@@ -5,14 +5,17 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 
 # ThreeNative performance evidence
 
-Refill scratch and pool objects. Static GLBs may use `assets.models.lightmap:{atlasSize,padding}`;
-load through `ctx.assets.model()`, remove it to roll back, and never claim Android/iOS from a
-web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, and
-`residual`; `defineGame({ frameBudget: false })` silences output, never measurement.
+Refill scratch and pool objects; load static GLBs through `ctx.assets.model()` so rollback is removal, and never claim Android/iOS from a web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, `residual`, plus per-pass draw calls and triangles attributed to the innermost render call. `defineGame({ frameBudget: false })` silences output, never measurement.
+
+## Reach for the shipped default before you write your own
+
+The engine already prepares transforms, batches and projects the scene, culls per pass, scales resolution, cooks assets and warms first use. Hand-rolling any of that pays twice — read `agent-docs/performance-basics.md` before the first profile.
 
 Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. The bounded proof shape is
-`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12}}}` and its
-fields are defined in `agent-docs/assertion-reference.md#performance`.
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}` and its
+fields are defined in `agent-docs/assertion-reference.md#performance`. `maxPassDrawCalls` and
+`maxPassTriangles` bound one pass kind at a time; they fail closed when the run carries no
+per-pass split, so keep the frame budget installed.
 
 |Tier|Measure|Floor|Target|
 |---|---|---:|---:|

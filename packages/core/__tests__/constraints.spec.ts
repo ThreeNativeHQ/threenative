@@ -54,6 +54,10 @@ describe("core constraints", () => {
           file !== "softbody.ts" &&
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
+          // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
+          // constructs no material, light, colour or shader; the word "light" it trips on is
+          // inside "flight".
+          file !== "flight.ts" &&
           file !== "instanced-batch.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
@@ -72,6 +76,12 @@ describe("core constraints", () => {
           // colour, map, roughness or opacity, and the silhouette itself — the alpha test and the
           // texture behind it — stays entirely the game's. The assertions below keep that true.
           file !== "render/alpha-antialiasing.ts" &&
+          // The geometry capture counts what the renderer submitted. It is handed a material by
+          // `onBeforeRender` and puts it in a Set to report how many DISTINCT surfaces an object
+          // was drawn with — identity, exactly as `warmup.ts` reads it. It constructs no material,
+          // light or colour and reads no property that describes how anything looks; the
+          // assertions below are what keep that true.
+          file !== "geometry-capture.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -85,6 +95,17 @@ describe("core constraints", () => {
     expect(assets).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    const geometryCapture = readFileSync(path.join(sourceDirectory, "geometry-capture.ts"), "utf8");
+    expect(geometryCapture).not.toMatch(
+      /new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    // The same appearance-property list as `warmup.ts`, minus the array method: a call is
+    // `rows.map(...)`, a material's texture is `material.map`, and only the second is a look.
+    expect(geometryCapture).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\()/iu,
+    );
+    expect(geometryCapture.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `config.ts` is exempted on the same terms: it declares option NAMES a game types
     // (`assets.targets.maxMaterials`), measures nothing, and originates no visual concern.

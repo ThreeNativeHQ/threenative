@@ -62,6 +62,8 @@ export interface IPlaytestObservations {
   effectLogSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
   entityTransforms?: Record<string, { halfExtents?: Vec3; position?: Vec3; scale?: Vec3 }>;
   framebufferCoverage?: IPlaytestFramebufferCoverageObservation;
+  /** The per-object geometry capture report, present only when the scenario requested one. */
+  geometry?: JsonValue;
   hud: Record<string, { after?: unknown; before?: unknown }>;
   overlayNodes?: Record<string, { after?: unknown; before?: unknown }>;
   network: Array<{ method: string; url: string }>;

@@ -1092,6 +1092,10 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                                     : state->engine->toString(labelProp);
                             // Create pipeline descriptor
                             WGPURenderPipelineDescriptor pipelineDesc = {};
+                            // Carry the label the game already set into the native descriptor so a
+                            // backend validation error names this pipeline instead of an unlabeled
+                            // one. `ownDescriptor()` copies `source.label` for the async path.
+                            pipelineDesc.label = viewOf(pipelineLabel);
                             // Check for layout property
                             auto layoutProp = state->engine->getProperty(descriptor, "layout");
                             if (!state->engine->isUndefined(layoutProp)) {

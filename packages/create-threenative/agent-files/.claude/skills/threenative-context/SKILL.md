@@ -14,6 +14,7 @@ The recipes are in `agent-docs/ctx-cookbook.md` and imports still require
 | `ctx.goto("<scene-name>")` | hand reset | async scene rebuild |
 | `ctx.tween(...)` | `Math.sin`/`lerp` accumulator | timed interpolation with optional `ease` |
 | `ctx.after(...)` / `ctx.every(...)` | timer branches in `update` | disposable schedules |
+| `ctx.beforeRender(fn)` | per-frame packing in `update` or an object `onBeforeRender` hook | one dispatch per actual world draw, after the last fixed step and before the projection; cleared like `ctx.afterPhysics` |
 | `ctx.random.range(-1, 1)` | `Math.random()` | reproducible when `seed` is configured |
 | `ctx.pointer.on(...)` / `ctx.pointer.drag(...)` | hover/press/drag bookkeeping | web/native pointer-id stream |
 | `ctx.raycast()` / `ctx.raycastAll()` | `new Raycaster()` | backend-neutral intersections |
@@ -28,6 +29,13 @@ frame function, `goto` and then `return` immediately because the old scene is to
 restart, `game.goto("<scene-name>")` from React resets declared initial state first. A state reset
 uses `ctx.state.set({ /* copy this game's initial-state shape */ })` before the goto. `ctx.random` is
 deterministic only when `defineGame({ seed })` is configured.
+
+`ctx.beforeRender(fn)` runs once per actual world draw, after the frame's last fixed update and
+before the projection reconciles, so `fn` reads the frame's final state; a held, loader-only frame
+draws no world and dispatches nothing. It is cleared on scene change and stop, like
+`ctx.afterPhysics`. Reach for it when the draw itself consumes per-frame CPU work — packing an
+instanced batch, rebuilding a buffer — instead of an object `onBeforeRender` hook, which makes the
+render projection decline the whole frame.
 
 `pnpm budgets` rejects superseded raw constructs such as `new Audio(`, `Math.random(`,
 `new Raycaster(`, `.visible = false`, and `new Box3().setFromObject(`; use the named capability or

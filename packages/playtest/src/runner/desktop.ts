@@ -24,13 +24,17 @@ export class LocalDeviceMailbox {
     try {
       return await readFile(path, "utf8");
     } catch (error) {
-      if (isMissingFile(error)) return undefined;
+      // Windows reports a file the game is replacing as EPERM/EBUSY; it is not written yet, so
+      // the poller retries. A lock that never clears still fails at the playtest's own timeout.
+      if (isMissingFile(error) || isTransientMailboxLock(error)) return undefined;
       throw error;
     }
   }
 
   async remove(path: string): Promise<void> {
-    await rm(path, { force: true });
+    // rm lstats first, which Windows rejects with EPERM while the game holds the file; Node's
+    // rm retries EPERM/EBUSY itself when asked to.
+    await rm(path, { force: true, maxRetries: 10, retryDelay: 20 });
   }
 
   async write(path: string, contents: string): Promise<void> {
@@ -183,10 +187,19 @@ function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
   // send explicitly labelled warnings to stderr. Keep every line and fail closed on
   // unclassified stderr instead of dropping platform diagnostics to make a run pass.
   if (/^(?:\[error\]|(?:error|fatal):)/iu.test(text)) return "error";
-  if (/^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|\*\* \([^)]*\): WARNING \*\*:)/iu.test(text)) {
+  if (
+    /^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|libEGL\s+warning:|\*\* \([^)]*\): WARNING \*\*:|\([^)]*\): dbind-WARNING \*\*:)/iu.test(
+      text,
+    )
+  ) {
     return "warning";
   }
-  if (/^Gtk-Message:/u.test(text)) return "log";
+  // A hosted headless runner has no sound card and no accessibility bus, so ALSA and AT-SPI
+  // complain about the host, not the game. The same policy Android applies to platform WebView
+  // noise (isPlatformWebViewNoise): keep the line, decide only its severity here so a soundless
+  // host cannot fail a gameplay qualification. The audio lifecycle is proven by
+  // verify-desktop-audio.mjs against real AudioContexts, not by this line.
+  if (/^ALSA lib\b|^\[Audio\] Failed to open audio device: ALSA:|^Gtk-Message:/u.test(text)) return "log";
   return stream === "stderr" ? "error" : "log";
 }
 
@@ -239,6 +252,13 @@ function isProcessExited(child: ChildProcess): boolean {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isTransientMailboxLock(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return code === "EPERM" || code === "EBUSY";
 }
 
 function isMissingFile(error: unknown): boolean {

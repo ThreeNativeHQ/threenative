@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { handleLine } from "../src/index.js";
 
 const manifestFile = path.resolve("packages/create-threenative/capabilities.json");
@@ -9,6 +11,14 @@ function frame(id: unknown, method: string, params?: unknown): string {
 }
 
 describe("threenative-engine-mcp stdio contract", () => {
+  // Every tools/call below would otherwise append to the launch directory's real log.
+  beforeEach(() => {
+    process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
+  });
+  afterEach(() => {
+    process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
+  });
+
   it("answers initialize with the pinned protocol version and server info", () => {
     const response = JSON.parse(handleLine(frame(1, "initialize", {}), manifestFile) ?? "");
     expect(response).toEqual({
@@ -19,7 +29,7 @@ describe("threenative-engine-mcp stdio contract", () => {
         instructions:
           'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.',
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.2" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.3" },
       },
     });
   });
@@ -138,5 +148,49 @@ describe("threenative-engine-mcp stdio contract", () => {
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toContain("situation");
+  });
+
+  it("appends one JSON line per tool call, rejections included", () => {
+    const logFile = path.join(makeTempDirSync("threenative-engine-mcp-log-"), "calls.log");
+    process.env.THREENATIVE_ENGINE_MCP_LOG = logFile;
+    handleLine(
+      frame(1, "tools/call", {
+        arguments: { situation: "spawn many identical props" },
+        name: "engine_search_capabilities",
+      }),
+      manifestFile,
+    );
+    handleLine(
+      frame(2, "tools/call", {
+        arguments: { symbol: "nope" },
+        name: "engine_capability_detail",
+      }),
+      manifestFile,
+    );
+    const lines = readFileSync(logFile, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({
+      situation: "spawn many identical props",
+      tool: "engine_search_capabilities",
+      verdict: "matched",
+    });
+    expect(Array.isArray(lines[0]?.results)).toBe(true);
+    expect(String(lines[1]?.error)).toContain("nope");
+  });
+
+  it("writes nothing when the log is off", () => {
+    const logFile = path.join(makeTempDirSync("threenative-engine-mcp-log-"), "calls.log");
+    process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
+    handleLine(
+      frame(1, "tools/call", {
+        arguments: { situation: "spawn many identical props" },
+        name: "engine_search_capabilities",
+      }),
+      manifestFile,
+    );
+    expect(() => readFileSync(logFile, "utf8")).toThrow();
   });
 });

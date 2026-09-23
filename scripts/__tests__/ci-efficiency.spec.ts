@@ -297,16 +297,24 @@ describe("PRD-373 fail-closed required verdict", () => {
   });
 
   it("maps every coverage job to the required verdict and rejects unregistered additions", () => {
+    const plan = fullPlan();
+    const jobs = plan.jobs as Record<string, { required: boolean }>;
     const coverage = ciJobGraph(source)
       .map(({ name }) => name)
       .filter((name) => !["scope", "ci-required", "run-summary"].includes(name))
       .sort();
-    expect(Object.keys(fullPlan().jobs as object).sort()).toEqual(coverage);
+    expect(Object.keys(jobs).sort()).toEqual(coverage);
+    // The native matrix is a `needs` of ci-required because the plan can require it: a full
+    // selection that touches native code, targets main, or cannot prove a clean native-free diff.
+    // When the plan exempts it the job is skipped and ci-required.mjs treats an exempt skip as a
+    // pass, so the merge waits only for the cases the classifier could not clear.
+    expect(declaredNeeds(job("ci-required"))).toContain("native-platforms");
+    const requiredCoverage = coverage.filter((name) => jobs[name]?.required);
     expect(
       declaredNeeds(job("ci-required"))
         .filter((name) => name !== "scope")
         .sort(),
-    ).toEqual(coverage);
+    ).toEqual(requiredCoverage);
   });
 
   it("always evaluates and does not depend on advisory summary work", () => {

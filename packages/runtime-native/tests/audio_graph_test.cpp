@@ -5,9 +5,23 @@
 #include <cstdlib>
 #include <iostream>
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 using mystral::audio::AudioContext;
 
 namespace {
+
+void sleepMs(int ms) {
+#if defined(_WIN32)
+    Sleep(static_cast<DWORD>(ms));
+#else
+    usleep(static_cast<useconds_t>(ms) * 1000);
+#endif
+}
 
 bool closeTo(float actual, float expected, float tolerance = 0.0001f) {
     return std::abs(actual - expected) <= tolerance;
@@ -89,6 +103,44 @@ int main() {
         return 1;
     }
 
-    std::cout << "audio graph ok: ramp-mid=0.5 gain=0.5 right=0.1 flipped-left=0.1 ended=1\n";
+    // `start(when)` is an absolute AudioContext time: Three's `Audio.play()` passes
+    // `context.currentTime + delay`. Adding `currentTime()` again rescheduled a cue fired at t
+    // to 2t, so one-shots stayed silent for as long as the context had run. Needs the clock off
+    // zero, so resume the (SDL opens it paused) stream and let the dummy device tick (bounded).
+    context.resume();
+    double now = context.currentTime();
+    for (int spin = 0; now <= 0.02 && spin < 1000; spin++) {
+        sleepMs(1);
+        now = context.currentTime();
+    }
+    if (now <= 0.02) {
+        std::cerr << "the audio clock never advanced; cannot prove scheduling\n";
+        return 1;
+    }
+    auto scheduled = context.createBufferSource();
+    scheduled->setBuffer(constantBuffer(context));
+    scheduled->start(now);
+    float scheduledOut[8] = {};
+    scheduled->process(scheduledOut, 4, 2);
+    if (!closeTo(scheduledOut[0], 1.0f)) {
+        std::cerr << "an absolute-time start did not sound immediately: " << scheduledOut[0] << '\n';
+        return 1;
+    }
+
+    // The other half of the same conditional: a cue the game schedules ahead of the clock must
+    // still wait for it. A fix that simply started everything at `currentTime` would pass the
+    // leg above and fire every queued gun cue in the same block.
+    auto pending = context.createBufferSource();
+    pending->setBuffer(constantBuffer(context));
+    pending->start(now + 1.0);
+    float pendingOut[8] = {};
+    pending->process(pendingOut, 4, 2);
+    if (!closeTo(pendingOut[0], 0.0f) || !pending->isPlaying()) {
+        std::cerr << "a cue scheduled 1s ahead sounded early: " << pendingOut[0] << '\n';
+        return 1;
+    }
+
+    std::cout << "audio graph ok: ramp-mid=0.5 gain=0.5 right=0.1 flipped-left=0.1 ended=1"
+              << " absolute-start=1 scheduled-ahead=0\n";
     return 0;
 }

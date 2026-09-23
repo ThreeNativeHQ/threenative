@@ -309,6 +309,27 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function aerodynamicCoefficients( alpha: number, flaps = 0, gear = 0, brakes = 0, ): { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "aerodynamicCoefficients"
+    },
+    {
+      "aliases": [],
       "constraints": ["register from a scene context; callbacks are cleared when that scene exits"],
       "example": "afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));",
       "importPath": "@threenative/core",
@@ -323,6 +344,74 @@
       "summary": "Register work that reads a body or camera after physics has moved it and before this frame draws. The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.",
       "supersedes": [],
       "symbol": "afterPhysics"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function aircraftMass(state: IFlightState, airframe: IAircraftAirframe): number { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "aircraftMass"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function airDensity(y: number): number { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "airDensity"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the marker is per object and is reported as `exemptMarked` in the projection window",
+        "`renderer.minimumProjectedPixels: false` leaves the scene drawn and keeps the measurement on",
+        "the marker is per object and survives scene rebuilds only as long as the object does",
+        "disabling the gate (`renderer.minimumProjectedPixels: false`) keeps its measurement on"
+      ],
+      "example": "import { alwaysRender } from \"@threenative/core\";\nalwaysRender(ctx.camera.children[0]); // a camera-attached cockpit stays drawn",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "renderer.minimumProjectedPixels sets the projected-pixel threshold, default 0.5"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function alwaysRender(object: Object3D, enabled = true): void { … }",
+      "situations": [
+        "keep a small object drawn when the engine would skip it as too far to resolve",
+        "stop my cockpit, marker or player model popping out at distance",
+        "a tiny object disappeared at range and I need it always visible",
+        "widen or narrow the projected-size cull with a named threshold"
+      ],
+      "summary": "Keep an object drawn even when the render camera cannot resolve it. The engine's projected-size gate is on by default: an object whose world bounding sphere projects to fewer than 0.5 raster pixels in the camera about to render it is not submitted, per camera. Mark the player's own cockpit, a nameplate, a quest marker, or anything a game never wants to pop out of the frame. `alwaysRender(object, false)` removes the marker. Camera-attached objects and shadow casters are already kept, and the number of marked objects is reported beside the cull in the `TN_PROJECTION` window rather than hidden. The threshold itself is `renderer.minimumProjectedPixels` — a larger number cuts more aggressively, `false` leaves every object drawn while still measuring.",
+      "supersedes": [],
+      "symbol": "alwaysRender"
     },
     {
       "aliases": [],
@@ -412,6 +501,27 @@
     {
       "aliases": [],
       "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function attitudeAxes(state: IFlightState): IFlightAxes { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "attitudeAxes"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "create buses before playing clips and dispose them with the game",
         "refDistance and rolloffFactor tune positional falloff and apply to playAt only"
       ],
@@ -430,6 +540,22 @@
       "summary": "Route effects through a named audio bus.",
       "supersedes": ["new Audio("],
       "symbol": "AudioBus"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const geometry = baseGeometryOf(mesh);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function baseGeometryOf(mesh: Mesh): BufferGeometry { … }",
+      "situations": [
+        "collide or ray-test the authored geometry of a mesh whose render detail changes with distance"
+      ],
+      "summary": "The full-detail geometry of a mesh the loader gave an automatic LOD chain. Selection swaps `mesh.geometry`, so a ray test or a collision body built from the current geometry would change with the camera. Framework picking and gameplay collide against this instead: the authored LOD0, which never changes as the camera moves.",
+      "supersedes": [],
+      "symbol": "baseGeometryOf"
     },
     {
       "aliases": [],
@@ -831,6 +957,27 @@
     {
       "aliases": [],
       "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class FlightModel<TState extends IFlightState = IFlightState> { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "FlightModel"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic",
         "`dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code",
         "the conformance sample measures mean absolute velocity divergence at 0.001732 after four 32² steps with pressureIterations 2, below the 0.0025 threshold"
@@ -857,7 +1004,9 @@
     {
       "aliases": [],
       "constraints": [
-        "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement"
+        "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement",
+        "per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main",
+        "GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero"
       ],
       "example": "defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });",
       "importPath": "@threenative/core",
@@ -867,11 +1016,35 @@
       "signature": "export class FrameBudget { … }",
       "situations": [
         "find out why a game runs slowly on a phone",
-        "attribute a frame to present wait, simulation, three.js render, or overlay"
+        "attribute a frame to present wait, simulation, three.js render, or overlay",
+        "tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp",
+        "split a frame's draw calls and triangles per render pass (main, shadow, reflection)",
+        "tell a shadow or reflection pass's cost from the main colour pass"
       ],
-      "summary": "Read where the frame's milliseconds went, per presented frame, on any platform.",
+      "summary": "Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and triangles each render pass submitted.",
       "supersedes": [],
       "symbol": "FrameBudget"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function gearClearance(state: IFlightState): number { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "gearClearance"
     },
     {
       "aliases": [],
@@ -1126,24 +1299,30 @@
     {
       "aliases": [],
       "constraints": [
-        "every part is de-indexed and stripped to position, so UVs and authored normals do not survive; normals are recomputed from the merged buffer",
+        "every part is de-indexed; without preserve it is stripped to position and normals are recomputed from the merged buffer",
+        "preserve keeps the listed channels, transforming position and normal by the part's placement matrix while UV values are retained unchanged",
+        "a part that does not carry a listed preserve channel throws naming the label, the part and the channel",
         "either every part names a color or none does, and a mix throws",
         "an empty part list throws, and a merge three.js refuses throws naming the label"
       ],
-      "example": "const wall = new Mesh(mergeParts(pieces, { label: \"gatehouse\" }), stone);\n// pieces are meshes, or { geometry, matrix, color } when the colour is per piece:\nconst banner = mergeParts([{ color: 0x8b2f1a, geometry: cloth, matrix: placement }], { label: \"banner\" });",
+      "example": "const wall = new Mesh(mergeParts(pieces, { label: \"gatehouse\" }), stone);\n// pieces are meshes, or { geometry, matrix, color } when the colour is per piece:\nconst banner = mergeParts([{ color: 0x8b2f1a, geometry: cloth, matrix: placement }], { label: \"banner\" });\n// keep a model's texture UVs and authored normals while baking its transforms:\nconst hull = mergeParts(hullParts, { label: \"hull\", preserve: [\"uv\", \"normal\"] });",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [
-        "color is per part and optional; without it no colour attribute is written and the surface alone decides"
+        "color is per part and optional; without it no colour attribute is written and the surface alone decides",
+        "preserve is optional and empty by default: position-only merge with recomputed normals, exactly as before"
       ],
       "package": "@threenative/core",
       "signature": "export function mergeParts( parts: Iterable<IMergePart>, options: IMergePartsOptions, ): BufferGeometry { … }",
       "situations": [
         "bake a building, ship or character authored out of primitives into one draw call",
+        "merge multiple static Three.js meshes into one mesh per material",
+        "consolidate the static parts of an imported glTF model into one buffer",
+        "preserve texture UV coordinates and authored normals while baking object transforms",
         "merge many small geometries and keep each piece's own colour",
         "stop mergeGeometries from silently returning null on an extruded shape"
       ],
-      "summary": "Merge pieces a game authored out of primitives into one buffer, keeping each piece's own colour. `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that never move relative to each other — a building, a ship, a character built from boxes. Two things go wrong every time and neither is about how any of it looks. `mergeGeometries` hands back `null` on mismatched inputs instead of throwing, and the usual mismatch is invisible: one `ExtrudeGeometry` is non-indexed while every other primitive is indexed, so the merge fails at the first piece and the scene never loads. And a merged buffer draws with one surface, so per-piece colour is gone unless every piece carries a flat `color` attribute written before the merge. Both are mechanical. Geometry, placement, colour and the surface it draws with all stay the game's.",
+      "summary": "Merge pieces a game authored out of primitives into one buffer, keeping each piece's own look. `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that never move relative to each other — a building, a ship, a character built from boxes, or the static parts of an imported glTF model. Two things go wrong every time and neither is about how any of it looks. `mergeGeometries` hands back `null` on mismatched inputs instead of throwing, and the usual mismatch is invisible: one `ExtrudeGeometry` is non-indexed while every other primitive is indexed, so the merge fails at the first piece and the scene never loads. And a merged buffer draws with one surface, so per-piece colour is gone unless every piece carries a flat `color` attribute written before the merge. Both are mechanical. By default every part is stripped to position and the normals are recomputed from the merged buffer; pass `preserve` to keep authored normals and texture UVs while baking each part's object transform. Geometry, placement, colour and the surface it draws with all stay the game's.",
       "supersedes": [],
       "symbol": "mergeParts"
     },
@@ -1527,8 +1706,35 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "it draws nothing; the game supplies the mesh, the material and every colour",
+        "add its height to an analytic swell, never in place of one",
+        "the patch is finite and its rim absorbs; call recenter to keep it over the action",
+        "there is no obstacle mask, because a mask is only correct for a body that never moves"
+      ],
+      "example": "const ripples = new RippleField({ resolution: 128, size: 400 });\nripples.impulse(hit.x, hit.z, 6, -40, 0.5);\nripples.advance(dt);\nconst lift = ripples.heightAt(boat.x, boat.z);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "speed, damping, foamHalfLife, current, step and maxSteps tune the solve; the default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class RippleField { … }",
+      "situations": [
+        "make a splash or explosion ripple outward across water",
+        "show the sea reacting to a bomb, shell, or torpedo hitting it",
+        "leave a foam trail behind something moving through water",
+        "disturb a water surface the player can see respond",
+        "spread and drift foam on a water surface over time"
+      ],
+      "summary": "Propagate a disturbance across a patch of water surface and let it fade. step is 1/60s or the CFL stability limit for the given resolution and speed, whichever is smaller",
+      "supersedes": [],
+      "symbol": "RippleField"
+    },
+    {
+      "aliases": [],
       "constraints": ["scene code must stay portable across web and native"],
-      "example": "class Play extends Scene { update(ctx, dt) {} }",
+      "example": "class Play extends Scene { update(ctx, dt) {} }\nctx.beforeRender(() => packBatches()); // cleared on scene change and stop, like ctx.afterPhysics",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -1536,7 +1742,8 @@
       "signature": "export abstract class Scene< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, > { … }",
       "situations": [
         "add a playable level or menu scene",
-        "move scene setup and per-frame gameplay out of the entry point"
+        "move scene setup and per-frame gameplay out of the entry point",
+        "run scene work once per actual world draw, after the frame's last fixed update and before the projection packs"
       ],
       "summary": "Implement a portable Godot-shaped game scene lifecycle.",
       "supersedes": [],
@@ -1579,6 +1786,27 @@
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
       "symbol": "Scheduler"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every mass, area, power and inertia value comes from the game's airframe",
+        "damage, stores and configuration arrive as the game's own modifier sample"
+      ],
+      "example": "const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });\nmodel.step(1 / 60, { turn: -1, pitch: 0.4 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function setAttitude( state: IFlightState, heading = 0, pitch = 0, roll = 0, ): IFlightQuaternion { … }",
+      "situations": [
+        "fly an airplane with lift, drag, stall and control authority",
+        "launch an aircraft off a moving carrier deck",
+        "apply component damage or a loadout to an aircraft's performance"
+      ],
+      "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
+      "supersedes": [],
+      "symbol": "setAttitude"
     },
     {
       "aliases": [],
@@ -1799,6 +2027,31 @@
     {
       "aliases": [],
       "constraints": [
+        "the chain is baked by the asset cook; there is no runtime generation and no runtime flag",
+        "`assets.lod: false` opts out globally and `assets.lod.overrides` per asset, with no runtime controller installed",
+        "only static indexed triangles are eligible; skinned, morphed, alpha-blended or authored-LOD meshes keep full detail",
+        "the real gate is measured benefit: a level must save at least `minSaving` (20% default) of its predecessor, and a mesh that cannot is skipped, not forced"
+      ],
+      "example": "// Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.\nconst hull = await ctx.assets.model(\"hull.glb\");\nctx.scene.add(hull.scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`assets.lod.generation.maxLevels`, `.minTriangles`, `.minTrianglesScope`, `.minSaving` and `.errorTargets` move the bake's ceiling, pre-filter, its scope, its saving rule and its error ladder; `assets.lod.runtime.maxPixelError` and `.hysteresis` move the runtime budget and coarsen band; all by project, preset or asset"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function updateModelLods( root: { … }",
+      "situations": [
+        "draw a vehicle or hull built from many small meshes at distance without its full triangles",
+        "stop a distant model from costing its authored mesh count and triangle count",
+        "one source model, right detail by default, no hand-authored LOD files"
+      ],
+      "summary": "Draw a model at the detail its projected geometric error earns, from a chain the asset cook baked. **This is engine-owned, and a game does not call it.** `assets.lod: {}` opts in — the default-on front door opens after qualification — the `model` pass bakes `TN_discrete_lod` into eligible models, the loader registers the reader, and the engine runs the selection every frame before it renders. Each frame the mesh picks the cheapest baked level whose measured error projects to fewer than the resolved pixel budget, taking the camera's own projection, zoom, viewport and a conservative nearest depth into account. Refinement is immediate; coarsening waits for the resolved hysteresis. A mesh with no baked chain draws its full geometry.",
+      "supersedes": [],
+      "symbol": "updateModelLods"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it"
       ],
@@ -1888,10 +2141,12 @@
         "it draws nothing; the game supplies the mesh, the material and every colour",
         "the material must be transparent so the frame beneath it is already drawn",
         "thickness is metres, saturating at maxThickness; sky behind the surface reads deep",
-        "one reflection is a second draw of the world, so resolutionScale is the whole cost",
+        "one reflection is a second draw of the world; resolutionScale is its pixels only",
+        "on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice",
+        "reflection.refreshInterval is in presented frames; 1 is every frame, and the default",
         "the mirror plane is level, from level alone; do not parent target to a scaled mesh"
       ],
-      "example": "const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
+      "example": "const REFLECTED = 1; // the layer the big silhouettes sit on\nconst surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -1901,7 +2156,9 @@
         "reflect the sky and the shoreline in a lake, pond or river",
         "see the bed through the water and have the shallows fade at the shore",
         "know how deep the water is under a pixel without a second render pass",
-        "stop a water surface repeating in visible bands or stripes"
+        "stop a water surface repeating in visible bands or stripes",
+        "keep a crowd of small actors out of the water's reflection so the frame can afford it",
+        "stop the water reflection redrawing the whole world every frame"
       ],
       "summary": "Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres of water between them.",
       "supersedes": [],
@@ -1911,9 +2168,10 @@
       "aliases": [],
       "constraints": [
         "supply every wave amplitude, wavelength, direction, speed and warp value",
-        "call setTime for the default graph clock when the game advances its own time"
+        "call setTime for the default graph clock when the game advances its own time",
+        "sample allocates a result and a normal vector; ask heightAt when only the height is"
       ],
-      "example": "const field = new WaveField({ waves });\nconst { height, normal } = field.sample(x, z, elapsed);",
+      "example": "const field = new WaveField({ waves });\nconst { height, normal } = field.sample(x, z, elapsed);\nconst lift = field.heightAt(x, z, elapsed);",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -1924,7 +2182,7 @@
         "make water move",
         "find the water surface height at a point"
       ],
-      "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.",
+      "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph. wanted, and the warp jacobian, every slope and both allocations are skipped",
       "supersedes": [],
       "symbol": "WaveField"
     },
@@ -2672,18 +2930,15 @@
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["returns an error; the caller must throw it"],
+      "example": "import { invalidScenario } from \"@threenative/playtest\";\nthrow invalidScenario(\"smoke.playtest.json\", \"Expected a non-empty assertion set\");",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function invalidScenario(scenarioPath: string, message: string): PlaytestScenarioError { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["construct a validation error for malformed scenario input"],
+      "summary": "Construct a named invalid-scenario error without loading or executing a scenario.",
       "supersedes": [],
       "symbol": "invalidScenario"
     },
@@ -2707,8 +2962,11 @@
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": [
+        "unknown scenario keys and missing referenced evidence fail closed",
+        "loading validates the fixture; use the runner to execute it"
+      ],
+      "example": "import { loadPlaytestScenario } from \"@threenative/playtest\";\nconst scenario = await loadPlaytestScenario(process.cwd(), \"playtests/smoke.playtest.json\");",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
@@ -2716,9 +2974,9 @@
       "signature": "export async function loadPlaytestScenario(projectPath: string, scenarioPath: string): Promise<IPlaytestScenario> { … }",
       "situations": [
         "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
+        "load a deterministic tick-based playtest scenario"
       ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "summary": "Load and validate a scenario and its referenced evidence before running it.",
       "supersedes": [],
       "symbol": "loadPlaytestScenario"
     },
@@ -2838,69 +3096,59 @@
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": [
+        "the diagnostic describes a failed load, not a successfully executed scenario"
+      ],
+      "example": "import { PlaytestScenarioError } from \"@threenative/playtest\";\nconst error = new PlaytestScenarioError({ code: \"TN_PLAYTEST_SCENARIO_INVALID\", message: \"Invalid fixture\", severity: \"error\", suggestion: \"Fix the fixture\" });",
       "importPath": "@threenative/playtest",
       "kind": "class",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export class PlaytestScenarioError extends Error { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["catch a structured playtest scenario validation error"],
+      "summary": "Carry a structured scenario validation diagnostic as an error.",
       "supersedes": [],
       "symbol": "PlaytestScenarioError"
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["reads the duration only; the runner advances the simulation"],
+      "example": "import { playtestStepHoldTicks } from \"@threenative/playtest\";\nconst ticks = playtestStepHoldTicks({ kind: \"input\", press: \"KeyW\", holdTicks: 30, release: true });",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["read the deterministic number of ticks to hold a playtest input"],
+      "summary": "Read a validated step's input-hold duration in simulation ticks.",
       "supersedes": [],
       "symbol": "playtestStepHoldTicks"
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["reads the wait duration only; the runner advances the simulation"],
+      "example": "import { playtestStepWaitTicks } from \"@threenative/playtest\";\nconst ticks = playtestStepWaitTicks({ kind: \"wait\", waitTicks: 30, release: true });",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function playtestStepWaitTicks(step: IPlaytestStep): number { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["wait or hold a game for a deterministic number of ticks"],
+      "summary": "Read a validated step's no-input duration in simulation ticks.",
       "supersedes": [],
       "symbol": "playtestStepWaitTicks"
     },
     {
       "aliases": [],
-      "constraints": ["unknown scenario keys fail closed"],
-      "example": "const scenario = await loadPlaytestScenario(project, file);",
+      "constraints": ["throws an invalid-scenario error on the first unknown key"],
+      "example": "import { rejectUnknownKeys } from \"@threenative/playtest\";\nrejectUnknownKeys({ name: \"smoke\" }, [\"name\"], \"smoke.playtest.json\", \"scenario\");",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function rejectUnknownKeys( value: Record<string, unknown>, allowedKeys: readonly string[], scenarioPath: string, objectPath: string, ): void { … }",
-      "situations": [
-        "create a browser or device playtest scenario",
-        "wait or hold a game for a deterministic number of ticks"
-      ],
-      "summary": "Load and validate a scenario, then control its tick steps.",
+      "situations": ["reject an unknown field while validating a scenario object"],
+      "summary": "Reject object keys outside the explicitly allowed scenario fields.",
       "supersedes": [],
       "symbol": "rejectUnknownKeys"
     },
@@ -3734,18 +3982,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["inspect the adapter name before claiming GPU proof"],
-      "example": "const args = resolveBrowserArguments(undefined);",
+      "constraints": [
+        "returns changes only; the caller dispatches them and retains the next snapshot"
+      ],
+      "example": "import { reconcileBrowserPointers } from \"@threenative/playtest/runner\";\nconst changes = reconcileBrowserPointers(new Map(), [{ id: 1, x: 20, y: 30 }]);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function reconcileBrowserPointers( previous: ReadonlyMap<number, Required<IPlaytestPointer>>, next: readonly IPlaytestPointer[], ): IBrowserPointerChange[] { … }",
-      "situations": [
-        "run a browser playtest with Vulkan WebGPU",
-        "reject a SwiftShader adapter as evidence"
-      ],
-      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "situations": ["reconcile pointer contacts into down move and up events"],
+      "summary": "Compare pointer snapshots and produce down, move, and up transitions.",
       "supersedes": [],
       "symbol": "reconcileBrowserPointers"
     },
@@ -3785,18 +4032,18 @@
     },
     {
       "aliases": [],
-      "constraints": ["inspect the adapter name before claiming GPU proof"],
-      "example": "const args = resolveBrowserArguments(undefined);",
+      "constraints": [
+        "pass WEBGPU_BROWSER_ARGS explicitly; undefined selects no additional arguments",
+        "inspect the observed adapter before claiming hardware GPU evidence"
+      ],
+      "example": "import { resolveBrowserArguments, WEBGPU_BROWSER_ARGS } from \"@threenative/playtest/runner\";\nconst args = resolveBrowserArguments(WEBGPU_BROWSER_ARGS);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] { … }",
-      "situations": [
-        "run a browser playtest with Vulkan WebGPU",
-        "reject a SwiftShader adapter as evidence"
-      ],
-      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "situations": ["run a browser playtest with Vulkan WebGPU"],
+      "summary": "Copy the selected Chromium arguments without silently enabling a rendering recipe.",
       "supersedes": [],
       "symbol": "resolveBrowserArguments"
     },
@@ -3952,18 +4199,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["inspect the adapter name before claiming GPU proof"],
-      "example": "const args = resolveBrowserArguments(undefined);",
+      "constraints": [
+        "undefined means no software name was found, not proof of a hardware adapter"
+      ],
+      "example": "import { softwareAdapterName } from \"@threenative/playtest/runner\";\nconst software = softwareAdapterName({ architecture: \"swiftshader\" });",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export function softwareAdapterName(adapter: Readonly<Record<string, string>> | undefined): string | undefined { … }",
-      "situations": [
-        "run a browser playtest with Vulkan WebGPU",
-        "reject a SwiftShader adapter as evidence"
-      ],
-      "summary": "Select safe Chromium arguments for WebGPU playtests.",
+      "situations": ["reject a SwiftShader adapter as evidence"],
+      "summary": "Identify a software renderer in the fields reported by adapter.info.",
       "supersedes": [],
       "symbol": "softwareAdapterName"
     },
@@ -4121,6 +4367,25 @@
       "summary": "Drive and inspect Android playtest transport.",
       "supersedes": [],
       "symbol": "viewportRestoreCommands"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "browser only; requires a scenario and runtime.startup; does not execute scenario steps or assertions",
+        "cancellation is checked between resource acquisitions; lock waiting retains its own bounded queue policy",
+        "use session.screenshot for nonblank PNGs; private-display captures are not FPS evidence",
+        "use threenative-playtest trace --url <url> for slow-frame attribution instead of creating another profiler"
+      ],
+      "example": "import { parseStandalonePlaytestArgs, withBrowserCapture } from \"@threenative/playtest/runner\";\nconst config = parseStandalonePlaytestArgs([\"--scenario\", \"playtests/smoke.playtest.json\", \"--url\", \"http://127.0.0.1:5173\"]);\nawait withBrowserCapture(config, async (session) => session.screenshot(\"ready\"));",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function withBrowserCapture<T>( config: IStandalonePlaytestConfig, capture: (session: IBrowserCaptureSession) => Promise<T>, signal?: AbortSignal, ): Promise<T> { … }",
+      "situations": ["write a custom browser capture without owning Xvfb or Chromium cleanup"],
+      "summary": "Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.",
+      "supersedes": [],
+      "symbol": "withBrowserCapture"
     },
     {
       "aliases": [],
@@ -4853,7 +5118,10 @@
     },
     {
       "aliases": [],
-      "constraints": [],
+      "constraints": [
+        "the Geometry tab captures only on an explicit press; nothing is collected while idle",
+        "per-object numbers are measured submissions reconciled against the frame's own pass totals, and the remainder is reported rather than hidden"
+      ],
       "example": "<DebugOverlay />",
       "importPath": "@threenative/ui",
       "kind": "function",
@@ -4862,9 +5130,11 @@
       "signature": "export function DebugOverlay() { … }",
       "situations": [
         "display runtime and playtest diagnostics in a React HUD",
-        "inspect a game without changing its scene"
+        "inspect a game without changing its scene",
+        "find out which scene object is submitting the frame's triangles",
+        "tell a cheap foreground character from an expensive distant prop"
       ],
-      "summary": "Show framework diagnostics while developing a game.",
+      "summary": "Show framework diagnostics while developing a game. Backtick opens it; the Entities tab lists registered entity fields, and the Geometry tab captures one frame and ranks the objects that submitted its triangles beside their projected size on screen.",
       "supersedes": [],
       "symbol": "DebugOverlay"
     },
@@ -4952,6 +5222,62 @@
       "summary": "Read the game's published state from a UI that may be in another process.",
       "supersedes": [],
       "symbol": "useUiState"
+    },
+    {
+      "symbol": "renderer.minimumProjectedPixels",
+      "package": "@threenative/core",
+      "importPath": "src/game.ts",
+      "kind": "function",
+      "signature": "renderer.minimumProjectedPixels?: number | false",
+      "summary": "Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 projected pixel; an object below it is skipped per render camera. Raise the number to cull more, set `false` to leave every object drawn — the count of what was skipped still reports in `TN_PROJECTION`.",
+      "situations": [
+        "my frame is slow with many distant objects",
+        "draw count is high but the screen is mostly empty",
+        "far away models, aircraft, boats or props cost draw calls but are specks",
+        "a large roster or fleet drops the frame rate while barely visible",
+        "stop submitting objects smaller than a pixel to the camera",
+        "cull by how big something looks to the camera rather than how far it is from the player",
+        "tune how aggressively distant objects are skipped",
+        "a small object I need disappeared at range"
+      ],
+      "example": "renderer: { minimumProjectedPixels: 2 } // in threenative.config.ts",
+      "constraints": [
+        "Unset is the shipping behaviour: the gate runs at 0.5 px. A game that wants the cut a shipped title tuned names 2; `false` leaves every object drawn.",
+        "The decision reads the render camera's projection and viewport, not the player's distance — a camera far from the player still culls its own specks.",
+        "It writes only `object.visible`, which the projection's batch key ignores; `castShadow`, `layers` and `frustumCulled` are never flipped, because that churns batch grouping.",
+        "Shadow casters and objects attached to the render camera are never dropped on the main view alone. Exempt any other object with `alwaysRender`.",
+        "Turning the gate off with `false` does not turn its measurement off: `TN_PROJECTION` still reports considered and skipped counts as `cull`."
+      ],
+      "overrides": [
+        "alwaysRender(object) keeps one object drawn whatever the render camera resolves",
+        "renderer.minimumProjectedPixels: false leaves the scene drawn and keeps the measurement on"
+      ],
+      "supersedes": [],
+      "aliases": []
+    },
+    {
+      "symbol": "renderer.projection",
+      "package": "@threenative/core",
+      "importPath": "src/game.ts",
+      "kind": "function",
+      "signature": "renderer.projection?: boolean",
+      "summary": "The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.",
+      "situations": [
+        "the game got slower after the projection engaged",
+        "turn off the render projection, batching, or the instanced mirror",
+        "draw count fell but frame time did not",
+        "a multi-second freeze when the mirror first engages",
+        "opt out of an engine render optimizer"
+      ],
+      "example": "renderer: { projection: false } // in threenative.config.ts",
+      "constraints": [
+        "Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it.",
+        "An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame.",
+        "TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines."
+      ],
+      "overrides": [],
+      "supersedes": [],
+      "aliases": []
     },
     {
       "symbol": "WorldEnvironment",

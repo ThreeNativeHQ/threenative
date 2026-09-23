@@ -10,6 +10,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 ## How you work
 
 1. **Search the manifest before you write, by rule and never by judgement** — `engine_search_capabilities`, then `engine_capability_detail` on every hit — before any new file under `src/` or `packages/`, any helper longer than a screen, and any render stage you turn on or off. Not "before a system": that judgement always answers no. Measured: 880 colliders, a loading gate and four tuned render stages shipped without one search, straight past the `ClusteredBatch` built for exactly that; another game hand-wrote 446 already-installed lines and ran at 9 FPS. The manifest (`packages/create-threenative/capabilities.json`, rebuilt by `pnpm build`) is the only complete public surface, searchable by plain-words situation, binding in its constraints, and the only way to see subpath exports like `@threenative/physics/navigation`. Both tools ship in `threenative-engine-mcp`, wired by the `.mcp.json` that installing `@threenative/core` writes — read from the launch directory, so launch from the game-project root or the server is not there.
+   Lazy first is the same reflex, and it runs after that search, never instead of it: YAGNI, then the installed system, then the standard library or the platform, then one line. The `ponytail` skill holds the full ladder — its "already exists?" rung *is* the capability search above — and the checkout's project hook (`.claude/settings.json`, `.codex/hooks.json`) re-injects the short ruleset every session, prompt and subagent so the rule cannot drift. AGENTS.md carries the same rule for hooks-off hosts; `PONYTAIL=off` opts a session out. It never simplifies away validation, error handling, security, accessibility, or a requested behaviour.
 2. **Name the layer before you fix the bug**: engine (`packages/`) or game (example or template)? Say which and why. An engine bug fixed in game code buys one green screenshot and leaves every other game broken.
 3. **Red-green for behavior changes, bugfixes included.** Reproduce the failure, fix it and run the regression check. Do not manufacture failures for planning or prose edits.
 4. **Never claim a gate you did not run.** Summarize the actual result in the PRD, PR or response; "unverified" is an acceptable answer. Separate verification reports are not required.
@@ -80,9 +81,9 @@ promotion. Everything else stays full — shared/package/template/dependency/CI 
 Main PRs, main pushes, nightly and manual qualification are full. `ci-required` rejects missing or
 unsuccessful selected checks; full coverage retains `typecheck`, `lint`, `build`, `budgets`,
 `supply-chain`, unit/browser/playtest gates, `golden-path`, `template-nonvisual`. The
-`native-platforms.yml` matrix including `desktop-parity` still runs on full selections, but it is
-**not part of the merge verdict** — the release lane validates the native rows for the exact
-candidate SHA, so a slow or red native matrix cannot hold every merge. Never cache test verdicts.
+`native-platforms.yml` matrix including `desktop-parity` **blocks the merge** when a full selection
+touches native code, targets `main`, or cannot prove a clean native-free pull request; a clean
+`develop` pull request touching no native path skips it. Never cache test verdicts.
 
 **The integration flow is active (PRD-373).** `develop` is protected and requires `ci-required`;
 start feature branches from `develop`, open their PRs against `develop`, and squash-merge there.
@@ -91,9 +92,10 @@ full-checked PRs merged with a merge commit, never squash or rebase; open the or
 `develop -> main` PR rather than a branch whose name restates a SHA. `TN_DEVELOP_CI_ENABLED=true`
 makes `ci-required` reject a main PR whose selection is not `full`, and the head branch's name is
 not part of the verdict: the candidate is frozen by the exact base/head parent assertion, so a new
-commit on the head re-runs the checks before the merge button returns. Native platform evidence is
-produced on full selections but is not part of the merge verdict — the release lane validates it
-for the exact candidate. Inventory `gh pr list` and `pnpm worktree:status` before retargeting,
+commit on the head re-runs the checks before the merge button returns. Native platform evidence
+blocks the merge exactly when the scope plan requires it — a full selection touching native code, a
+`main` target, or a diff that cannot be proven native-free — and is skipped otherwise. Inventory
+`gh pr list` and `pnpm worktree:status` before retargeting,
 retarget in-flight PRs individually, and never rewrite another worktree. Keep the existing release
 gates and exact-main push qualification. Activation and rollback:
 `docs/PRDs/production-readiness/PRD-373-selective-ci-and-develop-promotion.md`.
