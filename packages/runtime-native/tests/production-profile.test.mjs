@@ -1,7 +1,7 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -717,6 +717,121 @@ test('accepted profile controls are parsed and execution receives every value', 
     () => parseProductionArgs(['--target', 'android-physical', '--device', 'pixel', '--hosted-software']),
     (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_HOSTED_SOFTWARE_UNSUPPORTED',
   );
+});
+
+test('an existing project and scenario parse and stage without mutating the source', async () => {
+  const source = makeTempDirSync('tn-profile-project-');
+  const stageRoot = makeTempDirSync('tn-profile-stage-');
+  temporary.push(source, stageRoot);
+  mkdirSync(join(source, 'src'));
+  mkdirSync(join(source, 'playtests'));
+  mkdirSync(join(source, 'node_modules'));
+  writeFileSync(join(source, 'src/main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(source, 'playtests/performance.playtest.json'), JSON.stringify({
+    assert: { performance: { maxFrameMsP95: 15 } },
+    name: 'production-performance',
+    schemaVersion: 1,
+    steps: [{ kind: 'wait', waitFrames: 1 }],
+  }));
+  writeFileSync(join(source, 'node_modules/installed.txt'), 'installed\n');
+
+  const parsed = parseProductionArgs([
+    '--target', 'web',
+    '--project', source,
+    '--scenario', 'playtests/performance.playtest.json',
+  ]);
+  assert.equal(parsed.project, source);
+  assert.equal(parsed.scenario, join(source, 'playtests/performance.playtest.json'));
+  assert.throws(
+    () => parseProductionArgs(['--target', 'web', '--scenario', 'playtests/performance.playtest.json']),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_CLI_USAGE',
+  );
+  assert.throws(
+    () => parseProductionArgs(['--target', 'fixture', '--project', source]),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_CLI_USAGE',
+  );
+
+  const staged = join(stageRoot, 'platformer');
+  const { stageProductionProject } = await import('../scripts/profile-production.mjs');
+  await stageProductionProject(parsed, staged, {});
+
+  assert.equal(readFileSync(join(staged, 'src/main.ts'), 'utf8'), 'export const value = 1;\n');
+  assert.equal(readFileSync(join(staged, 'playtests/performance.playtest.json'), 'utf8').length > 0, true);
+  assert.equal(readFileSync(join(staged, 'node_modules/installed.txt'), 'utf8'), 'installed\n');
+  writeFileSync(join(staged, 'src/main.ts'), 'export const value = 2;\n');
+  assert.equal(readFileSync(join(source, 'src/main.ts'), 'utf8'), 'export const value = 1;\n');
+});
+
+test('staging dereferences symlinked sources and reads the scenario from the staged snapshot', async () => {
+  const external = makeTempDirSync('tn-profile-symlink-external-');
+  const source = makeTempDirSync('tn-profile-symlink-source-');
+  const stageRoot = makeTempDirSync('tn-profile-symlink-stage-');
+  temporary.push(external, source, stageRoot);
+  mkdirSync(join(source, 'src'));
+  mkdirSync(join(source, 'playtests'));
+  writeFileSync(join(external, 'main.ts'), 'export const value = 1;\n');
+  symlinkSync(join(external, 'main.ts'), join(source, 'src/main.ts'));
+  const scenario = (snapshot) => JSON.stringify({
+    assert: { performance: { maxFrameMsP95: 15 } },
+    name: 'production-performance',
+    schemaVersion: 1,
+    snapshot,
+    steps: [{ kind: 'wait', waitFrames: 1 }],
+  });
+  writeFileSync(join(source, 'playtests/performance.playtest.json'), scenario('source'));
+
+  const parsed = parseProductionArgs([
+    '--target', 'web',
+    '--project', source,
+    '--scenario', 'playtests/performance.playtest.json',
+  ]);
+  const staged = join(stageRoot, 'platformer');
+  const { stageProductionProject, writeRunScenarios } = await import('../scripts/profile-production.mjs');
+  await stageProductionProject(parsed, staged, {});
+
+  // The symlinked source file becomes a real staged file; writing it must not reach its target.
+  const stagedMain = join(staged, 'src/main.ts');
+  assert.equal(lstatSync(stagedMain).isSymbolicLink(), false);
+  writeFileSync(stagedMain, 'export const value = 2;\n');
+  assert.equal(readFileSync(join(external, 'main.ts'), 'utf8'), 'export const value = 1;\n');
+
+  // The run scenario is generated from the staged snapshot, not the source it was named from.
+  assert.equal(parsed.scenario, join(staged, 'playtests/performance.playtest.json'));
+  writeFileSync(parsed.scenario, scenario('staged'));
+  const paths = await writeRunScenarios(staged, parsed);
+  assert.equal(JSON.parse(readFileSync(paths.workloadPath, 'utf8')).snapshot, 'staged');
+});
+
+test('a scenario outside --project is rejected instead of re-anchored out of staging', () => {
+  const source = makeTempDirSync('tn-profile-scenario-guard-');
+  temporary.push(source);
+
+  for (const scenario of ['../outside.playtest.json', join(source, '..', 'outside.playtest.json')]) {
+    assert.throws(
+      () => parseProductionArgs(['--target', 'web', '--project', source, '--scenario', scenario]),
+      (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_SCENARIO_OUTSIDE_PROJECT',
+      `expected '${scenario}' to be rejected`,
+    );
+  }
+
+  const inside = parseProductionArgs(['--target', 'web', '--project', source, '--scenario', 'playtests/performance.playtest.json']);
+  assert.equal(inside.scenario, join(source, 'playtests/performance.playtest.json'));
+});
+
+test('the default judge still scaffolds when no existing project is supplied', async () => {
+  const stageRoot = makeTempDirSync('tn-profile-stage-default-');
+  temporary.push(stageRoot);
+  const staged = join(stageRoot, 'platformer');
+  const calls = [];
+  const { stageProductionProject } = await import('../scripts/profile-production.mjs');
+  const result = await stageProductionProject(
+    { project: undefined },
+    staged,
+    { scaffoldCli: '/fixture/scaffold' },
+    { scaffoldPlatformer: async (project, tools) => { calls.push([project, tools]); } },
+  );
+  assert.equal(result, staged);
+  assert.deepEqual(calls, [[staged, { scaffoldCli: '/fixture/scaffold' }]]);
 });
 
 test('native profile entry replaces a config entry without creating a package conflict', async () => {
