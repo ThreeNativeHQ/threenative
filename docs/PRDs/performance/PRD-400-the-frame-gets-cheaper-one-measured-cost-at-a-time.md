@@ -303,6 +303,9 @@ bound their virtual-display run-median variation (`L0-11`). A direct host log ex
 present timing but no frame-budget or projection markers (`L0-12`), leaving three.js CPU and
 recorder JS unnamed. The Wayland session currently has zero active outputs, so the paced Midway
 presentation baseline remains unavailable; the virtual-display intervals are not FPS evidence.
+The live scaffolded `slow-native` control currently returns `BLOCKED`, not a sensitivity verdict:
+the native budget triggers, but the web arm lacks mean FPS and its 120 frames cover only 3.1955
+seconds despite `--duration 45` (`L0-13`). The sampling contract must be fixed before retrying.
 
 ### Phase 2 — Lane 1: scene projection
 
