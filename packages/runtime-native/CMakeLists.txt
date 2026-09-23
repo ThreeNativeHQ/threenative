@@ -1178,12 +1178,19 @@ endif()
 # Note: libuv is only used on desktop platforms; iOS/Android use platform-native async APIs
 set(LIBUV_DIR ${THIRD_PARTY_DIR}/libuv)
 set(LIBUV_SOURCE_DIR ${THIRD_PARTY_DIR}/libuv-src/libuv-1.51.0)
-# AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a write-after-free on libuv's
-# own closing list - the exact defect PRD-177 and PRD-184 exist to prove - is invisible to the
-# sanitizer lane. Under TN_ENABLE_SANITIZERS, build libuv from the matching 1.51.0 source instead,
-# so the lane's instrumentation reaches into it. Every other configuration keeps the prebuilt.
-if(TN_ENABLE_SANITIZERS AND EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID)
-    set(LIBUV_BUILD_SHARED OFF CACHE BOOL "libuv static under sanitizers" FORCE)
+# Two reasons to build libuv from the pinned 1.51.0 source rather than link the prebuilt:
+#   1. AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a write-after-free on
+#      libuv's own closing list - the exact defect PRD-177 and PRD-184 exist to prove - is invisible
+#      to the lane that exists to catch it.
+#   2. No prebuilt exists for every target: Linux arm64 publishes only an x64 libuv.a, and
+#      download-deps.mjs fetches the arch-independent libuv-source there instead.
+# The prebuilt stays first choice whenever it exists, so x64/macOS/Windows linking is unchanged.
+set(LIBUV_SOURCE_AVAILABLE FALSE)
+if(EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IOS AND NOT ANDROID)
+    set(LIBUV_SOURCE_AVAILABLE TRUE)
+endif()
+if(LIBUV_SOURCE_AVAILABLE AND (TN_ENABLE_SANITIZERS OR NOT EXISTS ${LIBUV_DIR}))
+    set(LIBUV_BUILD_SHARED OFF CACHE BOOL "libuv static when built from source" FORCE)
     set(LIBUV_BUILD_TESTS OFF CACHE BOOL "libuv tests are not ours to run" FORCE)
     set(LIBUV_BUILD_BENCH OFF CACHE BOOL "libuv benchmarks are not ours to run" FORCE)
     # libuv's own CMakeLists defines the libuv::libuv alias over its selected library; with
@@ -1194,11 +1201,11 @@ if(TN_ENABLE_SANITIZERS AND EXISTS ${LIBUV_SOURCE_DIR}/CMakeLists.txt AND NOT IO
         if(UNIX AND NOT APPLE)
             set(LIBUV_SYSTEM_LIBS pthread dl)
         endif()
-        message(STATUS "libuv: source build under sanitizers (${LIBUV_SOURCE_DIR})")
+        message(STATUS "libuv: source build (${LIBUV_SOURCE_DIR})")
     else()
         message(FATAL_ERROR
-            "libuv source at ${LIBUV_SOURCE_DIR} defined no libuv::libuv target; the sanitizer "
-            "lane must not fall back to the prebuilt and silently lose instrumentation inside libuv")
+            "libuv source at ${LIBUV_SOURCE_DIR} defined no libuv::libuv target; the build must "
+            "not fall back to the prebuilt and silently lose async I/O (or sanitizer coverage)")
     endif()
 elseif(EXISTS ${LIBUV_DIR} AND NOT IOS AND NOT ANDROID)
     # Headers are directly in include/

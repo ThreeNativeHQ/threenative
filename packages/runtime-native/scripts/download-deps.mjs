@@ -401,10 +401,11 @@ const DEPS = {
     extractTo: 'libuv',
   },
   'libuv-source': {
-    // libuv upstream source, matching the prebuilt's 1.51.0. Only the sanitizer configuration
-    // consumes it: AddressSanitizer cannot instrument inside the prebuilt libuv.a, so a
+    // libuv upstream source, matching the prebuilt's 1.51.0. Consumed wherever the prebuilt cannot
+    // be used: under AddressSanitizer (which cannot instrument inside the prebuilt libuv.a, so a
     // write-after-free on libuv's own closing list is invisible to the lane that exists to catch
-    // exactly that. PRD-177 and PRD-184 are parked on this.
+    // exactly that - PRD-177 and PRD-184 are parked on this), and on Linux arm64, which has no
+    // arm64 prebuilt. The source is architecture-independent, so one payload serves both.
     version: '1.51.0',
     getUrl: () => `https://github.com/libuv/libuv/archive/refs/tags/v${DEPS['libuv-source'].version}.tar.gz`,
     extractTo: 'libuv-src',
@@ -1522,15 +1523,17 @@ async function main() {
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
   // Linux arm64 has no prebuilt for the x64 desktop stack: kuoruan/libv8 ships Linux x64 only,
-  // Dawn's `ubuntu-latest` release asset is x64, and skia/swc/libuv/quiche/webp publish no arm64
-  // Linux archive. A source V8 build is not allowed in CI. The arm64 desktop host is therefore
-  // built with the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt is already
-  // in the dependency lock; the CMake build disables the optional features whose libraries are
-  // absent (Canvas2D/Skia, WebTransport/quiche, TS/SWC, async libuv) instead of linking a foreign
-  // architecture. See scripts/native-build.mjs for the matching configure overrides.
+  // Dawn's `ubuntu-latest` release asset is x64, and skia/swc/quiche/webp publish no arm64 Linux
+  // archive. A source V8 build is not allowed in CI. The arm64 desktop host is therefore built with
+  // the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt is already in the
+  // dependency lock; the CMake build disables the optional features whose libraries are absent
+  // (Canvas2D/Skia, WebTransport/quiche, TS/SWC) instead of linking a foreign architecture. libuv
+  // has no arm64 prebuilt either, so arm64 also fetches the architecture-independent `libuv-source`
+  // and CMake builds it from that pinned source (see CMakeLists.txt). See scripts/native-build.mjs
+  // for the matching configure overrides.
   const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
   const desktopDeps = linuxArm64
-    ? ['wgpu', 'sdl3', 'quickjs', 'stb']
+    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'libuv-source']
     : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)

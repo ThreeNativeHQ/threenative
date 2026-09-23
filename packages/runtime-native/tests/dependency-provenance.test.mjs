@@ -43,6 +43,28 @@ test('should lock every selectable payload when the full target matrix is resolv
   assert.ok(ids.length >= 60, `expected the complete matrix, found ${ids.length} payloads`);
 });
 
+test('Linux arm64 fetches libuv source where no prebuilt exists, and CMake builds it', () => {
+  // Linux arm64 has no libuv prebuilt (library-builder ships libuv-linux-x64 only), so the arm64
+  // desktop set must carry the architecture-independent source and CMake must build it there,
+  // while every target that does have the prebuilt keeps linking that first.
+  const downloader = readFileSync(DOWNLOADER, 'utf8');
+  const arm64 = downloader.match(/const desktopDeps = linuxArm64\n\s*\? \[([^\]]*)\]/u)?.[1];
+  assert.ok(arm64, 'download-deps must keep an explicit Linux arm64 desktop set');
+  assert.match(arm64, /'libuv-source'/u);
+
+  const cmake = readFileSync(join(PACKAGE_ROOT, 'CMakeLists.txt'), 'utf8');
+  assert.match(
+    cmake,
+    /if\(LIBUV_SOURCE_AVAILABLE AND \(TN_ENABLE_SANITIZERS OR NOT EXISTS \$\{LIBUV_DIR\}\)\)/u,
+    'CMake must build libuv from source under sanitizers or where the prebuilt is absent',
+  );
+  assert.match(
+    cmake,
+    /elseif\(EXISTS \$\{LIBUV_DIR\} AND NOT IOS AND NOT ANDROID\)/u,
+    'the prebuilt branch must remain the fallback that the source path only bypasses',
+  );
+});
+
 test('should reject a tampered archive before extraction when downloaded bytes differ', () => {
   // PRD-059 Phase 1 archive-before-extract gate, run against the real transaction
   // helper path: bytes that do not match the lock digest never reach an extractor.
