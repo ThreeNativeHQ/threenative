@@ -480,7 +480,18 @@ export async function writeRunScenarios(project, options) {
           waitFrames: 1,
         })),
       ]
-    : workload.steps;
+    : workload.steps.map((step) => {
+        if (step.kind !== 'click' || step.at === undefined || 'entity' in step.at) return step;
+        const viewport = scenarioSource.viewport ?? options.renderSize;
+        const { x, y } = step.at;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(viewport.width)
+          || !Number.isFinite(viewport.height) || viewport.width <= 0 || viewport.height <= 0
+          || x < 0 || y < 0 || x > viewport.width || y > viewport.height) {
+          throw new ProductionEvidenceError('TN_PROD_NATIVE_CLICK_INVALID', `Click step '${step.label ?? ''}' lies outside its source viewport.`);
+        }
+        const { at: _at, kind: _kind, ...pointerStep } = step;
+        return { ...pointerStep, pointerPosition: { buttons: 1, x: x / viewport.width, y: y / viewport.height } };
+      });
   const startup = {
     ...scenarioSource,
     assert: { diagnostics: { noConsoleErrors: true, runtimeReady: true } },

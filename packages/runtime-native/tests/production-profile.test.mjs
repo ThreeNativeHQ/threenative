@@ -839,7 +839,10 @@ test('a project scenario keeps its own workload steps and a timeout that scales 
   const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
   const nativeWorkload = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
   assert.deepEqual(workload.steps, steps);
-  assert.deepEqual(nativeWorkload.steps, steps);
+  assert.deepEqual(nativeWorkload.steps, [
+    { pointerPosition: { buttons: 1, x: 640 / 1920, y: 360 / 1080 }, release: true },
+    steps[1],
+  ]);
   assert.equal(paths.timeoutMs, playtestTimeoutMs(workload));
   assert.ok(paths.timeoutMs > 30_000);
   assert.ok(paths.timeoutMs >= 60_000 + (60 + 240) * 100);
@@ -1041,6 +1044,26 @@ test('web production runs headed on WebGPU and identifies its own marker endpoin
   assert.equal(isJudgeMarkerRequestFailure('POST', markerUrl, markerUrl), true);
   assert.equal(isJudgeMarkerRequestFailure('POST', `${markerUrl}?game=1`, markerUrl), false);
   assert.equal(isJudgeMarkerRequestFailure('GET', markerUrl, markerUrl), false);
+});
+
+test('desktop production keeps an authored pixel click through native pointer input', async () => {
+  const project = makeTempDirSync('tn-prod-desktop-click-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/flight.playtest.json'), JSON.stringify({
+    name: 'flight', schemaVersion: 1, target: 'web',
+    viewport: { width: 1280, height: 720 },
+    steps: [{ kind: 'click', label: 'board', at: { x: 320, y: 360 }, release: true }],
+    assert: { diagnostics: { runtimeReady: true } },
+  }));
+  const paths = await writeRunScenarios(project, {
+    project, scenario: join(project, 'playtests/flight.playtest.json'), duration: 1, warmup: 1,
+    target: 'desktop', renderSize: { width: 1920, height: 1080 },
+  });
+  const native = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
+  assert.deepEqual(native.steps[0], {
+    label: 'board', pointerPosition: { buttons: 1, x: 0.25, y: 0.5 }, release: true,
+  });
 });
 
 test('generated production workload runs through the playtest validator and keeps source bounds out of band', async () => {

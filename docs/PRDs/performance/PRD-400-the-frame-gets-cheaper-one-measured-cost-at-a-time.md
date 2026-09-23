@@ -256,6 +256,11 @@ workload; the playtest runner now excludes only failed POSTs to the judge's exac
 URL from its network assertion. A one-run preflight then returned `PASS` with 900 frame samples,
 startup and all three markers; Chromium `adapter.info` reported `nvidia / turing`. This is a
 preflight on a dirty checkout, not a pinned baseline or A/A noise result.
+The native generated flight scenario now converts an authored viewport-pixel click into the desktop
+pointer transport at the same normalized location; 57 focused judge tests pass. A short native 4x
+smoke still fails at pipeline creation: the shader declares a multisampled depth binding while its
+layout declares a single-sample binding at group 1, binding 11. Scratch tracing was confined to
+the ignored snapshot and removed after capture. Native measurements remain blocked.
 The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
 the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
 `pnpm lint`, and `pnpm test` passed locally (454 files, 5,519 tests; 8 skipped).
