@@ -873,6 +873,21 @@ test('the default scaffolded workload still drives ArrowRight whatever the templ
   assert.ok(paths.timeoutMs > 30_000);
 });
 
+test('hosted software waits for compile settlement without requiring a ready-frame milestone', async () => {
+  const project = makeTempDirSync('tn-profile-hosted-startup-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance', schemaVersion: 1, steps: [{ kind: 'wait', waitFrames: 1 }],
+  }));
+  const options = { duration: 1, hostedSoftware: true, renderSize: { height: 720, width: 1280 }, target: 'desktop', warmup: 1 };
+  const hosted = await writeRunScenarios(project, options);
+  assert.ok(JSON.parse(readFileSync(hosted.nativeStartupPath, 'utf8')).assert.startup.maxCompileSettledMs > 0);
+  assert.equal(JSON.parse(readFileSync(hosted.nativeStartupPath, 'utf8')).assert.startup.maxReadyMs, undefined);
+  const hardware = await writeRunScenarios(project, { ...options, hostedSoftware: false });
+  assert.ok(JSON.parse(readFileSync(hardware.nativeStartupPath, 'utf8')).assert.startup.maxReadyMs > 0);
+});
+
 test('desktop artifact selection takes the executable regular file and fails closed without one', async () => {
   const project = makeTempDirSync('tn-profile-native-artifact-');
   temporary.push(project);
@@ -1376,9 +1391,9 @@ test('native screenshot mapping keeps asynchronous callback state alive after a 
   assert.doesNotMatch(context, /userdata1 = &mapData/u);
 });
 
-test('desktop production profiling forwards the scenario-derived operation timeout to the mailbox transport', () => {
+test('desktop production profiling keeps mailbox operations shorter than the scenario budget', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}, timeoutMs\)/u);
+  assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}\)/u);
   assert.match(profile, /target: 'android',\n {4}timeoutMs,/u);
   assert.doesNotMatch(profile, /const timeoutMs = 30_000;/u);
   assert.match(profile, /scenarios\.timeoutMs/u);

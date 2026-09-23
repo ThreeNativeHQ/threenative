@@ -434,9 +434,11 @@ function packageSourceFlag(name) {
   throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
-function nativeAssertions(assertions, timeoutMs) {
+function nativeAssertions(assertions, timeoutMs, hostedSoftware) {
   const { diagnostics: _browserOnly, ...supported } = assertions;
-  return { ...supported, startup: supported.startup ?? { maxReadyMs: timeoutMs } };
+  return { ...supported, startup: supported.startup ?? (hostedSoftware
+    ? { maxCompileSettledMs: timeoutMs }
+    : { maxReadyMs: timeoutMs }) };
 }
 
 export async function writeRunScenarios(project, options) {
@@ -511,7 +513,7 @@ export async function writeRunScenarios(project, options) {
   const timeoutMs = playtestTimeoutMs(workload);
   const nativeWorkload = {
     ...workload,
-    assert: nativeAssertions(workload.assert, timeoutMs),
+    assert: nativeAssertions(workload.assert, timeoutMs, options.hostedSoftware),
     artifacts: {
       screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
         ? 'after'
@@ -519,7 +521,7 @@ export async function writeRunScenarios(project, options) {
     },
     steps: nativeWorkloadSteps,
   };
-  const nativeStartup = { ...startup, assert: nativeAssertions(startup.assert, timeoutMs), artifacts: { screenshots: 'after' } };
+  const nativeStartup = { ...startup, assert: nativeAssertions(startup.assert, timeoutMs, options.hostedSoftware), artifacts: { screenshots: 'after' } };
   const workloadPath = join(project, 'playtests/production-performance.run.playtest.json');
   const startupPath = join(project, 'playtests/production-startup.run.playtest.json');
   const nativeWorkloadPath = join(project, 'playtests/production-performance.native.playtest.json');
@@ -624,7 +626,11 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
       `The scaffolded platformer ${target} build failed.${details.length === 0 ? '' : `\n${details.slice(-4_000)}`}`,
     );
   }
-  const artifactPath = options.prebuiltArtifact ?? await nativeArtifactPath(project, target);
+  // A desktop prebuilt artifact supplies the runtime used to build the game; launch the packaged
+  // game executable, not the bare runtime CLI.
+  const artifactPath = target !== 'desktop' && options.prebuiltArtifact !== undefined
+    ? options.prebuiltArtifact
+    : await nativeArtifactPath(project, target);
   const artifactSha = await hashPath(artifactPath);
   const runs = [];
   const startups = [];
@@ -721,7 +727,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   const responsePath = join(mailboxRoot, 'tn-playtest-response.json');
   const runner = await import(pathToFileURL(modulePath).href);
   const mailbox = new runner.LocalDeviceMailbox();
-  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath }, timeoutMs);
+  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
   const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
   const transport = {
     capabilities: innerTransport.capabilities,
