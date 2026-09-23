@@ -21,6 +21,7 @@ import {
   aggregateMetrics,
   desktopFailureRun,
   assembleEvidence,
+  failureSuffix,
   isSuccessfulStartupSample,
   installNativeProfileEntry,
   nativeFrameInstrumentation,
@@ -30,6 +31,7 @@ import {
   profileConfigPath,
   postWarmupFrameSamples,
   runProductionProfile,
+  runCommand,
   safeReport,
   setNativeProfileEntry,
   webFrameInstrumentation,
@@ -237,6 +239,24 @@ test('desktop child receives the transport mailbox root and writes a raw post-pr
 test('production desktop mailbox uses atomic request writes', () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   assert.match(source, /const mailbox = new runner\.LocalDeviceMailbox\(\);/u);
+});
+
+test('failed production commands name the timeout or carry their stderr tail', async () => {
+  const timedOut = await runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], process.cwd(), undefined, 200);
+  assert.equal(timedOut.timedOut, true);
+  assert.equal(timedOut.timeout, 200);
+  assert.match(`Scaffolding the production platformer failed.${failureSuffix(timedOut)}`, /timed out after \d+ s/u);
+
+  const failed = await runCommand(
+    process.execPath,
+    ['-e', "process.stderr.write('line one\\nboom-tail\\n'); process.exit(3);"],
+    process.cwd(),
+    undefined,
+    5_000,
+  );
+  assert.equal(failed.status, 3);
+  assert.equal(failed.timedOut, false);
+  assert.match(`The scaffolded platformer web build failed.${failureSuffix(failed)}`, /boom-tail/u);
 });
 
 afterEach(() => {

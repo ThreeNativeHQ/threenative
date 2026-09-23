@@ -299,9 +299,10 @@ async function scaffoldPlatformer(project, tools) {
     '--template', 'platformer',
     ...localSources.flatMap(([name, source]) => [packageSourceFlag(name), source]),
   ];
-  const result = await runCommand(process.execPath, args, commandRoot);
+  // Scaffolding packs and installs the whole workspace, which is slow on hosted runners.
+  const result = await runCommand(process.execPath, args, commandRoot, undefined, 600_000);
   if (result.status !== 0) {
-    throw new ProductionEvidenceError('TN_PROD_SCAFFOLD_FAILED', 'Scaffolding the production platformer failed.');
+    throw new ProductionEvidenceError('TN_PROD_SCAFFOLD_FAILED', `Scaffolding the production platformer failed.${failureSuffix(result)}`);
   }
 }
 
@@ -319,7 +320,7 @@ function localWorkspacePackages() {
 async function packLocalPackage(directory, destination) {
   const before = new Set(await readdir(destination));
   const result = await runCommand('pnpm', ['pack', '--pack-destination', destination], directory);
-  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_PACKAGE_ARCHIVE_FAILED', `Packing local package '${basename(directory)}' failed.`);
+  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_PACKAGE_ARCHIVE_FAILED', `Packing local package '${basename(directory)}' failed.${failureSuffix(result)}`);
   const archive = (await readdir(destination)).find((entry) => entry.endsWith('.tgz') && !before.has(entry));
   if (archive === undefined) throw new ProductionEvidenceError('TN_PROD_PACKAGE_ARCHIVE_FAILED', `Packing local package '${basename(directory)}' produced no archive.`);
   return join(destination, archive);
@@ -427,8 +428,9 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
   const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
     await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options));
-    const build = await runCommand('pnpm', ['run', 'build:web'], project);
-    if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', 'The scaffolded platformer web build failed.');
+    // A production build can outlast the default timeout on slow hosted runners.
+    const build = await runCommand('pnpm', ['run', 'build:web'], project, undefined, 300_000);
+    if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', `The scaffolded platformer web build failed.${failureSuffix(build)}`);
     const artifactSha = await hashPath(join(project, 'dist'));
     const runs = [];
     const startups = [];
@@ -1788,7 +1790,7 @@ async function installAndroidArtifact(apk, device) {
   });
   const args = [...(device === undefined ? [] : ['-s', device]), 'install', '-r', apk];
   const result = await runCommand('adb', args, commandRoot);
-  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_ANDROID_INSTALL_FAILED', 'Installing the scaffolded Android platformer failed.');
+  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_ANDROID_INSTALL_FAILED', `Installing the scaffolded Android platformer failed.${failureSuffix(result)}`);
 }
 
 async function hashPath(path) {
@@ -1860,7 +1862,7 @@ async function availablePort() {
   return address.port;
 }
 
-async function runCommand(command, args, cwd, env = undefined, timeout = 120_000) {
+export async function runCommand(command, args, cwd, env = undefined, timeout = 120_000) {
   const started = performance.now();
   try {
     const result = await execFileAsync(command, args, {
@@ -1870,15 +1872,28 @@ async function runCommand(command, args, cwd, env = undefined, timeout = 120_000
       maxBuffer: 32 * 1024 * 1024,
       timeout,
     });
-    return { durationMs: performance.now() - started, status: 0, stderr: result.stderr, stdout: result.stdout };
+    return { durationMs: performance.now() - started, status: 0, stderr: result.stderr, stdout: result.stdout, timeout, timedOut: false };
   } catch (error) {
     return {
       durationMs: performance.now() - started,
       status: typeof error?.code === 'number' ? error.code : 2,
       stderr: error?.stderr ?? '',
       stdout: error?.stdout ?? '',
+      timeout,
+      timedOut: error?.killed === true,
     };
   }
+}
+
+export function failureSuffix(result) {
+  if (result.timedOut === true) return `: timed out after ${Math.round(result.timeout / 1_000)} s`;
+  const lines = [result.stderr, result.stdout]
+    .filter((value) => typeof value === 'string' && value.trim().length > 0)
+    .join('\n')
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .slice(-20);
+  return lines.length === 0 ? '' : `\n${lines.join('\n')}`;
 }
 
 async function removeMailbox(root) {
