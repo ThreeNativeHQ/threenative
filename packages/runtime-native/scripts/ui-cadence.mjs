@@ -101,9 +101,10 @@ export function analyzeUiCadence({ states, captures }, { sampling = 'x11' } = {}
   const durationMs = captures.at(-1).at - captures[0].at;
   const captureHz = (captures.length - 1) * 1000 / durationMs;
   const android = sampling === 'android';
-  requireObservation(durationMs >= 24_000 && captureHz >= (android ? 55 : 180) && captureHz <= (android ? 65 : 300) &&
+  // The band guards sampling validity (the ≥600 IDs and interval-p95 checks), and Android panels run at 60–120 Hz, so the upper bound follows the panel, not the 60 FPS workload.
+  requireObservation(durationMs >= 24_000 && captureHz >= (android ? 55 : 180) && captureHz <= (android ? 125 : 300) &&
     percentile(captureIntervals, 0.95) <= (android ? 20 : 10) && Math.max(...captureIntervals) <= 100,
-  'SAMPLING', `need at least 24 seconds of continuous ${android ? '55–65' : '180–300'} Hz capture`);
+  'SAMPLING', `need at least 24 seconds of continuous ${android ? '55–125' : '180–300'} Hz capture`);
   const start = captures[0].at + 1000;
   const end = captures.at(-1).at - 100;
   const latencies = [];

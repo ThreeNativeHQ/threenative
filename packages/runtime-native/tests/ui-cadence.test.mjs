@@ -68,6 +68,18 @@ test('Android sampling keeps the same visible cadence bounds without attributing
   assert.throws(() => analyzeUiCadence(sample(), { sampling: 'unknown' }), /SAMPLING/u);
 });
 
+test('Android capture band accepts 120 Hz panels while rejecting oversampling', () => {
+  const atRate = (keep, every) => {
+    const data = recording();
+    data.captures = data.captures.filter((_, index) => (index * keep) % every < keep);
+    return data;
+  };
+  const panel120 = analyzeUiCadence(atRate(10, 27), { sampling: 'android' });
+  assert.ok(panel120.captureHz > 80 && panel120.captureHz < 125);
+  assert.ok(panel120.p95Ms <= 50);
+  assert.throws(() => analyzeUiCadence(atRate(13, 24), { sampling: 'android' }), /SAMPLING/u);
+});
+
 test('Android timestamps require the exact Winscope format and decoded-frame PTS alignment', () => {
   const magic = Buffer.from('#VV1NSC0PET1ME2#');
   const buffer = Buffer.alloc(magic.length + 16 + 3 * 8);
