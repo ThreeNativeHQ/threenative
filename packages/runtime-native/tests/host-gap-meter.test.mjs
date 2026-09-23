@@ -27,7 +27,27 @@ function assertHostGapPeriodRecording(source) {
   assert.match(source, /"webtransport"/u);
   assert.match(source, /uint64_t\s+frameId\s*=\s*0;/u);
   assert.match(source, /\\"samples\\":\[\s*[\s\S]*\\"frame\\"/u);
-  assert.match(source, /sample\.micros\[kWebTransport\]/u);
+  // The default per-frame sample stays the old frame + webtransportMs shape, so routine
+  // desktop/Android TN_HOST_GAP log lines do not grow.
+  assert.match(
+    source,
+    /out\s*<<\s*",\\"webtransportMs\\":"\s*[\s\S]*?sample\.micros\[kWebTransport\]/u,
+  );
+  // Every per-frame segment the meter already measured plus the rAF period it sits inside are
+  // opt-in behind TN_HOST_GAP_DETAIL=1; the window summary kept them but the per-frame array
+  // dropped all but webtransportMs.
+  assert.match(
+    source,
+    /std::getenv\("TN_HOST_GAP_DETAIL"\)[\s\S]{0,120}?\[0\]\s*==\s*'1'[\s\S]{0,60}?\[1\]\s*==\s*'\\0'/u,
+  );
+  assert.match(
+    source,
+    /for\s*\(\s*size_t\s+segment\s*=\s*0;\s*segment\s*<\s*kSegmentCount;\s*\+\+segment\s*\)[\s\S]*?kNames\[segment\][\s\S]*?sample\.micros\[segment\]/u,
+  );
+  assert.match(
+    source,
+    /\\"periodMs\\":\s*"[\s\S]*?sample\.periodMicros/u,
+  );
 
   const poll = functionBody(source, "bool pollEvents() override");
   assert.match(

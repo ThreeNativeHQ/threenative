@@ -378,12 +378,26 @@ struct HostGapMeter {
         out << "}";
 #else
         out << ",\"samples\":[";
+        // The default per-frame shape stays frame + webtransportMs on desktop;
+        // TN_HOST_GAP_DETAIL=1 adds every measured segment and the rAF period.
+        const char* detailEnv = std::getenv("TN_HOST_GAP_DETAIL");
+        const bool detail = detailEnv != nullptr && detailEnv[0] == '1' && detailEnv[1] == '\0';
         for (size_t i = 0; i < samples_.size(); ++i) {
             if (i > 0) out << ",";
             const Sample& sample = samples_[i];
-            out << "{\"frame\":" << sample.frameId
-                << ",\"webtransportMs\":"
-                << static_cast<double>(sample.micros[kWebTransport]) / 1000.0 << "}";
+            out << "{\"frame\":" << sample.frameId;
+            if (detail) {
+                for (size_t segment = 0; segment < kSegmentCount; ++segment) {
+                    out << ",\"" << kNames[segment] << "Ms\":"
+                        << static_cast<double>(sample.micros[segment]) / 1000.0;
+                }
+                out << ",\"periodMs\":"
+                    << static_cast<double>(sample.periodMicros) / 1000.0;
+            } else {
+                out << ",\"webtransportMs\":"
+                    << static_cast<double>(sample.micros[kWebTransport]) / 1000.0;
+            }
+            out << "}";
         }
         out << "]}";
 #endif

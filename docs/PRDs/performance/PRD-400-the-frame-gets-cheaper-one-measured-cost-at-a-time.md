@@ -319,6 +319,10 @@ rerun passes 56/56. The full suite then passed (457 files, 5,526 tests; 8 skippe
 A clean live retry now returns `FAIL` with only `TN_PROD_PERFORMANCE_BUDGET`; web and native
 comparison metrics and all required markers are complete (`L0-15`). The slow-native control is
 verified, while the Phase 1 sensitivity box remains open for the live resolution-cut candidate.
+The host-gap meter now has an opt-in detailed sample (`TN_HOST_GAP_DETAIL=1`) with its existing
+per-frame segment times and rAF period. The default marker shape stays small. Focused source test
+and C++ object compile pass; a linked-host runtime sample and the JS/host frame join are still
+required before claiming five-term attribution.
 
 ### Phase 2 — Lane 1: scene projection
 
