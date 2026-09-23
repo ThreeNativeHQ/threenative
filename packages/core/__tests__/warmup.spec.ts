@@ -21,6 +21,9 @@ interface IFakeObject {
   /** Set on the fakes that stand in for a shadow-casting light. */
   isLight?: boolean;
   castShadow?: boolean;
+  /** three's `Object3D.frustumCulled` / `visible`, which the warm render toggles and restores. */
+  frustumCulled?: boolean;
+  visible?: boolean;
 }
 
 const mesh = (name: string): IFakeObject => ({ children: [], material: {}, name });
@@ -490,6 +493,106 @@ describe("scene warm-up", () => {
     expect(render).not.toHaveBeenCalled();
     expect(report.passes).toEqual([]);
     expect(report.passPipelines).toBe(0);
+  });
+
+  test("should submit an off-screen caster by turning frustum culling off for the warm render", async () => {
+    // Frustum culling is on by default, so a mesh outside the startup camera's view is never
+    // submitted to the shadow or reflection pass and its pipelines stay unbuilt. Midway's mid-flight
+    // compiles are exactly those off-screen objects. One render with culling off submits them.
+    let during: boolean | undefined;
+    const far = {
+      children: [],
+      material: {},
+      name: "far-carrier",
+      frustumCulled: true,
+      visible: true,
+    };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => {
+        during = far.frustumCulled;
+      },
+      raw: { shadowMap: { enabled: true } },
+    };
+    const scene = group("scene", [
+      far,
+      { children: [], isLight: true, castShadow: true, name: "sun" },
+    ]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(during).toBe(false);
+    expect(report.cullingForced).toBeGreaterThanOrEqual(1);
+    // Restored exactly, so the game's own culling is untouched.
+    expect(far.frustumCulled).toBe(true);
+  });
+
+  test("should render a hidden mesh only with includeHidden, then restore it exactly", async () => {
+    const build = () => {
+      const hiddenMesh = {
+        children: [],
+        material: {},
+        name: "hidden-lod",
+        frustumCulled: true,
+        visible: false,
+      };
+      // A hidden ancestor: three never draws its subtree whatever the child says, so the ancestor
+      // itself has to be forced visible for the child to be submitted.
+      const hiddenGroup = {
+        children: [mesh("inside")],
+        name: "hidden-group",
+        frustumCulled: true,
+        visible: false,
+      };
+      const renderer = {
+        compileAsync: () => Promise.resolve(),
+        render: vi.fn(),
+        raw: { shadowMap: { enabled: true } },
+      };
+      const scene = group("scene", [
+        hiddenMesh,
+        hiddenGroup,
+        { children: [], isLight: true, castShadow: true, name: "sun" },
+      ]);
+      return { hiddenMesh, hiddenGroup, renderer, scene };
+    };
+
+    const off = build();
+    let meshVisibleOff: boolean | undefined;
+    let groupVisibleOff: boolean | undefined;
+    off.renderer.render.mockImplementation(() => {
+      meshVisibleOff = off.hiddenMesh.visible;
+      groupVisibleOff = off.hiddenGroup.visible;
+    });
+    const reportOff = await warmUpScene(off.renderer as never, off.scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(meshVisibleOff).toBe(false);
+    expect(groupVisibleOff).toBe(false);
+    expect(reportOff.visibilityForced).toBe(0);
+    expect(off.hiddenMesh.visible).toBe(false);
+    expect(off.hiddenGroup.visible).toBe(false);
+    expect(off.hiddenMesh.frustumCulled).toBe(true);
+
+    const on = build();
+    let meshVisibleOn: boolean | undefined;
+    let groupVisibleOn: boolean | undefined;
+    on.renderer.render.mockImplementation(() => {
+      meshVisibleOn = on.hiddenMesh.visible;
+      groupVisibleOn = on.hiddenGroup.visible;
+    });
+    const reportOn = await warmUpScene(on.renderer as never, on.scene as never, {} as never, {
+      includeHidden: true,
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(meshVisibleOn).toBe(true);
+    expect(groupVisibleOn).toBe(true);
+    expect(reportOn.visibilityForced).toBeGreaterThanOrEqual(2);
+    // Every original value is back exactly, on the object and on its hidden ancestor.
+    expect(on.hiddenMesh.visible).toBe(false);
+    expect(on.hiddenGroup.visible).toBe(false);
+    expect(on.hiddenMesh.frustumCulled).toBe(true);
+    expect(on.hiddenGroup.frustumCulled).toBe(true);
   });
 
   test("should restore every renderer and scene state the pass render touched", async () => {

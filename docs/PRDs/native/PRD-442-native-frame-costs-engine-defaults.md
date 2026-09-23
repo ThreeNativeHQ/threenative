@@ -157,11 +157,13 @@ plus `compare-frames` and a native V8 profile.
 **Status:** PARTIAL
 **Progress:** core's warm-up performs one hidden render after `compileAsync` when a shadow-casting
 light or a reflector is present, forcing the shadow map and restoring every state it touched. The
-named `renderPasses` option (default on) and the `passes`/`passPipelines` report are in. Unit test
-red then green; engine gates pass apart from the pre-existing unbuilt-native package-test failures.
-Core packed for the sandbox as
-`.packages/threenative-core-0.3.2-prd442warm-71fa6d0775a0.tgz` (sha256
-`71fa6d0775a0931cbddd01dbcb5cf81dd147e10abaf7f1088a66275280a8b504`). The native bench (AC-4) has
+render turns frustum culling off for that one pass so off-screen casters are submitted, and the
+named `includeHidden` option (default off) also forces hidden renderables and their ancestors
+visible. `renderPasses`, `passes`/`passPipelines` and the forced counts are all reported. Unit
+tests red then green; engine gates pass apart from the pre-existing unbuilt-native package-test
+failures. Core packed for the sandbox as
+`.packages/threenative-core-0.3.2-prd442warm-ea5923c8876a.tgz` (sha256
+`ea5923c8876a8bd51192fa737e4eef4004c4f2432f8e7925a8fceabd1529a7dc`). The native bench (AC-4) has
 not been run here.
 **ACs:** AC-4
 **Files:** `packages/core/src/warmup.ts` (+ unit test); sandbox Midway `src/render/world.ts`,
@@ -172,14 +174,19 @@ not been run here.
 - [x] `warmUpScene` renders the warm scene once after `compileAsync` when a shadow-casting light or
   a reflector is present, forces `shadowMap.needsUpdate`, and restores render target, `autoClear`,
   `shadowMap.needsUpdate` and `scene.visible` (`packages/core/src/warmup.ts`)
+- [x] The warm render sets `frustumCulled = false` on every renderable for that one pass and
+  restores every original value, so off-screen casters build their shadow/reflection pipelines
+- [x] Named `includeHidden` option (default `false`) forces hidden renderables and their hidden
+  ancestors visible for that one render, restoring every `visible` exactly
 - [x] Named `renderPasses` option on `IWarmUpOptions`, default `true`, documented beside the other
   warm-up options and honoured by the default startup warm-up (`packages/core/src/game.ts`)
-- [x] `TN_STARTUP_WARMUP` / `TN_WARMUP` report `passes` and `passPipelines`
-- [x] Red then green unit test in `packages/core/__tests__/warmup.spec.ts` — red: 3 failed;
-  green: 24 passed
-- [x] Engine gates — `pnpm typecheck` (error list identical to a clean stash), `pnpm lint` (exit 0),
-  `pnpm test` unit phase 5538 passed / 5 skipped; the `package-test` phase fails only on unbuilt
-  native executables, identical on a clean stash
+- [x] `TN_STARTUP_WARMUP` / `TN_WARMUP` report `passes`, `passPipelines`, `cullingForced` and
+  `visibilityForced`
+- [x] Red then green unit tests in `packages/core/__tests__/warmup.spec.ts` — red: 2 failed;
+  green: 26 passed
+- [x] Engine gates — `pnpm typecheck` (0 errors), `pnpm lint` (exit 0), core unit tests 125 files /
+  1441 passed; the `package-test` phase fails only on unbuilt native executables, identical on a
+  clean stash
 - [ ] Native bench (AC-4): `pipelinesAfterStart` = 0 over a 150 s flight, "ready" no later than
   stock + 3 s
 

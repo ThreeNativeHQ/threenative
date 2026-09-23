@@ -1033,6 +1033,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
           renderPasses: this.#warmUpOptions().renderPasses,
+          includeHidden: this.#warmUpOptions().includeHidden,
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
@@ -1068,6 +1069,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeTimedOut: report.computeTimedOut,
                 passes: report.passes,
                 passPipelines: report.passPipelines,
+                cullingForced: report.cullingForced,
+                visibilityForced: report.visibilityForced,
                 cache: report.cache,
               },
         )}`,
@@ -1682,6 +1685,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeTimedOut: report.computeTimedOut,
                 passes: report.passes,
                 passPipelines: report.passPipelines,
+                cullingForced: report.cullingForced,
+                visibilityForced: report.visibilityForced,
                 cache: report.cache,
               },
         )}`,

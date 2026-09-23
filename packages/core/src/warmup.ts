@@ -112,6 +112,18 @@ export interface IWarmUpOptions {
    * turning a convention off must not turn its measurement off.
    */
   readonly renderPasses?: boolean;
+  /**
+   * Also render objects the scene has hidden for that one covered render. Default `false`.
+   *
+   * `renderPasses` already disables frustum culling, so every caster is submitted to the shadow
+   * pass and every reflected object to the reflection pass even when the startup camera cannot see
+   * it. A hidden LOD level or a parked model is still skipped, though: three never draws a subtree
+   * whose ancestor's `visible` is false, so its shadow and reflection pipelines stay unbuilt. With
+   * this on, the warm-up forces every hidden object visible for that one render — ancestors
+   * included — and restores every original `visible` exactly afterwards. The count is reported as
+   * `visibilityForced`, so a game can see how much of its scene the render had to un-hide.
+   */
+  readonly includeHidden?: boolean;
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
@@ -190,6 +202,10 @@ export interface IWarmUpReport {
   readonly passes?: readonly string[];
   /** Backend pipelines observed created by the hidden warm render alone. Absent with `passes`. */
   readonly passPipelines?: number;
+  /** Objects whose `frustumCulled` the warm render turned off, so off-screen casters were submitted. */
+  readonly cullingForced?: number;
+  /** Hidden objects the warm render forced visible (`includeHidden`); zero when it was off. */
+  readonly visibilityForced?: number;
 }
 
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
@@ -577,6 +593,22 @@ interface IWarmPassRender {
   readonly passes: readonly string[];
   readonly created: number;
   readonly elapsedMs: number;
+  readonly cullingForced: number;
+  readonly visibilityForced: number;
+}
+
+/** The scene-graph state the warm render turns off and must put back exactly. */
+interface IWarmVisibilityHost {
+  frustumCulled?: boolean;
+  visible?: boolean;
+}
+
+interface IRestoredVisibility {
+  readonly object: IWarmVisibilityHost;
+  /** Set only when this warm render turned the object's culling off. */
+  readonly frustumCulled?: boolean;
+  /** Set only when this warm render forced the object visible. */
+  readonly visible?: boolean;
 }
 
 /** A shadow map is rendered for every shadow-casting light; nothing else triggers that pass. */
@@ -649,6 +681,11 @@ function hasReflector(scene: Object3D): boolean {
  * loading frame, and the output stays behind the opaque cover. `shadowMap.needsUpdate` is forced
  * so a game that renders its shadows once (`autoUpdate = false`) still builds them.
  *
+ * Frustum culling is turned off for that one render: an object the startup camera cannot see is
+ * exactly the object whose shadow and reflection pipelines are missing at startup, so every caster
+ * must be submitted. With `includeHidden`, every hidden object is also forced visible, because
+ * three never draws a subtree behind a hidden ancestor. Both are restored exactly in a `finally`.
+ *
  * Returns `undefined` when the renderer exposes no `render`, so a stub renderer is skipped rather
  * than reported as a pass render that did nothing.
  */
@@ -657,10 +694,18 @@ function renderWarmPasses(
   scene: Object3D,
   camera: Camera,
   enabled: boolean,
+  includeHidden: boolean,
 ): IWarmPassRender | undefined {
   const render = renderer.render;
   if (typeof render !== "function") return undefined;
-  if (!enabled) return { passes: [], created: 0, elapsedMs: 0 };
+  const skipped: IWarmPassRender = {
+    passes: [],
+    created: 0,
+    elapsedMs: 0,
+    cullingForced: 0,
+    visibilityForced: 0,
+  };
+  if (!enabled) return skipped;
   const raw =
     typeof renderer.raw === "object" && renderer.raw !== null
       ? (renderer.raw as IWarmRenderHost)
@@ -672,18 +717,45 @@ function renderWarmPasses(
   // `compileAsync` already built the main pass. A scene with neither a shadow map nor a reflection
   // has no second pass to build, so rendering it again would only draw a frame the cover hides for
   // nothing. Skip the draw and report the one pass that was compiled.
-  if (passes.length === 1) return { passes, created: 0, elapsedMs: 0 };
+  if (passes.length === 1) return { ...skipped, passes };
 
   const censusBefore = readPipelineCensus(renderer);
-  const sceneVisible = (scene as { visible?: boolean }).visible;
+  const sceneVisible = (scene as IWarmVisibilityHost).visible;
   const hadOwnAutoClear = raw !== undefined && Object.hasOwn(raw, "autoClear");
   const autoClear = raw?.autoClear;
   const shadowNeedsUpdate = shadowMap?.needsUpdate;
   const previousTarget = raw?.getRenderTarget?.();
+  // One walk remembers every original value, so the restore is exact and covers hidden ancestors.
+  const restored: IRestoredVisibility[] = [];
+  let cullingForced = 0;
+  let visibilityForced = 0;
+  const stack: Object3D[] = [scene];
+  while (stack.length > 0) {
+    const object = stack.pop() as Object3D & IWarmVisibilityHost;
+    const children = object.children ?? [];
+    for (const child of children) stack.push(child as Object3D);
+    const entry: { object: IWarmVisibilityHost; frustumCulled?: boolean; visible?: boolean } = {
+      object,
+    };
+    if (object.frustumCulled === true) {
+      entry.frustumCulled = true;
+      object.frustumCulled = false;
+      cullingForced += 1;
+    }
+    // The root's own visibility is forced below whether or not hidden objects are included, so it
+    // is not counted here; a hidden child or group is.
+    if (includeHidden && object !== scene && object.visible === false) {
+      entry.visible = false;
+      object.visible = true;
+      visibilityForced += 1;
+    }
+    if (entry.frustumCulled !== undefined || entry.visible !== undefined) restored.push(entry);
+  }
+
   const startedAt = globalThis.performance?.now() ?? Date.now();
   try {
     // The render is the mechanism; nothing about the frame it would have drawn is kept.
-    if (sceneVisible === false) (scene as { visible: boolean }).visible = true;
+    if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
     render(scene, camera);
@@ -699,12 +771,18 @@ function renderWarmPasses(
         raw.setRenderTarget(previousTarget);
     }
     if (shadowMap !== undefined) shadowMap.needsUpdate = shadowNeedsUpdate;
-    if (sceneVisible === false) (scene as { visible: boolean }).visible = false;
+    if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = false;
+    for (const entry of restored) {
+      if (entry.frustumCulled !== undefined) entry.object.frustumCulled = entry.frustumCulled;
+      if (entry.visible !== undefined) entry.object.visible = entry.visible;
+    }
   }
   return {
     passes,
     created: censusDelta(censusBefore, readPipelineCensus(renderer), "creations"),
     elapsedMs: (globalThis.performance?.now() ?? Date.now()) - startedAt,
+    cullingForced,
+    visibilityForced,
   };
 }
 
@@ -851,7 +929,13 @@ export async function warmUpScene(
     passRendered = true;
     if (now() >= startedAt + budgetMs) return undefined;
     try {
-      passResult = renderWarmPasses(renderer, scene, camera, options.renderPasses !== false);
+      passResult = renderWarmPasses(
+        renderer,
+        scene,
+        camera,
+        options.renderPasses !== false,
+        options.includeHidden === true,
+      );
     } catch {
       passResult = undefined;
     }
@@ -864,6 +948,8 @@ export async function warmUpScene(
           ...report,
           passes: passResult.passes,
           passPipelines: passResult.created,
+          cullingForced: passResult.cullingForced,
+          visibilityForced: passResult.visibilityForced,
           elapsedMs: report.elapsedMs + passResult.elapsedMs,
         };
 
