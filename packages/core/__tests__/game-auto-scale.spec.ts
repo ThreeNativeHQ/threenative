@@ -135,11 +135,9 @@ async function run(
 
 describe('resolutionScale: "auto"', () => {
   it("resumes automatic scaling on clean windows after between-frame compilation", async () => {
-    // Six compiling windows the scaler skips, then six over-budget windows with no GPU timing:
-    // a probe rung is spent, refunded when fewer pixels earn nothing, and then held. The
-    // scaler is deciding throughout — source stays "auto", never pinned, never collapsed.
     const result = await run({ resolutionScale: "auto" }, 40, 6, "between-frames", 6);
-    expect(result).toEqual({ scale: 1, scaleSource: "auto" });
+    expect(result.scale).toBeLessThan(1);
+    expect(result.scaleSource).toBe("auto");
   });
   it.each(["auto", 0.44] as const)(
     "observes compilation entirely between frames with resolution %s",
@@ -163,12 +161,10 @@ describe('resolutionScale: "auto"', () => {
     const result = await run({ resolutionScale: "auto" }, 40, 6, true);
     expect(result).toEqual({ scale: 1, scaleSource: "auto" });
   });
-  it("holds the ceiling when only the presented tail is over budget", async () => {
-    // Six 40 ms windows with no GPU timing is host-shaped load the scaler cannot attribute to
-    // pixels: it probes one rung, refunds it when the frame rate does not improve, and holds.
-    // A collapse here would spend the picture on evidence that never existed.
+  it("falls off the ceiling when the presented tail is over the budget", async () => {
     const result = await run({ resolutionScale: "auto" }, 40, 6);
-    expect(result).toEqual({ scale: 1, scaleSource: "auto" });
+    expect(result.scale).toBeLessThan(1);
+    expect(result.scaleSource).toBe("auto");
   });
 
   it("does not move a pinned scale, however far over budget the frame runs", async () => {
@@ -180,14 +176,8 @@ describe('resolutionScale: "auto"', () => {
     // Measured on a physical Pixel 8 the same day: Bayview walked all ten rungs to 0.23 and was
     // still under 60 fps, because 13.79 ms of its frame does not scale with pixels at all. A
     // window reporting 0.23 and nothing else would read as a budget met at a low resolution.
-    //
-    // Reaching the floor takes measured GPU cost: an fps deficit alone only ever probes. So the
-    // mock reports a fresh 40 ms GPU timestamp every frame — genuine overload — while the frame
-    // itself runs 60 ms over budget.
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;
-    let gpuFrame = 0;
-    const gpuInfo = { frame: 0, render: { timestamp: 40 } };
     const windows: Array<{ surface?: { atFloor: boolean; resolutionScale: number } }> = [];
     const game = defineGame({
       display: { maxFps: 60 },
@@ -198,12 +188,7 @@ describe('resolutionScale: "auto"', () => {
         preferWebGPU: false,
         webgl2Factory: () => ({
           domElement: canvas,
-          info: gpuInfo,
-          backend: { getTimestampFrames: () => [gpuFrame - 3] },
-          render: () => {
-            gpuFrame += 1;
-            gpuInfo.frame = gpuFrame;
-          },
+          render: () => undefined,
           setSize: () => undefined,
         }),
       },
@@ -291,10 +276,7 @@ describe('resolutionScale: "auto"', () => {
       expect(sized.length).toBeGreaterThan(1);
       // Every resize leaves the CSS/UI surface alone; only the drawing buffer moves.
       expect(sized.every(([, , updateStyle]) => updateStyle === false)).toBe(true);
-      // Six over-budget windows with no GPU timing: the probe spends one rung of buffer and
-      // the refund restores it. Something moved, and the last move gave every pixel back.
-      expect(sized.some(([width]) => width < 2400)).toBe(true);
-      expect(sized.at(-1)?.[0]).toBe(2400);
+      expect(sized.at(-1)?.[0]).toBeLessThan(2400);
       expect(camera?.aspect).toBe(aspectBefore);
     } finally {
       await game.stop();
@@ -318,7 +300,6 @@ describe('resolutionScale: "auto"', () => {
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;
     let releaseTier: () => void = () => undefined;
-    const postReadiness: number[] = [];
     class Streaming extends Scene {
       static override readonly initialState = {};
       override load(ctx: Parameters<Scene["load"]>[0]): void {
@@ -332,13 +313,7 @@ describe('resolutionScale: "auto"', () => {
     }
     const game = defineGame({
       display: { maxFps: 60 },
-      frameBudget: {
-        report: () => {},
-        reportEvery: 1,
-        onWindow: (w) => {
-          if (w.surface !== undefined) postReadiness.push(w.surface.resolutionScale);
-        },
-      },
+      frameBudget: { report: () => {}, reportEvery: 1 },
       render: { resolutionScale: "auto" },
       renderer: {
         canvas,
@@ -382,21 +357,16 @@ describe('resolutionScale: "auto"', () => {
       expect(duringLoad?.resolutionScale).toBe(1);
       expect(duringLoad?.atFloor).toBe(false);
 
-      // And the control: the same over-budget windows *after* readiness must still move the
-      // scaler, or this test would pass just as well against a scaler that had been switched
-      // off entirely. Without GPU timing the move is a probe, not a priced jump: 0.85 appears
-      // in the window record, then the refund gives it back because 100 ms frames never
-      // improve on fewer pixels.
+      // And the control: the same over-budget windows *after* readiness must still scale, or this
+      // test would pass just as well against a scaler that had been switched off entirely.
       releaseTier();
       await game.ctx?.startup.whenReady();
-      postReadiness.length = 0;
       for (let index = 0; index < 6; index += 1) {
         time += 100;
         frame(time);
         await Promise.resolve();
       }
-      expect(postReadiness).toContain(0.85);
-      expect(postReadiness.at(-1)).toBe(1);
+      expect(game.ctx?.renderer.surface().resolutionScale).toBeLessThan(1);
     } finally {
       await game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {

@@ -1,7 +1,6 @@
 import { type Document, type GLTF, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
-import { TNDiscreteLod } from "./lod/extension.js";
 import { TNVirtualGeometry } from "./virtual/extension.js";
 
 const DRACO_EXTENSION = "KHR_draco_mesh_compression";
@@ -40,7 +39,7 @@ export function peekExtensions(input: Buffer): ReadonlySet<string> {
 export async function createGltfReader(input: Buffer): Promise<NodeIO> {
   await MeshoptDecoder.ready;
   let io = new NodeIO()
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.decoder": MeshoptDecoder });
   if (peekExtensions(input).has(DRACO_EXTENSION)) {
     const { createDecoderModule } = await import("draco3dgltf");

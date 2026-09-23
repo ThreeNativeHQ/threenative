@@ -21,11 +21,6 @@ Clip conformance (`clipPoseError`, `clipTrackBindings`, `clipBoneCoverage`, `bon
 admitted the same way — see `CHARTER.md`'s "Pose conformance measurement is mechanism" and
 `docs/PRDs/done/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md`. It measures and
 reports; it moves nothing and decides no appearance.
-`FlightModel` is admitted as mechanism by PRD-382: it integrates lift, drag, thrust, stall,
-control moments and the carrier-deck run for a fixed-wing aircraft, and takes every airframe
-constant, wind value and damage multiplier from the game. It moves the aircraft the game gives it
-and ships no airframe, geometry, material or colour of its own. See `CHARTER.md`'s "Mechanism is
-not appearance".
 Optional portable message transport is admitted by PRD-359 at the `@threenative/core/net` subpath.
 `connect` opens authenticated HTTPS WebTransport only; credentials come from the game's identity
 flow, and there is no fallback transport. Defaults are a 10-second connect timeout, 65,536-byte
@@ -106,9 +101,6 @@ particular, Godot-borrowed node names stay unchanged.
   is exposed as `window.__THREENATIVE__` in dev builds only, and playtest reads it.
 - Scene-owned time lives behind `ctx.after`, `ctx.every`, `ctx.tween`; `Scheduler` and
   `ScheduleHandle` are the public supporting types, and transitions cancel it.
-- `ctx.beforeRender(cb)` runs once per actual world draw, after the frame's last fixed update and
-  before the projection reconciles and the renderer draws; a held loader frame draws no world and
-  dispatches nothing. It is scene-owned and cleared on scene change and stop, like `ctx.afterPhysics`.
 - `AudioBus` is the audio sink; `IAudioBusOptions` and `IAudioPlayOptions` configure listener
   and voice cleanup.
 - `ctx.random` is the seeded randomness surface playtest reports; `createRandom` and `IRandom`

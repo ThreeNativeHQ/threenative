@@ -119,95 +119,38 @@ test("without Xvfb installed a pixel run fails closed naming the cause", async (
   ).rejects.toThrow(/Xvfb is not installed/);
 });
 
-/**
- * `installed` decides whether this host has a compositing manager. A private Xvfb has none of
- * its own and nothing else blends for it, so the native runtime refuses to attach its UI
- * overlay to a display without one — the display provisions it, and a host that has none still
- * gets its display and keeps the overlay's honest refusal.
- */
-for (const installed of [["Xvfb", "xcompmgr"], ["Xvfb"]]) {
-  const composited = installed.includes("xcompmgr");
-  test(`a private Xvfb is spawned, adopted, and released${composited ? " with a compositor" : " with no compositor installed"}`, async () => {
-    const spawnedCommands: string[] = [];
-    const killed: string[] = [];
-    const { spawn } = await import("node:child_process");
-    const { EventEmitter } = await import("node:events");
-    const fd3 = new EventEmitter();
-    const originalSpawn = spawn;
-    const provided = await provideDisplay({
-      commandExists: (command) => installed.includes(command),
-      displaySocketExists: () => false,
-      env: { PATH: "/usr/bin", WAYLAND_DISPLAY: "wayland-0" },
-      platform: "linux",
-      spawnProcess: ((command: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
-        spawnedCommands.push(command);
-        if (command === "Xvfb") queueMicrotask(() => fd3.emit("data", Buffer.from("57\n")));
-        // The compositor must be pointed at the display this run just created, never at
-        // whatever DISPLAY the operator's own session exported.
-        else expect(options.env?.DISPLAY).toBe(":57");
-        // A killed child reports its exit, as a real one does: without that the helper waits
-        // out its grace period and escalates to SIGKILL, which is a second kill to account for.
-        const child = {
-          exitCode: null as number | null,
-          kill: () => {
-            killed.push(command);
-            child.exitCode = 0;
-            return true;
-          },
-          on: () => undefined,
-          stdio: command === "Xvfb" ? [undefined, undefined, undefined, fd3] : [],
-        };
-        return child as never;
-      }) as unknown as typeof originalSpawn,
-    });
-    expect(spawnedCommands).toEqual(installed);
-    expect(provided.compositor).toBe(composited ? "xcompmgr" : undefined);
-    expect(provided.display).toBe(":57");
-    expect(provided.strategy).toMatchObject({ kind: "private-xvfb" });
-    expect(provided.env.DISPLAY).toBe(":57");
-    expect(provided.env.WAYLAND_DISPLAY).toBeUndefined();
-    await provided.release();
-    // Both children, and the compositor first: it draws the display it is about to lose.
-    expect(killed).toEqual(composited ? ["xcompmgr", "Xvfb"] : ["Xvfb"]);
-  });
-}
-
-/**
- * `commandExists` and the spawn itself are two different moments. A compositor that is gone, or
- * that this host cannot execute, by the time the run reaches it reports neither an exit code nor a
- * signal — the failure arrives as an `error` event — so a run that took the silence for success
- * would report a compositor that never ran and claim a blend nothing performs.
- */
-test("a compositor that fails to spawn is not reported as running", async () => {
-  const killed: string[] = [];
+test("a private Xvfb is spawned, adopted, and released", async () => {
+  let spawnedCommand: string | undefined;
+  let killed = false;
+  const fakeChild = {
+    exitCode: null,
+    kill: () => {
+      killed = true;
+      return true;
+    },
+    stdio: [] as unknown[],
+  } as never;
   const { spawn } = await import("node:child_process");
   const { EventEmitter } = await import("node:events");
   const fd3 = new EventEmitter();
+  (fakeChild as unknown as { stdio: unknown[] }).stdio = [undefined, undefined, undefined, fd3];
   const originalSpawn = spawn;
   const provided = await provideDisplay({
-    commandExists: (command) => ["Xvfb", "xcompmgr"].includes(command),
+    commandExists: () => true,
     displaySocketExists: () => false,
-    env: { PATH: "/usr/bin" },
+    env: { PATH: "/usr/bin", WAYLAND_DISPLAY: "wayland-0" },
     platform: "linux",
     spawnProcess: ((command: string) => {
-      if (command === "Xvfb") queueMicrotask(() => fd3.emit("data", Buffer.from("57\n")));
-      const child = {
-        exitCode: null as number | null,
-        kill: () => {
-          killed.push(command);
-          child.exitCode = 0;
-          return true;
-        },
-        on: (event: string, listener: () => void) => {
-          if (command === "xcompmgr" && event === "error") queueMicrotask(listener);
-        },
-        stdio: command === "Xvfb" ? [undefined, undefined, undefined, fd3] : [],
-      };
-      return child as never;
-    }) as unknown as typeof originalSpawn,
+      spawnedCommand = command;
+      queueMicrotask(() => fd3.emit("data", Buffer.from("57\n")));
+      return fakeChild;
+    }) as typeof originalSpawn,
   });
-  expect(provided.compositor).toBeUndefined();
+  expect(spawnedCommand).toBe("Xvfb");
   expect(provided.display).toBe(":57");
+  expect(provided.strategy).toMatchObject({ kind: "private-xvfb" });
+  expect(provided.env.DISPLAY).toBe(":57");
+  expect(provided.env.WAYLAND_DISPLAY).toBeUndefined();
   await provided.release();
-  expect(killed).toEqual(["Xvfb"]);
+  expect(killed).toBe(true);
 });

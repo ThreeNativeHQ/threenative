@@ -30,18 +30,6 @@ import {
 } from "../compile.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
-import { TNDiscreteLod } from "../lod/extension.js";
-import {
-  type IModelLodOptions,
-  type IModelLodOverride,
-  type IModelLodSummary,
-  LOD_ARTIFACT_SCHEMA_VERSION,
-  LOD_GENERATOR,
-  LOD_GENERATOR_VERSION,
-  LOD_TOOLCHAIN,
-  generateDiscreteLod,
-  validateDiscreteLod,
-} from "../lod/generate.js";
 import {
   type IModelVirtualOptions,
   type IModelVirtualSummary,
@@ -161,13 +149,6 @@ export interface IModelPassOptions {
    * would hide that.
    */
   readonly virtual?: IModelVirtualOptions | "none";
-  /**
-   * Automatic discrete LOD (`assets.lod`). Absent means no automatic generation in this phase;
-   * `false` / `"none"` is the kill switch, and an object carries the resolved policy. Per-asset
-   * overrides key off the canonical source asset path, which is why the pass resolves them here
-   * rather than at registry construction.
-   */
-  readonly lod?: boolean | IModelLodOptions | "none";
 }
 
 export type { IModelVirtualOptions, IModelVirtualSummary } from "../virtual/bake.js";
@@ -189,7 +170,6 @@ export interface IModelSimplifySummary {
 export interface IModelPassOutputEntry {
   readonly embeddedTextures?: IEmbeddedTextureSummary;
   readonly extensions: readonly string[];
-  readonly lod?: IModelLodSummary;
   readonly simplify?: IModelSimplifySummary;
   readonly triangles: number;
   readonly vertices: number;
@@ -254,7 +234,7 @@ async function writeDocument(
   await MeshoptEncoder.ready;
   const io = new NodeIO()
     .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   try {
     const buffer = Buffer.from(await io.writeBinary(document));
@@ -638,45 +618,6 @@ function snapPositions(root: RootOf, bits: number): void {
   }
 }
 
-/**
- * The generation-only cache identity of `assets.lod`. Runtime selection settings (`preset`,
- * `runtime`) are stripped: changing only the pixel budget must refresh runtime metadata, not
- * rebake geometry (PRD-377 §3.2, §5).
- */
-function lodCacheKey(lod: boolean | IModelLodOptions | "none" | undefined): unknown {
-  if (lod === undefined) return null;
-  if (lod === false || lod === "none") return "none";
-  if (lod === true) {
-    return {
-      enabled: true,
-      generator: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
-      schema: LOD_ARTIFACT_SCHEMA_VERSION,
-      toolchain: LOD_TOOLCHAIN,
-    };
-  }
-  const override = (entry: boolean | IModelLodOverride): unknown =>
-    typeof entry === "boolean"
-      ? entry
-      : {
-          ...(entry.enabled === undefined ? {} : { enabled: entry.enabled }),
-          ...(entry.generation === undefined ? {} : { generation: entry.generation }),
-        };
-  return {
-    ...(lod.enabled === undefined ? {} : { enabled: lod.enabled }),
-    ...(lod.generation === undefined ? {} : { generation: lod.generation }),
-    ...(lod.overrides === undefined
-      ? {}
-      : {
-          overrides: Object.fromEntries(
-            Object.entries(lod.overrides).map(([key, entry]) => [key, override(entry)]),
-          ),
-        }),
-    generator: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
-    schema: LOD_ARTIFACT_SCHEMA_VERSION,
-    toolchain: LOD_TOOLCHAIN,
-  };
-}
-
 export function modelPass(options: IModelPassOptions = {}): IAssetPass {
   return {
     configuration: {
@@ -696,8 +637,6 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Part of the compile cache key: change the cap or a codec and stale outputs must not
       // be re-served.
       simplify: options.simplify ?? null,
-      // Generation-only identity; runtime budget edits must not invalidate baked geometry.
-      lod: lodCacheKey(options.lod),
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
@@ -737,15 +676,10 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       const textureOptions = options.textures === "none" ? undefined : (options.textures ?? {});
       // Absent means on, exactly as `textures` reads it.
       const virtualOptions = options.virtual === "none" ? undefined : (options.virtual ?? {});
-      const lodOptions =
-        options.lod === undefined || options.lod === false || options.lod === "none"
-          ? undefined
-          : options.lod;
       const geometryActive =
         options.vertexLayout !== undefined ||
         Object.values(enabled).some(Boolean) ||
         options.simplify !== undefined ||
-        lodOptions !== undefined ||
         virtualOptions !== undefined;
       if (!geometryActive && textureOptions === undefined) return input;
 
@@ -790,18 +724,6 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         virtualOptions === undefined
           ? undefined
           : await bakeVirtualGeometry(document, virtualOptions);
-      // After the virtual bake, so a primitive already owned by a cluster DAG is never also given
-      // a discrete chain (PRD-377 §4.2), and before `quantize`, which needs float positions.
-      const lod =
-        lodOptions === undefined
-          ? undefined
-          : await generateDiscreteLod(
-              document,
-              lodOptions,
-              logicalPath,
-              createHash("sha256").update(input).digest("hex"),
-              { simplify: options.simplify !== undefined, virtualNone: options.virtual === "none" },
-            );
       if (enabled.quantize) {
         // Depths below the library's 8-bit floor are honoured by pre-rounding the floats
         // onto the coarser grid first; the self-verify then fails the build on the drift.
@@ -869,13 +791,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         assertSimplifiedWithinBounds(source, output, options.simplify.ratio, logicalPath);
       }
       assertNoTextureDrift(sourceTextures, textureBindings(verified), logicalPath);
-      // Fails closed on a malformed chain in the bytes that will ship, not in the in-memory graph
-      // that produced them.
-      if (lod !== undefined && lod.generated > 0) validateDiscreteLod(verified);
       const entry: IModelPassOutputEntry = {
         ...(embeddedTextures === undefined ? {} : { embeddedTextures }),
         extensions: [...extensions].sort(),
-        ...(lod === undefined ? {} : { lod }),
         ...(options.simplify === undefined
           ? {}
           : {
@@ -1058,7 +976,7 @@ async function writeAndVerifyShared(
   await MeshoptEncoder.ready;
   const io = new NodeIO()
     .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   // Encoded bytes → every store key they were filed under. Equal encoded bytes can come from
   // distinct source keys, so each writer callback consumes one deterministic candidate rather

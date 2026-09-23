@@ -6,15 +6,8 @@ asset tools when the asset is conventional; build anything specific to this game
 
 Installing `@threenative/core` writes the `.mcp.json` that launches `threenative-asset-mcp`, so
 your host lists its tools alongside your own. Your host reads that file from the directory it was
-launched in: start the session in this project, not in a parent of it. It advertises 44; these 8
+launched in: start the session in this project, not in a parent of it. It advertises 40; these 8
 are the loop you will use for nearly everything:
-
-For a humanoid that needs a skeleton or more motion, use the complete
-[`rigging-characters.md`](rigging-characters.md) recipe. Inspect with `asset_inspect_rig`,
-preserve or fit a rig with `asset_auto_rig`, select and bake donor clips with
-`asset_retarget_animations`, and confirm the result with `asset_preview_animation` on a nonblank
-contact sheet. AETHER / 02 is the pinned sample; its 18-bone rig has no fingers or toes, and the
-tools report those absent roles instead of inventing them.
 
 For a bespoke animated creature, use the complete [`creating-creatures.md`](creating-creatures.md)
 recipe. It keeps the editable spec and claims under `.threenative/creatures/`, compiles the GLB

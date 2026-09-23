@@ -661,49 +661,6 @@ js::JSValueHandle createCanvas2DContext(
                 }));
             return result;
         }));
-    // The same object shape as the linear gradient above, six arguments instead of four. Skia
-    // draws it as a two-point conical gradient, which is exactly what the canvas spec describes.
-    engine->setProperty(jsCtx, "createRadialGradient",
-        engine->newFunction("createRadialGradient", [engine, ctxPtr, contextIndex](void*, const std::vector<js::JSValueHandle>& args) {
-            if (args.size() < 6) {
-                engine->throwException("TypeError: createRadialGradient requires six arguments");
-                return engine->newUndefined();
-            }
-            float values[6];
-            for (size_t i = 0; i < 6; ++i) {
-                values[i] = static_cast<float>(engine->toNumber(args[i]));
-                if (!std::isfinite(values[i])) {
-                    engine->throwException("NotSupportedError: gradient coordinates must be finite");
-                    return engine->newUndefined();
-                }
-            }
-            // The spec is explicit that a negative radius is an IndexSizeError, not a clamp.
-            if (values[2] < 0 || values[5] < 0) {
-                engine->throwException("IndexSizeError: gradient radius must not be negative");
-                return engine->newUndefined();
-            }
-            const auto index = ctxPtr->createRadialGradient(values[0], values[1], values[2],
-                                                            values[3], values[4], values[5]);
-            auto gradient = ctxPtr->getGradient(index);
-            auto result = engine->newObject();
-            engine->setProperty(result, "__tnGradientContext", engine->newNumber(contextIndex));
-            engine->setProperty(result, "__tnGradientIndex", engine->newNumber(index));
-            engine->setProperty(result, "addColorStop", engine->newFunction("addColorStop",
-                [engine, gradient](void*, const std::vector<js::JSValueHandle>& stopArgs) {
-                    if (stopArgs.size() < 2) {
-                        engine->throwException("TypeError: addColorStop requires offset and color");
-                        return engine->newUndefined();
-                    }
-                    const float offset = static_cast<float>(engine->toNumber(stopArgs[0]));
-                    if (!std::isfinite(offset) || offset < 0 || offset > 1) {
-                        engine->throwException("IndexSizeError: gradient offset must be between 0 and 1");
-                    } else if (!gradient->addColorStop(offset, engine->toString(stopArgs[1]))) {
-                        engine->throwException("SyntaxError: invalid gradient color");
-                    }
-                    return engine->newUndefined();
-                }));
-            return result;
-        }));
     const auto setStyle = [engine, ctxPtr, &ownedContexts](bool stroke, const std::vector<js::JSValueHandle>& args) {
         if (args.empty()) return engine->newUndefined();
         if (engine->isObject(args[0])) {
@@ -749,69 +706,6 @@ js::JSValueHandle createCanvas2DContext(
     engine->setProperty(jsCtx, "__nativeGetLineCap",
         engine->newFunction("__nativeGetLineCap", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
             return engine->newString(ctxPtr->getLineCap().c_str());
-        }));
-
-    engine->setProperty(jsCtx, "__nativeSetLineJoin",
-        engine->newFunction("__nativeSetLineJoin", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>& args) {
-            if (!args.empty()) ctxPtr->setLineJoin(engine->toString(args[0]));
-            return engine->newUndefined();
-        }));
-    engine->setProperty(jsCtx, "__nativeGetLineJoin",
-        engine->newFunction("__nativeGetLineJoin", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
-            return engine->newString(ctxPtr->getLineJoin().c_str());
-        }));
-
-    engine->setProperty(jsCtx, "setLineDash",
-        engine->newFunction("setLineDash", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>& args) {
-            if (args.empty()) return engine->newUndefined();
-            // `ctx.setLineDash(5)` is a plain game typo, and a number has no `length`: reading one
-            // gives NaN, which used to cast to a size_t near 2^63 and push floats until the host
-            // died. A browser throws a TypeError on a non-sequence, so this does.
-            //
-            // Any object with a numeric `length` stays accepted, as it always was -- a plain
-            // array-like and a Float32Array both are. What is new is the range check before the
-            // conversion: `length` must be a non-negative integer no larger than 2^32 - 1
-            // (ECMAScript's maximum Array length). Outside that range `static_cast<size_t>` is
-            // undefined, which is the actual bug (e.g. {length: 1e300}); inside it the conversion
-            // and the uint32_t index are both defined. This fixes the conversion only: a legitimate
-            // very large Array, or a Proxy that lies about its length within the range, still costs
-            // work proportional to the length it reports, exactly as iterating such an object would
-            // in a browser. A Set (no `length`) remains unsupported, as it always was.
-            const double reported =
-                engine->isObject(args[0]) ? engine->toNumber(engine->getProperty(args[0], "length")) : NAN;
-            if (!std::isfinite(reported) || reported < 0.0 || reported > 4294967295.0
-                || std::floor(reported) != reported) {
-                engine->throwException("TypeError: setLineDash expects a sequence of numbers");
-                return engine->newUndefined();
-            }
-            const size_t length = static_cast<size_t>(reported);
-            std::vector<float> segments;
-            for (size_t i = 0; i < length; ++i) {
-                const double value =
-                    engine->toNumber(engine->getPropertyIndex(args[0], static_cast<uint32_t>(i)));
-                // The list is all or nothing, as the spec has it: an entry that is missing,
-                // negative or not finite leaves the previous pattern in place.
-                if (!std::isfinite(value) || value < 0) return engine->newUndefined();
-                segments.push_back(static_cast<float>(value));
-            }
-            ctxPtr->setLineDash(segments);
-            return engine->newUndefined();
-        }));
-    engine->setProperty(jsCtx, "__nativeGetLineDash",
-        engine->newFunction("__nativeGetLineDash", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
-            const auto segments = ctxPtr->getLineDash();
-            auto array = engine->newObject();
-            for (size_t i = 0; i < segments.size(); ++i) {
-                engine->setProperty(array, std::to_string(i).c_str(), engine->newNumber(segments[i]));
-            }
-            engine->setProperty(array, "length", engine->newNumber(static_cast<double>(segments.size())));
-            return array;
-        }));
-
-    engine->setProperty(jsCtx, "clip",
-        engine->newFunction("clip", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
-            ctxPtr->clip();
-            return engine->newUndefined();
         }));
 
     engine->setProperty(jsCtx, "__nativeSetGlobalAlpha",

@@ -34,14 +34,6 @@ For a bespoke animated creature, follow `agent-docs/creating-creatures.md`. Call
 visual review before delivery. `creature_status` distinguishes compile-only availability from
 optional preview/check dependencies; an unavailable renderer is not approval.
 
-For a humanoid that needs a skeleton or more motion, follow `agent-docs/rigging-characters.md`.
-Inspect first with `asset_inspect_rig` (a local GLB or the pinned `aether-02` sample), auto-rig an
-unrigged biped with `asset_auto_rig` (or pass explicit landmarks when it returns a correction
-request), select donors with `asset_retarget_animations` (in-place by default; `root_motion` only
-from the matching `_RM` donor), and confirm the result with `asset_preview_animation` on a
-nonblank contact sheet before cooking. The 18-bone AETHER sample has no fingers or toes; the
-tools report those absent roles instead of inventing them.
-
 Choose the sculpt branch before coding: conventional → asset tools; trivial → portable geometry;
 bespoke with a reference → `sculpt_plan`, `sculpt_spec_gate` until every region passes, one
 factory per pass in `src/render/`, then `sculpt_compare` and `sculpt_pass_gate` against a real

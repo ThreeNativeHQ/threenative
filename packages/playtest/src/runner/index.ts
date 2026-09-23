@@ -9,33 +9,14 @@ export * from "./bridgeClient.js";
 // `WEBGPU_BROWSER_ARGS` lives here. Without it an external consumer cannot reproduce the browser
 // arguments this repository's own gates depend on — and a WebGPU run that reaches SwiftShader
 // instead of the Vulkan driver reports healthy-looking numbers from a CPU rasteriser.
-export { PERFORMANCE_BROWSER_ARGS, WEBGPU_BROWSER_ARGS } from "./browser.js";
-export type { IBrowserPointerChange } from "./browser.js";
 /**
- * Copy the selected Chromium arguments without silently enabling a rendering recipe.
+ * Select safe Chromium arguments for WebGPU playtests.
  * @situation run a browser playtest with Vulkan WebGPU
- * @constraint pass WEBGPU_BROWSER_ARGS explicitly; undefined selects no additional arguments
- * @constraint inspect the observed adapter before claiming hardware GPU evidence
- * @example import { resolveBrowserArguments, WEBGPU_BROWSER_ARGS } from "@threenative/playtest/runner";
- * const args = resolveBrowserArguments(WEBGPU_BROWSER_ARGS);
- */
-export { resolveBrowserArguments } from "./browser.js";
-/**
- * Identify a software renderer in the fields reported by adapter.info.
  * @situation reject a SwiftShader adapter as evidence
- * @constraint undefined means no software name was found, not proof of a hardware adapter
- * @example import { softwareAdapterName } from "@threenative/playtest/runner";
- * const software = softwareAdapterName({ architecture: "swiftshader" });
+ * @constraint inspect the adapter name before claiming GPU proof
+ * @example const args = resolveBrowserArguments(undefined);
  */
-export { softwareAdapterName } from "./browser.js";
-/**
- * Compare pointer snapshots and produce down, move, and up transitions.
- * @situation reconcile pointer contacts into down move and up events
- * @constraint returns changes only; the caller dispatches them and retains the next snapshot
- * @example import { reconcileBrowserPointers } from "@threenative/playtest/runner";
- * const changes = reconcileBrowserPointers(new Map(), [{ id: 1, x: 20, y: 30 }]);
- */
-export { reconcileBrowserPointers } from "./browser.js";
+export * from "./browser.js";
 /**
  * Drive and inspect Android playtest transport.
  * @situation run a scenario on an Android emulator or device
@@ -132,17 +113,3 @@ export * from "./pipeline-summary.js";
  * @example const paths = deviceMailboxPaths(projectRoot);
  */
 export * from "./deviceTransport.js";
-
-/**
- * Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.
- * @situation write a custom browser capture without owning Xvfb or Chromium cleanup
- * @constraint browser only; requires a scenario and runtime.startup; does not execute scenario steps or assertions
- * @constraint cancellation is checked between resource acquisitions; lock waiting retains its own bounded queue policy
- * @constraint use session.screenshot for nonblank PNGs; private-display captures are not FPS evidence
- * @constraint use threenative-playtest trace --url <url> for slow-frame attribution instead of creating another profiler
- * @example import { parseStandalonePlaytestArgs, withBrowserCapture } from "@threenative/playtest/runner";
- * const config = parseStandalonePlaytestArgs(["--scenario", "playtests/smoke.playtest.json", "--url", "http://127.0.0.1:5173"]);
- * await withBrowserCapture(config, async (session) => session.screenshot("ready"));
- */
-export { withBrowserCapture } from "./captureSession.js";
-export type { IBrowserCaptureSession } from "./captureSession.js";

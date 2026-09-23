@@ -1,4 +1,3 @@
-import type { IRenderCameraCullReport } from "./render-camera-cull.js";
 import type { IRenderProjectionReport, ProjectionExactReason } from "./renderProjection.js";
 
 /**
@@ -30,26 +29,6 @@ export interface IProjectionWindowJson {
   readonly reason?: string;
   readonly reasonCode: string;
   readonly sourceRenderables: number;
-  /**
-   * The projected-size gate's own count for this window.
-   *
-   * Present whenever the engine ran the gate, whether it is enabled or the game declined it — a
-   * silent cull is one nobody can tell is working. `culled` is what the render camera could not
-   * resolve and the frame did not submit; a game that marked objects with `alwaysRender` reads its
-   * overrides in `exemptMarked`.
-   */
-  readonly cull?: {
-    readonly enabled: boolean;
-    readonly cameraResolved: boolean;
-    readonly thresholdPixels: number;
-    readonly considered: number;
-    readonly culled: number;
-    readonly exemptCameraAttached: number;
-    readonly exemptMarked: number;
-    readonly exemptShadowCasters: number;
-    readonly exemptWithoutBounds: number;
-    readonly exemptFrustumCulled: number;
-  };
   readonly window: number;
 }
 
@@ -78,26 +57,9 @@ export function formatProjectionWindow(
   report: IRenderProjectionReport,
   window: number,
   drawsActual: number | undefined,
-  cull?: IRenderCameraCullReport,
 ): string {
   const payload: IProjectionWindowJson = {
     ...(drawsActual === undefined ? {} : { drawsActual }),
-    ...(cull === undefined
-      ? {}
-      : {
-          cull: {
-            enabled: cull.enabled,
-            cameraResolved: cull.cameraResolved,
-            thresholdPixels: cull.thresholdPixels,
-            considered: cull.considered,
-            culled: cull.culled,
-            exemptCameraAttached: cull.exemptCameraAttached,
-            exemptMarked: cull.exemptMarked,
-            exemptShadowCasters: cull.exemptShadowCasters,
-            exemptWithoutBounds: cull.exemptWithoutBounds,
-            exemptFrustumCulled: cull.exemptFrustumCulled,
-          },
-        }),
     drawsPlanned: report.drawsPlanned,
     exact: report.exact,
     exactObjects: report.exactObjects,

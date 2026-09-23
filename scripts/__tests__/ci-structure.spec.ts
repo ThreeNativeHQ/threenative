@@ -2243,7 +2243,7 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(8);
+    expect(callers).toBe(6);
   });
 
   it("keeps the native contracts and primary CI documentation honest", async () => {

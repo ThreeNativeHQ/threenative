@@ -8,15 +8,15 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeTempDirSync } from "../../../../test-support/temp-dir.js";
 import {
   requireFiles,
   requireGpuTestOptIn,
   runCommand,
   runtimeBinary,
+  runtimeRoot,
 } from "../runtime-test-utils.js";
 
-const TEST_DIR = makeTempDirSync("tn-gpu-fetch-");
+const TEST_DIR = join(runtimeRoot, ".test-tmp");
 const binaryRequirement = [{ label: "built native runtime", path: runtimeBinary }];
 
 describe("Fetch API", () => {

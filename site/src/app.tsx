@@ -1,7 +1,5 @@
 import { useEffect } from "react";
 import { CopyToast } from "./components/code/CopyButton.js";
-import { DocsPreview } from "./components/docs/DocsPreview.js";
-import { DocsRouter } from "./components/docs/DocsRouter.js";
 import { MobileNav } from "./components/layout/MobileNav.js";
 import { SiteFooter } from "./components/layout/SiteFooter.js";
 import { SiteHeader } from "./components/layout/SiteHeader.js";
@@ -24,7 +22,6 @@ function Home() {
       <Hero />
       <FeatureRow />
       <CodeShowcase />
-      <DocsPreview />
       <LogoWall />
     </>
   );
@@ -50,12 +47,6 @@ function NotFound() {
   );
 }
 
-function RouteBody({ route }: { readonly route: IRoute }) {
-  if (route.path === "/") return <Home />;
-  if (route.path.startsWith("/docs")) return <DocsRouter path={route.path} />;
-  return <NotFound />;
-}
-
 /** Deep links select the code tab: `/?tab=react` lands on the React sample. */
 function useTabDeepLink(): void {
   const setCodeTab = useUiStore((state) => state.setCodeTab);
@@ -71,9 +62,7 @@ export function App({ route }: { readonly route: IRoute }) {
     <div className="flex min-h-screen flex-col bg-tn-bg">
       <SiteHeader />
       <MobileNav />
-      <main className="flex-1">
-        <RouteBody route={route} />
-      </main>
+      <main className="flex-1">{route.path === "/" ? <Home /> : <NotFound />}</main>
       <SiteFooter />
       <CopyToast />
     </div>

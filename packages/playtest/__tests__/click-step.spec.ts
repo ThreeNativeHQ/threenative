@@ -401,6 +401,6 @@ test("native pointer transport remains an explicit pointerPosition step", async 
   expect(report.pass).toBe(true);
   expect(pointerCalls).toEqual([
     { buttons: 1, type: "down", x: 50, y: 50 },
-    { buttons: 0, type: "up", x: 50, y: 50 },
+    { buttons: 0, type: "up", x: 0, y: 0 },
   ]);
 });

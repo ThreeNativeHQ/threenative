@@ -19,16 +19,6 @@ const budget = (fps: number, p95 = 17.5, p99 = p95) => ({
   fps,
   presented: { max: p99, p50: 1_000 / fps, p95, p99 },
 });
-/**
- * The same window with fresh GPU timing. Sized jumps need measured GPU cost: an fps deficit
- * alone cannot say how much of the frame scales with pixels, so without `gpuMs` the fallback
- * below only probes.
- */
-const gpuBudget = (fps: number, gpuMs: number, p95 = 17.5, p99 = p95) => ({
-  ...budget(fps, p95, p99),
-  gpuMs,
-  gpuAgeFrames: 3,
-});
 
 /** A window that is comfortably meeting a 60 fps target on a vsync-capped 60 Hz panel. */
 const AT_TARGET = 60;
@@ -81,26 +71,23 @@ describe("ResolutionScaler", () => {
   it("jumps straight to the rung the deficit implies instead of walking there", () => {
     // Bayview's first live window on a physical Pixel 8 read 28.99 fps against a 60 target.
     // log(60/28.99) / log(1/0.72) = 2.2 -> 3 rungs, so 1.00 -> 0.61 in one step. Walking it cost
-    // about three minutes visibly at 29 fps (§1.3.6). The jump needs measured GPU cost — the
-    // device arm reports timestamps — because an fps deficit alone cannot price it.
+    // about three minutes visibly at 29 fps (§1.3.6).
     const scaler = new ResolutionScaler({ targetFps: 60 });
     feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
-    expect(scaler.observe(gpuBudget(28.99, 1_000 / 28.99))).toBe(0.61);
+    expect(scaler.observe(budget(28.99))).toBe(0.61);
   });
 
   it("never jumps further than the cap, however bad the window", () => {
     const scaler = new ResolutionScaler({ targetFps: 60 });
     feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
     // 1 fps against 60 implies far more than four rungs; four is what it takes.
-    expect(scaler.observe(gpuBudget(1, 100))).toBe(
-      RESOLUTION_SCALER.rungs[RESOLUTION_SCALER.maxDownRungs],
-    );
+    expect(scaler.observe(budget(1))).toBe(RESOLUTION_SCALER.rungs[RESOLUTION_SCALER.maxDownRungs]);
   });
 
   it("stops at the floor when the jump would overshoot it", () => {
     const scaler = new ResolutionScaler({ start: 0.32, targetFps: 60 });
     feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
-    expect(scaler.observe(gpuBudget(5, 200))).toBe(0.23);
+    expect(scaler.observe(budget(5))).toBe(0.23);
     expect(scaler.scale).toBe(0.23);
   });
 
@@ -139,10 +126,7 @@ describe("ResolutionScaler", () => {
     // The cooldown window missed the target too, and must not trigger a second fall.
     expect(scaler.observe(budget(20))).toBeUndefined();
     expect(scaler.scale).toBe(0.85);
-    // The next window repeats the deficit the probe already priced in: fewer pixels earned
-    // nothing, so the probe is refunded instead of deepened.
-    expect(scaler.observe(budget(58))).toBe(1);
-    expect(scaler.scale).toBe(1);
+    expect(scaler.observe(budget(58))).toBe(0.72);
   });
 
   it("stops at the floor and says so rather than pretending the budget was met", () => {
@@ -159,7 +143,7 @@ describe("ResolutionScaler", () => {
     expect(scaler.scale).toBe(1.0);
   });
 
-  it("temporarily holds the lower rung after oscillation, then reports and permits recovery", () => {
+  it("pins the lower rung after two down-up-down cycles across one boundary", () => {
     const scaler = new ResolutionScaler({ targetFps: 60 });
     feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
     expect(scaler.scaleSource).toBe("auto");
@@ -184,15 +168,11 @@ describe("ResolutionScaler", () => {
     scaler.observe(budget(58));
     expect(scaler.scale).toBe(0.85);
     expect(scaler.scaleSource).toBe("auto-pinned");
-    feed(scaler, AT_TARGET, RESOLUTION_SCALER.oscillationWindows - 1);
+    // Pinned means pinned: nothing moves it again this session, in either direction.
+    feed(scaler, AT_TARGET, 20);
     expect(scaler.scale).toBe(0.85);
-    expect(scaler.scaleSource).toBe("auto-pinned");
-    expect(scaler.observe(budget(AT_TARGET))).toBe(0.85); // propagate source change to renderer
-    expect(scaler.scaleSource).toBe("auto");
-    feed(scaler, AT_TARGET, RESOLUTION_SCALER.upWindows);
-    expect(scaler.scale).toBe(1);
-    expect(scaler.observe(budget(UNDER_TARGET))).toBeUndefined(); // resize cooldown
-    expect(scaler.observe(budget(UNDER_TARGET))).toBeLessThan(1);
+    feed(scaler, UNDER_TARGET, 20);
+    expect(scaler.scale).toBe(0.85);
   });
 
   it("scales its triggers to the configured target rather than assuming 60", () => {
@@ -202,7 +182,7 @@ describe("ResolutionScaler", () => {
     expect(scaler.observe(budget(30, 33.3))).toBeUndefined();
     const at60 = new ResolutionScaler({ targetFps: 60 });
     feed(at60, 60, RESOLUTION_SCALER.warmupWindows);
-    expect(at60.observe(gpuBudget(30, 1_000 / 30, 33.3))).toBe(0.61);
+    expect(at60.observe(budget(30, 33.3))).toBe(0.61);
   });
 
   it("refuses a target it cannot hold a budget against", () => {

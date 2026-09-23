@@ -452,7 +452,7 @@ Proves console, network, runtime, and readiness diagnostics stayed clean. **Use 
 
 ### `performance`
 
-Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, whole-frame or per-pass draw calls and triangles. **Use when** that is the thing the scenario must prove.
+Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, draw calls, and triangles. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.performance
 
@@ -462,17 +462,12 @@ Proves a live render sample exists and optionally bounds frame time, an fps floo
 | `minFps` | number | no |
 | `maxPhaseMsP95` | { [phase]: number } | no |
 | `maxDrawCalls` | number | no |
-| `maxPassDrawCalls` | { [pass: 'main' | 'shadow' | 'reflection' | 'nested']: number } | no |
-| `maxPassTriangles` | { [pass: 'main' | 'shadow' | 'reflection' | 'nested']: number } | no |
 | `maxTriangles` | number | no |
 
 
 ```json
 {
   "performance": {
-    "maxPassDrawCalls": {
-      "shadow": 400
-    },
     "maxPhaseMsP95": {
       "render": 12
     },

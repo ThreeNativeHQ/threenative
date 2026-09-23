@@ -9,7 +9,6 @@ import {
   type Vector3,
 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
-import { baseGeometryOf, isLodJoinProxy } from "./model-lod.js";
 import type { Viewport } from "./viewport.js";
 
 export interface IRaycastOptions {
@@ -187,30 +186,9 @@ export class ScenePicker {
   }
 
   #hitTest(object: Object3D, into: Intersection[]): void {
-    // A joined rung inserts a proxy object carrying the collapsed geometry but none of the authored
-    // node identity. Authored primitives are hidden from the render, never from a ray test, so the
-    // proxy must be skipped or a pick at distance would answer with an object the game never added.
-    if (isLodJoinProxy(object)) return;
     const tree = this.#treeFor(object);
-    if (tree === undefined) {
-      object.raycast(this.#raycaster, into);
-      return;
-    }
-    if (!(object instanceof Mesh)) {
-      tree.raycastObject3D(object, this.#raycaster, into);
-      return;
-    }
-    // A mesh the loader gave an automatic LOD chain swaps its `geometry` with the camera. Picking
-    // must not: the tree is built from LOD0, and the object is put back on LOD0 for the test so the
-    // hit is the authored surface whatever detail is currently drawn.
-    const base = baseGeometryOf(object);
-    const restore = base === object.geometry ? undefined : object.geometry;
-    if (restore !== undefined) object.geometry = base;
-    try {
-      tree.raycastObject3D(object, this.#raycaster, into);
-    } finally {
-      if (restore !== undefined) object.geometry = restore;
-    }
+    if (tree === undefined) object.raycast(this.#raycaster, into);
+    else tree.raycastObject3D(object, this.#raycaster, into);
   }
 
   #isExcluded(object: Object3D, excluded: ReadonlySet<Object3D>): boolean {
@@ -236,10 +214,8 @@ export class ScenePicker {
       (object.morphTargetInfluences?.length ?? 0) > 0
     )
       return undefined;
-    // The tree is built from the authored LOD0, never from whichever level the camera selected;
-    // the position attribute is shared across levels, so its version still tracks source changes.
-    const geometry = baseGeometryOf(object);
-    const position = object.geometry.attributes.position;
+    const geometry = object.geometry;
+    const position = geometry.attributes.position;
     if (position === undefined || position.count === 0) return undefined;
     const cached = this.#trees.get(geometry);
     if (cached !== undefined && cached.version === position.version) return cached.tree;

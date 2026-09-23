@@ -337,7 +337,7 @@ jobs:
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
-          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
       - name: Identify the complete native build toolchain
         id: native-toolchain
@@ -1041,11 +1041,9 @@ jobs:
       - run: pnpm quality
       - run: pnpm sync:agents --check
 
-  # The native lane guards targets that any package change can break. Its complete matrix runs on
-  # full selections after the hosted macOS, Windows, Android-emulator and iOS-simulator legs passed
-  # on the corrected native build — but it is deliberately not a `needs` of `ci-required`, so its
-  # 50–180 minute runtime cannot hold the merge verdict. PRD-373: the release lane validates the
-  # native rows for the exact candidate separately.
+  # The native lane guards targets that any package change can break. Its complete matrix is now a
+  # required reusable workflow after the hosted macOS, Windows, Android-emulator and iOS-simulator
+  # legs passed on the corrected native build.
   native-platforms:
     needs: scope
     if: needs.scope.outputs.selection == 'full'
@@ -1147,7 +1145,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain, website]
+    needs: [scope, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, native-platforms, supply-chain, website]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

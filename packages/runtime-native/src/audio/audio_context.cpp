@@ -273,13 +273,7 @@ void AudioBufferSourceNode::setBuffer(std::shared_ptr<AudioBuffer> buffer) {
 void AudioBufferSourceNode::start(double when, double offset, double duration) {
     if (isPlaying() || !buffer_) return;
 
-    // `when` is a point on the AudioContext timeline, not a delay from now: the Web Audio spec
-    // says so, and Three's `Audio.play()` passes `context.currentTime + delay` already absolute.
-    // Adding `currentTime()` a second time doubled the schedule, so a cue fired at t was held
-    // until 2t — every one-shot went silent for as long as the context had been alive, while
-    // loops started at t≈0 were unaffected. A zero or past `when` means "start now".
-    const double now = context_->currentTime();
-    startTime_ = when > now ? when : now;
+    startTime_ = context_->currentTime() + when;
     offsetTime_ = offset;
     durationTime_ = duration;
     playbackPosition_ = static_cast<size_t>(offset * buffer_->sampleRate());
@@ -292,9 +286,7 @@ void AudioBufferSourceNode::start(double when, double offset, double duration) {
 
 void AudioBufferSourceNode::stop(double when) {
     if (!isPlaying()) return;
-    // Absolute context time for the same reason `start` is: Three passes `currentTime + delay`.
-    const double now = context_->currentTime();
-    stopTime_.store(when > now ? when : now, std::memory_order_release);
+    stopTime_.store(context_->currentTime() + when, std::memory_order_release);
 }
 
 void AudioBufferSourceNode::process(float* output, size_t numFrames, int numChannels) {

@@ -137,17 +137,12 @@ test('the protected build context requires scope and workspace evidence, not the
     expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
     expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
   }
-  // The native matrix is still required for the exact candidate, just not by the merge verdict:
-  // the release lane consumes the `native-platforms` rows and run-summary reports them, so a
-  // native failure cannot pass unnoticed. Waiting on it in ci-required withheld every develop
-  // verdict for the whole 50–180 minute matrix while the plan already marked it exempt.
-  const jobBlock = (name) =>
-    ciWorkflow.match(
-      new RegExp(`\\n\\x20{2}${name}:\\n[\\s\\S]*?(?=\\n\\x20{2}[a-z0-9-]+:|\\s*$)`, 'u'),
-    )?.[0] ?? '';
-  expect(jobBlock('ci-required')).toContain('needs: [scope,');
-  expect(jobBlock('ci-required')).not.toContain('native-platforms');
-  expect(jobBlock('run-summary')).toContain('native-platforms');
+  // The native matrix is still required for the exact candidate, just not by this join: the
+  // release lane consumes the `native-platforms` rows, so a native failure cannot pass unnoticed.
+  const required = ciWorkflow.match(
+    /\n\x20{2}ci-required:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(required).toContain('native-platforms');
 });
 
 test('the desktop parity job keeps the name the release gate requires', () => {

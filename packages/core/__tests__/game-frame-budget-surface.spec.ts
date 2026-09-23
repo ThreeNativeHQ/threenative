@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { FRAME_BUDGET_MARKER } from "../src/frame-budget.js";
 import { defineGame } from "../src/game.js";
-import { type ICtx, Scene } from "../src/scene.js";
+import { Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -176,64 +176,6 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       );
     } finally {
       await game.stop();
-      Object.defineProperty(globalThis, "requestAnimationFrame", {
-        configurable: true,
-        value: requestFrame,
-      });
-    }
-  });
-
-  it("charges ctx.beforeRender work to the render phase instead of residual", async () => {
-    const canvas = testCanvas();
-    let frame: ((time: number) => void) | undefined;
-    const lines: string[] = [];
-    let clock = 0;
-    class Packing extends Scene {
-      static override readonly initialState = {};
-
-      override enter(ctx: ICtx): void {
-        ctx.beforeRender(() => {
-          clock += 5;
-        });
-      }
-    }
-    const game = defineGame({
-      frameBudget: { report: (line) => lines.push(line), reportEvery: 1 },
-      renderer: {
-        canvas,
-        preferWebGPU: false,
-        webgl2Factory: () => ({
-          domElement: canvas,
-          render: () => undefined,
-          setSize: () => undefined,
-        }),
-      },
-      scenes: { test: Packing },
-      start: "test",
-    });
-    const requestFrame = globalThis.requestAnimationFrame;
-    const nowSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
-    Object.defineProperty(globalThis, "requestAnimationFrame", {
-      configurable: true,
-      value: (callback: (time: number) => void) => {
-        frame = callback;
-        return 1;
-      },
-    });
-    try {
-      await game.start();
-      if (frame === undefined) throw new Error("Game did not start its loop.");
-      clock = 100;
-      frame(100);
-      const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
-      expect(marker, "no frame-budget window was reported").toBeDefined();
-      const reported = JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}");
-      // The callback's 5 ms is bracketed by renderStart, so it lands in render, not residual.
-      expect(reported.phases.render.p50).toBeCloseTo(5, 2);
-      expect(reported.phases.residual.p50).toBeCloseTo(0, 2);
-    } finally {
-      await game.stop();
-      nowSpy.mockRestore();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
         value: requestFrame,

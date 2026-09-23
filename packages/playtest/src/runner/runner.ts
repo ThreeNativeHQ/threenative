@@ -436,8 +436,6 @@ async function runStandalonePlaytestInternal(
       ...(scenario.assert?.sceneNodes === undefined
         ? {}
         : { sceneNodes: scenario.assert.sceneNodes.map(({ select }) => select) }),
-      // One armed capture per sample; absent means the bridge does no geometry work at all.
-      ...(scenario.assert?.geometry === undefined ? {} : { geometry: scenario.assert.geometry }),
     } as const;
     const labeledSamples: ILabeledPlaytestSample[] = [];
     const capturesAnonymousMovement = isAnonymousMovementScenario(scenario);

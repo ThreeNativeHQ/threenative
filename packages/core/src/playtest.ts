@@ -17,7 +17,6 @@ import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
-import { GEOMETRY_CAPTURE_CAPABILITY } from "./geometry-capture.js";
 import { PIPELINE_CENSUS_CAPABILITY } from "./pipeline-census.js";
 import { readRenderChainObservation } from "./render/chain.js";
 import type { ICtx } from "./scene.js";
@@ -40,7 +39,6 @@ export function playtest<
   let attached: Promise<void> | undefined;
   let startSceneEntered: Promise<void> | undefined;
   let disposePipelineCensus: (() => void) | undefined;
-  let disposeGeometryCapture: (() => void) | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
   // The tick a contact happened on, and the tick a published value changed on, are the two
   // halves of "the door opened because the plate was pressed". Both are drained per tick rather
@@ -125,33 +123,17 @@ export function playtest<
           sample: () => ({ pipelineCensus: pipelineCensus() as unknown as JsonValue }),
         });
       }
-      const geometryCapture = runtime?.geometryCapture;
-      if (runtime !== undefined && geometryCapture !== undefined) {
-        disposeGeometryCapture = runtime.observations.contribute({
-          capabilities: [GEOMETRY_CAPTURE_CAPABILITY],
-          // Nothing is armed, walked or hooked unless this request asked for a capture: the
-          // capability says the runtime can answer, not that every sample pays for one.
-          sample: async (request) =>
-            request.geometry === undefined
-              ? {}
-              : { geometry: (await geometryCapture(request.geometry)) as unknown as JsonValue },
-        });
-      }
       installRuntimeChannels(installation.bridge, runtime);
-      // A runner announced itself: it is the one consumer of per-frame render samples, so
-      // collection turns on exactly for playtest runs and stays off for every plain `pnpm dev`
-      // frame. It reads the same predicate as the boot hold below, because gating collection on
-      // the browser's half alone left every device and desktop run with an empty
-      // `runtimeDiagnosticsSeries` under an advertised `runtime.performance` — a native host
-      // announces itself through `TN_PLAYTEST_ENDPOINT`, not through the expected global.
-      if (runnerAnnounced()) runtime?.enableRuntimeDiagnostics?.();
+      // A runner announced itself before the page loaded: it is the one consumer of per-frame
+      // render samples, so collection turns on exactly for playtest runs and stays off for
+      // every plain `pnpm dev` frame.
+      if ((globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true)
+        runtime?.enableRuntimeDiagnostics?.();
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
         disposePipelineCensus?.();
         disposePipelineCensus = undefined;
-        disposeGeometryCapture?.();
-        disposeGeometryCapture = undefined;
         dispose?.();
         dispose = undefined;
         attached = undefined;
@@ -213,20 +195,6 @@ export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EX
  */
 function shouldHoldUntilAttached(options: IPlaytestOptions): boolean {
   if (options.holdUntilAttached !== undefined) return options.holdUntilAttached;
-  return runnerAnnounced();
-}
-
-/**
- * Whether a runner announced itself, whichever lane it came from.
- *
- * Browser runners set the expected global before navigation; a native host exposes
- * `TN_PLAYTEST_ENDPOINT` when a device or desktop transport is attached. Both decisions that
- * depend on an announcement — holding the boot, and turning per-frame render collection on — read
- * this one predicate: they were written separately once, and the collection half shipped with only
- * the browser branch, so every device and desktop run answered an advertised
- * `runtime.performance` with an empty series.
- */
-function runnerAnnounced(): boolean {
   const host = globalThis as Record<string, unknown>;
   return host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true || host.TN_PLAYTEST_ENDPOINT !== undefined;
 }
@@ -254,7 +222,7 @@ function holdUntilAttached(
       );
     }, timeoutMs);
     // Node keeps the process alive for a pending timer; a held game must not outlive its host.
-    timer.unref?.();
+    (timer as unknown as { unref?: () => void }).unref?.();
     const release = () => {
       if (settled) return;
       settled = true;
@@ -322,17 +290,14 @@ function addRuntimeCapabilities(
   }
   return { ...description, capabilities };
 }
-async function addRuntimeObservations(
+function addRuntimeObservations(
   snapshot: IPlaytestObservationSnapshot,
   request: IPlaytestSampleRequest,
   contributions: readonly IGameObservationContribution[],
-): Promise<IPlaytestObservationSnapshot> {
+): IPlaytestObservationSnapshot {
   const result: Record<string, unknown> = { ...snapshot };
   for (const contribution of contributions) {
-    // Awaited in order: an observation that waits for a presented frame — a geometry capture —
-    // cannot be produced inside the request that asked for it, and the collision check below has
-    // to see the slices in a stable order.
-    const slice = await contribution.sample(request);
+    const slice = contribution.sample(request);
     if (typeof slice !== "object" || slice === null || Array.isArray(slice)) {
       throw new TypeError("A runtime observation contribution must return a top-level object.");
     }

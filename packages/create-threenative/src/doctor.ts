@@ -203,7 +203,7 @@ interface IMcpServerSpec {
  * resolves, so it must name core — and core's own version, which `doctor.spec.ts` holds equal to
  * `packages/core/package.json`. */
 const CORE_PACKAGE_NAME = "@threenative/core";
-const CORE_PACKAGE_VERSION = "0.3.3";
+const CORE_PACKAGE_VERSION = "0.3.2";
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
   "threenative-blender",
@@ -311,54 +311,19 @@ const SHAPE_VERIFIABLE_HOSTS: readonly IMcpHost[] = (MCP_HOSTS as readonly IMcpH
 
 type CompositorProbe = (environment: NodeJS.ProcessEnv) => boolean | undefined;
 
-// `_NET_WM_CM_S0` is the X11 *selection* a compositing manager owns; `xprop -root` reads a root
-// *property* of the same name and reports "not found" even while a compositor holds the selection,
-// so it cannot answer this. Node has no X11 client, so this ctypes shim queries the selection owner
-// exactly as the runtime's overlay guard does. It prints `unknown` rather than guessing when it
-// cannot measure, and `detectX11Compositor` maps that to `undefined`.
-const X11_COMPOSITOR_PROBE = [
-  "import ctypes, ctypes.util, sys",
-  'path = ctypes.util.find_library("X11")',
-  "if not path:",
-  "    print('unknown'); sys.exit(0)",
-  "x = ctypes.CDLL(path)",
-  "x.XOpenDisplay.restype = ctypes.c_void_p",
-  "x.XOpenDisplay.argtypes = [ctypes.c_char_p]",
-  "display = x.XOpenDisplay(None)",
-  "if not display:",
-  "    print('unknown'); sys.exit(0)",
-  "x.XDefaultScreen.restype = ctypes.c_int",
-  "x.XDefaultScreen.argtypes = [ctypes.c_void_p]",
-  "screen = x.XDefaultScreen(display)",
-  "x.XInternAtom.restype = ctypes.c_ulong",
-  "x.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]",
-  'atom = x.XInternAtom(display, ("_NET_WM_CM_S%d" % screen).encode(), 0)',
-  "x.XGetSelectionOwner.restype = ctypes.c_ulong",
-  "x.XGetSelectionOwner.argtypes = [ctypes.c_void_p, ctypes.c_ulong]",
-  "owner = x.XGetSelectionOwner(display, atom)",
-  "x.XCloseDisplay.argtypes = [ctypes.c_void_p]",
-  "x.XCloseDisplay(display)",
-  "print('1' if owner else '0')",
-].join("\n");
-
 export function detectX11Compositor(
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean | undefined {
   if (environment.DISPLAY === undefined) return undefined;
   try {
-    const output = execFileSync("python3", ["-c", X11_COMPOSITOR_PROBE], {
+    const output = execFileSync("xprop", ["-root", "_NET_WM_CM_S0"], {
       encoding: "utf8",
       env: { ...environment },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const answer = output.trim();
-    if (answer === "1") return true;
-    if (answer === "0") return false;
-    return undefined;
-  } catch {
-    // python3 missing, or the shim could not run: the answer is unknown, never a false "no
-    // compositor" that would veto a build the session supports.
-    return undefined;
+    return /window id\s*#/u.test(output);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : false;
   }
 }
 
@@ -368,24 +333,11 @@ export function probeDesktopOverlay(
 ): IDesktopOverlayProbe {
   const wayland =
     environment.WAYLAND_DISPLAY !== undefined || environment.XDG_SESSION_TYPE === "wayland";
-  // A Wayland session never runs the overlay natively: the host selects SDL's X11 driver and
-  // `GDK_BACKEND=x11`, so the web view is an Xwayland window and the Wayland compositor, which a
-  // Wayland session always has, blends its alpha. There is no separate compositor to find — only
-  // Xwayland, without which the game window itself could not be created.
   if (wayland) {
-    if (environment.DISPLAY === undefined) {
-      return {
-        detail:
-          "a Wayland session without an X11 display (Xwayland) cannot host the desktop overlay",
-        fix: "Enable Xwayland for this session or use the web UI target.",
-        status: "fail",
-      };
-    }
     return {
-      detail:
-        "the runtime selects Xwayland (SDL x11, GDK_BACKEND=x11) and the Wayland compositor blends the overlay's alpha",
-      fix: "",
-      status: "ok",
+      detail: "the transparent container could not be created on this Wayland/Xwayland session",
+      fix: "Run the desktop target under an X11 session (for example SDL_VIDEODRIVER=x11) or use the web UI target.",
+      status: "fail",
     };
   }
   if (environment.DISPLAY === undefined) {
@@ -406,13 +358,13 @@ export function probeDesktopOverlay(
   if (present === false) {
     return {
       detail: "no compositing manager is running, so nothing would blend the overlay",
-      fix: "Start a compositing manager (xcompmgr -n, picom or compton -- the three the repository's own private displays borrow) or run the desktop target under a composited X11 session.",
+      fix: "Start a compositing manager or run the desktop target under a composited X11 session.",
       status: "fail",
     };
   }
   return {
     detail: "the X11 compositor probe could not run, so overlay transparency is unknown",
-    fix: "Install python3 and rerun doctor in the desktop display session.",
+    fix: "Install xprop and rerun doctor in the desktop display session.",
     status: "warn",
   };
 }
@@ -666,7 +618,7 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
     method: "initialize",
     params: {
       capabilities: {},
-      clientInfo: { name: "threenative-doctor", version: "0.3.3" },
+      clientInfo: { name: "threenative-doctor", version: "0.3.2" },
       protocolVersion: "2025-06-18",
     },
   });

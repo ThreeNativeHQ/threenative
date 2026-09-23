@@ -21,12 +21,6 @@
  * instead of skipping.
  */
 
-import {
-  FRAME_PASS_KINDS,
-  type FramePassKind,
-  type IRenderPassSample,
-} from "./render-pass-budget.js";
-
 /** Marker printed once per report window. */
 export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET";
 /** Marker printed the moment a gap between presented frames exceeds `hitchMs`. */
@@ -147,17 +141,6 @@ export interface IFrameBudgetSummary {
   readonly max: number;
 }
 
-/**
- * One render-pass kind's submissions across a window, so a change that trades triangles for CPU is
- * visible in the same report as the milliseconds it traded for.
- */
-export interface IFrameBudgetPassSummary {
-  readonly draws: IFrameBudgetSummary;
-  /** Frames in the window that submitted a pass of this kind. */
-  readonly frames: number;
-  readonly triangles: IFrameBudgetSummary;
-}
-
 export interface IFrameBudgetWindow {
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
@@ -177,44 +160,19 @@ export interface IFrameBudgetWindow {
   /** Each phase's mean as a fraction of the mean presented interval. */
   readonly shares: Readonly<Record<FrameBudgetPhase, number>>;
   /**
-   * Draw calls and triangles submitted per render pass, when a pass recorder was installed.
-   *
-   * Absent rather than defaulted: a renderer whose submissions nothing measured and a frame that
-   * submitted nothing are different facts, and a zero would merge them. A kind no frame submitted
-   * is absent; `frames` says how many frames did.
-   */
-  readonly passes?: Readonly<Partial<Record<FramePassKind, IFrameBudgetPassSummary>>>;
-  /**
    * The resolution and sampling this window's frames were drawn at, when the loop reported one.
    * Absent rather than defaulted: a consumer asserting on it must fail loudly instead of reading
    * a fabricated `1.0` that no frame was ever drawn at.
    */
   readonly surface?: IFrameSurfaceState;
   /**
-   * GPU milliseconds per resolved frame in this window, from `timestamp-query`, summarised like a
-   * phase — mean/p50/p95/p99/max over the frames the device actually reported.
+   * GPU milliseconds for a frame in this window, from `timestamp-query`, when the adapter has it.
    *
-   * A single instantaneous `info.render.timestamp` read is lagged by up to `gpuAgeFrames` and
-   * spread 3.5x between consecutive reads of one steady frame, so it is not the frame's GPU cost
-   * and is not what this reports. Absent rather than zero when no frame resolved a reading: an
-   * adapter without timestamps and a frame that genuinely cost no GPU time are different facts,
-   * and a zero would merge them.
-   */
-  readonly gpu?: IFrameBudgetSummary;
-  /**
-   * Frames in the window whose GPU reading had not advanced since the previous frame, or was
-   * absent. `gpu.samples + gpuStale` is the frames the device was asked about; a window where
-   * every frame is stale reports `gpu` absent rather than the last reading looking current.
-   */
-  readonly gpuStale: number;
-  /**
-   * The window mean of `gpu`, when present. The scalar the resolution scaler reads.
-   *
-   * It is the same number as `gpu.mean`; a single field keeps the scaler and the perf report on
-   * one series rather than a second instantaneous read.
+   * Absent rather than zero when there is nothing to report: an adapter without timestamps and a
+   * frame that genuinely cost no GPU time are different facts, and a zero would merge them.
    */
   readonly gpuMs?: number;
-  /** Age of the most recent resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
+  /** Age of the resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
   readonly gpuAgeFrames?: number;
 }
 
@@ -240,6 +198,8 @@ export interface IFrameBudgetOptions {
    * loop, which is the only place that knows both the renderer and the window boundary.
    */
   readonly readSurface?: () => IFrameSurfaceState;
+  /** Reads the last resolved GPU frame time, called once per reported window. */
+  readonly readGpuMs?: () => number | undefined;
   /** Reads the successful GPU query frame age, not the age of the last resolve attempt. */
   readonly readGpuAgeFrames?: () => number | undefined;
 }
@@ -334,24 +294,13 @@ export class FrameBudget {
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
   #readSurface: (() => IFrameSurfaceState) | undefined;
+  #readGpuMs: (() => number | undefined) | undefined;
   #readGpuAgeFrames: (() => number | undefined) | undefined;
   #scratch: Float64Array;
   #presented: Ring;
   #frame: Ring;
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
-  #gpu: Ring;
-  #passDrawRings: Record<FramePassKind, Ring>;
-  #passTriangleRings: Record<FramePassKind, Ring>;
-  #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
-  #passesThisFrame: IRenderPassSample[] = [];
-  // The resolved frame the last sample belonged to, so a reading still in flight is not measured
-  // twice. It survives a window boundary: the first frame of a new window can still be showing the
-  // previous window's resolved frame.
-  #lastGpuFrame: number | undefined;
-  #gpuThisFrame: number | undefined;
-  #gpuStaleThisFrame = false;
-  #gpuStaleInWindow = 0;
   #open = false;
   #frameStart = 0;
   #simulationEnd: number | undefined;
@@ -378,30 +327,18 @@ export class FrameBudget {
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
     this.#readSurface = options.readSurface;
+    this.#readGpuMs = options.readGpuMs;
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
-    this.#gpu = new Ring(capacity);
     this.#phaseRings = {
       hostGap: new Ring(capacity),
       overlay: new Ring(capacity),
       render: new Ring(capacity),
       residual: new Ring(capacity),
       update: new Ring(capacity),
-    };
-    this.#passDrawRings = {
-      main: new Ring(capacity),
-      nested: new Ring(capacity),
-      reflection: new Ring(capacity),
-      shadow: new Ring(capacity),
-    };
-    this.#passTriangleRings = {
-      main: new Ring(capacity),
-      nested: new Ring(capacity),
-      reflection: new Ring(capacity),
-      shadow: new Ring(capacity),
     };
   }
 
@@ -419,8 +356,6 @@ export class FrameBudget {
     this.#renderMs = 0;
     this.#overlayMs = 0;
     this.#substepCount = 0;
-    this.#gpuThisFrame = undefined;
-    this.#gpuStaleThisFrame = false;
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
     this.#presentedDelta =
       this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
@@ -445,58 +380,6 @@ export class FrameBudget {
   }
 
   /**
-   * Records one presented frame's GPU duration, from a resolved `timestamp-query`.
-   *
-   * `ms` is `undefined` when the device reported no reading for the frame. `frame` is the
-   * Three.js frame id the duration belongs to — `gpuFrameSample`/`gpuFrameAge` on the renderer.
-   * A reading whose `frame` has not advanced since the previous frame is the previous frame's
-   * resolve still in flight, so it is counted as stale and not pushed again; that repetition was
-   * what made one lagged sample read as the current frame's cost. Without a `frame` a reading is
-   * always taken as fresh, since there is nothing to tell repeats from a genuine re-measurement.
-   *
-   * Once per frame. A window with no reading at all reports `gpu` absent, never a zero.
-   */
-  addGpuMs(ms: number | undefined, frame?: number): void {
-    if (!this.#open) throw new Error("FrameBudget.addGpuMs called outside a frame.");
-    if (ms === undefined) {
-      this.#gpuStaleThisFrame = true;
-      return;
-    }
-    if (!Number.isFinite(ms) || ms < 0) {
-      throw new Error(`Frame budget gpuMs must be a non-negative number, received ${String(ms)}.`);
-    }
-    if (frame !== undefined) {
-      if (!Number.isInteger(frame) || frame < 0) {
-        throw new Error(
-          `Frame budget gpu frame must be a non-negative integer, received ${String(frame)}.`,
-        );
-      }
-      if (frame === this.#lastGpuFrame) {
-        this.#gpuStaleThisFrame = true;
-        return;
-      }
-      this.#lastGpuFrame = frame;
-    }
-    this.#gpuThisFrame = ms;
-  }
-
-  /**
-   * Records the frame's per-pass submissions, from `RenderPassBudget` or any other source. At most
-   * one entry per kind per frame is meaningful; a second of the same kind is summed by the caller.
-   * An unknown kind throws rather than being dropped, the same fail-closed rule as a phase.
-   */
-  addRenderPasses(passes: readonly IRenderPassSample[]): void {
-    if (!this.#open) throw new Error("FrameBudget.addRenderPasses called outside a frame.");
-    for (const pass of passes) {
-      if (!(FRAME_PASS_KINDS as readonly string[]).includes(pass.kind))
-        throw new Error(
-          `FrameBudget received an unknown pass kind: ${String(pass.kind)}. Expected one of: ${FRAME_PASS_KINDS.join(", ")}.`,
-        );
-      this.#passesThisFrame.push(pass);
-    }
-  }
-
-  /**
    * Closes the frame and returns its phase split, or `undefined` when the frame was a hitch and
    * therefore excluded — a 27-second startup stall is not a frame time and must not enter a
    * percentile anybody is asked to act on.
@@ -516,7 +399,6 @@ export class FrameBudget {
 
     const isHitch = this.#presentedDelta >= this.hitchMs;
     if (isHitch) {
-      this.#passesThisFrame.length = 0;
       this.#hitchesInWindow += 1;
       this.#report(
         `${FRAME_HITCH_MARKER}:${JSON.stringify({
@@ -551,14 +433,6 @@ export class FrameBudget {
     this.#phaseRings.render.push(this.#renderMs);
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
-    if (this.#gpuThisFrame !== undefined) this.#gpu.push(this.#gpuThisFrame);
-    if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
-    for (const pass of this.#passesThisFrame) {
-      this.#passDrawRings[pass.kind].push(pass.draws);
-      this.#passTriangleRings[pass.kind].push(pass.triangles);
-      this.#passFrames[pass.kind] += 1;
-    }
-    this.#passesThisFrame.length = 0;
     this.#framesInWindow += 1;
     this.#maybeReport();
     return sample;
@@ -576,24 +450,18 @@ export class FrameBudget {
     };
     const share = (value: number): number =>
       presented.mean === 0 ? 0 : Math.round((value / presented.mean) * 1_000) / 1_000;
-    const passes: Partial<Record<FramePassKind, IFrameBudgetPassSummary>> = {};
-    for (const kind of FRAME_PASS_KINDS) {
-      if (this.#passFrames[kind] === 0) continue;
-      passes[kind] = {
-        draws: this.#passDrawRings[kind].summarize(this.#scratch),
-        frames: this.#passFrames[kind],
-        triangles: this.#passTriangleRings[kind].summarize(this.#scratch),
-      };
-    }
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
-    const gpuAgeFrames = this.#readGpuAgeFrames?.();
+    const gpuMs = this.#readGpuMs?.();
+    const gpuAgeFrames = gpuMs === undefined ? undefined : this.#readGpuAgeFrames?.();
     if (gpuAgeFrames !== undefined && (!Number.isInteger(gpuAgeFrames) || gpuAgeFrames < 0))
       throw new Error(
         `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,
       );
-    const gpuSummary = this.#gpu.summarize(this.#scratch);
-    const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
+    if (gpuMs !== undefined && (!Number.isFinite(gpuMs) || gpuMs < 0))
+      throw new Error(
+        `Frame budget gpuMs must be a non-negative number, received ${String(gpuMs)}.`,
+      );
     return {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
@@ -609,12 +477,7 @@ export class FrameBudget {
         update: share(phases.update.mean),
       },
       substeps: this.#substeps.summarize(this.#scratch),
-      ...(Object.keys(passes).length === 0 ? {} : { passes }),
-      // One series, two readers: `gpu` is the distribution and `gpuMs` is its mean for the scaler
-      // and the perf record, which want a single number.
-      ...(gpu === undefined ? {} : { gpu }),
-      gpuStale: this.#gpuStaleInWindow,
-      ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
+      ...(gpuMs === undefined ? {} : { gpuMs: round(gpuMs) }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(surface === undefined ? {} : { surface }),
       window: this.#windowIndex + 1,
@@ -629,14 +492,7 @@ export class FrameBudget {
     this.#presented.reset();
     this.#frame.reset();
     this.#substeps.reset();
-    this.#gpu.reset();
-    this.#gpuStaleInWindow = 0;
     for (const phase of FRAME_BUDGET_PHASES) this.#phaseRings[phase].reset();
-    for (const kind of FRAME_PASS_KINDS) {
-      this.#passDrawRings[kind].reset();
-      this.#passTriangleRings[kind].reset();
-      this.#passFrames[kind] = 0;
-    }
     this.#framesInWindow = 0;
     this.#hitchesInWindow = 0;
     // After the reset, so a consumer that changes the scene from this callback changes it for the

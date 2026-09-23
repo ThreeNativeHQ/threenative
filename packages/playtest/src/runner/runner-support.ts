@@ -136,7 +136,6 @@ export async function provideRunDisplay(): Promise<IProvidedDisplay> {
   const provided = await provideDisplay();
   writeCaptureState({
     captureDisplay: {
-      ...(provided.compositor === undefined ? {} : { compositor: provided.compositor }),
       ...(provided.display === undefined ? {} : { display: provided.display }),
       ...(provided.strategy.kind === "private-xvfb" ? { screen: provided.strategy.screen } : {}),
       strategy: provided.strategy.kind,
@@ -268,11 +267,6 @@ export function buildReport(
       ...(afterSnapshot?.pipelineCensus === undefined && beforeSnapshot?.pipelineCensus === undefined
         ? {}
         : { pipelineCensus: afterSnapshot?.pipelineCensus ?? beforeSnapshot?.pipelineCensus }),
-      // Like the pipeline census: a report about the frame it was requested on, kept whole. The
-      // last sample wins, because a capture describes the world as the run left it.
-      ...(afterSnapshot?.geometry === undefined && beforeSnapshot?.geometry === undefined
-        ? {}
-        : { geometry: afterSnapshot?.geometry ?? beforeSnapshot?.geometry }),
       ...(afterSnapshot?.renderChain === undefined && beforeSnapshot?.renderChain === undefined
         ? {}
         : { renderChain: afterSnapshot?.renderChain ?? beforeSnapshot?.renderChain }),

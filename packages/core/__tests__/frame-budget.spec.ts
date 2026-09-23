@@ -8,7 +8,6 @@ import {
   type IFramePhaseSample,
 } from "../src/frame-budget.js";
 import { FixedStepLoop } from "../src/loop.js";
-import type { IRenderPassSample } from "../src/render-pass-budget.js";
 
 /**
  * A scripted device frame. The numbers are the measured Pixel 8 shape from
@@ -261,8 +260,7 @@ describe("FixedStepLoop with a frame budget", () => {
       onRender: () => {
         clock += 40;
         budget.addRender(40);
-        budget.addRenderPasses([MAIN_PASS, SHADOW_PASS]);
-        return { drawCalls: 7, passes: [MAIN_PASS, SHADOW_PASS] };
+        return { drawCalls: 7 };
       },
       onUpdate: () => {
         clock += 2;
@@ -282,8 +280,6 @@ describe("FixedStepLoop with a frame budget", () => {
     expect(last?.phases?.render).toBeCloseTo(40, 2);
     expect(last?.phases?.update).toBeCloseTo(2, 2);
     expect(last?.drawCalls).toBe(7);
-    // The per-pass split rides the same sample as drawCalls and phases.
-    expect(last?.passes).toEqual([MAIN_PASS, SHADOW_PASS]);
     const window = parseWindow(
       lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`)) ?? "",
     );
@@ -329,72 +325,5 @@ describe("FixedStepLoop with a frame budget", () => {
 
     expect(() => loop.stepFrame(0)).toThrow("renderer failed");
     expect(() => loop.stepFrame(16)).not.toThrow();
-  });
-});
-
-const MAIN_PASS: IRenderPassSample = { draws: 10, kind: "main", triangles: 100 };
-const SHADOW_PASS: IRenderPassSample = { draws: 4, kind: "shadow", triangles: 40 };
-const REFLECTION_PASS: IRenderPassSample = { draws: 6, kind: "reflection", triangles: 60 };
-
-function driveFrameWithPasses(
-  budget: FrameBudget,
-  clock: { now: number; timestamp: number },
-  passes: readonly IRenderPassSample[],
-): void {
-  clock.now += DEVICE_FRAME.hostGap;
-  clock.timestamp += DEVICE_FRAME.presented;
-  budget.beginFrame(clock.timestamp, clock.now);
-  clock.now += DEVICE_FRAME.update;
-  budget.markSimulationEnd(clock.now, 3);
-  budget.addRender(DEVICE_FRAME.render);
-  clock.now += DEVICE_FRAME.render;
-  budget.addRenderPasses(passes);
-  clock.now += DEVICE_FRAME.overlay;
-  budget.addOverlay(DEVICE_FRAME.overlay);
-  clock.now += DEVICE_FRAME.overlay;
-  clock.now += DEVICE_FRAME.residual;
-  budget.endFrame(clock.now);
-}
-
-describe("FrameBudget pass split", () => {
-  it("reports draws and triangles per pass beside the phase split", () => {
-    const { budget, lines } = collectingBudget(4);
-    const clock = { now: 0, timestamp: 0 };
-    for (let index = 0; index < 4; index += 1)
-      driveFrameWithPasses(budget, clock, [MAIN_PASS, SHADOW_PASS, REFLECTION_PASS]);
-
-    const window = parseWindow(lines[0] ?? "");
-    // The phase split is untouched by the pass split.
-    expect(window.phases.render.p50).toBeCloseTo(DEVICE_FRAME.render, 2);
-    expect(window.passes?.main?.draws.p50).toBe(10);
-    expect(window.passes?.main?.triangles.p50).toBe(100);
-    expect(window.passes?.main?.frames).toBe(4);
-    expect(window.passes?.shadow?.draws.p50).toBe(4);
-    expect(window.passes?.reflection?.triangles.p50).toBe(60);
-  });
-
-  it("omits a kind no frame submitted, so absence is reported rather than zero", () => {
-    const { budget, lines } = collectingBudget(2);
-    const clock = { now: 0, timestamp: 0 };
-    for (let index = 0; index < 2; index += 1) driveFrameWithPasses(budget, clock, [MAIN_PASS]);
-    const window = parseWindow(lines[0] ?? "");
-    expect(window.passes?.main?.draws.p50).toBe(10);
-    expect(window.passes?.shadow).toBeUndefined();
-    expect(window.passes?.reflection).toBeUndefined();
-  });
-
-  it("reports no passes at all when nothing measured them", () => {
-    const budget = new FrameBudget({ report: () => undefined });
-    expect(budget.window().passes).toBeUndefined();
-  });
-
-  it("throws on a pass kind it does not know rather than dropping it", () => {
-    const budget = new FrameBudget({ report: () => undefined });
-    budget.beginFrame(0, 0);
-    expect(() =>
-      budget.addRenderPasses([
-        { draws: 1, kind: "unknown" as IRenderPassSample["kind"], triangles: 1 },
-      ]),
-    ).toThrow(/pass kind/u);
   });
 });
