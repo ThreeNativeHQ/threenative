@@ -3,10 +3,10 @@
 import { createServer } from 'node:http';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { PNG } from 'pngjs';
@@ -95,8 +95,10 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     prebuiltArtifact: undefined,
     physicalEvidence: undefined,
     profile: PRODUCTION_PROFILE,
+    project: undefined,
     renderSize: undefined,
     repetitions: 3,
+    scenario: undefined,
     sourceSha: undefined,
     target: undefined,
     warmup: 60,
@@ -116,9 +118,11 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     else if (flag === '--prebuilt-artifact') { explicit.add('prebuiltArtifact'); options.prebuiltArtifact = nextValue(argv, ++index, flag); }
     else if (flag === '--physical-evidence') { explicit.add('physicalEvidence'); options.physicalEvidence = nextValue(argv, ++index, flag); }
     else if (flag === '--profile') options.profile = nextValue(argv, ++index, flag);
+    else if (flag === '--project') { explicit.add('project'); options.project = nextValue(argv, ++index, flag); }
     else if (flag === '--regression') options.profile = REGRESSION_PROFILE;
     else if (flag === '--render-size') { explicit.add('renderSize'); options.renderSize = parseRenderSize(nextValue(argv, ++index, flag)); }
     else if (flag === '--repetitions') { explicit.add('repetitions'); options.repetitions = positiveInteger(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--scenario') { explicit.add('scenario'); options.scenario = nextValue(argv, ++index, flag); }
     else if (flag === '--source-sha') { explicit.add('sourceSha'); options.sourceSha = nextValue(argv, ++index, flag); }
     else if (flag === '--target') { explicit.add('target'); options.target = nextValue(argv, ++index, flag); }
     else if (flag === '--warmup') { explicit.add('warmup'); options.warmup = positiveNumber(nextValue(argv, ++index, flag), flag); }
@@ -136,6 +140,15 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
   return validateProductionOptions(options);
 }
 
+// Lexical containment: both paths were resolved from the same --project root in normalizeOptions,
+// so a symlinked project still passes and the staging re-anchor stays inside the copy. A scenario
+// that escapes (../outside.json or an absolute outside path) is refused before it can be read
+// outside staging or overwrite a generated scenario path.
+function scenarioInsideProject(project, scenario) {
+  const rel = relative(project, scenario);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
 export function validateProductionOptions(input) {
   const options = normalizeOptions(input);
   if (options.help) return options;
@@ -150,6 +163,15 @@ export function validateProductionOptions(input) {
   }
   if (options.control !== undefined && !supportedControls.has(options.control)) {
     throw new ProductionEvidenceError('TN_PROD_CONTROL_UNSUPPORTED', `Production control '${options.control}' is not supported.`);
+  }
+  if (options.scenario !== undefined && options.project === undefined) {
+    throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', '--scenario requires --project so an existing project is measured against its own scenario.');
+  }
+  if (options.scenario !== undefined && !scenarioInsideProject(options.project, options.scenario)) {
+    throw new ProductionEvidenceError('TN_PROD_SCENARIO_OUTSIDE_PROJECT', `--scenario '${basename(options.scenario)}' must live inside --project '${basename(options.project)}'.`);
+  }
+  if (options.target === 'fixture' && options.project !== undefined) {
+    throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', '--project is not valid for the fixture negative control.');
   }
   if (options.target === 'fixture' && options.control === undefined) {
     throw new ProductionEvidenceError('TN_PROD_FIXTURE_CONTROL_REQUIRED', 'The fixture target is available only as an explicit negative control.');
@@ -201,7 +223,7 @@ export async function runProductionProfile(input, dependencies = {}) {
 
 export async function collectProduction(options, context, runId) {
   const tools = resolveProductionTools();
-  if (tools.scaffoldCli === undefined || !await fileExists(tools.scaffoldCli)) {
+  if (options.project === undefined && (tools.scaffoldCli === undefined || !await fileExists(tools.scaffoldCli))) {
     throw new ProductionEvidenceError(
       'TN_PROD_SCAFFOLDER_UNAVAILABLE',
       "The installed 'create-threenative' package does not expose its built scaffolder; install it or run the repository build first.",
@@ -218,7 +240,7 @@ export async function collectProduction(options, context, runId) {
   const project = join(temporaryRoot, 'platformer');
   const startedAt = new Date().toISOString();
   try {
-    await scaffoldPlatformer(project, tools);
+    await stageProductionProject(options, project, tools);
     tools.workloadSourceHash = await hashPath(join(project, 'src'));
     const scenarios = await writeRunScenarios(project, options);
     const artifactsRoot = join(project, 'artifacts', 'production');
@@ -252,6 +274,10 @@ function normalizeOptions(input = {}) {
   const defaultRenderSize = input.hostedSoftware === true && target === 'desktop'
     ? { height: 720, width: 1280 }
     : { height: 1080, width: 1920 };
+  const project = input.project === undefined ? undefined : resolve(input.project);
+  const scenario = input.scenario === undefined
+    ? undefined
+    : project === undefined ? resolve(input.scenario) : resolve(project, input.scenario);
   return {
     audioEvidence: input.audioEvidence,
     coldStarts: input.coldStarts ?? (regression ? REGRESSION_COLLECTION_PROFILE.coldStarts : 1),
@@ -263,9 +289,11 @@ function normalizeOptions(input = {}) {
     out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
     prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
     physicalEvidence: input.physicalEvidence,
+    project,
     renderSize: renderSize ?? defaultRenderSize,
     profile,
     repetitions: input.repetitions ?? (regression ? 1 : 3),
+    scenario,
     sourceSha: input.sourceSha,
     target,
     warmup: input.warmup ?? (regression ? 5 : 60),
@@ -274,6 +302,47 @@ function normalizeOptions(input = {}) {
 
 function warmupFramesFor(options) {
   return Math.max(0, Math.ceil((options.warmup ?? 0) * 60));
+}
+
+// Directories the judge regenerates itself. Copying a previous build measures stale bytes and
+// copying node_modules moves gigabytes; node_modules is linked into the staged copy instead.
+const PROJECT_SKIP_ENTRIES = new Set(['.runtime-mailbox', '.threenative', 'artifacts', 'dist', 'dist-native', 'node_modules']);
+
+// The default scaffold is built and thrown away. An existing project is copied first so every
+// instrumented file, scenario and build output lands in the copy and the source is never touched.
+export async function stageProductionProject(options, project, tools, dependencies = {}) {
+  if (options.project === undefined) {
+    await (dependencies.scaffoldPlatformer ?? scaffoldPlatformer)(project, tools);
+    return project;
+  }
+  const copy = dependencies.cp ?? cp;
+  const link = dependencies.symlink ?? symlink;
+  // Realpath first: a symlinked --project must stage a copy of the target, never write through it.
+  const source = await realpath(options.project).catch(() => undefined);
+  const details = source === undefined ? undefined : await stat(source).catch(() => undefined);
+  if (details === undefined || !details.isDirectory()) {
+    throw new ProductionEvidenceError('TN_PROD_PROJECT_MISSING', `--project '${basename(options.project)}' is not an existing project directory.`);
+  }
+  await copy(source, project, {
+    // Dereference so a nested symlink (for example src/main.ts into another checkout) becomes a
+    // real staged file; instrumentation then writes the copy instead of through to its source.
+    dereference: true,
+    recursive: true,
+    filter: (candidate) => {
+      const top = relative(source, candidate).split(sep)[0];
+      return top === '' || !PROJECT_SKIP_ENTRIES.has(top);
+    },
+  });
+  // node_modules is skipped by the filter above and linked wholesale, never copied or instrumented.
+  if (existsSync(join(source, 'node_modules'))) {
+    await link(join(source, 'node_modules'), join(project, 'node_modules'));
+  }
+  if (options.scenario !== undefined) {
+    // The staged copy is the only project the judge may read; re-anchor a scenario named inside
+    // the source so runs measure the staged snapshot, not the file the developer may still edit.
+    options.scenario = join(project, relative(options.project, options.scenario));
+  }
+  return project;
 }
 
 async function scaffoldPlatformer(project, tools) {
@@ -351,7 +420,10 @@ function nativeDiagnostics(assertions) {
 }
 
 export async function writeRunScenarios(project, options) {
-  const source = JSON.parse(await readFile(join(project, platformerScenario), 'utf8'));
+  const scenarioPath = options.scenario ?? join(project, platformerScenario);
+  const source = JSON.parse(await readFile(scenarioPath, 'utf8').catch(() => {
+    throw new ProductionEvidenceError('TN_PROD_SCENARIO_MISSING', `Production scenario '${basename(scenarioPath)}' was not found.`);
+  }));
   const sourceAssertions = source.assert && typeof source.assert === 'object' && !Array.isArray(source.assert)
     ? source.assert
     : {};
@@ -1585,6 +1657,8 @@ function profileCommand(options) {
     ...(options.device === undefined ? [] : ['--device <selected>']),
     ...(options.hostedSoftware ? ['--hosted-software'] : []),
     ...(options.prebuiltArtifact === undefined ? [] : ['--prebuilt-artifact <existing-build>']),
+    ...(options.project === undefined ? [] : ['--project <existing-project>']),
+    ...(options.scenario === undefined ? [] : ['--scenario <production-scenario>']),
   ].join(' ');
 }
 
