@@ -62,6 +62,10 @@ const REGRESSION_PROFILE = 'regression';
 // first-use compilation instead of capping the run at an arbitrary 30 s.
 const PLAYTEST_TIMEOUT_BASE_MS = 60_000;
 const PLAYTEST_FRAME_BUDGET_MS = 250;
+// The measured arm must be observed for `--duration` seconds of wall clock, but playtest steps
+// count fixed ticks and the runner advances those as fast as the machine allows. Pacing each
+// advance to the loop's own 60 Hz tick spends the scenario's tick budget in real time.
+const PRODUCTION_TICK_INTERVAL_MS = 1_000 / 60;
 
 export function playtestTimeoutMs(scenario) {
   const frameCount = (value) => (Number.isFinite(value) && value > 0 ? value : 0);
@@ -537,7 +541,7 @@ export async function writeRunScenarios(project, options) {
 async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
   const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
-    await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options));
+    await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options), options.project === undefined);
     // A production build can outlast the default timeout on slow hosted runners.
     const build = await runCommand('pnpm', ['run', 'build:web'], project, undefined, 300_000);
     if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', `The scaffolded platformer web build failed.${failureSuffix(build)}`);
@@ -941,7 +945,7 @@ export async function installNativeProfileEntry(project, target, options) {
   const mailbox = target === 'desktop'
     ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options))}\n${mailbox}export default game;\n`;
+  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), options.project === undefined)}\n${mailbox}export default game;\n`;
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
   await setNativeProfileEntry(project, 'src/profile-native-entry.ts');
@@ -995,7 +999,39 @@ const tnProductionReadPerformance = () => {
 `;
 }
 
-export function nativeFrameInstrumentation(control, warmupFrames = 0) {
+// The collector's real-time hold. A playtest bridge is installed by the game after this
+// instrumentation evaluates, and the runner reads `advance` off that bridge on every call, so
+// wrapping the one property here paces the scenario's fixed ticks to wall clock without touching
+// playtest or game code. The patch rides the first animation frame the loop schedules; by the time
+// a runner can call `advance`, the bridge exists and has been wrapped. It is enabled only for the
+// synthetic `--duration` workload, whose tick budget stands in for the requested seconds; a
+// project's own authored scenario keeps the accelerated pacing it was written for.
+export function productionExecutionHold(paceTicks = false) {
+  return `
+const tnProductionPaceEnabled = ${paceTicks === true};
+const tnProductionTickIntervalMs = ${PRODUCTION_TICK_INTERVAL_MS};
+let tnProductionPaceAt;
+let tnProductionPaceInstalled = false;
+const tnProductionInstallPace = () => {
+  if (!tnProductionPaceEnabled || tnProductionPaceInstalled) return;
+  const tnProductionBridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
+  if (typeof tnProductionBridge?.advance !== "function") return;
+  const tnProductionAdvance = tnProductionBridge.advance.bind(tnProductionBridge);
+  tnProductionBridge.advance = async (ticks) => {
+    const startedAt = performance.now();
+    tnProductionPaceAt = Math.max(tnProductionPaceAt ?? startedAt, startedAt) + ticks * tnProductionTickIntervalMs;
+    const result = await tnProductionAdvance(ticks);
+    const waitMs = tnProductionPaceAt - performance.now();
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return result;
+  };
+  tnProductionPaceInstalled = true;
+};
+tnProductionInstallPace();
+`;
+}
+
+export function nativeFrameInstrumentation(control, warmupFrames = 0, paceTicks = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
@@ -1013,7 +1049,9 @@ const tnProductionBusyWait = (milliseconds) => {
   while (performance.now() < deadline) {}
 };
 ${productionPerformanceReader()}
+${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
+  tnProductionInstallPace();
   const frameIndex = tnProductionFrameIndex++;
   const inWarmup = frameIndex < tnProductionWarmupFrames;
   if (frameIndex === tnProductionWarmupFrames) {
@@ -1050,7 +1088,7 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-export function webFrameInstrumentation(markerUrl, control, warmupFrames = 0) {
+export function webFrameInstrumentation(markerUrl, control, warmupFrames = 0, paceTicks = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
@@ -1062,6 +1100,7 @@ if (typeof tnProductionRequestAnimationFrame !== "function") {
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
+let tnProductionPresentation;
 let tnProductionSamples = [];
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
@@ -1077,7 +1116,18 @@ const tnProductionPost = (payload) => {
   }).catch(() => undefined);
 };
 ${productionPerformanceReader()}
+${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
+  tnProductionInstallPace();
+  // One browser presentation can invoke every callback registered for it with the same
+  // DOMHighResTimeStamp. Counting each callback would push a zero-length interval and make meanFps
+  // indeterminate, so only the first callback for a presentation is the frame; the rest still run
+  // their callback unchanged.
+  if (Number.isFinite(timestamp) && timestamp === tnProductionPresentation) {
+    callback(timestamp);
+    return;
+  }
+  tnProductionPresentation = Number.isFinite(timestamp) ? timestamp : undefined;
   const frameIndex = tnProductionFrameIndex++;
   const inWarmup = frameIndex < tnProductionWarmupFrames;
   if (frameIndex === tnProductionWarmupFrames) {
@@ -1114,12 +1164,12 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-async function installWebProfileEntry(project, markerUrl, control, warmupFrames = 0) {
+async function installWebProfileEntry(project, markerUrl, control, warmupFrames = 0, paceTicks = false) {
   const markerPath = join(project, 'src/profile-production-marker.ts');
   const mainPath = join(project, 'src/main.ts');
   const markerImport = 'import "./profile-production-marker.js";';
   const main = await readFile(mainPath, 'utf8');
-  const source = webFrameInstrumentation(markerUrl, control, warmupFrames);
+  const source = webFrameInstrumentation(markerUrl, control, warmupFrames, paceTicks);
   await writeFile(markerPath, source);
   if (!main.includes(markerImport)) await writeFile(mainPath, `${markerImport}\n${main}`);
 }
