@@ -26,10 +26,12 @@ import {
 } from "./identity.js";
 import {
   FRAMES_PER_RUNG,
+  type IWorkloadAxes,
   LADDER,
   REPEATS,
   type RenderMode,
   WARMUP_FRAMES,
+  parseAxesRecord,
   percentile,
 } from "./workload.js";
 
@@ -89,6 +91,7 @@ const warmup = readInteger("warmup", WARMUP_FRAMES);
 const repeats = readInteger("repeats", REPEATS);
 const ladder = readLadder();
 const modes = readModes();
+const axes = readAxes();
 
 const status = document.getElementById("status") as HTMLElement;
 const canvas = document.getElementById("stage") as HTMLCanvasElement;
@@ -121,6 +124,11 @@ function readModes(): RenderMode[] {
       throw new Error("TN_BENCH_BAD_PARAM:modes");
     return part;
   });
+}
+
+// Every axis is optional and defaults to the PRD-117 scene; `parseAxesRecord` validates the rest.
+function readAxes(): IWorkloadAxes {
+  return parseAxesRecord(Object.fromEntries(parameters.entries()));
 }
 
 function nextFrame(): Promise<number> {
@@ -419,6 +427,7 @@ async function ladderIdentity(adapterLabel: string): Promise<Record<string, stri
   const workloadHash = await hashWorkloadModuleGraph(
     workloadModules,
     {
+      axes,
       frames,
       ladder,
       modes,
@@ -464,7 +473,7 @@ async function describeAdapter(): Promise<string> {
 }
 
 async function main(): Promise<void> {
-  const harness = await createLoadTestHarness(canvas, await describeAdapter());
+  const harness = await createLoadTestHarness(canvas, await describeAdapter(), true, axes);
   const rungs: IRungReport[] = [];
   for (const objectCount of ladder) {
     for (const mode of modes) {
@@ -483,6 +492,7 @@ async function main(): Promise<void> {
     : undefined;
   const report = {
     arm: "tn-web",
+    axes,
     build: {
       notes:
         "vite dev build, SceneRenderProjection consumer on three/webgpu; culling A/B uses the production planner and excludes the presentation draw",
