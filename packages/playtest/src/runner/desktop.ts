@@ -32,9 +32,16 @@ export class LocalDeviceMailbox {
   }
 
   async remove(path: string): Promise<void> {
-    // rm lstats first, which Windows rejects with EPERM while the game holds the file; Node's
-    // rm retries EPERM/EBUSY itself when asked to.
-    await rm(path, { force: true, maxRetries: 10, retryDelay: 20 });
+    // Node retries EPERM/EBUSY only with recursive mode, which could remove a directory here.
+    for (let retry = 0; ; retry += 1) {
+      try {
+        await rm(path, { force: true });
+        return;
+      } catch (error) {
+        if (retry >= 10 || !isTransientMailboxLock(error)) throw error;
+        await delay(20);
+      }
+    }
   }
 
   async write(path: string, contents: string): Promise<void> {
