@@ -241,8 +241,9 @@ skill; the engine-load-test equivalence spec for `positionHash`; the judge's own
 **Checkpoint:** Project/scenario staging, workload axes and projection timing markers are on
 `perf/prd-400-ac1`; the staged judge preserves the game's automatic resolution and authored UI
 renderer. Focused checks passed. The [L0 contract](../../verification/runtime-perf-state.md)
-names the frozen judge paths and holdouts. Matrix/Midway runs, A/A noise, sensitivity controls and
-AC-1's full iteration remain unverified.
+names the frozen judge paths and holdouts. Midway's tracked `c277aee` game source is snapshotted at
+`sandbox/.afk/prd400-midway-source` so its separate package changes cannot enter the baseline.
+Matrix/Midway runs, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
 
 ### Phase 2 — Lane 1: scene projection
 
