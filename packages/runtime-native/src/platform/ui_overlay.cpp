@@ -294,9 +294,24 @@ bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, i
 
 bool uiOverlayInjectKey(const char* type, const char* key, const char* code, const char* text,
                         bool ctrl, bool alt, bool shift, bool meta) {
+#if defined(__linux__) && !defined(__ANDROID__)
     if (!uiOverlayAttached()) return false;
     return tn_ui_overlay_inject_key(type, key, code, text, ctrl ? 1 : 0, alt ? 1 : 0,
                                     shift ? 1 : 0, meta ? 1 : 0) == 0;
+#else
+    // Windows and macOS host their overlay as a real child web view, so the OS routes keyboard
+    // input to the focused control directly. Their Rust ABI intentionally has no synthetic-key
+    // entry point; keep this C++ seam a no-op there instead of leaving an unresolved symbol.
+    (void)type;
+    (void)key;
+    (void)code;
+    (void)text;
+    (void)ctrl;
+    (void)alt;
+    (void)shift;
+    (void)meta;
+    return false;
+#endif
 }
 
 /**
