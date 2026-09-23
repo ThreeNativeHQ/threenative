@@ -12,9 +12,11 @@ interface HotDiagnostics {
   sceneObjects: number;
   canvases: number;
   audio: {
+    cues: Readonly<Record<string, number>>;
     paused: number;
     pooled: number;
     queued: number;
+    recentCues: ReadonlyArray<{ readonly atMs: number; readonly cue: string }>;
     unsupported: readonly string[];
     voices: number;
   };
@@ -394,9 +396,11 @@ test("preserves starter state and stays flat across ten real HMR updates", async
       expect(after.diagnostics.entities).toBe(before.diagnostics.entities);
       expect(after.diagnostics.physics).toBe(before.diagnostics.physics);
       expect(after.diagnostics.audio).toEqual({
+        cues: {},
         paused: 0,
         pooled: 0,
         queued: 0,
+        recentCues: [],
         unsupported: [],
         voices: 0,
       });
