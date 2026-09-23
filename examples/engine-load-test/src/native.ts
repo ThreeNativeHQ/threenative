@@ -97,6 +97,7 @@ async function main(): Promise<void> {
           }
         }
         rungs.push({
+          collapseMs,
           drawCalls,
           frameMs,
           stepMs,
