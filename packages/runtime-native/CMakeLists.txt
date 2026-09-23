@@ -1879,7 +1879,9 @@ endif()
 # That is why "contract tests only link in build/tn-linux" was true, and it made wgpu-native — the
 # backend Android ships — the one backend no contract test could be run against. PUBLIC so every
 # consumer inherits it rather than each target restating it.
-if(MYSTRAL_USE_WGPU AND SWC_LIBRARY AND UNIX AND NOT APPLE)
+# The desktop UI overlay is a Rust staticlib too, so it collides with wgpu-native the same way
+# whenever SWC is absent (the Linux arm64 QuickJS + wgpu host builds no SWC).
+if(MYSTRAL_USE_WGPU AND (SWC_LIBRARY OR TN_ENABLE_UI_OVERLAY) AND UNIX AND NOT APPLE)
     target_link_options(mystral-runtime PUBLIC "-Wl,--allow-multiple-definition")
 endif()
 
