@@ -241,7 +241,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   ): Promise<IPlaytestDeviceResponse> {
     const deadline = Date.now() + timeoutMs;
     while (!this.closed && Date.now() < deadline) {
-      const raw = await this.mailbox.read(this.paths.response);
+      const raw = await readMailboxFile(this.mailbox, this.paths.response);
       if (raw !== undefined) {
         const response = parseResponse(raw);
         this.responseObserver?.({ body: raw, method, order, requestId: response.id });
@@ -259,7 +259,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   }
 
   private async readResponse(): Promise<IPlaytestDeviceResponse | undefined> {
-    const raw = await this.mailbox.read(this.paths.response);
+    const raw = await readMailboxFile(this.mailbox, this.paths.response);
     return raw === undefined ? undefined : parseResponse(raw);
   }
 }
@@ -360,4 +360,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function delayUntil(deadline: number): Promise<void> {
   const remaining = deadline - Date.now();
   if (remaining > 0) await new Promise<void>((resolve) => setTimeout(resolve, Math.min(40, remaining)));
+}
+
+// Windows returns a transient EPERM/EBUSY/EACCES from `lstat`/`read` while another process (the
+// game host, or an AV scanner) has the mailbox file briefly open, and the poll then dies on a
+// file that is present and correct. A retry is safe because a missing file stays `undefined` and
+// every non-lock error still throws on the first try.
+const kMailboxLockRetryLimit = 5;
+const kMailboxLockRetryDelayMs = 50;
+const kMailboxLockCodes = new Set(["EPERM", "EBUSY", "EACCES"]);
+
+async function readMailboxFile(
+  mailbox: IDeviceMailbox,
+  path: string,
+): Promise<string | undefined> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < kMailboxLockRetryLimit; attempt += 1) {
+    try {
+      return await mailbox.read(path);
+    } catch (error) {
+      if (!isMailboxLockError(error)) throw error;
+      lastError = error;
+      await new Promise<void>((resolve) => setTimeout(resolve, kMailboxLockRetryDelayMs));
+    }
+  }
+  throw lastError;
+}
+
+function isMailboxLockError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && kMailboxLockCodes.has(String((error as { code?: unknown }).code));
 }

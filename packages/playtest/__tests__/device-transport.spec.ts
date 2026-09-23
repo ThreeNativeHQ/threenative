@@ -139,6 +139,79 @@ test("mailbox operations honor a longer per-call timeout for slow advances", asy
   }
 });
 
+test("a Windows-style EPERM on the mailbox read is retried until the file is readable", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/locked-device-files");
+  // The AV/file-lock race clears after a couple of tries, exactly as it does on the Windows lane.
+  const mailbox = new LockingMailbox(paths, { lockedReads: 2 });
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(1_000)).resolves.toBe(true);
+    expect(mailbox.readAttempts).toBeGreaterThan(2);
+  } finally {
+    await transport.close();
+  }
+});
+
+test("a persistent EPERM on the mailbox read rethrows the last error", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/stuck-device-files");
+  const mailbox = new LockingMailbox(paths, { lockedReads: Number.POSITIVE_INFINITY });
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(1_000)).rejects.toMatchObject({ code: "EPERM" });
+    // Bounded: five tries, then the last error, never an unbounded spin.
+    expect(mailbox.readAttempts).toBe(5);
+  } finally {
+    await transport.close();
+  }
+});
+
+test("a non-lock mailbox read error is rethrown without retrying", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/broken-device-files");
+  const mailbox = new LockingMailbox(paths, { lockedReads: Number.POSITIVE_INFINITY, errorCode: "EIO" });
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(1_000)).rejects.toMatchObject({ code: "EIO" });
+    expect(mailbox.readAttempts).toBe(1);
+  } finally {
+    await transport.close();
+  }
+});
+
+class LockingMailbox implements IDeviceMailbox {
+  readAttempts = 0;
+  private readonly files = new Map<string, string>();
+
+  constructor(
+    private readonly paths: ReturnType<typeof androidMailboxPaths>,
+    private readonly options: { lockedReads: number; errorCode?: string },
+  ) {}
+
+  async read(path: string): Promise<string | undefined> {
+    this.readAttempts += 1;
+    if (this.readAttempts <= this.options.lockedReads) {
+      throw Object.assign(
+        new Error(`${this.options.errorCode ?? "EPERM"}: operation not permitted, lstat`),
+        { code: this.options.errorCode ?? "EPERM" },
+      );
+    }
+    return this.files.get(path);
+  }
+
+  async remove(path: string): Promise<void> {
+    this.files.delete(path);
+  }
+
+  async write(path: string, contents: string): Promise<void> {
+    this.files.set(path, contents);
+  }
+}
+
 class FakeMailbox implements IDeviceMailbox {
   readonly files = new Map<string, string>();
   readonly requests: unknown[] = [];
