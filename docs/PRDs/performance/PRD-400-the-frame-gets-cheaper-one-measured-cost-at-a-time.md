@@ -341,6 +341,13 @@ same native matrix cell (`L0-19`), but its sampled shares are not per-frame time
 reuse and upload bypass its drain timer, and there is no single existing wrapper around all of them.
 The five-term box remains open; recorder instrumentation and candidate selection wait for an
 uncontended, paced desktop baseline so the diagnostic cost can be justified against a real frame.
+The RTX 2080's HDMI and secondary outputs are now active at 60 Hz. A headed empty-page control
+paced at 16.7 ms p50 on NVIDIA/Turing; the branch rebased cleanly onto the new `develop` culling
+change, rebuilt core, and passed its 17 focused tests. The 10,000-object L3 cell hit the 16.7 ms
+display floor, so three identical real-display A/A runs used 40,000 objects: frame p50 run medians
+26.975/26.650/28.258 ms, noise band 1.608 ms; projection p50 band 1.490 ms (`L0-20`). This is
+an uncapped matrix throughput baseline only. The Phase 1 baseline checkbox remains open until
+Midway native/browser and both holdouts have matching pinned A/A evidence.
 
 ### Phase 2 — Lane 1: scene projection
 
