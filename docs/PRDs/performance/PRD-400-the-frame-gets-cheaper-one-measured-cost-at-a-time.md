@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-400 — The frame gets cheaper one measured, removable cost at a time
 
-**Status:** NOT STARTED
-**Progress:** 0/5 phases
+**Status:** IN PROGRESS
+**Progress:** 0/5 phases (Phase 1: skill landed; judge not started)
 **Complexity:** 7 → HIGH; 11+ implementation files across core, the three.js patch, the native
 recorder and the C++ replay (+3), retained projection and command-plan state (+2), crosses the native
 host build (+2); risk override: none.
@@ -218,7 +218,7 @@ phase.
 
 ### Phase 1 — The judge and the skill exist before any optimization
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **ACs:** AC-1
 **Files:** `.claude/skills/perf-loop/SKILL.md` (new) and its `.agents/skills/perf-loop` link;
 `packages/runtime-native/scripts/profile-production.mjs` (project and scenario input);
@@ -234,7 +234,9 @@ skill; the engine-load-test equivalence spec for `positionHash`; the judge's own
   and browser, both holdouts named and measured.
 - [ ] Judge sensitivity: `--control slow-native` and a resolution-cut candidate both come back
   `reject`.
-- [ ] Skill written and linked; docs, instruction-budget and `sync-agent-docs` checks green.
+- [x] Skill written and linked; docs, instruction-budget and `sync-agent-docs` checks green —
+  `.claude/skills/perf-loop/SKILL.md`, `.agents/skills/perf-loop` symlink; `pnpm check:docs` (2,199 links),
+  `check-doc-links`, `sync-agent-docs`, `evidence-budget` specs 29/29, `instruction-budget` 9/9, 2026-09-22.
 
 **Checkpoint:** pending
 
