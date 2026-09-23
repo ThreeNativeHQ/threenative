@@ -182,7 +182,10 @@ is never reported as a steady-state win.
 ## Acceptance criteria
 
 - [ ] AC-1 [local; actor: agent]: A fresh subagent given only the `perf-loop` skill and this PRD runs
-  one full iteration unassisted and writes a valid ledger row — Evidence: pending.
+  one full iteration unassisted and writes a valid ledger row — Evidence: 2026-09-23 fresh-agent
+  attempt stopped before a candidate: the pinned baseline, A/A band and complete five-term attribution are
+  still absent, the shared GPU/CPU was in use, and every RTX 2080 DRM connector was disconnected.
+  No candidate ledger row was written.
 - [ ] AC-2 [local; actor: agent]: Midway native desktop at 1280×720, `sampleCount 4`, identical
   content: frame p50 at least 20% below the pinned Phase 1 baseline, outside the A/A noise band, p95
   no worse — Evidence: pending.
