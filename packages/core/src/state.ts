@@ -10,6 +10,15 @@ export type GameStore<T extends Record<string, unknown>> = StoreApi<T> & {
   stop(): void;
 };
 
+/**
+ * A store the UI reads, coalesced to one publication per frame unless a game names an interval.
+ *
+ * `intervalMs` is an override, not the rule. A fixed 100 ms default published the HUD ten times a
+ * second whatever the frame rate was, which reads as a HUD that is not live — the number a player
+ * watches moves in visible steps while the scene beside it runs smoothly. Left unset, `flush` is
+ * called once per frame by the loop that draws that frame, so a HUD updates at the rate the game
+ * actually runs at, and a slower interval is available to a game that measured a reason for one.
+ */
 export function createGameStore<T extends Record<string, unknown>>(
   initial: T,
   intervalMs?: number,
@@ -44,6 +53,7 @@ export function createGameStore<T extends Record<string, unknown>>(
   };
   gameStore.flush = flush;
   gameStore.start = () => {
+    // No interval means the frame drives the flush; only a game that named one gets a timer.
     if (intervalMs === undefined || timer !== undefined) return;
     timer = setInterval(flush, intervalMs);
   };

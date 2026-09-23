@@ -60,19 +60,33 @@ describe("documented runtime contracts", () => {
     }
   });
 
-  it("preserves the explicitly selected 100ms state flush interval", () => {
+  it("keeps the documented frame-driven default and the documented override", () => {
     vi.useFakeTimers();
-    const store = createGameStore({ score: 0 }, DOCUMENTED_FLUSH_INTERVAL_MS);
+    const store = createGameStore({ score: 0 });
     let notifications = 0;
     const unsubscribe = store.subscribe(() => notifications++);
     store.start();
     store.set({ score: 1 });
 
     try {
-      vi.advanceTimersByTime(DOCUMENTED_FLUSH_INTERVAL_MS - 1);
+      // No interval: the frame publishes, and a timer never does.
+      vi.advanceTimersByTime(DOCUMENTED_FLUSH_INTERVAL_MS * 2);
       expect(notifications).toBe(0);
-      vi.advanceTimersByTime(1);
+      store.flush();
       expect(notifications).toBe(1);
+
+      // The override a game names still gets its own interval.
+      const throttled = createGameStore({ score: 0 }, DOCUMENTED_FLUSH_INTERVAL_MS);
+      let throttledNotifications = 0;
+      const unsubscribeThrottled = throttled.subscribe(() => throttledNotifications++);
+      throttled.start();
+      throttled.set({ score: 1 });
+      vi.advanceTimersByTime(DOCUMENTED_FLUSH_INTERVAL_MS - 1);
+      expect(throttledNotifications).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(throttledNotifications).toBe(1);
+      unsubscribeThrottled();
+      throttled.stop();
     } finally {
       unsubscribe();
       store.stop();

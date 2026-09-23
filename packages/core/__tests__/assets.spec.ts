@@ -109,6 +109,32 @@ describe("IAssetLoader", () => {
     expect(textureDispose).toHaveBeenCalledTimes(1);
   });
 
+  it("times each asset only when the caller asked, and names the path when it does", async () => {
+    // The group totals a game logs cannot say *which* asset is slow; this seam is the engine's one
+    // place that sees every settle. Off by default and silent when off.
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    });
+    try {
+      const quiet = createAssetLoader({ model: async () => ({ scene: new Group() }) });
+      await quiet.model("quiet.glb");
+      expect(logged).toEqual([]);
+
+      (globalThis as { __TN_ASSET_TRACE__?: boolean }).__TN_ASSET_TRACE__ = true;
+      const traced = createAssetLoader({ model: async () => ({ scene: new Group() }) });
+      await traced.model("traced.glb");
+      const marker = logged.find((line) => line.startsWith("TN_ASSET:"));
+      expect(marker).toBeDefined();
+      const payload = JSON.parse((marker as string).slice("TN_ASSET:".length));
+      expect(payload).toMatchObject({ kind: "model", path: "traced.glb" });
+      expect(Number.isFinite(payload.ms)).toBe(true);
+    } finally {
+      delete (globalThis as { __TN_ASSET_TRACE__?: boolean }).__TN_ASSET_TRACE__;
+      spy.mockRestore();
+    }
+  });
+
   it("loads textures through fetch and createImageBitmap when Image is unavailable", async () => {
     const bitmap = { height: 16, width: 16 } as ImageBitmap;
     const createBitmap = vi.fn(async () => bitmap);
@@ -341,6 +367,7 @@ describe("IAssetLoader through the asset manifest", () => {
           : new Promise<Texture>((resolve) => setTimeout(() => resolve(new Texture()), 0)),
     });
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 0,
       requestedBytes: 0,
       settled: 0,
@@ -349,7 +376,9 @@ describe("IAssetLoader through the asset manifest", () => {
     const first = assets.texture("a.png");
     void assets.texture("a.png"); // cached: one request, not two
     // No manifest here, so no size is knowable and the byte ledger stays at zero throughout.
+    // A loading view reads `pending` to say *what* it is waiting for, not just how much is left.
     expect(assets.progress).toEqual({
+      pending: ["a.png"],
       requested: 1,
       requestedBytes: 0,
       settled: 0,
@@ -357,6 +386,7 @@ describe("IAssetLoader through the asset manifest", () => {
     });
     await first;
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 1,
       requestedBytes: 0,
       settled: 1,
@@ -364,7 +394,9 @@ describe("IAssetLoader through the asset manifest", () => {
     });
     await expect(assets.texture("nope.png")).rejects.toThrow(/no such texture/u);
     // A rejected load settles too: a bar that waits for a texture that failed never finishes.
+    // A rejected load leaves `pending` too, or the bar names a file nothing is waiting for.
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 2,
       requestedBytes: 0,
       settled: 2,

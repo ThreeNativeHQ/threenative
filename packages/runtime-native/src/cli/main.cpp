@@ -17,6 +17,7 @@
 #include "mystral/screenshot_gate.h"
 #include "tool_dispatch.h"
 #include "mystral/platform/ui_overlay.h"
+#include "mystral/platform/window.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include "mystral/debug/debug_server.h"
 #include "mystral/video/async_capture.h"
@@ -1734,7 +1735,13 @@ int runScript(const CLIOptions& opts) {
     // more than once a launch. This brackets the one that is the game.
     mystral::coldStartMark("game_eval_begin");
     if (!runtime->loadScript(opts.scriptPath)) {
-        std::cerr << "Error: Failed to evaluate script!" << std::endl;
+        // The window is already open, so this is the one failure a developer sees without reading
+        // a log: the title says the game did not start, the line is prefixed so a grep finds it,
+        // and the process exits non-zero rather than leaving a window that draws nothing. A launch
+        // that survives a bundle which never evaluated is the silent failure this refuses.
+        const char* title = "ThreeNative - the game did not start (TN_FATAL in the log)";
+        mystral::platform::setWindowTitle(title);
+        std::cerr << "[TN_FATAL] the game script did not load: " << opts.scriptPath << std::endl;
         return 1;
     }
     return driveMainLoop(opts, runtime);

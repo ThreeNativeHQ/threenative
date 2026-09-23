@@ -898,6 +898,16 @@ jobs:
           pnpm parity:ledger "$RUNNER_TEMP/prd-303-desktop-parity-ledger.md"
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/desktop "desktop parity"
+      # The one platform whose UI path differs: on Linux the page is a texture inside the game's
+      # own frame, so this gate asserts the composite's counter and size, the page's own colour in
+      # the captured frame, and the routing table, all from one run. Windows and macOS run the same
+      # verifier through `native:verify:desktop` in the `desktop` matrix job below — exactly how the
+      # loading gate is wired — and there it asserts the child-web-view half and names the two
+      # frame assertions it cannot make (platform::uiOverlayFrame reports no page frame off Linux).
+      # Android and iOS attach their own web views from their own hosts (Java/Swift) and keep their
+      # own lanes; nothing in this gate applies to them.
+      - name: Verify the web UI composites into the game's own frame
+        run: pnpm --filter @threenative/runtime-native native:verify:ui-frame
       - name: Collect bounded desktop performance evidence from the existing binary
         if: always()
         run: |

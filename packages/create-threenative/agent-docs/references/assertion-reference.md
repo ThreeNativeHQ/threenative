@@ -667,6 +667,40 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 }
 ```
 
+### `audio`
+
+Proves which labelled audio cues the game actually played, and how often. Every other audio check
+is about the *file* — it exists, it decodes, it is inside its budget — and all of them stay green
+while a one-shot line sounds a second time mid-match. **Use when** that is the thing the scenario
+must prove.
+
+Label a cue by passing a cue name to the audio bus when the game plays it; unlabelled sounds are never counted.
+When it fails, `observations.json/runtimeObservations/gameplay/audio/recentCues` says when each
+play happened.
+
+- **Supported on:** web, desktop · **Requires:** runtime.audio
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `cue` | string | yes |
+| `minPlays` | non-negative integer (defaults to 1) | no |
+| `maxPlays` | non-negative integer; 0 proves silence | no |
+| `minGapMs` | non-negative integer; fewest ms since the line before it | no |
+
+
+```json
+{
+  "audio": [
+    {
+      "cue": "speech:p01",
+      "minPlays": 1,
+      "maxPlays": 1,
+      "minGapMs": 500
+    }
+  ]
+}
+```
+
 ### `scene`
 
 Bounds the room the game is played in — the lights, materials, fog and camera framing the renderer was handed. Fails closed on a bridge that does not report the scene. **Use when** that is the thing the scenario must prove.

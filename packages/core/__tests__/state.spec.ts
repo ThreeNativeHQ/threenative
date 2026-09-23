@@ -2,7 +2,27 @@ import { describe, expect, it, vi } from "vitest";
 import { createGameStore } from "../src/state.js";
 
 describe("createGameStore", () => {
-  it("should notify at most 11 times when set is called 600 times in one second", () => {
+  it("should publish nothing on a timer when no interval was named, and one frame of writes once", () => {
+    vi.useFakeTimers();
+    const store = createGameStore({ score: 0 }, 100);
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => notifications++);
+    store.start();
+
+    for (let score = 0; score < 600; score++) store.set({ score });
+    vi.advanceTimersByTime(1_000);
+    expect(notifications).toBe(0);
+
+    // The frame is the publisher, so the whole second of writes lands as one notification.
+    store.flush();
+    expect(notifications).toBe(1);
+    expect(store.getState().score).toBe(599);
+    unsubscribe();
+    store.stop();
+    vi.useRealTimers();
+  });
+
+  it("should notify at most 11 times when a game asks for the 100 ms interval", () => {
     vi.useFakeTimers();
     const store = createGameStore({ score: 0 }, 100);
     let notifications = 0;
