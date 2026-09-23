@@ -8,6 +8,7 @@
 #include "mystral/platform/crash_policy.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu/async_image_decode.h"
 #include "mystral/webgpu/bindings.h"
 #include "webgpu/bindings_state.h"  // full BindingsState for the host-gap phase fields
 #include <cmath>
@@ -1443,6 +1444,8 @@ public:
         // still be in a nested callback stack. The callbacks will be processed next frame.
         hostGapMeter_.begin(HostGapMeter::kIo);
         fs::getAsyncFileReader().processCompletedReads();
+        // Image decodes land here for the same reason file reads do: a worker may not touch V8.
+        webgpu::AsyncImageDecoder::instance().drain();
 
         // Process file watch events (for hot reload)
         fs::getFileWatcher().processPendingEvents();
