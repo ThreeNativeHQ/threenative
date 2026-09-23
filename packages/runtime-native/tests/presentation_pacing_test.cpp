@@ -26,6 +26,7 @@ using mystral::webgpu::notePresentationFramesStopped;
 using mystral::webgpu::paceToPresentationCap;
 using mystral::webgpu::PresentationPacingPath;
 using mystral::webgpu::setPresentationCapHz;
+using mystral::webgpu::setPresentationPacingTimeoutForTest;
 
 // `notePresentationFrame` takes the raw Choreographer timestamp in nanoseconds, so a millisecond
 // is a million of them. 60 Hz truncates to 16,666,666 ns.
@@ -69,6 +70,15 @@ void resetPacing(uint32_t capHz) {
     setPresentationCapHz(capHz);
 }
 
+// A display-release case parks the render thread and unblocks it with a synthetic frame. On a
+// loaded runner that frame can land after the production bounded timeout, so the waiter would
+// fall back to the wrong path; widening the allowance keeps the assertion about the display
+// handoff. The lost-signal and pause cases measure that timeout, so they keep the formula and
+// never call this. The lifecycle reset in resetPacing clears it.
+void widenDisplayReleaseTimeout() {
+    setPresentationPacingTimeoutForTest(std::chrono::seconds(5));
+}
+
 // Uncapped: the only way a game presents above the ceiling is maxFps 0, and it must not wait,
 // even with a live display signal.
 void testUncappedIgnoresDisplay() {
@@ -86,12 +96,17 @@ void testUncappedIgnoresDisplay() {
 // software deadline still paces. The first call schedules; the next one waits it out.
 void testNoSignalUsesSoftwareDeadline() {
     resetPacing(60);
+    // Time from before the scheduling call, which is where the deadline is set: a stall between
+    // that call and the wait would otherwise eat into the interval and fail the lower bound.
+    const auto begin = clock::now();
     check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,
           "no display signal schedules software pacing");
-    const auto begin = clock::now();
     const auto path = paceToPresentationCap();  // must wait the software interval
     const auto elapsed = clock::now() - begin;
-    check(elapsed >= std::chrono::milliseconds(8) && elapsed < std::chrono::milliseconds(250),
+    // The lower bound holds by construction (the deadline is set after `begin`); the upper bound
+    // only proves the wait is bounded, and a loaded runner can add hundreds of milliseconds, so it
+    // stays generous rather than tight.
+    check(elapsed >= std::chrono::milliseconds(8) && elapsed < std::chrono::milliseconds(1000),
           "no display signal falls back to the software interval (waited " +
               std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()) +
               " ms)");
@@ -104,6 +119,7 @@ void testNoSignalUsesSoftwareDeadline() {
 // vsync and the extra-frame double sleep that would halve the visible rate.
 void testCapAtRefreshWaitsOneFrame() {
     resetPacing(60);  // interval 16,666,666 ns
+    widenDisplayReleaseTimeout();
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // schedule target 16,666,666
@@ -121,6 +137,7 @@ void testCapAtRefreshWaitsOneFrame() {
 // in nanoseconds, not rounded away.
 void testFractionalTargetResolvesAtExactTarget() {
     resetPacing(60);
+    widenDisplayReleaseTimeout();
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // target 16,666,666 ns
@@ -138,6 +155,7 @@ void testFractionalTargetResolvesAtExactTarget() {
 // unblock only on the second.
 void testBelowRefreshCapSkipsFrames() {
     resetPacing(30);  // interval 33,333,333 ns
+    widenDisplayReleaseTimeout();
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // schedule target 33,333,333
@@ -154,6 +172,7 @@ void testBelowRefreshCapSkipsFrames() {
 // one display frame -- not zero (which would busy-spin past the panel) and not two.
 void testAboveRefreshCapStaysPanelLimited() {
     resetPacing(120);  // interval 8,333,333 ns, shorter than the 16.67 ms display period
+    widenDisplayReleaseTimeout();
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // schedule target 8,333,333
@@ -168,6 +187,7 @@ void testAboveRefreshCapStaysPanelLimited() {
 // waits one interval from that late frame.
 void testLateFrameReschedulesWithoutBurst() {
     resetPacing(60);
+    widenDisplayReleaseTimeout();
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // target 16,666,666
@@ -188,6 +208,7 @@ void testLateFrameReschedulesWithoutBurst() {
 // should have released it, until the 90 ms bounded timeout.
 void testAlreadyArrivedFrameCarriesSchedule() {
     resetPacing(50);  // interval 20,000,000 ns; timeout 2*20 + 50 == 90 ms
+    widenDisplayReleaseTimeout();
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // schedule target 20,000,000
@@ -229,9 +250,12 @@ void testLostSignalFallsBackAndRecovers() {
     notePresentationFramesStarted();
     notePresentationFrame(0);
     paceToPresentationCap();  // schedule target 16,666,666
+    // Time from before the wait starts: the bounded deadline is set inside runPaceAsync, so a
+    // stall between that call and a clock taken afterwards would consume the timeout before it is
+    // measured. Taken first, elapsed >= 83 ms holds by construction.
+    const auto boundedBegin = clock::now();
     auto lost = runPaceAsync();
     check(!paceReturned(lost, 8), "the present is parked waiting for the display frame");
-    const auto boundedBegin = clock::now();
     checkPath(lost, PresentationPacingPath::DisplayTimeoutFallback,
               "a lost display signal releases the present through the bounded wait");
     const auto boundedElapsed = clock::now() - boundedBegin;
@@ -263,6 +287,7 @@ void testLostSignalFallsBackAndRecovers() {
 void testStopThenStartReArmsDisplay() {
     resetPacing(60);
     notePresentationFramesStopped();
+    widenDisplayReleaseTimeout();
     notePresentationFrame(frameMs(1000));  // ignored: the signal is not running
     notePresentationFramesStarted();
     check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,

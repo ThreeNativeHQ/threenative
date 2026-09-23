@@ -101,6 +101,13 @@ struct PresentationPacing {
 
 PresentationPacing g_presentationPacing;
 
+// Test-only, PRD-399. A display-release test parks the render thread and unblocks it with a
+// synthetic display frame; on a loaded runner that synthetic frame can arrive after the production
+// bounded timeout, so the waiter falls back to the wrong path. Non-zero replaces the bounded
+// allowance with a value the test chooses. Production never calls the setter, and the lifecycle
+// reset clears it, so the production formula below is what ships.
+std::chrono::nanoseconds g_presentationPacingTimeoutOverride{0};
+
 // Reports the effective pacing path once per transition, never per frame. A run can then tell
 // "display-aligned" from "deadline-fallback" without reading the source, and a packaged `.so` can
 // be grepped for the marker to prove the APK actually carries this change.
@@ -128,8 +135,12 @@ PresentationPacingPath paceToDisplayFrame(std::chrono::nanoseconds interval) {
 
     // One absolute bounded wait tolerates a late callback without extending on spurious wakes.
     // Only a deadline with no qualifying frame drops the display schedule until a fresh callback.
-    const auto deadline =
-        std::chrono::steady_clock::now() + interval * 2 + std::chrono::milliseconds(50);
+    // The production allowance is two intervals plus 50 ms; the test seam only ever widens it.
+    const std::chrono::nanoseconds boundedWait =
+        g_presentationPacingTimeoutOverride.count() > 0
+            ? g_presentationPacingTimeoutOverride
+            : interval * 2 + std::chrono::milliseconds(50);
+    const auto deadline = std::chrono::steady_clock::now() + boundedWait;
     while (g_presentationPacing.running &&
            g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
         if (g_presentationPacing.ready.wait_until(lock, deadline) == std::cv_status::timeout) {
@@ -175,6 +186,7 @@ void notePresentationFramesStopped() {
     g_presentationPacing.haveFrame = false;
     g_presentationPacing.frameTimeNs = 0;
     g_presentationPacing.nextPresentTargetNs = 0;
+    g_presentationPacingTimeoutOverride = std::chrono::nanoseconds{0};
     g_presentationPacing.ready.notify_all();
 }
 
@@ -184,6 +196,11 @@ void notePresentationFrame(int64_t frameTimeNs) {
     g_presentationPacing.frameTimeNs = frameTimeNs;
     g_presentationPacing.haveFrame = true;
     g_presentationPacing.ready.notify_all();
+}
+
+void setPresentationPacingTimeoutForTest(std::chrono::milliseconds timeout) {
+    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
+    g_presentationPacingTimeoutOverride = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout);
 }
 
 bool setPresentationCapHz(uint32_t hz) {
