@@ -1041,14 +1041,17 @@ jobs:
       - run: pnpm quality
       - run: pnpm sync:agents --check
 
-  # The native lane guards targets that any package change can break. Its complete matrix runs on
-  # full selections after the hosted macOS, Windows, Android-emulator and iOS-simulator legs passed
-  # on the corrected native build — but it is deliberately not a `needs` of `ci-required`, so its
-  # 50–180 minute runtime cannot hold the merge verdict. PRD-373: the release lane validates the
-  # native rows for the exact candidate separately.
+  # The native lane blocks the merge in exactly three cases: a full selection that touches a native
+  # path, a pull request into main, and any full selection that is not a clean pull-request diff
+  # (push, schedule, dispatch, --full, or a fail-safe-to-full fallback). A clean develop pull
+  # request that provably touches no native path is exempt and the job is skipped, so it neither
+  # delays the verdict nor burns runners. The scope plan decides which case this is and ci-required
+  # enforces it — a required native run that is not `success` fails the verdict, an exempt skip passes.
   native-platforms:
     needs: scope
-    if: needs.scope.outputs.selection == 'full'
+    if: >-
+      needs.scope.outputs.selection == 'full' &&
+      fromJSON(needs.scope.outputs.plan).jobs['native-platforms'].required
     uses: ./.github/workflows/native-platforms.yml
     with:
       selection_plan: ${{ needs.scope.outputs.plan }}
@@ -1147,7 +1150,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain, website]
+    needs: [scope, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain, website]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

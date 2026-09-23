@@ -11,6 +11,21 @@ const EXCLUDED_MARKDOWN = [
   /^docs\/verification\/native-(?:runtime-)?(?:census|coverage)(?:-|\.)/u,
   /^docs\/verification\/(?:round-|parity-|sweep-|tier-1-)/u,
 ];
+// Paths whose change the native platform matrix has to prove. Recorded as data beside the other
+// path classes: a new package or action that `native-platforms.yml` builds or consumes belongs in
+// this list, or the matrix silently stops covering it. The action directories are enumerated from
+// the `uses: ./.github/actions/...` references in that workflow.
+export const NATIVE_PATHS = [
+  /^packages\/runtime-native\//u,
+  /^\.github\/workflows\/native-platforms\.yml$/u,
+  /^\.github\/actions\/(?:android-v8-source|playwright-chromium|pnpm|scaffold-from-tarballs|workspace-dist)\//u,
+  /^pnpm-lock\.yaml$/u,
+  /^pnpm-workspace\.yaml$/u,
+];
+
+function isNativePath(file) {
+  return NATIVE_PATHS.some((pattern) => pattern.test(file));
+}
 const SELECTIONS = new Set(["full", "prose", "instructions", "website", "mixed"]);
 // No package/template exemption yet: core, playtest, scaffolding, physics, fixtures, toolchains
 // and dependencies have native consumers. Narrow those only with an explicit dependency proof.
@@ -32,7 +47,7 @@ const FULL_JOBS = [
   "native-platforms",
 ];
 
-export function selectionPlan(selection, reason, files = [], candidateSha = "") {
+export function selectionPlan(selection, reason, files = [], candidateSha = "", native = false) {
   const full = selection === "full";
   const checks = {
     docs: true,
@@ -72,15 +87,28 @@ export function selectionPlan(selection, reason, files = [], candidateSha = "") 
       ? "Website build, types, unit and browser tests (including its consumed contracts)"
       : "Exempt: no website or shared dependency change",
   };
-  // Native platform evidence is produced asynchronously (selection full) but never blocks a
-  // merge. The release lane validates the native rows for the exact candidate separately, so a
-  // slow or red native matrix cannot hold the merge verdict hostage. See PRD-373.
+  // The native matrix blocks the merge in exactly three cases: a full selection that touches a
+  // native path; a pull request into main; and any full selection that is not a clean pull-request
+  // diff (push, schedule, dispatch, --full, or a fail-safe-to-full fallback). Everything else is a
+  // clean develop pull request that provably excludes native code, and skips this lane entirely.
+  const nativeRequired = full && native;
   jobs["native-platforms"] = {
-    required: false,
-    reason:
-      "Native platform evidence is produced on full selections and validated by the release lane, not the merge verdict",
+    required: nativeRequired,
+    reason: nativeRequired
+      ? "Native evidence blocks the merge: a full selection that touches native code, targets main, or cannot prove from a clean pull request that it avoids native code"
+      : "Exempt: a clean develop pull request whose diff provably touches no native path; the matrix is skipped rather than awaited or run",
   };
-  return { version: 1, files, reason, scope: selection, selection, candidateSha, checks, jobs };
+  return {
+    version: 1,
+    files,
+    reason,
+    scope: selection,
+    selection,
+    candidateSha,
+    native,
+    checks,
+    jobs,
+  };
 }
 
 export function validatePlan(value) {
@@ -94,14 +122,21 @@ export function validatePlan(value) {
     /[\r\n]/u.test(value.reason) ||
     !Array.isArray(value.files) ||
     value.files.some((file) => typeof file !== "string" || !file || file.includes("\0")) ||
+    typeof value.native !== "boolean" ||
     typeof value.candidateSha !== "string" ||
     !/^[0-9a-f]{40}$/u.test(value.candidateSha)
   ) {
     throw new Error(
-      "CI_SCOPE_INVALID_PLAN: missing or malformed selection, paths, reason or candidate SHA",
+      "CI_SCOPE_INVALID_PLAN: missing or malformed selection, paths, native requirement, reason or candidate SHA",
     );
   }
-  const expected = selectionPlan(value.selection, value.reason, value.files, value.candidateSha);
+  const expected = selectionPlan(
+    value.selection,
+    value.reason,
+    value.files,
+    value.candidateSha,
+    value.native,
+  );
   for (const field of ["scope", "checks", "jobs"]) {
     if (JSON.stringify(value[field]) !== JSON.stringify(expected[field])) {
       throw new Error(`CI_SCOPE_INVALID_PLAN: ${field} does not match the selected check families`);
@@ -234,7 +269,10 @@ function changedPaths(options) {
 export function classify(options) {
   const candidateSha =
     options.candidateSha ?? git(options.root, ["rev-parse", "HEAD"]).stdout.trim();
-  const full = (reason, files = []) => selectionPlan("full", reason, files, candidateSha);
+  // A full selection reached without a resolved pull-request diff cannot prove the change avoids
+  // native code, so it is native-blocking by default. Only the clean-diff path below may clear it.
+  const full = (reason, files = [], native = true) =>
+    selectionPlan("full", reason, files, candidateSha, native);
   if (options.full) return full("explicit full verification requested");
   if (options.eventName !== undefined && options.eventName !== "pull_request")
     return full(`event ${JSON.stringify(options.eventName)} requires complete verification`);
@@ -251,11 +289,13 @@ export function classify(options) {
   }
   const parsed = changedPaths(options);
   if ("error" in parsed) return full(parsed.error);
+  // Computed over the whole diff: a native file sorted after a non-native one must still block.
+  const touchesNative = parsed.paths.some(isNativePath);
   const families = new Set();
   for (const file of parsed.paths) {
     const family = pathFamily(file, options.target === "develop");
     if (!["prose", "instructions", "website"].includes(family))
-      return full(`${JSON.stringify(file)} is ${family}`, parsed.paths);
+      return full(`${JSON.stringify(file)} is ${family}`, parsed.paths, touchesNative);
     families.add(family);
   }
   // Prose is already covered by lint's doc lane; mixed means website AND instruction consumers.
@@ -268,7 +308,7 @@ export function classify(options) {
           ? "instructions"
           : "prose";
   const reason = `all ${String(parsed.paths.length)} changed path(s) match explicit ${[...families].sort().join(" + ")} dependency rules`;
-  return selectionPlan(selection, reason, parsed.paths, candidateSha);
+  return selectionPlan(selection, reason, parsed.paths, candidateSha, false);
 }
 
 function output(result, format) {
