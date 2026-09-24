@@ -4,27 +4,24 @@ prd_contract: v1
 
 # PRD-196 — A stranger's install of ThreeNative is functional
 
-**Status:** BLOCKED — `requires-release-credentials` and candidate-cohort preparation
+**Status:** BLOCKED — `requires-release-credentials`
 
-Filed here on 2026-09-08. The engineering in this PRD is implemented and gated in the tree, but the
-source tree is not yet a publishable candidate. `pnpm publish:check` reports eight immutable package
-versions whose source moved after publication — `@threenative/assets@0.3.0`,
-`@threenative/core@0.3.0`, `@threenative/physics@0.3.0`, `@threenative/playtest@0.3.0`,
-`@threenative/runtime-native@0.3.0`, `@threenative/ui@0.3.0`, `create-threenative@0.2.3`, and
-`threenative-engine-mcp@0.2.0` — plus the absent matching native prebuilt release. npm versions are
-immutable, so release preparation must first choose and commit a fresh coherent eleven-package
-cohort, bump the changed packages to versions absent from npm, and repin every template and internal
-dependency to that cohort. Only then can the external publish and native-release acts be performed.
-Until that prepared cohort is published with its matching prebuilt assets, the published world cannot
-satisfy the criteria below, and this PRD must not be filed as done. It was previously in
-`docs/PRDs/done/` from an unrelated bulk move (`b45bf21f7`) while still reading `NOT STARTED`; neither
-state was true.
+Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
+tree, and the candidate cohort is prepared and committed: eleven packages at
+`@threenative/{assets,core,physics,playtest,runtime-native,ui}@0.3.3`, `create-threenative@0.2.6`,
+`threenative-engine-mcp@0.2.3`, with every template pin moved to 0.3.3
+(`packages/create-threenative/templates/*/package.json`). `pnpm publish:check` now reports exactly
+two classes of finding, both cleared by the external acts: 69 template-pin findings because the
+registry does not yet carry the 0.3.3 cohort, and one prebuilt-release finding because
+`runtime-native-v0.3.3` does not exist yet. Until that cohort is published with its matching
+prebuilt assets, the published world cannot satisfy the criteria below, and this PRD must not be
+filed as done. It was previously in `docs/PRDs/done/` from an unrelated bulk move (`b45bf21f7`)
+while still reading `NOT STARTED`; neither state was true.
 
-**What unblocks it:** (1) a committed version-cohort preparation that clears the eight immutable
-package findings and pins the templates to the new versions, (2) a successful
-`runtime-native-v<version>` release built from that exact candidate SHA with its `prebuilt-lock.json`,
-and (3) npm publish rights for the eleven-package cohort plus release-upload rights on
-`ThreeNativeHQ/threenative`. The credentials are needed after preparation; they do not replace it.
+**What unblocks it:** (1) a successful `runtime-native-v0.3.3` release built from this candidate SHA
+with its `prebuilt-lock.json`, and (2) npm publish rights for the eleven-package cohort (under a
+non-`latest` dist-tag, `next`) plus release-upload rights on `ThreeNativeHQ/threenative`. The
+credentials are needed after preparation; they do not replace it.
 
 **Evidence:** [round-196-published-install.md](../../../verification/round-196-published-install.md)
 and the five phase records it cites —
@@ -161,14 +158,14 @@ than by a user:
 
 ```mermaid
 flowchart TD
-  T["git tag v0.3.0"] --> G["gates: typecheck lint test publish:check"]
+  T["git tag v0.3.3"] --> G["gates: typecheck lint test publish:check"]
   G -->|"template pin census<br/>prebuilt release census"| P["pnpm -r publish"]
   P --> C["clean room: scaffold from registry"]
   C --> W["build --target web"]
   C --> D["build --target desktop"]
   C --> M["mcp initialize handshake"]
   C --> X["threenative doctor"]
-  RT["git tag runtime-native-v0.3.0"] --> NR["native-release.yml"]
+  RT["git tag runtime-native-v0.3.3"] --> NR["native-release.yml"]
   NR --> REL["public release: prebuilt-lock.json + .so + runtime binaries"]
   REL -.->|"fetched by install-prebuilt.mjs"| D
 ```
@@ -226,8 +223,8 @@ and the web-only clean-room flow (row 6).
 - `packages/runtime-native/scripts/install-prebuilt.mjs` — EDIT: `RELEASE_REPOSITORY` constant
   replaces the `jonit-dev` literal at line 53; new `writeInstallStatus()`; the CLI branch records
   the outcome instead of only setting `exitCode`.
-- `packages/runtime-native/__tests__/install-prebuilt.spec.ts` — EDIT: URL-owner and status-file
-  cases.
+- `packages/runtime-native/tests/distribution.test.mjs` — EDIT: URL-owner and status-file cases
+  (the suite landed here rather than as a `__tests__/*.spec.ts`; both run under the package's vitest config).
 - `packages/create-threenative/src/doctor.ts` — EDIT: new native-runtime check reading
   `install-status.json` through the resolved `@threenative/runtime-native` root.
 - `packages/create-threenative/__tests__/doctor.spec.ts` — EDIT: red/green for the new check.
@@ -236,28 +233,32 @@ and the web-only clean-room flow (row 6).
 
 **Implementation:**
 
-- [ ] Export `RELEASE_REPOSITORY = "ThreeNativeHQ/threenative"` and build every release URL from it.
-- [ ] On both success and failure, write `prebuilt/install-status.json` with `{ key, ok, reason,
+- [x] Export `RELEASE_REPOSITORY = "ThreeNativeHQ/threenative"` and build every release URL from it.
+      — `packages/runtime-native/scripts/install-prebuilt.mjs:10` (constant), `:248` (`releaseManifestUrl()`).
+- [x] On both success and failure, write `prebuilt/install-status.json` with `{ key, ok, reason,
       url, version }`; keep the non-zero exit for a source-checkout-less failure.
-- [ ] `doctor` reports `native runtime: available (linux-x64)` / `unavailable — <reason>` /
+      — `install-prebuilt.mjs:251` (`writeInstallStatus`), `:283` (installing), `:305` (ok:true), `:313` (failure).
+- [x] `doctor` reports `native runtime: available (linux-x64)` / `unavailable — <reason>` /
       `unknown — no install status recorded`, and fails the report only on `unavailable`.
-- [ ] `package-android.mjs` keeps its existing `THREENATIVE_RUNTIME_SOURCE` escape hatch and adds
+      — `packages/create-threenative/src/doctor.ts:1364` (`nativeRuntimeCheck`); `unknown` is `warn` (`:1375,:1385`), `unavailable` is `fail` (`:1411`).
+- [x] `package-android.mjs` keeps its existing `THREENATIVE_RUNTIME_SOURCE` escape hatch and adds
       the release tag it looked for.
+      — `packages/runtime-native/scripts/package-android.mjs:713` (`expectedSource`), `:731` (message names the source/tag).
 
 **Wiring:**
 
-- [ ] Caller edited: `packages/create-threenative/src/doctor.ts` check list (reached by
-      `threenative.ts:41`).
-- [ ] Registration: none needed — `scripts.install` already runs the hook.
-- [ ] Old path: the `jonit-dev` literal is deleted, not aliased.
-- [ ] Ledger rows filled: #1, #2, #3.
+- [x] Caller edited: `packages/create-threenative/src/doctor.ts` check list (reached by
+      `threenative.ts:41`). — `nativeRuntimeCheck` registered in the doctor check list.
+- [x] Registration: none needed — `scripts.install` already runs the hook. — `install-prebuilt.mjs:422` CLI branch.
+- [x] Old path: the `jonit-dev` literal is deleted, not aliased. — `grep -rn "jonit-dev" packages scripts .github` matches only `packages/runtime-native/tests/fixtures/prd056-*.json`.
+- [x] Ledger rows filled: #1, #2, #3. — no `TBD` cells remain in the ledger.
 
 **Tests Required:**
 
 | Test File | Test Name | Assertion | Negative control (must be observed red) |
 |---|---|---|---|
-| `runtime-native/__tests__/install-prebuilt.spec.ts` | `should build every release URL from the live repository owner` | URL contains `ThreeNativeHQ/threenative` | grep for `jonit-dev` in `packages/` returns nothing; restoring the literal fails the test |
-| `runtime-native/__tests__/install-prebuilt.spec.ts` | `should record ok:false with the fetch reason when the manifest 404s` | status file parsed, `ok === false`, reason names the URL | stub a 200 manifest → the same test fails |
+| `runtime-native/tests/distribution.test.mjs` | `the default checksum lock URL is tied to the installed package version` | URL contains `ThreeNativeHQ/threenative` | grep for `jonit-dev` in `packages/` returns nothing; restoring the literal fails the test |
+| `runtime-native/tests/distribution.test.mjs` | `records a failed prebuilt install with its release URL and reason` | status file parsed, `ok === false`, reason names the URL | stub a 200 manifest → the same test fails |
 | `create-threenative/__tests__/doctor.spec.ts` | `should fail the report when the native runtime install recorded a failure` | `report.pass === false`, message names the platform key | write `ok:true` into the fixture → the assertion fails |
 
 **Revert check:** delete `writeInstallStatus` → `doctor.spec.ts`'s unavailable case fails, and
@@ -282,21 +283,26 @@ names the missing runtime and exits 1 before any build is attempted.
 
 **Implementation:**
 
-- [ ] Reconcile the workflow's uploaded asset names against the exported key table; any key the
+- [x] Reconcile the workflow's uploaded asset names against the exported key table; any key the
       installer can request and the workflow does not upload fails the build.
-- [ ] Cut `runtime-native-v0.3.0` and record the run id, the release URL, and each asset's SHA-256.
+      — `.github/workflows/native-release.yml:833` imports `PREBUILT_ASSET_NAMES`/`PUBLISHED_PREBUILT_KEYS`;
+      `packages/runtime-native/tests/distribution.test.mjs:221` ("the native release workflow covers
+      every exported prebuilt key") passes.
+- [ ] Cut `runtime-native-v0.3.3` and record the run id, the release URL, and each asset's SHA-256.
+      — OPEN: needs release-upload rights; `prebuiltReleaseCensus` reports the release absent.
 
 **Wiring:**
 
-- [ ] Caller edited: `.github/workflows/native-release.yml` reads the exported key table.
-- [ ] Old path: n/a.
-- [ ] Ledger rows filled: #1 (URL now resolves).
+- [x] Caller edited: `.github/workflows/native-release.yml` reads the exported key table.
+      — same import at `native-release.yml:833`.
+- [x] Old path: n/a.
+- [x] Ledger rows filled: #1 (URL now resolves). — the constant/`releaseManifestUrl()` rows have real callers.
 
 **Tests Required:**
 
 | Test File | Test Name | Assertion | Negative control |
 |---|---|---|---|
-| `runtime-native/__tests__/install-prebuilt.spec.ts` | `should upload every prebuilt key the installer can request` | workflow asset list ⊇ key table | remove one key from the workflow list → red |
+| `runtime-native/tests/distribution.test.mjs` | `the native release workflow covers every exported prebuilt key` | workflow asset list ⊇ key table | remove one key from the workflow list → red |
 
 **Revert check:** delete an asset name from the workflow → the key-table test fails.
 
@@ -320,18 +326,20 @@ desktop` writes `dist-native/mygame` and it starts.
 
 **Implementation:**
 
-- [ ] `templatePinCensus`: for every dependency in every shipped template manifest, resolve
+- [x] `templatePinCensus`: for every dependency in every shipped template manifest, resolve
       `name@version` against the registry; an unresolvable pin is a `fail` finding naming the
       template and the pin. Treat a registry it cannot reach as `blocked` (exit 2), matching the
-      existing contract.
-- [ ] `prebuiltReleaseCensus`: `HEAD` the `prebuilt-lock.json` for the current `runtime-native`
-      version; absent → `fail`.
+      existing contract. — `scripts/check-publish-state.ts:308`; spec `:423` (fail) and `:399` (blocked).
+- [x] `prebuiltReleaseCensus`: `HEAD` the `prebuilt-lock.json` for the current `runtime-native`
+      version; absent → `fail`. — `scripts/check-publish-state.ts:452`; spec `:536` (fail) and `:543` (blocked).
 - [ ] Publish `@threenative/assets` and `threenative-engine-mcp`, then the rest of the set.
+      — OPEN: needs npm publish rights; the 0.3.3 pins are committed but unresolvable until published.
 
 **Wiring:**
 
-- [ ] Caller edited: `scripts/check-publish-state.ts` report assembly; the workflow already runs it.
-- [ ] Ledger rows filled: #4, #5.
+- [x] Caller edited: `scripts/check-publish-state.ts` report assembly; the workflow already runs it.
+      — `scripts/check-publish-state.ts:861` (`templatePinCensus`) and `:870` (`prebuiltReleaseCensus`) in the report.
+- [x] Ledger rows filled: #4, #5. — both censuses have non-test callers in the report assembly.
 
 **Tests Required:**
 
@@ -360,19 +368,23 @@ census test fails, and `pnpm publish:check` refuses the tree.
 
 **Implementation:**
 
-- [ ] `doctor` step: `npx threenative doctor` in the scaffolded project; non-zero fails the gate.
-- [ ] `native` step: `npm run build:desktop`; assert the output path exists and is executable.
-- [ ] `mcp` step: for every server in the project's `.mcp.json`, spawn the command and assert a
+- [x] `doctor` step: `npx threenative doctor` in the scaffolded project; non-zero fails the gate.
+      — `scripts/verify-registry-install.ts:840,858` (`doctor --text` step).
+- [x] `native` step: `npm run build:desktop`; assert the output path exists and is executable.
+      — `scripts/verify-registry-install.ts:566` (`nativeOutput`) and the native step; spec `:296` ("fails when the native build produces no executable").
+- [x] `mcp` step: for every server in the project's `.mcp.json`, spawn the command and assert a
       valid `initialize` result on stdout within a timeout — including
       `threenative-engine`, whose `engine_search_capabilities` must return at least one hit for a
-      plain-words query.
-- [ ] Fail closed: a step that did not run is a failure, matching the file's existing contract.
+      plain-words query. — `scripts/verify-registry-install.ts:625` (`mcpStep`), `:950`; engine search at `:702`; spec `:344` ("fails when an MCP server never answers initialize").
+- [x] Fail closed: a step that did not run is a failure, matching the file's existing contract.
+      — `scripts/verify-registry-install.ts:558` (`step`); spec `:391` ("does not report a pass for a step that did not run").
 
 **Wiring:**
 
-- [ ] Caller edited: `.github/workflows/npm-release.yml` clean-room job.
-- [ ] Old path: the four-step flow is extended, not duplicated.
-- [ ] Ledger rows filled: #6.
+- [x] Caller edited: `.github/workflows/npm-release.yml` clean-room job.
+      — `npm-release.yml:209` runs `pnpm tsx scripts/verify-registry-install.ts` in the `clean-room` job (`:162`).
+- [x] Old path: the four-step flow is extended, not duplicated.
+- [x] Ledger rows filled: #6. — the doctor/native/mcp steps have non-test callers in the runner.
 
 **Tests Required:**
 
@@ -404,15 +416,18 @@ the dated Arm A run above reproduces the recorded failures.
 
 **Implementation:**
 
-- [ ] Pack and inject both packages so a sandbox can run `threenative build --target desktop` and
+- [x] Pack and inject both packages so a sandbox can run `threenative build --target desktop` and
       launch the capability server without touching the workspace.
-- [ ] Update the sandbox's closing report to name native and capability availability.
+      — `scripts/make-sandbox.ts:38` (`PACKAGES` from `sandboxWorkspacePackages()`), scaffold `packageSources`; spec `make-sandbox.spec.ts:126` ("packs the native runtime and capability server with the user-facing packages").
+- [x] Update the sandbox's closing report to name native and capability availability.
+      — `scripts/make-sandbox.ts:734-735` ("native runtime: packed locally for build --target desktop" / "capability server: packed locally for engine_search_capabilities").
 
 **Wiring:**
 
-- [ ] Caller edited: `scripts/make-sandbox.ts:21` and the scaffold invocation below it.
-- [ ] Old path: the six-package list is replaced.
-- [ ] Ledger rows filled: #7.
+- [x] Caller edited: `scripts/make-sandbox.ts:21` and the scaffold invocation below it.
+      — `PACKAGES` is derived from the workspace build order and passed as `packageSources`.
+- [x] Old path: the six-package list is replaced. — no hard-coded package list remains.
+- [x] Ledger rows filled: #7. — `--runtime-package`/`--engine-mcp-package` overrides at `create-threenative/src/index.ts:23,735`; spec `scaffold.spec.ts:1726,1734`.
 
 **Tests Required:**
 
@@ -470,19 +485,24 @@ above it.
 - [ ] In that project, an agent calling `engine_search_capabilities("enemy walks around a wall")`
       through the project's `.mcp.json` receives at least one capability.
 - [ ] In that project, `pnpm test` is green on first run with no added flags.
-- [ ] `pnpm publish:check` refuses a tree whose templates pin an unpublished package, and refuses a
+- [x] `pnpm publish:check` refuses a tree whose templates pin an unpublished package, and refuses a
       tree whose runtime version has no prebuilt release.
+      — observed 2026-09-23: 70 findings — 69 `template:<name>` pin findings for the unpublished 0.3.3
+      pins, plus `@threenative/runtime-native: No prebuilt release exists at .../runtime-native-v0.3.3/prebuilt-lock.json`; exit 1.
 - [ ] `pnpm sandbox` produces a sandbox in which the desktop build succeeds without pointing at
-      the engine source.
+      the engine source. — OPEN: not run this session.
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`.
-- [ ] Every new exported symbol has a non-test consumer (census pasted).
-- [ ] Revert check passed for each phase.
-- [ ] The `jonit-dev` URL is deleted, not aliased — no behaviour has two live implementations.
-- [ ] Every gate has a negative control observed failing.
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`.
+- [x] Every new exported symbol has a non-test consumer (census pasted).
+      — `templatePinCensus`/`prebuiltReleaseCensus` → `check-publish-state.ts:861,870`; `RELEASE_REPOSITORY`/`writeInstallStatus` → `install-prebuilt.mjs:195,248,283,305,313` and `package-android.mjs:19`.
+- [ ] Revert check passed for each phase. — OPEN: not run this session.
+- [x] The `jonit-dev` URL is deleted, not aliased — no behaviour has two live implementations.
+      — `grep -rn "jonit-dev" packages scripts .github` matches only `packages/runtime-native/tests/fixtures/prd056-*.json`.
+- [ ] Every gate has a negative control observed failing. — OPEN: the negative controls are encoded as passing specs; not observed red this session.
 - [ ] Proved on the real subjects: `linux-x64` desktop and `android-arm64-v8a`, not a stub key.
+      — OPEN: needs the published cohort + `runtime-native-v0.3.3` release.
 
 ## Out of scope
 
