@@ -12,6 +12,8 @@
 #include "mystral/cold_start.h"
 #include "mystral/js/module_system.h"
 #include <deque>
+#include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #if defined(__ANDROID__)
@@ -25,8 +27,9 @@
 
 #include "v8.h"
 #include "libplatform/libplatform.h"
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
 #include "v8-profiler.h"
+#include <algorithm>
 #include <cstdlib>
 #endif
 
@@ -104,6 +107,65 @@ static bool initializeV8() {
 
     return true;
 }
+
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+// V8's `CpuProfile::Serialize` writes function names and script URLs unescaped, so a real game's
+// `RegExp: ^((?:[^\[\]\.:\/]+…` frame name, or a quote in a `sourceURL`, turns the file into
+// JSON that DevTools refuses. The embedder writes the same DevTools shape and escapes every string.
+static void writeJsonString(std::ostream& out, const char* text) {
+    out << '"';
+    for (const unsigned char* c = reinterpret_cast<const unsigned char*>(text); *c; ++c) {
+        if (*c == '"' || *c == '\\') {
+            out << '\\' << *c;
+        } else if (*c < 0x20) {
+            char escaped[8];
+            std::snprintf(escaped, sizeof escaped, "\\u%04x", *c);
+            out << escaped;
+        } else {
+            out << *c;
+        }
+    }
+    out << '"';
+}
+
+static bool writeCpuProfile(v8::Isolate* isolate, const v8::CpuProfile* profile, const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    out << "{\"nodes\":[";
+    std::vector<const v8::CpuProfileNode*> stack{profile->GetTopDownRoot()};
+    for (bool first = true; !stack.empty(); first = false) {
+        const v8::CpuProfileNode* node = stack.back();
+        stack.pop_back();
+        v8::String::Utf8Value name(isolate, node->GetFunctionName());
+        v8::String::Utf8Value url(isolate, node->GetScriptResourceName());
+        out << (first ? "" : ",") << "{\"id\":" << node->GetNodeId() << ",\"callFrame\":{\"functionName\":";
+        writeJsonString(out, *name ? *name : "");
+        out << ",\"scriptId\":" << node->GetScriptId() << ",\"url\":";
+        writeJsonString(out, *url ? *url : "");
+        // DevTools positions are 0-based; V8's are 1-based with 0 meaning unknown, which maps to -1.
+        out << ",\"lineNumber\":" << node->GetLineNumber() - 1 << ",\"columnNumber\":"
+            << node->GetColumnNumber() - 1 << "},\"hitCount\":" << node->GetHitCount() << ",\"children\":[";
+        for (int i = 0; i < node->GetChildrenCount(); i++) {
+            out << (i ? "," : "") << node->GetChild(i)->GetNodeId();
+            stack.push_back(node->GetChild(i));
+        }
+        out << "]}";
+    }
+    const int samples = profile->GetSamplesCount();
+    out << "],\"startTime\":" << profile->GetStartTime() << ",\"endTime\":" << profile->GetEndTime()
+        << ",\"samples\":[";
+    for (int i = 0; i < samples; i++) out << (i ? "," : "") << profile->GetSample(i)->GetNodeId();
+    out << "],\"timeDeltas\":[";
+    int64_t previous = profile->GetStartTime();
+    for (int i = 0; i < samples; i++) {
+        out << (i ? "," : "") << profile->GetSampleTimestamp(i) - previous;
+        previous = profile->GetSampleTimestamp(i);
+    }
+    out << "]}\n";
+    out.flush();
+    return out.good();
+}
+#endif
 
 class V8EntryScope {
 public:
@@ -189,34 +251,40 @@ public:
             setupGlobals();
         }
 
-#if TN_ANDROID_JS_PROFILE
-        // PRD-222: name the JavaScript half of the frame. Opt-in through the environment so the
-        // profiled host stays usable as a plain A/B meter; the profiler perturbs the frame.
-        if (const char* enabled = std::getenv("TN_JS_CPU_PROFILE")) {
-            if (enabled[0] == '1') {
-                g_startCpuProfile = [this]() {
-                    if (cpuProfiler_) return;
-                    V8EntryScope entryScope(isolate_);
-                    const auto context = context_.Get(isolate_);
-                    entryScope.enterContext(context);
-                    cpuProfiler_ = v8::CpuProfiler::New(isolate_);
-                    cpuProfiler_->SetSamplingInterval(200);
-                    v8::HandleScope profileScope(isolate_);
-                    cpuProfiler_->StartProfiling(
-                        v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked(), true);
-                    std::cout << "[V8] CPU profiler started" << std::endl;
-                };
-                g_dumpCpuProfile = [this]() { dumpCpuProfile(); };
-            }
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+        // PRD-222 / PRD-444: name the JavaScript half of the frame. `--cpu-prof <path>` writes a
+        // loadable DevTools file; TN_JS_CPU_PROFILE=1 is the env equivalent with the printed
+        // summary only. Opt-in because the profiler perturbs the frame, and started on demand at
+        // the first eligible frame so startup's compiles do not contaminate the sample.
+        const char* enabled = std::getenv("TN_JS_CPU_PROFILE");
+        if ((enabled != nullptr && enabled[0] == '1') || !g_cpuProfilePath.empty()) {
+            g_startCpuProfile = [this]() {
+                if (cpuProfiler_) return;
+                V8EntryScope entryScope(isolate_);
+                const auto context = context_.Get(isolate_);
+                entryScope.enterContext(context);
+                cpuProfiler_ = v8::CpuProfiler::New(isolate_);
+                cpuProfiler_->SetSamplingInterval(200);
+                v8::HandleScope profileScope(isolate_);
+                cpuProfiler_->StartProfiling(
+                    v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked(), true);
+                std::cout << "[V8] CPU profiler started" << std::endl;
+            };
+            g_dumpCpuProfile = [this]() { dumpCpuProfile(); };
+            // `--cpu-prof` asks for the whole run, so it starts now rather than at the Android
+            // probe's frame 226 — a short playtest run must still profile. The env var keeps the
+            // steady-state start so an A/B on Android is unchanged.
+            if (!g_cpuProfilePath.empty()) g_startCpuProfile();
         }
 #endif
         std::cout << "[V8] Engine created successfully" << std::endl;
     }
 
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
     // Flatten the sampled tree into self-time per (function, script:line) and print the heaviest
     // entries. Self time is the node's own hit count, so a shared helper is not credited to its
-    // callers and the totals stay additive.
+    // callers and the totals stay additive. When `--cpu-prof` named a path, the same profile is
+    // serialized to a DevTools `.cpuprofile` beside the summary.
     void dumpCpuProfile() {
         if (!cpuProfiler_) return;
         V8EntryScope entryScope(isolate_);
@@ -276,6 +344,19 @@ public:
                       << (total ? 100.0 * rows[i].second.hits / total : 0.0) << "\t"
                       << rows[i].first << "\t" << rows[i].second.location << std::endl;
         }
+        if (!g_cpuProfilePath.empty()) {
+            // Write beside the target and rename, so a kill mid-write cannot leave a truncated
+            // `.cpuprofile` that still looks like a profile.
+            const std::string temporaryPath = g_cpuProfilePath + ".tmp";
+            if (!writeCpuProfile(isolate_, profile, temporaryPath) ||
+                std::rename(temporaryPath.c_str(), g_cpuProfilePath.c_str()) != 0) {
+                std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: write failed for " << g_cpuProfilePath
+                          << std::endl;
+                g_cpuProfileFailed = true;
+            } else {
+                std::cout << "TN_CPU_PROFILE_WRITTEN:" << g_cpuProfilePath << std::endl;
+            }
+        }
         profile->Delete();
         cpuProfiler_->Dispose();
         cpuProfiler_ = nullptr;
@@ -284,7 +365,7 @@ public:
 
     ~V8Engine() override {
         std::cout << "[V8] Destroying engine..." << std::endl;
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
         dumpCpuProfile();
 #endif
         // Clean up any remaining frame handles
@@ -1905,7 +1986,7 @@ private:
     };
 
     v8::Isolate* isolate_ = nullptr;
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
     v8::CpuProfiler* cpuProfiler_ = nullptr;
 #endif
     v8::ArrayBuffer::Allocator* allocator_ = nullptr;

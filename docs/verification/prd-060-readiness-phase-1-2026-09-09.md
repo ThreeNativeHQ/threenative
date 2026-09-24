@@ -138,7 +138,7 @@ The phase-1 acceptance boundary is therefore proven locally. The remaining relea
 require an exact hosted candidate and owner-supplied external capabilities; no local green result is
 promoted to `DONE`.
 
-References: [PRD-060](../PRDs/BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md),
+References: [PRD-060](../PRDs/production-readiness/PRD-060-promoted-consumer-distribution.md),
 [candidate workflow](../../.github/workflows/release-candidate.yml),
 [native-release workflow](../../.github/workflows/native-release.yml), and
 [phase-1 validator](../../scripts/release-candidate-gate.ts).

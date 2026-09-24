@@ -606,17 +606,6 @@ uint64_t endProfiledBinding(
 }
 
 static void emitAndroidJsNativeProfile(BindingsState* state, uint64_t submitPollNs, uint64_t presentNs) {
-    // 226 is the frame the Android lane profiles from, which is fine for steady state and useless
-    // for a startup: a game whose first seconds stall the loop reaches frame 226 long after the
-    // stall is over. `TN_JS_CPU_PROFILE_START_FRAME` moves the window so the stall can be profiled
-    // at all. Read once — a `getenv` per frame is not worth a measurement that is already opt-in.
-    if (js::g_startCpuProfile) {
-        static const uint32_t startFrame = [] {
-            const char* value = std::getenv("TN_JS_CPU_PROFILE_START_FRAME");
-            return value != nullptr ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 226u;
-        }();
-        if (state->profiling.frameEndCount == startFrame) js::g_startCpuProfile();
-    }
     const uint64_t nowCpuNs = readRenderThreadCpuNs();
     const uint64_t renderThreadCpuNs =
         (state->profiling.lastRenderThreadCpuNs != 0 && nowCpuNs > state->profiling.lastRenderThreadCpuNs)
@@ -2994,6 +2983,28 @@ void endDawnFrame(BindingsState* state) {
     // desktop and device gates keep their `minTicks` guarantee; every tick after it waits a
     // second of wall clock, whatever the loop is doing.
     state->profiling.frameEndCount += 1;
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    // One start hook for the desktop and Android lanes (PRD-444). 226 is the frame the Android lane
+    // profiles from, which is fine for steady state and useless for a startup: a game whose first
+    // seconds stall the loop reaches frame 226 long after the stall is over.
+    // `TN_JS_CPU_PROFILE_START_FRAME` moves the window so the stall can be profiled at all. Read
+    // once — a `getenv` per frame is not worth a measurement that is already opt-in.
+    if (js::g_startCpuProfile) {
+        static const uint32_t startFrame = [] {
+            const char* value = std::getenv("TN_JS_CPU_PROFILE_START_FRAME");
+            return value != nullptr ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 226u;
+        }();
+        if (state->profiling.frameEndCount == startFrame) js::g_startCpuProfile();
+    }
+    // A SIGTERM asked for the profile to be flushed. Done here, on the render thread between
+    // frames, because a signal handler may not call V8.
+    if (js::g_cpuProfileStopRequested && js::g_dumpCpuProfile) {
+        js::g_cpuProfileStopRequested = 0;
+        js::g_dumpCpuProfile();
+        std::cout.flush();
+        std::_Exit(js::g_cpuProfileFailed ? 1 : 0);
+    }
+#endif
     if (state->profiling.frameEndCount % 60 == 0) {
         using clock = std::chrono::steady_clock;
         const clock::time_point now = clock::now();

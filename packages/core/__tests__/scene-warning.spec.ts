@@ -56,6 +56,7 @@ const MIDWAY_CULL: IRenderCameraCullReport = {
   enabled: true,
   exemptCameraAttached: 0,
   exemptFrustumCulled: 0,
+  exemptDynamicBounds: 0,
   exemptMarked: 0,
   exemptShadowCasters: 856,
   exemptWithoutBounds: 0,

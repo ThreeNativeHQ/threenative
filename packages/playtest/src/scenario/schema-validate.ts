@@ -789,7 +789,12 @@ export function validateStepLabels(
 }
 
 export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number {
-  if (step.press === undefined || step.holdFrames !== undefined || step.waitFrames !== undefined) return 0;
+  // A touch or mouse hold authored in `holdTicks` is held for those ticks. Dropping it left a
+  // 90-tick drag lasting one display frame, so the scenario passed or failed on wall-clock luck.
+  const pointerHold =
+    (step.pointers !== undefined || step.pointerPosition !== undefined) && step.holdTicks !== undefined;
+  if ((step.press === undefined && !pointerHold) || step.holdFrames !== undefined || step.waitFrames !== undefined)
+    return 0;
   return Math.max(1, step.holdTicks ?? fallback);
 }
 

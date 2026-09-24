@@ -315,6 +315,11 @@ describe("scenario schema boundaries", () => {
     expect(validateAimTarget({ entity: "player" }, "steps.json", 0)).toEqual({ entity: "player" });
     expect(validatePointer({ buttons: 1, id: 2, x: 0, y: 1 }, "steps.json", 0, 0)).toEqual({ buttons: 1, id: 2, x: 0, y: 1 });
     expect(playtestStepHoldTicks({ press: "KeyW", release: true } as never, 3)).toBe(3);
+    // A touch hold authored in ticks is held for those ticks, not dropped to one display frame.
+    expect(playtestStepHoldTicks({ holdTicks: 90, pointers: [{ id: 7, x: 0.2, y: 0.5 }], release: true } as never, 0)).toBe(90);
+    expect(playtestStepHoldTicks({ holdTicks: 5, pointerPosition: { x: 0.5, y: 0.5 }, release: true } as never, 0)).toBe(5);
+    // A pointer step with no authored hold keeps its one-frame timing.
+    expect(playtestStepHoldTicks({ pointers: [{ id: 7, x: 0.2, y: 0.5 }], release: true } as never, 0)).toBe(0);
     expect(playtestStepWaitTicks({ release: true, waitTicks: 4 } as never)).toBe(4);
   });
 
