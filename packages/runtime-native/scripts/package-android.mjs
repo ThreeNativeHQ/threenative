@@ -889,6 +889,22 @@ export function androidAbiGradleArgs(mode, extraGradleArgs = []) {
 }
 
 /**
+ * The ABI set a Gradle invocation builds: its last `-PthreenativeAbis`, or `undefined` for Gradle's
+ * own default. The 16 KB census checks exactly this set, so a release (arm64-v8a) or an
+ * emulator-only (x86_64) build is not failed for the slice it deliberately left out.
+ */
+export function androidRequestedAbis(gradleArgs) {
+  const value = gradleArgs
+    .map((arg) => /^(?:-P|--project-prop=)threenativeAbis=(.*)$/u.exec(arg)?.[1])
+    .filter((entry) => entry !== undefined)
+    .at(-1);
+  return value
+    ?.split(',')
+    .map((abi) => abi.trim())
+    .filter((abi) => abi.length > 0);
+}
+
+/**
  * The exact artifacts a resolved request may produce, in preference order.
  *
  * A release APK is signed, so only `app-release.apk` satisfies it; `app-release-unsigned.apk` is a
@@ -1139,7 +1155,11 @@ export async function packageAndroid(
         });
       }
       // The 16 KB census runs on the artifact that ships, not on the build directory it came from.
-      const census = assertAndroidArtifact16KbAlignment(output, options.artifact16Kb ?? {});
+      const abis = androidRequestedAbis(baseArgs);
+      const census = assertAndroidArtifact16KbAlignment(output, {
+        ...(abis === undefined ? {} : { abis }),
+        ...(options.artifact16Kb ?? {}),
+      });
       for (const library of census.libraries) {
         console.log(
           `  16 KB ok: ${library.entry} (${library.compression}, offset 0x${library.dataOffset.toString(16)}, ` +
