@@ -1,0 +1,33 @@
+name: PR306 native coverage and Android fixture verification
+on:
+  push:
+    branches: [fix/prd-399-android-ui-latency]
+    paths: [.github/workflows/pr306-native-coverage-fix.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify Android packaging fixture repair
+        run: pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/android-packaging.integration.test.mjs
+      - name: Regenerate native coverage evidence
+        run: pnpm --filter @threenative/runtime-native native:coverage
+      - name: Verify regenerated gates
+        run: |
+          pnpm budgets
+          git diff --check
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr306-native-coverage-report
+          path: docs/verification/native-coverage-2026-08-28.md
+          retention-days: 3
