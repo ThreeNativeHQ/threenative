@@ -120,8 +120,8 @@ acceptance) and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-bran
 4. **Supply chain and distribution.** SBOM/provenance —
    [PRD-059](../BLOCKED/requires-hosted-run/PRD-059-native-dependency-provenance-sbom.md) (0/36);
    store validation, signing hand-off, N-1 recovery and promotion —
-   [PRD-060](PRD-060-promoted-consumer-distribution.md) (0/24) and its
-   [BLOCKED twin](../BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md) (10/54).
+   [PRD-060](PRD-060-promoted-consumer-distribution.md) (0/24; the duplicate BLOCKED file carrying
+   its implemented Phase 1 exact-candidate preflight was removed by PRD-445 Phase 3).
 5. **iOS is not a supported target** (decision 2). [PRD-065](../BLOCKED/requires-ios-ecossystem/PRD-065-ios-evidence-lane.md)
    (3/15) and iOS rows in other PRDs block nothing; the public README still claims iOS, which
    [PRD-445](critical/PRD-445-public-release-hygiene.md) removes.
@@ -180,7 +180,7 @@ These fold into [PRD-445](critical/PRD-445-public-release-hygiene.md):
 
 - PRD-060 exists twice, with different titles and progress
   ([here](PRD-060-promoted-consumer-distribution.md) and
-  [in BLOCKED](../BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md)).
+  [in BLOCKED](../BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md)). **Resolved 2026-09-23** by PRD-445 Phase 3: the BLOCKED duplicate was deleted, its landed Phase 1 folded into the survivor.
 - `PRD-375-release-artifacts-carry-the-game-brand.md` carries the heading "PRD-153".
 - Release-blocking PRDs without phase boxes cannot report progress: PRD-054, PRD-058, PRD-064,
   PRD-066 and PRD-112-repair.
