@@ -131,6 +131,26 @@ owner on 2026-09-24: not worth the size.
 4. Package only files the asset manifest references; warn on the rest.
 5. Emit brotli and gzip sidecars from the web build.
 
+## Achieved (PRD-447, 2026-09-24)
+
+Measured on the same consumer game and local trees after the PRD-447 changes.
+
+| Distributable | Before | After | Change |
+| --- | --- | --- | --- |
+| Android release APK | 105,284,577 B | 51,749,487 B | arm64-v8a only in release; debug keeps x86_64 |
+| Native `assets/scripts/main.js` | 5,015,233 B | 2,063,155 B | esbuild minify, `keepNames`, licence comments kept |
+| Desktop Linux runtime (packaged) | 126,432,264 B | 74,254,000 B | stripped release copy |
+| Desktop Linux runtime + section GC | 74,327,728 B stripped | 58,072,784 B stripped | `--gc-sections`, Linux only |
+| Web decoder copies in `dist/assets` | 7 files, 1.93 MB | 0 | never fetched; one Basis pair remains in `basis/` |
+| Web main chunk transfer (`action-rpg`) | 3,564,059 B raw | 934,103 B brotli / 1,218,661 B gzip | `.br`/`.gz` sidecars |
+
+Not taken, with the measurement: Rapier WASM as a file would save about 185 KB brotli
+(`rapier_wasm3d_bg.wasm` 429,334 B against `rapier.mjs` 614,287 B) but needs the non-compat
+`@dimforge/rapier3d`, a new dependency. SWC-off would save another 21.7 MB stripped on Linux, but
+the prebuilt runtime is also the `mystral run foo.ts` CLI and ships `mystral-tools`, which
+transpiles TypeScript. Manifest-only packaging was measured to drop hand-placed runtime files, so
+the packagers skip only editor leftovers and superseded digest outputs (333 files in one game).
+
 ## Reproduce
 
 ```sh
