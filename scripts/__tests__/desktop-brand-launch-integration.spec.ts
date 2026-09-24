@@ -48,9 +48,7 @@ it("proves release signing with test credentials on Windows and macOS", async ()
   expect(macCertificate).toContain('security import "$p12"');
   // The build itself signs with the test credential, exactly as the Windows leg passes its subject.
   const macBuild = step("Build the desktop release container");
-  expect(macBuild).toContain(
-    "THREENATIVE_DESKTOP_CODESIGN_IDENTITY='ThreeNative CI Signing Proof'",
-  );
+  expect(macBuild).toContain('THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY"');
   expect(macBuild).not.toContain("THREENATIVE_DESKTOP_CODESIGN_IDENTITY=-");
   // The signature is read back independently of the adapter that wrote it.
   const macReadBack = step("Read the macOS signature back off the release container");
