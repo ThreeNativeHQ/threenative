@@ -2,7 +2,7 @@
 
 **Status:** NOT STARTED
 **Complexity:** 3 → LOW; all local, no credentials.
-**Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
+**Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../RELEASE-READINESS-2026-09-23.md).
 
 ## Context
 
@@ -50,6 +50,21 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
 - [ ] One PRD-060 remains; the other is removed with its ticked boxes and evidence merged into the survivor.
 - [ ] PRD-375's heading matches its file name, and links to it still resolve.
 - [ ] Phase boxes added to PRD-054, PRD-058, PRD-064, PRD-066 and PRD-112-repair; `pnpm prd:progress` exits 0 on each.
+
+### Phase 4 — Repository junk a stranger clones
+
+Inventory 2026-09-23 (read-only arm; each "no references" re-checked with `git grep -l <name>`
+excluding `docs/PRDs/done`, 0 hits). About 5.7 MiB of tracked bytes.
+
+- [ ] Delete `packages/runtime-native/native/ui-overlay/composited.ppm` (2.76 MB, unreferenced).
+- [ ] Delete `docs/verification/platformer-round-1-final-comparison.png` (1.73 MB, unreferenced, outside every walked evidence root).
+- [ ] Untrack `artifacts/vsm-prototype/` (47 files, 1.42 MB, unreferenced; already matched by `.gitignore` `artifacts`).
+- [ ] Untrack `.runtime/` and add it to `.gitignore` (3 tracked files; scripts write there at run time).
+- [ ] Delete root `profile-l1.mjs`, `peek.mjs`, `packages/core/tmp-probe-instanced-write.mts` and `advisor-plans/` (all unreferenced).
+- [ ] Delete the two tracked sweep `scaffold.sh` files carrying `/home/joao` paths (`docs/benchmark/sweeps/physics-puzzle-2026-08-15-9/`, `-2026-08-16/`); confirm no spec reads them first.
+- [ ] Owner call: the two product-playbook PDFs in `docs/product/` (1.8 MB, unreferenced).
+- [ ] Owner call: `docs/midway-adoption-verify/midway-adoption.patch` carries a personal email in its commit headers.
+- [ ] Owner call: 214 tracked files carry absolute `/home/joao/...` paths (mostly verification records; not secrets). No tracked tokens or private keys were found.
 
 ## Acceptance criteria
 

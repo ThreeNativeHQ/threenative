@@ -4,20 +4,20 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) now has a live caller — `verifyStarterContainer` and its CLI `--config` flag inspect the container's brand before anything launches — and real Windows PE resource inspection replacing the manifest-only false pass (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../verification/prd-375-readiness-phase-2-2026-09-15.md)). PRD-365's containers landed on `develop` (PR #224, `b66585f08`), so that blocker is gone. A real linux-x64 container built from a starter branded only in game files passes the shipped CLI end to end (300 frames, brand verified, exit 0) with three negative controls firing on the real artifact. What remains is Windows/macOS OS-launcher inspection and human capture on those hosts, a PRD-365 container `loading` record so a configured `bootSplash` can pass, and an independent reviewer PASS.
-Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../verification/prd-375-readiness-phase-1-2026-09-12.md).
+**Status:** PARTIAL — phase 1 (Android release-artifact brand) landed and observed on the API 36 16 KB emulator; physical OEM appearance stays a separately named observation. Phase 2 (distributed desktop brand) now has a live caller — `verifyStarterContainer` and its CLI `--config` flag inspect the container's brand before anything launches — and real Windows PE resource inspection replacing the manifest-only false pass (evidence: [prd-375-readiness-phase-2-2026-09-15.md](../../../verification/prd-375-readiness-phase-2-2026-09-15.md)). PRD-365's containers landed on `develop` (PR #224, `b66585f08`), so that blocker is gone. A real linux-x64 container built from a starter branded only in game files passes the shipped CLI end to end (300 frames, brand verified, exit 0) with three negative controls firing on the real artifact. What remains is Windows/macOS OS-launcher inspection and human capture on those hosts, a PRD-365 container `loading` record so a configured `bootSplash` can pass, and an independent reviewer PASS.
+Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
 PRD-153's own web branding and is already delivered — `web-brand.spec.ts` green, `branding.playtest.json`
 tracked, re-confirmed by the readiness assessment — so it is dropped here rather than re-litigated.
 What remains is what PRD-153 explicitly did not claim: the installed Android **release artifact** and
 the **distributed desktop app** showing the developer brand.
-[PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) is restored to `done/`; this PRD
+[PRD-153](../../done/PRD-153-game-branding-from-launch-to-play.md) is restored to `done/`; this PRD
 extends it.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 platform packaging, +1 OS appearance validation).
 **Problem:** Game-owned branding controls exist, but their appearance on final distributed native artifacts has not been established for this release path.
 
-Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](../README.md). Baseline: [the assessment](../../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
 
@@ -31,7 +31,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 The report changed name/icon paths/theme color only in the installed game and verified web output. app.icon/app.icons/bootSplash and generated src/render/loading.ts already exist. Desktop staging currently proves a runtime SDL window icon, not executable/Finder/installed launcher metadata. Original PRD-153 closed with unverified device lanes.
 
-Appearance stays game-generated source; native resource conversion/application is engine plumbing. [PRD-365](PRD-365-consumer-desktop-distribution.md) owns desktop containers/resource embedding; [PRD-212](../done/PRD-212-published-install-builds-android.md) owns signed Android packaging. This PRD owns the authored inputs, loading/handoff behavior and visible proof, avoiding duplicate packagers.
+Appearance stays game-generated source; native resource conversion/application is engine plumbing. [PRD-365](PRD-365-consumer-desktop-distribution.md) owns desktop containers/resource embedding; [PRD-212](../../done/PRD-212-published-install-builds-android.md) owns signed Android packaging. This PRD owns the authored inputs, loading/handoff behavior and visible proof, avoiding duplicate packagers.
 
 ## Approach and boundaries
 
@@ -234,4 +234,4 @@ other criterion's wording changed.
 
 Moved from `docs/PRDs/done/PRD-153-game-branding-from-launch-to-play.md` under the owner's 2026-09-08 instruction. This revision replaces the execution scope, not historical test results. [Original plan at the assessed commit](https://github.com/ThreeNativeHQ/threenative/blob/912a567e3e7592e6b437e49fe6318a3987d1f7c1/docs/PRDs/done/PRD-153-game-branding-from-launch-to-play.md) remains the immutable history. Original completion at 930569b plus 620e464/a4a7db3 remains credited. This reopening is final non-iOS consumer-artifact appearance, not removal of the established app/icons/bootSplash API.
 
-Historical evidence: [prd-153-154-integration-2026-08-19.md](../../verification/prd-153-154-integration-2026-08-19.md).
+Historical evidence: [prd-153-154-integration-2026-08-19.md](../../../verification/prd-153-154-integration-2026-08-19.md).

@@ -2,7 +2,7 @@
 
 **Status:** NOT STARTED
 **Complexity:** 6 → MEDIUM; touches release scripts and CI, no runtime code.
-**Depends on:** [PRD-445](PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
+**Depends on:** [PRD-445](critical/PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
 (1.0) of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
 
 ## Context

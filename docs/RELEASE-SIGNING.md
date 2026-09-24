@@ -107,7 +107,7 @@ output:
   `stapler staple`.
 - Android: the Gradle `signingConfigs` block, which `package-android.mjs` already generates around.
 
-That work belongs to [PRD-365](PRDs/production-readiness/PRD-365-consumer-desktop-distribution.md)
+That work belongs to [PRD-365](PRDs/production-readiness/critical/PRD-365-consumer-desktop-distribution.md)
 (consumer desktop distribution), not to the release-publishing lane.
 
 ## Related
