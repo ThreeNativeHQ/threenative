@@ -789,8 +789,14 @@ export function validateStepLabels(
 }
 
 export function playtestStepHoldTicks(step: IPlaytestStep, fallback = 1): number {
-  if (step.press === undefined || step.holdFrames !== undefined || step.waitFrames !== undefined) return 0;
-  return Math.max(1, step.holdTicks ?? fallback);
+  if (step.holdFrames !== undefined || step.waitFrames !== undefined) return 0;
+  // An authored hold is a hold whichever input carries it. This used to return 0 unless `press`
+  // was set, so every pointer-only step silently discarded its `holdTicks`: the runner advanced
+  // one display frame instead of the ticks the scenario asked for, and a stick anchored on one
+  // step and moved on the next read a machine-dependent few live ticks of throttle.
+  if (step.holdTicks !== undefined) return Math.max(1, step.holdTicks);
+  if (step.press === undefined) return 0;
+  return Math.max(1, fallback);
 }
 
 export function playtestStepWaitTicks(step: IPlaytestStep): number {
