@@ -79,7 +79,9 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
   A1 still fails (the 0.3.3 / 0.2.6 cohort is unpublished); A6 stays deferred; that is expected and
   belongs to PRD-196.
 - [ ] Root cause of the `site` deploy failure recorded here; the next `site` run on `main` is green.
-  **Root cause recorded; the green run needs an owner secret and a push.** The `site` workflow's
+  **Root cause recorded, box deliberately unticked: the `CLOUDFLARE_API_TOKEN` repo secret is
+  unset; `wrangler` exits "In a non-interactive environment, it's necessary to set a
+  CLOUDFLARE_API_TOKEN". Owner will set it.** The `site` workflow's
   `deploy` job (`site.yml`, environment `site-production`) maps
   `secrets.CLOUDFLARE_ACCOUNT_ID` / `secrets.CLOUDFLARE_API_TOKEN` into `pnpm site:deploy`, but on
   the failing run (`main`, `d3e6b7deb`, run 35899011227) both env vars are empty, so `wrangler
