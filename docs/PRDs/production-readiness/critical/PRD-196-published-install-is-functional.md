@@ -283,21 +283,26 @@ names the missing runtime and exits 1 before any build is attempted.
 
 **Implementation:**
 
-- [ ] Reconcile the workflow's uploaded asset names against the exported key table; any key the
+- [x] Reconcile the workflow's uploaded asset names against the exported key table; any key the
       installer can request and the workflow does not upload fails the build.
-- [ ] Cut `runtime-native-v0.3.0` and record the run id, the release URL, and each asset's SHA-256.
+      — `.github/workflows/native-release.yml:833` imports `PREBUILT_ASSET_NAMES`/`PUBLISHED_PREBUILT_KEYS`;
+      `packages/runtime-native/tests/distribution.test.mjs:221` ("the native release workflow covers
+      every exported prebuilt key") passes.
+- [ ] Cut `runtime-native-v0.3.3` and record the run id, the release URL, and each asset's SHA-256.
+      — OPEN: needs release-upload rights; `prebuiltReleaseCensus` reports the release absent.
 
 **Wiring:**
 
-- [ ] Caller edited: `.github/workflows/native-release.yml` reads the exported key table.
-- [ ] Old path: n/a.
-- [ ] Ledger rows filled: #1 (URL now resolves).
+- [x] Caller edited: `.github/workflows/native-release.yml` reads the exported key table.
+      — same import at `native-release.yml:833`.
+- [x] Old path: n/a.
+- [x] Ledger rows filled: #1 (URL now resolves). — the constant/`releaseManifestUrl()` rows have real callers.
 
 **Tests Required:**
 
 | Test File | Test Name | Assertion | Negative control |
 |---|---|---|---|
-| `runtime-native/__tests__/install-prebuilt.spec.ts` | `should upload every prebuilt key the installer can request` | workflow asset list ⊇ key table | remove one key from the workflow list → red |
+| `runtime-native/tests/distribution.test.mjs` | `the native release workflow covers every exported prebuilt key` | workflow asset list ⊇ key table | remove one key from the workflow list → red |
 
 **Revert check:** delete an asset name from the workflow → the key-table test fails.
 
