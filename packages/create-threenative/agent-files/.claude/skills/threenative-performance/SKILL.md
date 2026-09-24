@@ -5,17 +5,11 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 
 # ThreeNative performance evidence
 
-Refill scratch and pool objects; load static GLBs through `ctx.assets.model()` so rollback is removal, and never claim Android/iOS from a web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, `residual`, plus per-pass draw calls and triangles attributed to the innermost render call. `defineGame({ frameBudget: false })` silences output, never measurement.
+Refill scratch and pool objects; load static GLBs through `ctx.assets.model()` so rollback is removal; never claim Android/iOS from a web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, `residual`, plus per-pass draws and triangles by innermost render call. `defineGame({ frameBudget: false })` silences output, never measurement.
 
-## Reach for the shipped default before you write your own
+The engine prepares transforms, batches, projection, per-pass culling, resolution scaling, asset cooking and first-use warming. Hand-rolling any of that pays twice — read `agent-docs/performance-basics.md` before the first profile. Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4.
 
-The engine already prepares transforms, batches and projects the scene, culls per pass, scales resolution, cooks assets and warms first use. Hand-rolling any of that pays twice — read `agent-docs/performance-basics.md` before the first profile.
-
-Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. The bounded proof shape is
-`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}` and its
-fields are defined in `agent-docs/assertion-reference.md#performance`. `maxPassDrawCalls` and
-`maxPassTriangles` bound one pass kind at a time; they fail closed when the run carries no
-per-pass split, so keep the frame budget installed.
+The bounded proof shape is `{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`; its fields are in `agent-docs/assertion-reference.md#performance`. `maxPassDrawCalls` and `maxPassTriangles` bound one pass kind each and fail closed without a per-pass split, so keep the frame budget installed.
 
 |Tier|Measure|Floor|Target|
 |---|---|---:|---:|
@@ -40,22 +34,6 @@ per-pass split, so keep the frame budget installed.
 |4|Thermal-status|≤2|≤1|
 |4|Whole-device-current|—|report;not-gated|
 
-On Android, budget roughly a 500 MiB driver floor before your own textures; a dual-use
-equirectangular environment adds about 48 MiB. Fix it with `agent-docs/mobile-memory-budget.md`,
-which carries the measurement conditions behind both numbers.
+On Android, budget roughly a 500 MiB driver floor before your own textures; a dual-use equirectangular environment adds about 48 MiB. Fix it with `agent-docs/mobile-memory-budget.md`.
 
-## Name the hot function without installing a profiler
-
-A frame meter says a frame was slow; it cannot say which function. On native, run the game with
-`--cpu-prof <file>` to write a Chrome DevTools `.cpuprofile` and print the top self-time functions
-on exit — there is no system profiler to install, no `perf`, no `--call-graph dwarf`:
-
-```sh
-./game --cpu-prof out.cpuprofile    # then open out.cpuprofile in Chrome DevTools' Performance panel
-```
-
-`TN_JS_CPU_PROFILE=1` is the same profiler with the printed summary only, started after the loading
-tier settles. On a playtest, `threenative-playtest <scenario> --cpu-prof <file>` writes the same
-artifact on the browser and desktop targets; the device targets refuse it by name rather than
-silently skipping. `trace` stays the interactive summary — reach for it when you want the numbers,
-and for `--cpu-prof` when you want a file to load.
+A meter says a frame was slow; a profile says which function. Native builds take `--cpu-prof <file>` and write a loadable Chrome DevTools `.cpuprofile` — no system profiler to install; `TN_JS_CPU_PROFILE=1` prints the summary alone. Playtests take `--cpu-prof` on the browser and desktop targets.

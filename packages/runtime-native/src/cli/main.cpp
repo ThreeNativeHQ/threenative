@@ -56,8 +56,7 @@ static void dumpLlvmProfile() {}
 #endif
 
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
-// Flush a requested CPU profile before the deliberate `_exit`. `_exit` runs no destructor, so
-// every exit path that skips them calls this. Idempotent: the profiler clears itself after dump.
+// Flush a requested CPU profile before a deliberate `_exit`, which runs no destructor. Idempotent.
 static int finalizeCpuProfile(int exitCode) {
     if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
     return mystral::js::g_cpuProfileFailed ? 1 : exitCode;
@@ -475,8 +474,7 @@ VIDEO RECORDING OPTIONS:
 
 PROFILING OPTIONS:
     --cpu-prof <file>     Write a Chrome DevTools .cpuprofile of this run and print the top
-                          self-time functions on exit. Compiled into desktop builds; there is
-                          no system profiler to install.
+                          self-time functions on exit; no system profiler to install.
 
 DEBUG/TESTING OPTIONS:
     --debug               Enable verbose debug logging (WebGPU, shaders, etc.)
@@ -1771,10 +1769,8 @@ int runScript(const CLIOptions& opts) {
         return 1;
     }
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
-    // Installed after the runtime exists: SDL and the host install their own dispositions during
-    // startup and would otherwise reset this one. A desktop playtest stops the host with SIGTERM,
-    // which runs no destructor; the handler sets a signal-safe flag and the render loop flushes the
-    // profile from a normal context (the frame boundary in bindings.cpp), where calling V8 is safe.
+    // Installed after the runtime exists, because SDL and the host reset dispositions during
+    // startup. The handler only sets a signal-safe flag; the render loop flushes the profile.
     if (!opts.cpuProfilePath.empty())
         std::signal(SIGTERM, [](int) { mystral::js::g_cpuProfileStopRequested = 1; });
 #endif
