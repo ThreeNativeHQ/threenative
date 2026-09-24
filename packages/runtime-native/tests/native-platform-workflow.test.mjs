@@ -198,7 +198,7 @@ test('Android V8 interruption leaves time to cache and resume Ninja state', () =
     ?.split('\n')
     .map((line) => line.replace(/^ {8}/u, ''))
     .join('\n');
-  expect(script).toContain('timeout --signal=TERM --kill-after=30s 120m');
+  expect(script).toContain('timeout --signal=TERM --kill-after=30s 180m');
   expect(androidV8Action.indexOf('Save resumable V8 source state')).toBeGreaterThan(
     androidV8Action.indexOf('Build the pinned Android V8 payload'),
   );
@@ -245,7 +245,7 @@ wait "$child"
     // build shell. The timeout must fail after the fake Ninja state has been written.
     const interrupted = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '1s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '1s')],
       { cwd: runtime, env, encoding: 'utf8' },
     );
     expect(interrupted.status).toBe(124);
@@ -253,7 +253,7 @@ wait "$child"
 
     const resumed = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '5s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '5s')],
       { cwd: runtime, env: { ...env, TN_V8_RESUME: '1' }, encoding: 'utf8' },
     );
     expect(resumed.status).toBe(0);
@@ -403,12 +403,15 @@ test('iOS workflow dispatch can run without unrelated platform cancellation', ()
   expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
 });
 
-test('iOS consumer proof runs and reports without holding the merge verdict', () => {
-  // iOS is not a supported target (owner decision, 2026-09-23). The lane still runs and reports,
-  // but `continue-on-error: true` keeps a red iOS leg out of the develop->main `ci-required`
-  // verdict; `native-release.yml` still gates the iOS rows for a release.
+test('iOS consumer proof runs but cannot hold the merge verdict', () => {
+  // iOS is not a supported target (owner decision, 2026-09-23), so the simulator lane runs and
+  // reports its own red but is deliberately non-blocking — otherwise a red iOS leg holds the
+  // develop->main `ci-required` verdict. `native-release.yml` still validates the iOS rows for a
+  // release, so only the merge verdict is dropped. Mirrors
+  // scripts/__tests__/ci-structure.spec.ts's android-not-blocking / ios-blocking contract.
   const iosJob = workflow.slice(workflow.indexOf('  ios-simulator:'));
   expect(iosJob).toContain('continue-on-error: true');
+  expect(iosJob).toContain('verify-ios-simulator.mjs');
   expect(workflow).not.toContain('worker proof is unresolved');
 });
 

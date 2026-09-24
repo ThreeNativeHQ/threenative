@@ -549,7 +549,8 @@ jobs:
       ${{ !cancelled() && needs.gates.result == 'success' &&
       (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    # Hosts the resumable Android V8 producer: 180-minute build ceiling plus cache-save time.
+    timeout-minutes: 210
     steps:
       # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
