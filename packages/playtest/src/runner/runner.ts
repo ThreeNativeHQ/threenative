@@ -448,7 +448,9 @@ async function runStandalonePlaytestInternal(
         scenario.assert?.settled === undefined
           ? []
           : ["physicsDebugSeries"]),
-        ...(scenario.assert?.performance === undefined ? [] : ["runtimeDiagnosticsSeries"]),
+        ...(scenario.assert?.performance === undefined && scenario.assert?.parity === undefined
+          ? []
+          : ["runtimeDiagnosticsSeries"]),
         ...(scenario.assert?.renderChain === undefined ? [] : ["renderChain"]),
       ],
       resources: resourceIds,
