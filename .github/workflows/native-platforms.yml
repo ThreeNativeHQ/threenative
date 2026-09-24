@@ -1277,11 +1277,15 @@ jobs:
             -out "$RUNNER_TEMP/tn-signing-proof-cert.pem" \
             -config "$RUNNER_TEMP/tn-signing-proof.cnf"
           # LibreSSL and OpenSSL 3 disagree on the PKCS#12 default cipher, and a failed import here
-          # would read later as "no identity found". Try the modern export, then the legacy one.
+          # would read later as "no identity found". OpenSSL 3's modern default (AES-256-CBC with
+          # a SHA-256 MAC) exports fine but macOS refuses it with "SecKeychainItemImport: MAC
+          # verification failed during PKCS12 import" — so lead with the legacy algorithms macOS
+          # accepts, and fall back to the modern default only where -legacy is unavailable (LibreSSL,
+          # whose default is already importable).
           p12="$RUNNER_TEMP/tn-signing-proof.p12"
-          if ! openssl pkcs12 -export -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+          if ! openssl pkcs12 -export -legacy -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
               -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout pass: 2>/dev/null; then
-            openssl pkcs12 -export -legacy -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+            openssl pkcs12 -export -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
               -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout pass:
           fi
           security import "$p12" -k "$keychain" -P "" -T /usr/bin/codesign
