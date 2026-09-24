@@ -190,3 +190,49 @@ workspace.
 **Verification:** E4 — `pnpm typecheck && pnpm lint && pnpm test` and the template docs lane; owner
 opens the `.cpuprofile`. Covers AC-8, AC-9.
 **Checkpoint:** done 2026-09-23 (draft PR open for the owner's review; archive this batch on merge)
+
+#### Review follow-ups and measured gains (merge into develop, 2026-09-23)
+
+Measured on native Midway (Linux/NVIDIA, Xvfb, `tools/bench-native.sh` airborne start, 60 s of
+flight, three interleaved pairs, `perf record -e cpu-clock:u` plus per-thread `/proc` CPU).
+Before = develop host `94d862c` (native sources identical to develop); after = this branch; the
+same develop core bundle in both, so only the host differs.
+
+| Audio thread (`SDLAudioP15`), mean of 3 | before | after |
+| --- | ---: | ---: |
+| share of process CPU samples | 8.31 % | 5.58 % |
+| `GainNode::process` + `AudioParam::valueAtTime` + `exp` | 5.39 % | 2.41 % |
+| CPU ms per wall second | 40.2 | 31.1 |
+
+Three defects were found by measuring, each fixed red then green:
+
+- **The gain hoist was a net regression on Midway.** The test counter was a locked `fetch_add`
+  in `valueAtTime`, which still runs per sample for every automated param: audio thread 38.8 →
+  44.6 ms/s, the two functions 3.87 % → 4.58 %. It is now a relaxed load and store, with no
+  `lock` instruction in the disassembly. That alone made no difference (4.19 % → 4.19 %), because
+  Midway's gains are `setTargetAtTime`/`setValueAtTime`, never `Immediate`. The block check is
+  now `isConstantOver(from, to)`, which also covers a past step, a finished ramp, a target
+  retargeted to its own value, and a target within 1e-6 of converged. `audio_graph_test` was red
+  first ("a past setValueAtTime step sampled 4 times (want 1)") and is green now; the table above
+  is the result.
+- **Native `--cpu-prof` wrote invalid JSON on a real game.** V8's `CpuProfile::Serialize` does not
+  escape names or URLs, so Midway's `RegExp: ^((?:[^\[\]…` frames made a file that neither
+  DevTools nor `JSON.parse` can load, and the host still reported `TN_CPU_PROFILE_WRITTEN`. The host now writes
+  the DevTools shape itself and escapes every string. `native-cpu-profile.test.mjs` runs the built
+  host on a `sourceURL` holding `"` and `\`: `SyntaxError … at position 1777` before, parsed after.
+  A native Midway flight profile now parses (90,791 nodes, 139,710 samples, 89 `RegExp:` frames).
+- **The dynamic-bounds exemption was permanent.** A buffer rewritten on two consecutive consults
+  (for example, a startup burst) stayed uncullable for the whole run. It now rescans once when the
+  buffer settles and culls normally (`render-camera-cull.spec.ts`, red then green).
+
+The cull item (#1) is proven on its mechanism, not on today's Midway. With 60 per-frame-rewritten
+4,000-vertex buffers and 1,000 statics, `RenderCameraCull.apply` took 2.66 / 2.65 / 2.73 ms per
+frame before and 0.071 / 0.073 / 0.065 after (interleaved). In a native Midway flight, the gate's
+`computeBoundingSphere` cost is **0 ms/s on both cores** (three pairs, `--cpu-prof`). The 3.06 % in
+Context was measured on the older `rendercpu` core, and the remaining calls come from Midway's
+`mergeLod`/`mergeStatic` at load and from three's `intersectsObject`, not from the gate.
+
+Also: a browser `--cpu-prof` write failure now fails the run (`TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED`,
+exit 2). Develop's `TN_JS_CPU_PROFILE_START_FRAME` drives the shared start hook. Midway's
+`launch.playtest.json` passes on the merged core. `capture-sortie.mjs` fails at "debrief must not
+intercept pause controls" on develop's core as well, so that failure predates this change.

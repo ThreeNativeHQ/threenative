@@ -109,6 +109,13 @@ export function classifyRunnerError(
       "Confirm adb can reach the requested serial and Android Chrome exposes its CDP socket, then rerun.",
     );
   }
+  if (message.startsWith("TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED")) {
+    return diagnostic(
+      "TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED",
+      message,
+      "Point --cpu-prof at a writable path; the run is not green without the profile it was asked for.",
+    );
+  }
   if (message.startsWith("TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED")) {
     return diagnostic(
       "TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED",

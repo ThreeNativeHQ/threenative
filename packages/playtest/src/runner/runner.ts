@@ -237,16 +237,20 @@ async function runStandalonePlaytestInternal(
   };
   let profilesBeforeLaunch: readonly string[] | undefined;
   // `--cpu-prof` writes the loadable DevTools artifact for this run. Stopping is idempotent so the
-  // success path (before the page closes) and the failure path (in `finally`) share one call.
+  // success path (before the page closes) and the failure path (in `finally`) share one call. On
+  // the success path a missing profile fails the run: a green run without its artifact is a lie.
   let cpuProfile: IBrowserCpuProfile | undefined;
   let cpuProfileStopped = false;
-  const stopCpuProfile = async (): Promise<void> => {
+  const stopCpuProfile = async (failClosed: boolean): Promise<void> => {
     if (cpuProfile === undefined || cpuProfileStopped) return;
     cpuProfileStopped = true;
     try {
       const written = await cpuProfile.stop();
       process.stderr.write(`${JSON.stringify({ cpuProfile: written })}\n`);
     } catch (error) {
+      if (failClosed) {
+        throw new Error(`TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED: ${error instanceof Error ? error.message : String(error)}`);
+      }
       process.stderr.write(
         `${JSON.stringify({ diagnostics: [{ code: "TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED", message: error instanceof Error ? error.message : String(error), severity: "error" }] })}\n`,
       );
@@ -765,7 +769,7 @@ async function runStandalonePlaytestInternal(
       network: networkEntries,
       runtimeTrace: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
     });
-    await stopCpuProfile();
+    await stopCpuProfile(true);
     if (options.remoteBrowser === undefined) await context.close();
     else await page.close();
     return addPreflightDiagnostic(report, preflight);
@@ -781,7 +785,7 @@ async function runStandalonePlaytestInternal(
   } finally {
     process.off("SIGINT", handleSignal);
     process.off("SIGTERM", handleSignal);
-    await stopCpuProfile();
+    await stopCpuProfile(false);
     await teardown();
     // Released last-in-first-out: the browser dies before the display it rendered on, and the
     // display before the lock that serialises displays. Both releases swallow their own errors.

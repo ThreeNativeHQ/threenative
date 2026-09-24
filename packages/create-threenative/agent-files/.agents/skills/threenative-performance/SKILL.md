@@ -5,11 +5,28 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 
 # ThreeNative performance evidence
 
-Refill scratch and pool objects; load static GLBs through `ctx.assets.model()` so rollback is removal; never claim Android/iOS from a web/desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`, `residual`, plus per-pass draws and triangles by innermost render call. `defineGame({ frameBudget: false })` silences output, never measurement.
+Pool objects; load static GLBs through `ctx.assets.model()`; never claim Android/iOS from a
+desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`,
+`residual` and per-pass draws and triangles. `defineGame({ frameBudget: false })` silences
+output, never measurement.
 
-The engine prepares transforms, batches, projection, per-pass culling, resolution scaling, asset cooking and first-use warming. Hand-rolling any of that pays twice — read `agent-docs/performance-basics.md` before the first profile. Unexecuted platforms stay unverified; never invent numbers. Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4.
+## When the scene is the problem
 
-The bounded proof shape is `{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`; its fields are in `agent-docs/assertion-reference.md#performance`. `maxPassDrawCalls` and `maxPassTriangles` bound one pass kind each and fail closed without a per-pass split, so keep the frame budget installed.
+`TN_SCENE_WARNING` fires when the GPU used under a third of a frame whose render phase overran
+the display period: move draws and objects, not settings. `npx threenative doctor` and
+`DEV_MODE=true` repeat it; `TN_FRAME_SPANS=1` splits that phase.
+The largest static win is free — three skips per-object binding updates when nothing changed, so
+not writing a transform saved 7.35 ms on 1,561 objects where `markStatic(root)` saved 0.009 ms.
+
+## Use the shipped defaults
+
+The engine prepares transforms, batches, culls, scales resolution and cooks assets;
+read `agent-docs/performance-basics.md` before hand-rolling any.
+Unexecuted platforms stay unverified; never invent numbers.
+Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. Bounded proof:
+`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`,
+defined in `agent-docs/assertion-reference.md#performance`; pass bounds fail closed without a
+per-pass split.
 
 |Tier|Measure|Floor|Target|
 |---|---|---:|---:|
@@ -34,6 +51,8 @@ The bounded proof shape is `{"performance":{"maxFrameMsP95":33,"minFps":30,"maxP
 |4|Thermal-status|≤2|≤1|
 |4|Whole-device-current|—|report;not-gated|
 
-On Android, budget roughly a 500 MiB driver floor before your own textures; a dual-use equirectangular environment adds about 48 MiB. Fix it with `agent-docs/mobile-memory-budget.md`.
+Android: budget a ~500 MiB driver floor before textures; a dual-use equirectangular
+environment adds ~48 MiB: `agent-docs/mobile-memory-budget.md`.
 
-A meter says a frame was slow; a profile says which function. Native builds take `--cpu-prof <file>` and write a loadable Chrome DevTools `.cpuprofile` — no system profiler to install; `TN_JS_CPU_PROFILE=1` prints the summary alone. Playtests take `--cpu-prof` on the browser and desktop targets.
+Name the hot function: `--cpu-prof <file>` (native, or a browser/desktop playtest) writes a
+DevTools `.cpuprofile`.

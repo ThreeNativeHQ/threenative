@@ -66,6 +66,7 @@ export interface IResolvedThreeNativeConfig {
     readonly alphaAntialiasing?: boolean;
     readonly projection?: boolean;
     readonly minimumProjectedPixels?: number | false;
+    readonly matrixWorld?: "visible" | "all";
     readonly android?: {
       readonly resolutionScale?: number | "auto";
       readonly antialias?: boolean;
@@ -925,6 +926,7 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     "alphaAntialiasing",
     "projection",
     "minimumProjectedPixels",
+    "matrixWorld",
     "android",
   ]);
   const android = assertRecord(renderer.android, "renderer.android");
@@ -961,6 +963,10 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     renderer.minimumProjectedPixels,
     "renderer.minimumProjectedPixels",
   );
+  const matrixWorld = renderer.matrixWorld;
+  if (matrixWorld !== undefined && matrixWorld !== "visible" && matrixWorld !== "all") {
+    fail("TN_CONFIG_RENDERER_INVALID", 'renderer.matrixWorld must be "visible" or "all".');
+  }
   const androidOverrides = {
     ...(androidResolutionScale === undefined
       ? {}
@@ -981,6 +987,7 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
     ...(alphaAntialiasing === undefined ? {} : { alphaAntialiasing }),
     ...(projection === undefined ? {} : { projection }),
     ...(minimumProjectedPixels === undefined ? {} : { minimumProjectedPixels }),
+    ...(matrixWorld === undefined ? {} : { matrixWorld: matrixWorld as "visible" | "all" }),
     ...(resolutionScale === undefined
       ? {}
       : { resolutionScale: resolutionScale as number | "auto" }),

@@ -1418,6 +1418,7 @@ set(TN_RUNTIME_SCRIPT_NAMES
     image-bitmap-polyfill
     webtransport-polyfill
     webtransport-stub
+    install-async-audio-decode
     audio-context-constructor
     audio-source-properties
     audio-gain-param
@@ -1484,6 +1485,7 @@ set(MYSTRAL_SOURCES
     src/fs/file_watcher.cpp
     src/audio/audio_context.cpp
     src/audio/audio_bindings.cpp
+    src/audio/async_audio_decode.cpp
     src/audio/vorbis_impl.c
     src/vfs/embedded_bundle.cpp
     src/storage/local_storage.cpp

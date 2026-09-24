@@ -17,6 +17,7 @@
 #include "mystral/screenshot_gate.h"
 #include "tool_dispatch.h"
 #include "mystral/platform/ui_overlay.h"
+#include "mystral/platform/window.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include "mystral/debug/debug_server.h"
 #include "mystral/video/async_capture.h"
@@ -603,9 +604,7 @@ struct CLIOptions {
     // Verbose logging
     bool debug = false;  // Enable verbose WebGPU/shader logging
 
-    // PRD-444: write a loadable DevTools `.cpuprofile` for this run, or empty for the printed
-    // self-time summary alone.
-    std::string cpuProfilePath;
+    std::string cpuProfilePath;  // PRD-444: DevTools `.cpuprofile` target; empty = summary only
 
     // The built UI bundle to render over the game surface, or empty for the native renderer.
     std::string uiRoot;
@@ -699,8 +698,7 @@ CLIOptions parseArgs(int argc, char* argv[]) {
             opts.vsync = false;
         } else if (arg == "--cpu-prof" && i + 1 < argc) {
             opts.cpuProfilePath = argv[++i];
-        } else if (arg.rfind("--cpu-prof=", 0) == 0) {
-            // The playtest runner forwards the flag as one argument: `--cpu-prof=<path>`.
+        } else if (arg.rfind("--cpu-prof=", 0) == 0) {  // the playtest runner's one-arg form
             opts.cpuProfilePath = arg.substr(std::string("--cpu-prof=").size());
         } else if (arg == "--quiet" || arg == "-q") {
             opts.quiet = true;
@@ -1740,8 +1738,7 @@ int runScript(const CLIOptions& opts) {
     if (!opts.cpuProfilePath.empty()) mystral::js::g_cpuProfilePath = opts.cpuProfilePath;
 #else
     if (!opts.cpuProfilePath.empty()) {
-        std::cerr << "Error: --cpu-prof requires a build compiled with TN_JS_PROFILE=ON."
-                  << std::endl;
+        std::cerr << "Error: --cpu-prof requires a build compiled with TN_JS_PROFILE=ON." << std::endl;
         return 1;
     }
 #endif
@@ -1765,12 +1762,17 @@ int runScript(const CLIOptions& opts) {
     // more than once a launch. This brackets the one that is the game.
     mystral::coldStartMark("game_eval_begin");
     if (!runtime->loadScript(opts.scriptPath)) {
-        std::cerr << "Error: Failed to evaluate script!" << std::endl;
+        // The window is already open, so this is the one failure a developer sees without reading
+        // a log: the title says the game did not start, the line is prefixed so a grep finds it,
+        // and the process exits non-zero rather than leaving a window that draws nothing. A launch
+        // that survives a bundle which never evaluated is the silent failure this refuses.
+        const char* title = "ThreeNative - the game did not start (TN_FATAL in the log)";
+        mystral::platform::setWindowTitle(title);
+        std::cerr << "[TN_FATAL] the game script did not load: " << opts.scriptPath << std::endl;
         return 1;
     }
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
-    // Installed after the runtime exists, because SDL and the host reset dispositions during
-    // startup. The handler only sets a signal-safe flag; the render loop flushes the profile.
+    // After runtime startup (SDL resets dispositions); the render loop flushes on the flag.
     if (!opts.cpuProfilePath.empty())
         std::signal(SIGTERM, [](int) { mystral::js::g_cpuProfileStopRequested = 1; });
 #endif

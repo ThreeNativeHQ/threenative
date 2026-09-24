@@ -6,9 +6,12 @@
 // proof is AC-1's run on a built host, which this file's shape keeps honest.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 function source(relativePath) {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
@@ -32,14 +35,34 @@ test("desktop builds compile the V8 CPU profiler and mobile builds do not", () =
   assert.doesNotMatch(v8Engine, /#if TN_ANDROID_JS_PROFILE\n#include "v8-profiler\.h"/u);
 });
 
-test("--cpu-prof writes a DevTools .cpuprofile through V8's own serializer", () => {
-  // V8 serializes the profile; the embedder supplies the sink. Hand-rolling the node walk would
-  // be a second implementation of a format V8 already owns.
-  assert.match(v8Engine, /v8::OutputStream/u);
-  assert.match(v8Engine, /profile->Serialize\(&stream, v8::CpuProfile::kJSON\)/u);
+test("--cpu-prof writes the DevTools .cpuprofile itself, escaping every string", () => {
+  // V8's `CpuProfile::Serialize` writes names and URLs unescaped: a native Midway run produced a
+  // `RegExp: ^((?:[^\[\]…` frame name and a file DevTools could not parse. The host walks the
+  // profile API and escapes instead.
+  assert.doesNotMatch(v8Engine, /profile->Serialize\(/u);
+  assert.match(v8Engine, /static void writeJsonString\(std::ostream& out, const char\* text\)/u);
+  assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath\)/u);
   assert.match(engineHeader, /inline std::string g_cpuProfilePath;/u);
   assert.match(engineHeader, /inline bool g_cpuProfileFailed = false;/u);
 });
+
+const host = fileURLToPath(new URL("../build/tn-linux/mystral", import.meta.url));
+
+test.skipIf(!existsSync(host))("a profile whose script URL holds a quote and a backslash still parses", () => {
+  const dir = makeTempDirSync("tn-cpu-prof-");
+  const script = join(dir, "hot.js");
+  const out = join(dir, "hot.cpuprofile");
+  writeFileSync(script, [
+    "const hot = eval('(function hot() { let x = 0; for (let i = 0; i < 2e5; i++) x += Math.sqrt(i); return x; })\\n//# sourceURL=we\"ird\\\\path.js');",
+    "const t0 = Date.now();",
+    "while (Date.now() - t0 < 500) hot();",
+  ].join("\n"));
+  execFileSync(host, ["run", script, "--no-sdl", "--cpu-prof", out], { stdio: "ignore", timeout: 60_000 });
+  const profile = JSON.parse(readFileSync(out, "utf8"));
+  assert.equal(profile.samples.length, profile.timeDeltas.length);
+  const hot = profile.nodes.find((node) => node.callFrame.functionName === "hot");
+  assert.equal(hot?.callFrame.url, 'we"ird\\path.js');
+}, 90_000);
 
 test("a SIGTERM run flushes the profile from the frame boundary, not the signal handler", () => {
   // A playtest stops the host with SIGTERM, which runs no destructor. The handler may only set a
@@ -57,6 +80,7 @@ test("the host CLI parses --cpu-prof, forwards the path and fails closed without
   // A build without the profiler refuses the flag rather than running and writing nothing.
   assert.match(main, /--cpu-prof requires a build compiled with TN_JS_PROFILE=ON/u);
   // The profiler starts at the steady-state frame for the env var, and at once for --cpu-prof.
-  assert.match(bindings, /frameEndCount == 226 && js::g_startCpuProfile/u);
+  assert.match(bindings, /getenv\("TN_JS_CPU_PROFILE_START_FRAME"\)[\s\S]{0,120}: 226u;/u);
+  assert.match(bindings, /frameEndCount == startFrame\) js::g_startCpuProfile\(\);/u);
   assert.match(v8Engine, /if \(!g_cpuProfilePath\.empty\(\)\) g_startCpuProfile\(\);/u);
 });

@@ -226,6 +226,223 @@ describe("createRenderer", () => {
     }
   });
 
+  it("binds the frame-buffer target while compiling, so a depth sampler is not compiled against the wrong sample count", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // three's own compile() reads the frame-buffer target for its render context but never binds
+      // it, so a viewport-depth copy destination is sized from that target while the bind group
+      // layout for the same binding is sized from `currentSamples`. Dawn refuses the bind group and
+      // the device is lost. The wrapper has to bind what is being compiled for, and put back what
+      // was bound.
+      const frameBufferTarget = { samples: 4 };
+      const seenDuringCompile: unknown[] = [];
+      // What a concurrent frame sees. three's compile yields to the render loop between objects, so
+      // this must not move while the compile runs.
+      const rendered: unknown[] = [];
+      const raw: Record<string, unknown> = {
+        needsFrameBufferTarget: true,
+        _renderTarget: null,
+        getRenderTarget(this: Record<string, unknown>) {
+          return this._renderTarget;
+        },
+        _getFrameBufferTarget: () => frameBufferTarget,
+        compileAsync: async () => {
+          seenDuringCompile.push((raw.getRenderTarget as () => unknown).call(raw));
+          rendered.push(raw._renderTarget);
+        },
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      };
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => raw as never,
+      });
+      await renderer.compileAsync({} as never, {} as never);
+      // The sample-count question is answered ...
+      expect(seenDuringCompile).toEqual([frameBufferTarget]);
+      // ... without moving what a frame arriving mid-compile renders into.
+      expect(rendered).toEqual([null]);
+      // and the accessor is handed back afterwards.
+      expect((raw.getRenderTarget as () => unknown).call(raw)).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("leaves no frame-buffer target behind when two compiles overlap", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // Two compiles do overlap in a real launch: the framework's own warm-up runs while a game
+      // warms its own views, and this fork's compile yields to the frame loop between objects. The
+      // second compile then captures the first one's override as "what was here before" and puts it
+      // back when it finishes, so `getRenderTarget()` answers the frame-buffer target forever after.
+      // Nothing is drawn into the swapchain from then on: measured as a game that renders at 59 fps
+      // with its presents frozen at 160 and a five-second-old picture on the screen.
+      const frameBufferTarget = { samples: 4 };
+      let bound: unknown = null;
+      let release: (() => void) | undefined;
+      const firstCompileStarted = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let compiles = 0;
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          needsFrameBufferTarget: true,
+          getRenderTarget: () => bound,
+          setRenderTarget: (target: unknown) => {
+            bound = target;
+          },
+          _getFrameBufferTarget: () => frameBufferTarget,
+          compileAsync: async () => {
+            compiles += 1;
+            // The first compile stays open across the second one's whole lifetime.
+            if (compiles === 1) await firstCompileStarted;
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      const first = renderer.compileAsync({} as never, {} as never);
+      await renderer.compileAsync({} as never, {} as never);
+      release?.();
+      await first;
+      // The renderer must be exactly as it was found: a frame that renders now goes to the screen.
+      expect((renderer.raw as { getRenderTarget: () => unknown }).getRenderTarget()).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("hides the compile-time render target from frames that run while the compile yields", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // This fork's compile yields to the frame loop between objects, so frames really do run
+      // inside the window where `getRenderTarget` is answering the compile's question. three's own
+      // reflector saves `renderer.getRenderTarget()` at the top of its `updateBefore` and restores
+      // it after drawing its mirror — so if it sees the frame-buffer target it puts the
+      // frame-buffer target back, and every later frame renders into it instead of the swapchain.
+      //
+      // Measured before this guard, on a game whose water has a reflection: the swapchain image
+      // was never acquired again after the first world frame (`TN_FRAME_NOT_PRESENTED` with
+      // `texture:false`), presents froze at 137 while the loop ran at 59 fps, and the window kept
+      // showing the loading screen for the rest of the session.
+      const frameBufferTarget = { samples: 4 };
+      let bound: unknown = null;
+      const seenByCompile: unknown[] = [];
+      const seenByFrame: unknown[] = [];
+      const hooks: { renderDuringCompile?: () => void; reflectInsideFrame?: () => void } = {};
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          needsFrameBufferTarget: true,
+          getRenderTarget: () => bound,
+          setRenderTarget: (target: unknown) => {
+            bound = target;
+          },
+          _getFrameBufferTarget: () => frameBufferTarget,
+          compileAsync: async (): Promise<void> => {
+            seenByCompile.push(
+              (renderer.raw as { getRenderTarget: () => unknown }).getRenderTarget(),
+            );
+            // The yield three's compile makes between objects: a frame lands here.
+            hooks.renderDuringCompile?.();
+            await Promise.resolve();
+          },
+          domElement: canvas,
+          render: () => hooks.reflectInsideFrame?.(),
+          setSize: () => undefined,
+        }),
+      });
+      // A frame, through the renderer the game holds — and inside it, what three's reflector does
+      // exactly: save the bound target, draw its mirror elsewhere, put back what it saved.
+      hooks.reflectInsideFrame = () => {
+        const raw = renderer.raw as {
+          getRenderTarget: () => unknown;
+          setRenderTarget: (target: unknown) => void;
+        };
+        const saved = raw.getRenderTarget();
+        seenByFrame.push(saved);
+        raw.setRenderTarget({ mirror: true });
+        raw.setRenderTarget(saved);
+      };
+      hooks.renderDuringCompile = () => renderer.render({} as never, {} as never);
+      await renderer.compileAsync({} as never, {} as never);
+
+      // The compile still gets its answer...
+      expect(seenByCompile).toEqual([frameBufferTarget]);
+      // ...and a frame running inside the same window sees the screen, and restores the screen.
+      expect(seenByFrame).toEqual([null]);
+      expect((renderer.raw as { getRenderTarget: () => unknown }).getRenderTarget()).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("leaves the screen bound when a node's own pass saves and restores inside the compile", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // three's compile runs node `updateBefore` hooks, and a reflector's does exactly this: save
+      // `getRenderTarget()`, draw its mirror into its own target, put back what it saved. Inside a
+      // compile that answer is the frame-buffer target, so it gets *bound* and stays bound — and
+      // every frame after it renders into that target instead of the swapchain. Measured: presents
+      // frozen at 137 with the loop still at 59 fps, and the window stuck on the loading screen.
+      const frameBufferTarget = { samples: 4 };
+      let bound: unknown = null;
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          needsFrameBufferTarget: true,
+          getRenderTarget: () => bound,
+          setRenderTarget: (target: unknown) => {
+            bound = target;
+          },
+          _getFrameBufferTarget: () => frameBufferTarget,
+          compileAsync: async (): Promise<void> => {
+            const raw = renderer.raw as {
+              getRenderTarget: () => unknown;
+              setRenderTarget: (target: unknown) => void;
+            };
+            const saved = raw.getRenderTarget();
+            raw.setRenderTarget({ mirror: true });
+            raw.setRenderTarget(saved);
+            await Promise.resolve();
+          },
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      await renderer.compileAsync({} as never, {} as never);
+      // Nothing is bound, so the next frame goes to the screen.
+      expect(bound).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("records the actual WebGPU adapter identity in the pipeline census", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

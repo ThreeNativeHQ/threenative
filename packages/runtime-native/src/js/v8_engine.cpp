@@ -108,28 +108,62 @@ static bool initializeV8() {
 }
 
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
-// V8 serializes a `CpuProfile` to the Chrome DevTools `.cpuprofile` JSON itself, so the embedder
-// only supplies the sink. Writing the bytes straight through keeps the format V8's problem instead
-// of re-implementing the node/sample walk, and the printed self-time summary stays beside it.
-class CpuProfileFileStream final : public v8::OutputStream {
-public:
-    explicit CpuProfileFileStream(const std::string& path)
-        : out_(path, std::ios::binary) {}
-
-    bool ok() const { return out_.good(); }
-
-    void EndOfStream() override { out_.flush(); }
-
-    int GetChunkSize() override { return 65536; }
-
-    WriteResult WriteAsciiChunk(char* data, int size) override {
-        out_.write(data, static_cast<std::streamsize>(size));
-        return out_.good() ? kContinue : kAbort;
+// V8's `CpuProfile::Serialize` writes function names and script URLs unescaped, so a real game's
+// `RegExp: ^((?:[^\[\]\.:\/]+…` frame name, or a quote in a `sourceURL`, turns the file into
+// JSON that DevTools refuses. The embedder writes the same DevTools shape and escapes every string.
+static void writeJsonString(std::ostream& out, const char* text) {
+    out << '"';
+    for (const unsigned char* c = reinterpret_cast<const unsigned char*>(text); *c; ++c) {
+        if (*c == '"' || *c == '\\') {
+            out << '\\' << *c;
+        } else if (*c < 0x20) {
+            char escaped[8];
+            std::snprintf(escaped, sizeof escaped, "\\u%04x", *c);
+            out << escaped;
+        } else {
+            out << *c;
+        }
     }
+    out << '"';
+}
 
-private:
-    std::ofstream out_;
-};
+static bool writeCpuProfile(v8::Isolate* isolate, const v8::CpuProfile* profile, const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    out << "{\"nodes\":[";
+    std::vector<const v8::CpuProfileNode*> stack{profile->GetTopDownRoot()};
+    for (bool first = true; !stack.empty(); first = false) {
+        const v8::CpuProfileNode* node = stack.back();
+        stack.pop_back();
+        v8::String::Utf8Value name(isolate, node->GetFunctionName());
+        v8::String::Utf8Value url(isolate, node->GetScriptResourceName());
+        out << (first ? "" : ",") << "{\"id\":" << node->GetNodeId() << ",\"callFrame\":{\"functionName\":";
+        writeJsonString(out, *name ? *name : "");
+        out << ",\"scriptId\":" << node->GetScriptId() << ",\"url\":";
+        writeJsonString(out, *url ? *url : "");
+        // DevTools positions are 0-based; V8's are 1-based with 0 meaning unknown, which maps to -1.
+        out << ",\"lineNumber\":" << node->GetLineNumber() - 1 << ",\"columnNumber\":"
+            << node->GetColumnNumber() - 1 << "},\"hitCount\":" << node->GetHitCount() << ",\"children\":[";
+        for (int i = 0; i < node->GetChildrenCount(); i++) {
+            out << (i ? "," : "") << node->GetChild(i)->GetNodeId();
+            stack.push_back(node->GetChild(i));
+        }
+        out << "]}";
+    }
+    const int samples = profile->GetSamplesCount();
+    out << "],\"startTime\":" << profile->GetStartTime() << ",\"endTime\":" << profile->GetEndTime()
+        << ",\"samples\":[";
+    for (int i = 0; i < samples; i++) out << (i ? "," : "") << profile->GetSample(i)->GetNodeId();
+    out << "],\"timeDeltas\":[";
+    int64_t previous = profile->GetStartTime();
+    for (int i = 0; i < samples; i++) {
+        out << (i ? "," : "") << profile->GetSampleTimestamp(i) - previous;
+        previous = profile->GetSampleTimestamp(i);
+    }
+    out << "]}\n";
+    out.flush();
+    return out.good();
+}
 #endif
 
 class V8EntryScope {
@@ -264,24 +298,41 @@ public:
         struct Entry { unsigned hits = 0; std::string location; };
         std::unordered_map<std::string, Entry> self;
         unsigned total = 0;
-        std::vector<const v8::CpuProfileNode*> stack{profile->GetTopDownRoot()};
+        // Walk with the caller in hand: a C++ binding has no name of its own in a V8 profile, so
+        // the only way to say *which* binding ate the time is to name the JS frame that called it.
+        // Without this, 62% of a startup stall read as "(anonymous) @ (native)" and named nothing.
+        struct Frame { const v8::CpuProfileNode* node; std::string caller; };
+        auto label = [&](const v8::CpuProfileNode* node, std::string& name, std::string& file) {
+            // `file` stays bare so the native test below can recognise "(native)"; callers carry
+            // the line, because "which binding" is answered by "which line called it".
+            v8::String::Utf8Value fn(isolate_, node->GetFunctionName());
+            v8::String::Utf8Value url(isolate_, node->GetScriptResourceName());
+            name = *fn && **fn ? *fn : "(anonymous)";
+            file = *url && **url ? *url : "(native)";
+            const size_t slash = file.find_last_of('/');
+            if (slash != std::string::npos) file = file.substr(slash + 1);
+        };
+        std::vector<Frame> stack{{profile->GetTopDownRoot(), "(root)"}};
         while (!stack.empty()) {
-            const v8::CpuProfileNode* node = stack.back();
+            Frame frame = stack.back();
             stack.pop_back();
+            const v8::CpuProfileNode* node = frame.node;
             const unsigned hits = node->GetHitCount();
             total += hits;
+            std::string name;
+            std::string file;
+            label(node, name, file);
             if (hits > 0) {
-                v8::String::Utf8Value fn(isolate_, node->GetFunctionName());
-                v8::String::Utf8Value url(isolate_, node->GetScriptResourceName());
-                std::string name = *fn && **fn ? *fn : "(anonymous)";
-                std::string file = *url && **url ? *url : "(native)";
-                const size_t slash = file.find_last_of('/');
-                if (slash != std::string::npos) file = file.substr(slash + 1);
-                auto& entry = self[name + " @ " + file];
+                const bool native = file == "(native)";
+                const std::string key = native ? "native <- " + frame.caller : name + " @ " + file;
+                auto& entry = self[key];
                 entry.hits += hits;
-                entry.location = file + ":" + std::to_string(node->GetLineNumber());
+                entry.location = native ? frame.caller : file + ":" + std::to_string(node->GetLineNumber());
             }
-            for (int i = 0; i < node->GetChildrenCount(); i++) stack.push_back(node->GetChild(i));
+            const std::string caller = file == "(native)"
+                ? frame.caller
+                : name + " @ " + file + ":" + std::to_string(node->GetLineNumber());
+            for (int i = 0; i < node->GetChildrenCount(); i++) stack.push_back({node->GetChild(i), caller});
         }
         std::vector<std::pair<std::string, Entry>> rows(self.begin(), self.end());
         std::sort(rows.begin(), rows.end(),
@@ -296,20 +347,13 @@ public:
             // Write beside the target and rename, so a kill mid-write cannot leave a truncated
             // `.cpuprofile` that still looks like a profile.
             const std::string temporaryPath = g_cpuProfilePath + ".tmp";
-            CpuProfileFileStream stream(temporaryPath);
-            if (!stream.ok()) {
-                std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: cannot open " << temporaryPath
+            if (!writeCpuProfile(isolate_, profile, temporaryPath) ||
+                std::rename(temporaryPath.c_str(), g_cpuProfilePath.c_str()) != 0) {
+                std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: write failed for " << g_cpuProfilePath
                           << std::endl;
                 g_cpuProfileFailed = true;
             } else {
-                profile->Serialize(&stream, v8::CpuProfile::kJSON);
-                if (!stream.ok() || std::rename(temporaryPath.c_str(), g_cpuProfilePath.c_str()) != 0) {
-                    std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: write failed for "
-                              << g_cpuProfilePath << std::endl;
-                    g_cpuProfileFailed = true;
-                } else {
-                    std::cout << "TN_CPU_PROFILE_WRITTEN:" << g_cpuProfilePath << std::endl;
-                }
+                std::cout << "TN_CPU_PROFILE_WRITTEN:" << g_cpuProfilePath << std::endl;
             }
         }
         profile->Delete();
@@ -622,9 +666,16 @@ public:
 
     JSValueHandle newUndefined() override {
         V8EntryScope entry_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Undefined(isolate_));
-        frameHandles_.insert(persistent);
-        return {persistent, isolate_};
+        // One persistent, not one per call. Every binding that returns nothing used to take a
+        // pooled Persistent, `Reset` it, insert it into `frameHandles_` and have the trampoline
+        // erase and release it again — a canvas `fillRect` is exactly that, and a page painting
+        // procedurally calls it a million times at startup. A protected handle is skipped by the
+        // trampoline's release path, so this one outlives every call and is never pooled.
+        if (undefinedHandle_ == nullptr) {
+            undefinedHandle_ = acquirePersistent(isolate_, v8::Undefined(isolate_));
+            protectedHandles_.insert(undefinedHandle_);
+        }
+        return {undefinedHandle_, isolate_};
     }
 
     JSValueHandle newNull() override {
@@ -1986,6 +2037,9 @@ private:
         internedKeys_.emplace(name, v8::Global<v8::String>(isolate, key));
         return key;
     }
+
+    /** The one `undefined` this engine hands out; protected, so no call releases it. */
+    v8::Persistent<v8::Value>* undefinedHandle_ = nullptr;
 
     v8::Persistent<v8::Value>* acquirePersistent(v8::Isolate* isolate, v8::Local<v8::Value> value) {
         v8::Persistent<v8::Value>* persistent;

@@ -74,10 +74,13 @@ constexpr const char *kScript = R"JS((() => {
     callbackError = error;
   });
 
-  check("the legacy success callback still fires", () =>
-    callbackBuffer !== undefined && typeof callbackBuffer.getChannelData === "function"
+  // A browser fires these when the decode lands, not before it returns. Decoding used to be
+  // synchronous here — the one thing that made a settled promise possible from a hand-rolled
+  // thenable — and a caller that only reads the callback synchronously was relying on it.
+  check("the legacy success callback has NOT fired before the decode lands", () =>
+    callbackBuffer === undefined
       ? undefined
-      : "onSuccess received " + describe(callbackBuffer),
+      : "onSuccess ran before decodeAudioData returned: " + describe(callbackBuffer),
   );
   check("the legacy error callback still fires", () =>
     callbackError !== undefined ? undefined : "onError was not called",
@@ -110,6 +113,11 @@ constexpr const char *kScript = R"JS((() => {
   Promise.resolve()
     .then(() => resolved.then((buffer) => buffer, (error) => ({ error })))
     .then((value) => {
+      check("the legacy success callback fires when the decode lands", () =>
+        callbackBuffer !== undefined && typeof callbackBuffer.getChannelData === "function"
+          ? undefined
+          : "onSuccess received " + describe(callbackBuffer),
+      );
       check("the success Promise settles with an AudioBuffer", () =>
         value !== null && typeof value === "object" && typeof value.getChannelData === "function"
           ? undefined
@@ -180,6 +188,10 @@ bool runContract(const EngineCase &engineCase, bool &ran) {
     // Settling runs on the microtask queue. QuickJS drains pending jobs after each eval and V8
     // needs the explicit pump, so do both rather than assume which engine this is.
     for (int pass = 0; pass < 8 && report.empty(); pass += 1) {
+        // The runtime delivers finished decodes from `processAudioEvents()` inside `pollEvents()`,
+        // and this loop stands in for that: the decode runs on a worker, so a harness that only
+        // pumps microtasks would wait for a completion nobody ever delivers.
+        mystral::audio::drainAudioDecodes();
         engine->processMicrotasks();
         engine->evalWithResult("undefined", "audio_decode_promise_drain.js");
     }

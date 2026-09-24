@@ -77,13 +77,12 @@ public:
     float valueAtTime(double time) const;
 
     /**
-     * True when the value does not change across a block, so a caller may read it once instead of
-     * per sample. `Automation::Immediate` is the common case for a node's static gain; a ramp or a
-     * scheduled change is not.
+     * True when the value does not change over `[from, to]`, so a caller may read it once for the
+     * block instead of per sample. Beyond `Immediate`, a game's automated gain is usually settled:
+     * a step whose time has passed, a finished ramp, a target retargeted to the value it holds, or a
+     * target converged below a millionth of its value. A ramp or target still moving is not.
      */
-    bool isConstant() const {
-        return automation_.load(std::memory_order_acquire) == Automation::Immediate;
-    }
+    bool isConstantOver(double from, double to) const;
 
     /** How many times `valueAtTime` was sampled. A readout for a block-hoist test, not a signal. */
     uint64_t valueAtTimeCalls() const {
@@ -256,7 +255,6 @@ public:
     AudioVector3 listenerRight() const;
 
     // Decode audio data (async in browser, sync here for simplicity)
-    std::shared_ptr<AudioBuffer> decodeAudioDataSync(const uint8_t* data, size_t length);
 
     // Lifecycle
     void resume();
