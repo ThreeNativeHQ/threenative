@@ -115,12 +115,25 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
 Inventory 2026-09-23 (read-only arm; each "no references" re-checked with `git grep -l <name>`
 excluding `docs/PRDs/done`, 0 hits). About 5.7 MiB of tracked bytes.
 
-- [ ] Delete `packages/runtime-native/native/ui-overlay/composited.ppm` (2.76 MB, unreferenced).
-- [ ] Delete `docs/verification/platformer-round-1-final-comparison.png` (1.73 MB, unreferenced, outside every walked evidence root).
-- [ ] Untrack `artifacts/vsm-prototype/` (47 files, 1.42 MB, unreferenced; already matched by `.gitignore` `artifacts`).
-- [ ] Untrack `.runtime/` and add it to `.gitignore` (3 tracked files; scripts write there at run time).
-- [ ] Delete root `profile-l1.mjs`, `peek.mjs`, `packages/core/tmp-probe-instanced-write.mts` and `advisor-plans/` (all unreferenced).
-- [ ] Delete the two tracked sweep `scaffold.sh` files carrying `/home/joao` paths (`docs/benchmark/sweeps/physics-puzzle-2026-08-15-9/`, `-2026-08-16/`); confirm no spec reads them first.
+- [x] Delete `packages/runtime-native/native/ui-overlay/composited.ppm` (2.76 MB, unreferenced).
+  Done: `git rm`; 2,764,816 bytes removed. Only references were this PRD and the generic word
+  "composited" elsewhere; `rg --no-ignore -l composited.ppm` outside `.worktrees/` hit nothing else.
+- [x] Delete `docs/verification/platformer-round-1-final-comparison.png` (1.73 MB, unreferenced, outside every walked evidence root).
+  Done: `git rm`; 1,730,329 bytes removed. The only other mention is the historical "Files analyzed"
+  list in `docs/PRDs/done/PRD-023-framework-visual-parity.md`, which the evidence-citation scan does
+  not treat as a consumer.
+- [x] Untrack `artifacts/vsm-prototype/` (47 files, 1.42 MB, unreferenced; already matched by `.gitignore` `artifacts`).
+  Done: `git rm -r --cached artifacts/vsm-prototype/`; 47 files / 1,423,210 bytes untracked, left on
+  disk. `.gitignore`'s `artifacts` rule already covers the path.
+- [x] Untrack `.runtime/` and add it to `.gitignore` (3 tracked files; scripts write there at run time).
+  Done: `git rm -r --cached .runtime/` (3 files, 10,101 bytes) and `.runtime/` added to `.gitignore`.
+  `physical-mobile-qualification.test.mjs:99` already documents `.runtime/` as untracked by design.
+- [x] Delete root `profile-l1.mjs`, `peek.mjs`, `packages/core/tmp-probe-instanced-write.mts` and `advisor-plans/` (all unreferenced).
+  Done: `git rm` all four (advisor-plans/ = README + 001-consume-verified-ci-outputs.md); no
+  reference outside this PRD.
+- [x] Delete the two tracked sweep `scaffold.sh` files carrying `/home/joao` paths (`docs/benchmark/sweeps/physics-puzzle-2026-08-15-9/`, `-2026-08-16/`); confirm no spec reads them first.
+  Done: `rg` for both exact paths found no spec or script consumer (the many `scaffold.sh` hits are
+  generator code and prose, not these files); `git rm` both.
 - [ ] Owner call: the two product-playbook PDFs in `docs/product/` (1.8 MB, unreferenced).
 - [ ] Owner call: `docs/midway-adoption-verify/midway-adoption.patch` carries a personal email in its commit headers.
 - [ ] Owner call: 214 tracked files carry absolute `/home/joao/...` paths (mostly verification records; not secrets). No tracked tokens or private keys were found.
