@@ -782,6 +782,61 @@ describe("model compaction", () => {
     }
   });
 
+  it("keeps multi-primitive and uniformly-scaled copies out of join too", async () => {
+    const build = (mode: "multi" | "scaled"): Document => {
+      const document = new Document();
+      const buffer = document.createBuffer("fixture");
+      const material = document.createMaterial("copy").setBaseColorFactor([0.3, 0.5, 0.7, 1]);
+      const second = document.createMaterial("trim").setBaseColorFactor([0.7, 0.5, 0.3, 1]);
+      const scene = document.createScene("Scene");
+      for (let index = 0; index < 20; index += 1) {
+        const mesh = polyMesh(document, buffer, material, `copy-${String(index)}`, 0);
+        if (mode === "multi") {
+          const base = mesh.listPrimitives()[0];
+          if (base !== undefined) {
+            const extra = document.createPrimitive();
+            for (const semantic of base.listSemantics()) {
+              const attribute = base.getAttribute(semantic);
+              if (attribute !== null) extra.setAttribute(semantic, attribute.clone());
+            }
+            const indices = base.getIndices();
+            if (indices !== null) extra.setIndices(indices.clone());
+            extra.setMaterial(second);
+            mesh.addPrimitive(extra);
+          }
+        } else {
+          const position = mesh.listPrimitives()[0]?.getAttribute("POSITION");
+          const array = position?.getArray();
+          if (position !== null && position !== undefined && array !== undefined) {
+            const scaled = new Float32Array(array.length);
+            const factor = 1 + index * 0.05;
+            for (let vertex = 0; vertex < array.length; vertex += 1)
+              scaled[vertex] = (array[vertex] ?? 0) * factor;
+            position.setArray(scaled);
+          }
+        }
+        scene.addChild(
+          document
+            .createNode(`node_${String(index)}`)
+            .setMesh(mesh)
+            .setTranslation([index * 5, 0, 0]),
+        );
+      }
+      return document;
+    };
+    for (const mode of ["multi", "scaled"] as const) {
+      const input = Buffer.from(await toGlb(build(mode)));
+      const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+        input,
+        `${mode}.glb`,
+      );
+      if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+      const output = await readVerified(result.buffer);
+      expect(orphanAccessors(output), mode).toBeLessThanOrEqual(1);
+      expect(result.buffer.length, mode).toBeLessThan(input.length * 2);
+    }
+  });
+
   it("never joins a node that two scenes share into an empty first scene", async () => {
     const document = new Document();
     const buffer = document.createBuffer("fixture");

@@ -599,29 +599,68 @@ function collectPrimitives(root: ReturnType<Document["getRoot"]>): Primitive[] {
 }
 
 /**
- * A signature of a mesh's shape that is blind to a constant translation: every vertex minus the
- * mesh's own per-axis minimum, rounded and hashed. Two meshes exported as translated copies of one
- * shape share it, and `join` must leave them alone — merging them would copy the shape N times,
- * while `quantize`'s accessor dedup can still share the one normalized copy.
+ * A scale- and translation-invariant signature of one primitive's vertex data: every attribute and
+ * the index buffer, hashed with POSITION normalised by the primitive's own extent. Two primitives
+ * exported as copies of one shape at different positions or uniform scales share it, and `join`
+ * must leave them alone — merging them would copy the shape N times, while `quantize`'s accessor
+ * dedup can still share the one normalized copy. Every attribute is included so quads that differ
+ * only in UV (an atlas kit) stay distinct and remain joinable.
  */
-function translationInvariantSignature(mesh: Mesh): string | null {
-  const primitive = mesh.listPrimitives()[0];
-  if (primitive === undefined || mesh.listPrimitives().length !== 1) return null;
+function primitiveSignature(primitive: Primitive): string | null {
   if (primitive.listTargets().length > 0) return null;
   const position = primitive.getAttribute("POSITION");
-  if (position === null || position.getNormalized()) return null;
+  if (position === null) return null;
   const hash = createHash("sha1");
   const min = position.getMin([0, 0, 0]);
-  const array = position.getArray();
-  const stride = position.getElementSize();
-  for (let index = 0; index < position.getCount(); index += 1) {
-    for (let axis = 0; axis < stride; axis += 1) {
-      const value = (array[index * stride + axis] ?? 0) - (min[axis] ?? 0);
-      hash.update(Math.round(value * 1e4).toString());
+  const max = position.getMax([0, 0, 0]);
+  const extent = Math.max(
+    (max[0] ?? 0) - (min[0] ?? 0),
+    (max[1] ?? 0) - (min[1] ?? 0),
+    (max[2] ?? 0) - (min[2] ?? 0),
+    1e-9,
+  );
+  for (const semantic of [...primitive.listSemantics()].sort()) {
+    const attribute = primitive.getAttribute(semantic);
+    if (attribute === null) continue;
+    hash.update(semantic);
+    hash.update(":");
+    const array = attribute.getArray();
+    const stride = attribute.getElementSize();
+    const normalized = attribute.getNormalized();
+    for (let index = 0; index < attribute.getCount(); index += 1) {
+      for (let axis = 0; axis < stride; axis += 1) {
+        let value = array[index * stride + axis] ?? 0;
+        if (semantic === "POSITION" && !normalized && axis < 3) {
+          value = (value - (min[axis] ?? 0)) / extent;
+        }
+        hash.update(Math.round(value * 1e4).toString());
+        hash.update(",");
+      }
+    }
+  }
+  const indices = primitive.getIndices();
+  if (indices !== null) {
+    const array = indices.getArray();
+    hash.update("indices:");
+    for (let index = 0; index < indices.getCount(); index += 1) {
+      hash.update((array[index] ?? 0).toString());
       hash.update(",");
     }
   }
   return hash.digest("hex");
+}
+
+/** A mesh's signature: the sorted signatures of its primitives, so a multi-primitive prop matches
+ * another copy of itself whatever order its primitives were authored in. */
+function meshShapeSignature(mesh: Mesh): string | null {
+  const signatures: string[] = [];
+  for (const primitive of mesh.listPrimitives()) {
+    const signature = primitiveSignature(primitive);
+    if (signature === null) return null;
+    signatures.push(signature);
+  }
+  signatures.sort();
+  return signatures.join("|");
 }
 
 /**
@@ -637,7 +676,7 @@ function joinExclusions(root: ReturnType<Document["getRoot"]>): Set<Node> {
     if (listNodeScenes(node).length > 1) excluded.add(node);
     const mesh = node.getMesh();
     if (mesh === null) continue;
-    const signature = translationInvariantSignature(mesh);
+    const signature = meshShapeSignature(mesh);
     if (signature === null) continue;
     byNode.set(node, signature);
     signatures.set(signature, (signatures.get(signature) ?? 0) + 1);
@@ -674,7 +713,7 @@ export function compactRequested(options: boolean | IModelCompactOptions | undef
 }
 
 /** Bump when a compaction algorithm change makes a previously cached output stale. */
-export const COMPACT_VERSION = 7;
+export const COMPACT_VERSION = 8;
 
 /** The compaction policy with every default resolved, so it is a stable cache key. */
 export interface IResolvedCompactOptions {
