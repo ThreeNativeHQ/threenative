@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type Accessor,
   type Document,
@@ -8,7 +9,7 @@ import {
   PropertyType,
   type mat4,
 } from "@gltf-transform/core";
-import { clearNodeParent, instance, join } from "@gltf-transform/functions";
+import { clearNodeParent, instance, join, listNodeScenes } from "@gltf-transform/functions";
 
 /**
  * Lossless scene-graph compaction: `flatten` collapses empty transform chains, `join`
@@ -546,9 +547,11 @@ export async function compactModel(
     // nodes were recorded before the detach (a protected descendant's clone is not shared any
     // more, but it is still one of a repeated set), and stay authored for `instance`/runtime.
     const sourcePrimitives = collectPrimitives(root);
+    const exclusions = joinExclusions(root);
     await join({
       cleanup: false,
-      filter: (node) => !protectedNodes.has(node) && !sharedBefore.has(node),
+      filter: (node) =>
+        !protectedNodes.has(node) && !sharedBefore.has(node) && !exclusions.has(node),
     })(document);
     // With `cleanup: false`, `join` unlinks each source primitive from its mesh but never disposes
     // it, and its compacted accessor clones keep a non-Root parent. Remove this pass's own
@@ -595,6 +598,56 @@ function collectPrimitives(root: ReturnType<Document["getRoot"]>): Primitive[] {
   return root.listMeshes().flatMap((mesh) => mesh.listPrimitives());
 }
 
+/**
+ * A signature of a mesh's shape that is blind to a constant translation: every vertex minus the
+ * mesh's own per-axis minimum, rounded and hashed. Two meshes exported as translated copies of one
+ * shape share it, and `join` must leave them alone — merging them would copy the shape N times,
+ * while `quantize`'s accessor dedup can still share the one normalized copy.
+ */
+function translationInvariantSignature(mesh: Mesh): string | null {
+  const primitive = mesh.listPrimitives()[0];
+  if (primitive === undefined || mesh.listPrimitives().length !== 1) return null;
+  if (primitive.listTargets().length > 0) return null;
+  const position = primitive.getAttribute("POSITION");
+  if (position === null || position.getNormalized()) return null;
+  const hash = createHash("sha1");
+  const min = position.getMin([0, 0, 0]);
+  const array = position.getArray();
+  const stride = position.getElementSize();
+  for (let index = 0; index < position.getCount(); index += 1) {
+    for (let axis = 0; axis < stride; axis += 1) {
+      const value = (array[index * stride + axis] ?? 0) - (min[axis] ?? 0);
+      hash.update(Math.round(value * 1e4).toString());
+      hash.update(",");
+    }
+  }
+  return hash.digest("hex");
+}
+
+/**
+ * Nodes `join` must skip even though nothing marks them protected: two or more differently-authored
+ * meshes of the same shape (translated copies), and any node placed in more than one scene —
+ * `join` walks scene by scene, so joining a shared node twice empties the first scene.
+ */
+function joinExclusions(root: ReturnType<Document["getRoot"]>): Set<Node> {
+  const excluded = new Set<Node>();
+  const signatures = new Map<string, number>();
+  const byNode = new Map<Node, string>();
+  for (const node of sceneNodes(root)) {
+    if (listNodeScenes(node).length > 1) excluded.add(node);
+    const mesh = node.getMesh();
+    if (mesh === null) continue;
+    const signature = translationInvariantSignature(mesh);
+    if (signature === null) continue;
+    byNode.set(node, signature);
+    signatures.set(signature, (signatures.get(signature) ?? 0) + 1);
+  }
+  for (const [node, signature] of byNode) {
+    if ((signatures.get(signature) ?? 0) > 1) excluded.add(node);
+  }
+  return excluded;
+}
+
 /** Every accessor one primitive's attributes, indices and morph targets reference. */
 function accessorsOfPrimitive(primitive: Primitive): Accessor[] {
   const accessors: Accessor[] = [];
@@ -621,7 +674,7 @@ export function compactRequested(options: boolean | IModelCompactOptions | undef
 }
 
 /** Bump when a compaction algorithm change makes a previously cached output stale. */
-export const COMPACT_VERSION = 6;
+export const COMPACT_VERSION = 7;
 
 /** The compaction policy with every default resolved, so it is a stable cache key. */
 export interface IResolvedCompactOptions {

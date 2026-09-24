@@ -37,6 +37,8 @@ function triangleMesh(
 ): Mesh {
   const mesh = document.createMesh(name);
   const primitive = document.createPrimitive();
+  // `seed` changes the shape (the apex's z), not a translation: two of these are deliberately
+  // different meshes so `join` may merge them, unlike `polyMesh`'s translated copies.
   const bump = seed * 1e-4;
   primitive.setAttribute(
     "POSITION",
@@ -44,7 +46,7 @@ function triangleMesh(
       document,
       buffer,
       `${name}-positions`,
-      new Float32Array([0, 0, bump, 1, 0, bump, 0, 1, bump]),
+      new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, bump]),
     ).setType("VEC3"),
   );
   primitive.setIndices(
@@ -749,6 +751,76 @@ describe("model compaction", () => {
     const output = await readVerified(result.buffer);
     expect(orphanAccessors(output)).toBe(0);
     expect(result.buffer.length).toBeLessThan(input.length * 2);
+  });
+
+  it("keeps translated copies of one shape out of join so quantize can share them", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("copy").setBaseColorFactor([0.3, 0.5, 0.7, 1]);
+    const scene = document.createScene("Scene");
+    // Distinct meshes whose vertices differ only by a constant translation, as a DCC bakes when a
+    // node transform is applied at export. `dedup` cannot link them, but join would copy the shape
+    // N times; quantize's accessor dedup can still share one normalized copy.
+    for (let index = 0; index < 40; index += 1) {
+      scene.addChild(
+        document
+          .createNode(`copy_${String(index)}`)
+          .setMesh(polyMesh(document, buffer, material, `copy-${String(index)}`, index * 10)),
+      );
+    }
+    const input = Buffer.from(await toGlb(document));
+    for (const quantize of [true, false]) {
+      const result = await modelPass({
+        passes: { dedup: true, meshopt: false, prune: true, quantize, reorder: false },
+        textures: "none",
+        virtual: "none",
+      }).apply(input, "copies.glb");
+      if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+      const output = await readVerified(result.buffer);
+      expect(orphanAccessors(output), `quantize=${String(quantize)}`).toBe(0);
+      expect(result.buffer.length, `quantize=${String(quantize)}`).toBeLessThan(input.length * 2);
+    }
+  });
+
+  it("never joins a node that two scenes share into an empty first scene", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("ship").setBaseColorFactor([0.3, 0.5, 0.7, 1]);
+    const shared = document
+      .createNode("p0")
+      .setMesh(triangleMesh(document, buffer, material, "p0", 1));
+    const first = document.createScene("First");
+    first.addChild(shared);
+    first.addChild(
+      document.createNode("p1").setMesh(triangleMesh(document, buffer, material, "p1", 2)),
+    );
+    first.addChild(
+      document.createNode("p2").setMesh(triangleMesh(document, buffer, material, "p2", 3)),
+    );
+    const second = document.createScene("Second");
+    second.addChild(shared);
+    second.addChild(
+      document.createNode("q1").setMesh(triangleMesh(document, buffer, material, "q1", 4)),
+    );
+    second.addChild(
+      document.createNode("q2").setMesh(triangleMesh(document, buffer, material, "q2", 5)),
+    );
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+      Buffer.from(await toGlb(document)),
+      "scenes.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const scene = output.listScenes().find((entry) => entry.getName() === "First");
+    let vertices = 0;
+    scene?.traverse((node) => {
+      const mesh = node.getMesh();
+      if (mesh === null) return;
+      for (const primitive of mesh.listPrimitives()) {
+        vertices += primitive.getAttribute("POSITION")?.getCount() ?? 0;
+      }
+    });
+    expect(vertices).toBeGreaterThan(0);
   });
 
   it("reports every named node compaction removed", async () => {
