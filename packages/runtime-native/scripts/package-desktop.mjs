@@ -27,6 +27,47 @@ const loadDistribution = () => import('./desktop-distribution.mjs');
 
 const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
+/** Normalize `spawnSync` into the shape every injected tool executor returns. */
+function exec(command, args, options = {}) {
+  const result = spawnSync(command, args, { encoding: 'utf8', ...options });
+  return {
+    error: result.error,
+    status: result.status,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
+}
+
+/**
+ * Strip debug and symbol sections from a packaged runtime copy, in place.
+ *
+ * Runs on the package COPY, never the build-tree original: the original keeps its symbols for
+ * debugging, the artifact the player installs does not carry them. Linux only: `--strip-all` keeps
+ * `.dynsym`, so the loader still resolves. macOS is left alone because `strip` invalidates the
+ * linker signature Apple Silicon requires to launch an unsigned build, and no macOS lane proves a
+ * re-sign here; Windows has no strip step.
+ *
+ * A machine with no strip tool is not a failed build — the unstripped runtime ships with one
+ * warning naming its size in bytes. A tool that runs and fails is: its stderr is the failure.
+ */
+export function stripDesktopRuntime(file, { platform = process.platform, run = exec, warn = console.warn } = {}) {
+  if (platform !== 'linux') return { stripped: false, reason: platform };
+  for (const command of ['strip', 'llvm-strip']) {
+    const result = run(command, ['--strip-all', file], { stdio: ['ignore', 'pipe', 'pipe'] });
+    if (result.error) continue;
+    if (result.status !== 0) {
+      throw new Error(
+        `TN_DESKTOP_STRIP_FAILED: '${command}' exited ${result.status ?? 'unknown'} on ${basename(file)}.\n${result.stderr ?? ''}`,
+      );
+    }
+    return { stripped: true, command };
+  }
+  warn(
+    `ThreeNative desktop packaging: no strip tool on PATH, shipping unstripped ${basename(file)} (${statSync(file).size} bytes).`,
+  );
+  return { stripped: false, reason: 'tool-missing' };
+}
+
 /**
  * Resolve the desktop runtime binary a consumer build compiles against.
  *
@@ -266,6 +307,9 @@ function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
         throw new Error(`TN_DESKTOP_BUNDLE_MISSING: the runtime packager wrote no bundle at ${bundle}.`);
       }
       copyFileSync(runtime, output);
+      // The sidecar copy is the bare runtime the container ships, so it is stripped here; the
+      // executable the runtime packager wrote in debug mode has the game appended and must not be.
+      stripDesktopRuntime(output, { run: options.stripRun });
     }
   } finally {
     rmSync(staging, { force: true, recursive: true });
