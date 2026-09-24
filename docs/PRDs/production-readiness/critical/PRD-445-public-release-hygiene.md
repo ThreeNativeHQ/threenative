@@ -1,6 +1,8 @@
 # PRD-445 — Public release hygiene
 
-**Status:** IN PROGRESS — Phase 1 landed; Phases 2–4 open.
+**Status:** IN PROGRESS — Phases 1–4 landed; 15/20 boxes ticked (`prd:75%`). Open: the upstream
+`threenative-sculpt-mcp` `sharp` release (box 44), the owner-set `CLOUDFLARE_API_TOKEN` and a green
+`site` run (box 81), and three owner-call Phase 4 deletions (boxes 113–115).
 **Complexity:** 3 → LOW; all local, no credentials.
 **Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../RELEASE-READINESS-2026-09-23.md).
 
