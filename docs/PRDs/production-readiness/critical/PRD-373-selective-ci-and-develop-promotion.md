@@ -192,6 +192,31 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
       green with the iOS leg red-but-allowed before this is claimed. Only CI can prove the reusable
       workflow conclusion.
 
+### 7. Clear the promotion reds on PR #301 — 2026-09-23
+
+**Progress:**
+
+- [x] Implemented and wired: the stale `iOS consumer proof is a required gate` assertion in
+      `packages/runtime-native/tests/native-platform-workflow.test.mjs` now matches the phase-6
+      owner decision — the `ios-simulator` job runs `verify-ios-simulator.mjs` and carries
+      `continue-on-error: true`, mirroring `scripts/__tests__/ci-structure.spec.ts`.
+- [x] Implemented and wired: a declared software lane (`--allow-software` + a WebGPU software
+      adapter) records the device-loss cascade as a `TN_PLAYTEST_SOFTWARE_DEVICE_LOST` warning
+      instead of failing `noConsoleErrors`; hardware runs and any real error still fail
+      (`packages/playtest/src/runner/runner-support.ts`). `console.json` keeps every raw entry.
+- [x] Implemented and wired: the Android V8 source producer's build ceiling is 180 minutes
+      (`.github/actions/android-v8-source/action.yml`) with 210-minute job budgets in
+      `native-platforms.yml` and `native-release.yml`, and 240 in `pipeline-cache.yml`. A cold
+      build reached 3089 of 3529 Ninja targets in 120 minutes on run 35945560551 and could never
+      finish in one run, so the payload was never saved.
+- [x] Required test green — `native-platform-workflow.test.mjs` + `wgpu-cache-toolchain.test.mjs`
+      54 passed, `ci-structure.spec.ts` + `ci-needs.spec.ts` 138 passed, and
+      `packages/playtest/__tests__` 1215 passed including the new
+      `software-device-loss.spec.ts`; all run locally 2026-09-23.
+- [ ] Verified on a real PR, not only locally — PR #301's hosted run must show `test-native`,
+      `template-nonvisual (racing)` and `template-nonvisual (sailing)` green before this is
+      claimed. Only CI can prove the reusable workflow conclusions.
+
 ## Acceptance criteria
 
 - [ ] Real feature PRs for inert docs and isolated website changes omit native jobs, report why,
