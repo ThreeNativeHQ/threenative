@@ -374,7 +374,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "8cffd8c6d9421f1e981be2bbec4bc4cc80ae9366e42c1712eb3b59e591c9e763",
   runner: "bd7f55ef05087f27d80be4ff06d4ce6e6beca7090a44a0b549896d301c6e48de",
   puzzle: "a5a424c6fb4278c141329e0f8987119a7fd746599d5f2352b2a0aef327613b33",
-  racing: "c1088376b58e25d14b50b51f02fb67359e0cb94922ec87bcd4b7429412ed6a85",
+  racing: "11ccb88cf6dbd46b9278d979fe5506c2318133cf8c765816b431875d1f8f2754",
   shooter: "24000de977d03ed37e2d01d11aa1abc9e582fe249f3076495ccff5b8c0e2b40f",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
