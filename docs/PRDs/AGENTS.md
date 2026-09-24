@@ -9,6 +9,8 @@ Read `/AGENTS.md` first. This file is about filing, not about how the work gets 
   evidence or failing gate. See `BLOCKED/README.md`.
 - `NOT STARTED`, `PARTIAL`, `OPEN`, `SCOPING` and `PROPOSED` stay in their owning batch, even when a
   dependency is not ready.
+- **Release-critical** → `docs/PRDs/production-readiness/critical/`, whatever the status, blocked
+  included (owner decision, 2026-09-23). Only a PRD there blocks a release.
 
 **Never un-file a finished PRD by rewriting it.** Re-scoping is not a reason to pull a PRD out of
 `done/` and replace it with a fresh plan: that deletes the ticked boxes and the landed commits that
