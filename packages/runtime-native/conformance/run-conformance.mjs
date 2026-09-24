@@ -2026,11 +2026,23 @@ async function runAndroid(
     }
     if (rotationRestore !== null) {
       for (const [setting, value] of Object.entries(rotationRestore)) {
-        const restored = runCommand(
-          tools.adb,
-          androidArgs(serial, "shell", "settings", "put", "system", setting, value),
-          { allowFailure: true, timeout: 10_000 },
-        );
+        const put = () =>
+          runCommand(
+            tools.adb,
+            androidArgs(serial, "shell", "settings", "put", "system", setting, value),
+            { allowFailure: true, timeout: 10_000 },
+          );
+        let restored = put();
+        if (restored.status !== 0) {
+          // The emulator's adbd drops for a moment under load ("adb: device offline"), and that
+          // failed rows that had already rendered and compared. Wait for it once and retry; a
+          // device that stays gone still fails the row below.
+          runCommand(tools.adb, androidArgs(serial, "wait-for-device"), {
+            allowFailure: true,
+            timeout: 30_000,
+          });
+          restored = put();
+        }
         if (restored.status !== 0) {
           result.status = "fail";
           result.native = {
