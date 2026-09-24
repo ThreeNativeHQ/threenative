@@ -204,6 +204,14 @@ same develop core bundle in both, so only the host differs.
 | `GainNode::process` + `AudioParam::valueAtTime` + `exp` | 5.39 % | 2.41 % |
 | CPU ms per wall second | 40.2 | 31.1 |
 
+**No frame regression.** The earlier per-frame check was redone against a develop host built fresh
+from `origin/develop` with identical flags, instead of another worktree's binary. It ran uncapped
+(`--no-vsync`), 5 rounds per host interleaved, same develop core. The PR host used less process CPU in
+every run: 1,086–1,126 ms/s, against 1,130–1,154 on the develop host. Frame tails were no worse: p95
+66.6 vs 70.7 ms, p99 80.8 vs 82.2 ms. Slow frames are `hostGap` (host pacing) in every variant, and
+building with `TN_JS_PROFILE=OFF` changes nothing measurable. The ~1 ms/frame p95 gap in the first
+uncapped A/B came from that unverified baseline binary.
+
 Three defects were found by measuring, each fixed red then green:
 
 - **The gain hoist was a net regression on Midway.** The test counter was a locked `fetch_add`
