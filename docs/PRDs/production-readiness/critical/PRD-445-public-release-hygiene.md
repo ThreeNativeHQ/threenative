@@ -47,9 +47,13 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
   consumer install nests a vulnerable copy even when `@threenative/assets` floors the direct pin.
   Measured: `npm install @threenative/core@0.3.2 @threenative/assets@0.3.2` in a clean project
   installs `sharp` `0.35.4` at the root (assets path clean) and `0.35.3` under
-  `threenative-sculpt-mcp`, and `npm audit --omit=dev` reports 3 high. Fixing it needs a
-  `threenative-sculpt-mcp` release that moves its pin to `>=0.35.4`, then a publish — both out of
-  scope here. The local cohort (this repo) is clean via the override.
+  `threenative-sculpt-mcp`, and `npm audit --omit=dev` reports 3 high. Re-measured 2026-09-23: the
+  same install still nests `sharp@0.35.3` under `threenative-sculpt-mcp@0.1.1` and
+  `npm audit --omit=dev` reports `3 high severity vulnerabilities` (`GHSA-rgj7-g3m4-5g8c`); the
+  registry's newest `threenative-sculpt-mcp@0.2.1` still pins `sharp` to exactly `0.35.3`, so the
+  upstream block persists. Fixing it needs a `threenative-sculpt-mcp` release that moves its pin to
+  `>=0.35.4`, then a publish — both out of scope here. The local cohort (this repo) is clean via the
+  override: `pnpm audit --prod --audit-level high` prints "No known vulnerabilities found", exit 0.
 - [x] `SECURITY.md` names the supported 0.3.x line.
   Done: the supported-versions table now reads `0.3.x | Yes`.
 - [x] `CHANGELOG.md` has sections for every published 0.3.x version and the release candidate.
