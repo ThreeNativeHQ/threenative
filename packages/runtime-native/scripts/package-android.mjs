@@ -875,6 +875,20 @@ export function androidBuildRequest(mode = 'debug', format = 'apk') {
 }
 
 /**
+ * The ABI override the packager hands Gradle.
+ *
+ * A release is what Play installs on a phone, where only `arm64-v8a` runs, so release names that
+ * one slice; the `x86_64` emulator dev lane lives in debug, which keeps Gradle's both-ABI default. An explicit
+ * `-PthreenativeAbis` from the caller wins in both modes — no default overrides a named set.
+ */
+export function androidAbiGradleArgs(mode, extraGradleArgs = []) {
+  const namesAbis = extraGradleArgs.some((arg) =>
+    /^(?:-P|--project-prop=)threenativeAbis=/u.test(arg),
+  );
+  return mode === 'release' && !namesAbis ? ['-PthreenativeAbis=arm64-v8a'] : [];
+}
+
+/**
  * The exact artifacts a resolved request may produce, in preference order.
  *
  * A release APK is signed, so only `app-release.apk` satisfies it; `app-release-unsigned.apk` is a
@@ -1065,7 +1079,13 @@ export async function packageAndroid(
     const extraGradleArgs = (process.env.THREENATIVE_GRADLE_ARGS ?? '')
       .split(' ')
       .filter((entry) => entry.length > 0);
-    const baseArgs = [request.task, '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
+    const baseArgs = [
+      request.task,
+      '-x',
+      'buildAndroidFirstProofBundle',
+      ...androidAbiGradleArgs(request.mode, extraGradleArgs),
+      ...extraGradleArgs,
+    ];
     const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];
     const spawn = options.spawnSync ?? spawnSync;
     const result = spawn(command, args, {

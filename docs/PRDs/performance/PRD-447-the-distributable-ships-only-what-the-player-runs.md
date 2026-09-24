@@ -1,6 +1,6 @@
 # PRD-447 — The distributable ships only what the player runs
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Complexity:** 4 (MEDIUM); risk override: none. About 9 implementation files, and the change crosses the release/prebuilt boundary.
 **Owner:** Claude (session 2026-09-24)
 **Depends on:** None. Coordinates with PRD-399, which qualifies dev distributables on an x86_64 emulator.
@@ -77,10 +77,10 @@ Out of scope, with reasons:
 
 #### Phase 1: Native payload
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **ACs:** AC-1, AC-2, AC-8
 
-- [ ] Release default ABI is `arm64-v8a` (Gradle and packager), debug keeps both; spec red before the change, green after.
+- [x] Release default ABI is `arm64-v8a` (Gradle and packager), debug keeps both; spec red before the change, green after. — `package-android.mjs:androidAbiGradleArgs` passes `-PthreenativeAbis=arm64-v8a` for release unless `THREENATIVE_GRADLE_ARGS` names a set; debug keeps the Gradle default (both). `android-release-abis.spec.ts` red (`androidAbiGradleArgs is not a function`, 3 failed) → green 3/3; the 4 package-android specs 53/53.
 - [ ] Desktop packaging strips the runtime (`llvm-strip`/`strip` on Linux, `strip -x` on macOS; Windows PDBs stay out of the archive); prebuilt asset names unchanged.
 - [ ] Linux section GC measured and kept or rejected (AC-8).
 - [ ] SWC decision recorded: if no packaged-runtime path loads `.ts`, the release desktop runtime builds with `MYSTRAL_USE_SWC=OFF` under the same prebuilt asset name. Otherwise record why and leave it.
