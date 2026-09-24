@@ -49,6 +49,97 @@ describe("createRenderer", () => {
     }
   });
 
+  it("records GPU timestamps on one of every eight renderer frames by default", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const states: boolean[] = [];
+    const info = { frame: 0, render: { timestamp: 0 } };
+    const backend = { trackTimestamp: false };
+    const raw = {
+      backend,
+      domElement: canvas,
+      info,
+      init: async () => {
+        backend.trackTimestamp = true;
+      },
+      render: () => states.push(backend.trackTimestamp),
+      setSize: () => undefined,
+    };
+    try {
+      const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+      for (let frame = 0; frame < 16; frame += 1) {
+        info.frame = frame;
+        renderer.render(new Scene(), new PerspectiveCamera());
+      }
+
+      expect(states.filter(Boolean)).toHaveLength(2);
+      expect(states.filter((enabled, frame) => enabled && frame % 8 === 0)).toEqual([true, true]);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("uses the named GPU timestamp frame interval override", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const states: boolean[] = [];
+    const info = { frame: 0, render: { timestamp: 0 } };
+    const backend = { trackTimestamp: false };
+    const raw = {
+      backend,
+      domElement: canvas,
+      info,
+      init: async () => {
+        backend.trackTimestamp = true;
+      },
+      render: () => states.push(backend.trackTimestamp),
+      setSize: () => undefined,
+    };
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        gpuTimestampFrameInterval: 3,
+        webgpuFactory: () => raw,
+      });
+      for (let frame = 0; frame < 6; frame += 1) {
+        info.frame = frame;
+        renderer.render(new Scene(), new PerspectiveCamera());
+      }
+
+      expect(states).toEqual([true, false, false, true, false, false]);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("keeps an eight-frame-old GPU sample available to the renderer", async () => {
+    const canvas = testCanvas();
+    const info = { frame: 8, render: { timestamp: 6.25 } };
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        info,
+        backend: { getTimestampFrames: () => [0] },
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.gpuFrameMs()).toBe(6.25);
+      expect(renderer.gpuFrameAge?.()).toBe(8);
+    } finally {
+      renderer.dispose();
+    }
+  });
+
   it("defers platform resize and reports the old buffer until compilation releases it", async () => {
     const canvas = testCanvas();
     let resize = () => {};
