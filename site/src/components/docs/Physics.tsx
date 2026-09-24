@@ -38,7 +38,7 @@ export function Physics() {
 
       <DocSection id="backends" title="Web and native select different Rapier backends">
         <p>
-          Browser builds use the WebAssembly Rapier backend. Native desktop, Android and iOS builds
+          Browser builds use the WebAssembly Rapier backend. Native desktop and Android builds
           select the runtime&apos;s native Rapier adapter through the native export condition. The
           public ThreeNative physics surface is the portability boundary between those backends.
         </p>

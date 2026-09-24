@@ -90,7 +90,7 @@ to 0.3.3 and not released.
    [PRD-366](critical/PRD-366-one-consumer-game-proves-supported-platforms.md) — phase 3 open, 0/5 acceptance.
 2. **The packed golden path is red.** The 7-template packed gate fails on `action-rpg`
    ("Execution context was destroyed"). Owner:
-   [PRD-112](critical/PRD-112-golden-path-from-packed-artifacts.md) and
+   [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
    its [repair](critical/PRD-112-repair-golden-path-contract.md).
 3. **Native React UI misses its latency bound on a 60 Hz phone.** Real Pixel 8, p95 55.35 ms against
    50 ms; it passes only on the 120 Hz panel, and that run was below the battery floor. Owner:
@@ -120,8 +120,8 @@ acceptance) and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-bran
 4. **Supply chain and distribution.** SBOM/provenance —
    [PRD-059](../BLOCKED/requires-hosted-run/PRD-059-native-dependency-provenance-sbom.md) (0/36);
    store validation, signing hand-off, N-1 recovery and promotion —
-   [PRD-060](PRD-060-promoted-consumer-distribution.md) (0/24) and its
-   [BLOCKED twin](../BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md) (10/54).
+   [PRD-060](PRD-060-promoted-consumer-distribution.md) (0/24; the duplicate BLOCKED file carrying
+   its implemented Phase 1 exact-candidate preflight was removed by PRD-445 Phase 3).
 5. **iOS is not a supported target** (decision 2). [PRD-065](../BLOCKED/requires-ios-ecossystem/PRD-065-ios-evidence-lane.md)
    (3/15) and iOS rows in other PRDs block nothing; the public README still claims iOS, which
    [PRD-445](critical/PRD-445-public-release-hygiene.md) removes.
@@ -179,8 +179,8 @@ cohort that R1 and R2 fix.
 These fold into [PRD-445](critical/PRD-445-public-release-hygiene.md):
 
 - PRD-060 exists twice, with different titles and progress
-  ([here](PRD-060-promoted-consumer-distribution.md) and
-  [in BLOCKED](../BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md)).
+  ([here](PRD-060-promoted-consumer-distribution.md) and its former
+  BLOCKED duplicate). **Resolved 2026-09-23** by PRD-445 Phase 3: the BLOCKED duplicate was deleted, its landed Phase 1 folded into the survivor.
 - `PRD-375-release-artifacts-carry-the-game-brand.md` carries the heading "PRD-153".
 - Release-blocking PRDs without phase boxes cannot report progress: PRD-054, PRD-058, PRD-064,
   PRD-066 and PRD-112-repair.
