@@ -174,13 +174,17 @@ function proveAudioDecodePromise(): void {
     fail("then-is-not-chainable");
     return;
   }
-  if (!callbackRan) {
-    fail("legacy-callback-did-not-run");
-    return;
-  }
   // Delivery, not just shape: this only resolves if the frame loop pumps microtasks.
   chained
     .then((buffer) => {
+      // A browser fires the legacy callback when the decode lands, not before `decodeAudioData`
+      // returns, and the host now decodes off the frame thread and settles the same way
+      // (`runtime-scripts/install-async-audio-decode.js`, `audio_decode_promise_test.cpp`). Reading
+      // it here, at settlement, is the contract; reading it synchronously was the pre-async shape.
+      if (!callbackRan) {
+        fail("legacy-callback-did-not-run");
+        return;
+      }
       if (buffer === undefined || typeof buffer.getChannelData !== "function") {
         fail("resolved-without-an-audiobuffer");
         return;

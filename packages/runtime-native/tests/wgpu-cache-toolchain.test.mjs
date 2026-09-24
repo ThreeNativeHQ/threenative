@@ -123,7 +123,7 @@ test('the Android cache ABI lane can reuse the resumable V8 producer without wea
   const body = workflow.slice(start, workflow.indexOf('\n  host-contract:', start));
   assert.match(body, /timeout-minutes: \$\{\{ matrix\.target == 'android-arm64' && (\d+) \|\| 45 \}\}/u);
   const budget = Number(body.match(/&& (\d+) \|\| 45/u)?.[1]);
-  assert.ok(budget >= 150, 'the 120-minute V8 build and cache save cannot fit a 45-minute job');
+  assert.ok(budget >= 210, 'the 180-minute V8 build and cache save cannot fit a 45-minute job');
   const producer = body.indexOf('uses: ./.github/actions/android-v8-source');
   assert.ok(producer > body.indexOf('- name: Select the Android host NDK from Gradle'));
   assert.ok(producer < body.indexOf('- name: Compile Android host against reconstructed backend'));
