@@ -485,19 +485,24 @@ above it.
 - [ ] In that project, an agent calling `engine_search_capabilities("enemy walks around a wall")`
       through the project's `.mcp.json` receives at least one capability.
 - [ ] In that project, `pnpm test` is green on first run with no added flags.
-- [ ] `pnpm publish:check` refuses a tree whose templates pin an unpublished package, and refuses a
+- [x] `pnpm publish:check` refuses a tree whose templates pin an unpublished package, and refuses a
       tree whose runtime version has no prebuilt release.
+      — observed 2026-09-23: 70 findings — 69 `template:<name>` pin findings for the unpublished 0.3.3
+      pins, plus `@threenative/runtime-native: No prebuilt release exists at .../runtime-native-v0.3.3/prebuilt-lock.json`; exit 1.
 - [ ] `pnpm sandbox` produces a sandbox in which the desktop build succeeds without pointing at
-      the engine source.
+      the engine source. — OPEN: not run this session.
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`.
-- [ ] Every new exported symbol has a non-test consumer (census pasted).
-- [ ] Revert check passed for each phase.
-- [ ] The `jonit-dev` URL is deleted, not aliased — no behaviour has two live implementations.
-- [ ] Every gate has a negative control observed failing.
+- [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`.
+- [x] Every new exported symbol has a non-test consumer (census pasted).
+      — `templatePinCensus`/`prebuiltReleaseCensus` → `check-publish-state.ts:861,870`; `RELEASE_REPOSITORY`/`writeInstallStatus` → `install-prebuilt.mjs:195,248,283,305,313` and `package-android.mjs:19`.
+- [ ] Revert check passed for each phase. — OPEN: not run this session.
+- [x] The `jonit-dev` URL is deleted, not aliased — no behaviour has two live implementations.
+      — `grep -rn "jonit-dev" packages scripts .github` matches only `packages/runtime-native/tests/fixtures/prd056-*.json`.
+- [ ] Every gate has a negative control observed failing. — OPEN: the negative controls are encoded as passing specs; not observed red this session.
 - [ ] Proved on the real subjects: `linux-x64` desktop and `android-arm64-v8a`, not a stub key.
+      — OPEN: needs the published cohort + `runtime-native-v0.3.3` release.
 
 ## Out of scope
 
