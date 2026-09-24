@@ -90,7 +90,7 @@ to 0.3.3 and not released.
    [PRD-366](critical/PRD-366-one-consumer-game-proves-supported-platforms.md) — phase 3 open, 0/5 acceptance.
 2. **The packed golden path is red.** The 7-template packed gate fails on `action-rpg`
    ("Execution context was destroyed"). Owner:
-   [PRD-112](critical/PRD-112-golden-path-from-packed-artifacts.md) and
+   [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
    its [repair](critical/PRD-112-repair-golden-path-contract.md).
 3. **Native React UI misses its latency bound on a 60 Hz phone.** Real Pixel 8, p95 55.35 ms against
    50 ms; it passes only on the 120 Hz panel, and that run was below the battery floor. Owner:
