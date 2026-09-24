@@ -29,6 +29,7 @@
 #include "libplatform/libplatform.h"
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
 #include "v8-profiler.h"
+#include <algorithm>
 #include <cstdlib>
 #endif
 
