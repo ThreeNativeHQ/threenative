@@ -83,7 +83,7 @@ export const docsPages: readonly IDocsPage[] = [
     summary:
       "Desktop and mobile builds without replacing your Three.js game source with a second API.",
     sourceFile: "site/src/components/docs/NativeRuntime.tsx",
-    keywords: "android ios desktop linux windows macos mobile",
+    keywords: "android desktop linux windows macos mobile",
   },
   {
     path: "/docs/comparison",

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
@@ -198,7 +198,7 @@ test('Android V8 interruption leaves time to cache and resume Ninja state', () =
     ?.split('\n')
     .map((line) => line.replace(/^ {8}/u, ''))
     .join('\n');
-  expect(script).toContain('timeout --signal=TERM --kill-after=30s 120m');
+  expect(script).toContain('timeout --signal=TERM --kill-after=30s 180m');
   expect(androidV8Action.indexOf('Save resumable V8 source state')).toBeGreaterThan(
     androidV8Action.indexOf('Build the pinned Android V8 payload'),
   );
@@ -245,7 +245,7 @@ wait "$child"
     // build shell. The timeout must fail after the fake Ninja state has been written.
     const interrupted = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '1s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '1s')],
       { cwd: runtime, env, encoding: 'utf8' },
     );
     expect(interrupted.status).toBe(124);
@@ -253,7 +253,7 @@ wait "$child"
 
     const resumed = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '5s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '5s')],
       { cwd: runtime, env: { ...env, TN_V8_RESUME: '1' }, encoding: 'utf8' },
     );
     expect(resumed.status).toBe(0);
@@ -296,6 +296,54 @@ test('desktop platform lanes build and retain executable evidence', () => {
   }
 });
 
+test('macOS runs the installed playtest against the relocated release and propagates failure', () => {
+  const step = workflow.match(
+    /- name: Play the relocated macOS release with React controls\n([\s\S]*?)(?=\n {6}- name:)/u,
+  )?.[1];
+  assert.ok(step, 'The final macOS app needs interactive gameplay verification');
+  assert.match(step, /if: matrix.platform == 'macOS'/u);
+  const script = step.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n\s+NODE/u)?.[1];
+  assert.ok(script);
+  const root = makeTempDirSync('tn-macos-release-playtest-');
+  const project = join(root, 'threenative-starter-native');
+  const container = join(root, 'Relocated Game.app');
+  const distribution = join(project, 'node_modules/@threenative/runtime-native/scripts');
+  const runner = join(project, 'node_modules/@threenative/playtest/dist/runner');
+  const recorded = join(root, 'argv.json');
+  mkdirSync(distribution, { recursive: true });
+  mkdirSync(runner, { recursive: true });
+  writeFileSync(join(distribution, 'desktop-distribution.mjs'), `
+    import assert from 'node:assert/strict';
+    export function resolveContainer(root) {
+      assert.equal(root, process.env.TN_RELEASE_CONTAINER_ROOT);
+      return { executable: 'Contents/MacOS/Game With Spaces' };
+    }
+  `);
+  writeFileSync(join(runner, 'cli.js'), `
+    require('node:fs').writeFileSync(process.env.TN_TEST_ARGV, JSON.stringify(process.argv.slice(2)));
+    process.exit(Number(process.env.TN_TEST_EXIT));
+  `);
+  try {
+    for (const code of [0, 7]) {
+      const result = spawnSync(process.execPath, ['--input-type=module'], {
+        input: script, encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, RUNNER_TEMP: root, TN_RELEASE_CONTAINER_ROOT: container,
+          TN_TEST_ARGV: recorded, TN_TEST_EXIT: String(code) },
+      });
+      assert.equal(result.status, code, result.stderr);
+      assert.deepEqual(JSON.parse(readFileSync(recorded, 'utf8')), [
+        resolve('packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json'),
+        '--target', 'desktop', '--executable', join(container, 'Contents/MacOS/Game With Spaces'),
+        '--project', project, '--artifacts',
+        resolve('packages/runtime-native/artifacts/release-container-macOS/gameplay'),
+        '--host-arg', '--windowed',
+      ]);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('iOS lane executes simulator proof and negative-control tests on an Apple runner', () => {
   expect(workflow).toMatch(/ios-simulator:[\s\S]*runs-on: macos-15/);
   expect(workflow).toContain('rustup target add aarch64-apple-ios-sim');
@@ -333,15 +381,37 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
 });
 
+test('iOS builds selected React UI from installed packages and checks full-screen pixels', () => {
+  const step = workflow.match(
+    /- name: Scaffold the iOS React UI consumer from local tarballs\n([\s\S]*?)\n {6}- run: >-/u,
+  )?.[1];
+  assert.ok(step);
+  assert.match(step, /template: starter/u);
+  assert.match(step, /pnpm --dir "\$target" build:ios/u);
+  assert.match(step, /node "\$target\/node_modules\/@threenative\/playtest\/dist\/runner\/cli\.js"/u);
+  assert.match(step, /ui-state-ios\.playtest\.json/u);
+  assert.match(step, /--target ios --app "\$app" --bundle-id "\$bundle_id"/u);
+  assert.match(step, /decodeUiScreenshot\(image, 96, 96\)/u);
+  assert.match(step, /published\.includes\(visible\.sequence\)/u);
+  assert.match(step, /tests\/ui-layer-host-contract\.test\.mjs/u);
+  // Not yet passing (PRD-399 P4-d): runs in the dedicated iOS dispatch, not on every pull request.
+  expect(step.match(/if: \$\{\{ inputs\.ios_only == true \}\}/gu)).toHaveLength(2);
+});
+
 test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
   expect(workflow).toContain('ios_only:');
   expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
 });
 
-test('iOS consumer proof is a required gate after the simulator proof passes', () => {
-  // Fail-closed since the simulator's worker proof passed in isolated run 33498394620.
+test('iOS consumer proof runs but cannot hold the merge verdict', () => {
+  // iOS is not a supported target (owner decision, 2026-09-23), so the simulator lane runs and
+  // reports its own red but is deliberately non-blocking — otherwise a red iOS leg holds the
+  // develop->main `ci-required` verdict. `native-release.yml` still validates the iOS rows for a
+  // release, so only the merge verdict is dropped. Mirrors
+  // scripts/__tests__/ci-structure.spec.ts's android-not-blocking / ios-blocking contract.
   const iosJob = workflow.slice(workflow.indexOf('  ios-simulator:'));
-  expect(iosJob).not.toContain('continue-on-error: true');
+  expect(iosJob).toContain('continue-on-error: true');
+  expect(iosJob).toContain('verify-ios-simulator.mjs');
   expect(workflow).not.toContain('worker proof is unresolved');
 });
 
@@ -433,7 +503,7 @@ const requiredCiJobs = [
   'typecheck', 'lint', 'test', 'budgets', 'build', 'test-native',
   'native-platforms / Windows desktop core',
   'native-platforms / macOS desktop core',
-  'native-platforms / Scaffolded starter desktop artifact',
+  'native-platforms / Scaffolded starter desktop artifact (linux-x64)',
   'native-platforms / Desktop web/native parity',
   'native-platforms / Android emulator visual parity',
 ];

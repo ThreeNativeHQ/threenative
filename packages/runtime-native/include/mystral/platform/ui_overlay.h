@@ -64,26 +64,104 @@ bool attachDesktopUiOverlay(const std::string& uiRoot);
 /** Give the desktop overlay its slice of the frame. A no-op where nothing is attached. */
 void pumpUiOverlay();
 
+/**
+ * One completed UI frame, as the renderer needs it.
+ *
+ * `pixels` is valid until the next call to `uiOverlayFrame`, and it is the web view's own buffer —
+ * nothing is copied on this side. `stride` is bytes per row and is not necessarily `width * 4`.
+ * The bytes are premultiplied `B,G,R,A`, which is cairo's `ARGB32` on a little-endian host.
+ */
+struct UiOverlayFrame {
+    const uint8_t* pixels = nullptr;
+    size_t length = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t stride = 0;
+    /// Advances only when the page's pixels changed, so an unchanged frame needs no upload.
+    uint64_t counter = 0;
+};
+
+/**
+ * The newest completed UI frame. Returns false until the page has painted once, and false on
+ * Windows and macOS, whose web views draw themselves and never pass through here.
+ *
+ * Call once per frame, before drawing the UI quad: the pointer it hands back belongs to the frame
+ * it was asked about.
+ */
+bool uiOverlayFrame(UiOverlayFrame& frame);
+
+/** How many frames the web view has published. Monotonic; reported in the composite marker. */
+uint64_t uiOverlayFramesPublished();
+
+/**
+ * Tell the offscreen UI how many pixels the game window has now, so the page re-lays out.
+ *
+ * The web view has no window of its own to follow, so without this it keeps the viewport it was
+ * attached at and the composite stretches that layout across the swapchain. A no-op where nothing is
+ * attached and on every platform whose web view is a real window the OS resizes for it.
+ */
+void uiOverlaySetSize(int width, int height);
+
 /** Publish the interactive rectangles, normalized to the viewport, as x, y, width, height. */
 void setUiHitRegions(const std::vector<float>& regions);
 
 /**
  * Whether a normalized point is inside a published interactive rectangle.
  *
- * The playtest input bridge asks this before dispatching a synthetic pointer, so the same list
- * the OS routes real input with — the Windows window region, the macOS `hitTest:`, the X11 input
- * shape — is also what decides where a synthetic press lands. False when nothing is attached.
+ * The playtest input bridge asks this before dispatching a synthetic pointer, and so does the
+ * runtime before it forwards a real OS press, so both routes are decided by one list. False when
+ * nothing is attached.
  */
 bool uiOverlayHitTest(float nx, float ny);
+
+/** How many interactive rectangles the page last published, for the OS press verdict line. */
+size_t uiOverlayHitRegionCount();
 
 /**
  * Dispatch one synthetic pointer event into the page, at a point normalized to the viewport.
  *
- * `type` is a DOM pointer event type (`pointerdown`, `pointermove`, `pointerup`). Playtest input
- * only: an OS-routed press arrives at the page by itself. Returns false when nothing is attached
- * or the page refused the script.
+ * `type` is a DOM pointer event type (`pointerdown`, `pointermove`, `pointerup`). Returns false
+ * when nothing is attached. Used by the playtest input bridge and, on Linux, by the runtime's own
+ * forwarding of OS pointer input: with no overlay window there is nothing for the OS to route a
+ * press into, so every press the player makes arrives here or goes to the game.
  */
 bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, int pointerId);
+
+/** Forward an X11 key event to WebKit's native input handling. Linux only. */
+bool uiOverlayInjectKey(uint32_t keycode, uint32_t modifiers, uint32_t group,
+                        uint32_t time, bool down);
+
+/**
+ * Whether the page holds the keyboard, so the host knows where a key belongs.
+ *
+ * True while the page has a focused input, textarea, select or open list. A published rectangle
+ * says where a press landed and says nothing about who should receive `ArrowUp`, so the page's own
+ * focus is the only honest authority; without this the host could only guess, and guessing wrong
+ * either swallows a game's keys or leaves a focused control deaf. False when nothing is attached
+ * and on every platform whose web view is a real window and gets keys from the OS itself.
+ */
+bool uiOverlayKeyboardCaptured();
+
+/**
+ * Decide which side a pointer event belongs to, and remember that answer for the rest of the
+ * gesture. Returns true when the page owns the event and the game must not see it.
+ *
+ * One authority for both callers, because they must not be able to disagree: a real pointer event
+ * arrives from the OS on Linux, and a synthetic one arrives from the playtest bridge, and both are
+ * routed by the same published rectangles.
+ *
+ * `type` is a DOM pointer event type. `nx`/`ny` are normalized to the viewport; on a release they
+ * are ignored, because a gesture is completed by the control that received its press and not by
+ * wherever the pointer happened to be when it let go — a real system delivers the release to the
+ * same target, and a synthetic release that carries no position at all must not be dropped for
+ * failing a hit test it was never meant to face.
+ *
+ * The gesture latch is what makes a drag behave. A press inside a UI island keeps going to the page
+ * even when the pointer leaves the island, or a drag out of a button becomes a game input halfway
+ * through; a press on the game keeps going to the game, or a camera drag that crosses a HUD button
+ * is stolen mid-move — the single most common way an overlay like this feels broken.
+ */
+bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId);
 
 /** Tear the desktop overlay down. Safe when nothing is attached. */
 void detachDesktopUiOverlay();
@@ -92,8 +170,8 @@ void detachDesktopUiOverlay();
 /**
  * The iOS overlay, in `ios/ui_overlay_ios.mm`.
  *
- * **UNPROVEN.** Never compiled, launched or touched — this repository has no macOS host. PRD-217's
- * acceptance criterion 6 asks for iOS to be proven or stated unproven, and this is the statement.
+ * **UNPROVEN WebUI execution.** Native-only simulator smoke does not qualify the overlay;
+ * the packaged React pixel proof and device input/presentation checks remain separate gates.
  */
 bool attachIosUiOverlay(const std::string& uiRoot);
 void detachIosUiOverlay();

@@ -123,6 +123,13 @@ constexpr const char *kScript = R"JS((() => {
   check("decoding a real Ogg still hands back a Promise", () =>
     decoded instanceof Promise ? undefined : "got " + describe(decoded));
 
+  // The whole point of the change: five decodes are queued, and none of them has run on this
+  // thread yet. Before it, every one of these settled inside the call, on the frame thread.
+  check("decoding is deferred, not settled on the calling thread", () => {
+    const outstanding = __tnAudioDecodePendingCount();
+    return outstanding === 5 ? undefined : "expected 5 decodes outstanding, saw " + outstanding;
+  });
+
   Promise.resolve()
     .then(() => decoded.then((buffer) => buffer, (error) => ({ error })))
     .then((value) => {
@@ -227,6 +234,10 @@ bool runContract(const EngineCase &engineCase, const std::vector<uint8_t> &fixtu
     engine->evalWithResult(kScript, "audio_decode_ogg_test.js");
 
     for (int pass = 0; pass < 16 && report.empty(); pass += 1) {
+        // The host drains finished decodes from `pollEvents()`, which this loop stands in for: the
+        // decode runs on a worker, so a harness that only pumps microtasks would wait for a
+        // completion nobody ever delivers. `drainAudioDecodes` is `processAudioEvents`' own call.
+        mystral::audio::drainAudioDecodes();
         engine->processMicrotasks();
         engine->evalWithResult("undefined", "audio_decode_ogg_drain.js");
     }

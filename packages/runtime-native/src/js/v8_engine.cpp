@@ -12,6 +12,8 @@
 #include "mystral/cold_start.h"
 #include "mystral/js/module_system.h"
 #include <deque>
+#include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #if defined(__ANDROID__)
@@ -25,8 +27,9 @@
 
 #include "v8.h"
 #include "libplatform/libplatform.h"
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
 #include "v8-profiler.h"
+#include <algorithm>
 #include <cstdlib>
 #endif
 
@@ -104,6 +107,65 @@ static bool initializeV8() {
 
     return true;
 }
+
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+// V8's `CpuProfile::Serialize` writes function names and script URLs unescaped, so a real game's
+// `RegExp: ^((?:[^\[\]\.:\/]+…` frame name, or a quote in a `sourceURL`, turns the file into
+// JSON that DevTools refuses. The embedder writes the same DevTools shape and escapes every string.
+static void writeJsonString(std::ostream& out, const char* text) {
+    out << '"';
+    for (const unsigned char* c = reinterpret_cast<const unsigned char*>(text); *c; ++c) {
+        if (*c == '"' || *c == '\\') {
+            out << '\\' << *c;
+        } else if (*c < 0x20) {
+            char escaped[8];
+            std::snprintf(escaped, sizeof escaped, "\\u%04x", *c);
+            out << escaped;
+        } else {
+            out << *c;
+        }
+    }
+    out << '"';
+}
+
+static bool writeCpuProfile(v8::Isolate* isolate, const v8::CpuProfile* profile, const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    out << "{\"nodes\":[";
+    std::vector<const v8::CpuProfileNode*> stack{profile->GetTopDownRoot()};
+    for (bool first = true; !stack.empty(); first = false) {
+        const v8::CpuProfileNode* node = stack.back();
+        stack.pop_back();
+        v8::String::Utf8Value name(isolate, node->GetFunctionName());
+        v8::String::Utf8Value url(isolate, node->GetScriptResourceName());
+        out << (first ? "" : ",") << "{\"id\":" << node->GetNodeId() << ",\"callFrame\":{\"functionName\":";
+        writeJsonString(out, *name ? *name : "");
+        out << ",\"scriptId\":" << node->GetScriptId() << ",\"url\":";
+        writeJsonString(out, *url ? *url : "");
+        // DevTools positions are 0-based; V8's are 1-based with 0 meaning unknown, which maps to -1.
+        out << ",\"lineNumber\":" << node->GetLineNumber() - 1 << ",\"columnNumber\":"
+            << node->GetColumnNumber() - 1 << "},\"hitCount\":" << node->GetHitCount() << ",\"children\":[";
+        for (int i = 0; i < node->GetChildrenCount(); i++) {
+            out << (i ? "," : "") << node->GetChild(i)->GetNodeId();
+            stack.push_back(node->GetChild(i));
+        }
+        out << "]}";
+    }
+    const int samples = profile->GetSamplesCount();
+    out << "],\"startTime\":" << profile->GetStartTime() << ",\"endTime\":" << profile->GetEndTime()
+        << ",\"samples\":[";
+    for (int i = 0; i < samples; i++) out << (i ? "," : "") << profile->GetSample(i)->GetNodeId();
+    out << "],\"timeDeltas\":[";
+    int64_t previous = profile->GetStartTime();
+    for (int i = 0; i < samples; i++) {
+        out << (i ? "," : "") << profile->GetSampleTimestamp(i) - previous;
+        previous = profile->GetSampleTimestamp(i);
+    }
+    out << "]}\n";
+    out.flush();
+    return out.good();
+}
+#endif
 
 class V8EntryScope {
 public:
@@ -189,34 +251,40 @@ public:
             setupGlobals();
         }
 
-#if TN_ANDROID_JS_PROFILE
-        // PRD-222: name the JavaScript half of the frame. Opt-in through the environment so the
-        // profiled host stays usable as a plain A/B meter; the profiler perturbs the frame.
-        if (const char* enabled = std::getenv("TN_JS_CPU_PROFILE")) {
-            if (enabled[0] == '1') {
-                g_startCpuProfile = [this]() {
-                    if (cpuProfiler_) return;
-                    V8EntryScope entryScope(isolate_);
-                    const auto context = context_.Get(isolate_);
-                    entryScope.enterContext(context);
-                    cpuProfiler_ = v8::CpuProfiler::New(isolate_);
-                    cpuProfiler_->SetSamplingInterval(200);
-                    v8::HandleScope profileScope(isolate_);
-                    cpuProfiler_->StartProfiling(
-                        v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked(), true);
-                    std::cout << "[V8] CPU profiler started" << std::endl;
-                };
-                g_dumpCpuProfile = [this]() { dumpCpuProfile(); };
-            }
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+        // PRD-222 / PRD-444: name the JavaScript half of the frame. `--cpu-prof <path>` writes a
+        // loadable DevTools file; TN_JS_CPU_PROFILE=1 is the env equivalent with the printed
+        // summary only. Opt-in because the profiler perturbs the frame, and started on demand at
+        // the first eligible frame so startup's compiles do not contaminate the sample.
+        const char* enabled = std::getenv("TN_JS_CPU_PROFILE");
+        if ((enabled != nullptr && enabled[0] == '1') || !g_cpuProfilePath.empty()) {
+            g_startCpuProfile = [this]() {
+                if (cpuProfiler_) return;
+                V8EntryScope entryScope(isolate_);
+                const auto context = context_.Get(isolate_);
+                entryScope.enterContext(context);
+                cpuProfiler_ = v8::CpuProfiler::New(isolate_);
+                cpuProfiler_->SetSamplingInterval(200);
+                v8::HandleScope profileScope(isolate_);
+                cpuProfiler_->StartProfiling(
+                    v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked(), true);
+                std::cout << "[V8] CPU profiler started" << std::endl;
+            };
+            g_dumpCpuProfile = [this]() { dumpCpuProfile(); };
+            // `--cpu-prof` asks for the whole run, so it starts now rather than at the Android
+            // probe's frame 226 — a short playtest run must still profile. The env var keeps the
+            // steady-state start so an A/B on Android is unchanged.
+            if (!g_cpuProfilePath.empty()) g_startCpuProfile();
         }
 #endif
         std::cout << "[V8] Engine created successfully" << std::endl;
     }
 
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
     // Flatten the sampled tree into self-time per (function, script:line) and print the heaviest
     // entries. Self time is the node's own hit count, so a shared helper is not credited to its
-    // callers and the totals stay additive.
+    // callers and the totals stay additive. When `--cpu-prof` named a path, the same profile is
+    // serialized to a DevTools `.cpuprofile` beside the summary.
     void dumpCpuProfile() {
         if (!cpuProfiler_) return;
         V8EntryScope entryScope(isolate_);
@@ -231,24 +299,41 @@ public:
         struct Entry { unsigned hits = 0; std::string location; };
         std::unordered_map<std::string, Entry> self;
         unsigned total = 0;
-        std::vector<const v8::CpuProfileNode*> stack{profile->GetTopDownRoot()};
+        // Walk with the caller in hand: a C++ binding has no name of its own in a V8 profile, so
+        // the only way to say *which* binding ate the time is to name the JS frame that called it.
+        // Without this, 62% of a startup stall read as "(anonymous) @ (native)" and named nothing.
+        struct Frame { const v8::CpuProfileNode* node; std::string caller; };
+        auto label = [&](const v8::CpuProfileNode* node, std::string& name, std::string& file) {
+            // `file` stays bare so the native test below can recognise "(native)"; callers carry
+            // the line, because "which binding" is answered by "which line called it".
+            v8::String::Utf8Value fn(isolate_, node->GetFunctionName());
+            v8::String::Utf8Value url(isolate_, node->GetScriptResourceName());
+            name = *fn && **fn ? *fn : "(anonymous)";
+            file = *url && **url ? *url : "(native)";
+            const size_t slash = file.find_last_of('/');
+            if (slash != std::string::npos) file = file.substr(slash + 1);
+        };
+        std::vector<Frame> stack{{profile->GetTopDownRoot(), "(root)"}};
         while (!stack.empty()) {
-            const v8::CpuProfileNode* node = stack.back();
+            Frame frame = stack.back();
             stack.pop_back();
+            const v8::CpuProfileNode* node = frame.node;
             const unsigned hits = node->GetHitCount();
             total += hits;
+            std::string name;
+            std::string file;
+            label(node, name, file);
             if (hits > 0) {
-                v8::String::Utf8Value fn(isolate_, node->GetFunctionName());
-                v8::String::Utf8Value url(isolate_, node->GetScriptResourceName());
-                std::string name = *fn && **fn ? *fn : "(anonymous)";
-                std::string file = *url && **url ? *url : "(native)";
-                const size_t slash = file.find_last_of('/');
-                if (slash != std::string::npos) file = file.substr(slash + 1);
-                auto& entry = self[name + " @ " + file];
+                const bool native = file == "(native)";
+                const std::string key = native ? "native <- " + frame.caller : name + " @ " + file;
+                auto& entry = self[key];
                 entry.hits += hits;
-                entry.location = file + ":" + std::to_string(node->GetLineNumber());
+                entry.location = native ? frame.caller : file + ":" + std::to_string(node->GetLineNumber());
             }
-            for (int i = 0; i < node->GetChildrenCount(); i++) stack.push_back(node->GetChild(i));
+            const std::string caller = file == "(native)"
+                ? frame.caller
+                : name + " @ " + file + ":" + std::to_string(node->GetLineNumber());
+            for (int i = 0; i < node->GetChildrenCount(); i++) stack.push_back({node->GetChild(i), caller});
         }
         std::vector<std::pair<std::string, Entry>> rows(self.begin(), self.end());
         std::sort(rows.begin(), rows.end(),
@@ -259,6 +344,19 @@ public:
                       << (total ? 100.0 * rows[i].second.hits / total : 0.0) << "\t"
                       << rows[i].first << "\t" << rows[i].second.location << std::endl;
         }
+        if (!g_cpuProfilePath.empty()) {
+            // Write beside the target and rename, so a kill mid-write cannot leave a truncated
+            // `.cpuprofile` that still looks like a profile.
+            const std::string temporaryPath = g_cpuProfilePath + ".tmp";
+            if (!writeCpuProfile(isolate_, profile, temporaryPath) ||
+                std::rename(temporaryPath.c_str(), g_cpuProfilePath.c_str()) != 0) {
+                std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: write failed for " << g_cpuProfilePath
+                          << std::endl;
+                g_cpuProfileFailed = true;
+            } else {
+                std::cout << "TN_CPU_PROFILE_WRITTEN:" << g_cpuProfilePath << std::endl;
+            }
+        }
         profile->Delete();
         cpuProfiler_->Dispose();
         cpuProfiler_ = nullptr;
@@ -267,7 +365,7 @@ public:
 
     ~V8Engine() override {
         std::cout << "[V8] Destroying engine..." << std::endl;
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
         dumpCpuProfile();
 #endif
         // Clean up any remaining frame handles
@@ -569,9 +667,16 @@ public:
 
     JSValueHandle newUndefined() override {
         V8EntryScope entry_scope(isolate_);
-        v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, v8::Undefined(isolate_));
-        frameHandles_.insert(persistent);
-        return {persistent, isolate_};
+        // One persistent, not one per call. Every binding that returns nothing used to take a
+        // pooled Persistent, `Reset` it, insert it into `frameHandles_` and have the trampoline
+        // erase and release it again — a canvas `fillRect` is exactly that, and a page painting
+        // procedurally calls it a million times at startup. A protected handle is skipped by the
+        // trampoline's release path, so this one outlives every call and is never pooled.
+        if (undefinedHandle_ == nullptr) {
+            undefinedHandle_ = acquirePersistent(isolate_, v8::Undefined(isolate_));
+            protectedHandles_.insert(undefinedHandle_);
+        }
+        return {undefinedHandle_, isolate_};
     }
 
     JSValueHandle newNull() override {
@@ -1604,8 +1709,10 @@ private:
                 }
                 std::cout << "[" << *prefixUtf8 << "] " << line << std::endl;
 #if defined(__ANDROID__)
-                __android_log_print(ANDROID_LOG_INFO, "MystralJS", "[%s] %s", *prefixUtf8,
-                                    line.c_str());
+                // __android_log_write, not __android_log_print: the print formatter caps at
+                // LOG_BUF_SIZE 1024 (1023 bytes), which truncated TN_FRAME_BUDGET windows.
+                const std::string full = std::string("[") + *prefixUtf8 + "] " + line;
+                __android_log_write(ANDROID_LOG_INFO, "MystralJS", full.c_str());
 #endif
             }, v8::String::NewFromUtf8(isolate_, prefix).ToLocalChecked())->GetFunction(context).ToLocalChecked();
         };
@@ -1879,7 +1986,7 @@ private:
     };
 
     v8::Isolate* isolate_ = nullptr;
-#if TN_ANDROID_JS_PROFILE
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
     v8::CpuProfiler* cpuProfiler_ = nullptr;
 #endif
     v8::ArrayBuffer::Allocator* allocator_ = nullptr;
@@ -1931,6 +2038,9 @@ private:
         internedKeys_.emplace(name, v8::Global<v8::String>(isolate, key));
         return key;
     }
+
+    /** The one `undefined` this engine hands out; protected, so no call releases it. */
+    v8::Persistent<v8::Value>* undefinedHandle_ = nullptr;
 
     v8::Persistent<v8::Value>* acquirePersistent(v8::Isolate* isolate, v8::Local<v8::Value> value) {
         v8::Persistent<v8::Value>* persistent;

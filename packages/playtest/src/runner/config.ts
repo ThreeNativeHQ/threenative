@@ -29,6 +29,8 @@ export interface IStandalonePlaytestConfig {
    */
   captureArtifactScreenshots?: boolean;
   browserArgs?: readonly string[];
+  /** Write a Chrome DevTools `.cpuprofile` for this run (browser and desktop targets). */
+  cpuProfilePath?: string;
   device?: string;
   desktop?: { executable: string; hostArgs?: readonly string[] };
   endpoint?: string;
@@ -70,6 +72,7 @@ export const PLAYTEST_FLAGS = {
   "--no-screenshots": { default: "false", summary: "skip the before/after artifact frames; scenarios that assert on a frame still capture one", takesValue: false },
   "--browser-arg": { allowDashValue: true, default: "none (repeatable)", repeatable: true, summary: "one additional Chromium argument", takesValue: true },
   "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu)", takesValue: true },
+  "--cpu-prof": { default: "none", summary: "write a Chrome DevTools .cpuprofile for this run (browser and desktop targets)", takesValue: true },
   "--bundle-id": { default: "dev.threenative.runtime", summary: "iOS application bundle identifier", takesValue: true },
   "--device": { default: "platform default", summary: "Android serial or iOS device identifier", takesValue: true },
   "--executable": { default: "required for desktop", summary: "native desktop game executable", takesValue: true },
@@ -125,6 +128,9 @@ export function formatUsage(): string {
     "                        with repeatable --host-arg, or --logcat <serial>",
     "                        bounds: --max-frame-p95 <ms>, --min-fps <fps>",
     "                        --require-windows <n> (default 2), --timeout <s>, --text",
+    "                        --allow-virtual-display accepts a frame rate the display did not",
+    "                        see (a private Xvfb, or a loop the presentation cap outran); without",
+    "                        it such a run prints no fps column and refuses a --min-fps bound",
     "  trace                 record a Chrome performance trace of a running game and name the",
     "                        functions inside its slow frames — a percentile says a frame was",
     "                        slow, a trace says which function. Take one BEFORE attributing any",
@@ -220,6 +226,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     throw new PlaytestCliUsageError("Choose --browser-recipe or --browser-arg, not both.");
   }
   const device = flags.get("--device")?.[0];
+  const cpuProfilePath = flags.get("--cpu-prof")?.[0];
   if (target === "browser" && device !== undefined) {
     if (browserRecipe !== undefined) {
       throw new PlaytestCliUsageError("Android Chrome device runs cannot honor --browser-recipe; remove it.");
@@ -273,6 +280,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
     captureArtifactScreenshots: !argv.includes("--no-screenshots"),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
+    ...(cpuProfilePath === undefined ? {} : { cpuProfilePath: resolve(projectPath, cpuProfilePath) }),
     ...(device === undefined ? {} : { device }),
     ...(executable === undefined
       ? {}

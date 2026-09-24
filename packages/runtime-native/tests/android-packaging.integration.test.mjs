@@ -248,6 +248,20 @@ public final class Log {
   public static int w(String tag, String message) { return 0; }
 }
 `,
+    'android/view/Choreographer.java': `package android.view;
+
+// Minimal API-faithful stand-in for the platform vsync source. Production arms it on resume
+// and removes the callback on pause/destroy; the probe only needs the calls to resolve.
+public final class Choreographer {
+  private static final Choreographer instance = new Choreographer();
+  public static Choreographer getInstance() { return instance; }
+  public void postFrameCallback(FrameCallback callback) {}
+  public void removeFrameCallback(FrameCallback callback) {}
+  public interface FrameCallback {
+    public abstract void doFrame(long frameTimeNanos);
+  }
+}
+`,
     'android/view/Surface.java': `package android.view;
 
 public final class Surface {
@@ -355,6 +369,8 @@ public class SDLActivity {
 
   protected void onCreate(Bundle state) {}
   protected void onResume() {}
+  protected void onPause() {}
+  protected void onDestroy() {}
   public void onTrimMemory(int level) {}
   protected String[] getLibraries() { return new String[0]; }
   protected String getMainFunction() { return ""; }
@@ -486,10 +502,45 @@ public final class MetadataProbe {
   }
 }
 `,
-    'MystralActivity.java': readFileSync(
-      new URL('../android/app/src/main/java/com/mystral/engine/MystralActivity.java', import.meta.url),
-      'utf8',
-    ),
+    // This probe JVM ships no native library, so only the JNI boundary is stubbed: the two
+    // frame-arming native declarations on the onResume/onPause/onDestroy path become no-op
+    // Java bodies in this compiled fixture. Every line of production Java — onResume,
+    // arm/disarm, requestPreferredFrameRate — compiles and runs unmodified, so the
+    // frame-rate-reapply-after-resume assertions below exercise the real resume path.
+    // Match counts fail closed: a rename or another native on this path breaks loudly here
+    // instead of silently testing a stale copy. JNI-backed behavior has its own real-APK proof.
+    'MystralActivity.java': (() => {
+      const production = readFileSync(
+        new URL('../android/app/src/main/java/com/mystral/engine/MystralActivity.java', import.meta.url),
+        'utf8',
+      );
+      const boundaries = [
+        'private static native void nativeOnPresentationFramesStarted();',
+        'private static native void nativeOnPresentationFramesStopped();',
+      ];
+      for (const declaration of boundaries) {
+        assert.equal(
+          production.split(declaration).length - 1,
+          1,
+          `expected exactly one JNI boundary declaration: ${declaration}`,
+        );
+      }
+      const fixture = production
+        .replace(boundaries[0], 'private static void nativeOnPresentationFramesStarted() {}')
+        .replace(boundaries[1], 'private static void nativeOnPresentationFramesStopped() {}');
+      assert.doesNotMatch(fixture, /native void nativeOnPresentationFrames(Started|Stopped)\(\)/u);
+      for (const retained of [
+        'private static native void nativeOnPresentationFrame(long frameTimeNanos);',
+        'private static native void nativeOnTrimMemory(int level);',
+      ]) {
+        assert.equal(
+          fixture.split(retained).length - 1,
+          1,
+          `only the resume-path boundary is stubbed, JNI stays native: ${retained}`,
+        );
+      }
+      return fixture;
+    })(),
   };
   const sourcePaths = [];
   for (const [relative, source] of Object.entries(sources)) {
@@ -1181,6 +1232,36 @@ test('the real signature path rejects an artifact the signer refuses', () => {
   );
 });
 
+test('AAB verification accepts self-signed certificates but rejects unsigned entries and expired certificates', () => {
+  const root = makeTempDirSync('threenative-aab-signature-');
+  roots.push(root);
+  const archive = join(root, 'candidate.aab');
+  const payload = join(root, 'payload.txt');
+  const keystore = join(root, 'qualification.p12');
+  const env = { ...process.env, TN_TEST_STORE_PASSWORD: 'fixture-password' };
+  const run = (tool, args) => execFileSync(tool, args, { env, stdio: 'pipe' });
+  const verify = () => verifyAndroidReleaseArtifact(archive, androidBuildRequest('release', 'aab'), {
+    findBuildTool: (name) => name,
+  });
+  writeFileSync(payload, 'signed payload');
+  run('jar', ['--create', '--file', archive, '-C', root, 'payload.txt']);
+  assert.throws(verify, /TN_ANDROID_SIGNATURE_INVALID/u);
+  run('keytool', ['-genkeypair', '-keystore', keystore, '-alias', 'qualification',
+    '-storepass:env', 'TN_TEST_STORE_PASSWORD', '-keypass:env', 'TN_TEST_STORE_PASSWORD',
+    '-keyalg', 'RSA', '-keysize', '2048', '-validity', '3650', '-dname', 'CN=Local qualification']);
+  run('jarsigner', ['-keystore', keystore, '-storepass:env', 'TN_TEST_STORE_PASSWORD', archive, 'qualification']);
+  assert.doesNotThrow(verify);
+  writeFileSync(join(root, 'unsigned.txt'), 'unsigned addition');
+  run('jar', ['--update', '--file', archive, '-C', root, 'unsigned.txt']);
+  assert.throws(verify, /TN_ANDROID_SIGNATURE_INVALID/u);
+  run('keytool', ['-genkeypair', '-keystore', keystore, '-alias', 'expired',
+    '-storepass:env', 'TN_TEST_STORE_PASSWORD', '-keypass:env', 'TN_TEST_STORE_PASSWORD',
+    '-keyalg', 'RSA', '-keysize', '2048', '-startdate', '2000/01/01', '-validity', '1', '-dname', 'CN=Expired qualification']);
+  run('jar', ['--create', '--file', archive, '-C', root, 'payload.txt']);
+  run('jarsigner', ['-keystore', keystore, '-storepass:env', 'TN_TEST_STORE_PASSWORD', archive, 'expired']);
+  assert.throws(verify, /TN_ANDROID_SIGNATURE_INVALID/u);
+});
+
 test('the real path needs aapt and fails closed without it', () => {
   assert.throws(
     () =>
@@ -1487,8 +1568,8 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
   // what the test pins is that it runs, that it runs *before* the census, and that its arguments
   // ask for 16 KB.
   const calls = [];
-  const spawnAlign = (command, args) => {
-    calls.push({ args, command });
+  const spawnAlign = (command, args, options) => {
+    calls.push({ args, command, options });
     if (String(command).endsWith('zipalign'))
       writeArchive(`${String(args[args.length - 1])}`, compliantEntries());
     return { status: 0, stdout: '' };
@@ -1501,7 +1582,7 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
         entry.name === 'lib/arm64-v8a/libv8android.so' ? { ...entry, align: 4096 } : entry,
       ),
     ),
-    align: { keystore, spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+    align: { keystore, keystorePassword: 'store-fixture-secret', keyPassword: 'key-fixture-secret', spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
     artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
   });
   assert.deepEqual(
@@ -1509,6 +1590,11 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
     ['/fake/build-tools/zipalign', '/fake/build-tools/apksigner'],
   );
   assert.deepEqual(calls[0]?.args.slice(0, 4), ['-P', '16', '-f', '4']);
+  assert.ok(calls[1].args.includes('env:TN_ANDROID_KEYSTORE_PASSWORD'));
+  assert.ok(calls[1].args.includes('env:TN_ANDROID_KEY_PASSWORD'));
+  assert.ok(calls[1].args.every((value) => !String(value).includes('fixture-secret')));
+  assert.equal(calls[1].options.env.TN_ANDROID_KEYSTORE_PASSWORD, 'store-fixture-secret');
+  assert.equal(calls[1].options.env.TN_ANDROID_KEY_PASSWORD, 'key-fixture-secret');
   // The census passed on an archive Gradle wrote misaligned, which is only possible because the
   // aligner replaced it first.
 

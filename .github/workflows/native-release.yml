@@ -116,7 +116,11 @@ jobs:
 
   gates:
     needs: validate-tag
-    if: ${{ !cancelled() && (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
+    # Scheduled/manual CI also completes on main, but only push CI qualifies a release.
+    if: >-
+      ${{ !cancelled() &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push') &&
+      (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
     runs-on: ubuntu-24.04
     # A verdict over the triggering CI completion, not a wait for it: the event payload
     # carries the conclusion and head SHA, and the required-job table is read once from
@@ -239,7 +243,7 @@ jobs:
             "typecheck", "lint", "test", "budgets", "build", "test-native",
             "native-platforms / Windows desktop core",
             "native-platforms / macOS desktop core",
-            "native-platforms / Scaffolded starter desktop artifact",
+            "native-platforms / Scaffolded starter desktop artifact (linux-x64)",
             "native-platforms / Desktop web/native parity",
             "native-platforms / Android emulator visual parity",
           ];
@@ -339,7 +343,7 @@ jobs:
             "typecheck", "lint", "test", "budgets", "build", "test-native",
             "native-platforms / Windows desktop core",
             "native-platforms / macOS desktop core",
-            "native-platforms / Scaffolded starter desktop artifact",
+            "native-platforms / Scaffolded starter desktop artifact (linux-x64)",
             "native-platforms / Desktop web/native parity",
             "native-platforms / Android emulator visual parity",
           ];
@@ -545,7 +549,8 @@ jobs:
       ${{ !cancelled() && needs.gates.result == 'success' &&
       (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    # Hosts the resumable Android V8 producer: 180-minute build ceiling plus cache-save time.
+    timeout-minutes: 210
     steps:
       # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
@@ -595,8 +600,8 @@ jobs:
       - name: Stage the QuickJS Android runtimes
         run: |
           mkdir -p release
-          cp packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so release/threenative-runtime-android-arm64-v8a.so
-          cp packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so release/threenative-runtime-android-x86_64.so
+          cp packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libmystral-runtime.so release/threenative-runtime-android-arm64-v8a.so
+          cp packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/x86_64/libmystral-runtime.so release/threenative-runtime-android-x86_64.so
       - name: Build both Android release ABIs (V8, the default)
         working-directory: packages/runtime-native/android
         run: sh ./gradlew assembleRelease -x buildAndroidFirstProofBundle --no-daemon
@@ -615,16 +620,16 @@ jobs:
             "./packages/runtime-native/scripts/package-android.mjs"
           );
           const assets = {
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so": "release/threenative-runtime-android-arm64-v8a-v8.so",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libv8android.so": "release/threenative-v8-android-arm64-v8a.so",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libc++_shared.so": "release/threenative-libcxx-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libmystral-runtime.so": "release/threenative-runtime-android-arm64-v8a-v8.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libv8android.so": "release/threenative-v8-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libc++_shared.so": "release/threenative-libcxx-android-arm64-v8a.so",
             "packages/runtime-native/android/app/build/generated/threenative/assets/v8/arm64-v8a/snapshot_blob.bin": "release/threenative-v8-snapshot-android-arm64-v8a.bin",
             "packages/runtime-native/android/app/build/generated/threenative/assets/v8/x86_64/snapshot_blob.bin": "release/threenative-v8-snapshot-android-x86_64.bin",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libv8android.so": "release/threenative-v8-android-x86_64.so",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libc++_shared.so": "release/threenative-libcxx-android-x86_64.so",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libSDL3.so": "release/threenative-sdl3-android-arm64-v8a.so",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so": "release/threenative-runtime-android-x86_64-v8.so",
-            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libSDL3.so": "release/threenative-sdl3-android-x86_64.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/x86_64/libv8android.so": "release/threenative-v8-android-x86_64.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/x86_64/libc++_shared.so": "release/threenative-libcxx-android-x86_64.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libSDL3.so": "release/threenative-sdl3-android-arm64-v8a.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/x86_64/libmystral-runtime.so": "release/threenative-runtime-android-x86_64-v8.so",
+            "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/x86_64/libSDL3.so": "release/threenative-sdl3-android-x86_64.so",
             [`packages/runtime-native/third_party/sdl3-android/SDL3-${SDL3_ANDROID_VERSION}.aar`]:
               "release/threenative-sdl3-android.aar",
           };

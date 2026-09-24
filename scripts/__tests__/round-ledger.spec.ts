@@ -78,6 +78,25 @@ function ledger(overrides: string[] = []): string {
   ].join("\n");
 }
 
+/**
+ * An open round: the sections whose work has not happened yet carry a marker, not a table.
+ *
+ * Round 14's ledger is the real one this comes from — committed mid-round with `pending` in its gap
+ * list and dispositions — and `pnpm round:next`, the command an agent runs *during* a round, refused
+ * it from 2026-09-04 until the marker was read as "no rows yet".
+ */
+function openLedger(): string {
+  return ledger()
+    .replace(
+      "| # | Genre | Column | What vanilla did better | Evidence | Smallest change that would close it |\n| --- | --- | --- | --- | --- | --- |\n| None | None | None | None | None | None |",
+      "pending — sourced from each build's friction.md",
+    )
+    .replace(
+      "| Gap # | Disposition | 20-line verdict | Named live caller | PRD | Reason if rejected |\n| --- | --- | --- | --- | --- | --- |\n| None | None | None | None | None | None |",
+      "pending",
+    );
+}
+
 interface ProofAssertion {
   readonly id: string;
   readonly pass: boolean;
@@ -450,5 +469,22 @@ describe("visual deltas and the resolution they are read against", () => {
     const parsed = validateRoundLedger(ledger());
     expect(parsed.visualMde).toBeNull();
     expect(parsed.visualDeltas).toEqual([]);
+  });
+});
+
+describe("an open round ledger", () => {
+  it("reads a marker section as no rows rather than refusing the file", () => {
+    const open = parseRoundLedger(openLedger());
+    expect(open.gaps).toEqual([]);
+    expect(open.dispositions).toEqual([]);
+    expect(open.arms).toHaveLength(2);
+  });
+
+  it("still refuses prose where a table belongs", () => {
+    const prose = ledger().replace(
+      "| Gap # | Disposition | 20-line verdict | Named live caller | PRD | Reason if rejected |\n| --- | --- | --- | --- | --- | --- |\n| None | None | None | None | None | None |",
+      "Gaps are decided once both arms have run.",
+    );
+    expect(() => parseRoundLedger(prose)).toThrow(/Dispositions' has no table/u);
   });
 });

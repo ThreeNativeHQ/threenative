@@ -197,6 +197,7 @@ async function packageDesktopRelease(options, runtime) {
       uiRenderer,
     });
     console.log(`ThreeNative desktop container${result.signed ? ' (signed)' : ' (unsigned)'}: ${result.archive}`);
+    if (result.installer) console.log('ThreeNative Windows installer: ' + result.installer);
     return result.archive;
   } finally {
     rmSync(staging, { force: true, recursive: true });

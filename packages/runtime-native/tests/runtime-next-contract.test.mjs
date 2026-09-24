@@ -953,11 +953,11 @@ test('screenshot mode finalizes pipeline capture before the platform-safe exit p
   assert.ok(screenshotEnd > screenshotStart, 'screenshot mode boundary is missing');
   const screenshot = cli.slice(screenshotStart, screenshotEnd);
   const finalize = screenshot.indexOf('host.finalizePipelineCapture();');
-  const exit = screenshot.indexOf('_exit(success ? 0 : 1);');
+  const exit = screenshot.indexOf('_exit(finalizeCpuProfile(success ? 0 : 1));');
   assert.ok(finalize >= 0, 'screenshot mode must finalize native pipeline capture');
   assert.ok(exit > finalize, 'capture finalization must precede the immediate exit');
-  assert.match(screenshot, /#ifndef MYSTRAL_CLI_NO_MAIN[\s\S]*_exit\(success \? 0 : 1\);/u);
-  assert.match(screenshot, /#else[\s\S]*runtime\.reset\(\);[\s\S]*return success/u);
+  assert.match(screenshot, /#ifndef MYSTRAL_CLI_NO_MAIN[\s\S]*_exit\(finalizeCpuProfile\(success \? 0 : 1\)\);/u);
+  assert.match(screenshot, /#else[\s\S]*runtime\.reset\(\);[\s\S]*return finalizeCpuProfile\(success/u);
 
   const withoutFinalization = screenshot.replace('host.finalizePipelineCapture();', '');
   assert.throws(
@@ -1116,7 +1116,7 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
   const nativeBuild = read('scripts/native-build.mjs');
   assert.match(nativeBuild, /VCPKG_INSTALLATION_ROOT[\s\S]*x64-windows-static/,
     'Windows builds must consume the static-CRT HTTP dependencies installed by the platform lane');
-  assert.match(deps, /gradle\/v8\.5\.0\/gradle\/wrapper\/gradle-wrapper\.jar[\s\S]*GRADLE_WRAPPER_SHA256/,
+  assert.match(deps, /gradle\/v8\.13\.0\/gradle\/wrapper\/gradle-wrapper\.jar[\s\S]*GRADLE_WRAPPER_SHA256/,
     'Android dependency reconstruction must restore the excluded wrapper from an immutable Gradle tag and verify it');
   assert.match(deps, /'wgpu-android':[\s\S]*version: 'v25\.0\.2\.2'/,
     'Android must use the first verified modern wgpu-native release that accepts Three.js WGSL on the emulator');
@@ -1386,4 +1386,24 @@ test('the QuickJS rollback stays reachable', () => {
     'the rollback flag must be named where someone editing this file will see it');
   const cmake = read('CMakeLists.txt');
   assert.match(cmake, /MYSTRAL_USE_QUICKJS/u, 'the QuickJS option must still exist in CMake');
+});
+
+test('the file-callback drain is bounded, so one asset burst cannot own a frame', () => {
+  // A native run of a real game measured a single `fileCallbacks` phase of 625-1043 ms during
+  // launch: the reads are issued in parallel, so every completed read arrives at once and each
+  // callback copies its bytes into a fresh ArrayBuffer before the game continues. The work is the
+  // same either way; the bound is what gives the loading screen a frame between batches. This keeps
+  // an unbounded `while (!pendingFileCallbacks_.empty())` from coming back.
+  const runtime = read('src/runtime.cpp');
+  const drain = /void processPendingFileCallbacks\(\) \{[\s\S]*?\n {4}\}/u.exec(runtime);
+  assert.ok(drain, 'processPendingFileCallbacks must exist');
+  assert.match(drain[0], /const auto deadline = std::chrono::steady_clock::now\(\) \+/u,
+    'the drain must carry a time budget');
+  assert.match(drain[0], /count < \d+/u, 'the drain must carry a count cap');
+  assert.match(drain[0], /if \(std::chrono::steady_clock::now\(\) >= deadline\) break;/u,
+    'the drain must stop at its budget');
+  assert.match(drain[0], /processMicrotasks\(\);/u,
+    'a callback may enqueue the next read, so its continuation runs before the next callback');
+  // The engine already bounds its scheduler drain the same way; the two must not drift apart.
+  assert.match(runtime, /void executeSchedulerCallbacks\(\) \{[\s\S]*?const auto deadline/u);
 });

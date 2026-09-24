@@ -21,6 +21,7 @@
     "caps:recall": "tsx scripts/capability-recall.ts",
     "census": "tsx scripts/generate-native-census.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
+    "check:flight-cost": "tsx scripts/check-flight-cost.ts --max-mean-ms 0.35",
     "ci:fast": "bash scripts/ci-fast.sh",
     "ci:local": "bash scripts/ci-local.sh",
     "coverage": "vitest run --coverage",
@@ -32,6 +33,9 @@
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
     "native:qualify:physical": "pnpm --filter @threenative/runtime-native native:qualify:physical",
     "native:verify:desktop": "pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop",
+    "native:verify:android:artifact": "node packages/runtime-native/scripts/check-android-16kb-alignment.mjs",
+    "native:verify:windows:installer": "node packages/runtime-native/scripts/verify-windows-installer.mjs",
+    "native:verify:ui": "tsx packages/runtime-native/scripts/verify-ui-cadence.ts",
     "parity": "sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs",
     "parity:ledger": "tsx scripts/check-parity-ledger.ts",
     "prd:progress": "tsx scripts/prd-progress.ts",
@@ -64,6 +68,7 @@
     "sync:agents": "tsx scripts/sync-agent-docs.ts",
     "sync:mcp": "tsx scripts/sync-mcp-configs.ts",
     "test": "bash scripts/run-test-suite.sh",
+    "test:ui-native": "tsx packages/runtime-native/scripts/verify-native-ui-input.ts",
     "test:browser": "pnpm --filter @threenative/playtest build && sh scripts/xvfb.sh playwright test --config=playwright.config.ts",
     "test:browser:ci": "test -f packages/playtest/dist/runner/cli.js || { echo 'TN_PREBUILT_PLAYWRIGHT_RUNNER_MISSING: packages/playtest/dist/runner/cli.js' >&2; exit 1; }; command -v playwright >/dev/null 2>&1 || { echo 'TN_PREBUILT_PLAYWRIGHT_CLI_MISSING: playwright is not installed' >&2; exit 1; }; test -n \"${THREENATIVE_PACKED_PACKAGES:-}\" && test -d \"$THREENATIVE_PACKED_PACKAGES\" && test -s \"$THREENATIVE_PACKED_PACKAGES/specs\" || { echo 'TN_PREBUILT_WORKSPACE_ARCHIVE_MISSING: THREENATIVE_PACKED_PACKAGES must point to a verified archive directory' >&2; exit 1; }; test -n \"$(find \"$THREENATIVE_PACKED_PACKAGES\" -maxdepth 1 -type f -name '*.tgz' -print -quit 2>/dev/null)\" || { echo 'TN_PREBUILT_WORKSPACE_ARCHIVE_MISSING: no workspace archive was found' >&2; exit 1; }; sh scripts/xvfb.sh playwright test --config=playwright.config.ts",
     "test:ci": "TN_SUITE_PREBUILT=1 bash scripts/run-test-suite.sh",
@@ -78,7 +83,9 @@
     "visuals:baseline": "sh scripts/xvfb.sh tsx scripts/template-baseline.ts",
     "visuals:realism-effects": "sh scripts/xvfb.sh tsx scripts/realism-effects-visual.ts",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
-    "worktree:status": "tsx scripts/worktree-lifecycle.ts status"
+    "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
+    "census:content": "tsx scripts/content-census.ts",
+    "bench:host-boundary": "timeout 240 packages/runtime-native/build/tn-linux/mystral run packages/runtime-native/scripts/bench-host-boundary.js --headless"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -97,7 +104,12 @@
     "typescript": "catalog:",
     "vitest": "4.1.10"
   },
-  "description": "ThreeNative is an application framework for games whose same vanilla Three.js source runs in the browser on WebGPU and on an owned C++ runtime for desktop, Android, and iOS. It uses Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every surface.",
+  "description": "ThreeNative is an application framework for games whose same vanilla Three.js source runs in the browser on WebGPU and on an owned C++ runtime for desktop and Android. It uses Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every surface.",
+  "pnpm": {
+    "overrides": {
+      "sharp": ">=0.35.4"
+    }
+  },
   "main": "index.js",
   "directories": {
     "doc": "docs",

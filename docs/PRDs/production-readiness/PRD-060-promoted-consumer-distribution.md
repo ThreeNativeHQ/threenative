@@ -23,7 +23,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Existing npm-release requires a promoted native release before publishing npm, while native-release promotes after local-tarball consumer checks. The report found runtime HTTP404 and old public package contents. Earlier PRD-060 mixed packaging, publisher implementation and broad all-platform claims; packaging now has explicit delegated owners.
 
-Release orchestration only. [PRD-196](../BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md) owns package/MCP contents; [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md)/[PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) hosted/prebuilt delivery; [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md)/[PRD-212](../done/PRD-212-published-install-builds-android.md) Android compatibility/artifacts; [PRD-217](../done/PRD-217-webview-ui-layer.md)/[PRD-365](PRD-365-consumer-desktop-distribution.md) desktop UI/artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand; [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) diagnosis; [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) actual game qualification. Existing PRD-059 provenance/SBOM, PRD-054 conformance and PRD-080 stranger protocol remain dependencies for their applicable non-iOS evidence. Do not duplicate their implementations or mark their iOS criteria complete.
+Release orchestration only. [PRD-196](critical/PRD-196-published-install-is-functional.md) owns package/MCP contents; [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md)/[PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) hosted/prebuilt delivery; [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md)/[PRD-212](../done/PRD-212-published-install-builds-android.md) Android compatibility/artifacts; [PRD-217](../done/PRD-217-webview-ui-layer.md)/[PRD-365](critical/PRD-365-consumer-desktop-distribution.md) desktop UI/artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand; [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) diagnosis; [PRD-366](critical/PRD-366-one-consumer-game-proves-supported-platforms.md) actual game qualification. Existing PRD-059 provenance/SBOM, PRD-054 conformance and PRD-080 stranger protocol remain dependencies for their applicable non-iOS evidence. Do not duplicate their implementations or mark their iOS criteria complete.
 
 ## Approach and boundaries
 
@@ -224,4 +224,26 @@ No implementation gate was run by this planning revision. Every new phase is **N
 
 ## Prior work retained
 
-Moved from `docs/PRDs/BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md` under the owner's 2026-09-08 instruction. This revision replaces the execution scope, not historical test results. [Original plan at the assessed commit](https://github.com/ThreeNativeHQ/threenative/blob/912a567e3e7592e6b437e49fe6318a3987d1f7c1/docs/PRDs/BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md) remains the immutable history. Original broad packaging phases are delegated to PRD-212/365, public install to PRD-196, runtime delivery to PRD-262, physical execution to PRD-366 and branding to PRD-153. Provenance, N-1/recovery and same-candidate requirements remain here; none is silently dropped. Old credential/E404 statements must be freshly checked, not copied as current blockers.
+Moved from `docs/PRDs/BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md`
+under the owner's 2026-09-08 instruction; PRD-445 (Phase 3) removed that duplicate file, carrying
+its landed Phase 1 here. This revision replaces the execution scope, not historical test results.
+
+**The removed plan's Phase 1 (exact-candidate preflight) is implemented and verified** — recorded
+at [`docs/verification/prd-060-readiness-phase-1-2026-09-09.md`](../../verification/prd-060-readiness-phase-1-2026-09-09.md):
+
+- `scripts/release-candidate-gate.ts` derives the exact 11-package cohort and 18-subject GitHub
+  asset set from manifests, resolves the required `CI` and `Native platform evidence` runs at the
+  tag's peeled commit, and classifies absent npm/signing credentials as `BLOCKED` (exit 2) before
+  any build or publish.
+- `.github/workflows/release-candidate.yml` invokes that resolver and
+  `.github/workflows/native-release.yml` validates its SHA-named artifact; every later release job
+  depends on the preflight, so tag/version-only validation no longer reaches builders alone.
+- `scripts/__tests__/release-candidate-gate.spec.ts` and
+  `packages/runtime-native/tests/native-platform-workflow.test.mjs` cover the schema,
+  exact-candidate, credential and wiring rows.
+
+[Original plan at the assessed commit](https://github.com/ThreeNativeHQ/threenative/blob/912a567e3e7592e6b437e49fe6318a3987d1f7c1/docs/PRDs/BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md)
+remains the immutable history. Original broad packaging phases are delegated to PRD-212/365,
+public install to PRD-196, runtime delivery to PRD-262, physical execution to PRD-366 and branding
+to PRD-153. Provenance, N-1/recovery and same-candidate requirements remain here; none is silently
+dropped. Old credential/E404 statements must be freshly checked, not copied as current blockers.

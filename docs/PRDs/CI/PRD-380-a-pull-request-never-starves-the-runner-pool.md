@@ -9,7 +9,7 @@ prd_contract: v1
 **Owner:** CI release tooling.
 **Problem:** The org's GitHub-hosted runner concurrency is small (roughly three runs at once) and it is consumed by matrices that a pull request does not need. On 2026-09-12 thirteen CI runs sat queued, five of them `main` pushes, while three heavy runs held the pool; a two-minute `build` join waited over an hour. Three multipliers: `native-release.yml` runs its macOS/Windows/Linux proof on **every** PR that touches one of four paths (including `native-platform-workflow.test.mjs`, which ordinary runtime-native PRs touch), `ci.yml` runs the **full** `native-platforms` matrix for any `selection == 'full'` PR, and nothing cancels a run whose PR has already merged, so dead runs keep holding runners. The owner's ask: pushing to a branch must not restart or stall the whole board.
 
-Baseline: `develop`. [PRD-373](../production-readiness/PRD-373-selective-ci-and-develop-promotion.md) owns the selective-CI classifier and the develop→main promotion rule; this PRD narrows what the selection is allowed to spend a runner on. PRD-379 changes *how* `native-release` learns about CI completion; this PRD changes *what triggers* it.
+Baseline: `develop`. [PRD-373](../production-readiness/critical/PRD-373-selective-ci-and-develop-promotion.md) owns the selective-CI classifier and the develop→main promotion rule; this PRD narrows what the selection is allowed to spend a runner on. PRD-379 changes *how* `native-release` learns about CI completion; this PRD changes *what triggers* it.
 
 ### Phase 1 — The release proof stops running on every PR push
 

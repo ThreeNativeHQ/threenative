@@ -138,6 +138,27 @@ function section(markdown: string, title: string): string {
   return end < 0 ? rest : rest.slice(0, end);
 }
 
+/** The vocabulary an *open* round uses where a closed one writes what it found. */
+const NOT_YET = /^(?:pending|unmeasured)(?:\b|$)/u;
+
+/**
+ * Whether a section declares that its work has not happened yet, instead of tabulating it.
+ *
+ * `round:next` is the command an agent runs *during* a round, and the sections that depend on work
+ * not yet done — the gap list, the dispositions, the visual deltas — carry `pending` (with the
+ * reason after it) until that work runs. Read as a table they threw `has no table`, so round 14's
+ * own ledger, committed mid-round on 2026-09-04, took `pnpm round:next` out for every agent that
+ * asked it what to do next — the same way round 10's missing `## Arms` did, and for the same
+ * reason: the loop's "what next" command refused before it computed anything.
+ *
+ * Only the sections whose emptiness is a legitimate open-round state consult this. `## Arms`,
+ * `## Column verdicts` and `## Gates` are structural: a ledger that lost one to a bad edit still
+ * throws, because an absence there is a defect rather than a round still running.
+ */
+function notYet(markdown: string, title: string): boolean {
+  return NOT_YET.test(section(markdown, title).trim());
+}
+
 /**
  * Splits a markdown table row on its *unescaped* pipes.
  *
@@ -280,6 +301,7 @@ function parseColumns(markdown: string): RoundColumnVerdict[] {
  * declaration that unlocks the missing Arms section, not by a column simply being absent.
  */
 function parseGaps(markdown: string): RoundGap[] {
+  if (notYet(markdown, "Gap list")) return [];
   const parsed = table(markdown, "Gap list");
   const baseline = declaresNoGenres(markdown);
   const number = column(parsed.header, "#");
@@ -302,6 +324,7 @@ function parseGaps(markdown: string): RoundGap[] {
 }
 
 function parseDispositions(markdown: string): RoundDispositionRow[] {
+  if (notYet(markdown, "Dispositions")) return [];
   const parsed = table(markdown, "Dispositions");
   const gap = column(parsed.header, "Gap #");
   const disposition = column(parsed.header, "Disposition");
@@ -337,7 +360,7 @@ function parseGates(markdown: string): RoundGate[] {
  * table is what gets quoted.
  */
 function parseVisualDeltas(markdown: string): RoundVisualDelta[] {
-  if (!hasSection(markdown, "Visual deltas")) return [];
+  if (!hasSection(markdown, "Visual deltas") || notYet(markdown, "Visual deltas")) return [];
   const parsed = table(markdown, "Visual deltas");
   const template = column(parsed.header, "Template");
   const before = column(parsed.header, "Before");

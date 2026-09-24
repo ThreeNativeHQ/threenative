@@ -17,7 +17,7 @@ const names = [
   "test-native",
   "native-platforms / Windows desktop core",
   "native-platforms / macOS desktop core",
-  "native-platforms / Scaffolded starter desktop artifact",
+  "native-platforms / Scaffolded starter desktop artifact (linux-x64)",
   "native-platforms / Desktop web/native parity",
   "native-platforms / Android emulator visual parity",
 ];
@@ -44,6 +44,7 @@ function allowed(
   event: string,
   refType: string,
   results: Record<string, string> = {},
+  triggerEvent = "push",
 ): boolean {
   const body = job(name).split("\n    steps:")[0] ?? "";
   const expression = body.match(/\n\x20{4}if: (?:>-\n)?([\s\S]*?)(?=\n\x20{4}[a-z]|$)/u)?.[1];
@@ -77,6 +78,7 @@ function allowed(
   return evaluate(
     {
       event_name: event,
+      event: { workflow_run: { event: triggerEvent } },
       ref_type: refType,
       ref: refType === "tag" ? "refs/tags/runtime-native-v0.3.1" : "refs/heads/main",
       sha,
@@ -653,6 +655,28 @@ test("a proof run is not cancelled by the next push to its own branch", () => {
   assert.match(concurrency, /group:[^\n]*github\.event\.workflow_run\.head_sha/u);
   assert.match(concurrency, /group:[^\n]*github\.ref/u);
 });
+
+test.each(["schedule", "workflow_dispatch", "pull_request"])(
+  "CI completion from %s does not enter main-push release qualification",
+  (event) => {
+    assert.equal(
+      allowed("gates", "workflow_run", "branch", { "validate-tag": "skipped" }, event),
+      false,
+    );
+    for (const name of ["build", "build-android", "clean-consumer", "clean-consumer-windows"]) {
+      assert.equal(
+        allowed(
+          name,
+          "workflow_run",
+          "branch",
+          { "validate-tag": "skipped", gates: "skipped" },
+          event,
+        ),
+        false,
+      );
+    }
+  },
+);
 
 test("workflow_run evidence runs proof without a release candidate", () => {
   for (const name of ["gates", "build", "build-android", "clean-consumer"]) {

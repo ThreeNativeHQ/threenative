@@ -138,9 +138,11 @@ test("reports the bounded runtime diagnostics series through the bridge", async 
   });
 
   const description = await installation.bridge.describe();
-  const snapshot = await installation.bridge.sample({});
+  const omitted = await installation.bridge.sample({});
+  const snapshot = await installation.bridge.sample({ include: ["runtimeDiagnosticsSeries"] });
 
   expect(description.capabilities).toContain("runtime.performance");
+  expect(omitted.runtimeDiagnosticsSeries).toBeUndefined();
   expect(snapshot.runtimeDiagnosticsSeries).toEqual([
     { drawCalls: 4, frameMs: 16.7, triangles: 96 },
     { frameMs: 17.2 },

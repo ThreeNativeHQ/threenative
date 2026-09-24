@@ -53,8 +53,10 @@ void redirectStdioToLogcat() {
             size_t newline = 0;
             size_t start = 0;
             while ((newline = pending.find('\n', start)) != std::string::npos) {
-                __android_log_print(ANDROID_LOG_INFO, "MystralStdio", "%.*s",
-                    static_cast<int>(newline - start), pending.data() + start);
+                // __android_log_write, not __android_log_print: the print formatter caps at
+                // LOG_BUF_SIZE 1024 (1023 bytes), which truncated TN_FRAME_BUDGET windows.
+                const std::string line(pending.data() + start, newline - start);
+                __android_log_write(ANDROID_LOG_INFO, "MystralStdio", line.c_str());
                 start = newline + 1;
             }
             pending.erase(0, start);

@@ -132,7 +132,8 @@ jobs:
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
+    timeout-minutes: 210
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
@@ -898,6 +899,16 @@ jobs:
           pnpm parity:ledger "$RUNNER_TEMP/prd-303-desktop-parity-ledger.md"
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/desktop "desktop parity"
+      # The one platform whose UI path differs: on Linux the page is a texture inside the game's
+      # own frame, so this gate asserts the composite's counter and size, the page's own colour in
+      # the captured frame, and the routing table, all from one run. Windows and macOS run the same
+      # verifier through `native:verify:desktop` in the `desktop` matrix job below — exactly how the
+      # loading gate is wired — and there it asserts the child-web-view half and names the two
+      # frame assertions it cannot make (platform::uiOverlayFrame reports no page frame off Linux).
+      # Android and iOS attach their own web views from their own hosts (Java/Swift) and keep their
+      # own lanes; nothing in this gate applies to them.
+      - name: Verify the web UI composites into the game's own frame
+        run: pnpm --filter @threenative/runtime-native native:verify:ui-frame
       - name: Collect bounded desktop performance evidence from the existing binary
         if: always()
         run: |
@@ -1166,6 +1177,10 @@ jobs:
           # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
           if [ "${{ matrix.platform }}" = "Windows" ]; then
             choco install zip -y --no-progress
+            choco install nsis --version=3.11.0 -y --no-progress
+            nsis='/c/Program Files (x86)/NSIS'
+            "$nsis/makensis.exe" -VERSION
+            cygpath -w "$nsis" >> "$GITHUB_PATH"
             # The starter sets app.icon, so desktop-distribution.mjs shells out to rcedit to embed
             # the icon and version strings in the PE resources. rcedit is not on the runner image.
             # Pin the release: `latest` would make the packaged identity move under us.
@@ -1195,6 +1210,101 @@ jobs:
             echo "TN_DESKTOP_ARCHIVER_MISSING: 'zip' is required to write the desktop release container." >&2
             exit 1
           fi
+      - name: Exercise the compiled Windows installer lifecycle
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          TN_WINDOWS_INSTALLER_INTEGRATION=1 pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/windows-installer.test.mjs
+      # A disposable trusted certificate proves the actual signing tools and final installer.
+      # These are CI qualification artifacts, not proof of public Authenticode trust.
+      - name: Create a self-signed code-signing certificate for the proof
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $subject = 'ThreeNative CI Signing Proof'
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=$subject" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
+          # `signtool verify /pa` requires a trusted chain, so the self-signed root is trusted for
+          # this user only, on this throwaway runner.
+          $cer = Join-Path $env:RUNNER_TEMP 'tn-signing-proof.cer'
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          # CurrentUser\Root opens an interactive Root Certificate Store confirmation on hosted Windows.
+          # Use certutil against the machine Root store instead: the hosted runner is disposable and
+          # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.
+          & certutil.exe -f -addstore Root $cer | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate" }
+          # signtool ships with the Windows SDK and is on PATH only inside a Developer Command
+          # Prompt, the same way dumpbin is. The signing step runs in bash, so put the newest x64
+          # SDK signtool on PATH for the steps that follow rather than entering VsDevCmd there.
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'TN_DESKTOP_SIGNING_PROOF: no signtool.exe found in the Windows SDK' }
+          Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
+          Write-Host "created $($cert.Thumbprint) for CN=$subject; signtool at $($signtool.FullName)"
+      # PRD-365 phase 3, macOS half of the owner's 2026-09-23 decision: prove that
+      # `threenative build --mode release` signs with a developer credential, using a certificate
+      # generated on the runner. The Windows leg already does this with `signtool /n`; this mirrors
+      # it for `codesign`. The certificate is self-signed and discarded, so this proves the adapter,
+      # `codesign` and the host, not Developer ID trust or notarization — those stay PENDING.
+      - name: Create a self-signed code-signing certificate for the macOS proof
+        if: matrix.platform == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/tn-signing-proof.keychain-db"
+          password="$(openssl rand -hex 16)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          # A certificate is only a codesigning identity when it carries the codeSigning extended
+          # key usage; without it `security find-identity -p codesigning` never lists it and
+          # `codesign` reports "no identity found". A config file rather than `-addext` because
+          # macOS ships LibreSSL, whose `req` support differs from OpenSSL's.
+          cat > "$RUNNER_TEMP/tn-signing-proof.cnf" <<'EOF'
+          [req]
+          distinguished_name = dn
+          x509_extensions = codesign
+          prompt = no
+          [dn]
+          CN = ThreeNative CI Signing Proof
+          [codesign]
+          keyUsage = digitalSignature
+          extendedKeyUsage = codeSigning
+          basicConstraints = critical, CA:FALSE
+          EOF
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+            -keyout "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+            -out "$RUNNER_TEMP/tn-signing-proof-cert.pem" \
+            -config "$RUNNER_TEMP/tn-signing-proof.cnf"
+          # LibreSSL and OpenSSL 3 disagree on the PKCS#12 default cipher, and a failed import here
+          # would read later as "no identity found". OpenSSL 3's modern default (AES-256-CBC with
+          # a SHA-256 MAC) exports fine but macOS refuses it with "SecKeychainItemImport: MAC
+          # verification failed during PKCS12 import" — so lead with the legacy algorithms macOS
+          # accepts, and fall back to the modern default only where -legacy is unavailable (LibreSSL,
+          # whose default is already importable).
+          # macOS `security import` fails the MAC check on an empty-password PKCS#12, so use a throwaway one.
+          p12_password="$(openssl rand -hex 16)"
+          p12="$RUNNER_TEMP/tn-signing-proof.p12"
+          if ! openssl pkcs12 -export -legacy -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout "pass:$p12_password" 2>/dev/null; then
+            openssl pkcs12 -export -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout "pass:$p12_password"
+          fi
+          security import "$p12" -k "$keychain" -P "$p12_password" -T /usr/bin/codesign
+          # Without the partition list `codesign` blocks on a keychain-access prompt a hosted runner
+          # cannot answer, which reads as a signing failure.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security default-keychain -s "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # A throwaway self-signed certificate is never trusted, so `find-identity -v` (valid only)
+          # lists nothing; codesign still signs with an untrusted identity named by its SHA-1 hash.
+          security find-identity -p codesigning "$keychain" | tee "$RUNNER_TEMP/tn-signing-identity.txt"
+          identity_hash="$(grep 'ThreeNative CI Signing Proof' "$RUNNER_TEMP/tn-signing-identity.txt" | head -1 | awk '{print $2}')"
+          if [ -z "$identity_hash" ]; then
+            echo "TN_DESKTOP_SIGNING_PROOF: the generated certificate is not a usable codesigning identity." >&2
+            exit 1
+          fi
+          echo "TN_SIGNING_PROOF_IDENTITY=$identity_hash" >> "$GITHUB_ENV"
       # The container records every DLL the executable imports so it can be relocated, and
       # `desktop-distribution.mjs` reads them with `dumpbin`, which lives only inside the Visual
       # Studio developer environment. Enter it here rather than exporting it through GITHUB_ENV,
@@ -1209,13 +1319,19 @@ jobs:
           where dumpbin || exit /b 1
           where rcedit || exit /b 1
           set "THREENATIVE_RUNTIME_BINARY=%GITHUB_WORKSPACE%\packages\runtime-native\build\tn-windows\mystral.exe"
+          set "THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof"
           pnpm --dir "%RUNNER_TEMP%\threenative-starter-native" exec threenative build --target desktop --mode release
       - name: Build the desktop release container
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
+          pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/desktop-finalization.test.mjs
           target="$RUNNER_TEMP/threenative-starter-native"
+          # The test credential created above, exactly as the Windows leg passes its own subject:
+          # this proves the release build signs with a developer identity rather than ad-hoc, while
+          # Developer ID trust, notarization and Gatekeeper acceptance stay PENDING.
+          THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY" \
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-macos/mystral" \
             pnpm --dir "$target" exec threenative build --target desktop --mode release
       - name: Relocate and extract the release container outside the project
@@ -1331,6 +1447,31 @@ jobs:
             [ -f "$container/$icon" ] || {
               echo "TN_DESKTOP_IDENTITY_ICON_MISSING: recorded icon $icon is absent from the container." >&2; exit 1; }
           fi
+      # PRD-365 phase 3, macOS half: read the release build's signature back independently of the
+      # code that wrote it. The manifest records the scheme; `codesign` confirms the seal and
+      # `codesign -dv` names the test signer. This is what turns "the build passed a credential"
+      # into "the artifact a player downloads is signed by it".
+      - name: Read the macOS signature back off the release container
+        if: matrix.platform == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="$TN_RELEASE_CONTAINER_ROOT"
+          manifest=$(find "$container" -name threenative-container.json -type f -print)
+          signed=$(node -e "const m=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(String(m.signed)+' '+String(m.signingScheme))" "$manifest")
+          printf '%s\n' "manifest signed/scheme: $signed"
+          case "$signed" in
+            "true codesign") ;;
+            *) echo "TN_DESKTOP_SIGNING_PROOF: release manifest records '$signed', not 'true codesign'." >&2; exit 1 ;;
+          esac
+          codesign --verify --strict --deep "$container"
+          details=$(codesign -dv --verbose=4 "$container" 2>&1)
+          printf '%s\n' "$details"
+          printf '%s\n' "$details" | grep -q 'Authority=ThreeNative CI Signing Proof' || {
+            echo "TN_DESKTOP_SIGNING_PROOF: the release container is not signed by the CI proof identity." >&2
+            exit 1
+          }
+          echo "TN_DESKTOP_SIGNING_PROOF_SCHEME:codesign"
       # PRD-375: the shipped brand inspector, against the exact packaged artifact. It reads the
       # .exe's own RT_GROUP_ICON/RT_ICON and RT_VERSION/VS_FIXEDFILEINFO on Windows and the
       # .icns/Info.plist linkage on macOS, comparing them with the consumer config the build
@@ -1374,6 +1515,29 @@ jobs:
           node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \
             --container "$TN_RELEASE_CONTAINER_ROOT" \
             --project "$target"
+      - name: Play the relocated macOS release with React controls
+        if: matrix.platform == 'macOS'
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process';
+          import { join, resolve } from 'node:path';
+          import { pathToFileURL } from 'node:url';
+          const project = join(process.env.RUNNER_TEMP, 'threenative-starter-native');
+          const { resolveContainer } = await import(pathToFileURL(join(project,
+            'node_modules/@threenative/runtime-native/scripts/desktop-distribution.mjs')));
+          const container = process.env.TN_RELEASE_CONTAINER_ROOT;
+          const executable = join(container, resolveContainer(container).executable);
+          const result = spawnSync(process.execPath, [
+            join(project, 'node_modules/@threenative/playtest/dist/runner/cli.js'),
+            resolve('packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json'),
+            '--target', 'desktop', '--executable', executable, '--project', project,
+            '--artifacts', resolve('packages/runtime-native/artifacts/release-container-macOS/gameplay'),
+            '--host-arg', '--windowed',
+          ], { stdio: 'inherit', timeout: 180_000 });
+          if (result.error) throw result.error;
+          process.exit(result.status ?? 1);
+          NODE
       # The verifier writes its capture and report into the project, which the starter upload above
       # already passed by. Collect them into the release-container evidence so the frame is
       # retrievable and attributable to this exact candidate, not produced and then discarded.
@@ -1415,35 +1579,6 @@ jobs:
           PATH="$clean_path" "$executable" --windowed --screenshot "$RUNNER_TEMP/clean-player.png" --frames 300 2>&1 | tee "$log"
           grep -q 'TN_NATIVE_SMOKE_READY:webgpu' "$log"
           grep -qE 'Rendered [0-9]+ frames' "$log"
-      # The signtool path was only ever exercised through an injected transport, because a publicly
-      # trusted code-signing certificate does not exist for this repository. A certificate generated
-      # on the runner and trusted for this session proves the real tool, on a real Windows host,
-      # against the real distributed executable. It does NOT prove public trust: Authenticode against
-      # a CA-issued certificate stays with PRD-060, and the artifact this produces is thrown away.
-      - name: Create a self-signed code-signing certificate for the proof
-        if: matrix.platform == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $subject = 'ThreeNative CI Signing Proof'
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=$subject" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(1)
-          # `signtool verify /pa` requires a trusted chain, so the self-signed root is trusted for
-          # this user only, on this throwaway runner.
-          $cer = Join-Path $env:RUNNER_TEMP 'tn-signing-proof.cer'
-          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
-          # CurrentUser\Root opens an interactive Root Certificate Store confirmation on hosted Windows.
-          # Use certutil against the machine Root store instead: the hosted runner is disposable and
-          # elevated, and -f makes the trust operation non-interactive while keeping /pa verification real.
-          & certutil.exe -f -addstore Root $cer | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw "TN_DESKTOP_SIGNING_PROOF: certutil failed to trust the CI certificate" }
-          # signtool ships with the Windows SDK and is on PATH only inside a Developer Command
-          # Prompt, the same way dumpbin is. The signing step runs in bash, so put the newest x64
-          # SDK signtool on PATH for the steps that follow rather than entering VsDevCmd there.
-          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $signtool) { throw 'TN_DESKTOP_SIGNING_PROOF: no signtool.exe found in the Windows SDK' }
-          Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
-          Write-Host "created $($cert.Thumbprint) for CN=$subject; signtool at $($signtool.FullName)"
       - name: Sign the distributed executable through the packager's own adapter
         if: matrix.platform == 'Windows'
         shell: bash
@@ -1486,6 +1621,17 @@ jobs:
           Write-Host "status=$($sig.Status) signer=$($sig.SignerCertificate.Subject)"
           if ($sig.Status -ne 'Valid') { throw "TN_DESKTOP_SIGNING_PROOF: signature status $($sig.Status)" }
           if ($sig.SignerCertificate.Subject -notlike '*ThreeNative CI Signing Proof*') { throw 'TN_DESKTOP_SIGNING_PROOF: unexpected signer' }
+      - name: Install and play the final signed Windows setup, then uninstall it
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Join-Path $env:RUNNER_TEMP 'threenative-starter-native'
+          $installers = @(Get-ChildItem (Join-Path $project 'dist-native') -Filter '*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one final Windows installer' }
+          $verifier = Join-Path $project 'node_modules/@threenative/runtime-native/scripts/verify-windows-installer.mjs'
+          node $verifier --require-signed --installer $installers[0].FullName --project $project --scenario packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json --artifacts packages/runtime-native/artifacts/release-container-Windows/installed-game
+          if ($LASTEXITCODE -ne 0) { throw 'Installed Windows gameplay or uninstall failed' }
       - name: Upload the desktop release container evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -1494,6 +1640,8 @@ jobs:
           path: |
             packages/runtime-native/artifacts/release-container-${{ matrix.platform }}/
             ${{ runner.temp }}/threenative-starter-native/artifacts/native/starter-container*
+            ${{ runner.temp }}/threenative-starter-native/dist-native/*-setup.exe
+            ${{ runner.temp }}/threenative-starter-native/dist-native/*.zip
           if-no-files-found: warn
       - name: Collect bounded desktop performance evidence from the built runtime
         if: always()
@@ -1534,10 +1682,24 @@ jobs:
           if-no-files-found: error
 
   starter-linux:
-    name: Scaffolded starter desktop artifact
+    name: Scaffolded starter desktop artifact (${{ matrix.platform }})
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x64 and arm64 run the identical release-container proof. The arm64 leg is GitHub's
+          # free hosted `ubuntu-24.04-arm` runner: there is no V8 or Dawn prebuilt for Linux arm64
+          # (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64) and a source V8
+          # build is not allowed in CI, so the arm64 host is built with QuickJS over wgpu-native —
+          # the one WebGPU backend that publishes an arm64 Linux archive. scripts/download-deps.mjs
+          # and scripts/native-build.mjs select that route from `process.arch`.
+          - platform: linux-x64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1595,7 +1757,7 @@ jobs:
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
-          libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
       - name: Zero the compiler cache counters
         shell: bash
         run: ccache --zero-stats
@@ -1680,7 +1842,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="packages/runtime-native/artifacts/release-container-linux"
+          evidence="packages/runtime-native/artifacts/release-container-${{ matrix.platform }}"
           mkdir -p "$evidence"
           # git-bash carries sha256sum, macOS only shasum; do not assume either.
           if command -v shasum >/dev/null 2>&1; then
@@ -1719,30 +1881,46 @@ jobs:
           node "$target/node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs" \
             --container "$TN_RELEASE_CONTAINER_ROOT" \
             --project "$target"
+      # The runner has no GPU, so the Vulkan ICD is Mesa lavapipe (llvmpipe software rasteriser).
+      # Record what the relocated release actually bound rather than assuming it: PRD-399 states
+      # "lavapipe software Vulkan" only because this evidence names it.
+      - name: Record the WebGPU adapter the relocated release bound
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-native"
+          evidence="packages/runtime-native/artifacts/release-container-${{ matrix.platform }}"
+          mkdir -p "$evidence"
+          log="$target/artifacts/native/starter-container.log"
+          [ -f "$log" ] || {
+            echo "TN_DESKTOP_ADAPTER_LOG_MISSING: the installed verifier wrote no $log." >&2; exit 1; }
+          grep -E '\[WebGPU\] (Adapter|Vendor|Backend):' "$log" | tee "$evidence/adapter.txt"
+          test -s "$evidence/adapter.txt" || {
+            echo "TN_DESKTOP_ADAPTER_MISSING: the relocated release recorded no WebGPU adapter." >&2; exit 1; }
       - name: Upload the release container evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: native-desktop-release-linux
+          name: native-desktop-release-${{ matrix.platform }}
           path: |
-            packages/runtime-native/artifacts/release-container-linux/
+            packages/runtime-native/artifacts/release-container-${{ matrix.platform }}/
             ${{ runner.temp }}/threenative-starter-native/artifacts/native/starter-container*
           if-no-files-found: warn
       - name: Collect starter evidence
         if: always()
         run: |
-          mkdir -p packages/runtime-native/artifacts/starter-linux
+          mkdir -p packages/runtime-native/artifacts/starter-${{ matrix.platform }}
           source="$RUNNER_TEMP/threenative-starter-native/artifacts/native"
           if [ -d "$source" ]; then
-            cp -a "$source/." packages/runtime-native/artifacts/starter-linux/
+            cp -a "$source/." packages/runtime-native/artifacts/starter-${{ matrix.platform }}/
           else
             echo "starter verifier produced no artifact directory: $source"
           fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: native-starter-linux
-          path: packages/runtime-native/artifacts/starter-linux/
+          name: native-starter-${{ matrix.platform }}
+          path: packages/runtime-native/artifacts/starter-${{ matrix.platform }}/
           if-no-files-found: error
 
   ios-simulator:
@@ -1752,6 +1930,12 @@ jobs:
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60
+    # Non-blocking since 2026-09-23: iOS is not a supported target (owner decision, see
+    # docs/PRDs/production-readiness/README.md). The lane still runs and reports its own red, but a
+    # red here no longer fails the reusable workflow, so it cannot hold the develop->main
+    # promotion's `ci-required` verdict. `native-release.yml` still validates the iOS rows for a
+    # release, so dropping this from the merge verdict does not weaken release provenance.
+    continue-on-error: true
     # The simulator verifier and the exact no-Xcode consumer handoff passed in isolated run
     # 33498394620 on 2026-09-01, including the worker proof, package telemetry, and consumer
     # physics scenarios. The job is fail-closed: a later regression is visible immediately on
@@ -1911,6 +2095,60 @@ jobs:
               > "$telemetry/package-report.json"
             echo "TN_IOS_PACKAGE_PLIST_FORMAT:unavailable"
           fi
+      # The React-over-game pixel proof (PRD-399 P4-d) is not yet passing: the page loads, runs and
+      # receives state, yet the simulator capture shows no overlay (the frame stays landscape on a
+      # portrait capture). Until it passes it runs only in the dedicated iOS dispatch
+      # (`ios_only: true`) rather than holding every pull request; the evidence steps below still run.
+      - name: Scaffold the iOS React UI consumer from local tarballs
+        if: ${{ inputs.ios_only == true }}
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/ios-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-ios-ui
+          template: starter
+      - name: Verify packaged iOS React state reaches visible pixels
+        if: ${{ inputs.ios_only == true }}
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-ios-ui"
+          cp packages/runtime-native/tests/fixtures/ui-cadence/game.ts "$target/src/game.ts"
+          # Keep the same barcode away from phone cutouts; its bit layout is unchanged.
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const source = readFileSync('packages/runtime-native/tests/fixtures/ui-cadence/main.tsx', 'utf8');
+          writeFileSync(join(process.env.RUNNER_TEMP, 'threenative-ios-ui/src/ui/main.tsx'),
+            source.replace('left: 16,', 'left: 96,').replace('top: 16,', 'top: 96,'));
+          NODE
+          pnpm --dir "$target" install --ignore-scripts
+          pnpm --dir "$target" build:ios
+          app="$target/dist-native/threenative-ios-ui.app"
+          bundle_id=$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).appId)' "$app.json")
+          node "$target/node_modules/@threenative/playtest/dist/runner/cli.js" \
+            "$GITHUB_WORKSPACE/packages/runtime-native/scenarios/ui-state-ios.playtest.json" \
+            --target ios --app "$app" --bundle-id "$bundle_id" --project "$target" \
+            --artifacts "$GITHUB_WORKSPACE/packages/runtime-native/artifacts/ios/web-ui"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { PNG } from 'pngjs';
+          import { decodeUiScreenshot } from './packages/runtime-native/scripts/ui-cadence.mjs';
+          const root = 'packages/runtime-native/artifacts/ios/web-ui';
+          const image = PNG.sync.read(readFileSync(`${root}/after.png`));
+          const visible = decodeUiScreenshot(image, 96, 96);
+          const entries = JSON.parse(readFileSync(`${root}/console.json`, 'utf8'));
+          const published = entries.flatMap(({ text }) => {
+            const sample = /TN_UI_SAMPLE:(\{[^\r\n]*\})/.exec(text)?.[1];
+            return sample ? [JSON.parse(sample).sequence] : [];
+          });
+          assert.ok(published.includes(visible.sequence), 'Visible React state was not published by this app');
+          writeFileSync(`${root}/visible-state.json`, JSON.stringify({ ...visible,
+            measurement: 'One simulator screenshot; cadence, latency and touch input remain unverified' }));
+          console.log(`TN_IOS_WEB_UI_VISIBLE:${JSON.stringify(visible)}`);
+          NODE
+      - name: Check iOS UI packaging and asset confinement on the Apple host
+        run: pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/ios-packaging.test.mjs tests/ui-layer-host-contract.test.mjs
       - run: >-
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts

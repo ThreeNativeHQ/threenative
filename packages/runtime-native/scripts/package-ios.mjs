@@ -16,12 +16,17 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { assertNativeAssetsDecodable, deriveIosWebpSupport } from './asset-preflight.mjs';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
-import { PNG } from 'pngjs';
 
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
+/**
+ * The iOS-only SDL3 version. Upstream 3.4.16 owns the UIWindowScene lifecycle via its
+ * built-in SDLUIKitSceneDelegate (TN3187 opt-in); desktop and Android stay on 3.2.30.
+ */
+export const SDL3_IOS_VERSION = '3.4.16';
 export const DEFAULT_IOS_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.13', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
@@ -45,6 +50,10 @@ function configValue(value, orientation) {
   const display = source.display && typeof source.display === 'object' ? source.display : {};
   const window = source.window && typeof source.window === 'object' ? source.window : {};
   const bootSplash = source.bootSplash && typeof source.bootSplash === 'object' ? source.bootSplash : {};
+  const renderer = source.ui === undefined ? 'native' : source.ui?.renderer;
+  if (renderer !== 'web' && renderer !== 'native') {
+    throw new Error('TN_UI_RENDERER_INVALID: ui.renderer must be web or native.');
+  }
   return {
     app: { ...DEFAULT_IOS_CONFIG.app, ...app },
     display: {
@@ -53,6 +62,7 @@ function configValue(value, orientation) {
       orientation: orientation ?? display.orientation ?? DEFAULT_IOS_CONFIG.display.orientation,
     },
     window: { ...DEFAULT_IOS_CONFIG.window, ...window },
+    ui: { renderer },
     ...(source.bootSplash === undefined ? {} : { bootSplash: { ...bootSplash } }),
   };
 }
@@ -118,9 +128,10 @@ function plistInteger(source, key, value) {
 
 function plistLaunchScreen(source, config) {
   const image = config.bootSplash?.image === undefined ? undefined : 'LaunchImage';
+  const icon = config.app.icon ?? config.app.icons?.ios?.dark ?? config.app.icons?.ios?.tinted;
+  const hasCatalog = icon !== undefined || config.bootSplash !== undefined;
   const inner = [
-    '  <key>UIColorName</key>',
-    '  <string>TNLaunchBackground</string>',
+    ...(hasCatalog ? ['  <key>UIColorName</key>', '  <string>LaunchBackground</string>'] : []),
     ...(image === undefined ? [] : ['  <key>UIImageName</key>', `  <string>${image}</string>`]),
   ].join('\n');
   const rendered = `  <key>UILaunchScreen</key>\n  <dict>\n${inner}\n  </dict>`;
@@ -128,6 +139,21 @@ function plistLaunchScreen(source, config) {
   return pattern.test(source)
     ? source.replace(pattern, `\n${rendered}`)
     : source.replace(/\s*<\/dict>\s*<\/plist>/u, `\n${rendered}\n</dict>\n</plist>`);
+}
+
+/**
+ * Legacy generated-host detection for the TN3187 scene opt-in: the Info.plist
+ * template must carry the manifest key opening a dict AND the delegate
+ * assignment naming SDLUIKitSceneDelegate. XML comments are stripped first so a
+ * commented-out pair cannot pass. Field markers only, not an XML structure
+ * validator: no nesting proof (manifest → configuration → delegate), and a pass
+ * never qualifies an arbitrary plist for Apple launch — real UIKit execution on
+ * device/simulator remains required.
+ */
+export function hasIosSceneManifestFields(source) {
+  const text = String(source ?? '').replace(/<!--[\s\S]*?-->/gu, '');
+  return /<key>UIApplicationSceneManifest<\/key>\s*<dict>/u.test(text) &&
+    /<key>UISceneDelegateClassName<\/key>\s*<string>SDLUIKitSceneDelegate<\/string>/u.test(text);
 }
 
 function orientationValue(value = 'landscape') {
@@ -156,11 +182,13 @@ export function renderIosInfoPlist(source, orientation = 'landscape') {
   rendered = plistBoolean(rendered, 'TNFullscreen', config.display.fullscreen);
   rendered = plistBoolean(rendered, 'TNKeepScreenOn', config.display.keepScreenOn);
   rendered = plistInteger(rendered, 'TNMaxFps', config.display.maxFps);
+  rendered = plistKey(rendered, 'TNUIRenderer', config.ui.renderer);
   rendered = plistKey(rendered, 'TNWindowTitle', config.window.title);
   rendered = plistInteger(rendered, 'TNWindowWidth', config.window.width);
   rendered = plistInteger(rendered, 'TNWindowHeight', config.window.height);
   rendered = plistBoolean(rendered, 'TNWindowResizable', config.window.resizable);
-  if (config.app.icon !== undefined || config.app.icons?.ios !== undefined) {
+  const launchIcon = config.app.icon ?? config.app.icons?.ios?.dark ?? config.app.icons?.ios?.tinted;
+  if (launchIcon !== undefined) {
     rendered = plistKey(rendered, 'CFBundleIconName', 'AppIcon');
   }
   return plistLaunchScreen(rendered, config);
@@ -246,6 +274,9 @@ function compileIosIcon(catalog, output) {
 }
 
 function assertIosIconSource(icon, label) {
+  // Loaded lazily so importing this module (e.g. download-deps.mjs reading SDL3_IOS_VERSION)
+  // does not require node_modules; the check still runs synchronously when it is reached.
+  const { PNG } = createRequire(import.meta.url)('pngjs');
   let image;
   try {
     image = PNG.sync.read(readFileSync(icon));
@@ -264,9 +295,9 @@ function assertIosIconSource(icon, label) {
 function colorComponents(value) {
   const hex = /^#([0-9a-f]{6})$/iu.exec(value ?? '')?.[1] ?? '000000';
   return {
-    blue: hex.slice(4, 6),
-    green: hex.slice(2, 4),
-    red: hex.slice(0, 2),
+    blue: Number.parseInt(hex.slice(4, 6), 16) / 255,
+    green: Number.parseInt(hex.slice(2, 4), 16) / 255,
+    red: Number.parseInt(hex.slice(0, 2), 16) / 255,
   };
 }
 
@@ -282,7 +313,7 @@ function writeLaunchColor(catalog, value) {
           {
             color: {
               'color-space': 'srgb',
-              components: { alpha: '1.000', ...components },
+              components: { alpha: 1, ...components },
             },
             idiom: 'universal',
           },
@@ -394,7 +425,7 @@ function stageIosLaunchAssets(output, backgroundColor, compileAssets = compileIo
  * game with no built UI would launch and show nothing over a working game, and a `native` game must
  * carry no bundle at all.
  *
- * **The iOS host that would read this has never run.** See `ios/ui_overlay_ios.mm`.
+ * Native-only simulator smoke does not qualify WebUI. See the packaged React pixel proof.
  */
 export function stageIosUi(ui, renderer, destination) {
   rmSync(destination, { force: true, recursive: true });
@@ -448,6 +479,15 @@ export function stageIosSimulatorApp({
     if (!existsSync(join(templateApp, required))) {
       throw new Error(`Verified iOS simulator host is missing ${required}.`);
     }
+  }
+  // An old prebuilt archive predates the TN3187 scene opt-in and would ship a non-launching
+  // app. Fail closed with the matching-runtime fix instead of silently packaging it: the
+  // release lane must rebuild the ios-simulator-arm64 archive from SDL 3.4.16.
+  const templatePlist = readIosInfoPlist(join(templateApp, 'Info.plist'), convertInfoPlist);
+  if (!hasIosSceneManifestFields(templatePlist.source)) {
+    throw new Error(
+      'TN_IOS_SCENE_MANIFEST_MISSING: simulator host predates the UIScene adoption; rebuild the ios-simulator-arm64 archive from the matching runtime (SDL 3.4.16) before packaging.',
+    );
   }
   rmSync(output, { force: true, recursive: true });
   mkdirSync(dirname(output), { recursive: true });
@@ -512,7 +552,9 @@ export function stageIosSimulatorApp({
     ...(icon === undefined ? {} : { icon }),
     ...(icon === undefined ? {} : { iconArtifact: 'Assets.car' }),
     ...(declared.bootSplash?.image === undefined ? {} : { launchImage: 'LaunchImage.png' }),
-    launchBackground: declared.bootSplash?.backgroundColor ?? '#000000',
+    ...(icon === undefined && declared.bootSplash === undefined
+      ? {}
+      : { launchBackground: declared.bootSplash?.backgroundColor ?? '#000000' }),
     output,
     outputBundleSha256: checksum(join(output, 'native-smoke.js')),
   };
@@ -565,6 +607,7 @@ export async function packageIosSimulator(options) {
     return stageIosSimulatorApp({
       assets: options.assets ? resolve(options.assets) : undefined,
       bundle: resolve(options.bundle),
+      ui: options.ui === undefined ? undefined : resolve(options.ui),
       output: resolve(options.output),
       templateApp,
       orientation,

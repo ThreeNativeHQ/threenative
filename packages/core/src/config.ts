@@ -377,6 +377,24 @@ export interface IThreeNativeConfig {
      */
     readonly minimumProjectedPixels?: number | false;
     /**
+     * How much of the scene graph the engine walks for world matrices each frame.
+     *
+     * `"visible"` — the default — does not recurse into a hidden subtree. three's own
+     * `updateMatrixWorld` walks every child whatever its `visible` flag, multiplying a world matrix
+     * for a full-detail body whose merged stand-in is showing, a hidden LOD level, a parked model —
+     * none of which can draw. The engine composes every visible node exactly as three does, and
+     * remembers a hidden node it skipped so the first frame that subtree shows again its whole
+     * chain is refreshed before anything reads it. A game that reads a **hidden** object's
+     * `matrixWorld` directly must not rely on the walk having reached it: use `getWorldPosition`
+     * (which updates the chain) or call `updateWorldMatrix(true, false)` first.
+     *
+     * `"all"` visits every node, exactly as three's own walk does — for a game that reads hidden
+     * world matrices without going through `getWorld*` and cannot say so per object. Both modes
+     * report the number of nodes walked in the `TN_PROJECTION` window, so the cost of the walk the
+     * default removed is measurable rather than asserted.
+     */
+    readonly matrixWorld?: "visible" | "all";
+    /**
      * Android-only rendering overrides selected by the engine.
      *
      * `antialias` belongs here beside `resolutionScale` because they spend the same budget: a
@@ -397,7 +415,7 @@ export interface IThreeNativeConfig {
   };
   readonly ui?: {
     /**
-     * Which renderer draws `src/ui/`.
+     * Which renderer draws `src/ui/`. Defaults to `"web"`.
      *
      * `"web"` runs the same React DOM, Tailwind, CSS, SVG and fonts on every target, through
      * that platform's own browser-class renderer composited over the game surface. What is

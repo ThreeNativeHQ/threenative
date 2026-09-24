@@ -231,6 +231,7 @@ struct HostGapMeter {
         kFrameDrain,     // endDawnFrame: the packed frame-stream drain call into JS
         kFrameReplay,    // endDawnFrame: C++ replay of the packed stream
         kPresent,        // endDawnFrame: presentPendingSurface (screenshot copy rides inside)
+        kUi,             // endDawnFrame: the native UI upload and quad (PRD-393)
         kGpuDrain,       // diagnostic post-present blocking poll; adds to period/next hostGap
         kDevicePoll,     // endDawnFrame: wgpuDevicePoll(false) / wgpuDeviceTick
         kEndFrameOther,  // endDawnFrame remainder: profile emission, 2D composite, pacing
@@ -242,7 +243,7 @@ struct HostGapMeter {
 
     static constexpr std::array<const char*, kSegmentCount> kNames = {
         "events", "io", "webtransport", "audio", "timers", "microtasks", "preFrame",
-        "frameDrain", "frameReplay", "present", "gpuDrain", "devicePoll", "endFrameOther",
+        "frameDrain", "frameReplay", "present", "ui", "gpuDrain", "devicePoll", "endFrameOther",
         "storage", "handles", "screenshot",
     };
 
@@ -294,10 +295,12 @@ struct HostGapMeter {
     // endDawnFrame timed its own interior in bindings.cpp; absorb that split here. Values are
     // nanoseconds; the sample stores microseconds. Repeated calls accumulate, like begin/end.
     void recordEndFramePhases(uint64_t drainNs, uint64_t replayNs, uint64_t presentNs,
-                              uint64_t gpuDrainNs, uint64_t pollNs, uint64_t otherNs) {
+                              uint64_t uiNs, uint64_t gpuDrainNs, uint64_t pollNs,
+                              uint64_t otherNs) {
         current_.micros[kFrameDrain] += drainNs / 1000;
         current_.micros[kFrameReplay] += replayNs / 1000;
         current_.micros[kPresent] += presentNs / 1000;
+        current_.micros[kUi] += uiNs / 1000;
         current_.micros[kGpuDrain] += gpuDrainNs / 1000;
         current_.micros[kDevicePoll] += pollNs / 1000;
         current_.micros[kEndFrameOther] += otherNs / 1000;
@@ -365,7 +368,16 @@ struct HostGapMeter {
                 << ",\"meanMs\":" << mean << "}";
             sumP50 += p50;
         }
-        out << "},\"sumP50Ms\":" << sumP50 << ",\"samples\":[";
+        out << "},\"sumP50Ms\":" << sumP50;
+#if defined(__ANDROID__)
+        // logcat carries ~4 KB per message: the 300 per-frame samples (~11 KB) can never
+        // arrive whole there, and a truncated marker fails the strict perf parser. The
+        // aggregates above stay; the uncapped desktop stdout keeps the samples array for
+        // the networking proof (scripts/run-networking-proof.mjs reads child stdout,
+        // never logcat).
+        out << "}";
+#else
+        out << ",\"samples\":[";
         for (size_t i = 0; i < samples_.size(); ++i) {
             if (i > 0) out << ",";
             const Sample& sample = samples_[i];
@@ -374,9 +386,16 @@ struct HostGapMeter {
                 << static_cast<double>(sample.micros[kWebTransport]) / 1000.0 << "}";
         }
         out << "]}";
+#endif
         const std::string marker = out.str();
         std::cout << marker << std::endl;
+#if defined(__ANDROID__)
+        // __android_log_write, not LOGI/__android_log_print: the print formatter caps at
+        // LOG_BUF_SIZE 1024 (1023 bytes); this assembled marker is larger and must arrive whole.
+        __android_log_write(ANDROID_LOG_INFO, MYSTRAL_LOG_TAG, marker.c_str());
+#else
         LOGI("%s", marker.c_str());
+#endif
 
         samples_.clear();
     }
@@ -1256,11 +1275,37 @@ public:
         LOGE("%s", marker);
     }
 
+    /**
+     * Reports a pump phase that took long enough to matter, with the clock it really took.
+     *
+     * The frame meters answer "what did the frames cost", and they cannot answer "what happened
+     * while there were no frames": a native startup iterates the loop a handful of times in forty
+     * seconds, and a window that closes every 300 frames never covers that stretch. This says so
+     * from the one place that knows - the phase itself. The threshold is deliberately high: this is
+     * a stall report, not a profiler, and it stays silent on a healthy run.
+     */
+    struct SlowPhaseWatch {
+        const char* phase;
+        std::chrono::steady_clock::time_point began = std::chrono::steady_clock::now();
+        explicit SlowPhaseWatch(const char* name) : phase(name) {}
+        ~SlowPhaseWatch() {
+            const double ms =
+                static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                        std::chrono::steady_clock::now() - began)
+                                        .count()) /
+                1000.0;
+            if (ms >= 250.0)
+                std::cout << "TN_SLOW_PHASE:{\"phase\":\"" << phase << "\",\"ms\":" << ms
+                          << ",\"atMs\":" << coldStartNowMs() << "}" << std::endl;
+        }
+    };
+
     bool pollEvents() override {
         // PRD-360 pump-silence observation: one entry stamp on the launch clock,
         // before every early return. Two steady_clock reads per entry; no
         // scheduling, quality, or scene-work change.
         pumpSilence().notePumpEntry(coldStartNowMs());
+        SlowPhaseWatch iterationWatch("pollEvents");
         // Each frame's between-callbacks time is metered into named sub-phases (TN_HOST_GAP).
         // Segments bracket the existing calls; nothing here changes order or behaviour.
         hostGapMeter_.begin(HostGapMeter::kEvents);
@@ -1426,7 +1471,7 @@ public:
         hostGapMeter_.begin(HostGapMeter::kIo);
         fs::getAsyncFileReader().processCompletedReads();
         // Image decodes land here for the same reason file reads do: a worker may not touch V8.
-        webgpu::AsyncImageDecoder::instance().drain();
+        { SlowPhaseWatch watch("imageDecodeDrain"); webgpu::AsyncImageDecoder::instance().drain(); }
 
         // Process file watch events (for hot reload)
         fs::getFileWatcher().processPendingEvents();
@@ -1445,20 +1490,20 @@ public:
 
         // Execute timer callbacks (setTimeout, setInterval)
         hostGapMeter_.begin(HostGapMeter::kTimers);
-        executeTimerCallbacks();
+        { SlowPhaseWatch watch("timerCallbacks"); executeTimerCallbacks(); }
 
         // Process any queued file callbacks that were deferred from previous frames
         // We process them here (after other callbacks) to ensure we're not in a nested callback stack
-        processPendingFileCallbacks();
+        { SlowPhaseWatch watch("fileCallbacks"); processPendingFileCallbacks(); }
 
         // Deliver whatever the UI posted since the last frame.
-        drainUiMessages();
+        { SlowPhaseWatch watch("uiMessages"); drainUiMessages(); }
         hostGapMeter_.end(HostGapMeter::kTimers);
 
         // Process microtask queue for promises
         hostGapMeter_.begin(HostGapMeter::kMicrotasks);
-        processMicrotasks();
-        executeSchedulerCallbacks();
+        { SlowPhaseWatch watch("microtasks"); processMicrotasks(); }
+        { SlowPhaseWatch watch("schedulerCallbacks"); executeSchedulerCallbacks(); }
         hostGapMeter_.end(HostGapMeter::kMicrotasks);
 
         // A deliberate fault, after startup, only when a proof harness asked for one. This is the
@@ -1478,15 +1523,16 @@ public:
         hostGapMeter_.end(HostGapMeter::kPreFrame);
 
         // Execute requestAnimationFrame callbacks (renders a frame)
-        executeAnimationFrameCallbacks();
+        { SlowPhaseWatch watch("animationFrames"); executeAnimationFrameCallbacks(); }
 
         // Replay the JS-recorded WebGPU frame while descriptor and upload handles are still live.
-        webgpu::endDawnFrame(bindingsState_);
+        { SlowPhaseWatch watch("endDawnFrame"); webgpu::endDawnFrame(bindingsState_); }
         // The replay boundary's own split (drain / replay / present / poll / other) was timed
         // inside endDawnFrame; fold it into this frame's sample.
         hostGapMeter_.recordEndFramePhases(
             bindingsState_->profiling.framePhaseDrainNs, bindingsState_->profiling.framePhaseReplayNs,
-            bindingsState_->profiling.framePhasePresentNs, bindingsState_->profiling.framePhaseGpuDrainNs,
+            bindingsState_->profiling.framePhasePresentNs, bindingsState_->profiling.framePhaseUiNs,
+            bindingsState_->profiling.framePhaseGpuDrainNs,
             bindingsState_->profiling.framePhasePollNs, bindingsState_->profiling.framePhaseOtherNs);
 
         // Free non-protected handles only after the replay boundary consumed the frame stream.
@@ -2030,8 +2076,29 @@ private:
         auto argv = jsEngine_->newArray();
         jsEngine_->setProperty(process, "argv", argv);
 
-        // process.env - environment variables (empty object for now, could populate later)
+        // process.env - the launch flags a game may read.
+        //
+        // Only the flags a host chooses to publish: handing over the whole environment would put
+        // the machine's variables in a game's hands, which is a leak nobody asked for. `DEV_MODE`
+        // is the one a developer sets on the command line to ask for the dev surfaces, and the
+        // engine reads it to decide whether they exist at all.
         auto env = jsEngine_->newObject();
+        const char* devMode = std::getenv("DEV_MODE");
+        if (devMode != nullptr && devMode[0] != '\0' && std::strcmp(devMode, "0") != 0 &&
+            std::strcmp(devMode, "false") != 0) {
+            jsEngine_->setProperty(env, "DEV_MODE", jsEngine_->newString("true"));
+        }
+        // The engine's own launch diagnostics, each off unless asked for. Forwarded verbatim
+        // rather than as booleans so the engine's reader stays the single place that decides what
+        // counts as on, and a host that publishes a flag never decides it twice. Listed rather
+        // than pattern-matched on a prefix: publishing every `TN_*` variable a machine happens to
+        // carry is a leak, and one line per flag is the price of not having one.
+        for (const char* flag : {"TN_FRAME_SPANS", "TN_RENDERLIST_VALIDATE"}) {
+            const char* value = std::getenv(flag);
+            if (value != nullptr && value[0] != '\0') {
+                jsEngine_->setProperty(env, flag, jsEngine_->newString(value));
+            }
+        }
         jsEngine_->setProperty(process, "env", env);
 
         jsEngine_->setGlobalProperty("process", process);
@@ -2566,6 +2633,21 @@ private:
             jsEngine_->newFunction("__tnUiOverlayAttached", [this](void*, const std::vector<js::JSValueHandle>&) {
                 return jsEngine_->newBoolean(platform::uiOverlayAttached());
             }));
+        // The native UI composite's cost, for the frame budget's `ui` phase (PRD-393 Phase 3).
+        //
+        // It is the *previous* frame's number. The composite runs inside `endDawnFrame`, which is
+        // after every rAF callback has returned, so the frame being measured cannot report its own
+        // composite cost from inside itself. One frame of skew on a phase whose whole purpose is a
+        // p95 is not a measurement anyone can be misled by, and the alternative — inventing a JS
+        // binding that blocks on the render thread — would cost more than the thing it measures.
+        // Zero when there is no overlay, so a game with a native renderer reports a real zero
+        // rather than an absent phase.
+        jsEngine_->setGlobalProperty("__tnUiCompositeMs",
+            jsEngine_->newFunction("__tnUiCompositeMs", [this](void*, const std::vector<js::JSValueHandle>&) {
+                if (!bindingsState_) return jsEngine_->newNumber(0);
+                return jsEngine_->newNumber(
+                    static_cast<double>(bindingsState_->profiling.framePhaseUiNs) / 1'000'000.0);
+            }));
     }
 
     /**
@@ -2827,9 +2909,16 @@ private:
 
     void processPendingFileCallbacks() {
         // Process pending file callbacks - these come from async file reads
-        // We process them on the main thread to ensure JS context safety
-
-        while (!pendingFileCallbacks_.empty()) {
+        // We process them on the main thread to ensure JS context safety.
+        //
+        // Bounded in time and count, the way `executeSchedulerCallbacks` below is: one frame must
+        // not own a whole asset burst. A native run of a real game measured a single `fileCallbacks`
+        // phase of 846-1527 ms during launch — the reads are issued in parallel, so every completed
+        // read arrives at once, and each callback copies its bytes into a fresh ArrayBuffer before
+        // the game can continue. The work is the same either way; what changes is that the loading
+        // screen gets a frame between batches instead of freezing through all of them.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+        for (int count = 0; running_ && count < 256 && !pendingFileCallbacks_.empty(); ++count) {
             auto pending = std::move(pendingFileCallbacks_.front());
             pendingFileCallbacks_.pop();
 
@@ -2849,6 +2938,9 @@ private:
 
             // Unprotect the callback now that we're done with it
             jsEngine_->freeHandle(pending.callback);
+            // A callback may enqueue the next read; let its continuation run before the next one.
+            processMicrotasks();
+            if (std::chrono::steady_clock::now() >= deadline) break;
         }
     }
 
@@ -3530,25 +3622,24 @@ private:
                 event.width = 1;
                 event.height = 1;
                 event.pressure = event.buttons == 0 ? 0 : 0.5;
-                // A synthetic press is routed where the OS routes a real one: inside a published
-                // UI island the page gets it, outside it the game does. The regions are the ones
-                // the OS region and hit test are built from, so a playtest cannot disagree with a
-                // real click; without an overlay attached this is a plain game dispatch.
+                // A synthetic press is routed where the OS routes a real one, through the same
+                // authority: inside a published UI island the page gets it, outside it the game
+                // does, and a gesture keeps whichever side received its press. The regions are the
+                // ones the OS route is built from, so a playtest cannot disagree with a real click;
+                // without an overlay attached this is a plain game dispatch.
                 if (platform::uiOverlayAttached() && width_ > 0 && height_ > 0) {
                     const float nx = std::clamp(
                         static_cast<float>(event.clientX) / static_cast<float>(width_), 0.0f, 1.0f);
                     const float ny = std::clamp(
                         static_cast<float>(event.clientY) / static_cast<float>(height_), 0.0f, 1.0f);
-                    const bool hit = platform::uiOverlayHitTest(nx, ny);
-                    const bool injected = hit && platform::uiOverlayInjectPointer(
+                    const bool hit = platform::uiOverlayRoutePointer(
                         event.type.c_str(), nx, ny, event.buttons, event.pointerId);
                     // One bounded line per synthetic pointer: which side the host routed it to, and
                     // whether the page accepted it. A synthesized-input failure on one host is
                     // otherwise invisible — the press just does nothing.
                     std::cout << "TN_UI_POINTER_ROUTE:{\"type\":\"" << event.type
                               << "\",\"nx\":" << nx << ",\"ny\":" << ny
-                              << ",\"hit\":" << (hit ? "true" : "false")
-                              << ",\"injected\":" << (injected ? "true" : "false") << "}"
+                              << ",\"hit\":" << (hit ? "true" : "false") << "}"
                               << std::endl;
                     if (hit) {
                         // The page owns this gesture, exactly as it would for an OS-routed press.

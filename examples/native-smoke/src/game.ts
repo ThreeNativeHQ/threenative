@@ -80,6 +80,7 @@ declare global {
 declare const __TN_RUNTIME__: "native" | "web";
 declare const __TN_PLAYTEST_ENABLED__: boolean;
 declare const __TN_LOADING_PROOF__: boolean;
+declare const __TN_UI_FRAME_GATE__: boolean;
 declare const __TN_NETWORKING_CONFIG__: INetworkingConfig;
 declare const __TN_JS_ENGINE_PROFILE__: Readonly<{
   extraDrawControl: boolean;
@@ -173,13 +174,17 @@ function proveAudioDecodePromise(): void {
     fail("then-is-not-chainable");
     return;
   }
-  if (!callbackRan) {
-    fail("legacy-callback-did-not-run");
-    return;
-  }
   // Delivery, not just shape: this only resolves if the frame loop pumps microtasks.
   chained
     .then((buffer) => {
+      // A browser fires the legacy callback when the decode lands, not before `decodeAudioData`
+      // returns, and the host now decodes off the frame thread and settles the same way
+      // (`runtime-scripts/install-async-audio-decode.js`, `audio_decode_promise_test.cpp`). Reading
+      // it here, at settlement, is the contract; reading it synchronously was the pre-async shape.
+      if (!callbackRan) {
+        fail("legacy-callback-did-not-run");
+        return;
+      }
       if (buffer === undefined || typeof buffer.getChannelData !== "function") {
         fail("resolved-without-an-audiobuffer");
         return;
@@ -199,7 +204,12 @@ function proveAudioDecodePromise(): void {
     .catch((error: unknown) => fail(`threw:${String(error)}`));
 }
 
-if ((__TN_RUNTIME__ === "native" || isNative()) && !__TN_LOADING_PROOF__) proveAudioDecodePromise();
+// The rejection half of this proof asks the host to decode an empty buffer, and the host logs that
+// refusal on stderr — which the playtest lane reads as an unexpected console error, correctly, for
+// every lane that is not this one. The UI-frame gate's build drops the proof (`THREENATIVE_UI_FRAME_GATE`)
+// so its console channel stays strict; every other native build still carries it.
+if ((__TN_RUNTIME__ === "native" || isNative()) && !__TN_LOADING_PROOF__ && !__TN_UI_FRAME_GATE__)
+  proveAudioDecodePromise();
 
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right);

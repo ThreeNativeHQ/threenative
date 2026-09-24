@@ -2109,6 +2109,13 @@ describe("CI pipeline structure", () => {
     // It reports its own red rather than swallowing it, and — since 2026-09-02 — without taking
     // the sibling legs down with it: see "no job cancels its own run".
     expect(android).toContain("Verify captured parity ledger");
+
+    // iOS is not a supported target (owner decision, 2026-09-23), so its simulator lane runs and
+    // reports but cannot fail the reusable workflow — otherwise a red iOS leg holds the
+    // develop->main `ci-required` verdict. `native-release.yml` still gates the iOS rows for a
+    // release, so this only leaves the merge verdict.
+    const ios = requiredJob(native, "ios-simulator");
+    expect(ios).toContain("continue-on-error: true");
   });
 
   it("job-level env never reads the runner context", async () => {
@@ -2243,7 +2250,7 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(8);
+    expect(callers).toBe(9);
   });
 
   it("keeps the native contracts and primary CI documentation honest", async () => {
@@ -2566,6 +2573,25 @@ describe("CI pipeline structure", () => {
     expect(simulator).toContain('provenance":"simulator"');
     expect(simulator).toContain('status":"UNVERIFIED"');
     expect(simulator).not.toContain("--help");
+  });
+
+  it("proves desktop release signing with test credentials on both hosted hosts", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const desktop = requiredJob(native, "desktop");
+    // Owner decision 2026-09-23: each developer signs their own game; the engine ships no
+    // certificate. The lane proves the credential path with a runner-generated certificate on each
+    // host, and reads the signature back independently of the adapter that wrote it. Without this
+    // the macOS half signs ad-hoc and the credentialed path the decision names stays unwired.
+    expect(desktop).toContain("Create a self-signed code-signing certificate for the proof");
+    expect(desktop).toContain("Create a self-signed code-signing certificate for the macOS proof");
+    expect(desktop).toContain("THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof");
+    expect(desktop).toContain('THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY"');
+    expect(desktop).toContain("Get-AuthenticodeSignature");
+    expect(desktop).toContain("codesign --verify --strict --deep");
+    expect(desktop).toContain("Authority=ThreeNative CI Signing Proof");
   });
 
   it("plans real alternating pairs and rejects unsafe or incomparable hardware evidence", () => {

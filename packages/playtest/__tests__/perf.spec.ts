@@ -174,6 +174,100 @@ describe("assessPerfMarkers", () => {
   });
 });
 
+describe("a frame rate the run cannot vouch for", () => {
+  const VIRTUAL = { strategy: "private-xvfb", virtual: true } as const;
+  const HOST = { strategy: "host", virtual: false } as const;
+
+  it("refuses an fps bound on a private Xvfb instead of satisfying it with a wrong number", () => {
+    // Measured on midway's desktop build under the capture-lock Xvfb: window 2 reported 1123.60 fps
+    // and window 3 20000.00, and `--min-fps 55` PASSED. Same package's `trace` refuses to print a
+    // frame rate from a private display at all (13.3 fps there against 57.7 on the real one).
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL);
+    expect(report.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, bound: 55 }),
+    ]);
+    expect(report.pass).toBe(false);
+    expect(report.display).toEqual({
+      fpsSuppressed: true,
+      reason: "a private-xvfb display",
+      strategy: "private-xvfb",
+      virtual: true,
+    });
+  });
+
+  it("assesses the same bound when the operator acknowledges the display", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(
+      parsed,
+      { allowVirtualDisplay: true, minFps: 55, requireWindows: 2 },
+      "test",
+      VIRTUAL,
+    );
+    // The windows in this fixture are 20.55 and 20.9 fps, so the bound genuinely fails — the point
+    // is that it is assessed rather than refused, and the number is presented.
+    expect(report.violations.map(({ code }) => code)).toEqual(["TN_PERF_MIN_FPS", "TN_PERF_MIN_FPS"]);
+    expect(report.display).toEqual({
+      fpsSuppressed: false,
+      reason: "a private-xvfb display",
+      strategy: "private-xvfb",
+      virtual: true,
+    });
+  });
+
+  it("leaves a run on a vouched-for display exactly as it was", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test", HOST);
+    expect(report.violations).toEqual([]);
+    expect(report.display).toEqual({ fpsSuppressed: false, strategy: "host", virtual: false });
+    // A source that carries no display knowledge — a log file from elsewhere — is untouched.
+    expect(assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test").display).toBeUndefined();
+  });
+
+  it("still assesses a frame-duration bound, which the run did measure", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const report = assessPerfMarkers(parsed, { maxFrameMsP95: 45.0, requireWindows: 2 }, "test", VIRTUAL);
+    // Both steady windows carry a 45.7 ms frame p95, and a bound is checked against every steady
+    // window rather than the median — so two violations, and the frame rate never enters it.
+    expect(report.violations.map(({ code }) => code)).toEqual([
+      "TN_PERF_MAX_FRAME_P95",
+      "TN_PERF_MAX_FRAME_P95",
+    ]);
+    expect(report.pass).toBe(false);
+  });
+
+  it("prints no frame-rate column, and says why rather than leaving it blank", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const text = formatPerfReport(
+      assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL),
+    );
+    expect(text).toContain("fps suppressed");
+    expect(text).toContain("private-xvfb");
+    expect(text).toContain("TN_PLAYTEST_HOST_DISPLAY=1");
+    expect(text).toContain("--allow-virtual-display");
+    // The column header carries no `fps`, and no window row prints one.
+    expect(text).not.toMatch(/^window\s+fps/mu);
+    expect(text.split("\n").some((line) => /^\d+\*?\s+20\.\d/u.test(line))).toBe(false);
+    // The phase rows the native lane quotes are untouched.
+    expect(text).toContain("host gap segments");
+    expect(text).toContain("render p50/p95");
+  });
+
+  it("prints the frame rate again once the operator has acknowledged the display", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const text = formatPerfReport(
+      assessPerfMarkers(parsed, { allowVirtualDisplay: true, requireWindows: 2 }, "test", VIRTUAL),
+    );
+    expect(text).not.toContain("fps suppressed");
+    expect(text).toMatch(/^window\s+fps/mu);
+  });
+
+  it("parses the acknowledgement off the command line, defaulting to off", () => {
+    expect(parsePerfArgs(["--file", "a.log"]).allowVirtualDisplay).toBe(false);
+    expect(parsePerfArgs(["--file", "a.log", "--allow-virtual-display"]).allowVirtualDisplay).toBe(true);
+  });
+});
+
 describe("parsePerfArgs", () => {
   it("requires exactly one source", () => {
     expect(() => parsePerfArgs(["--text"])).toThrow(PlaytestCliUsageError);
@@ -396,5 +490,266 @@ describe("the GPU column never reads as a measured zero", () => {
     expect(text).toContain("4.50");
     expect(text).toContain("unmeasured");
     expect(text).not.toContain("gpu: not reported");
+  });
+});
+
+describe("the two TN_FRAME_HITCH payloads", () => {
+  // The native host emits a 300-frame window; core's frame budget emits one line per present gap
+  // over `hitchMs` ({gapMs, uptimeMs, wallClock}) on every platform. Both carry the same marker.
+  const windowLine =
+    'TN_FRAME_HITCH:{"window":300,"maxMs":203.114,"maxAtFrame":41,"p99Ms":8.221,"p50Ms":7.940}';
+  const gapLines = [
+    'TN_FRAME_HITCH:{"gapMs":3000.14,"uptimeMs":10177.57,"wallClock":1789852713865}',
+    'TN_FRAME_HITCH:{"gapMs":2102.54,"uptimeMs":13362.72,"wallClock":1789852717050}',
+  ];
+
+  it("sorts a gap line into its own series rather than into the window series", () => {
+    const parsed = parsePerformanceMarkers([windowLine, ...gapLines].join("\n"));
+    expect(parsed.hitches).toHaveLength(1);
+    expect(parsed.presentGaps).toHaveLength(2);
+    expect(parsed.presentGaps[0]).toMatchObject({ gapMs: 3000.14, uptimeMs: 10177.57 });
+  });
+
+  it("reports a gap-only run as gaps, with no NaN and no misattributed reason", () => {
+    // Measured on midway's native launch log: three gap lines of 2.1-3.0 s beside the host's
+    // windows made this reader print `worst NaN ms` and blame an older host for fields that were
+    // never in the line.
+    const report = assessPerfMarkers(parsePerformanceMarkers(gapLines.join("\n")), { requireWindows: 0 }, "test");
+    const text = formatPerfReport(report);
+    expect(text).not.toContain("NaN");
+    expect(text).not.toContain("hitch windows");
+    expect(text).not.toContain("predates the pipelineCompile fields");
+    expect(text).toContain("present gaps (2): worst 3000.140 ms at uptime 10178 ms");
+  });
+
+  it("keeps the window figures and the compile note when both series are present", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([windowLine, ...gapLines].join("\n")),
+      { requireWindows: 0 },
+      "test",
+    );
+    const text = formatPerfReport(report);
+    expect(text).toContain("present gaps (2): worst 3000.140 ms");
+    expect(text).toContain("hitch windows (post-launch, 1): worst 203.114 ms");
+    // The window genuinely carries no compile fields, so this note is still the honest one.
+    expect(text).toContain("predates the pipelineCompile fields");
+  });
+
+  it("names a line that is neither shape instead of rendering a number it never received", () => {
+    const bare = 'TN_FRAME_HITCH:{"window":300,"maxAtFrame":41}';
+    expect(() => parsePerformanceMarkers(bare)).toThrow(/TN_PERF_MARKER_MALFORMED:.*maxMs/u);
+  });
+});
+
+describe("attributing a present gap to the host's own slow phases", () => {
+  // The real pair from midway's native launch log: the host attributed the stall to the image
+  // decode and its outer watcher bracketed the same stretch.
+  const neverMind = {
+    budgets: [],
+    discardedWindows: [],
+    hitches: [],
+    hostGaps: [],
+    pass: true,
+    presentGaps: [{ gapMs: 3000.14, uptimeMs: 10177.57 }],
+    presents: [],
+    presentMode: undefined,
+    projections: [],
+    slowPhases: [
+      { atMs: 9945.939384, ms: 2965.129, phase: "imageDecodeDrain" },
+      { atMs: 10419.748819, ms: 473.653, phase: "animationFrames" },
+      { atMs: 10438.395025, ms: 3457.714, phase: "pollEvents" },
+    ],
+    source: "test",
+    violations: [],
+  };
+
+  it("names the innermost phases, never the watcher that contains them", () => {
+    const text = formatPerfReport(neverMind);
+    expect(text).toContain("imageDecodeDrain 2965.129 ms");
+    expect(text).toContain("animationFrames 473.653 ms");
+    // `pollEvents` brackets the whole iteration: it contains both, so naming it says nothing.
+    expect(text).not.toContain("pollEvents");
+  });
+
+  it("says when a gap had no phase inside it, and when the log carries none at all", () => {
+    const none = { ...neverMind, slowPhases: [] };
+    expect(formatPerfReport({ ...none, presentGaps: [{ gapMs: 900, uptimeMs: 5000 }] })).toContain(
+      "no slow phase reported in this log",
+    );
+    const outsideOnly = { ...neverMind, presentGaps: [{ gapMs: 120, uptimeMs: 4000 }] };
+    expect(formatPerfReport(outsideOnly)).toContain("no slow phase fell inside it");
+  });
+
+  it("keeps its cap and its ordering when many phases overlap", () => {
+    // Nesting as the host really reports it: one watcher per iteration, containing the phases the
+    // iteration ran — plus a fourth phase whose span ends before the gap begins.
+    const many = {
+      ...neverMind,
+      slowPhases: [
+        { atMs: 9945.94, ms: 2965.13, phase: "outermostInner" },
+        { atMs: 10419.75, ms: 473.65, phase: "secondInner" },
+        { atMs: 10100, ms: 300, phase: "thirdInner" },
+        { atMs: 10438.4, ms: 3457.71, phase: "iterationWatcher" },
+        { atMs: 4000, ms: 500, phase: "beforeTheGap" },
+      ],
+    };
+    const line = formatPerfReport(many).split("\n").find((entry) => entry.includes("gap 3000.140"));
+    expect(line).toBeDefined();
+    expect(line).not.toContain("iterationWatcher");
+    expect(line).not.toContain("beforeTheGap");
+    expect(line?.match(/Inner/g)).toHaveLength(3);
+    expect(line?.indexOf("outermostInner")).toBeLessThan(line?.indexOf("secondInner") ?? 0);
+    expect(line?.indexOf("secondInner")).toBeLessThan(line?.indexOf("thirdInner") ?? 0);
+  });
+});
+
+describe("a loop cadence the display never saw", () => {
+  // The host counts loop frames and presents separately; the presentation cap lets a loop iterate
+  // many times per present. These are midway's native launch numbers: 1740 frames, 133 presents,
+  // cap 60 Hz — beside a window this reader printed as 2631 fps.
+  const tick = 'TN_PRESENTS_TICK:{"frames":1740,"presents":133,"textureMB":886,"textures":221,"bufferMB":45,"capHz":60}';
+  const window = 'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"fps":2631.58,' +
+    '"presented":{"samples":300,"mean":0.38,"p50":0.03,"p95":0.1,"p99":8.15,"max":47.77},' +
+    '"frame":{"samples":300,"mean":0.3,"p50":0.2,"p95":0.4,"p99":0.6,"max":1.0},' +
+    '"phases":{"render":{"samples":300,"mean":0.1,"p50":0.1,"p95":0.2,"p99":0.3,"max":0.4}}}';
+
+  const report = (allowVirtualDisplay: boolean) =>
+    assessPerfMarkers(
+      parsePerformanceMarkers([tick, window].join("\n")),
+      { allowVirtualDisplay, minFps: 55, requireWindows: 0 },
+      "test",
+    );
+
+  it("refuses the frame rate and the fps bound the log cannot support", () => {
+    const refused = report(false);
+    expect(refused.display).toMatchObject({
+      fpsSuppressed: true,
+      reason: "the host presented 133 of 1740 loop frames (cap 60 Hz)",
+      virtual: false,
+    });
+    expect(refused.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_VIRTUAL_DISPLAY", bound: 55 }),
+    ]);
+    expect(refused.pass).toBe(false);
+    const text = formatPerfReport(refused);
+    expect(text).toContain("the host presented 133 of 1740 loop frames (cap 60 Hz)");
+    expect(text).not.toMatch(/^window\s+fps/mu);
+    // The phase rows the native lane quotes survive, and the window itself is still listed.
+    expect(text).toContain("render p50/p95");
+  });
+
+  it("prints the frame rate when the display saw every frame", () => {
+    const honest = 'TN_PRESENTS_TICK:{"frames":1740,"presents":1738,"capHz":60}';
+    const allowed = assessPerfMarkers(
+      parsePerformanceMarkers([honest, window].join("\n")),
+      { minFps: 55, requireWindows: 0 },
+      "test",
+    );
+    expect(allowed.display).toBeUndefined();
+    const text = formatPerfReport(allowed);
+    expect(text).toMatch(/^window\s+fps/mu);
+    // 2631 fps clears a 55 fps bound honestly here: this display really saw the frames.
+    expect(text).not.toContain("TN_PERF_VIRTUAL_DISPLAY");
+    expect(allowed.violations).toEqual([]);
+  });
+
+  it("lets the operator accept it explicitly, and still records what was accepted", () => {
+    const accepted = report(true);
+    expect(accepted.display).toMatchObject({
+      fpsSuppressed: false,
+      reason: "the host presented 133 of 1740 loop frames (cap 60 Hz)",
+    });
+    // 2631 loop fps clears a 55 fps bound; the acknowledgement is what makes that printable, and
+    // the report keeps the reason beside it.
+    expect(accepted.violations).toEqual([]);
+    expect(formatPerfReport(accepted)).toMatch(/^window\s+fps/mu);
+  });
+});
+
+describe("a window that carries the display's own rate", () => {
+  const tick = 'TN_PRESENTS_TICK:{"frames":1740,"presents":133,"capHz":60}';
+  // What the engine reports once the host can count presents: the loop's cadence, and the rate the
+  // display actually ran at, side by side in one window.
+  const window = 'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"presents":18,"presentedFps":60.4,' +
+    '"fps":2631.58,"presented":{"samples":300,"mean":0.38,"p50":0.03,"p95":0.1,"p99":8.15,"max":47.77},' +
+    '"frame":{"samples":300,"mean":0.3,"p50":0.2,"p95":0.4,"p99":0.6,"max":1.0},' +
+    '"phases":{"render":{"samples":300,"mean":0.1,"p50":0.1,"p95":0.2,"p99":0.3,"max":0.4}}}';
+
+  it("prints the display's rate without suppressing it, even though the loop outran it", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, window].join("\n")),
+      { minFps: 55, requireWindows: 0 },
+      "test",
+    );
+    expect(report.display?.fpsSuppressed).not.toBe(true);
+    expect(report.violations).toEqual([]);
+    const text = formatPerfReport(report);
+    expect(text).toMatch(/^window\s+fps/mu);
+    expect(text).toContain("60.40");
+    expect(text).not.toContain("2631.58");
+  });
+
+  it("assesses the fps bound against the display's rate, not the loop's", () => {
+    // 60.4 clears a 55 bound. A 70 bound must fail on the display's rate even though the loop's
+    // 2631 would clear it — that is the whole reason the two are separate numbers.
+    const failing = assessPerfMarkers(
+      parsePerformanceMarkers([tick, window].join("\n")),
+      { minFps: 70, requireWindows: 0 },
+      "test",
+    );
+    expect(failing.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_MIN_FPS", observed: 60.4 }),
+    ]);
+  });
+});
+
+describe("windows too short to carry a display rate", () => {
+  const tick = 'TN_PRESENTS_TICK:{"frames":1740,"presents":133,"capHz":60}';
+  const zero = 'TN_FRAME_BUDGET:{"window":2,"frames":300,"hitches":0,"presents":0,"fps":20000,' +
+    '"presented":{"samples":300,"mean":0.05,"p50":0.03,"p95":0.1,"p99":1,"max":2},' +
+    '"frame":{"samples":300,"mean":0.04,"p50":0.02,"p95":0.08,"p99":1,"max":2},' +
+    '"phases":{"render":{"samples":300,"mean":0.01,"p50":0.01,"p95":0.02,"p99":0.1,"max":0.2}}}';
+  const rated = 'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"presents":18,"presentedFps":60.4,' +
+    '"fps":2631.58,"presented":{"samples":300,"mean":0.38,"p50":0.03,"p95":0.1,"p99":8.15,"max":47.77},' +
+    '"frame":{"samples":300,"mean":0.3,"p50":0.2,"p95":0.4,"p99":0.6,"max":1.0},' +
+    '"phases":{"render":{"samples":300,"mean":0.1,"p50":0.1,"p95":0.2,"p99":0.3,"max":0.4}}}';
+
+  it("prints a zero-present window as zero, never the loop's cadence", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, zero, rated].join("\n")),
+      { requireWindows: 0 },
+      "test",
+    );
+    const text = formatPerfReport(report);
+    const rows = text.split("\n").filter((line) => /^\d+\*?\s/.test(line));
+    expect(rows.some((row) => row.includes("0.00"))).toBe(true);
+    expect(rows.some((row) => row.includes("20000.00"))).toBe(false);
+    expect(report.display?.fpsSuppressed).not.toBe(true);
+    // A bare zero is true and reads as a frozen game, so the windows that had nothing to measure
+    // are named.
+    expect(text).toContain("windows 2 presented nothing in their loop frames");
+  });
+
+  it("refuses an fps bound when no window produced a rate, instead of passing it", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, zero].join("\n")),
+      { minFps: 55, requireWindows: 0 },
+      "test",
+    );
+    expect(report.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_BOUNDS_NOT_ASSESSABLE", bound: 55 }),
+    ]);
+    expect(report.pass).toBe(false);
+  });
+
+  it("assesses the bound on the windows that do carry a rate", () => {
+    const report = assessPerfMarkers(
+      parsePerformanceMarkers([tick, zero, rated].join("\n")),
+      { minFps: 70, requireWindows: 0 },
+      "test",
+    );
+    expect(report.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_MIN_FPS", observed: 60.4, window: 3 }),
+    ]);
   });
 });

@@ -82,6 +82,7 @@ import {
   teardownBrowserSession,
   type IRemoteBrowserSession,
 } from "./browserSession.js";
+import { startBrowserCpuProfile, type IBrowserCpuProfile } from "./cpuProfile.js";
 
 /** How long a single screenshot may take before the runner calls it a failure. */
 const SCREENSHOT_TIMEOUT_MS = 120_000;
@@ -235,6 +236,26 @@ async function runStandalonePlaytestInternal(
     await serverTeardownPromise;
   };
   let profilesBeforeLaunch: readonly string[] | undefined;
+  // `--cpu-prof` writes the loadable DevTools artifact for this run. Stopping is idempotent so the
+  // success path (before the page closes) and the failure path (in `finally`) share one call. On
+  // the success path a missing profile fails the run: a green run without its artifact is a lie.
+  let cpuProfile: IBrowserCpuProfile | undefined;
+  let cpuProfileStopped = false;
+  const stopCpuProfile = async (failClosed: boolean): Promise<void> => {
+    if (cpuProfile === undefined || cpuProfileStopped) return;
+    cpuProfileStopped = true;
+    try {
+      const written = await cpuProfile.stop();
+      process.stderr.write(`${JSON.stringify({ cpuProfile: written })}\n`);
+    } catch (error) {
+      if (failClosed) {
+        throw new Error(`TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      process.stderr.write(
+        `${JSON.stringify({ diagnostics: [{ code: "TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED", message: error instanceof Error ? error.message : String(error), severity: "error" }] })}\n`,
+      );
+    }
+  };
   const teardown = async (stopManagedServerOnTeardown = ownsServer): Promise<void> => {
     teardownPromise ??= (async () => {
       // Chromium does not always exit when asked — under a virtual display with a live GPU
@@ -427,7 +448,9 @@ async function runStandalonePlaytestInternal(
         scenario.assert?.settled === undefined
           ? []
           : ["physicsDebugSeries"]),
-        ...(scenario.assert?.performance === undefined ? [] : ["runtimeDiagnosticsSeries"]),
+        ...(scenario.assert?.performance === undefined && scenario.assert?.parity === undefined
+          ? []
+          : ["runtimeDiagnosticsSeries"]),
         ...(scenario.assert?.renderChain === undefined ? [] : ["renderChain"]),
       ],
       resources: resourceIds,
@@ -627,6 +650,9 @@ async function runStandalonePlaytestInternal(
           : {})
       : undefined;
     let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
+    if (activeConfig.cpuProfilePath !== undefined) {
+      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
+    }
     for (const [index, step] of scenario.steps.entries()) {
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (framebufferAssertion !== undefined
@@ -745,6 +771,7 @@ async function runStandalonePlaytestInternal(
       network: networkEntries,
       runtimeTrace: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
     });
+    await stopCpuProfile(true);
     if (options.remoteBrowser === undefined) await context.close();
     else await page.close();
     return addPreflightDiagnostic(report, preflight);
@@ -760,6 +787,7 @@ async function runStandalonePlaytestInternal(
   } finally {
     process.off("SIGINT", handleSignal);
     process.off("SIGTERM", handleSignal);
+    await stopCpuProfile(false);
     await teardown();
     // Released last-in-first-out: the browser dies before the display it rendered on, and the
     // display before the lock that serialises displays. Both releases swallow their own errors.

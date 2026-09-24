@@ -17,17 +17,16 @@ import {
  * the mirror behaves identically on both, because on web the mirror is fed by the same
  * publication through an in-process channel.
  *
- * Publications are **coalesced**: many store writes inside one turn produce one frame. React
- * must never re-render on the game loop, and neither may the bridge carry a frame per tick.
+ * Publications are **coalesced**: many simulation writes produce one state message per rendered
+ * frame. React consumes that snapshot in the UI realm, independently of the game's render work.
  */
 
 /**
  * The minimum a store must offer to be published.
  *
  * `getPublishedState` is optional and preferred when present: ThreeNative's game store keeps a
- * live `getState()` that moves every tick and a `getPublishedState()` that moves at most ten
- * times a second. The UI wants the throttled one — the live one would put a bridge frame on
- * every tick, which is the thing React must never do.
+ * live `getState()` that moves every tick and a stable `getPublishedState()` snapshot published
+ * once per rendered frame, unless the game selected a slower `stateFlushMs` interval.
  */
 export interface IPublishableStore<T> {
   getState(): T;
@@ -70,7 +69,7 @@ const microtask = (flush: () => void): void => {
  * directly would be a second source of truth that only diverges on the platform where the two
  * are actually separate processes.
  * @situation publish game state to a HUD in another realm
- * @situation keep a web and native UI mirror on the same throttled state stream
+ * @situation keep a web and native UI mirror on the same coalesced state stream
  * @example const publisher = publishUiState(bridge, store);
  */
 export function publishUiState<T>(

@@ -3,6 +3,27 @@
     {
       "aliases": [],
       "constraints": [
+        "deterministic by construction: the packing order is derived from the sources, never from directory order, so a rebuild places every source at the same pixel",
+        "a source the scene samples outside [0, 1] is excluded and reported, never clamped onto a shared page",
+        "page bounds hold regardless of input order; padding keeps a mip tap from reaching the next source"
+      ],
+      "example": "const { pages, transforms, excluded } = packAtlas(sources, { pageSize: 4096, padding: 4 });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function atlasManifest(result: IAtlasResult): string { … }",
+      "situations": [
+        "a merge found nothing to collapse because each imported part owns its own texture",
+        "cut the material count of an imported model pack at build time"
+      ],
+      "summary": "Pack texture sources into deterministic atlas pages and answer each source's UV transform, so a build can stop giving every material a private texture.",
+      "supersedes": [],
+      "symbol": "atlasManifest"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "a clip declared a loop has its seam measured on the decoded output bytes and fails the build when it exceeds the threshold; the assertion cannot be declared away",
         "which clips loop, which are positional, and what a clip is for are declared per glob and never inferred from a filename",
         "sources must be RIFF/WAVE or Ogg Vorbis, which is exactly what every native target decodes; an MP3 fails the bake"
@@ -25,6 +46,27 @@
     {
       "aliases": [],
       "constraints": [
+        "reads geometry and materials only: no GPU, no runtime, no game",
+        "a texture whose size the document does not state is reported excluded, never assumed square",
+        "a model the reader cannot open is named, never skipped silently"
+      ],
+      "example": "pnpm census:content public/assets",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function censusDocument( model: string, document: Document, pageSize = 4_096, ): IContentCensus { … }",
+      "situations": [
+        "find out whether \"fewer objects\" is available in this content before promising it",
+        "explain why a per-material merge collapsed nothing"
+      ],
+      "summary": "Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.",
+      "supersedes": [],
+      "symbol": "censusDocument"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "source and output directories must be disjoint; a pass failure stops the build with the asset path"
       ],
       "example": "const result = await compileAssets({ source: \"assets\", output: \"public\" });",
@@ -41,6 +83,26 @@
       "summary": "Compiles a project's source assets into content-addressed runtime files and a manifest.",
       "supersedes": [],
       "symbol": "compileAssets"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand",
+        "the census reads geometry and materials only: no GPU, no runtime, no game"
+      ],
+      "example": "pnpm census:content public/assets",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function dedupeMaterials(materials: readonly IMaterialState[]): { … }",
+      "situations": [
+        "decide whether fewer objects is actually available in this content",
+        "report why a per-material merge collapsed nothing"
+      ],
+      "summary": "Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.",
+      "supersedes": [],
+      "symbol": "dedupeMaterials"
     },
     {
       "aliases": [],
@@ -151,6 +213,47 @@
     {
       "aliases": [],
       "constraints": [
+        "the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand",
+        "the census reads geometry and materials only: no GPU, no runtime, no game"
+      ],
+      "example": "pnpm census:content public/assets",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function materialSignature(material: IMaterialState): string { … }",
+      "situations": [
+        "decide whether fewer objects is actually available in this content",
+        "report why a per-material merge collapsed nothing"
+      ],
+      "summary": "Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.",
+      "supersedes": [],
+      "symbol": "materialSignature"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "reads geometry and materials only: no GPU, no runtime, no game",
+        "a texture whose size the document does not state is reported excluded, never assumed square",
+        "a model the reader cannot open is named, never skipped silently"
+      ],
+      "example": "pnpm census:content public/assets",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function materialStateOf(material: Material): IMaterialState { … }",
+      "situations": [
+        "find out whether \"fewer objects\" is available in this content before promising it",
+        "explain why a per-material merge collapsed nothing"
+      ],
+      "summary": "Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.",
+      "supersedes": [],
+      "symbol": "materialStateOf"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output"
       ],
       "example": "const pass = modelPass({ simplify: { ratio: 0.5 } });",
@@ -166,6 +269,27 @@
       "summary": "Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.",
       "supersedes": [],
       "symbol": "modelPass"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "deterministic by construction: the packing order is derived from the sources, never from directory order, so a rebuild places every source at the same pixel",
+        "a source the scene samples outside [0, 1] is excluded and reported, never clamped onto a shared page",
+        "page bounds hold regardless of input order; padding keeps a mip tap from reaching the next source"
+      ],
+      "example": "const { pages, transforms, excluded } = packAtlas(sources, { pageSize: 4096, padding: 4 });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function packAtlas( sources: readonly IAtlasSource[], options: IAtlasOptions = { … }",
+      "situations": [
+        "a merge found nothing to collapse because each imported part owns its own texture",
+        "cut the material count of an imported model pack at build time"
+      ],
+      "summary": "Pack texture sources into deterministic atlas pages and answer each source's UV transform, so a build can stop giving every material a private texture.",
+      "supersedes": [],
+      "symbol": "packAtlas"
     },
     {
       "aliases": [],
@@ -228,6 +352,48 @@
     {
       "aliases": [],
       "constraints": [
+        "a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test",
+        "the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate",
+        "`resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself"
+      ],
+      "example": "if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function resolveSourceTexel( atlasUv: readonly [number, number], transform: IAtlasTransform, source: { … }",
+      "situations": [
+        "rewrite a model's texture coordinates after packing its images into an atlas",
+        "tell a surface that tiles from one that merely has a repeating sampler"
+      ],
+      "summary": "Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.",
+      "supersedes": [],
+      "symbol": "resolveSourceTexel"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test",
+        "the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate",
+        "`resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself"
+      ],
+      "example": "if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function rewriteUvs(uv: Float32Array, transform: IAtlasTransform): Float32Array { … }",
+      "situations": [
+        "rewrite a model's texture coordinates after packing its images into an atlas",
+        "tell a surface that tiles from one that merely has a repeating sampler"
+      ],
+      "summary": "Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.",
+      "supersedes": [],
+      "symbol": "rewriteUvs"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "a finding is fail-grade only when the corresponding project target was declared"
       ],
       "example": "const report = await runHealthReport(inputs, { maxTextureDimension: 2048 });",
@@ -268,6 +434,48 @@
     {
       "aliases": [],
       "constraints": [
+        "reads geometry and materials only: no GPU, no runtime, no game",
+        "a texture whose size the document does not state is reported excluded, never assumed square",
+        "a model the reader cannot open is named, never skipped silently"
+      ],
+      "example": "pnpm census:content public/assets",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function totalCensus(entries: readonly IContentCensus[]): Omit<IContentCensus, \"model\"> { … }",
+      "situations": [
+        "find out whether \"fewer objects\" is available in this content before promising it",
+        "explain why a per-material merge collapsed nothing"
+      ],
+      "summary": "Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.",
+      "supersedes": [],
+      "symbol": "totalCensus"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test",
+        "the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate",
+        "`resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself"
+      ],
+      "example": "if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function uvsTile(uv: ArrayLike<number>): boolean { … }",
+      "situations": [
+        "rewrite a model's texture coordinates after packing its images into an atlas",
+        "tell a surface that tiles from one that merely has a repeating sampler"
+      ],
+      "summary": "Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.",
+      "supersedes": [],
+      "symbol": "uvsTile"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "call close on the returned handle; initial and burst failures are reported without stopping the dev server"
       ],
       "example": "const watcher = watchAssets({ cwd: process.cwd() });",
@@ -283,6 +491,47 @@
       "summary": "Watches an asset source directory and recompiles settled changes during development.",
       "supersedes": [],
       "symbol": "watchAssets"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand",
+        "the census reads geometry and materials only: no GPU, no runtime, no game"
+      ],
+      "example": "pnpm census:content public/assets",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function withAtlasTextures( materials: readonly IMaterialState[], pageOf: (texture: string) => string | undefined, ): IMaterialState[] { … }",
+      "situations": [
+        "decide whether fewer objects is actually available in this content",
+        "report why a per-material merge collapsed nothing"
+      ],
+      "summary": "Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.",
+      "supersedes": [],
+      "symbol": "withAtlasTextures"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test",
+        "the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate",
+        "`resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself"
+      ],
+      "example": "if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function wrapTiles(wrapS: number | undefined, wrapT: number | undefined): boolean { … }",
+      "situations": [
+        "rewrite a model's texture coordinates after packing its images into an atlas",
+        "tell a surface that tiles from one that merely has a repeating sampler"
+      ],
+      "summary": "Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.",
+      "supersedes": [],
+      "symbol": "wrapTiles"
     },
     {
       "aliases": [],
@@ -306,6 +555,28 @@
       "summary": "Attach hundreds of built objects to the scene in slices, presenting a frame between each.",
       "supersedes": [],
       "symbol": "addInSlices"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function addSpan(id: SpanId, ms: number): void { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "addSpan"
     },
     {
       "aliases": [],
@@ -560,6 +831,28 @@
     {
       "aliases": [],
       "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function beginSpan(id: SpanId): void { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "beginSpan"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "call update from the owning scene; no global scene scan is installed",
         "orthographic cameras use their forward direction, and lockAxis restricts world rotation"
       ],
@@ -803,6 +1096,27 @@
       "symbol": "ComputeDrivenRegistry"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "counts command-encoder and queue methods only; `mapAsync` and the presentation path are named, not folded in",
+        "`gpuBytes` is `queue.writeBuffer` exactly, so it reconciles against a driver; texture uploads are not included",
+        "`jsAllocBytes` needs `performance.memory` and stays absent where the platform lacks it"
+      ],
+      "example": "const counters = FrameCounters.install(counterDeviceOf(renderer.raw));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function counterDeviceOf(raw: unknown): unknown { … }",
+      "situations": [
+        "decide whether a CPU-bound frame is paying for the V8-to-host boundary",
+        "measure how many bytes a frame writes into GPU buffers, and how many commands it issues"
+      ],
+      "summary": "Count the frame's host-boundary crossings and the bytes it writes into GPU buffers, off unless `TN_FRAME_SPANS` asks for them. On the frame budget's own window as `counters`, so a crossing count and a millisecond split describe the same frames.",
+      "supersedes": [],
+      "symbol": "counterDeviceOf"
+    },
+    {
       "aliases": ["different props in each area", "first playable screen external assets"],
       "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches"
@@ -906,6 +1220,48 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant",
+        "no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence",
+        "the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking"
+      ],
+      "example": "defineGame({ display: { maxFps: 60 }, scenes: { Play } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function describeSceneShape( window: IFrameBudgetWindow, cull: IRenderCameraCullReport | undefined, ): ISceneShape | undefined { … }",
+      "situations": [
+        "find out whether a slow frame is the scene's shape or the device",
+        "tell an authoring agent what to reduce before it promises a merge"
+      ],
+      "summary": "Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.",
+      "supersedes": [],
+      "symbol": "describeSceneShape"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant",
+        "no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence",
+        "the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking"
+      ],
+      "example": "defineGame({ display: { maxFps: 60 }, scenes: { Play } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function describeSceneWarning(warning: ISceneWarning): string { … }",
+      "situations": [
+        "find out whether a slow frame is the scene's shape or the device",
+        "tell an authoring agent what to reduce before it promises a merge"
+      ],
+      "summary": "Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.",
+      "supersedes": [],
+      "symbol": "describeSceneWarning"
+    },
+    {
+      "aliases": [],
       "constraints": ["pass a non-zero direction; coefficients and radii come from the game"],
       "example": "const transmittance = directionalTransmittance(parameters, sunDirection);",
       "importPath": "@threenative/core",
@@ -931,6 +1287,49 @@
       "summary": "Convert solar elevation and azimuth degrees into a normalized Three.js direction.",
       "supersedes": [],
       "symbol": "directionFromSolarPosition"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant",
+        "no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence",
+        "the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking"
+      ],
+      "example": "defineGame({ display: { maxFps: 60 }, scenes: { Play } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function displayPeriodMs( declaredTargetFps: number | undefined, ): { … }",
+      "situations": [
+        "find out whether a slow frame is the scene's shape or the device",
+        "tell an authoring agent what to reduce before it promises a merge"
+      ],
+      "summary": "Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.",
+      "supersedes": [],
+      "symbol": "displayPeriodMs"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function endSpan(id: SpanId): void { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "endSpan"
     },
     {
       "aliases": [],
@@ -1004,6 +1403,70 @@
     {
       "aliases": [],
       "constraints": [
+        "the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant",
+        "no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence",
+        "the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking"
+      ],
+      "example": "defineGame({ display: { maxFps: 60 }, scenes: { Play } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function formatSceneWarning(warning: ISceneWarning): string { … }",
+      "situations": [
+        "find out whether a slow frame is the scene's shape or the device",
+        "tell an authoring agent what to reduce before it promises a merge"
+      ],
+      "summary": "Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.",
+      "supersedes": [],
+      "symbol": "formatSceneWarning"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function formatSpansWindow(window: ISpanWindow): string { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "formatSpansWindow"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and expensive by construction — it does the work it is checking, twice",
+        "it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads",
+        "it proves the frames it ran on and nothing else"
+      ],
+      "example": "if (renderListValidationRequested()) console.log(formatValidationReport(report));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function formatValidationReport(report: IValidationReport): string { … }",
+      "situations": [
+        "prove a static freeze did not leave a stale transform on screen",
+        "gate a scene in CI against silent transform divergence"
+      ],
+      "summary": "Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.",
+      "supersedes": [],
+      "symbol": "formatValidationReport"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement",
         "per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main",
         "GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero"
@@ -1024,6 +1487,27 @@
       "summary": "Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and triangles each render pass submitted.",
       "supersedes": [],
       "symbol": "FrameBudget"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "counts command-encoder and queue methods only; `mapAsync` and the presentation path are named, not folded in",
+        "`gpuBytes` is `queue.writeBuffer` exactly, so it reconciles against a driver; texture uploads are not included",
+        "`jsAllocBytes` needs `performance.memory` and stays absent where the platform lacks it"
+      ],
+      "example": "const counters = FrameCounters.install(counterDeviceOf(renderer.raw));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class FrameCounters { … }",
+      "situations": [
+        "decide whether a CPU-bound frame is paying for the V8-to-host boundary",
+        "measure how many bytes a frame writes into GPU buffers, and how many commands it issues"
+      ],
+      "summary": "Count the frame's host-boundary crossings and the bytes it writes into GPU buffers, off unless `TN_FRAME_SPANS` asks for them. On the frame budget's own window as `counters`, so a crossing count and a millisecond split describe the same frames.",
+      "supersedes": [],
+      "symbol": "FrameCounters"
     },
     {
       "aliases": [],
@@ -1152,6 +1636,27 @@
       "symbol": "GroundSnap"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "returns an uninstall that restores every wrapper, asserted by test",
+        "a renderer whose internals have moved loses that span rather than throwing, and it is absent from the report rather than zero",
+        "only the outermost `_projectObject` opens a span, because three's recurses per child"
+      ],
+      "example": "const uninstall = installSpanProbes(renderer.raw, scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function installSpanProbes(target: ISpanProbeTarget, root: Object3D): () => void { … }",
+      "situations": [
+        "measure which part of three's render path costs the frame",
+        "attach the span tree to a renderer a test or a tool constructed itself"
+      ],
+      "summary": "Attach the span probes to a renderer: three's `render`, `_projectObject`, the render list's `sort`, the per-draw submission, and the scene-graph walk. Installed for you when `TN_FRAME_SPANS` asks; exported so a harness can wrap a renderer it owns.",
+      "supersedes": [],
+      "symbol": "installSpanProbes"
+    },
+    {
       "aliases": ["landmarks points of interest", "obstacles collectibles increasing pace"],
       "constraints": [
         "geometry and material are required and come from the game; the batch chooses neither",
@@ -1175,6 +1680,27 @@
       "summary": "Collapse many copies of one game-authored shape into a single draw, without counting them first. `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a procedural builder ends up walking its layout twice or over-allocating. Place as you go and `build()` once; the shape, the surface and every transform stay the game's, and the built mesh is returned so instances can still be animated by the index `place` and `span` hand back.",
       "supersedes": [],
       "symbol": "InstancedBatch"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
+        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
+        "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
+      ],
+      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function invalidateStatic(object: Object3D): number | undefined { … }",
+      "situations": [
+        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
+        "keep a frozen subtree correct when the game does move it after all"
+      ],
+      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "supersedes": [],
+      "symbol": "invalidateStatic"
     },
     {
       "aliases": [],
@@ -1217,6 +1743,27 @@
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
       "symbol": "isNative"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
+        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
+        "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
+      ],
+      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function isStatic(root: Object3D): boolean { … }",
+      "situations": [
+        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
+        "keep a frozen subtree correct when the game does move it after all"
+      ],
+      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "supersedes": [],
+      "symbol": "isStatic"
     },
     {
       "aliases": [],
@@ -1284,6 +1831,50 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
+        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
+        "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
+      ],
+      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function markStatic(root: Object3D): number { … }",
+      "situations": [
+        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
+        "keep a frozen subtree correct when the game does move it after all"
+      ],
+      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "supersedes": [],
+      "symbol": "markStatic"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "a game that reads a hidden object's matrixWorld directly must use getWorldPosition or updateWorldMatrix(true, false) first",
+        "`renderer.matrixWorld: \"all\"` visits every node; `TN_PROJECTION` reports the visited count either way"
+      ],
+      "example": "import { MatrixWorldPass } from \"@threenative/core\";\nconst pass = new MatrixWorldPass(); // renderer.matrixWorld defaults to \"visible\"",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "renderer.matrixWorld: \"all\" runs three's full walk instead of the visible-only default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class MatrixWorldPass { … }",
+      "situations": [
+        "the per-frame world matrix walk is hot in a profile",
+        "stop multiplying matrices for hidden models, LOD levels and merged stand-ins",
+        "a game needs every node walked, exactly as three's own updateMatrixWorld does"
+      ],
+      "summary": "Walk the scene graph's world matrices each frame without recursing into a hidden subtree. On by default as `renderer.matrixWorld: \"visible\"`. three's `updateMatrixWorld` recurses into every child whatever its `visible` flag, so a hidden LOD body, a merged stand-in and a parked model cost a world-matrix multiply each while nothing under them can draw. This pass mirrors three exactly for every visible node and defers a hidden node's subtree until the frame it shows again. A class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a hidden node that holds bones is walked, so no skeleton or view matrix goes stale.",
+      "supersedes": [],
+      "symbol": "MatrixWorldPass"
+    },
+    {
+      "aliases": [],
       "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
       "example": "const measurement = measureThreePose(model);",
       "importPath": "@threenative/core",
@@ -1344,6 +1935,23 @@
       "summary": "Scale an asset to a real-world measurement and return the applied factor.",
       "supersedes": ["new Box3().setFromObject("],
       "symbol": "normaliseToMetres"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const off = onLaunchFailure((failure) => shell.loading({ failure: failure.message }));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function onLaunchFailure(listener: (failure: ILaunchFailure) => void): () => void { … }",
+      "situations": [
+        "show the player why the game stopped loading instead of leaving the loading screen up",
+        "report a stalled launch or a lost GPU device in the game's own UI"
+      ],
+      "summary": "Called for every launch failure the engine notices, with the message to show the player.",
+      "supersedes": [],
+      "symbol": "onLaunchFailure"
     },
     {
       "aliases": [],
@@ -1635,6 +2243,27 @@
     {
       "aliases": [],
       "constraints": [
+        "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
+        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
+        "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
+      ],
+      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function refreshStaticTransforms(): void { … }",
+      "situations": [
+        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
+        "keep a frozen subtree correct when the game does move it after all"
+      ],
+      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "supersedes": [],
+      "symbol": "refreshStaticTransforms"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "stage factories own colour, strength, and all other appearance choices",
         "authored stages declare exactly one before or after anchor"
       ],
@@ -1654,6 +2283,48 @@
       "symbol": "RenderChain"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "off by default and expensive by construction — it does the work it is checking, twice",
+        "it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads",
+        "it proves the frames it ran on and nothing else"
+      ],
+      "example": "if (renderListValidationRequested()) console.log(formatValidationReport(report));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function renderListValidationRequested(): boolean { … }",
+      "situations": [
+        "prove a static freeze did not leave a stale transform on screen",
+        "gate a scene in CI against silent transform divergence"
+      ],
+      "summary": "Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.",
+      "supersedes": [],
+      "symbol": "renderListValidationRequested"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and expensive by construction — it does the work it is checking, twice",
+        "it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads",
+        "it proves the frames it ran on and nothing else"
+      ],
+      "example": "if (renderListValidationRequested()) console.log(formatValidationReport(report));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class RenderListValidator { … }",
+      "situations": [
+        "prove a static freeze did not leave a stale transform on screen",
+        "gate a scene in CI against silent transform divergence"
+      ],
+      "summary": "Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.",
+      "supersedes": [],
+      "symbol": "RenderListValidator"
+    },
+    {
       "aliases": ["fixed seed fixed-step simulation"],
       "constraints": [
         "use a seeded random source and fixed-step simulation for meaningful replays"
@@ -1671,6 +2342,43 @@
       "summary": "Record or replay deterministic game input and state.",
       "supersedes": [],
       "symbol": "replay"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "resetAudioCueLedger();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resetAudioCueLedger(): void { … }",
+      "situations": [
+        "clear the recorded audio cue counts between tests so one test cannot read another's plays"
+      ],
+      "summary": "Forgets every recorded cue.",
+      "supersedes": [],
+      "symbol": "resetAudioCueLedger"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
+        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
+        "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
+      ],
+      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resetStaticTransforms(): void { … }",
+      "situations": [
+        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
+        "keep a frozen subtree correct when the game does move it after all"
+      ],
+      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "supersedes": [],
+      "symbol": "resetStaticTransforms"
     },
     {
       "aliases": [],
@@ -1767,6 +2475,27 @@
       "symbol": "ScenePicker"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant",
+        "no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence",
+        "the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking"
+      ],
+      "example": "defineGame({ display: { maxFps: 60 }, scenes: { Play } });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, ): ISceneWarning | undefined { … }",
+      "situations": [
+        "find out whether a slow frame is the scene's shape or the device",
+        "tell an authoring agent what to reduce before it promises a merge"
+      ],
+      "summary": "Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.",
+      "supersedes": [],
+      "symbol": "sceneWarning"
+    },
+    {
       "aliases": ["tower defense game", "spawn waves"],
       "constraints": [
         "dispose returned handles when the owning scene exits",
@@ -1807,6 +2536,28 @@
       "summary": "Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.",
       "supersedes": [],
       "symbol": "setAttitude"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function setSpanRecorder(next: SpanRecorder | undefined): void { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "setSpanRecorder"
     },
     {
       "aliases": [],
@@ -1935,6 +2686,94 @@
     {
       "aliases": [],
       "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function spanNow(): number { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "spanNow"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function spanRecorder(): SpanRecorder | undefined { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "spanRecorder"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class SpanRecorder { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "SpanRecorder"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return",
+        "the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames",
+        "measurement only: no span changes what is drawn, in what order, or with which renderer"
+      ],
+      "example": "if (spansRequested()) setSpanRecorder(new SpanRecorder());",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function spansRequested(): boolean { … }",
+      "situations": [
+        "find out what inside the render phase is actually costing the frame",
+        "tell a shadow pass's traversal from the main pass's, with the residual computed",
+        "price an optimisation against a measured part of the phase rather than the whole of it"
+      ],
+      "summary": "Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under \"other\"; a child that outlives its parent reports a negative residual rather than a clamped zero.",
+      "supersedes": [],
+      "symbol": "spansRequested"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "it draws nothing; the game supplies the mesh, the material and every colour",
         "CPU height is a throttled copy carrying staleFrames, never this frame and never exact",
         "an exact free CPU height needs an analytic wave field instead; that is a different contract",
@@ -1979,6 +2818,27 @@
     {
       "aliases": [],
       "constraints": [
+        "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
+        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
+        "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
+      ],
+      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function staticTransformCensus(): IStaticTransformCensus { … }",
+      "situations": [
+        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
+        "keep a frozen subtree correct when the game does move it after all"
+      ],
+      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "supersedes": [],
+      "symbol": "staticTransformCensus"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the surface comes from the game; pooling, travel, and fading belong to the engine",
         "update once per frame and dispose with the owning scene"
       ],
@@ -1995,6 +2855,27 @@
       "summary": "Pool travelling bullet-streak meshes for hitscan shots.",
       "supersedes": [],
       "symbol": "TracerPool3D"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
+        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
+        "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
+      ],
+      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function unmarkStatic(root: Object3D): void { … }",
+      "situations": [
+        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
+        "keep a frozen subtree correct when the game does move it after all"
+      ],
+      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "supersedes": [],
+      "symbol": "unmarkStatic"
     },
     {
       "aliases": [],
@@ -2048,6 +2929,27 @@
       "summary": "Draw a model at the detail its projected geometric error earns, from a chain the asset cook baked. **This is engine-owned, and a game does not call it.** `assets.lod: {}` opts in — the default-on front door opens after qualification — the `model` pass bakes `TN_discrete_lod` into eligible models, the loader registers the reader, and the engine runs the selection every frame before it renders. Each frame the mesh picks the cheapest baked level whose measured error projects to fewer than the resolved pixel budget, taking the camera's own projection, zoom, viewport and a conservative nearest depth into account. Refinement is immediate; coarsening waits for the resolved hysteresis. A mesh with no baked chain draws its full geometry.",
       "supersedes": [],
       "symbol": "updateModelLods"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "off by default and expensive by construction — it does the work it is checking, twice",
+        "it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads",
+        "it proves the frames it ran on and nothing else"
+      ],
+      "example": "if (renderListValidationRequested()) console.log(formatValidationReport(report));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function validateWorldMatrices(root: Object3D): { … }",
+      "situations": [
+        "prove a static freeze did not leave a stale transform on screen",
+        "gate a scene in CI against silent transform divergence"
+      ],
+      "summary": "Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.",
+      "supersedes": [],
+      "symbol": "validateWorldMatrices"
     },
     {
       "aliases": [],
@@ -2452,7 +3354,7 @@
     {
       "aliases": ["journal objective panel", "readable HUD"],
       "constraints": [
-        "publishes at the store's throttled cadence, and not at all with no UI listening"
+        "publishes once per rendered frame unless stateFlushMs selects a slower interval, and not at all with no UI listening"
       ],
       "example": "publishUiState(bridge, game.state);",
       "importPath": "@threenative/core/ui-layer",
@@ -2464,7 +3366,7 @@
         "show score or health in a UI rendered over the game surface",
         "keep a HUD in step with the game without re-rendering on the loop",
         "publish game state to a HUD in another realm",
-        "keep a web and native UI mirror on the same throttled state stream"
+        "keep a web and native UI mirror on the same coalesced state stream"
       ],
       "summary": "Publish the game's state so a UI in another process can mirror it.",
       "supersedes": [],
@@ -5185,7 +6087,7 @@
         "bind a HUD component to game state",
         "select a slice of state for a React panel"
       ],
-      "summary": "Read throttled game state from React.",
+      "summary": "Read the game's coalesced frame snapshot from React.",
       "supersedes": [],
       "symbol": "useGameState"
     },
@@ -5222,6 +6124,34 @@
       "summary": "Read the game's published state from a UI that may be in another process.",
       "supersedes": [],
       "symbol": "useUiState"
+    },
+    {
+      "symbol": "renderer.matrixWorld",
+      "package": "@threenative/core",
+      "importPath": "src/game.ts",
+      "kind": "function",
+      "signature": "renderer.matrixWorld?: \"visible\" | \"all\"",
+      "summary": "The per-frame world-matrix walk, on by default as `\"visible\"`: a hidden subtree — a full-detail body behind a merged stand-in, a hidden LOD level, a parked or hangared model — is not recursed into, so nothing that cannot draw pays a world-matrix multiply. Every visible node is composed exactly as three does, a class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a hidden node that holds bones is still walked. `\"all\"` restores three's every-node walk.",
+      "situations": [
+        "updateMatrixWorld and multiplyMatrices are hot in a profile",
+        "the per-frame matrix walk is slow with many hidden LOD bodies or paired full/hull models",
+        "stop paying for matrices of models nothing can draw",
+        "a skinned mesh or camera goes stale because its world matrix was not refreshed",
+        "restore three's own full updateMatrixWorld walk",
+        "compare how many scene nodes the engine walks per frame"
+      ],
+      "example": "renderer: { matrixWorld: \"all\" } // in threenative.config.ts; omit for the visible-only default",
+      "constraints": [
+        "Unset is the shipping behaviour: `\"visible\"`, which does not recurse into a hidden subtree. `\"all\"` visits every node exactly as three's own `updateMatrixWorld` does.",
+        "A game that reads a hidden object's `matrixWorld` directly must not rely on the walk reaching it: use `getWorldPosition`/`getWorldQuaternion`/`getWorldScale` or call `object.updateWorldMatrix(true, false)` first.",
+        "The walk is the engine's either way, so three's renderer never walks the scene a second time; the count of nodes visited is reported as `matrixWorld` in every `TN_PROJECTION` window.",
+        "Bones are never skipped: a hidden node that holds a `Bone` is walked, because a visible `SkinnedMesh` draws with its skeleton's matrices wherever the armature sits."
+      ],
+      "overrides": [
+        "renderer.matrixWorld: \"all\" restores three's every-node walk; the visited count still reports"
+      ],
+      "supersedes": [],
+      "aliases": []
     },
     {
       "symbol": "renderer.minimumProjectedPixels",
