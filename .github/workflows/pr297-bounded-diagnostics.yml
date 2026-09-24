@@ -1,0 +1,53 @@
+name: PR297 bounded diagnostics
+on:
+  push:
+    branches: [feat/prd-443-compact]
+    paths: [.github/workflows/pr297-bounded-diagnostics.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Require the inspected candidate
+        run: test "$(git rev-parse HEAD^)" = ae75f0b7524fb8ff79986669003e77c1920735e1
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Capture exact errors and formatter correction
+        shell: bash
+        run: |
+          set +e
+          out="$RUNNER_TEMP/pr297-diagnostics"
+          mkdir -p "$out"
+          git rev-parse HEAD > "$out/revision.txt"
+          pnpm exec biome check . --diagnostic-level=error --max-diagnostics=100 > "$out/lint.log" 2>&1
+          echo "$?" > "$out/lint.status"
+          pnpm quality > "$out/quality.log" 2>&1
+          echo "$?" > "$out/quality.status"
+          pnpm exec biome check --write packages/assets/src/compile.ts > "$out/format.log" 2>&1
+          echo "$?" > "$out/format.status"
+          git diff -- packages/assets/src/compile.ts > "$out/format.patch"
+          cp packages/assets/src/compile.ts "$out/compile.ts"
+          pnpm exec biome check . --diagnostic-level=error --max-diagnostics=100 > "$out/lint-after.log" 2>&1
+          echo "$?" > "$out/lint-after.status"
+          cp packages/create-threenative/__tests__/scaffold.spec.ts "$out/scaffold.spec.ts"
+          node -p 'JSON.stringify(require("./package.json").scripts,null,2)' > "$out/scripts.json"
+          pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts > "$out/scaffold.log" 2>&1
+          echo "$?" > "$out/scaffold.status"
+          cat "$out/lint.log" "$out/lint-after.log"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr297-bounded-diagnostics
+          path: ${{ runner.temp }}/pr297-diagnostics
+          retention-days: 3
+          if-no-files-found: error
