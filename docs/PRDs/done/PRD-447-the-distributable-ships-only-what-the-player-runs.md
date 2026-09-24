@@ -1,6 +1,6 @@
 # PRD-447 — The distributable ships only what the player runs
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-09-24)
 **Complexity:** 4 (MEDIUM); risk override: none. About 9 implementation files, and the change crosses the release/prebuilt boundary.
 **Owner:** Claude (session 2026-09-24)
 **Depends on:** None. Coordinates with PRD-399, which qualifies dev distributables on an x86_64 emulator.
@@ -54,7 +54,7 @@ Out of scope, with reasons:
 
 ## Acceptance criteria
 
-- [ ] AC-1 [local; actor: agent]: `threenative build --target android` in release mode produces an APK/AAB whose `lib/` holds only `arm64-v8a`; debug mode and `-PthreenativeAbis=arm64-v8a,x86_64` still produce both. Consumer game release APK ≤ 55 MB (from 105 MB); it passes `pnpm native:verify:android:artifact` and its existing playtest on an arm64 target. — Evidence: pending.
+- [x] AC-1 [local; actor: agent]: `threenative build --target android` in release mode produces an APK/AAB whose `lib/` holds only `arm64-v8a`; debug mode and `-PthreenativeAbis=arm64-v8a,x86_64` still produce both. Consumer game release APK ≤ 55 MB (from 105 MB); it passes `pnpm native:verify:android:artifact` and its existing playtest on an arm64 target. — Evidence: consumer release build exits 0 (census prints `16 KB ok` for the 4 arm64 libraries); APK **51,749,487 B** (from 105,284,577), `aapt` `native-code: 'arm64-v8a'`; the debug APK built from the same tree carries both ABIs (107,055,308 B). `native:verify:android:artifact <apk> --abis arm64-v8a` passes (4 libraries). Pixel 8 (arm64, Mali-G715): `production-readiness.playtest.json` pass, 941 frames, 0 failed, 0 JS errors, runner exit 0. Earlier Pixel attempts failed `TN_PLAYTEST_BRIDGE_MISSING` because a sibling lane had reset the phone to a 30 s screen timeout, so the activity launched screen-off and was stopped; the bridge ships in the release bundle.
 - [x] AC-2 [local; actor: agent]: The packaged desktop runtime carries no `.debug_*`, `.symtab` or `.strtab` sections, and is ≤ 80 MB (from 126 MB); the starter's `test:native` still qualifies on Linux x64. — Evidence: `starter` scaffolded from this branch's packages, `threenative build --target desktop --mode release`: the shipped `container/starter/starter` is **74,254,000 B** (input 126,432,264 B), `readelf -S` debug/symtab/strtab count **0** (input 13). `test:native` exit 0 (`starter desktop gate passed: 300 frames`; `consumer gameplay qualified on desktop: 5 assertions`), and the release container's playtest passes on it: `starter-production-readiness` pass, 941 frames, 5/5 assertions. Linux only; macOS is deliberately unstripped (see Phase 1).
 - [x] AC-3 [local; actor: agent]: The native `main.js` is minified: the consumer game's bundle is ≤ 2.2 MB (from 5.0 MB), and the consumer playtest passes on desktop and on the Android emulator. — Evidence: consumer `assets/scripts/main.js` **2,063,155 B** (from 5,015,233), minified with names kept. Desktop: the minified bundle qualifies (`test:native` consumer gameplay, 5 assertions; release `starter-production-readiness` 941 frames, 5/5). Android x86_64 emulator (`threenative_api35`, branch debug APK, both ABIs): `production-readiness` pass 2/2, 941 frames, 0 console errors; baseline APK identical. One earlier red was `E/cr_CronetUrlRequestContext( 1624)` from a system process, reproduced 0 of 4 times: the runner's Android console capture is not pid-filtered (`packages/playtest/src/runner/android.ts:207`, `:506-519`). That is a pre-existing runner follow-up, not this change. `play.playtest.json` is `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` on devices (network assertions) on both APKs.
 - [x] AC-4 [local; actor: agent]: ~~The Android, desktop and iOS packagers copy only files the build's asset manifest names~~ **Amended 2026-09-24:** the Android and desktop packagers drop provable junk and print each path; a fixture holding a stray `*.orig` file packages without it and the build prints its path. — Evidence: the literal rule was measured to break real games: `public/` holds hand-placed runtime files no manifest names (wildwood 536 incl. `audio/*.ogg`, fps-framework 100, and the Basis transcoder in lumen-hall/menu-spike, whose older receipts predate it). Shipped rule (`scripts/asset-manifest.mjs`, used by both packagers): skip editor/VCS leftovers (`*.orig|.rej|.bak|.swp|~`, `.DS_Store`, `Thumbs.db`, `.gitkeep`) and, with a manifest, `<stem>.<hash>.<ext>` outputs superseded by a named same-stem sibling; keep everything else; a named file missing on disk fails `TN_ASSETS_MANIFEST_MISSING`. Real dirs (read-only): wildwood 425 copied / 333 superseded skipped, lumen-hall 68/27, fps-framework 90/23, consumer 7/0; zero `audio/` or `basis/` skips. `asset-manifest.spec.ts` red (4 failed on the manifest-only rule) → green 5/5; packaging tests 144 + 38 passed. iOS has its own copy loop and is not a supported target (owner, 2026-09-23), so it is unchanged.
@@ -77,18 +77,18 @@ Out of scope, with reasons:
 
 #### Phase 1: Native payload
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **ACs:** AC-1, AC-2, AC-8
 
 - [x] Release default ABI is `arm64-v8a` (Gradle and packager), debug keeps both; spec red before the change, green after. — `package-android.mjs:androidAbiGradleArgs` passes `-PthreenativeAbis=arm64-v8a` for release unless `THREENATIVE_GRADLE_ARGS` names a set; debug keeps the Gradle default (both). `android-release-abis.spec.ts` red (`androidAbiGradleArgs is not a function`, 3 failed) → green 3/3; the 4 package-android specs 53/53.
 - [x] Desktop packaging strips the runtime (`llvm-strip`/`strip` on Linux, ~~`strip -x` on macOS~~; Windows PDBs stay out of the archive); prebuilt asset names unchanged. **Amended 2026-09-24:** macOS moves to a follow-up (strip must be followed by an ad-hoc re-sign, and only a macOS lane can prove the result launches). — Linux `strip --strip-all` (fallback `llvm-strip`) runs on the release sidecar copy in `package-desktop.mjs:stripDesktopRuntime`; the local `tn-linux/mystral` copy went 126,432,264 → 74,254,000 bytes, 0 `.debug_*/.symtab/.strtab` sections, `--version` exits 0. Windows copies no `.pdb` (spec). **macOS not stripped**: `strip` voids the linker signature Apple Silicon needs to launch an unsigned build and no macOS lane here proves a re-sign. `PREBUILT_ASSET_NAMES` untouched. Specs: `desktop-strip.spec.ts` red 7 failed → green 7/7; 8 desktop packaging test files 222 passed. Runtime proof (`test:native`) pending.
 - [x] Linux section GC measured and kept or rejected (AC-8). — Kept (Linux-only block in `CMakeLists.txt`): stripped `mystral` 74,327,728 → **58,072,784 B** (−21.9%), raw 126,515,528 → 101,546,296; `ctest -L native-contract` 44/44 in both builds; `--version` exits 0. Games run on it: see AC-8.
 - [x] SWC decision recorded: if no packaged-runtime path loads `.ts`, the release desktop runtime builds with `MYSTRAL_USE_SWC=OFF` under the same prebuilt asset name. Otherwise record why and leave it. — **Left ON.** A packaged game never reaches SWC (`module_system.cpp:577` returns for `.js`), but the same prebuilt asset is the dev CLI (`mystral run foo.ts`, `main.cpp:444`) and ships `mystral-tools`, whose bundler transpiles `.ts` (`bundler.cpp:190-192`, linked at `CMakeLists.txt:2105-2110`) for `threenative build --target desktop`. OFF would save a further 21.7 MB stripped (52,640,016 B) but break those commands; a separate player-only asset would change `PREBUILT_ASSET_NAMES`, out of scope.
-- [ ] Consumer release APK size and arm64 playtest recorded (AC-1); stripped desktop size and starter `test:native` recorded (AC-2). — Partial. Consumer release APK built from this branch on 2026-09-24: 105,284,577 → **51,749,487 B**, `lib/` arm64-v8a only (4 libraries), `main.js` 5,015,233 → 2,063,155 B; installs and launches on the Pixel 8 with no JS errors in logcat. Two breaks found and fixed on the way: the packager's post-build 16 KB census demanded an x86_64 slice and failed every release build (`4f99a5f7c`, census now checks the requested ABI set; the packaging fixture's fake Gradle had hidden it by always emitting both), and `native:verify:android:artifact` gained `--abis` (`d89ad78f4`; passes with `--abis arm64-v8a`, still fails without). Pixel playtest: `TN_PLAYTEST_BRIDGE_MISSING`, identical on the old baseline APK, so not caused by this branch; bridge-enabled rerun pending. Desktop `test:native` pending.
+- [x] Consumer release APK size and arm64 playtest recorded (AC-1); stripped desktop size and starter `test:native` recorded (AC-2). — Consumer release APK built from this branch on 2026-09-24: 105,284,577 → **51,749,487 B**, `lib/` arm64-v8a only (4 libraries), `main.js` 5,015,233 → 2,063,155 B; installs and launches on the Pixel 8 with no JS errors in logcat. Two breaks found and fixed on the way: the packager's post-build 16 KB census demanded an x86_64 slice and failed every release build (`4f99a5f7c`, census now checks the requested ABI set; the packaging fixture's fake Gradle had hidden it by always emitting both), and `native:verify:android:artifact` gained `--abis` (`d89ad78f4`; passes with `--abis arm64-v8a`, still fails without). Pixel playtest: `TN_PLAYTEST_BRIDGE_MISSING`, identical on the old baseline APK, so not caused by this branch; Pixel playtest passed on rerun (see AC-1); desktop `test:native` passed (see AC-2).
 
 **Files:** `android/app/build.gradle.kts`, `scripts/package-android.mjs`, `scripts/package-desktop.mjs` or `scripts/desktop-distribution.mjs`, `CMakeLists.txt`, their `__tests__` specs.
 **Verification:** E1: `unzip -l <release.apk> | grep lib/`, `pnpm native:verify:android:artifact`, playtest `--target android` on the Pixel 8 or an arm64 emulator. E2: `readelf -S` on the packaged runtime, starter `test:native`. E3: `ctest` contract tests after section GC.
-**Checkpoint:** pending
+**Checkpoint:** passed 2026-09-24 — evidence under the ACs above.
 
 #### Phase 2: JS payload
 
@@ -102,7 +102,7 @@ Out of scope, with reasons:
 
 **Files:** `packages/runtime-native/scripts/bundle.mjs`, the web decoder emit in `packages/core` or `packages/assets`, the physics web loader in `packages/physics`.
 **Verification:** E4: `ls -la` on `assets/scripts/main.js`, playtest on both native targets. E5: `pnpm test:templates` for a KTX2 + Draco template. E6: brotli bytes before and after, plus a physics template playtest.
-**Checkpoint:** pending
+**Checkpoint:** passed 2026-09-24 — evidence under the ACs above.
 
 #### Phase 3: Content hygiene and transfer
 
@@ -115,4 +115,12 @@ Out of scope, with reasons:
 
 **Files:** `package-android.mjs`, `package-desktop.mjs`, `package-ios.mjs`, `buildWeb` in `packages/create-threenative`.
 **Verification:** E7: packager specs. E8: `find dist -name '*.br'` on a template build. E9: the full gate.
-**Checkpoint:** pending
+**Checkpoint:** passed 2026-09-24 — evidence under the ACs above.
+
+## Follow-ups (filed from this PRD's evidence)
+
+- macOS desktop strip: `strip -x` followed by an ad-hoc re-sign, proved on a macOS lane.
+- Rapier WASM as a file: needs the non-compat `@dimforge/rapier3d` (~185 KB brotli saved); an owner call on the new dependency.
+- The playtest runner's Android console capture is not pid-filtered (`packages/playtest/src/runner/android.ts:207`), so a system process's error line can red `diagnostics`.
+- A raw Draco `.glb` shipped with every model sub-pass off would 404 on `draco/`; nothing copies that decoder (pre-existing).
+- A player-only desktop runtime without SWC would save 21.7 MB more, but needs its own prebuilt asset name.
