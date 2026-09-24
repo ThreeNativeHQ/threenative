@@ -4,13 +4,17 @@ prd_contract: v1
 
 # PRD-112 repair — The packed golden path must describe and execute the path it proves
 
-**Status: BLOCKED, 2026-08-15.** The implementation is integrated in `0a689f1` and
-`4fa847d`, but the exact packed seven-template gate remains red in the action-rpg test layer.
-The first failure was a 30-second `page.screenshot` timeout; the runner now falls back to the
-canvas surface, which lets the first four action-rpg scenarios pass, but the next scenario still
-fails with `TN_PLAYTEST_RUNNER_FAILED: page.evaluate: Execution context was destroyed, most likely
-because of a navigation`. The remaining doubtful assumption is that the headed WebGPU page can be
-reused safely across the packed scenarios. Keep this PRD active until the exact gate is green.
+**Status: PARTIAL, 2026-09-23.** The action-rpg blocker this PRD was opened for is resolved and
+re-verified on the packed path. `9c361c43c` adds page-lifecycle classification so a mid-run page
+death is named `TN_PLAYTEST_PAGE_NAVIGATED` / `TN_PLAYTEST_PAGE_CRASHED`, never the unexplained
+`TN_PLAYTEST_RUNNER_FAILED`; `982d6913f` adds the capture grace window; `229313859` stops
+action-rpg enemies acting during launch. All three are ancestors of `develop`. Locally, the
+packed gate drives action-rpg's five non-visual scenarios green on the GPU and under a forced
+SwiftShader adapter, and action-rpg also passes inside the seven-template run. The exact
+seven-template gate is still red, but at `racing` layer `test` — a flaky template-scenario fault
+(`racing-finish-behind-rival-is-dnf` asserts `state.completedLaps` / `state.rescues`; racing alone
+passes, it fails only after five templates have run) unrelated to this contract. Keep this PRD
+active until the seven-template gate is green.
 
 Fresh repair for the review-2 blocker on capped lane
 `linchpin/prd-112-golden-path-from-packed-artifacts-r2` at `c005d91`. The source PRD remains
@@ -116,6 +120,12 @@ the original resolution chain, and no unmeasured Vite resolver replacement remai
 3. Keep failure code, layer, searched locations, and a real corrective command.
 4. Record the framework LOC delta; this phase should be a net deletion.
 
+**Checklist:**
+
+- [x] No Vite config-loader branch remains: `rg "loadConfigWithVite|resolveDeclaredModule|loadConfigFromFile" packages/create-threenative/src/config.ts` finds none.
+- [x] `packages/create-threenative/__tests__/config.spec.ts` passes.
+- [ ] Revert check observed red — not re-run in the 2026-09-23 verification.
+
 **Focused gate:**
 
 ```sh
@@ -150,6 +160,12 @@ corrective command into the exact directory named beside it without editing plac
 4. Tests must reject angle-bracket placeholders and must actually spawn the recorded command, not
    merely compare strings.
 
+**Checklist:**
+
+- [x] `threenative.ts` advertises only `build`; no `dev`, `test` or `ship` promise (`rg` over the parser and help).
+- [x] `pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts scripts/__tests__/verify-golden-path.spec.ts` passes: 3 files, 122 tests, including "executes project corrective commands from their recorded cwd".
+- [ ] Revert check observed red — not re-run in the 2026-09-23 verification.
+
 **Focused gate:**
 
 ```sh
@@ -183,6 +199,11 @@ generated dependency is truly broken.
 4. Retain the normal `pnpm verify:golden-path` run over all seven discovered repository templates,
    including scaffold, install, MCP, dev, test, web build, and artifact checks.
 
+**Checklist:**
+
+- [x] The alternate control packs and scaffolds the mutated template, proves tarball identity and generated-manifest mutation, then reds on the broken dependency (`verify-golden-path.spec.ts` — "packs and scaffolds the mutated CLI before observing its broken dependency"; also observed inside `TN_GOLDEN_PATH_TEMPLATES=action-rpg pnpm verify:golden-path`, exit 0).
+- [ ] Every one of the seven repository templates completes the real packed web journey — OPEN. On 2026-09-23 the full packed gate ran action-rpg, defense, minimal, platformer and puzzle green, then aborted at `racing` layer `test` (`racing-finish-behind-rival-is-dnf` resource assertions, runner, sailing, shooter and starter not reached). racing alone passes, so the fault is load/sequence-dependent and separate from this contract.
+
 **Focused and journey gates:**
 
 ```sh
@@ -212,19 +233,22 @@ and generated manifest paths before cleanup.
 **Consumer-scoped acceptance.** A user starting from packed artifacts must be able to execute the
 advertised journey and recovery commands; helper or test existence alone is not completion.
 
-- [ ] No Vite config-loader rewrite remains from the non-reproduced Phase 0 claim; packed configs
-  still load through one owned resolution path.
-- [ ] Root and command help advertise only parser-supported commands; no `dev`, `test`, or `ship`
+- [x] No Vite config-loader rewrite remains from the non-reproduced Phase 0 claim; packed configs
+  still load through one owned resolution path (`config.ts` has no `loadConfigWithVite` /
+  `resolveDeclaredModule` / `loadConfigFromFile`).
+- [x] Root and command help advertise only parser-supported commands; no `dev`, `test`, or `ship`
   promise is added without an existing-PRD requirement and real dispatch.
-- [ ] Every emitted corrective command runs unchanged from its recorded cwd; placeholders and prose
-  in the command field fail tests.
-- [ ] The alternate control packs and scaffolds the mutated template, proves tarball identity and
+- [x] Every emitted corrective command runs unchanged from its recorded cwd; placeholders and prose
+  in the command field fail tests (`scripts/__tests__/verify-golden-path.spec.ts` passes).
+- [x] The alternate control packs and scaffolds the mutated template, proves tarball identity and
   generated-manifest mutation, then goes red on the broken dependency.
 - [ ] Every one of the seven repository templates completes the real packed web journey from an
-  empty temporary directory.
+  empty temporary directory — OPEN; action-rpg/defense/minimal/platformer/puzzle pass, `racing`
+  reds at layer `test` in the full sequence (2026-09-23).
 - [ ] Caller census, incumbent deletion, and all revert checks are recorded.
 - [ ] Focused tests, `pnpm typecheck && pnpm lint && pnpm test`, and `pnpm budgets` pass; the
-  framework LOC delta is reported and no review trigger is hidden.
+  framework LOC delta is reported and no review trigger is hidden. Focused tests pass (3 files,
+  122 tests); the full typecheck/lint/test/budgets gate was not run in the 2026-09-23 verification.
 
 ## Verification Evidence
 
@@ -242,6 +266,28 @@ Observed implementation and gate evidence:
   the next action-rpg scenario with the navigation/context-destroyed error recorded above.
 - Therefore the seven-template packed journey, tarball identities, and final gate output remain
   incomplete. This PRD is blocked at the consumer gate; no completion archive is permitted.
+
+**2026-09-23 re-verification (packed path, HEAD `f8be3d161`).** The action-rpg blocker above no
+longer reproduces:
+
+- Fresh packed workspace (current `dist`, `packWorkspace(build=false)`), scaffolded action-rpg
+  installed from tarballs, exact gate `test` command (5 non-visual scenarios,
+  `TN_PLAYTEST_ALLOW_SOFTWARE=1`): exit 0, 5/5 pass.
+- Same command forcing SwiftShader (`--browser-arg --use-webgpu-adapter=swiftshader`, adapter
+  `architecture=swiftshader`): exit 0, 5/5 pass.
+- Project `pnpm test` (all scenarios, `vite preview`): exit 0.
+- `TN_GOLDEN_PATH_TEMPLATES=action-rpg TN_PLAYTEST_ALLOW_SOFTWARE=1 pnpm verify:golden-path`
+  (adopting those packs): exit 0, including the packed mutation control.
+- Full seven-template run: action-rpg, defense, minimal, platformer and puzzle green; aborts at
+  `racing` layer `test` (`racing-finish-behind-rival-is-dnf`, `resource.state.completedLaps` /
+  `resource.state.rescues`), twice. `TN_GOLDEN_PATH_TEMPLATES=racing pnpm verify:golden-path`
+  alone exits 0, so the racing fault is sequence/load dependent and unrelated to this contract.
+- `pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts
+  scripts/__tests__/verify-golden-path.spec.ts packages/create-threenative/__tests__/config.spec.ts`
+  passes: 3 files, 122 tests.
+- Recent develop CI (run 35942841524) shows `template-nonvisual (action-rpg, 1/1)` success and
+  `golden-path-template (starter|platformer)` success; its red lanes are racing/puzzle scenario
+  assertions under `template-nonvisual`, not the packed action-rpg path.
 
 ## Checkpoint Protocol
 
