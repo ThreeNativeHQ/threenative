@@ -103,6 +103,13 @@ reopen trigger; also repair the stale `production-readiness/` pointer for PRD-05
 `docs/PRDs/BLOCKED/README.md` — EDIT: each blocked PRD carries its tier and unlock
 condition.
 
+**Progress (added by PRD-445 Phase 3; the phase's boxes were never written):**
+
+- [ ] `docs/strategy/ROADMAP.md` carries the Tier 1/Tier 2 rows, the reopen trigger, and the corrected PRD-057…060 pointer
+- [ ] `docs/strategy/CONFLICTS.md` carries row 9, the device-matrix tension
+- [ ] `docs/PRDs/BLOCKED/README.md` names each blocked PRD's tier and unlock condition
+- [ ] Observed: no document claims mobile readiness
+
 **Why it is not a charter edit:** the mobile promise is *staged*, not deleted. `CONFLICTS.md`
 is the file this repo already uses for a strategy/charter tension, so the tension is recorded
 rather than resolved by an unauthorised amendment.
@@ -120,6 +127,13 @@ has to go green.
 **Negative control:** with the fix live, drop one of the two pointers before dispatch — the row
 must go red, not merely stop moving the player.
 
+**Progress (added by PRD-445 Phase 3):**
+
+- [ ] Root cause of the red `90-multitouch-input` row written down before any change
+- [ ] Simultaneous stick-and-jump moves the player in the browser build
+- [ ] Negative control observed red (one pointer dropped → row red)
+- [ ] Evidence record written: `docs/verification/tier-1-<date>.md`
+
 ### Phase 2 — the desktop overlay renders, and desktop multitouch stops being a silent blank
 
 **Files (≤4):** `conformance/overlay-anchor.mjs`, `conformance/scenes/shared/camera-parented-overlay.js`,
@@ -134,6 +148,13 @@ Two outcomes, both acceptable, neither silent:
    the thing this phase deletes.**
 
 **Negative control:** an excluded row claimed as a pass must make the runner exit non-zero.
+
+**Progress (added by PRD-445 Phase 3):**
+
+- [ ] `25-camera-parented-overlay` green with the GPU validation errors resolved, **or** desktop multitouch recorded in `registry.json`'s `exclusions[]` with owner and reason
+- [ ] No row left as a silent `blocked`
+- [ ] Negative control observed red (excluded row claimed as pass → non-zero exit)
+- [ ] Evidence record written
 
 ### Phase 3 — the Android matrix produces a real number for the first time
 
@@ -153,6 +174,14 @@ or explicitly is not.
 **Negative control:** with no AVD online the runner must report `TN_PARITY_ANDROID_DEVICE_BLOCKED`
 and exit non-zero — never 67 silent passes, never a skipped target counted as green.
 
+**Progress (added by PRD-445 Phase 3):**
+
+- [ ] `pnpm parity` reports Android executed: a real pass/fail split over 67 rows from a booted emulator
+- [ ] `run-conformance.mjs` fails with the AVD name it looked for
+- [ ] Negative control observed red (no AVD → `TN_PARITY_ANDROID_DEVICE_BLOCKED`, non-zero exit)
+- [ ] PRD-055 criterion 2 closed here, or explicitly not
+- [ ] Evidence record written
+
 ### Phase 4 — the unmodified platformer holds its budget on web and is not slower natively
 
 This is **PRD-058 Phase 5, executed unchanged** — same files, same gates, same budgets. It is
@@ -168,6 +197,14 @@ path → `TN_PROD_PERFORMANCE_BUDGET`; slow only the native arm → parity failu
 resolved process and artifact identities; delay the first non-blank frame → `TN_PROD_STARTUP_BUDGET`.
 The identity check is what stops the parity gate comparing the browser against itself.
 
+**Progress (added by PRD-445 Phase 3):**
+
+- [ ] The scaffolded platformer holds web desktop ≥ 60.0 fps mean and p99 ≤ 33.0 ms at 1920×1080
+- [ ] Native desktop is no slower than web on mean/p50/p95/p99 on one identified host
+- [ ] Cold start p95 ≤ 5,000 ms over five independent launches
+- [ ] All three negative controls observed red, with exit codes recorded
+- [ ] Evidence record written
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:
@@ -176,6 +213,12 @@ beta-bar rows 4 and 5 state the measured outcome and cite this ledger.
 The ledger records per-target pass/fail/blocked counts, every negative control observed red,
 the gates table (`pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm budgets` as actually run),
 and the sentence Tier 1 licenses. **Including "Tier 1 not reached" if that is the result.**
+
+**Progress (added by PRD-445 Phase 3):**
+
+- [ ] `docs/verification/tier-1-<date>.md` written with the per-target counts, negative controls, gates table and the licensing sentence
+- [ ] Its schema test passes
+- [ ] `ROADMAP.md` beta rows 4 and 5 state the measured outcome and cite the ledger
 
 ## 6. Acceptance criteria
 
