@@ -5,6 +5,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { compileAssets } from "@threenative/assets";
+import { writeCompressionSidecars } from "./compress.js";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
@@ -312,6 +313,22 @@ export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): P
     [path.join(packageRoot(cwd, "vite"), "bin/vite.js"), "build", ...viteArgs],
     cwd,
   );
+  const report = await writeCompressionSidecars(path.resolve(cwd, viteOutDir(viteArgs)));
+  if (report !== undefined) {
+    process.stdout.write(
+      `web main chunk ${report.entry}: raw ${report.raw} B, gzip ${report.gzip} B, brotli ${report.brotli} B\n`,
+    );
+  }
+}
+
+/** Vite's `--outDir`, or its `dist` default when the project left it to the config. */
+function viteOutDir(viteArgs: readonly string[]): string {
+  const index = viteArgs.findIndex((arg) => arg === "--outDir" || arg.startsWith("--outDir="));
+  if (index === -1) return "dist";
+  const flag = viteArgs[index] as string;
+  return flag.startsWith("--outDir=")
+    ? flag.slice("--outDir=".length)
+    : (viteArgs[index + 1] ?? "dist");
 }
 
 async function nativeEntry(cwd: string, config?: IResolvedThreeNativeConfig): Promise<string> {
