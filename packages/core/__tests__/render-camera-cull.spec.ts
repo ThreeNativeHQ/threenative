@@ -252,6 +252,55 @@ describe("render camera cull", () => {
     expect(cull.report.culled).toBe(0);
   });
 
+  it("does not rescan a buffer that is rewritten every frame", () => {
+    // A per-frame rewrite used to scan every vertex every frame. The gate cannot know the new
+    // extents without that scan, so once it sees two changes in a row it treats the bound like
+    // `frustumCulled = false` and keeps drawing, rather than paying the scan forever.
+    const dynamic = dynamicMesh([0, 0, 0, 0.001, 0, 0, 0, 0.001, 0], -1_000);
+    const scene = sceneWith(dynamic.mesh);
+    const cull = new RenderCameraCull();
+    const compute = vi.spyOn(dynamic.mesh.geometry, "computeBoundingSphere");
+
+    for (let frame = 0; frame < 40; frame += 1) {
+      dynamic.position[3] = frame + 1;
+      dynamic.attribute.needsUpdate = true;
+      cull.apply(scene, camera(), 720);
+    }
+
+    // One recompute for the first change, then the per-frame rewrite is recognised.
+    expect(compute.mock.calls.length).toBe(1);
+    expect(dynamic.mesh.visible).toBe(true);
+    expect(cull.report.culled).toBe(0);
+    expect(cull.report.exemptDynamicBounds).toBe(1);
+    compute.mockRestore();
+  });
+
+  it("culls a rewritten buffer again once it stops changing", () => {
+    // The dynamic exemption is for a buffer that *is* rewritten every frame. One that settles has a
+    // knowable bound again, and a startup burst of rewrites must not exempt it forever.
+    const dynamic = dynamicMesh([0, 0, 0, 0.001, 0, 0, 0, 0.001, 0], -1_000);
+    const scene = sceneWith(dynamic.mesh);
+    const cull = new RenderCameraCull();
+
+    for (let frame = 0; frame < 5; frame += 1) {
+      dynamic.position[3] = 100 + frame;
+      dynamic.attribute.needsUpdate = true;
+      cull.apply(scene, camera(), 720);
+    }
+    expect(cull.report.exemptDynamicBounds).toBe(1);
+
+    // The last rewrite shrinks it back to a speck, then the buffer stops changing.
+    dynamic.position[3] = 0.001;
+    dynamic.attribute.needsUpdate = true;
+    cull.apply(scene, camera(), 720);
+    cull.apply(scene, camera(), 720);
+
+    expect(cull.report.exemptDynamicBounds).toBe(0);
+    expect(dynamic.mesh.geometry.boundingSphere?.radius).toBeLessThan(1);
+    expect(dynamic.mesh.visible).toBe(false);
+    expect(cull.report.culled).toBe(1);
+  });
+
   it("keeps an object attached to the render camera", () => {
     const cockpit = ball(0.01, -1_000);
     const view = camera();

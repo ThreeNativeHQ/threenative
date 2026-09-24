@@ -1241,7 +1241,12 @@ test("Android capture uses reference dimensions and restores the prior display o
   assert.match(source, /finally \{[\s\S]*?displayRestore/u);
   assert.match(
     source,
-    /androidArgs\(serial, "shell", "wm", "size", displayRestore\)[\s\S]*?allowFailure: true/u,
+    /restoreOnDevice\(tools\.adb, serial, "wm", "size", displayRestore\)/u,
+  );
+  // The restore survives a momentary adbd drop: it waits for the device once and retries.
+  assert.match(
+    source,
+    /function restoreOnDevice[\s\S]*?allowFailure: true[\s\S]*?"wait-for-device"[\s\S]*?return run\(\);/u,
   );
 });
 
