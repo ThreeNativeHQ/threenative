@@ -101,6 +101,7 @@ shorter. Preserve diagnostics when one selected job fails.
 - [x] Observed red recorded, then restored green — run 34651109589 failed the captured-checkout regression (187/188 passed); this run restores it. New shell tests reject a mismatched checkout while accepting a different event SHA.
 - [ ] Verified on a real PR, not only locally
       PARTIAL — the develop ruleset enforces `ci-required`; a real promotion PR and a red verdict are not yet observed (see the 2026-09-13 observations).
+      Updated 2026-09-23: the real promotion PR is now observed — PR #291 (`develop -> main`, head `436ee3053`) ran the full board and `ci-required` correctly rejected it while selected jobs were red (run 35942841524). That is the real-PR promotion path and its red verdict; the green merge is still outstanding and is covered by the phase below.
 
 
 Feature branches start from `develop`; squash their focused PRs into `develop`. Capture a fixed
@@ -173,6 +174,23 @@ Land the enabling workflow changes through the current protected-main flow first
 Update main protection and agent/tool defaults as part of the same cutover. Inventory existing
 open PRs and active worktrees; migrate each deliberately without resetting local work or
 mass-retargeting active PRs. Rollback restores full selection and the previous protected flow.
+
+### 6. Take the unsupported iOS lane out of the merge verdict — 2026-09-23
+
+**Progress:**
+
+- [x] Implemented and wired: the `ios-simulator` job carries `continue-on-error: true`
+      (`.github/workflows/native-platforms.yml`), so a red iOS leg reports its own result without
+      failing the reusable workflow or the `ci-required` verdict. Owner decision 2026-09-23: iOS is
+      not a supported target (`docs/PRDs/production-readiness/README.md`). `native-release.yml`
+      still validates the iOS rows for a release, so release provenance is unchanged.
+- [x] Required test green — `scripts/__tests__/ci-structure.spec.ts` 121 passed (including the new
+      contract that asserts the non-blocking attribute), and `ci-needs.spec.ts` +
+      `ci-efficiency.spec.ts` + `ci-structure.spec.ts` 185 passed across 3 files, run locally
+      2026-09-23.
+- [ ] Verified on a real PR, not only locally — PR #291's hosted run must show `native-platforms`
+      green with the iOS leg red-but-allowed before this is claimed. Only CI can prove the reusable
+      workflow conclusion.
 
 ## Acceptance criteria
 

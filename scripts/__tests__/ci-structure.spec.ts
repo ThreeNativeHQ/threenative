@@ -2109,6 +2109,13 @@ describe("CI pipeline structure", () => {
     // It reports its own red rather than swallowing it, and — since 2026-09-02 — without taking
     // the sibling legs down with it: see "no job cancels its own run".
     expect(android).toContain("Verify captured parity ledger");
+
+    // iOS is not a supported target (owner decision, 2026-09-23), so its simulator lane runs and
+    // reports but cannot fail the reusable workflow — otherwise a red iOS leg holds the
+    // develop->main `ci-required` verdict. `native-release.yml` still gates the iOS rows for a
+    // release, so this only leaves the merge verdict.
+    const ios = requiredJob(native, "ios-simulator");
+    expect(ios).toContain("continue-on-error: true");
   });
 
   it("job-level env never reads the runner context", async () => {

@@ -1839,6 +1839,12 @@ jobs:
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60
+    # Non-blocking since 2026-09-23: iOS is not a supported target (owner decision, see
+    # docs/PRDs/production-readiness/README.md). The lane still runs and reports its own red, but a
+    # red here no longer fails the reusable workflow, so it cannot hold the develop->main
+    # promotion's `ci-required` verdict. `native-release.yml` still validates the iOS rows for a
+    # release, so dropping this from the merge verdict does not weaken release provenance.
+    continue-on-error: true
     # The simulator verifier and the exact no-Xcode consumer handoff passed in isolated run
     # 33498394620 on 2026-09-01, including the worker proof, package telemetry, and consumer
     # physics scenarios. The job is fail-closed: a later regression is visible immediately on
