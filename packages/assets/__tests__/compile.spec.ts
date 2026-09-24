@@ -1129,10 +1129,10 @@ describe("compileAssets and assets.models.compact", () => {
     );
 
     const badMin = {
-      models: { compact: { instance: { min: 0 } } },
+      models: { compact: { instance: { min: 1 } } },
     } as unknown as IAssetSourceConfig;
     await expect(compileAssets({ config: badMin, cwd: root })).rejects.toThrow(
-      /TN_ASSETS_CONFIG_INVALID.*assets\.models\.compact\.instance\.min must be a positive integer/u,
+      /TN_ASSETS_CONFIG_INVALID.*assets\.models\.compact\.instance\.min must be an integer of at least 2/u,
     );
 
     const badNames = {

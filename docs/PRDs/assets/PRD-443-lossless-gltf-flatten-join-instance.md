@@ -147,20 +147,33 @@ so it needs no look-affecting call arguments and carries no gate-2 risk.
   primitives by material, which would have destroyed exactly the shared mesh `instance` batches.
   `flatten`/`join` run with `cleanup: false` so the game-configured `prune` remains the one place
   that removes geometry, and the summary is re-measured after it.
+- **`flatten` is a protected-aware reimplementation, not gltf-transform's own.** Its `flatten()`
+  knows animation targets and skeleton descendants but not a game's protected names, so it
+  reparented a protected pivot's mesh child, left the pivot an empty leaf, and `prune` then deleted
+  it while `join` absorbed the child — a lookup the PRD forbids. The local `flattenProtected`
+  leaves a node in place when it, or any ancestor, is protected, a skin joint or an animation
+  target, or carries a world matrix `T * R * S` cannot represent (moving it would decompose a
+  shear and the self-verify would reject the output).
 - **`instance` has no predicate**, so the protected set is honoured by deep-cloning the mesh onto a
   protected node (`Mesh.clone()` copies accessors by reference, which later leaves quantize's node
-  compensation unapplied — hence a true deep copy). A node whose world matrix is not exactly
-  `T * R * S` (a non-uniformly scaled child of a rotated parent shears) is detached the same way:
-  `instance()` re-expresses the transform from TRS and drifts — measured 0.642% bbox drift on
-  `structures.garrison-camp.glb`, which the pass's own self-verify rejected until the guard landed.
-- **`dedup` makes Midway's repeated meshes visible to `instance`**, so akagi radar and garrison camp
-  now get real `EXT_mesh_gpu_instancing` batches where the CLI-only Phase 0 run reported none.
+  compensation unapplied — hence a true deep copy), and only when instancing is enabled. A node
+  whose world matrix is not exactly `T * R * S` is detached the same way.
+- **`composeTrsMatrix` is `MathUtils.compose`**, not a hand-rolled quaternion: the first cut had the
+  rotation transposed, which broke `isTrsExact` for every rotated node and mis-reconstructed rotated
+  instance batches.
+- **The LOD join rung skips `EXT_mesh_gpu_instancing` nodes**, so `lod.generation.join` cannot
+  collapse the placed copies onto the batch node's transform.
+- **The summary and report name every removed named node**, so a `getObjectByName` the protected set
+  did not cover surfaces as a build-report warning instead of a silent `undefined` at runtime.
+- **`dedup` makes Midway's repeated meshes visible to `instance`**, so akagi, garrison camp and
+  radar station get real `EXT_mesh_gpu_instancing` batches where the CLI-only Phase 0 run reported
+  none (the Midway import script leaves `instance: false` for its unique pre-built hulls).
 
 ## Acceptance Criteria
 
 - [x] AC-1 [local; actor: agent]: Phase 0 measurement table recorded for all 29 shipped Midway GLBs, plus a lossless dry run on `/tmp` copies (never `public/assets/`) showing flatten/join node-and-draw reduction and an `instance` run showing its current applicability — Evidence: measurement tables above, `/tmp/prd443/*.opt.glb`, `*.flat.glb`, `*.inst.glb`, this session's `gltf-transform` output.
 - [x] AC-2 [local; actor: agent]: `@threenative/assets` ships `flatten`/`join`/`instance` passes gated by `assets.models.compact` (default on, named override), computed against one protected-node set (regex ∪ animation targets ∪ skin joints ∪ allow-list) — Evidence: `packages/assets/src/passes/compact.ts` (`compactModel`, `buildProtectedSet`, `resolveCompactOptions`), wired into `modelPass` (`packages/assets/src/passes/model.ts`) and validated in `compile.ts`; `pnpm --filter @threenative/assets typecheck` and `pnpm exec vitest run packages/assets/__tests__/` green (382 passed).
-- [x] AC-3 [local; actor: agent]: Red→green unit test proves a protected node (regex match, animation target, skin joint, and an allow-listed name) survives `join`+`flatten` unmerged while an unprotected duplicate-material node gets merged, and a duplicated mesh across ≥2 nodes gets `EXT_mesh_gpu_instancing` — Evidence: `packages/assets/__tests__/compact-pass.spec.ts` (6 tests): a bare `join()` merges all four siblings and deletes `propeller_01` (red); the pass keeps `propeller_01` (regex) and `MyCustomPivot` (allow-list) while merging the hull pair; three nodes sharing one mesh become one `EXT_mesh_gpu_instancing` batch of 3 with the self-verify's triangles/vertices/bounds unchanged; skin joints/animations preserved by name.
+- [x] AC-3 [local; actor: agent]: Red→green unit test proves a protected node (regex match, animation target, skin joint, and an allow-listed name) survives `join`+`flatten` unmerged while an unprotected duplicate-material node gets merged, and a duplicated mesh across ≥2 nodes gets `EXT_mesh_gpu_instancing` — Evidence: `packages/assets/__tests__/compact-pass.spec.ts` (10 tests): a bare `join()` merges all four siblings and deletes `propeller_01` (red); a bare `flatten()` deletes a protected `VINTThreeNativePivot` and releases its mesh child to `join` (red); the pass keeps `propeller_01` (regex), `MyCustomPivot` (allow-list) and the pivot's child while merging the hull pair; three nodes sharing one mesh become one `EXT_mesh_gpu_instancing` batch of 3 with the self-verify's triangles/vertices/bounds unchanged; a rotated-node batch reconstructs world bounds; a sheared hierarchy compiles without drift; skin joints/animations preserved by name; removed named nodes are reported.
 - [x] AC-4 [local; actor: agent]: Compile report/summary lists per-pass before/after counts and every protected node with its protecting rule; a template `AGENTS.md` entry in `create-threenative` documents `assets.models.compact`'s default and override — Evidence: `IModelCompactSummary` is in `IModelPassOutputEntry` and the manifest, `compactLine()` in `packages/assets/src/report.ts` prints `flatten N -> M nodes, join P -> Q primitive(s), instance …` plus `protected <name> (<rule>)`; all 10 template `AGENTS.md` (and their generated `CLAUDE.md` mirrors) carry the `models.compact` paragraph; `create-threenative`'s config validator and the `@threenative/core` `IThreeNativeModelsConfig` type accept the key, proven by `packages/create-threenative/__tests__/config.spec.ts`.
 - [ ] AC-5 [local; actor: agent]: Midway re-imports `hornet.glb`, `akagi.glb`, `boat.pt59.glb`, `structures.garrison-camp.glb`, `structures.radar-station.glb` through the new passes into a scratch copy; `tools/compare-frames.mjs` (strict defaults) reports pixel-identical frames against the currently shipped assets, and `tools/bench-native.sh` shows the measured node/draw reduction with no frame-time regression — **BLOCKED: Midway is a separate sandbox checkout (`/home/joao/projects/threenative/sandbox/midway-open-pacific`), not part of the engine repository, so its import scripts, frame comparison, native bench and asset replacement cannot ship in this PR.** Engine-side evidence only: the five files plus `aircraft.mitsubishi-a6m3.glb` and `deck-crew.glb` were compacted in place through `modelPass({ compact: <default>, textures: "none", virtual: "none" })`; every self-verify (triangles, vertices, joints, clips, bounds) passed and the measured reduction was akagi 146→39 nodes / 146→39 prims (7 instance batches, 30 instances), boat.pt59 42→20 / 40→20, garrison-camp 26→12 / 26→12 (5 batches, 11 instances), radar-station 9→5 / 9→5, hornet 94→75 / 94→75, a6m3 244→15 nodes / 10→10 prims, deck-crew 67→67 / 1→1 with every joint and clip intact. The frame-identity and frame-time halves remain unrun.
 - [ ] AC-6 [local; actor: agent]: Engine package version bump, tarball packed to `sandbox/.packages` with a content-hash suffix, Midway's `file:` dependency repointed, `pnpm install`, and Midway's existing playtests (`tools/run-handoff.sh`) re-run green against the repointed engine — **BLOCKED: same boundary as AC-5; repointing a sandbox checkout's `file:` dependency is not an engine-repository change and no Midway playtest lane is reachable from this worktree.**
@@ -191,6 +204,7 @@ so it needs no look-affecting call arguments and carries no gate-2 risk.
 - [x] Ship `packages/assets/src/passes/compact.ts`: one protected-node set, flatten/instance/join orchestration via the `@gltf-transform/functions` SDK
 - [x] Wire it into `modelPass` (`assets.models.compact` default on, `false` override) ahead of `prune`, and validate the key in `compile.ts`
 - [x] Extend `reachableStats` for `EXT_mesh_gpu_instancing`, so the self-verify sees instanced geometry as the source saw it
+- [x] Protected-aware flatten, `MathUtils.compose`, LOD-join instancing skip and removed-node reporting after the first Opus 5.5 review returned FAIL
 - [x] Unit tests: red→green protected-node survival, instancing fixture, zero-candidate report, config validation
 - [x] Report + template docs: `compactLine()`, the manifest summary, and the `create-threenative`/`@threenative/core` config key
 **Files:** `packages/assets/src/passes/compact.ts` (new), `packages/assets/src/passes/model.ts`, `packages/assets/src/compile.ts`, `packages/assets/src/report.ts`, `packages/assets/src/index.ts`, `packages/assets/__tests__/compact-pass.spec.ts` (new), `packages/create-threenative/src/config.ts`, `packages/core/src/config.ts`, the 10 template `AGENTS.md` (+ generated mirrors).

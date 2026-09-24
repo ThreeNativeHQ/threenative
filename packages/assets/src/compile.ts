@@ -915,10 +915,10 @@ function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
         raw.instance.min !== undefined &&
         (typeof raw.instance.min !== "number" ||
           !Number.isSafeInteger(raw.instance.min) ||
-          raw.instance.min < 1)
+          raw.instance.min < 2)
       )
         throw new Error(
-          "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance.min must be a positive integer.",
+          "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance.min must be an integer of at least 2.",
         );
       instance = raw.instance.min === undefined ? {} : { min: raw.instance.min };
     } else {

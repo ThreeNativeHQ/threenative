@@ -57,7 +57,9 @@ import {
   composeTrsMatrix,
   countCompactNodes,
   countCompactPrimitives,
+  removedNames,
   resolveCompactOptions,
+  sceneNodeNames,
 } from "./compact.js";
 import {
   type IEmbeddedTextureSummary,
@@ -859,20 +861,24 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Lossless compaction runs before `prune`: `join`/`flatten` leave empty nodes behind for
       // that pass — which the game configures — to remove, and `dedup` has already linked the
       // duplicate meshes `instance` batches.
+      const namesBeforeCompact = compactRequested(options.compact)
+        ? sceneNodeNames(document)
+        : undefined;
       let compact = compactRequested(options.compact)
         ? await compactModel(document, resolveCompactOptions(options.compact))
         : undefined;
       if (enabled.prune) {
         await prune({ keepAttributes: options.preserveLightmapUv === true })(document);
-        // `flatten`/`join` leave empty nodes for this prune to remove; the summary is measured
-        // after it so the reported node count is the one that ships, not an intermediate one.
-        if (compact !== undefined) {
+        // The empty nodes `flatten`/`join` left behind are removed by this prune, so the shipped
+        // node count and the list of names it dropped are both measured after it. `flatten`'s own
+        // before/after stays what flatten itself did, not what prune later finished.
+        if (compact !== undefined && namesBeforeCompact !== undefined) {
           const nodes = countCompactNodes(document);
           compact = {
             ...compact,
-            flatten: { ...compact.flatten, nodesAfter: nodes },
             nodesAfter: nodes,
             primitivesAfter: countCompactPrimitives(document),
+            removed: removedNames(namesBeforeCompact, sceneNodeNames(document)),
           };
         }
       }

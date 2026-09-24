@@ -429,7 +429,11 @@ function compactLine(row: IModelSizeRow): readonly string[] {
     compact.protected.length === 0
       ? ""
       : `; protected ${compact.protected.map((node) => `${node.name} (${node.rule})`).join(", ")}`;
-  return [`compact ${row.logicalPath}: ${parts.join(", ")}${protectedNote}`];
+  const removedNote =
+    (compact.removed?.length ?? 0) === 0
+      ? ""
+      : `; removed named node(s) ${compact.removed.join(", ")} — a getObjectByName on any of these now returns undefined`;
+  return [`compact ${row.logicalPath}: ${parts.join(", ")}${protectedNote}${removedNote}`];
 }
 
 function extensionLabel(row: IModelSizeRow): string {

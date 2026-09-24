@@ -1,11 +1,13 @@
 import {
   type Accessor,
   type Document,
+  MathUtils,
   type Mesh,
   type Node,
   PropertyType,
+  type mat4,
 } from "@gltf-transform/core";
-import { flatten, instance, join } from "@gltf-transform/functions";
+import { clearNodeParent, instance, join } from "@gltf-transform/functions";
 
 /**
  * Lossless scene-graph compaction: `flatten` collapses empty transform chains, `join`
@@ -84,6 +86,12 @@ export interface IModelCompactSummary {
   readonly nodesBefore: number;
   readonly primitivesAfter: number;
   readonly primitivesBefore: number;
+  /**
+   * Named scene nodes that existed before compaction and are gone after it. Empty is the
+   * expected result of a run whose protected set covered every name the game addresses; a
+   * non-empty list is the report's warning that a `getObjectByName` can now return undefined.
+   */
+  readonly removed: readonly string[];
   /** Every node kept out of compaction, with the rule that protected it, sorted by name. */
   readonly protected: readonly IModelProtectedNode[];
 }
@@ -132,6 +140,20 @@ export function countCompactNodes(document: Document): number {
 /** Scene-reachable primitive count, likewise measured after `prune`. */
 export function countCompactPrimitives(document: Document): number {
   return countPrimitives(sceneNodes(document.getRoot()));
+}
+
+/** Sorted names of every named scene-reachable node, for reporting what compaction removed. */
+export function sceneNodeNames(document: Document): string[] {
+  return sceneNodes(document.getRoot())
+    .map((node) => node.getName())
+    .filter((name) => name !== "")
+    .sort();
+}
+
+/** Names present in `before` and missing from `after`, sorted. */
+export function removedNames(before: readonly string[], after: readonly string[]): string[] {
+  const present = new Set(after);
+  return before.filter((name) => !present.has(name)).sort();
 }
 
 /**
@@ -254,48 +276,68 @@ export function composeTrsMatrix(
   rotation: readonly number[],
   scale: readonly number[],
 ): number[] {
-  const [tx = 0, ty = 0, tz = 0] = translation;
-  const [qx = 0, qy = 0, qz = 0, qw = 1] = rotation;
-  const [sx = 1, sy = 1, sz = 1] = scale;
-  const x2 = qx + qx;
-  const y2 = qy + qy;
-  const z2 = qz + qz;
-  const xx = qx * x2;
-  const xy = qx * y2;
-  const xz = qx * z2;
-  const yy = qy * y2;
-  const yz = qy * z2;
-  const zz = qz * z2;
-  const wx = qw * x2;
-  const wy = qw * y2;
-  const wz = qw * z2;
-  const m00 = 1 - (yy + zz);
-  const m01 = xy + wz;
-  const m02 = xz - wy;
-  const m10 = xy - wz;
-  const m11 = 1 - (xx + zz);
-  const m12 = yz + wx;
-  const m20 = xz + wy;
-  const m21 = yz - wx;
-  const m22 = 1 - (xx + yy);
-  return [
-    m00 * sx,
-    m10 * sx,
-    m20 * sx,
-    0,
-    m01 * sy,
-    m11 * sy,
-    m21 * sy,
-    0,
-    m02 * sz,
-    m12 * sz,
-    m22 * sz,
-    0,
-    tx,
-    ty,
-    tz,
-    1,
-  ];
+  const out = new Float32Array(16);
+  const tx = translation[0] ?? 0;
+  const ty = translation[1] ?? 0;
+  const tz = translation[2] ?? 0;
+  const qx = rotation[0] ?? 0;
+  const qy = rotation[1] ?? 0;
+  const qz = rotation[2] ?? 0;
+  const qw = rotation[3] ?? 1;
+  const sx = scale[0] ?? 1;
+  const sy = scale[1] ?? 1;
+  const sz = scale[2] ?? 1;
+  MathUtils.compose(
+    [tx, ty, tz] as unknown as Parameters<typeof MathUtils.compose>[0],
+    [qx, qy, qz, qw] as unknown as Parameters<typeof MathUtils.compose>[1],
+    [sx, sy, sz] as unknown as Parameters<typeof MathUtils.compose>[2],
+    out as unknown as mat4,
+  );
+  return Array.from(out);
+}
+
+/**
+ * A protected-aware `flatten`: reparents every node that is safe to move up to its scene root,
+ * and leaves the rest where the game expects them.
+ *
+ * gltf-transform's own `flatten()` skips animation targets and skeleton descendants but knows
+ * nothing about a game's protected names. Without this, a protected pivot's mesh child is
+ * reparented first, the pivot becomes an empty leaf and `prune` deletes it, and `join` merges
+ * the child into the hull — the exact lookup the PRD forbids. A node is left in place when it,
+ * or any ancestor, is protected, a skin joint, an animation target, or carries a world matrix
+ * that `T * R * S` cannot represent (moving it would decompose a shear and drift).
+ */
+function flattenProtected(document: Document, protectedNodes: ReadonlyMap<Node, unknown>): void {
+  const root = document.getRoot();
+  const keepInPlace = new Set<Node>(protectedNodes.keys());
+  for (const skin of root.listSkins()) {
+    for (const joint of skin.listJoints()) keepInPlace.add(joint);
+  }
+  for (const animation of root.listAnimations()) {
+    for (const channel of animation.listChannels()) {
+      const target = channel.getTargetNode();
+      // A weights channel targets a mesh, not a transform; gltf-transform keeps it too.
+      if (target !== null && channel.getTargetPath() !== "weights") keepInPlace.add(target);
+    }
+  }
+  for (const scene of root.listScenes()) {
+    scene.traverse((node) => {
+      if (keepInPlace.has(node)) return;
+      const parent = node.getParentNode();
+      if (parent !== null && (keepInPlace.has(parent) || !isTrsExact(parent))) {
+        keepInPlace.add(node);
+        return;
+      }
+      if (!isTrsExact(node)) keepInPlace.add(node);
+    });
+  }
+  // Top-down, so a parent's reparent does not strand a child that is staying put.
+  for (const scene of root.listScenes()) {
+    scene.traverse((node) => {
+      if (keepInPlace.has(node)) return;
+      clearNodeParent(node);
+    });
+  }
 }
 
 /**
@@ -348,6 +390,7 @@ export async function compactModel(
   options: IModelCompactOptions = {},
 ): Promise<IModelCompactSummary> {
   const root = document.getRoot();
+  const namesBefore = sceneNodeNames(document);
   const nodesBefore = sceneNodes(root).length;
   const primitivesBefore = countPrimitives(sceneNodes(root));
   const { nodes: protectedNodes, summary: protectedSummary } = buildProtectedSet(document, options);
@@ -365,11 +408,13 @@ export async function compactModel(
   // `instance` batch needs, and `flatten` gathers the siblings that make `join` effective.
   let nodesAfterFlatten = nodesBefore;
   if (flattenEnabled) {
-    await flatten({ cleanup: false })(document);
+    flattenProtected(document, protectedNodes);
     nodesAfterFlatten = sceneNodes(root).length;
   }
 
-  detachProtectedMeshes(document, protectedNodes);
+  // The mesh detach exists only to keep a node out of an `instance` batch; with instancing off
+  // it would clone meshes for no draw reduction.
+  if (instanceEnabled) detachProtectedMeshes(document, protectedNodes);
 
   let instanceSummary: IModelCompactSummary["instance"] = {
     batches: 0,
@@ -419,6 +464,7 @@ export async function compactModel(
     nodesBefore,
     primitivesAfter: primitivesAfterJoin,
     primitivesBefore,
+    removed: removedNames(namesBefore, sceneNodeNames(document)),
     protected: protectedSummary,
   };
   return summary;
@@ -465,7 +511,9 @@ export function resolveCompactOptions(
   return {
     flatten: options.flatten !== false,
     instance:
-      instance === false ? false : { min: typeof instance === "object" ? (instance.min ?? 2) : 2 },
+      instance === false
+        ? false
+        : { min: Math.max(2, typeof instance === "object" ? (instance.min ?? 2) : 2) },
     join: options.join !== false,
     protectedNames: options.protectedNames ?? [],
     protectedPattern: options.protectedPattern ?? DEFAULT_PROTECTED_PATTERN,

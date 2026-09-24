@@ -1,6 +1,6 @@
 import { Document, type Material, type Mesh, type Node, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { join } from "@gltf-transform/functions";
+import { flatten, join } from "@gltf-transform/functions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { describe, expect, it } from "vitest";
 import {
@@ -247,6 +247,122 @@ describe("model compaction", () => {
     const compact = result.entry?.compact as IModelCompactSummary | undefined;
     expect(compact?.instance.batches).toBe(0);
     expect(compact?.instance.reason).toMatch(/shared/u);
+  });
+
+  it("keeps a protected pivot in place so its mesh child is not reparented and merged", async () => {
+    const build = (): Document => {
+      const document = new Document();
+      const buffer = document.createBuffer("fixture");
+      const material = document.createMaterial("hull").setBaseColorFactor([0.5, 0.5, 0.5, 1]);
+      const scene = document.createScene("Scene");
+      const pivot = document.createNode("VINTThreeNativePivot");
+      const blade = document
+        .createNode("blade")
+        .setMesh(triangleMesh(document, buffer, material, "blade", 5))
+        .setTranslation([0, 0.5, 0]);
+      pivot.addChild(blade);
+      scene.addChild(
+        document
+          .createNode("hull_01")
+          .setMesh(triangleMesh(document, buffer, material, "hull-a", 1)),
+      );
+      scene.addChild(
+        document
+          .createNode("hull_02")
+          .setMesh(triangleMesh(document, buffer, material, "hull-b", 2))
+          .setTranslation([2, 0, 0]),
+      );
+      scene.addChild(pivot);
+      return document;
+    };
+
+    // Red: the bare library reparents the blade out of the pivot, leaves the pivot an empty leaf
+    // and prunes it, then join absorbs the blade into the hull.
+    const naive = build();
+    await flatten()(naive);
+    expect(nodeNamed(naive.getRoot(), "VINTThreeNativePivot")).toBeUndefined();
+
+    // Green: the protected pivot keeps its child, and the child is never a join sibling.
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+      Buffer.from(await toGlb(build())),
+      "pivot.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const pivot = nodeNamed(output, "VINTThreeNativePivot");
+    const blade = nodeNamed(output, "blade");
+    expect(pivot).toBeDefined();
+    expect(blade).toBeDefined();
+    expect(blade?.getParentNode()?.getName()).toBe("VINTThreeNativePivot");
+  });
+
+  it("instances rotated nodes and reconstructs their world bounds", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("crate").setBaseColorFactor([0.2, 0.6, 0.3, 1]);
+    const scene = document.createScene("Scene");
+    const mesh = triangleMesh(document, buffer, material, "crate");
+    // 90 degrees about Y, glTF quaternion order (x, y, z, w).
+    const yaw: [number, number, number, number] = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+    for (let index = 0; index < 3; index += 1) {
+      scene.addChild(
+        document
+          .createNode(`crate_${String(index)}`)
+          .setMesh(mesh)
+          .setRotation(yaw)
+          .setTranslation([index * 3, 0, 0]),
+      );
+    }
+    const input = Buffer.from(await toGlb(document));
+    const source = reachableStats(await readVerified(input));
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(input, "rot.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const metadata = result.entry?.compact as IModelCompactSummary | undefined;
+    expect(metadata?.instance.batches).toBe(1);
+    expect(metadata?.instance.instances).toBe(3);
+    const after = reachableStats(output);
+    for (const axis of [0, 1, 2]) {
+      expect(after.boundingBox?.min[axis] ?? 0).toBeCloseTo(source.boundingBox?.min[axis] ?? 0, 4);
+      expect(after.boundingBox?.max[axis] ?? 0).toBeCloseTo(source.boundingBox?.max[axis] ?? 0, 4);
+    }
+  });
+
+  it("builds a sheared hierarchy without drift instead of failing", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("shell").setBaseColorFactor([0.4, 0.4, 0.9, 1]);
+    const scene = document.createScene("Scene");
+    // A non-uniformly scaled, rotated parent shears its child's world matrix; neither may be
+    // reparented, or the shear is decomposed and the self-verify rejects the output.
+    const root = document
+      .createNode("root")
+      .setScale([2, 1, 1])
+      .setRotation([0, 0, Math.SQRT1_2, Math.SQRT1_2] as [number, number, number, number]);
+    const arm = document
+      .createNode("arm")
+      .setMesh(triangleMesh(document, buffer, material, "arm"))
+      .setRotation([0, Math.SQRT1_2, 0, Math.SQRT1_2] as [number, number, number, number])
+      .setTranslation([1, 0, 0]);
+    root.addChild(arm);
+    scene.addChild(root);
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+      Buffer.from(await toGlb(document)),
+      "shear.glb",
+    );
+    expect(Buffer.isBuffer(result)).toBe(false);
+  });
+
+  it("reports every named node compaction removed", async () => {
+    const result = await modelPass({
+      compact: { protectedNames: ["MyCustomPivot"] },
+      textures: "none",
+      virtual: "none",
+    }).apply(Buffer.from(await toGlb(buildJoinFixture())), "join-fixture.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const metadata = result.entry?.compact as IModelCompactSummary | undefined;
+    // The hull pair is merged into one node, so the other hull node's name is gone.
+    expect(metadata?.removed).toEqual(["hull_02"]);
   });
 
   it("ships the buffer untouched when compact and the geometry passes are all off", async () => {

@@ -209,6 +209,7 @@ describe("formatModelSizes compaction reporting", () => {
           nodesBefore: 146,
           primitivesAfter: 20,
           primitivesBefore: 40,
+          removed: [],
           protected: [
             { name: "propeller_01", rule: "regex" },
             { name: "Head", rule: "skin-joint" },
