@@ -368,19 +368,23 @@ census test fails, and `pnpm publish:check` refuses the tree.
 
 **Implementation:**
 
-- [ ] `doctor` step: `npx threenative doctor` in the scaffolded project; non-zero fails the gate.
-- [ ] `native` step: `npm run build:desktop`; assert the output path exists and is executable.
-- [ ] `mcp` step: for every server in the project's `.mcp.json`, spawn the command and assert a
+- [x] `doctor` step: `npx threenative doctor` in the scaffolded project; non-zero fails the gate.
+      — `scripts/verify-registry-install.ts:840,858` (`doctor --text` step).
+- [x] `native` step: `npm run build:desktop`; assert the output path exists and is executable.
+      — `scripts/verify-registry-install.ts:566` (`nativeOutput`) and the native step; spec `:296` ("fails when the native build produces no executable").
+- [x] `mcp` step: for every server in the project's `.mcp.json`, spawn the command and assert a
       valid `initialize` result on stdout within a timeout — including
       `threenative-engine`, whose `engine_search_capabilities` must return at least one hit for a
-      plain-words query.
-- [ ] Fail closed: a step that did not run is a failure, matching the file's existing contract.
+      plain-words query. — `scripts/verify-registry-install.ts:625` (`mcpStep`), `:950`; engine search at `:702`; spec `:344` ("fails when an MCP server never answers initialize").
+- [x] Fail closed: a step that did not run is a failure, matching the file's existing contract.
+      — `scripts/verify-registry-install.ts:558` (`step`); spec `:391` ("does not report a pass for a step that did not run").
 
 **Wiring:**
 
-- [ ] Caller edited: `.github/workflows/npm-release.yml` clean-room job.
-- [ ] Old path: the four-step flow is extended, not duplicated.
-- [ ] Ledger rows filled: #6.
+- [x] Caller edited: `.github/workflows/npm-release.yml` clean-room job.
+      — `npm-release.yml:209` runs `pnpm tsx scripts/verify-registry-install.ts` in the `clean-room` job (`:162`).
+- [x] Old path: the four-step flow is extended, not duplicated.
+- [x] Ledger rows filled: #6. — the doctor/native/mcp steps have non-test callers in the runner.
 
 **Tests Required:**
 
