@@ -15,9 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
-      - name: Require the inspected candidate
-        run: test "$(git rev-parse HEAD^)" = 0f6429b3454a7d1cf9009591669b3d425f55fcd7
+          fetch-depth: 0
+      - name: Reconcile only the inspected base and generated-hash conflict
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 9eeee3c3fc7bae8520c3b4a124aecdc068727f9d
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin develop
+          test "$(git rev-parse origin/develop)" = 75ad5b7d41f4fba32f562668bd27af29939a8b52
+          if ! git merge --no-commit --no-ff origin/develop; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            test "$conflicts" = packages/create-threenative/__tests__/scaffold.spec.ts
+            git checkout --ours -- packages/create-threenative/__tests__/scaffold.spec.ts
+            git add packages/create-threenative/__tests__/scaffold.spec.ts
+          fi
+          if git rev-parse --verify MERGE_HEAD >/dev/null 2>&1; then
+            git commit -m 'Merge current develop before regenerating PRD-443 scaffold expectations'
+          fi
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -38,7 +54,7 @@ jobs:
           pnpm exec biome format --write packages/assets/src/passes/compact.ts
           pnpm exec biome check . --diagnostic-level=error --max-diagnostics=100 2>&1 | tee "$RUNNER_TEMP/pr297-diagnostics/lint-after.log"
           git diff -- packages/assets/src/passes/compact.ts > "$RUNNER_TEMP/pr297-diagnostics/format.patch"
-      - name: Measure the actual clean-checkout scaffold hashes without changing assertions
+      - name: Measure real scaffold output without removing assertions
         shell: bash
         run: |
           set -euo pipefail
@@ -60,7 +76,7 @@ jobs:
           echo "$result" > "$RUNNER_TEMP/pr297-diagnostics/scaffold-before.status"
           test -s "$RUNNER_TEMP/pr297-measured-hashes.json"
           cp "$RUNNER_TEMP/pr297-measured-hashes.json" "$RUNNER_TEMP/pr297-diagnostics/measured-hashes.json"
-      - name: Repin exactly the existing ten generated expectations
+      - name: Repin exactly the existing ten generated expectations and verify
         shell: bash
         run: |
           set -euo pipefail
@@ -83,22 +99,21 @@ jobs:
           PY
           pnpm exec biome format --write packages/create-threenative/__tests__/scaffold.spec.ts
           pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts 2>&1 | tee "$RUNNER_TEMP/pr297-diagnostics/scaffold-after.log"
-          pnpm exec vitest run packages/assets/__tests__/compact.spec.ts packages/create-threenative/__tests__/config.spec.ts 2>&1 | tee "$RUNNER_TEMP/pr297-diagnostics/focused.log"
+          pnpm exec vitest run packages/assets/__tests__/ packages/create-threenative/__tests__/config.spec.ts 2>&1 | tee "$RUNNER_TEMP/pr297-diagnostics/focused.log"
           pnpm typecheck 2>&1 | tee "$RUNNER_TEMP/pr297-diagnostics/typecheck.log"
           pnpm quality 2>&1 | tee "$RUNNER_TEMP/pr297-diagnostics/quality.log"
           pnpm exec biome check . --diagnostic-level=error --max-diagnostics=100 2>&1 | tee "$RUNNER_TEMP/pr297-diagnostics/lint-final.log"
           git diff --check
-      - name: Commit only the two verified corrections without rewriting history
+      - name: Push only the reconciled base and two verified corrections
         shell: bash
         run: |
           set -euo pipefail
           test "$(git ls-remote origin refs/heads/feat/prd-443-compact | cut -f1)" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/develop | cut -f1)" = 75ad5b7d41f4fba32f562668bd27af29939a8b52
           git add packages/assets/src/passes/compact.ts packages/create-threenative/__tests__/scaffold.spec.ts
           git diff --cached --stat
           git diff --cached > "$RUNNER_TEMP/pr297-diagnostics/correction.patch"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(prd-443): format typed matrices and regenerate verified scaffold hashes' -m 'Use the pinned formatter and ten hashes measured by createProject from this built clean checkout. Scaffold and focused regression tests, typecheck, quality and final formatting passed. No acceptance criteria or test gates weakened. PRD-443 remains partial.'
+          git commit -m 'fix(prd-443): format typed matrices and regenerate verified scaffold hashes' -m 'Use the pinned formatter and ten hashes measured by createProject from the combined clean checkout. Scaffold and asset/config regression tests, typecheck, quality and final formatting passed. No assertions or acceptance gates waived. PRD-443 remains partial.'
           git push origin HEAD:refs/heads/feat/prd-443-compact
           git rev-parse HEAD > "$RUNNER_TEMP/pr297-diagnostics/correction-commit.txt"
       - uses: actions/upload-artifact@v7
