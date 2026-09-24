@@ -1296,11 +1296,15 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
           security default-keychain -s "$keychain"
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          security find-identity -v -p codesigning "$keychain" | tee "$RUNNER_TEMP/tn-signing-identity.txt"
-          grep -q 'ThreeNative CI Signing Proof' "$RUNNER_TEMP/tn-signing-identity.txt" || {
+          # A throwaway self-signed certificate is never trusted, so `find-identity -v` (valid only)
+          # lists nothing; codesign still signs with an untrusted identity named by its SHA-1 hash.
+          security find-identity -p codesigning "$keychain" | tee "$RUNNER_TEMP/tn-signing-identity.txt"
+          identity_hash="$(grep 'ThreeNative CI Signing Proof' "$RUNNER_TEMP/tn-signing-identity.txt" | head -1 | awk '{print $2}')"
+          if [ -z "$identity_hash" ]; then
             echo "TN_DESKTOP_SIGNING_PROOF: the generated certificate is not a usable codesigning identity." >&2
             exit 1
-          }
+          fi
+          echo "TN_SIGNING_PROOF_IDENTITY=$identity_hash" >> "$GITHUB_ENV"
       # The container records every DLL the executable imports so it can be relocated, and
       # `desktop-distribution.mjs` reads them with `dumpbin`, which lives only inside the Visual
       # Studio developer environment. Enter it here rather than exporting it through GITHUB_ENV,
@@ -1327,7 +1331,7 @@ jobs:
           # The test credential created above, exactly as the Windows leg passes its own subject:
           # this proves the release build signs with a developer identity rather than ad-hoc, while
           # Developer ID trust, notarization and Gatekeeper acceptance stay PENDING.
-          THREENATIVE_DESKTOP_CODESIGN_IDENTITY='ThreeNative CI Signing Proof' \
+          THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY" \
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-macos/mystral" \
             pnpm --dir "$target" exec threenative build --target desktop --mode release
       - name: Relocate and extract the release container outside the project

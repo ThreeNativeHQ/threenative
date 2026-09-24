@@ -2589,7 +2589,7 @@ describe("CI pipeline structure", () => {
     expect(desktop).toContain("Create a self-signed code-signing certificate for the macOS proof");
     expect(desktop).toContain("THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof");
     expect(desktop).toContain(
-      "THREENATIVE_DESKTOP_CODESIGN_IDENTITY='ThreeNative CI Signing Proof'",
+      'THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY"',
     );
     expect(desktop).toContain("Get-AuthenticodeSignature");
     expect(desktop).toContain("codesign --verify --strict --deep");
