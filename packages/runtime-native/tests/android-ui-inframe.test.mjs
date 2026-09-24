@@ -47,7 +47,7 @@ test('native turns the published frame into the UiOverlayFrame seam on Android',
   // source channel order; Android routes to it from `uiOverlayFrame`.
   assert.match(platform, /bool takeAndroidUiOverlayFrame\(UiOverlayFrame& frame\)/u);
   assert.match(platform, /frame\.isRgba = g_androidFrameRgba\.load/u);
-  assert.match(platform, /#elif defined\(__ANDROID__\)\n    return takeAndroidUiOverlayFrame\(frame\);/u);
+  assert.match(platform, /#elif defined\(__ANDROID__\)\n {4}return takeAndroidUiOverlayFrame\(frame\);/u);
 });
 
 test('the composite picks the texture format from the source channel order', () => {
