@@ -9,6 +9,7 @@ import {
   PropertyType,
   type mat4,
 } from "@gltf-transform/core";
+import type { InstancedMesh } from "@gltf-transform/extensions";
 import { clearNodeParent, instance, join, listNodeScenes } from "@gltf-transform/functions";
 
 /**
@@ -98,18 +99,10 @@ export interface IModelCompactSummary {
   readonly protected: readonly IModelProtectedNode[];
 }
 
-/** Structural view of gltf-transform's `EXT_mesh_gpu_instancing` batch property. */
-interface IInstanceBatch {
-  getAttribute(semantic: string): Accessor | null;
-  listSemantics(): string[];
-}
-
 const EXT_MESH_GPU_INSTANCING = "EXT_mesh_gpu_instancing";
 
-function asBatch(node: Node): IInstanceBatch | null {
-  const batch = node.getExtension(EXT_MESH_GPU_INSTANCING);
-  if (batch === null) return null;
-  return batch as unknown as IInstanceBatch;
+function asBatch(node: Node): InstancedMesh | null {
+  return node.getExtension<InstancedMesh>(EXT_MESH_GPU_INSTANCING);
 }
 
 function sceneNodes(root: ReturnType<Document["getRoot"]>): Node[] {
@@ -460,7 +453,7 @@ function deepCloneMesh(document: Document, mesh: Mesh): Mesh {
   return clone;
 }
 
-function instanceCount(batch: IInstanceBatch): number {
+function instanceCount(batch: InstancedMesh): number {
   for (const semantic of batch.listSemantics()) {
     const attribute = batch.getAttribute(semantic);
     if (attribute !== null) return attribute.getCount();
