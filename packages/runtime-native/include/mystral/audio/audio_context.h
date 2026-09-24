@@ -241,7 +241,6 @@ public:
     AudioVector3 listenerRight() const;
 
     // Decode audio data (async in browser, sync here for simplicity)
-    std::shared_ptr<AudioBuffer> decodeAudioDataSync(const uint8_t* data, size_t length);
 
     // Lifecycle
     void resume();

@@ -357,8 +357,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // this branch's binding-sampler Three.js patch bytes land in the same scaffold trees, so neither
   // side's values alone describe the merged tree; all ten were re-measured from the merged
   // checkout's Received block and no template source changed.
-  "action-rpg": "3e34fb04584801d9a15585d3e622e616e07f2a6e5810b0122a97779d1cf53aa3",
-  defense: "087196eb4711f126ba4a2b70833e0af2cf4a27d36b9c604f19518318192c9e5f",
+  // Recomputed 2026-09-24 for PRD-442: every template's AGENTS.md gained the world-matrix walk
+  // paragraph, `pnpm sync:agents` carried it into each CLAUDE.md mirror, and the generated
+  // capability manifest and reference gained the `renderer.matrixWorld` entry — all bytes copied
+  // into every scaffold, so all ten trees move together and no other template source changed.
+  "action-rpg": "e4fd4b9a0b98b050a927685c25ec4371323cb284eadd2a810ab9cdd85486f282",
+  defense: "25120cc144c2085c03d28af6f606d05ac44dd28f589a1ee8af95ddf698bfd272",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -366,17 +370,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "59fb201ae33cccef70061408943773ce51e0b86d115a35e818b52870e8f4e649",
-  platformer: "621c38c013c95fab3f383bc612d65b555b8bf3cefdb71bda40245bf4eae4cc16",
-  runner: "69fb41ae1c3e8b09afa981dc8c5b477bd7c26b67b58175c277338559e5f48ea4",
-  puzzle: "aa71c8165fbfe0316afaa79da27627a0f5720ed72ec9163324ab35747b9dafc7",
-  racing: "ebe4f36245b47fbdd8b61228623608c4aa68d3b324281b8372d3d1210694892f",
-  shooter: "f80148ccefa1164b4741a51ddbbe101690dcbe3343b91a9008adbee55b05b47b",
+  minimal: "2fab15b9a690d7bf094de85e85915f4ec9faa6a89b03c9ec43794bece804d9d8",
+  platformer: "8cffd8c6d9421f1e981be2bbec4bc4cc80ae9366e42c1712eb3b59e591c9e763",
+  runner: "bd7f55ef05087f27d80be4ff06d4ce6e6beca7090a44a0b549896d301c6e48de",
+  puzzle: "a5a424c6fb4278c141329e0f8987119a7fd746599d5f2352b2a0aef327613b33",
+  racing: "c1088376b58e25d14b50b51f02fb67359e0cb94922ec87bcd4b7429412ed6a85",
+  shooter: "24000de977d03ed37e2d01d11aa1abc9e582fe249f3076495ccff5b8c0e2b40f",
   // Recomputed 2026-09-12 for PRD-366: the starter ships a new
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  starter: "65a59a1f4dcd0306a4845dd9ae3c480c482e9def0850a2f62d4210ea7ba5d702",
+  starter: "07de52e77a1308c3592db430a44022e5b30f9b7f381641c6639699c57b182665",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -402,7 +406,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "40538cb1e22d692c3fd87e5d31330d19736fbec1799f287a26e7bdd1f7c3ada6",
+  sailing: "95641afeb6435e39cd07b175179c5f8fe9df87453d709de5146b25c46e32585c",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

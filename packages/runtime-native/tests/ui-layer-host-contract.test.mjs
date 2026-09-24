@@ -260,6 +260,8 @@ test.skipIf(process.platform !== 'linux')('UI gestures finish outside the window
   const executable = join(directory, 'pointer');
   writeFileSync(path, `
 #include <cassert>
+#include <cstddef>
+#include <iostream>
 #include <string>
 struct { void* sdlWindow = reinterpret_cast<void*>(1); } g_window;
 void SDL_GetWindowSize(void*, int* width, int* height) { *width = 100; *height = 100; }
@@ -274,6 +276,8 @@ void resetUiOverlayKeyboard() {}
 std::string delivered;
 bool uiOverlayHitTest(float x, float y) { return x >= 0.1f && x <= 0.3f && y >= 0.1f && y <= 0.3f; }
 bool uiOverlayInjectPointer(const char* type, float, float, int, int) { delivered = type; return true; }
+void traceUiLatency(const char*, unsigned long long, const char*) {}
+size_t uiOverlayHitRegionCount() { return 0; }
 ${extract(overlay, /struct UiPointerGesture \{[\s\S]*?\n\};\nUiPointerGesture g_uiGesture;/u)}
 ${extract(overlay, /bool uiOverlayRoutePointer\([\s\S]*?\n\}/u)}
 ${extract(overlay, /void detachDesktopUiOverlay\(\) \{[\s\S]*?\n\}/u)}
@@ -286,7 +290,10 @@ int main() {
   event.type = SDL_EVENT_MOUSE_BUTTON_UP; event.button = {-10, 20}; g_domButtons = 0;
   assert(routePointerToUi(event));
   assert(!g_uiGesture.uiOwned && !g_uiGesture.gameOwned);
+  delivered.clear();
+  // A move outside every UI island still reaches the page (hover) but stays the game's.
   assert(!uiOverlayRoutePointer("pointermove", 0.8f, 0.8f, 0, 1));
+  assert(delivered == "pointermove");
   assert(uiOverlayRoutePointer("pointerdown", 0.2f, 0.2f, 1, 1));
   assert(uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1));
   assert(delivered == "pointercancel");

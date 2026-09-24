@@ -114,6 +114,9 @@ void setUiHitRegions(const std::vector<float>& regions);
  */
 bool uiOverlayHitTest(float nx, float ny);
 
+/** How many interactive rectangles the page last published, for the OS press verdict line. */
+size_t uiOverlayHitRegionCount();
+
 /**
  * Dispatch one synthetic pointer event into the page, at a point normalized to the viewport.
  *

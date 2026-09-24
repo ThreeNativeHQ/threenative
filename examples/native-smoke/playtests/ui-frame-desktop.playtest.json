@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "name": "native-smoke-ui-frame-desktop",
+  "target": "desktop",
+  "subject": "smoke",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "steps": [
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    { "waitTicks": 1 },
+    {
+      "label": "ui-ready",
+      "waitTicks": 600
+    },
+    {
+      "label": "game-running",
+      "waitTicks": 320,
+      "screenshot": "ui-frame"
+    }
+  ],
+  "artifacts": {
+    "console": true,
+    "screenshots": "after"
+  },
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "uiReady",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "uiRegions",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "frames",
+        "changed": true,
+        "gte": 400
+      }
+    ]
+  }
+}

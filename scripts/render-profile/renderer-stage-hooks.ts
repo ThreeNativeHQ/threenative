@@ -5,6 +5,17 @@ export interface IRendererStageSample {
   readonly callsPerMeasuredFrame?: number;
   readonly inclusiveMs: number;
   readonly inclusiveMsPerMeasuredFrame?: number;
+  /**
+   * The single most expensive call to this stage.
+   *
+   * Reported because a total divided by a call count is not a per-call cost when one call does
+   * something categorically different. Measured in three 0.185.1: `nodes.updateBefore` averages
+   * about 5.7 µs over ~394 calls a frame, and one of those calls renders the shadow map and
+   * takes 3,600 µs. Reading the mean alone turns a render pass into a per-draw cost, which is
+   * exactly the misreading this field exists to prevent — compare `maxMs` against
+   * `inclusiveMs / calls` before calling any stage expensive per call.
+   */
+  readonly maxMs: number;
   readonly timing: "inclusive";
 }
 
@@ -33,7 +44,7 @@ export interface IRendererStageReport {
   readonly reachableStages: readonly string[];
   readonly stages: Record<string, IRendererStageSample>;
   readonly threeVersion: string;
-  readonly version: 1;
+  readonly version: 2;
 }
 
 export interface IRendererStageOverlap {
@@ -74,13 +85,22 @@ type HookTarget = {
 interface IStageMutable {
   calls: number;
   inclusiveMs: number;
+  maxMs: number;
   timing: "inclusive";
 }
 
+/**
+ * Version 2 adds a required `maxMs` to every stage.
+ *
+ * The bump is not cosmetic: a version-1 report has no slowest-call field, so it validates as a
+ * stage whose calls are uniform, and that reading turned a shadow-map render into a per-draw
+ * cost in this repository's performance record. A reader that cannot tell the two shapes apart
+ * would repeat it, so the shapes carry different numbers.
+ */
 export const rendererStageReportSchema = {
   attributionMode: "inclusive-overlap-declared",
   stageTiming: "inclusive",
-  version: 1,
+  version: 2,
 } as const;
 
 const REQUIRED_RENDERER_METHODS = [
@@ -121,7 +141,7 @@ const OVERLAP: readonly IRendererStageOverlap[] = [
 function stage(stages: Map<string, IStageMutable>, name: string): IStageMutable {
   let value = stages.get(name);
   if (value === undefined) {
-    value = { calls: 0, inclusiveMs: 0, timing: "inclusive" };
+    value = { calls: 0, inclusiveMs: 0, maxMs: 0, timing: "inclusive" };
     stages.set(name, value);
   }
   return value;
@@ -307,7 +327,9 @@ export function installRendererStageHooks(
         const elapsed = clock() - before;
         const current = stage(stages, stageName);
         current.calls += 1;
-        current.inclusiveMs += Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : 0;
+        const safe = Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : 0;
+        current.inclusiveMs += safe;
+        if (safe > current.maxMs) current.maxMs = safe;
         if (renderSceneDepthIncremented) renderSceneDepth -= 1;
       };
       try {
@@ -442,7 +464,7 @@ export function installRendererStageHooks(
       reachableStages: [...stages.keys()].sort(),
       stages: stagesForReport,
       threeVersion,
-      version: 1,
+      version: 2,
     };
     return validateRendererStageReport(report);
   };
@@ -455,7 +477,7 @@ export function validateRendererStageReport(report: unknown): IRendererStageRepo
   if (typeof report !== "object" || report === null)
     throw new Error("Renderer stage report must be an object.");
   const candidate = report as Partial<IRendererStageReport> & { attribution?: { mode?: string } };
-  if (candidate.version !== 1) throw new Error("Renderer stage report version must be 1.");
+  if (candidate.version !== 2) throw new Error("Renderer stage report version must be 2.");
   if (candidate.threeVersion !== EXPECTED_THREE_VERSION)
     throw new Error(`Renderer stage report must pin three@${EXPECTED_THREE_VERSION}.`);
   if (candidate.attribution?.mode !== "inclusive-overlap-declared") {
@@ -476,6 +498,9 @@ export function validateRendererStageReport(report: unknown): IRendererStageRepo
       throw new Error(`Stage ${name} must declare inclusive timing.`);
     finiteCounter(stageValue.calls, `${name}.calls`);
     finiteCounter(stageValue.inclusiveMs, `${name}.inclusiveMs`);
+    // Required, not optional: a report without it reads as a stage whose calls are uniform, and
+    // that is the assumption that turned a shadow pass into a per-draw cost.
+    finiteCounter(stageValue.maxMs, `${name}.maxMs`);
     if (stageValue.callsPerMeasuredFrame !== undefined)
       finiteCounter(stageValue.callsPerMeasuredFrame, `${name}.callsPerMeasuredFrame`);
     if (stageValue.inclusiveMsPerMeasuredFrame !== undefined)

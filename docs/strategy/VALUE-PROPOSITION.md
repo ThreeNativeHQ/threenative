@@ -3,8 +3,12 @@
 > **Open limitations live in [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md).** This document
 > is a strategy record; it is not the place to look for what is currently broken or unproven.
 
-*Last measured 2026-08-30.* Axes 1, 4 and 5 were re-run; axes 2 and 3 were re-evidenced without
-moving. Two claims that no longer had a command behind them were replaced rather than softened:
+*Last measured 2026-09-20.* **The distribution clause is rewritten rather than re-scored.** The chain
+this file named as the first thing blocking everything else has fired: every package is on the
+registry, the native prebuilt release exists, and `main` has green CI runs. Axes 1, 2 and 4 moved;
+axis 3 was re-evidenced without moving; axis 5 did not move because the paired round that would move
+it — round 14 — is still `pending` on disk. **Standing total 75/100** (was 72 on 2026-08-30). Two
+claims from the 2026-08-30 pass that had lost their command were replaced there rather than softened:
 `scripts/count-loc.ts` stopped printing the ratio this file quoted (it writes
 [LOC.md](../benchmark/LOC.md) now), and `SceneCollapse` is called `SceneRenderProjection`.
 
@@ -27,38 +31,43 @@ Neighbours: [POSITIONING.md](POSITIONING.md) is what we'd tell a buyer,
 
 > **Today: use it if you are shipping a Three.js game to the browser, a desktop binary and
 > an Android phone, you want an agent to author the content, and you want the result
-> asserted rather than eyeballed — taking the workspace rather than the registry if you want
-> the engine this file measures. Vanilla Three.js is still the defensible choice for a
-> browser-only one-off, and for anything that must ship to iOS hardware.**
+> asserted rather than eyeballed. Install it from npm — 0.3.2 is published for every package —
+> or take the workspace if you are working on the engine itself. Vanilla Three.js is still the
+> defensible choice for a browser-only one-off, and for anything that must ship to iOS hardware.**
 
-**The registry clause is new on this pass, and it is narrower than it sounds.** It installs:
-`npx create-threenative@0.2.2` scaffolds a project whose `npm install` resolves every package from
-`registry.npmjs.org` with zero `file:` or `link:` specifiers and whose `npm run build` succeeds —
-alpha row A2 is green on exactly that run. What is not on the registry is *this* engine. The
-published line is **0.2.x**; the workspace is **0.3.0**, so every number below is measured on
-source a stranger cannot `npm install` today, and two packages have never been published at all
-(`@threenative/assets`, `threenative-engine-mcp`).
+**The registry clause is now earned, and it was the whole of the last pass's blocker.** It installs:
+`npx create-threenative@0.2.5` scaffolds a project that pins `@threenative/core`, `physics` and `ui`
+at `0.3.2` from `registry.npmjs.org` with zero `file:` or `link:` specifiers, and that project
+installs and builds — verified here on 2026-09-20. `pnpm alpha:bar` reports A1 green live: *"All 11
+publishable package(s) are on the registry at their workspace versions."* The two packages that had
+never been published at all are published: `@threenative/assets@0.3.2` (2026-09-12) and
+`threenative-engine-mcp@0.2.2` (2026-09-12), and `@threenative/core@0.3.2` followed the same day.
+The workspace and the registry now read the same version.
 
-**The publish pipeline is not the gap.** `.github/workflows/npm-release.yml` names all eight
-publishable packages in its generated publish set, and `pnpm publish:check` fails the release if a
-package that exists and is not private is missing from that list — a package cannot be silently
-dropped. `scripts/release.ts` then publishes them in dependency order as one consistent set. The
-lane has simply never fired: it triggers on a `v*` tag push, **no `v*` tag has ever been pushed**,
-`gh run list --workflow npm-release.yml` is empty, and `gh release list` is empty. The 0.2.x line
-on npm predates two of the packages, which is why they are absent.
+**The chain this file used to list ran, in order, over two weeks.** One green CI run on `main`
+(2026-09-12, run `34679507300`) unblocked the native release; `runtime-native-v0.3.2` published
+2026-09-12 carrying `prebuilt-lock.json`, `threenative-runtime-linux-x64` and
+`threenative-tools-linux-x64`; `scripts/release.ts` then published the JS cohort as one set. The
+2026-09-19 and 2026-09-20 scheduled `main` runs are fully green, including the advisory
+`native-platforms` rows (Android emulator visual parity, desktop web/native parity, Windows and
+macOS desktop core) that were red a week earlier.
 
-Three things gate the first real run, in the order they bite:
+**Three residual clauses, so the sentence above is not read wider than it is:**
 
-1. **CI has never had a green run, for any commit.** `main` is green locally (`pnpm typecheck`,
-   `pnpm lint`, `pnpm test` 2585/2585) and the same tree fails in CI on four native tests whose
-   binaries the CI job never builds
-   ([the record](../verification/ci-has-never-been-green-2026-08-29.md)).
-2. **No native release exists**, because `native-release.yml` refuses to build without a successful
-   CI push run on `main`. `pnpm publish:check` reports the consequence directly: *"No prebuilt
-   release exists at …/runtime-native-v0.3.0/prebuilt-lock.json"*.
-3. **No tag.** Everything above is a precondition of pushing `v0.3.0`, and nothing has pushed it.
-
-So publication is a chain that starts at one green CI run, not at a missing package in a list.
+1. **The native prebuilt release is Linux x64 only.** Windows, Android and iOS prebuilts are not
+   published, so a clean install on those hosts builds the host from source or waits. The
+   toolchain-free consumer proof is [PRD-078](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md).
+2. **`main`'s newest *push* run is red, on two advisory rows.** The 2026-09-13 run for PR #229
+   (`34737932197`) failed only `native-platforms / Windows desktop core` and `native-platforms /
+   Android V8 source payload`; every merge-verdict job — `typecheck`, `test`, `lint`, `build`,
+   `budgets`, `supply-chain`, `golden-path`, `template-nonvisual` — passed, and `ci-required` passed.
+   So "CI has never been green" is retired, and "the last main push run is green" is not true either.
+3. **The npm lane is unrefreshed at 0.2.5.** A2's evidence is the 2026-08-16 run at
+   `create-threenative@0.2.2`. A fresh attempt here with `npm install` failed inside a transitive
+   `sharp@0.34.5` postinstall (it fell back to a source build and asked for `node-addon-api`), while
+   the scaffold's own documented path — the `pnpm install` the CLI runs, and what `starter`'s README
+   says — installed and built cleanly against the published 0.3.2 packages. The npm install lane
+   needs one run on a machine with build tools before A2 can be quoted at the current version.
 
 That sentence is narrower than [POSITIONING.md](POSITIONING.md)'s *"Build real games with
 TypeScript and AI. One project. Web, iOS, Android."* — the gap is iOS, and it is the honest
@@ -74,7 +83,7 @@ flowchart TD
     plat -->|iOS| caution["**Not qualified.**<br/>Simulator only. No Apple<br/>hardware exists here.<br/>Do not plan a store release"]
     ok --> src
     android --> src
-    src["**Take the workspace, not npm.**<br/>npm has 0.2.x and installs clean;<br/>this file measures 0.3.0, and<br/>assets + engine-mcp are unpublished"]
+    src["**Install from npm.** 0.3.2 is published<br/>for all 11 packages and the golden path<br/>builds; the native prebuilt release is<br/>Linux x64 only, so other hosts build from source"]
 ```
 
 ## The score — axis by axis
@@ -86,16 +95,17 @@ The axes measure **what a user gets**, not the delta against a vanilla control. 
 deliberate change from the previous version of this file, which scored all five axes as
 "beats vanilla" and so could never exceed a tie: the paired benchmark hands the vanilla arm
 our own scaffolding *and* `playtest` on purpose, which is correct benchmark design and a
-useless value ledger. **Standing total: 72/100** (was 67 on 2026-08-12: axis 1 +1, axis 2 +3, axis 5 +1), on a scale that
-is not comparable to the ~60/100 the old axes reported.
+useless value ledger. **Standing total: 75/100** (was 72 on 2026-08-30: axis 1 +1, axis 2 +1,
+axis 4 +1; was 67 on 2026-08-12), on a scale that is not comparable to the ~60/100 the old axes
+reported.
 
 | # | Axis | The claim a user would care about | Instrument | Measured | Score |
 |---|---|---|---|---|---|
-| 1 | **Start a project** | "There is something to run in a minute, and an agent can find what already exists" | CI `scaffold-smoke`, `pnpm test:templates`, [default-retention measurement](../verification/scaffold-default-2026-08-12.md), `packages/create-threenative/capabilities.json` | Seven templates — `minimal`, `platformer`, `starter`, `action-rpg`, `defense`, `racing`, `shooter` — are scaffolded and playtested by the template gate; the one standing red in that gate was diagnosed as a scenario bug and closed (the shooter capture photographed the loading screen, not a capture-lane fact). The small endless-runner arm retained 15/18 starter source paths (83.33%), so starter remains the default. **New since the last pass:** a **194-entry capability manifest**, regenerated by `pnpm build` and served to a project by `threenative-engine-mcp`; every template ships the render chain and `resolutionScale: "auto"` and says what ran; `npx threenative doctor` answers all three questions a game author has | **17/20** — **+1 for the manifest**, the first thing that answers "what is already installed" before an agent writes it again; still docked because 42.89% of original starter lines survive as rewrite cost |
-| 2 | **Author the content** | "An agent can find and make my assets" | the two pinned MCP servers, `asset-mcp-tools.json`, [the 2026-08-30 rerun](../verification/prd-032-rerun-2026-08-30.md) | `threenative-asset-mcp@0.4.0` (32 tools) and `threenative-sculpt-mcp@0.1.0` (5 tools + 31 resources) install and launch in all seven templates via `.mcp.json`. **On a sealed scenery brief, the MCP arm beat the no-MCP control 4/4/4/4 against 2/3/2/2, `VERDICT` for the MCP arm at high confidence** — and gameplay readability, the criterion that killed the 2026-08-09 gate 2/5 against 5/5, inverted to 4 against 2 in its favour. Six CC0 ambientCG textures, every licensing line traced to a tool result | **13/20** — first honest win, **but the run's typecheck precondition was compromised by a template defect that predates both arms**, the evidence is one brief and one critic, and the sculpt MCP still has no preference or token telemetry. The 2026-08-09 crate failure stands unretouched |
+| 1 | **Start a project** | "There is something to run in a minute, and an agent can find what already exists" | CI `template-nonvisual` + `golden-path-template`, `pnpm test:templates`, [default-retention measurement](../verification/scaffold-default-2026-08-12.md), `packages/create-threenative/capabilities.json` | **Ten templates** — `action-rpg`, `defense`, `minimal`, `platformer`, `puzzle`, `racing`, `runner`, `sailing`, `shooter`, `starter` — each carry a green `template-nonvisual` job on the 2026-09-20 `main` CI run (`35500166719`), which also passes `golden-path`; `sailing`, `puzzle` and `runner` are new since the last pass. Every template ships a quality switch ([PRD-304](../PRDs/done/PRD-304-every-template-ships-a-quality-switch.md)) and is playable with the input the device has ([PRD-291](../PRDs/done/PRD-291-a-template-is-playable-with-the-input-the-device-has.md)). The capability manifest is **341 entries** — 269 functions and 72 classes, up from 194 — regenerated by `pnpm build` and reachable from a project through `engine_search_capabilities` on the shipped `threenative-engine-mcp`; `npx threenative doctor` now also predicts a requested build's missing prerequisite ([PRD-374](../PRDs/done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md)). The small endless-runner arm retained 15/18 starter source paths (83.33%), so starter remains the default — that measurement has **not** been re-run since 2026-08-12 | **18/20** — **+1** for three more scaffolded-and-playtested templates and a manifest that nearly doubled; still docked because 42.89% of original starter lines survive as rewrite cost and that retention number is five weeks old |
+| 2 | **Author the content** | "An agent can find and make my assets" | the four pinned MCP servers, `asset-mcp-tools.json`, [the 2026-08-30 rerun](../verification/prd-032-rerun-2026-08-30.md) | **Four MCP servers now launch in every template, out of the installed package**: `threenative-assets` (**44 tools**, pinned `0.9.1`, up from 32 at `0.4.0`), `threenative-sculpt` (5 tools + 31 technique-safe resources, `0.1.1`), `threenative-engine` (2 tools, `0.2.2`) and `threenative-blender` (5 tools, `0.1.2`), wired by the `.mcp.json` that installing `@threenative/core` writes and launched as `./node_modules/@threenative/core/mcp/*.mjs`. They are dependencies of `@threenative/core`, not vendored copies — still separately published MIT packages on their own release lanes. New since the last pass: auto-rig, retarget, rig inspection and preview ([PRD-383](../PRDs/done/PRD-383-rig-and-retarget-humanoids-through-the-asset-mcp.md)), a downloaded .fbx becoming a running character ([PRD-346](../PRDs/done/PRD-346-a-downloaded-fbx-becomes-a-running-threenative-character.md)) and the Fab/Unreal import path ([PRD-295](../PRDs/done/PRD-295-fab-unreal-to-threenative-assets.md), [PRD-320](../PRDs/done/PRD-320-the-fab-import-replays-without-a-fab-account.md)). **The quality claim did not move**: it still rests on the sealed scenery brief, MCP arm 4/4/4/4 against the no-MCP control 2/3/2/2 | **14/20** — **+1 for the surface**, not for quality: 44 tools against 32, four servers against two, and a rig/retarget/import path that did not exist. The caveats are unchanged — one brief, one critic, a typecheck precondition compromised by a template defect, sculpt preference and token telemetry still unavailable, and the 2026-08-09 crate failure (2/5 against 5/5) unreversed |
 | 3 | **Know it works** | "My game is asserted, not eyeballed" | `@threenative/playtest`, exit codes, alpha-bar row A3 | Fails closed: malformed assertion throws, missing bridge exits `2`, a pre-satisfied assertion reports `TN_PLAYTEST_ASSERTION_TRIVIAL`. **Re-proved 2026-08-29 against the shipped runner**: an empty assertion set exits `1` with `TN_PLAYTEST_SCENARIO_NO_ASSERTIONS` while the true-positive control passes on the same runner, project and browser recipe. The runner now also refuses to grade a lane it cannot observe, names each scenario's verdict as it finishes, carries tick counts in the summary, and declares a software adapter out loud instead of silently accepting SwiftShader. Same scenario runs on device with `--target android` or `--target ios` | **18/20** — score unchanged, evidence stronger; still docked only because a plain Three.js project can install the same bridge |
-| 4 | **Run it natively** | "It ships where vanilla can't, and faster" | the device matrix, `pnpm native:verify:desktop`, `pnpm parity:ledger` | Browser, Linux/macOS/Windows desktop, iOS **simulator**, and a **physical Pixel 8**: 2,282-mesh platformer, **~106 fps median, 0 of 253 windows below 60**, ~2× the same build in Chrome on the same phone. On an identical-scene load test, **3.0–3.9× Godot 4.7.1** on web, desktop and the same phone, all three pairs `GATE PASS`. **Tier 1 recomputed 2026-08-29** from three reports that exist on this machine, every cell recomputable: browser **73 pass / 0 fail / 1 blocked**, desktop **71 / 1 / 2** (up from 65/1), Android emulator **0 executed of 74** — blocked before Gradle on a stale SDL3 pin. The frame budget now reports **real GPU milliseconds from a timestamp query** rather than an estimate, and the adaptive resolution scaler says out loud when it runs out of room | **15/20** — desktop improved and the ledgers became recomputable, but the Android emulator lane went from partly-run to not-run, so the axis does not move; still **one phone, one thermal state, no iOS hardware, no store release** |
-| 5 | **Write less code** | "You will write less than vanilla" | `pnpm sweep:pair` → `authoredLoc`, `pnpm tsx scripts/count-loc.ts` | Wins 2 of 5 genres on the corpus measure: platformer **−187**, topdown **−695**; loses endless **+442**, exploration **+95**, open-world **+8**. **The owner settled the cost column on authored lines on 2026-08-15**, and on that measure the framework won both rounds that have run since — round 9's platformer pair **authored 379 fewer lines** while shipping 162 more. `count-loc`'s newest kill-switch row: cloth is **46 framework lines against 759 hand-written** (711 implementation + 48 callers) across flag, cape and curtain — **93.9% smaller**, and the script throws if that margin ever falls below 2× | **9/20** — **+1** for two paired rounds on the settled measure and a mechanism that clears the kill switch by 16×; against it, the frozen-source ratchet drifted the wrong way (below) |
+| 4 | **Run it natively** | "It ships where vanilla can't, and faster" | the device matrix, `pnpm native:verify:desktop`, `pnpm parity:ledger` | Browser, Linux/macOS/Windows desktop, iOS **simulator**, and a **physical Pixel 8**: 2,282-mesh platformer, **~106 fps median, 0 of 253 windows below 60**, ~2× the same build in Chrome on the same phone. On an identical-scene load test, **3.0–3.9× Godot 4.7.1** on web, desktop and the same phone, all three pairs `GATE PASS`. **Tier 1's newest ledger is still 2026-08-29** ([tier-1-2026-08-29.md](../verification/tier-1-2026-08-29.md)): browser **73 pass / 0 fail / 1 blocked**, desktop **71 / 1 / 2**, Android emulator **0 executed of 74** — blocked before Gradle on a stale SDL3 pin. **The lane has since gone green while the ledger stayed still**: the 2026-09-20 `main` CI run executes `native-platforms / Android emulator visual parity`, `Desktop web/native parity`, `Windows desktop core` and `macOS desktop core` successfully, so what is owed there is one ledger refresh, not a fix. Newly proved: the native prebuilt release exists (`runtime-native-v0.3.2`, Linux x64), a consumer builds desktop and Android with no native toolchain ([PRD-078](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md)), Android ships a signed release APK/AAB ([PRD-212](../PRDs/done/PRD-212-published-install-builds-android.md)), V8 is 16 KB-page clean ([PRD-221](../PRDs/done/PRD-221-android-v8-is-16kb-clean.md)), and the desktop UI overlay runs on Windows and macOS as well as Linux ([PRD-217](../PRDs/done/PRD-217-webview-ui-layer.md)). Measured and unmet: the Android launch reaches playable in **~10.9 s, 8,513 ms of it Mali shader compilation** ([PRD-360](../PRDs/done/PRD-360-android-launch-is-playable-within-eight-seconds.md), closed 2026-09-08) | **16/20** — **+1**: the emulator conformance lane executes on CI again and the release chain now ships a prebuilt native runtime; still **one phone, one thermal state, no iOS hardware, no store release**, and a launch cost the framework does not own |
+| 5 | **Write less code** | "You will write less than vanilla" | `pnpm sweep:pair` → `authoredLoc`, `pnpm tsx scripts/count-loc.ts` | Wins 2 of 5 genres on the corpus measure: platformer **−187**, topdown **−695**; loses endless **+442**, exploration **+95**, open-world **+8**. **The owner settled the cost column on authored lines on 2026-08-15**, and on that measure the framework won both rounds that have run since — round 9's platformer pair **authored 379 fewer lines** while shipping 162 more. `count-loc`'s newest kill-switch row: cloth is **46 framework lines against 761 hand-written** (713 implementation + 48 callers) across flag, cape and curtain — **94.0% smaller**, and the script throws if that margin ever falls below 2× | **9/20** — unchanged: no paired round has been measured since round 9, and round 14 sits `pending` on disk with every arms cell `unmeasured`; the mechanism still clears the kill switch by 16×, and the frozen-source ratchet is where it was (below) |
 
 Evidence: [phase-1-2026-08-08.md](../verification/phase-1-2026-08-08.md) (axis 5, four
 genres), [round-3-2026-08-09.md](../verification/round-3-2026-08-09.md) (open-world),
@@ -112,9 +122,21 @@ machine and so cannot be recomputed at all),
 [PRD-049](../PRDs/done/PRD-049-sculpt-from-reference-mcp.md) (axis 2),
 [round-9-2026-08-15.md](../verification/round-9-2026-08-15.md) and
 [LOC.md](../benchmark/LOC.md) (axis 5),
-[alpha-a3-2026-08-29.md](../verification/alpha-a3-2026-08-29.md) (axis 3),
-[ci-has-never-been-green-2026-08-29.md](../verification/ci-has-never-been-green-2026-08-29.md)
-(the install clause above).
+[alpha-a3-2026-08-29.md](../verification/alpha-a3-2026-08-29.md) and
+[prd-265-unobservable-lanes-2026-09-04.md](../verification/prd-265-unobservable-lanes-2026-09-04.md) (axis 3),
+[alpha-bar.md](../verification/alpha-bar.md) and `pnpm alpha:bar` (A1 and the install clause above),
+[PRD-078](../PRDs/done/PRD-078-toolchain-free-consumer-proof.md),
+[PRD-212](../PRDs/done/PRD-212-published-install-builds-android.md),
+[PRD-262](../PRDs/done/PRD-262-the-runtime-native-prebuilt-release-exists.md),
+[PRD-217](../PRDs/done/PRD-217-webview-ui-layer.md) and
+[PRD-360](../PRDs/done/PRD-360-android-launch-is-playable-within-eight-seconds.md) (axis 4 distribution and launch),
+and [PRD-304](../PRDs/done/PRD-304-every-template-ships-a-quality-switch.md),
+[PRD-291](../PRDs/done/PRD-291-a-template-is-playable-with-the-input-the-device-has.md) and
+[PRD-374](../PRDs/done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) (axis 1).
+
+The 2026-08-30 pass's install clause is retired: [ci-has-never-been-green-2026-08-29.md](../verification/ci-has-never-been-green-2026-08-29.md)
+described a chain that has since completed, and the A1 row of [alpha-bar.md](../verification/alpha-bar.md) is
+the live reading that replaces it.
 
 ### Why LOC cannot get us to 80 on axis 5
 
@@ -124,17 +146,18 @@ and gameplay is permanently the user's to write. **The ceiling on the cost axis 
 save the user lines" is arguing against arithmetic.
 
 The cloth number is the exception that proves the shape of the rule, not a counter-example: 46
-against 759 is a **93.9%** cut because a soft body is repeated mechanism a game writes three times
-and never wants to own, which is exactly the narrow band the ceiling argument leaves open. It moves
-the axis by one point, not by ten, and a second such win would move it by one more.
+against 761 is a **94.0%** cut because a soft body is repeated mechanism a game writes three times
+and never wants to own, which is exactly the narrow band the ceiling argument leaves open. It moved
+the axis by one point when it landed, not by ten, and a second such win would move it by one more.
 
 The win condition on that axis is the paired arm, agent against agent (`pnpm sweep:pair`),
 not the static `abyss` ratio. That ratio is a **regression ratchet** against frozen
 hand-written source — see `docs/benchmark/PROTOCOL.md` — and `scripts/count-loc.ts` no longer
-prints it, it writes [LOC.md](../benchmark/LOC.md). Vanilla still wins it on the total, and **the
-number moved the wrong way since the last pass: 91.3% → 93.2%**, plumbing 52.9% → 53.6%. That is
-the ratchet reporting correctly, not a defeat being hidden, and it is the reason axis 5 gained one
-point rather than two.
+prints it, it writes [LOC.md](../benchmark/LOC.md). Vanilla still wins it on the total at **93.2%**
+(plumbing **53.6%**), which is where the 2026-08-30 pass left it — re-run here and unchanged, and
+still the reason axis 5 sits at 9 rather than higher. The paired measure did not advance either:
+round 14 ([the ledger](../verification/round-14-2026-09-04.md)) is `pending` on disk with every arms
+cell `unmeasured`, because the owner capped it at framework-arm builds.
 
 ### What the paired benchmark cannot show
 
@@ -156,7 +179,14 @@ bridge, so it wins no benchmark column and is still the strongest reason to adop
 **2. One source runs on web and on an owned native runtime.** The same `src/game.ts` runs in
 the browser, in a desktop binary, and on a physical Android phone, with physics agreeing
 across the C ABI. No WASM on native; the native bundle is one import-free ESM file, asserted
-on every build by `examples/native-smoke`.
+on every build by `examples/native-smoke`. Since the last pass that runtime gained a shipped
+prebuilt release ([PRD-262](../PRDs/done/PRD-262-the-runtime-native-prebuilt-release-exists.md),
+`runtime-native-v0.3.2`, Linux x64), a desktop UI overlay on Windows and macOS as well as Linux
+([PRD-217](../PRDs/done/PRD-217-webview-ui-layer.md)), a signed Android release path
+([PRD-212](../PRDs/done/PRD-212-published-install-builds-android.md)) and 16 KB-page-clean V8
+([PRD-221](../PRDs/done/PRD-221-android-v8-is-16kb-clean.md)) — and, on the render side, virtual
+geometry that is on by default above 65,536 triangles
+([PRD-279](../PRDs/done/nanite-like/PRD-279-geometry-the-camera-cannot-resolve-is-never-submitted.md)–[PRD-285](../PRDs/done/nanite-like/PRD-285-clusters-arrive-when-the-camera-asks-for-them.md)).
 
 **3. The same Three.js game runs at roughly half the frame cost of the same game in a browser
 on the same phone.** This is the cleanest comparison the project has, because both arms are
@@ -174,23 +204,30 @@ the engine-bug/game-bug rule paying out in a measurement. (It was called `SceneC
 file last measured; the rename came with the fix for it eating the scene it was optimising, and
 with picking being preserved through it.)
 
-**4. The scaffold hands an agent two working asset servers.** All seven templates pin and
-launch `threenative-asset-mcp@0.4.0` (32 tools, surface recorded by running the pinned server
-from inside a scaffolded project) and `threenative-sculpt-mcp@0.1.0` (5 tools, 31
-technique-safe resources), with the generated `AGENTS.md` routing conventional assets,
-trivial geometry, bespoke objects, landmarks and scenery to the right one. Both are external,
-MIT, on their own release lanes — never vendored. **This is a capability claim, not a quality
-claim:** see the next section.
+**4. The scaffold hands an agent four working servers, out of one install.** Every template
+launches `threenative-assets` (44 tools, pinned `0.9.1`, surface recorded from the published
+package by `scripts/capture-asset-mcp-tools.ts`), `threenative-sculpt` (5 tools, 31
+technique-safe resources, `0.1.1`), `threenative-engine` (2 tools, `0.2.2`) and
+`threenative-blender` (5 tools, `0.1.2`) — all four by path out of `@threenative/core`, which
+depends on them, so installing the engine wires them. The generated `AGENTS.md` routes
+conventional assets, trivial geometry, bespoke objects, landmarks and scenery to the right
+one, and the asset server now rigs and retargets a humanoid
+([PRD-383](../PRDs/done/PRD-383-rig-and-retarget-humanoids-through-the-asset-mcp.md)) and
+imports Unreal/Fab content ([PRD-295](../PRDs/done/PRD-295-fab-unreal-to-threenative-assets.md)).
+They remain separately published MIT packages on their own release lanes — carried as
+dependencies, never vendored. **This is a capability claim, not a quality claim:** see the next
+section.
 
 **5. The plumbing you would rewrite each time is halved.** Framework plumbing is **53.6%** of
 the frozen hand-written control's — 74 lines against 138 (`pnpm tsx scripts/count-loc.ts`, which
 writes [LOC.md](../benchmark/LOC.md)). Total ratio **93.2%**, and **vanilla still wins the total** —
-the regression ratchet working, not a win being hidden. Both numbers are slightly worse than the
-2026-08-12 pass (52.9% and 91.3%) and they are printed here rather than dropped.
+the regression ratchet working, not a win being hidden. Both numbers are re-run on 2026-09-20 and
+unchanged from the 2026-08-30 pass, which is why this claim carries no new point.
 
-The same script carries a second, larger measure: **cloth costs 46 framework lines against 759
-hand-written** across a flag, a cape and a curtain, and the script *throws* if that margin ever
-narrows to less than 2×. That is the kill switch running as a gate rather than as an argument.
+The same script carries a second, larger measure: **cloth costs 46 framework lines against 761
+hand-written** (713 implementation + 48 callers) across a flag, a cape and a curtain, and the script
+*throws* if that margin ever narrows to less than 2×. That is the kill switch running as a gate
+rather than as an argument.
 
 **6. Against Godot 4.7.1, on an identical scene, on all three platforms.** This was the open
 question the fox platformer could not answer — different codebases, different scenes, so
@@ -216,17 +253,18 @@ also culls its projection batches by camera, and `InstancedBatch` gives a game t
 deliberately — placements first, count after — for the repeated shapes it authors itself.
 
 **7. An agent can ask what already exists before it writes it.**
-`packages/create-threenative/capabilities.json` — **194 entries**, regenerated by `pnpm build` and
-searchable by plain-words situation — did not exist when this file was last measured; it was added
-2026-08-19. A project reaches the same manifest through `engine_search_capabilities` and
-`engine_capability_detail` on the shipped `threenative-engine-mcp`, wired by the `.mcp.json` that
-installing `@threenative/core` writes. The failure it exists to prevent is measured: a game once
-hand-wrote 446 lines that were already installed and ran at 9 FPS.
+`packages/create-threenative/capabilities.json` — **341 entries** (269 functions, 72 classes),
+regenerated by `pnpm build` and searchable by plain-words situation — is nearly twice the 194 it held
+when this file was last measured. A project reaches the same manifest through
+`engine_search_capabilities` and `engine_capability_detail` on `threenative-engine-mcp`, wired by the
+`.mcp.json` that installing `@threenative/core` writes. The failure it exists to prevent is measured:
+a game once hand-wrote 446 lines that were already installed and ran at 9 FPS.
 
-**The caveat belongs in the same breath:** `threenative-engine-mcp` is one of the two packages
-alpha row A1 reports absent from the registry, so a project installing from npm today gets the
-manifest that ships inside `create-threenative` and not the server that serves it. The server is
-real; its distribution is not.
+**The caveat from the last pass is retired, and this is the cleanest example of the distribution
+change:** `threenative-engine-mcp` was absent from the registry on 2026-08-30 and is published at
+`0.2.2` today, so a project installing from npm now gets both the manifest and the server that serves
+it. What has *not* been re-measured is whether an agent uses it better — the manifest grew, the
+routing was not re-scored.
 
 **Where it loses, stated plainly:** unbatched per-object rendering on the web, where Godot is
 ~1.5× ahead on frame time. That is JavaScript issuing thousands of draw calls against compiled
@@ -239,15 +277,15 @@ path `defineGame` collapses away, so a normally written game does not sit on it.
 
 | Not earned | Why, precisely |
 |---|---|
-| **"You can install the engine this file measures"** | npm has the **0.2.x** line and it installs clean (A2 green); the workspace is **0.3.0** and unpublished, and `@threenative/assets` and `threenative-engine-mcp` have never been published at all. The publish workflow does name all eight packages and `pnpm publish:check` refuses a release that omits one — it has never run, because no `v*` tag has ever been pushed and the chain above it starts at a green CI run that has never happened |
+| **"You can install the engine this file measures, for every target"** | The JS packages install: all 11 publishable package(s) are on the registry at their workspace versions — A1 green, read live by `pnpm alpha:bar` on 2026-09-20 — and a scaffolded project pins them and builds. The **native prebuilt release is Linux x64 only**: `runtime-native-v0.3.2` carries `prebuilt-lock.json`, `threenative-runtime-linux-x64` and `threenative-tools-linux-x64`, so Windows, Android and iOS consumers build the host from source. The npm *install* lane is also unrefreshed: A2's evidence is the 2026-08-16 run at `create-threenative@0.2.2`, and a fresh `npm install` at 0.2.5 failed here inside a transitive `sharp` postinstall that fell back to a source build |
 | **"A heavy authored game holds 60 fps on a phone"** | The 2,282-mesh platformer does. Bayview — 830 meshes, ~818 draws — reaches **63.45–72.52 fps only on the 120 Hz arm**; on the acceptance baseline decided 2026-08-28 (60 Hz panel, `maxFps: 60`, accept at presented p95 ≤ 14 ms) SurfaceFlinger measured **49.932 fps** and it does not pass. Both numbers are real and they are not interchangeable |
 | **"Ships to iOS"** | **iOS-simulator evidence exists from the hosted `macos-15` lane.** No arm64-device, Metal-driver, signing, touch-hardware, thermal or battery evidence follows, so this is not a physical-device or mobile-readiness claim ([PRD-045](../PRDs/done/PRD-045-playtest-on-device.md), [PRD-065](../PRDs/BLOCKED/requires-ios-ecossystem/PRD-065-ios-evidence-lane.md)) |
-| **"Ships to Android"** as a *product* claim | One physical Pixel 8 (`shiba`, arm64-v8a, Android 17), one thermal state, no second device, no Play Store release. The frame-rate numbers are real; the fleet claim is not. The emulator conformance lane is worse than it was: on 2026-08-29 it executed **0 of 74 rows**, blocking before Gradle on a stale SDL3 pin |
+| **"Ships to Android"** as a *product* claim | One physical Pixel 8 (`shiba`, arm64-v8a, Android 17), one thermal state, no second device, no Play Store release. The frame-rate numbers are real; the fleet claim is not. What *is* newly proved is packaging, not reach: a signed release APK/AAB at targetSdk 36 ([PRD-212](../PRDs/done/PRD-212-published-install-builds-android.md)) and a V8 that is 16 KB-page clean ([PRD-221](../PRDs/done/PRD-221-android-v8-is-16kb-clean.md)). The emulator conformance lane is worse than it was: on 2026-08-29 it executed **0 of 74 rows**, blocking before Gradle on a stale SDL3 pin |
 | **"The asset MCP improves your game"** as a *general* claim | Earned for **scenery only**, on one sealed brief: [the 2026-08-30 rerun](../verification/prd-032-rerun-2026-08-30.md) went to the MCP arm on all four criteria at high confidence. It is one brief, one scene, one critic, and its typecheck precondition was compromised by a template defect predating both arms. The 2026-08-09 crate gate **failed** and stands — the no-MCP control produced the better frame there, and nothing about the scenery win reverses it. PRD-049 still ships with preference and token telemetry **unavailable** |
 | **"Less code than vanilla"** as a general claim | True in 2 of 5 genres. Gameplay is permanently the user's to write, so that axis tops out near 40/100 — a ceiling, not a backlog item |
 | **"Better looking"** as a general claim | Phase 1's own ledger forbids it: *"should not claim universal visual superiority from the two winning genres."* Wins platformer 3.8 vs 2.4 and exploration 4.4 vs 2.8; **loses** topdown 3.2 vs 3.8 on HUD hierarchy |
-| **"Production ready"** | Beta rows 3–5 are open. Tier 1 is not reached, on numbers recomputed 2026-08-29 from reports that exist on this machine: browser `73/0/1`, Desktop Linux `71/1/2` (the one real failure is `25-camera-parented-overlay`), Android emulator `0/0/74`. The two older tier-1 ledgers are superseded — their reports name a checkout that no longer exists, so not one of their cells can be recomputed |
-| **Any adoption claim at all** | **No stranger has ever played a ThreeNative game for five minutes.** That is the project's own decisive test and it is still open. [METRICS.md](METRICS.md) is right that until it closes, every other metric is a plan to measure something |
+| **"Production ready"** | Beta rows 3–5 are open. Tier 1 is not reached, on the newest ledger there is, recomputed 2026-08-29 from reports that exist on this machine: browser `73/0/1`, Desktop Linux `71/1/2` (the one real failure is `25-camera-parented-overlay`), Android emulator `0/0/74`. **That ledger is now behind the lane**: the 2026-09-20 `main` CI run executes the Android emulator and desktop parity rows successfully, so the emulator number is stale rather than representative, and no refreshed ledger has been filed to replace it |
+| **Any adoption claim at all** | **No stranger has ever played a ThreeNative game for five minutes.** That is the project's own decisive test and it is still open. [METRICS.md](METRICS.md) is right that until it closes, every other metric is a plan to measure something. A6 is still printed as `deferred` by the owner's 2026-08-29 decision, but the reason that decision states — *"a stranger cannot use what is not published"* — expired when A1 went green, so the row is now unmeasured in substance and stale in its stated reason; nothing has been filed for it |
 
 ## Who should not use this
 
@@ -262,8 +300,9 @@ path `defineGame` collapses away, so a normally written game does not sit on it.
   re-declined in Phase 0 on 2026-08-29 after `navcat` was evaluated as a pure-JavaScript backend
   ([PRD-260](../PRDs/done/PRD-260-standard-navigation-reaches-native-without-webassembly.md)) — no
   product code and no dependency were added.
-- **Anyone who must install the current engine from npm.** The published line is 0.2.x. Take the
-  workspace or wait for the first tagged release.
+- **Anyone who needs a native prebuilt on Windows, Android or iOS from a clean install.** The
+  prebuilt release is Linux x64; every other host builds the runtime from source and needs a
+  toolchain. The JS packages themselves install everywhere.
 
 ## What would change the answer
 
@@ -271,12 +310,15 @@ Ranked by how much the sentence at the top would move, cheapest first.
 
 | # | Change | Moves | Blocked on |
 |---|---|---|---|
-| 1 | **One green CI run on `main`** | Unblocks the whole chain: native release → `v*` tag → the publish lane that already names all eight packages → A1 → A6. Nothing else on this list can be reached first | Four native tests whose binaries CI never builds — a workflow fix, not an engine fix |
-| 2 | **A stranger plays for five minutes** | Every adoption claim — the project's decisive test. It is currently *unmeasurable*, not merely unmeasured: A6 was made a deferred row on 2026-08-29 because a stranger installs from the registry, which is row 1 | Row 1, then an afternoon and one external person |
-| 3 | **The Android emulator lane executing at all** | Restores the 74 rows it did not run; a precondition of tier 1, and the cheapest item here after row 1 | A stale SDL3 pin that blocks before Gradle |
-| 4 | **A second physical Android device** | Turns one device into a fleet claim; axis 4 → 18 | Hardware |
-| 5 | **The scenery rerun repeated on a template that typechecks** | Removes the one documented weakness in the 2026-08-30 result and would license the rest of axis 2 | 14 type errors in the starter's render chain, unrelated to the MCP |
-| 6 | **A five-genre re-measure on authored lines** | Axis 5's corpus number still reports the retired measure; only platformer has been run on the settled one, and it wins | `pnpm sweep:pair` across the corpus |
+| 1 | **A stranger plays for five minutes** | Every adoption claim, and the project's decisive test. It is no longer *unmeasurable* — that was the 2026-08-29 reason and A1 went green on 2026-08-31 — so this is now an afternoon and one external person, and it is the cheapest item on the list | One external person, and a filed A6 evidence block |
+| 2 | **One refresh of the tier-1 ledger** | The Android emulator rows are green on the 2026-09-20 CI run while the newest ledger still records `0 of 74`; recomputing it is what turns a green lane into an axis-4 number, and it is the only item here that needs no new capability | A conformance run with `--out` into a path that still exists, then `pnpm parity:ledger` |
+| 3 | **A second physical Android device** | Turns one device into a fleet claim; axis 4 → 18 | Hardware |
+| 4 | **The scenery rerun repeated on a template that typechecks** | Removes the one documented weakness in the 2026-08-30 result and would license the rest of axis 2 | 14 type errors in the starter's render chain, unrelated to the MCP |
+| 5 | **A five-genre re-measure on authored lines** | Axis 5's corpus number still reports the retired measure; only platformer has been run on the settled one, and it wins. Round 14 was cut to framework-arm-only and sits `pending`, so nothing has advanced since round 9 | `pnpm sweep:pair` across the corpus |
+| 6 | **An A2 refresh at `create-threenative@0.2.5`** | The install clause is the one part of the distribution sentence still resting on a 2026-08-16 run at `0.2.2`; the npm lane needs a machine where `sharp` finds a prebuilt binary, or a scaffold that does not run its postinstall | One run on a host with build tools |
+
+The chain this table used to open with — *one green CI run on `main`* — is done: it landed 2026-09-12,
+the native release and the npm cohort followed it, and the rows below are what is left.
 
 Below the cut, unchanged from the last pass and still true: two consecutive green iOS-simulator
 lanes (lets us say *iOS simulator*, never *iPhone*;
@@ -290,6 +332,6 @@ everything moving so no pass can fold it — the last of which
 | Version | Text | Status |
 |---|---|---|
 | Buyer-facing ([POSITIONING.md](POSITIONING.md)) | *Build real games with TypeScript and AI. One project. Web, iOS, Android. You own the code.* | **Proposal.** "iOS" is not executable evidence today |
-| Evidence-bound (this file) | *Write the game once in TypeScript; run it on browser WebGPU, a desktop binary and an Android phone at roughly twice the frame rate of the same build in Chrome, with an agent authoring your assets against a 194-entry capability manifest and a harness that fails closed asserting your gameplay. iOS is simulator-only, and the current engine comes from the workspace — npm has the previous line.* | Every clause traces to a verification file above |
+| Evidence-bound (this file) | *Write the game once in TypeScript; install it from npm at 0.3.2; run it on browser WebGPU, a desktop binary and an Android phone at roughly twice the frame rate of the same build in Chrome, with an agent authoring your assets against a 341-entry capability manifest and four MCP servers that arrive with the engine, and a harness that fails closed asserting your gameplay. iOS is simulator-only, and the native prebuilt release is Linux x64 only.* | Every clause traces to a verification file above |
 
 **Use the second one in anything a stranger reads** until the first is earned.

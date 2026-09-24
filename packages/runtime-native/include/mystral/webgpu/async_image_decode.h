@@ -62,7 +62,8 @@ public:
     void drain();
 
     /**
-     * Stop workers and discard queued/completed callbacks without invoking JS. Idempotent.
+     * Stop workers and discard queued, completed and in-flight captures on the owning thread.
+     * Does not invoke JS. Idempotent.
      * Call from the owning thread, never a decoder worker.
      */
     void shutdown();

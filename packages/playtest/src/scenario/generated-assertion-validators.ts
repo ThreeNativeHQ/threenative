@@ -154,6 +154,12 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "present": (value: unknown) => typeof value === "boolean",
     "allowTrivial": (value: unknown) => typeof value === "string" && value.replace(/\s/gu, "").length >= MIN_TRIVIALITY_REASON_LENGTH,
   }),
+  "audio": Object.freeze({
+    "cue": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "minPlays": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "maxPlays": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "minGapMs": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+  }),
   "world": Object.freeze({
     "seed": (value: unknown) => true,
     "runtime": (value: unknown) => isRecord(value),

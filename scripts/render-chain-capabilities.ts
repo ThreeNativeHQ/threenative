@@ -168,4 +168,36 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
     ],
     supersedes: [],
   },
+  // Also not a render stage: the per-frame world-matrix walk, which the engine owns by default and
+  // a game can restore to three's every-node form. It lives here for the same reason the projection
+  // above does — an agent whose profile is hot in `updateMatrixWorld` has nowhere else to find it.
+  {
+    symbol: "renderer.matrixWorld",
+    package: "@threenative/core",
+    importPath: "src/game.ts",
+    kind: "function",
+    signature: 'renderer.matrixWorld?: "visible" | "all"',
+    summary:
+      'The per-frame world-matrix walk, on by default as `"visible"`: a hidden subtree — a full-detail body behind a merged stand-in, a hidden LOD level, a parked or hangared model — is not recursed into, so nothing that cannot draw pays a world-matrix multiply. Every visible node is composed exactly as three does, a class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a hidden node that holds bones is still walked. `"all"` restores three\'s every-node walk.',
+    situations: [
+      "updateMatrixWorld and multiplyMatrices are hot in a profile",
+      "the per-frame matrix walk is slow with many hidden LOD bodies or paired full/hull models",
+      "stop paying for matrices of models nothing can draw",
+      "a skinned mesh or camera goes stale because its world matrix was not refreshed",
+      "restore three's own full updateMatrixWorld walk",
+      "compare how many scene nodes the engine walks per frame",
+    ],
+    example:
+      'renderer: { matrixWorld: "all" } // in threenative.config.ts; omit for the visible-only default',
+    constraints: [
+      'Unset is the shipping behaviour: `"visible"`, which does not recurse into a hidden subtree. `"all"` visits every node exactly as three\'s own `updateMatrixWorld` does.',
+      "A game that reads a hidden object's `matrixWorld` directly must not rely on the walk reaching it: use `getWorldPosition`/`getWorldQuaternion`/`getWorldScale` or call `object.updateWorldMatrix(true, false)` first.",
+      "The walk is the engine's either way, so three's renderer never walks the scene a second time; the count of nodes visited is reported as `matrixWorld` in every `TN_PROJECTION` window.",
+      "Bones are never skipped: a hidden node that holds a `Bone` is walked, because a visible `SkinnedMesh` draws with its skeleton's matrices wherever the armature sits.",
+    ],
+    overrides: [
+      'renderer.matrixWorld: "all" restores three\'s every-node walk; the visited count still reports',
+    ],
+    supersedes: [],
+  },
 ];
