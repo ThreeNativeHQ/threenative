@@ -416,15 +416,18 @@ the dated Arm A run above reproduces the recorded failures.
 
 **Implementation:**
 
-- [ ] Pack and inject both packages so a sandbox can run `threenative build --target desktop` and
+- [x] Pack and inject both packages so a sandbox can run `threenative build --target desktop` and
       launch the capability server without touching the workspace.
-- [ ] Update the sandbox's closing report to name native and capability availability.
+      — `scripts/make-sandbox.ts:38` (`PACKAGES` from `sandboxWorkspacePackages()`), scaffold `packageSources`; spec `make-sandbox.spec.ts:126` ("packs the native runtime and capability server with the user-facing packages").
+- [x] Update the sandbox's closing report to name native and capability availability.
+      — `scripts/make-sandbox.ts:734-735` ("native runtime: packed locally for build --target desktop" / "capability server: packed locally for engine_search_capabilities").
 
 **Wiring:**
 
-- [ ] Caller edited: `scripts/make-sandbox.ts:21` and the scaffold invocation below it.
-- [ ] Old path: the six-package list is replaced.
-- [ ] Ledger rows filled: #7.
+- [x] Caller edited: `scripts/make-sandbox.ts:21` and the scaffold invocation below it.
+      — `PACKAGES` is derived from the workspace build order and passed as `packageSources`.
+- [x] Old path: the six-package list is replaced. — no hard-coded package list remains.
+- [x] Ledger rows filled: #7. — `--runtime-package`/`--engine-mcp-package` overrides at `create-threenative/src/index.ts:23,735`; spec `scaffold.spec.ts:1726,1734`.
 
 **Tests Required:**
 
