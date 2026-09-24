@@ -4,27 +4,24 @@ prd_contract: v1
 
 # PRD-196 — A stranger's install of ThreeNative is functional
 
-**Status:** BLOCKED — `requires-release-credentials` and candidate-cohort preparation
+**Status:** BLOCKED — `requires-release-credentials`
 
-Filed here on 2026-09-08. The engineering in this PRD is implemented and gated in the tree, but the
-source tree is not yet a publishable candidate. `pnpm publish:check` reports eight immutable package
-versions whose source moved after publication — `@threenative/assets@0.3.0`,
-`@threenative/core@0.3.0`, `@threenative/physics@0.3.0`, `@threenative/playtest@0.3.0`,
-`@threenative/runtime-native@0.3.0`, `@threenative/ui@0.3.0`, `create-threenative@0.2.3`, and
-`threenative-engine-mcp@0.2.0` — plus the absent matching native prebuilt release. npm versions are
-immutable, so release preparation must first choose and commit a fresh coherent eleven-package
-cohort, bump the changed packages to versions absent from npm, and repin every template and internal
-dependency to that cohort. Only then can the external publish and native-release acts be performed.
-Until that prepared cohort is published with its matching prebuilt assets, the published world cannot
-satisfy the criteria below, and this PRD must not be filed as done. It was previously in
-`docs/PRDs/done/` from an unrelated bulk move (`b45bf21f7`) while still reading `NOT STARTED`; neither
-state was true.
+Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
+tree, and the candidate cohort is prepared and committed: eleven packages at
+`@threenative/{assets,core,physics,playtest,runtime-native,ui}@0.3.3`, `create-threenative@0.2.6`,
+`threenative-engine-mcp@0.2.3`, with every template pin moved to 0.3.3
+(`packages/create-threenative/templates/*/package.json`). `pnpm publish:check` now reports exactly
+two classes of finding, both cleared by the external acts: 69 template-pin findings because the
+registry does not yet carry the 0.3.3 cohort, and one prebuilt-release finding because
+`runtime-native-v0.3.3` does not exist yet. Until that cohort is published with its matching
+prebuilt assets, the published world cannot satisfy the criteria below, and this PRD must not be
+filed as done. It was previously in `docs/PRDs/done/` from an unrelated bulk move (`b45bf21f7`)
+while still reading `NOT STARTED`; neither state was true.
 
-**What unblocks it:** (1) a committed version-cohort preparation that clears the eight immutable
-package findings and pins the templates to the new versions, (2) a successful
-`runtime-native-v<version>` release built from that exact candidate SHA with its `prebuilt-lock.json`,
-and (3) npm publish rights for the eleven-package cohort plus release-upload rights on
-`ThreeNativeHQ/threenative`. The credentials are needed after preparation; they do not replace it.
+**What unblocks it:** (1) a successful `runtime-native-v0.3.3` release built from this candidate SHA
+with its `prebuilt-lock.json`, and (2) npm publish rights for the eleven-package cohort (under a
+non-`latest` dist-tag, `next`) plus release-upload rights on `ThreeNativeHQ/threenative`. The
+credentials are needed after preparation; they do not replace it.
 
 **Evidence:** [round-196-published-install.md](../../../verification/round-196-published-install.md)
 and the five phase records it cites —
@@ -161,14 +158,14 @@ than by a user:
 
 ```mermaid
 flowchart TD
-  T["git tag v0.3.0"] --> G["gates: typecheck lint test publish:check"]
+  T["git tag v0.3.3"] --> G["gates: typecheck lint test publish:check"]
   G -->|"template pin census<br/>prebuilt release census"| P["pnpm -r publish"]
   P --> C["clean room: scaffold from registry"]
   C --> W["build --target web"]
   C --> D["build --target desktop"]
   C --> M["mcp initialize handshake"]
   C --> X["threenative doctor"]
-  RT["git tag runtime-native-v0.3.0"] --> NR["native-release.yml"]
+  RT["git tag runtime-native-v0.3.3"] --> NR["native-release.yml"]
   NR --> REL["public release: prebuilt-lock.json + .so + runtime binaries"]
   REL -.->|"fetched by install-prebuilt.mjs"| D
 ```
@@ -226,8 +223,8 @@ and the web-only clean-room flow (row 6).
 - `packages/runtime-native/scripts/install-prebuilt.mjs` — EDIT: `RELEASE_REPOSITORY` constant
   replaces the `jonit-dev` literal at line 53; new `writeInstallStatus()`; the CLI branch records
   the outcome instead of only setting `exitCode`.
-- `packages/runtime-native/__tests__/install-prebuilt.spec.ts` — EDIT: URL-owner and status-file
-  cases.
+- `packages/runtime-native/tests/distribution.test.mjs` — EDIT: URL-owner and status-file cases
+  (the suite landed here rather than as a `__tests__/*.spec.ts`; both run under the package's vitest config).
 - `packages/create-threenative/src/doctor.ts` — EDIT: new native-runtime check reading
   `install-status.json` through the resolved `@threenative/runtime-native` root.
 - `packages/create-threenative/__tests__/doctor.spec.ts` — EDIT: red/green for the new check.
@@ -236,28 +233,32 @@ and the web-only clean-room flow (row 6).
 
 **Implementation:**
 
-- [ ] Export `RELEASE_REPOSITORY = "ThreeNativeHQ/threenative"` and build every release URL from it.
-- [ ] On both success and failure, write `prebuilt/install-status.json` with `{ key, ok, reason,
+- [x] Export `RELEASE_REPOSITORY = "ThreeNativeHQ/threenative"` and build every release URL from it.
+      — `packages/runtime-native/scripts/install-prebuilt.mjs:10` (constant), `:248` (`releaseManifestUrl()`).
+- [x] On both success and failure, write `prebuilt/install-status.json` with `{ key, ok, reason,
       url, version }`; keep the non-zero exit for a source-checkout-less failure.
-- [ ] `doctor` reports `native runtime: available (linux-x64)` / `unavailable — <reason>` /
+      — `install-prebuilt.mjs:251` (`writeInstallStatus`), `:283` (installing), `:305` (ok:true), `:313` (failure).
+- [x] `doctor` reports `native runtime: available (linux-x64)` / `unavailable — <reason>` /
       `unknown — no install status recorded`, and fails the report only on `unavailable`.
-- [ ] `package-android.mjs` keeps its existing `THREENATIVE_RUNTIME_SOURCE` escape hatch and adds
+      — `packages/create-threenative/src/doctor.ts:1364` (`nativeRuntimeCheck`); `unknown` is `warn` (`:1375,:1385`), `unavailable` is `fail` (`:1411`).
+- [x] `package-android.mjs` keeps its existing `THREENATIVE_RUNTIME_SOURCE` escape hatch and adds
       the release tag it looked for.
+      — `packages/runtime-native/scripts/package-android.mjs:713` (`expectedSource`), `:731` (message names the source/tag).
 
 **Wiring:**
 
-- [ ] Caller edited: `packages/create-threenative/src/doctor.ts` check list (reached by
-      `threenative.ts:41`).
-- [ ] Registration: none needed — `scripts.install` already runs the hook.
-- [ ] Old path: the `jonit-dev` literal is deleted, not aliased.
-- [ ] Ledger rows filled: #1, #2, #3.
+- [x] Caller edited: `packages/create-threenative/src/doctor.ts` check list (reached by
+      `threenative.ts:41`). — `nativeRuntimeCheck` registered in the doctor check list.
+- [x] Registration: none needed — `scripts.install` already runs the hook. — `install-prebuilt.mjs:422` CLI branch.
+- [x] Old path: the `jonit-dev` literal is deleted, not aliased. — `grep -rn "jonit-dev" packages scripts .github` matches only `packages/runtime-native/tests/fixtures/prd056-*.json`.
+- [x] Ledger rows filled: #1, #2, #3. — no `TBD` cells remain in the ledger.
 
 **Tests Required:**
 
 | Test File | Test Name | Assertion | Negative control (must be observed red) |
 |---|---|---|---|
-| `runtime-native/__tests__/install-prebuilt.spec.ts` | `should build every release URL from the live repository owner` | URL contains `ThreeNativeHQ/threenative` | grep for `jonit-dev` in `packages/` returns nothing; restoring the literal fails the test |
-| `runtime-native/__tests__/install-prebuilt.spec.ts` | `should record ok:false with the fetch reason when the manifest 404s` | status file parsed, `ok === false`, reason names the URL | stub a 200 manifest → the same test fails |
+| `runtime-native/tests/distribution.test.mjs` | `the default checksum lock URL is tied to the installed package version` | URL contains `ThreeNativeHQ/threenative` | grep for `jonit-dev` in `packages/` returns nothing; restoring the literal fails the test |
+| `runtime-native/tests/distribution.test.mjs` | `records a failed prebuilt install with its release URL and reason` | status file parsed, `ok === false`, reason names the URL | stub a 200 manifest → the same test fails |
 | `create-threenative/__tests__/doctor.spec.ts` | `should fail the report when the native runtime install recorded a failure` | `report.pass === false`, message names the platform key | write `ok:true` into the fixture → the assertion fails |
 
 **Revert check:** delete `writeInstallStatus` → `doctor.spec.ts`'s unavailable case fails, and
