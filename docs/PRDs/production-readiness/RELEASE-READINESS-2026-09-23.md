@@ -13,7 +13,7 @@ target, and no public text may claim iOS until a later decision adds it.
 | Rung | What you may tell the public | Ready? | Gap |
 | --- | --- | --- | --- |
 | **R1 — coherent 0.3.3 preview** | "Alpha. Install it, build web games, try native." | **No, days away** | Unpublished cohort, stale security/challenge docs, one high CVE, red site deploy, promotion PR stuck |
-| **R2 — public beta (public announcement)** | "Ship one game to web, Windows, macOS, Linux and Android from installed packages." | **No, weeks away** | Consumer-game qualification, packed golden path, Android UI latency, desktop perf judge, stranger test |
+| **R2 — public beta (public announcement)** | "Ship one game to web, Windows, macOS, Linux and Android from installed packages." | **No, weeks away** | Consumer-game qualification, packed golden path, Android UI latency, desktop perf judge |
 | **R3 — production 1.0** | "Build your game on this; the API is stable." | **No** | Physical-phone playtest and 60 Hz frame budget, a stable-API contract, parity, physical-device and store qualification |
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
@@ -98,9 +98,6 @@ to 0.3.3 and not released.
 4. **The desktop production-performance judge is BLOCKED today** (six `TN_PROD_*` codes, above).
    Owner: [PRD-064](critical/PRD-064-tier-1-native-reliability.md) (no phase boxes — cannot report
    progress). Related, not release-blocking: [PRD-400](../performance/PRD-400-the-frame-gets-cheaper-one-measured-cost-at-a-time.md) (1/17), [PRD-358](../performance/PRD-358-cross-platform-performance-regression-ci.md) (6/18).
-5. **Nobody outside the project has used it** (alpha row A6, Charter criterion 4). Owner:
-   [PRD-080](critical/PRD-080-five-minute-stranger-test.md). Needs you to
-   pick a build and find one person; everything else is ready once R1 ships.
 
 Also in R2, nearly done and worth finishing rather than re-planning:
 [PRD-365](critical/PRD-365-consumer-desktop-distribution.md) desktop containers (23/24 phase boxes, 19/24
@@ -135,13 +132,11 @@ flowchart TD
     P[PRD-373 merge promotion #291] --> R1
     R1([R1: coherent 0.3.3 preview on latest])
     R1 --> Q[PRD-366 phase 3: consumer game from the registry]
-    R1 --> S[PRD-080 stranger test]
     G[PRD-112 packed golden path green] --> R2
     Q --> R2
     L[PRD-399 Android UI latency at 60 Hz] --> R2
     J[PRD-064 desktop production judge passes] --> R2
     D[PRD-365 + PRD-375 finish] --> R2
-    S --> R2
     R2([R2: public beta])
     R2 --> A[PRD-446 stable API + N-1 upgrade proof]
     R2 --> W[PRD-054 parity + PRD-057 audio]
@@ -155,9 +150,9 @@ flowchart TD
 
 **Order of work.** R1 is roughly three days of local work plus a publish: PRD-445 and PRD-373 run in
 parallel with the PRD-196 cohort cut; publish under a candidate dist-tag, run PRD-196's
-installed-consumer gates against it, then move `latest`. R2's five lanes are independent and can run
-in parallel once R1 lands — PRD-112 and PRD-064 are local, PRD-399 needs the Pixel, PRD-080 needs
-you. R3 starts only after R2; do not open R3 lanes early, because each one reads the published
+installed-consumer gates against it, then move `latest`. R2's lanes are independent and can run
+in parallel once R1 lands — PRD-112 and PRD-064 are local, PRD-399 needs the Pixel. The stranger test (PRD-080) was removed by the owner and gates nothing.
+R3 starts only after R2; do not open R3 lanes early, because each one reads the published
 cohort that R1 and R2 fix.
 
 ## Decisions only you can make
