@@ -12,7 +12,7 @@ Batch contract and dependency order: [production-readiness](../production-readin
 
 ## Why this is not PRD-365 or PRD-366
 
-[PRD-365](../production-readiness/PRD-365-consumer-desktop-distribution.md) owns the release *container* — the ZIP, the embedded icon and version resources, WebView2 prerequisites, signing. [PRD-366](../production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md) owns one real *game* proving the supported platforms. Both assume the Windows desktop build works and package or play its output. **Nothing owns proving it works.** This PRD is the prerequisite both are standing on, and it is deliberately narrow: install from the published cohort, build, run, stop.
+[PRD-365](../production-readiness/critical/PRD-365-consumer-desktop-distribution.md) owns the release *container* — the ZIP, the embedded icon and version resources, WebView2 prerequisites, signing. [PRD-366](../production-readiness/critical/PRD-366-one-consumer-game-proves-supported-platforms.md) owns one real *game* proving the supported platforms. Both assume the Windows desktop build works and package or play its output. **Nothing owns proving it works.** This PRD is the prerequisite both are standing on, and it is deliberately narrow: install from the published cohort, build, run, stop.
 
 ## Current behavior and ownership
 

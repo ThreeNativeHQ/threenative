@@ -101,6 +101,7 @@ shorter. Preserve diagnostics when one selected job fails.
 - [x] Observed red recorded, then restored green — run 34651109589 failed the captured-checkout regression (187/188 passed); this run restores it. New shell tests reject a mismatched checkout while accepting a different event SHA.
 - [ ] Verified on a real PR, not only locally
       PARTIAL — the develop ruleset enforces `ci-required`; a real promotion PR and a red verdict are not yet observed (see the 2026-09-13 observations).
+      Updated 2026-09-23: the real promotion PR is now observed — PR #291 (`develop -> main`, head `436ee3053`) ran the full board and `ci-required` correctly rejected it while selected jobs were red (run 35942841524). That is the real-PR promotion path and its red verdict; the green merge is still outstanding and is covered by the phase below.
 
 
 Feature branches start from `develop`; squash their focused PRs into `develop`. Capture a fixed
@@ -173,6 +174,48 @@ Land the enabling workflow changes through the current protected-main flow first
 Update main protection and agent/tool defaults as part of the same cutover. Inventory existing
 open PRs and active worktrees; migrate each deliberately without resetting local work or
 mass-retargeting active PRs. Rollback restores full selection and the previous protected flow.
+
+### 6. Take the unsupported iOS lane out of the merge verdict — 2026-09-23
+
+**Progress:**
+
+- [x] Implemented and wired: the `ios-simulator` job carries `continue-on-error: true`
+      (`.github/workflows/native-platforms.yml`), so a red iOS leg reports its own result without
+      failing the reusable workflow or the `ci-required` verdict. Owner decision 2026-09-23: iOS is
+      not a supported target (`docs/PRDs/production-readiness/README.md`). `native-release.yml`
+      still validates the iOS rows for a release, so release provenance is unchanged.
+- [x] Required test green — `scripts/__tests__/ci-structure.spec.ts` 121 passed (including the new
+      contract that asserts the non-blocking attribute), and `ci-needs.spec.ts` +
+      `ci-efficiency.spec.ts` + `ci-structure.spec.ts` 185 passed across 3 files, run locally
+      2026-09-23.
+- [ ] Verified on a real PR, not only locally — PR #291's hosted run must show `native-platforms`
+      green with the iOS leg red-but-allowed before this is claimed. Only CI can prove the reusable
+      workflow conclusion.
+
+### 7. Clear the promotion reds on PR #301 — 2026-09-23
+
+**Progress:**
+
+- [x] Implemented and wired: the stale `iOS consumer proof is a required gate` assertion in
+      `packages/runtime-native/tests/native-platform-workflow.test.mjs` now matches the phase-6
+      owner decision — the `ios-simulator` job runs `verify-ios-simulator.mjs` and carries
+      `continue-on-error: true`, mirroring `scripts/__tests__/ci-structure.spec.ts`.
+- [x] Implemented and wired: a declared software lane (`--allow-software` + a WebGPU software
+      adapter) records the device-loss cascade as a `TN_PLAYTEST_SOFTWARE_DEVICE_LOST` warning
+      instead of failing `noConsoleErrors`; hardware runs and any real error still fail
+      (`packages/playtest/src/runner/runner-support.ts`). `console.json` keeps every raw entry.
+- [x] Implemented and wired: the Android V8 source producer's build ceiling is 180 minutes
+      (`.github/actions/android-v8-source/action.yml`) with 210-minute job budgets in
+      `native-platforms.yml` and `native-release.yml`, and 240 in `pipeline-cache.yml`. A cold
+      build reached 3089 of 3529 Ninja targets in 120 minutes on run 35945560551 and could never
+      finish in one run, so the payload was never saved.
+- [x] Required test green — `native-platform-workflow.test.mjs` + `wgpu-cache-toolchain.test.mjs`
+      54 passed, `ci-structure.spec.ts` + `ci-needs.spec.ts` 138 passed, and
+      `packages/playtest/__tests__` 1215 passed including the new
+      `software-device-loss.spec.ts`; all run locally 2026-09-23.
+- [ ] Verified on a real PR, not only locally — PR #301's hosted run must show `test-native`,
+      `template-nonvisual (racing)` and `template-nonvisual (sailing)` green before this is
+      claimed. Only CI can prove the reusable workflow conclusions.
 
 ## Acceptance criteria
 

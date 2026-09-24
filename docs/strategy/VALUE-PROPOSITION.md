@@ -323,7 +323,7 @@ the native release and the npm cohort followed it, and the rows below are what i
 Below the cut, unchanged from the last pass and still true: two consecutive green iOS-simulator
 lanes (lets us say *iOS simulator*, never *iPhone*;
 [PRD-045](../PRDs/done/PRD-045-playtest-on-device.md)), tier 1 aggregate green
-([PRD-064](../PRDs/native/PRD-064-tier-1-native-reliability.md)), and a controlled engine benchmark with
+([PRD-064](../PRDs/production-readiness/critical/PRD-064-tier-1-native-reliability.md)), and a controlled engine benchmark with
 everything moving so no pass can fold it — the last of which
 [the benchmark record](../verification/runtime-perf-state.md) already specifies.
 

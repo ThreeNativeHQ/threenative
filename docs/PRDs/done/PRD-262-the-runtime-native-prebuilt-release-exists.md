@@ -290,7 +290,7 @@ like a corrupt one. Publishing it again is one array entry, once someone runs th
 publisher of the artifact a player downloads, and that artifact is the developer's game, not our
 runtime — which reaches a machine through a postinstall `fetch()` into `node_modules` and is never
 double-clicked by a player. Giving developers a signing step in the build pipeline is
-[PRD-365](../production-readiness/PRD-365-consumer-desktop-distribution.md)'s. Full platform-by-platform status, the
+[PRD-365](../production-readiness/critical/PRD-365-consumer-desktop-distribution.md)'s. Full platform-by-platform status, the
 certificates that remain optional and what each costs: [`docs/RELEASE-SIGNING.md`](../../RELEASE-SIGNING.md).
 
 ## Public consumer verification — 2026-09-12

@@ -55,10 +55,13 @@ runs:
       run: |
         set -euo pipefail
         : "${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must select the pinned V8 NDK}"
-        # The producer job is 150 minutes. Keep 30 minutes available after an interrupted
-        # compile for actions/cache/save to archive the prepared checkout and Ninja outputs;
-        # the next run restores this exact recipe and continues instead of starting over.
-        timeout --signal=TERM --kill-after=30s 120m \
+        # The producer job is 210 minutes. A cold build on a two-core runner reached 3089 of
+        # 3529 Ninja targets in 120 minutes (run 35945560551), so a 120-minute ceiling could
+        # never finish one and save the payload — every fresh recipe cold-built into the timeout
+        # and needed a manual re-run. 180 minutes lets one run complete and cache the payload.
+        # The remaining 30 minutes let actions/cache/save archive the prepared checkout and Ninja
+        # outputs after an interrupted compile, so the next run resumes instead of starting over.
+        timeout --signal=TERM --kill-after=30s 180m \
           node scripts/download-deps.mjs --only v8-android
     # Payload-only verification is valid: `--verify` inspects the installed payload and its receipt
     # under third_party/v8-android and never reads third_party/.v8-source.

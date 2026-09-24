@@ -1,7 +1,7 @@
 # PRD-366 phase 1 evidence — the installed starter proves browser gameplay after a normal edit
 
 Date: 2026-09-12/13
-PRD: [PRD-366](../PRDs/production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md)
+PRD: [PRD-366](../PRDs/production-readiness/critical/PRD-366-one-consumer-game-proves-supported-platforms.md)
 Branch: `prd366/browser-consumer-phase1` (base `origin/develop` @ `051b5de03`)
 Layer: engine (`packages/create-threenative/` template + `scripts/` consumer gate).
 
