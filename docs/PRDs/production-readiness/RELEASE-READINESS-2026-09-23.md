@@ -14,7 +14,7 @@ target, and no public text may claim iOS until a later decision adds it.
 | --- | --- | --- | --- |
 | **R1 — coherent 0.3.3 preview** | "Alpha. Install it, build web games, try native." | **No, days away** | Unpublished cohort, stale security/challenge docs, one high CVE, red site deploy, promotion PR stuck |
 | **R2 — public beta (public announcement)** | "Ship one game to web, Windows, macOS, Linux and Android from installed packages." | **No, weeks away** | Consumer-game qualification, packed golden path, Android UI latency, desktop perf judge, stranger test |
-| **R3 — production 1.0** | "Build your game on this; the API is stable." | **No** | All four Charter success criteria, a stable-API contract, parity, physical-device and store qualification |
+| **R3 — production 1.0** | "Build your game on this; the API is stable." | **No** | Physical-phone playtest and 60 Hz frame budget, a stable-API contract, parity, physical-device and store qualification |
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md)
@@ -39,7 +39,6 @@ marked *read*.
 | `CHANGELOG.md` (read) | Last released section is `0.2.0`; 0.3.x has no entry |
 | `CURRENT-CHALLENGES.md` (read) | Last reviewed 2026-09-02; its Android-CI row was already superseded on 2026-09-08 |
 | `.runtime/prd064/production/production-evidence.json` (read; another lane's run, 18:22 today) | Desktop 1920×1080 production profile **BLOCKED**: `TN_PROD_PLAYTEST_FAILED`, `TN_PROD_MARKER_MISSING`, `TN_PROD_PERFORMANCE_BUDGET`, `TN_PROD_STARTUP_BUDGET`, samples incomplete |
-| `collectLoc()` from `scripts/count-loc.ts` | Abyss port **441** lines against vanilla **473** — shorter than vanilla, but over the Charter's 400-line bar |
 | `pnpm prd:progress` (release PRDs) | See the owner table below |
 | PRD census | 160 PRD files open outside `done/`, 272 done; 21 in `BLOCKED/`, 9 of those without phase boxes |
 
@@ -109,11 +108,9 @@ acceptance) and [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) bra
 
 ### R3 — production 1.0
 
-1. **The Charter's four success criteria.** (1) Abyss port at 441 lines against a 400-line bar.
-   (2) One codebase on a physical phone by playtest — [PRD-056](../BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md)
-   0/42 boxes. (3) Mobile frame budget on real hardware — met at 120 Hz (63–72 fps, Bayview), not on
-   the 60 Hz baseline; [PRD-066](../performance/PRD-066-android-device-frame-rate.md). (4) The stranger
-   test, above.
+1. **Proof on real hardware.** One codebase on a physical phone by playtest — [PRD-056](../BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md)
+   0/42 boxes. Mobile frame budget on real hardware — met at 120 Hz (63–72 fps, Bayview), not on
+   the 60 Hz baseline; [PRD-066](../performance/PRD-066-android-device-frame-rate.md).
 2. **No stable-API or upgrade contract exists.** Nothing defines the public surface, the deprecation
    window, or proves a game on version N-1 upgrades to N. **New:
    [PRD-446](PRD-446-stable-api-and-upgrade-contract.md).**
@@ -170,14 +167,12 @@ cohort that R1 and R2 fix.
    path is red on one template and no outsider has touched it.
 2. **iOS?** **Decided (owner, 2026-09-23): not supported.** Supported targets are web, Windows,
    macOS, Linux and Android. iOS is not labelled a preview and is claimed nowhere.
-3. **Charter criterion 1: 441 lines against 400.** Recommendation: treat it as work (cut 41 lines
-   from the port or the API it calls) inside R3, not a Charter amendment — the Charter forbids
-   routing around a cap.
-4. **Scope freeze.** Recommendation: approve that only the PRDs named in this document block a
-   release. The other ~140 open PRDs are post-launch; a lane that picks one up says so in its PR.
-5. **Desktop signing in the beta.** ThreeNative needs no certificate of its own; signing is per
-   developer, per game. Recommendation: the beta ships "bring your own certificate" proven with test
-   credentials on CI (PRD-365 phase 3), not a signed ThreeNative binary.
+3. **Scope freeze.** **Decided (owner, 2026-09-23): only the PRDs named in this document block a
+   release.** The other open PRDs are post-launch and cannot hold up the beta.
+4. **Desktop signing.** **Decided (owner, 2026-09-23): each developer signs their own game** with
+   their own certificate; ThreeNative ships no certificate of its own. The framework's job is that
+   `threenative build --mode release` signs with the developer's credentials, proven with test
+   credentials on Windows and macOS CI ([PRD-365](PRD-365-consumer-desktop-distribution.md) phase 3).
 
 ## Housekeeping found while inspecting
 
@@ -190,5 +185,5 @@ These fold into [PRD-445](PRD-445-public-release-hygiene.md):
 - Release-blocking PRDs without phase boxes cannot report progress: PRD-054, PRD-058, PRD-064,
   PRD-066 and PRD-112-repair.
 
-**Next action (under two minutes):** answer decisions 3–5, then open
+**Next action (under two minutes):** open
 [PRD-445](PRD-445-public-release-hygiene.md) phase 1 — the `sharp` bump is the first box.

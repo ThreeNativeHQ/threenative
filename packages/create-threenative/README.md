@@ -70,7 +70,7 @@ hidden by the install recipe.
 Inside a generated project, `npx threenative doctor --text` reports what would break a build:
 missing or version-mismatched `@threenative` packages, a portable entry with no default game
 export, no web entry, no scenario, no capability search for your agent. Naming the build you
-intend — `--target web|desktop|android|ios`, optionally with `--mode debug|release` — makes that
+intend — `--target web|desktop|android|ios` (iOS is not a supported target yet), optionally with `--mode debug|release` — makes that
 build's prerequisites decide the verdict instead of warning beside "available".
 
 Tool discovery reports four separate facts, because three of them are routinely mistaken for the

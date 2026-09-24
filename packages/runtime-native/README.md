@@ -3,7 +3,7 @@
 ## What it is
 
 `@threenative/runtime-native` is the optional ThreeNative host for running the same portable game
-entry on desktop, Android, and iOS. Native compilation is opt-in: installing this package does
+entry on desktop (Windows, macOS, Linux) and Android. iOS is not a supported target yet. Native compilation is opt-in: installing this package does
 not require CMake, an NDK, or Xcode. It is a host, not a second renderer or scene API; upstream
 Three.js and the game's `src/game.ts` remain the portable runtime contract.
 
