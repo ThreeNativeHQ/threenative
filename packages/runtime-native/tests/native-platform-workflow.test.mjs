@@ -403,10 +403,12 @@ test('iOS workflow dispatch can run without unrelated platform cancellation', ()
   expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
 });
 
-test('iOS consumer proof is a required gate after the simulator proof passes', () => {
-  // Fail-closed since the simulator's worker proof passed in isolated run 33498394620.
+test('iOS consumer proof runs and reports without holding the merge verdict', () => {
+  // iOS is not a supported target (owner decision, 2026-09-23). The lane still runs and reports,
+  // but `continue-on-error: true` keeps a red iOS leg out of the develop->main `ci-required`
+  // verdict; `native-release.yml` still gates the iOS rows for a release.
   const iosJob = workflow.slice(workflow.indexOf('  ios-simulator:'));
-  expect(iosJob).not.toContain('continue-on-error: true');
+  expect(iosJob).toContain('continue-on-error: true');
   expect(workflow).not.toContain('worker proof is unresolved');
 });
 
