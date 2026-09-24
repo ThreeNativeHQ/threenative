@@ -475,10 +475,86 @@ function simplifyRow(value: unknown): ISimplifyRow | undefined {
 
 function compactRow(value: unknown): IModelCompactSummary | undefined {
   if (!isRecord(value)) return undefined;
-  if (!isRecord(value.flatten) || !isRecord(value.instance) || !isRecord(value.join)) {
+  const flatten = value.flatten;
+  const instance = value.instance;
+  const join = value.join;
+  if (!isRecord(flatten) || !isRecord(instance) || !isRecord(join)) return undefined;
+
+  if (typeof flatten.enabled !== "boolean" || typeof flatten.reparented !== "number") {
     return undefined;
   }
-  return value as unknown as IModelCompactSummary;
+  if (
+    typeof instance.batches !== "number" ||
+    typeof instance.enabled !== "boolean" ||
+    typeof instance.instances !== "number" ||
+    (instance.reason !== undefined && typeof instance.reason !== "string")
+  ) {
+    return undefined;
+  }
+  if (
+    typeof join.enabled !== "boolean" ||
+    typeof join.primitivesAfter !== "number" ||
+    typeof join.primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  const nodesAfter = value.nodesAfter;
+  const nodesBefore = value.nodesBefore;
+  const primitivesAfter = value.primitivesAfter;
+  const primitivesBefore = value.primitivesBefore;
+  if (
+    typeof nodesAfter !== "number" ||
+    typeof nodesBefore !== "number" ||
+    typeof primitivesAfter !== "number" ||
+    typeof primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value.removed) || !Array.isArray(value.protected)) return undefined;
+  const removed: string[] = [];
+  for (const name of value.removed) {
+    if (typeof name !== "string") return undefined;
+    removed.push(name);
+  }
+
+  const protectedNodes: IModelCompactSummary["protected"][number][] = [];
+  for (const entry of value.protected) {
+    if (!isRecord(entry) || typeof entry.name !== "string") return undefined;
+    const rule = entry.rule;
+    if (
+      rule !== "allow-list" &&
+      rule !== "animation-ancestor" &&
+      rule !== "animation-target" &&
+      rule !== "regex" &&
+      rule !== "skin-joint"
+    ) {
+      return undefined;
+    }
+    protectedNodes.push({ name: entry.name, rule });
+  }
+
+  return {
+    flatten: { enabled: flatten.enabled, reparented: flatten.reparented },
+    instance: {
+      batches: instance.batches,
+      enabled: instance.enabled,
+      instances: instance.instances,
+      ...(instance.reason === undefined ? {} : { reason: instance.reason }),
+    },
+    join: {
+      enabled: join.enabled,
+      primitivesAfter: join.primitivesAfter,
+      primitivesBefore: join.primitivesBefore,
+    },
+    nodesAfter,
+    nodesBefore,
+    primitivesAfter,
+    primitivesBefore,
+    removed,
+    protected: protectedNodes,
+  };
 }
 
 function lodRow(value: unknown): ILodRow | undefined {

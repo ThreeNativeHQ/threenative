@@ -8,6 +8,8 @@ import {
   type Primitive,
   PropertyType,
   type mat4,
+  type vec3,
+  type vec4,
 } from "@gltf-transform/core";
 import type { InstancedMesh } from "@gltf-transform/extensions";
 import { clearNodeParent, instance, join, listNodeScenes } from "@gltf-transform/functions";
@@ -338,24 +340,26 @@ export function composeTrsMatrix(
   rotation: readonly number[],
   scale: readonly number[],
 ): number[] {
-  const out = new Float32Array(16);
-  const tx = translation[0] ?? 0;
-  const ty = translation[1] ?? 0;
-  const tz = translation[2] ?? 0;
-  const qx = rotation[0] ?? 0;
-  const qy = rotation[1] ?? 0;
-  const qz = rotation[2] ?? 0;
-  const qw = rotation[3] ?? 1;
-  const sx = scale[0] ?? 1;
-  const sy = scale[1] ?? 1;
-  const sz = scale[2] ?? 1;
-  MathUtils.compose(
-    [tx, ty, tz] as unknown as Parameters<typeof MathUtils.compose>[0],
-    [qx, qy, qz, qw] as unknown as Parameters<typeof MathUtils.compose>[1],
-    [sx, sy, sz] as unknown as Parameters<typeof MathUtils.compose>[2],
-    out as unknown as mat4,
-  );
-  return Array.from(out);
+  const translationVector: vec3 = [
+    translation[0] ?? 0,
+    translation[1] ?? 0,
+    translation[2] ?? 0,
+  ];
+  const rotationVector: vec4 = [
+    rotation[0] ?? 0,
+    rotation[1] ?? 0,
+    rotation[2] ?? 0,
+    rotation[3] ?? 1,
+  ];
+  const scaleVector: vec3 = [scale[0] ?? 1, scale[1] ?? 1, scale[2] ?? 1];
+  const out: mat4 = [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ];
+  MathUtils.compose(translationVector, rotationVector, scaleVector, out);
+  return [...out];
 }
 
 /**
