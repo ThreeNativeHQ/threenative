@@ -61,6 +61,8 @@ Ask these three questions before you profile anything, because they decide who o
 
 1. **Is the GPU busy?** `TN_FRAME_BUDGET` carries `gpuMs`. A frame with a 16 ms `render` phase and a
    2 ms GPU is not a rendering problem — the GPU is idle and waiting for JavaScript.
+   `gpuMs` is sampled one frame in eight (`renderer.gpuTimestampFrameInterval`, default `8`): reading
+   every pass of every frame cost native Midway 161 ms/s of main-thread JavaScript.
 2. **How many objects does the scene walk?** `TN_PROJECTION` reports `considered`, `culled`,
    `exemptShadowCasters` and `exemptFrustumCulled` for the frame. Three.js visits every object once
    per pass (main, each shadow, each reflection) and that visit is roughly 2 µs each on a desktop
