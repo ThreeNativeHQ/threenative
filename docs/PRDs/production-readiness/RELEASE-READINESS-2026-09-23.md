@@ -179,8 +179,8 @@ cohort that R1 and R2 fix.
 These fold into [PRD-445](critical/PRD-445-public-release-hygiene.md):
 
 - PRD-060 exists twice, with different titles and progress
-  ([here](PRD-060-promoted-consumer-distribution.md) and
-  [in BLOCKED](../BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md)). **Resolved 2026-09-23** by PRD-445 Phase 3: the BLOCKED duplicate was deleted, its landed Phase 1 folded into the survivor.
+  ([here](PRD-060-promoted-consumer-distribution.md) and its former
+  BLOCKED duplicate). **Resolved 2026-09-23** by PRD-445 Phase 3: the BLOCKED duplicate was deleted, its landed Phase 1 folded into the survivor.
 - `PRD-375-release-artifacts-carry-the-game-brand.md` carries the heading "PRD-153".
 - Release-blocking PRDs without phase boxes cannot report progress: PRD-054, PRD-058, PRD-064,
   PRD-066 and PRD-112-repair.

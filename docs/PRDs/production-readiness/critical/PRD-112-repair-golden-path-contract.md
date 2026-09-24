@@ -96,7 +96,14 @@ tarball for the mutated tarball makes the packed negative-control identity asser
 
 ## 4. Execution Phases
 
+Progress boxes were added by PRD-445 Phase 3; the phases were prose before that. None is ticked.
+
 ### Phase 1: Config loading matches the reproduced evidence
+
+- [ ] Vite `loadConfigWithVite` branch removed; one esbuild resolution path remains, with actionable errors
+- [ ] Focused gate green: `pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts`
+- [ ] Revert check observed red, then restored green (restoring the Vite call fails the regression)
+- [ ] Framework LOC delta recorded (net deletion)
 
 **User-testable vertical slice.** A generated packed project loads its TypeScript config through
 the original resolution chain, and no unmeasured Vite resolver replacement remains.
@@ -126,6 +133,11 @@ pnpm exec vitest run packages/create-threenative/__tests__/config.spec.ts
 not-reproduced implementation path has returned.
 
 ### Phase 2: Help and failure recovery are executable
+
+- [ ] Help advertises only parser-supported commands; no `dev`, `test`, or `ship` promise remains
+- [ ] Every corrective command is executable from its recorded cwd, with no placeholder or prose in the command slot
+- [ ] Focused gate green: `pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts scripts/__tests__/verify-golden-path.spec.ts`
+- [ ] Revert check observed red, then restored green (placeholder/unsupported command fails the tests)
 
 **User-testable vertical slice.** A user sees only supported CLI help, and can copy each golden-path
 corrective command into the exact directory named beside it without editing placeholders.
@@ -161,6 +173,11 @@ pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts \
 the focused tests fail on parser disagreement or command execution.
 
 ### Phase 3: The packed negative control mutates the artifact under test
+
+- [ ] Mutated temporary package packed and scaffolded; tarball identity differs from the repository tarball
+- [ ] All seven repository templates complete the real packed web journey from an empty temporary directory
+- [ ] Focused and journey gates green: `pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts` and `pnpm verify:golden-path`
+- [ ] Revert check observed red, then restored green (repository tarball substitution fails the identity assertion)
 
 **User-testable vertical slice.** All seven repository templates complete the real packed journey,
 while a separately packed mutated template scaffolds successfully and then fails because its

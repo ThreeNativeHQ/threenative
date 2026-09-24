@@ -90,9 +90,20 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
 
 ### Phase 3 — Release-path PRD bookkeeping
 
-- [ ] One PRD-060 remains; the other is removed with its ticked boxes and evidence merged into the survivor.
-- [ ] PRD-375's heading matches its file name, and links to it still resolve.
-- [ ] Phase boxes added to PRD-054, PRD-058, PRD-064, PRD-066 and PRD-112-repair; `pnpm prd:progress` exits 0 on each.
+- [x] One PRD-060 remains; the other is removed with its ticked boxes and evidence merged into the survivor.
+  Done: the `BLOCKED/requires-release-credentials/` duplicate was deleted (`git rm`); its landed
+  Phase 1 exact-candidate preflight is carried into the survivor at
+  `docs/PRDs/production-readiness/PRD-060-promoted-consumer-distribution.md` with its verification
+  record linked. `find docs/PRDs -name '*PRD-060*'` (excluding `done/`) returns exactly one file.
+  The now-empty reason folder was dropped from `BLOCKED/README.md` and the stale link in
+  `RELEASE-READINESS-2026-09-23.md` corrected.
+- [x] PRD-375's heading matches its file name, and links to it still resolve.
+  Done: the heading now reads `# PRD-375 — A consumer can brand launch, loading and packaged apps`
+  (was "PRD-153"); `pnpm check:docs` reports 2223 links across 1135 files, exit 0.
+- [x] Phase boxes added to PRD-054, PRD-058, PRD-064, PRD-066 and PRD-112-repair; `pnpm prd:progress` exits 0 on each.
+  Done: per-phase checklists added to all five. `pnpm prd:progress` exits 0 on each — PRD-054
+  0/6 phases (0/11 boxes), PRD-058 0/8 (0/40), PRD-064 0/6 (0/25), PRD-066 0/1 (1/4),
+  PRD-112-repair 0/3 (0/12). No box was ticked on unrun work.
 
 > Also folded in here: `d63a2464b` (the commit that added this PRD) deleted `PRD-080` from
 > `BLOCKED/` and repointed nine links at `critical/` without moving the file, breaking
