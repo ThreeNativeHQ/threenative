@@ -340,11 +340,7 @@ export function composeTrsMatrix(
   rotation: readonly number[],
   scale: readonly number[],
 ): number[] {
-  const translationVector: vec3 = [
-    translation[0] ?? 0,
-    translation[1] ?? 0,
-    translation[2] ?? 0,
-  ];
+  const translationVector: vec3 = [translation[0] ?? 0, translation[1] ?? 0, translation[2] ?? 0];
   const rotationVector: vec4 = [
     rotation[0] ?? 0,
     rotation[1] ?? 0,
@@ -352,12 +348,7 @@ export function composeTrsMatrix(
     rotation[3] ?? 1,
   ];
   const scaleVector: vec3 = [scale[0] ?? 1, scale[1] ?? 1, scale[2] ?? 1];
-  const out: mat4 = [
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1,
-  ];
+  const out: mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   MathUtils.compose(translationVector, rotationVector, scaleVector, out);
   return [...out];
 }
