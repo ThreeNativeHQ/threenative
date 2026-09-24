@@ -14,9 +14,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, posix, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { downloadReleaseArtifact, releaseManifestUrl, verifyChecksum } from './install-prebuilt.mjs';
+import { listFiles, selectManifestAssets } from './asset-manifest.mjs';
 import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
 import {
   assertAndroidArtifact16KbAlignment,
@@ -762,17 +763,6 @@ export async function ensureGradleWrapper(options = {}) {
   return output;
 }
 
-function listFiles(directory, relative = '') {
-  const files = [];
-  for (const entry of readdirSync(join(directory, relative), { withFileTypes: true })) {
-    const path = relative ? posix.join(relative, entry.name) : entry.name;
-    if (entry.isDirectory()) files.push(...listFiles(directory, path));
-    else if (entry.isFile()) files.push(path);
-    else throw new Error(`Unsupported Android asset entry: ${join(directory, path)}`);
-  }
-  return files.sort();
-}
-
 export function stageAndroidAssets(
   assets,
   destination = join(runtimeRoot, 'android', 'app', 'build', 'generated', 'threenative', 'assets', 'game'),
@@ -790,7 +780,7 @@ export function stageAndroidAssets(
   // Derived from the runtime this build is about to pack, not declared here. A hardcoded claim
   // goes stale the moment the build changes under it, which is exactly what happened to WebP.
   assertAndroidAssetsDecodable(assets, { webp: deriveAndroidWebpSupport(runtimeSource) });
-  const files = listFiles(assets);
+  const files = selectManifestAssets(assets);
   for (const file of files) {
     const output = join(destination, file);
     mkdirSync(dirname(output), { recursive: true });

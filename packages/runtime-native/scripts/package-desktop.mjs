@@ -19,6 +19,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
+import { selectManifestAssets } from './asset-manifest.mjs';
 import { installPrebuilt } from './install-prebuilt.mjs';
 
 // The container helper is imported lazily by the release path only, so a debug build never loads
@@ -374,11 +375,14 @@ export function stageDesktopFiles(
       target: 'desktop',
       capabilities: { webp: deriveDesktopWebpSupport(runtimeSource, runtimeExecutable) },
     });
-    for (const entry of readdirSync(assets)) {
-      if (entry === '.threenative') {
-        throw new Error('TN_NATIVE_ASSET_RESERVED_PATH: public/.threenative is reserved.');
-      }
-      cpSync(join(assets, entry), join(staging, entry), { recursive: true });
+    if (existsSync(join(assets, '.threenative'))) {
+      throw new Error('TN_NATIVE_ASSET_RESERVED_PATH: public/.threenative is reserved.');
+    }
+    const selected = selectManifestAssets(assets);
+    for (const file of selected) {
+      const output = join(staging, file);
+      mkdirSync(dirname(output), { recursive: true });
+      copyFileSync(join(assets, file), output);
     }
   }
   const entry = join(staging, '.threenative', 'game.js');

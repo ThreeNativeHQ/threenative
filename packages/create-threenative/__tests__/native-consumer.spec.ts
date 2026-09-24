@@ -309,7 +309,12 @@ posixTest("desktop packaging forwards install options and emits an artifact", as
   const consumer = path.join(fixture.root, "consumer");
   await mkdir(path.join(consumer, "scripts"), { recursive: true });
   await copyFile(path.join(runtimeRoot, "package.json"), path.join(consumer, "package.json"));
-  for (const script of ["package-desktop.mjs", "install-prebuilt.mjs", "asset-preflight.mjs"]) {
+  for (const script of [
+    "package-desktop.mjs",
+    "install-prebuilt.mjs",
+    "asset-preflight.mjs",
+    "asset-manifest.mjs",
+  ]) {
     await copyFile(
       path.join(runtimeRoot, "scripts", script),
       path.join(consumer, "scripts", script),
