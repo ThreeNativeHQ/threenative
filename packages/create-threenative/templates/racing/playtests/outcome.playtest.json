@@ -7,12 +7,6 @@
   "subject": "player",
   "steps": [
     {
-      "kind": "wait",
-      "label": "take-the-clock",
-      "waitTicks": 1,
-      "release": true
-    },
-    {
       "kind": "input",
       "label": "first-straight",
       "press": "ArrowUp",

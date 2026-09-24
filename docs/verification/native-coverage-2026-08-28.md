@@ -8,12 +8,12 @@ targets could not be built and are named below.
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1193 | 1013 | 84.91% |
+| `src/audio/` | 1223 | 1047 | 85.61% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
-| `src/cli/` | 1624 | 1211 | 74.57% |
+| `src/cli/` | 1643 | 1226 | 74.62% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2644 | 2203 | 83.32% |
+| `src/js/` | 2785 | 2212 | 79.43% |
 | `src/platform/` | 1266 | 914 | 72.20% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
 | `src/runtime.cpp` | 2331 | 1852 | 79.45% |
@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9643 | 7375 | 76.48% |
+| `src/webgpu/` | 9658 | 7382 | 76.43% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 524 | 85.20% |
-| **TOTAL** | **23813** | **18810** | **78.99%** |
+| `src/workers/` | 615 | 527 | 85.69% |
+| **TOTAL** | **24018** | **18878** | **78.60%** |
 
-Source digest: `sha256:633f822eb8c406c8526eb8662f795676844183bb88b8cc6409c882ffb9557e3d`
+Source digest: `sha256:67ba14e806fc68ed7cb898485202440687a8f8eb40cde0c3807e88385b735fab`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -136,7 +136,7 @@ The registration test was red before `enable_testing()` and the 27 primary regis
 ```text
 FAIL should register every native executable with CTest
 The input did not match /enable_testing\(\)/
-Test Files 1 failed (1)
+Test Files 1 failed (1); Tests no tests
 ```
 
 After registration, the focused gate and full runner were green:

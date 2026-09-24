@@ -63,9 +63,10 @@ npx @threenative/playtest doctor --url http://127.0.0.1:5173 --text`}
 
       <DocSection id="targets" title="Keep one scenario shape across targets">
         <p>
-          The schema can target browser, Android, desktop or iOS. For desktop, point the runner at a
-          packaged executable; the native host receives a temporary mailbox and injects the shared
-          playtest bridge before it evaluates the normal game entry.
+          The schema can target browser, Android, desktop or iOS (iOS is not a supported target
+          yet). For desktop, point the runner at a packaged executable; the native host receives a
+          temporary mailbox and injects the shared playtest bridge before it evaluates the normal
+          game entry.
         </p>
         <DocCodeBlock code={DESKTOP} label="desktop playtest" />
         <p>

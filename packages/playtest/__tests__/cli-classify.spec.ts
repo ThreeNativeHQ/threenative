@@ -12,6 +12,8 @@ test.each([
   [new Error("page.goto: Timeout 15000ms exceeded"), "TN_PLAYTEST_PAGE_UNREACHABLE"],
   [new Error("ENOENT: no such file or directory, open 'playtests/boot-to-play.playtest.json'"), "TN_PLAYTEST_SCENARIO_UNREADABLE"],
   [new Error("Playtest scenario 'playtests/boot-to-play.playtest.json' could not be read."), "TN_PLAYTEST_SCENARIO_UNREADABLE"],
+  [new Error("TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED: --cpu-prof is not supported on the android target; use the browser or desktop target."), "TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED"],
+  [new Error("TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED: ENOENT: no such file or directory, open '/missing/out.cpuprofile'"), "TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED"],
 ] as const)("classifies %s as %s", (error, code) => {
   expect(classifyRunnerError(error, { cwd: "/project" }).code).toBe(code);
 });

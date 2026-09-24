@@ -42,7 +42,7 @@ export const primaryNav: readonly INavEntry[] = [
       },
       {
         label: "Native runtime",
-        summary: "The owned C++ host for desktop, Android and iOS. No WebView game surface.",
+        summary: "The owned C++ host for desktop and Android. No WebView game surface.",
         target: { kind: "external", href: `${REPOSITORY}/tree/main/packages/runtime-native` },
       },
       {

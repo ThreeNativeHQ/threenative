@@ -59,12 +59,12 @@ export const claims: readonly IClaim[] = [
   },
   {
     id: "feature-ship-everywhere",
-    text: "Target web, desktop, Android, and iOS from a shared codebase.",
+    text: "Target web, Windows, macOS, Linux and Android from a shared codebase.",
     evidence: { kind: "doc", path: "packages/runtime-native/conformance/registry.json" },
   },
   {
     id: "showcase-body",
-    text: "The same source runs in the browser on WebGPU and on an owned C++ runtime for desktop, Android and iOS. Every platform claim on this page is a scenario something already ran.",
+    text: "The same source runs in the browser on WebGPU and on an owned C++ runtime for desktop and Android. Every platform claim on this page is a scenario something already ran.",
     evidence: { kind: "doc", path: "packages/playtest/AGENTS.md" },
   },
 ];

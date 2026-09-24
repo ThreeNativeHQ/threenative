@@ -66,6 +66,85 @@ int main() {
         return 1;
     }
 
+    // PRD-444: a constant gain is read once for the whole block; a ramp still varies per sample.
+    auto blockGain = context.createGain();
+    blockGain->gain().setValue(0.25f);
+    if (!blockGain->gain().isConstantOver(0.0, 1.0)) {
+        std::cerr << "an Immediate gain must read as constant\n";
+        return 1;
+    }
+    auto blockSource = context.createBufferSource();
+    blockSource->setBuffer(constantBuffer(context));
+    blockSource->connect(blockGain.get());
+    blockGain->connect(context.destination());
+    blockSource->start();
+    const uint64_t blockCallsBefore = blockGain->gain().valueAtTimeCalls();
+    float block[8] = {};
+    blockSource->process(block, 4, 2);
+    const uint64_t blockCalls = blockGain->gain().valueAtTimeCalls() - blockCallsBefore;
+    if (blockCalls != 1) {
+        std::cerr << "a constant gain sampled " << blockCalls << " times for a 4-frame block, want 1\n";
+        return 1;
+    }
+    if (!closeTo(block[0], 0.25f) || !closeTo(block[6], 0.25f)) {
+        std::cerr << "block gain failed: " << block[0] << ", " << block[6] << '\n';
+        return 1;
+    }
+
+    // Midway's gains are automated, not Immediate: a step whose time has passed, a target retargeted
+    // to the value it already holds, and a target that has converged are all constant over a block.
+    struct SettledCase { const char* name; float expected; void (*arm)(mystral::audio::AudioParam&); };
+    const SettledCase settledCases[] = {
+        {"a past setValueAtTime step", 0.75f, [](mystral::audio::AudioParam& p) { p.setValueAtTime(0.75f, -1.0); }},
+        {"a target retargeted to its own value", 0.5f, [](mystral::audio::AudioParam& p) {
+            p.setValue(0.5f);
+            p.setTargetAtTime(0.5f, 0.0, 0.1);
+        }},
+        {"a converged setTargetAtTime", 0.5f, [](mystral::audio::AudioParam& p) {
+            p.setValue(1.0f);
+            p.setTargetAtTime(0.5f, -10.0, 0.01);
+        }},
+    };
+    for (const auto& settled : settledCases) {
+        auto gain = context.createGain();
+        settled.arm(gain->gain());
+        auto source = context.createBufferSource();
+        source->setBuffer(constantBuffer(context));
+        source->connect(gain.get());
+        gain->connect(context.destination());
+        source->start();
+        const uint64_t before = gain->gain().valueAtTimeCalls();
+        float out[8] = {};
+        source->process(out, 4, 2);
+        const uint64_t calls = gain->gain().valueAtTimeCalls() - before;
+        if (calls != 1 || !closeTo(out[0], settled.expected) || !closeTo(out[6], settled.expected)) {
+            std::cerr << settled.name << " sampled " << calls << " times (want 1) and gave " << out[0]
+                      << ", " << out[6] << " (want " << settled.expected << ")\n";
+            return 1;
+        }
+    }
+
+    auto rampGain = context.createGain();
+    rampGain->gain().setValueAtTime(0.0f, 0.0);
+    rampGain->gain().linearRampToValueAtTime(1.0f, 1.0);
+    if (rampGain->gain().isConstantOver(0.0, 1.0)) {
+        std::cerr << "a linear ramp must not read as constant\n";
+        return 1;
+    }
+    auto rampSource = context.createBufferSource();
+    rampSource->setBuffer(constantBuffer(context));
+    rampSource->connect(rampGain.get());
+    rampGain->connect(context.destination());
+    rampSource->start();
+    const uint64_t rampCallsBefore = rampGain->gain().valueAtTimeCalls();
+    float ramped[8] = {};
+    rampSource->process(ramped, 4, 2);
+    const uint64_t rampCalls = rampGain->gain().valueAtTimeCalls() - rampCallsBefore;
+    if (rampCalls != 4) {
+        std::cerr << "a ramp sampled " << rampCalls << " times for a 4-frame block, want 4\n";
+        return 1;
+    }
+
     auto rightSource = context.createBufferSource();
     auto panner = context.createPanner();
     rightSource->setBuffer(constantBuffer(context));

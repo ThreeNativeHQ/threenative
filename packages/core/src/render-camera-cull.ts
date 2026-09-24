@@ -57,6 +57,18 @@ interface ICullable {
   };
 }
 
+/** Sentinel: the position buffer is rewritten so often that its bound cannot be trusted cheaply. */
+const DYNAMIC_BOUNDS = Symbol("render-camera-cull-dynamic-bounds");
+
+/** What the gate remembers about a geometry's position buffer between consults. */
+interface IPositionVersion {
+  version: number;
+  /** True when the previous consult also saw a change, so this one is the second in a row. */
+  changedLastConsult: boolean;
+  /** True when a rewrite was exempted without a rescan, so the cached sphere is stale. */
+  stale: boolean;
+}
+
 /** A sphere nearer than this to the camera would divide by zero; treat it as this far away. */
 const MIN_DISTANCE = 1e-4;
 
@@ -92,6 +104,11 @@ export interface IRenderCameraCullReport {
   readonly exemptMarked: number;
   readonly exemptShadowCasters: number;
   readonly exemptWithoutBounds: number;
+  /**
+   * Objects whose position buffer is rewritten every frame, so the gate cannot trust a bound it
+   * cannot afford to rescan. Kept drawn, like `frustumCulled = false`.
+   */
+  readonly exemptDynamicBounds: number;
   /** Objects that already set `frustumCulled = false`, and so never had trustworthy bounds. */
   readonly exemptFrustumCulled: number;
 }
@@ -132,7 +149,7 @@ export class RenderCameraCull {
   readonly #hidden: Object3D[] = [];
   readonly #visitor: (object: Object3D) => void;
   /** Last position-buffer version seen per geometry, so a rewritten dynamic bound is recomputed. */
-  readonly #positionVersions = new WeakMap<object, number>();
+  readonly #positionVersions = new WeakMap<object, IPositionVersion>();
   #hiddenCount = 0;
   #camera: Camera | undefined;
   #cameraX = 0;
@@ -146,6 +163,7 @@ export class RenderCameraCull {
   #exemptMarked = 0;
   #exemptShadowCasters = 0;
   #exemptWithoutBounds = 0;
+  #exemptDynamicBounds = 0;
   #exemptFrustumCulled = 0;
 
   constructor(options: IRenderCameraCullOptions = {}) {
@@ -172,6 +190,7 @@ export class RenderCameraCull {
       exemptMarked: this.#exemptMarked,
       exemptShadowCasters: this.#exemptShadowCasters,
       exemptWithoutBounds: this.#exemptWithoutBounds,
+      exemptDynamicBounds: this.#exemptDynamicBounds,
       exemptFrustumCulled: this.#exemptFrustumCulled,
     };
   }
@@ -196,6 +215,7 @@ export class RenderCameraCull {
     this.#exemptMarked = 0;
     this.#exemptShadowCasters = 0;
     this.#exemptWithoutBounds = 0;
+    this.#exemptDynamicBounds = 0;
     this.#exemptFrustumCulled = 0;
     this.#cameraResolved = true;
     this.#camera = undefined;
@@ -268,6 +288,12 @@ export class RenderCameraCull {
     // main camera *can* see is ordinary geometry — its shadow is in view with it, and a
     // sub-resolution object casts a sub-resolution shadow.
     const sphere = boundsOf(object, this.#positionVersions);
+    // A buffer rewritten every frame has extents the gate cannot know without a full scan each
+    // frame, which costs more than the draw it might remove. Keep it drawn, like an opt-out.
+    if (sphere === DYNAMIC_BOUNDS) {
+      this.#exemptDynamicBounds += 1;
+      return;
+    }
     // A zero or non-finite radius is not a size: a point has no projected diameter, and a pooled
     // buffer whose first compute saw it empty caches exactly that. Read it as "no usable bounds"
     // and keep the object, never as "infinitely small" and delete it.
@@ -310,23 +336,47 @@ export class RenderCameraCull {
 
 function boundsOf(
   object: Object3D,
-  versions: WeakMap<object, number>,
-): IBoundingSphereLike | undefined {
+  versions: WeakMap<object, IPositionVersion>,
+): IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined {
   const cullable = object as ICullable;
   // An `InstancedMesh` carries its own instance-aware bound; the geometry one is not it.
   if (cullable.boundingSphere != null) return cullable.boundingSphere;
   const geometry = cullable.geometry;
   if (geometry === undefined) return undefined;
   const version = geometry.attributes?.position?.version;
-  const known = versions.get(geometry);
   if (geometry.boundingSphere == null) {
     geometry.computeBoundingSphere?.();
-  } else if (version !== undefined && known !== undefined && known !== version) {
-    // The buffer was rewritten under a cached sphere, which is now a stale size that *looks*
-    // valid. Recompute rather than trust it. Only a changed buffer pays this, so a static scene
-    // computes once and a dynamic one pays only where its bounds are actually consulted.
-    geometry.computeBoundingSphere?.();
+    if (version !== undefined)
+      versions.set(geometry, { version, changedLastConsult: false, stale: false });
+    return geometry.boundingSphere ?? undefined;
   }
-  if (version !== undefined) versions.set(geometry, version);
+  if (version === undefined) return geometry.boundingSphere ?? undefined;
+  const known = versions.get(geometry);
+  if (known === undefined) {
+    versions.set(geometry, { version, changedLastConsult: false, stale: false });
+    return geometry.boundingSphere ?? undefined;
+  }
+  if (known.version === version) {
+    // A buffer that settled after a per-frame rewrite has knowable extents again: scan it once and
+    // cull it like any other, rather than exempting it for the rest of the run. Settling also lets
+    // the next change count as a fresh one rather than as the second frame of a rewrite.
+    if (known.stale) geometry.computeBoundingSphere?.();
+    known.changedLastConsult = false;
+    known.stale = false;
+    return geometry.boundingSphere ?? undefined;
+  }
+  known.version = version;
+  if (known.changedLastConsult) {
+    // The buffer moved again on the very next consult: it is rewritten every frame. A full
+    // vertex/instance scan per frame costs more than the draw it might remove, and the extents are
+    // not knowable without it — so treat the bound like `frustumCulled = false` and keep drawing.
+    known.stale = true;
+    return DYNAMIC_BOUNDS;
+  }
+  // The buffer was rewritten under a cached sphere, which is now a stale size that *looks* valid.
+  // Recompute rather than trust it. Only a changed buffer pays this, so a static scene computes
+  // once and a dynamic one pays only where its bounds are actually consulted.
+  geometry.computeBoundingSphere?.();
+  known.changedLastConsult = true;
   return geometry.boundingSphere ?? undefined;
 }

@@ -150,6 +150,15 @@ set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameL
 option(TN_WEBGPU_GPU_DRAIN_PROFILE "Block after present to measure remaining GPU work (diagnostic builds only)" OFF)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
+# The V8 CPU profiler behind `--cpu-prof` and TN_JS_CPU_PROFILE. On by default for a desktop build
+# so a user can name a hot function without installing a system profiler (PRD-444); off for a
+# shipping mobile build, where the Android profiling build keeps its own opt-in above.
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(TN_JS_PROFILE_DEFAULT OFF)
+else()
+    set(TN_JS_PROFILE_DEFAULT ON)
+endif()
+option(TN_JS_PROFILE "Compile the V8 CPU profiler into this build" ${TN_JS_PROFILE_DEFAULT})
 option(TN_ENABLE_COVERAGE "Instrument native targets for source-based coverage" OFF)
 option(TN_ENABLE_SANITIZERS "Instrument native targets with AddressSanitizer and UBSan" OFF)
 option(TN_ENABLE_CLANG_TIDY "Run clang-tidy over ThreeNative native sources" OFF)
@@ -216,6 +225,7 @@ add_compile_definitions(
     TN_WEBGPU_GPU_DRAIN_PROFILE=$<BOOL:${TN_WEBGPU_GPU_DRAIN_PROFILE}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
+    TN_JS_PROFILE=$<BOOL:${TN_JS_PROFILE}>
     TN_ABLATE_BACKEND=$<BOOL:${TN_ABLATE_BACKEND}>
     TN_ABLATE_UI_COMPOSITE=$<BOOL:${TN_ABLATE_UI_COMPOSITE}>
 )
