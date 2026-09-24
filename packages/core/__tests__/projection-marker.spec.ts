@@ -98,9 +98,7 @@ describe("projection window marker", () => {
     const pass = new MatrixWorldPass({ mode: "all" });
     pass.beginFrame();
     pass.apply(scenery(3));
-    const line = payload(
-      formatProjectionWindow(projection.report, 4, 41, undefined, pass.report),
-    );
+    const line = payload(formatProjectionWindow(projection.report, 4, 41, undefined, pass.report));
 
     expect(line.matrixWorld).toEqual({ mode: "all", visited: 4 });
     pass.dispose();

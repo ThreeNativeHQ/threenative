@@ -1,6 +1,6 @@
 # PRD-445 — Public release hygiene
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — Phase 1 landed; Phases 2–4 open.
 **Complexity:** 3 → LOW; all local, no credentials.
 **Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../RELEASE-READINESS-2026-09-23.md).
 
@@ -33,10 +33,28 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
 
 ### Phase 1 — Security surface
 
-- [ ] `@threenative/assets` resolves `sharp >=0.35.4` for consumers; `pnpm audit --prod --audit-level high` exits 0.
+- [x] `@threenative/assets` resolves `sharp >=0.35.4` for consumers; `pnpm audit --prod --audit-level high` exits 0.
+  Done: `sharp: 0.35.4` added to the root `catalog`, pinned as a direct `@threenative/assets`
+  dependency (`catalog:`), and a root `pnpm.overrides` (`sharp: >=0.35.4`) forces the dev tree's
+  one remaining holder. Result: every `sharp` in `pnpm-lock.yaml` resolves to `0.35.4`, and
+  `pnpm audit --prod --audit-level high` prints "No known vulnerabilities found", exit 0.
+  A second advisory path the inspection missed surfaced once the assets path was fixed:
+  `@threenative/core` → `threenative-sculpt-mcp` → `sharp` (pinned `0.35.3` by that external
+  package). The override covers the workspace; the consumer side is box 2.
 - [ ] A starter installed from packed tarballs reports no high `sharp` advisory in `npm audit --omit=dev`.
-- [ ] `SECURITY.md` names the supported 0.3.x line.
-- [ ] `CHANGELOG.md` has sections for every published 0.3.x version and the release candidate.
+  **Blocked — needs an upstream release, not a local change.** `threenative-sculpt-mcp@0.1.1`
+  (external, `jonit-dev/threenative-sculpt-mcp`) pins `sharp` to exactly `0.35.3`, so a fresh
+  consumer install nests a vulnerable copy even when `@threenative/assets` floors the direct pin.
+  Measured: `npm install @threenative/core@0.3.2 @threenative/assets@0.3.2` in a clean project
+  installs `sharp` `0.35.4` at the root (assets path clean) and `0.35.3` under
+  `threenative-sculpt-mcp`, and `npm audit --omit=dev` reports 3 high. Fixing it needs a
+  `threenative-sculpt-mcp` release that moves its pin to `>=0.35.4`, then a publish — both out of
+  scope here. The local cohort (this repo) is clean via the override.
+- [x] `SECURITY.md` names the supported 0.3.x line.
+  Done: the supported-versions table now reads `0.3.x | Yes`.
+- [x] `CHANGELOG.md` has sections for every published 0.3.x version and the release candidate.
+  Done: added `[0.3.3]` (unreleased release candidate), `[0.3.2]`, `[0.3.1]` and `[0.3.0]`
+  sections, written from the cohort release commits and npm publish dates.
 
 ### Phase 2 — Public truth
 
@@ -50,6 +68,11 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
 - [ ] One PRD-060 remains; the other is removed with its ticked boxes and evidence merged into the survivor.
 - [ ] PRD-375's heading matches its file name, and links to it still resolve.
 - [ ] Phase boxes added to PRD-054, PRD-058, PRD-064, PRD-066 and PRD-112-repair; `pnpm prd:progress` exits 0 on each.
+
+> Also folded in here: `d63a2464b` (the commit that added this PRD) deleted `PRD-080` from
+> `BLOCKED/` and repointed nine links at `critical/` without moving the file, breaking
+> `pnpm check:docs`, and left one unformatted spec that broke `pnpm lint`. Both are restored in
+> Phase 1's commit so the acceptance criteria below pass.
 
 ### Phase 4 — Repository junk a stranger clones
 
