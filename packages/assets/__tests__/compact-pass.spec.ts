@@ -660,6 +660,30 @@ describe("model compaction", () => {
     }
   });
 
+  it("does not ship join's orphaned accessors when prune is off", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("tile").setBaseColorFactor([0.3, 0.5, 0.7, 1]);
+    const scene = document.createScene("Scene");
+    // 40 unique same-material meshes at the root: `join` merges them, orphaning the source
+    // primitives/accessors, which previously shipped when `passes.prune` was off.
+    for (let index = 0; index < 40; index += 1) {
+      scene.addChild(
+        document
+          .createNode(`tile_${String(index)}`)
+          .setMesh(triangleMesh(document, buffer, material, `tile-${String(index)}`, index)),
+      );
+    }
+    const input = Buffer.from(await toGlb(document));
+    const result = await modelPass({
+      passes: { dedup: true, meshopt: false, prune: false, quantize: false, reorder: false },
+      textures: "none",
+      virtual: "none",
+    }).apply(input, "tiles.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    expect(result.buffer.length).toBeLessThan(input.length * 1.5);
+  });
+
   it("reports every named node compaction removed", async () => {
     const result = await modelPass({
       compact: { protectedNames: ["MyCustomPivot"] },
