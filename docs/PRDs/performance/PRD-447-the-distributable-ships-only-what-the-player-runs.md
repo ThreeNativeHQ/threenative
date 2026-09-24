@@ -59,7 +59,7 @@ Out of scope, with reasons:
 - [ ] AC-3 [local; actor: agent]: The native `main.js` is minified: the consumer game's bundle is ≤ 2.2 MB (from 5.0 MB), and the consumer playtest passes on desktop and on the Android emulator. — Evidence: pending.
 - [ ] AC-4 [local; actor: agent]: The Android, desktop and iOS packagers copy only files the build's asset manifest names; a fixture holding a stray `*.orig` file packages without it and the build prints its path. — Evidence: pending.
 - [ ] AC-5 [local; actor: agent]: A template web build ships one Basis transcoder and one Draco decoder variant; a KTX2 texture and a Draco model still load in the existing template playtest. — Evidence: pending.
-- [ ] AC-6 [local; actor: agent]: The web build emits `.br` and `.gz` sidecars for every JS, WASM, CSS, HTML and JSON file over 1 KB; the record names main-chunk raw, gzip and brotli bytes. — Evidence: pending.
+- [x] AC-6 [local; actor: agent]: The web build emits `.br` and `.gz` sidecars for every JS, WASM, CSS, HTML and JSON file over 1 KB; the record names main-chunk raw, gzip and brotli bytes. — Evidence: `action-rpg` scaffolded from local tarballs and built with `threenative build --target web`: 15 `.br` + 15 `.gz`, 0 JS/WASM/CSS/HTML/JSON files over 1 KB without a sidecar; `web main chunk assets/index-*.js: raw 3564059 B, gzip 1218667 B, brotli 934057 B`. `compression.spec.ts` red (module missing) → green, round-trips bytes and the entry report.
 - [ ] AC-7 [local; actor: agent]: Rapier on web loads its WASM as a separate file **only if** brotli transfer bytes for the physics payload drop and a physics template playtest still passes. Otherwise the change is reverted and the measured reason recorded here. — Evidence: pending.
 - [ ] AC-8 [local; actor: agent]: The Linux runtime links with `-ffunction-sections -fdata-sections -Wl,--gc-sections`, kept only if the stripped binary shrinks and the native contract tests stay green. The measured delta is recorded either way. — Evidence: pending.
 
@@ -106,11 +106,11 @@ Out of scope, with reasons:
 
 #### Phase 3: Content hygiene and transfer
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **ACs:** AC-4, AC-6
 
 - [ ] Packagers copy the manifest's file set and print what they skipped; spec with a stray `.orig` fixture is red first (AC-4).
-- [ ] Web build writes `.br`/`.gz` sidecars (AC-6).
+- [x] Web build writes `.br`/`.gz` sidecars (AC-6). — `create-threenative/src/compress.ts`, called from `buildWeb`; node:zlib only.
 - [ ] Spike doc updated with the achieved sizes; `pnpm typecheck && pnpm lint && pnpm test` green.
 
 **Files:** `package-android.mjs`, `package-desktop.mjs`, `package-ios.mjs`, `buildWeb` in `packages/create-threenative`.
