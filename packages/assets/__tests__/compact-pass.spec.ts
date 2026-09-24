@@ -484,6 +484,119 @@ describe("model compaction", () => {
     expect(output.listMeshes().some((entry) => entry.getName().endsWith("__lod_join"))).toBe(false);
   });
 
+  it("keeps a static child of an animated parent when the child's channel is listed first", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("skin").setBaseColorFactor([0.5, 0.5, 0.5, 1]);
+    const scene = document.createScene("Scene");
+    const animation = document.createAnimation("flight");
+    const channel = (name: string, target: Node, path: "rotation" | "translation") => {
+      const sampler = document
+        .createAnimationSampler(`${name}-sampler`)
+        .setInput(
+          accessor(document, buffer, `${name}-times`, new Float32Array([0, 1])).setType("SCALAR"),
+        )
+        .setOutput(
+          accessor(
+            document,
+            buffer,
+            `${name}-out`,
+            new Float32Array(path === "rotation" ? [0, 0, 0, 1, 0, 0, 0, 1] : [0, 0, 0, 0, 0, 0]),
+          ).setType(path === "rotation" ? "VEC4" : "VEC3"),
+        );
+      animation
+        .addSampler(sampler)
+        .addChannel(
+          document
+            .createAnimationChannel(`${name}-channel`)
+            .setSampler(sampler)
+            .setTargetNode(target)
+            .setTargetPath(path),
+        );
+    };
+    scene.addChild(
+      document.createNode("Ground").setMesh(triangleMesh(document, buffer, material, "ground", 1)),
+    );
+    const plane = document.createNode("Plane");
+    const fuselage = document
+      .createNode("Fuselage")
+      .setMesh(triangleMesh(document, buffer, material, "fuselage", 2));
+    const blades = document.createNode("Blades");
+    plane.addChild(fuselage);
+    plane.addChild(blades);
+    scene.addChild(plane);
+    // The child's channel is registered first, so a naive ancestor pass would classify Plane as
+    // an `animation-ancestor` before its own target is seen and release Fuselage to the root.
+    channel("blades", blades, "rotation");
+    channel("plane", plane, "translation");
+
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+      Buffer.from(await toGlb(document)),
+      "plane.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    expect(nodeNamed(output, "Fuselage")?.getParentNode()?.getName()).toBe("Plane");
+  });
+
+  it("does not duplicate a shared mesh many times over on an animated model", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("rivet").setBaseColorFactor([0.4, 0.4, 0.4, 1]);
+    const scene = document.createScene("Scene");
+    // A dense shared mesh: 300 vertices, no texture, no animation on the rivets themselves.
+    const positions: number[] = [];
+    const indices: number[] = [];
+    for (let index = 0; index < 300; index += 1) positions.push(index * 0.01, 0, 0);
+    for (let index = 0; index < 298; index += 1) indices.push(index, index + 1, index + 2);
+    const mesh = document.createMesh("rivet");
+    const primitive = document.createPrimitive();
+    primitive.setAttribute(
+      "POSITION",
+      accessor(document, buffer, "rivet-positions", new Float32Array(positions)).setType("VEC3"),
+    );
+    primitive.setIndices(
+      accessor(document, buffer, "rivet-indices", new Uint16Array(indices)).setType("SCALAR"),
+    );
+    primitive.setMaterial(material);
+    mesh.addPrimitive(primitive);
+    const hull = document.createNode("Hull");
+    for (let index = 0; index < 50; index += 1) {
+      hull.addChild(
+        document
+          .createNode(`rivet_${String(index)}`)
+          .setMesh(mesh)
+          .setTranslation([index, 0, 0]),
+      );
+    }
+    scene.addChild(hull);
+    // One animation anywhere makes gltf-transform's `instance()` refuse the whole document.
+    const spin = document.createAnimation("spin");
+    const sampler = document
+      .createAnimationSampler("spin-sampler")
+      .setInput(accessor(document, buffer, "t", new Float32Array([0, 1])).setType("SCALAR"))
+      .setOutput(
+        accessor(document, buffer, "r", new Float32Array([0, 0, 0, 1, 0, 0, 0, 1])).setType("VEC4"),
+      );
+    spin
+      .addSampler(sampler)
+      .addChannel(
+        document
+          .createAnimationChannel("c")
+          .setSampler(sampler)
+          .setTargetNode(hull)
+          .setTargetPath("rotation"),
+      );
+
+    const input = Buffer.from(await toGlb(document));
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+      input,
+      "rivets.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    expect(result.buffer.length).toBeLessThan(input.length * 3);
+  });
+
   it("reports every named node compaction removed", async () => {
     const result = await modelPass({
       compact: { protectedNames: ["MyCustomPivot"] },

@@ -193,11 +193,26 @@ export function buildProtectedSet(
     for (const joint of skin.listJoints()) claim(joint, "skin-joint");
   }
 
+  // Targets first, ancestors last: a node that is both an animation target and an ancestor of
+  // another target (a parent and its animated child) must keep the `animation-target` rule, which
+  // spreads the keep closure, rather than being mis-classified as a mere ancestor.
+  for (const animation of root.listAnimations()) {
+    for (const channel of animation.listChannels()) {
+      const target = channel.getTargetNode();
+      if (target !== null) claim(target, "animation-target");
+    }
+  }
+
+  const pattern = new RegExp(options.protectedPattern ?? DEFAULT_PROTECTED_PATTERN, "iu");
+  for (const node of sceneNodes(root)) {
+    const name = node.getName();
+    if (name !== "" && pattern.test(name)) claim(node, "regex");
+  }
+
   for (const animation of root.listAnimations()) {
     for (const channel of animation.listChannels()) {
       const target = channel.getTargetNode();
       if (target === null) continue;
-      claim(target, "animation-target");
       // An ancestor of an animated node must not be absorbed either: moving or merging it
       // would reparent the animated subtree under a different transform.
       let ancestor = target.getParentNode();
@@ -206,12 +221,6 @@ export function buildProtectedSet(
         ancestor = ancestor.getParentNode();
       }
     }
-  }
-
-  const pattern = new RegExp(options.protectedPattern ?? DEFAULT_PROTECTED_PATTERN, "iu");
-  for (const node of sceneNodes(root)) {
-    const name = node.getName();
-    if (name !== "" && pattern.test(name)) claim(node, "regex");
   }
 
   const summary: IModelProtectedNode[] = [];
@@ -519,7 +528,7 @@ export function compactRequested(options: boolean | IModelCompactOptions | undef
 }
 
 /** Bump when a compaction algorithm change makes a previously cached output stale. */
-export const COMPACT_VERSION = 2;
+export const COMPACT_VERSION = 3;
 
 /** The compaction policy with every default resolved, so it is a stable cache key. */
 export interface IResolvedCompactOptions {
