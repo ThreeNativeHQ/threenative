@@ -34,8 +34,8 @@ describe("resolution responds to measured GPU cost", () => {
     expect(scaler.observe(slow(7, 3))).toBe(0.61);
   });
 
-  it("accepts GPU headroom at the last allowed timestamp age", () => {
-    expect(ready().observe(slow(7, 8))).toBeUndefined();
+  it("accepts GPU headroom at the last allowed sampled timestamp age", () => {
+    expect(ready().observe(slow(7, 16))).toBeUndefined();
   });
 
   it("does not climb when the next rung would exhaust GPU headroom", () => {
@@ -54,7 +54,7 @@ describe("resolution responds to measured GPU cost", () => {
   it.each([
     [undefined, undefined],
     [7, undefined],
-    [7, 9],
+    [7, 17],
     [7, -1],
     [7, 1.5],
     [0, 0],
