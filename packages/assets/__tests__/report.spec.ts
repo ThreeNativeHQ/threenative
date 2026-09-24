@@ -202,14 +202,14 @@ describe("formatModelSizes compaction reporting", () => {
         before: 200,
         logicalPath: "carrier.glb",
         compact: {
-          flatten: { enabled: true, nodesAfter: 34, nodesBefore: 146 },
+          flatten: { enabled: true, reparented: 112 },
           instance: { batches: 0, enabled: true, instances: 0, reason: "no shared mesh" },
           join: { enabled: true, primitivesAfter: 20, primitivesBefore: 40 },
           nodesAfter: 34,
           nodesBefore: 146,
           primitivesAfter: 20,
           primitivesBefore: 40,
-          removed: [],
+          removed: ["Gone"],
           protected: [
             { name: "propeller_01", rule: "regex" },
             { name: "Head", rule: "skin-joint" },
@@ -218,9 +218,10 @@ describe("formatModelSizes compaction reporting", () => {
       },
     ]);
     const line = lines.find((entry) => entry.startsWith("compact carrier.glb:"));
-    expect(line).toContain("flatten 146 -> 34 nodes");
+    expect(line).toContain("flatten moved 112 node(s)");
     expect(line).toContain("join 40 -> 20 primitive(s)");
     expect(line).toContain("instance none (no shared mesh)");
     expect(line).toContain("protected propeller_01 (regex), Head (skin-joint)");
+    expect(line).toContain("removed named node(s) Gone");
   });
 });

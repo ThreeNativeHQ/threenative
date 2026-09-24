@@ -342,7 +342,13 @@ describe("model compaction", () => {
     const arm = document
       .createNode("arm")
       .setMesh(triangleMesh(document, buffer, material, "arm"))
-      .setRotation([0, Math.SQRT1_2, 0, Math.SQRT1_2] as [number, number, number, number])
+      // 45 degrees, so the composed world matrix is a real shear, not a permutation.
+      .setRotation([0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)] as [
+        number,
+        number,
+        number,
+        number,
+      ])
       .setTranslation([1, 0, 0]);
     root.addChild(arm);
     scene.addChild(root);
@@ -351,6 +357,72 @@ describe("model compaction", () => {
       "shear.glb",
     );
     expect(Buffer.isBuffer(result)).toBe(false);
+  });
+
+  it("keeps a protected node's shared-mesh descendants out of an instance batch", async () => {
+    const build = (): Document => {
+      const document = new Document();
+      const buffer = document.createBuffer("fixture");
+      const material = document.createMaterial("blade").setBaseColorFactor([0.3, 0.3, 0.3, 1]);
+      const scene = document.createScene("Scene");
+      const hub = document.createNode("PropellerHub");
+      const bladeMesh = triangleMesh(document, buffer, material, "blade", 7);
+      for (let index = 0; index < 3; index += 1) {
+        hub.addChild(
+          document
+            .createNode(`blade_${String(index)}`)
+            .setMesh(bladeMesh)
+            .setTranslation([index, 0, 0]),
+        );
+      }
+      scene.addChild(hub);
+      return document;
+    };
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+      Buffer.from(await toGlb(build())),
+      "hub.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const hub = nodeNamed(output, "PropellerHub");
+    expect(hub).toBeDefined();
+    // The blades shared one mesh; without the keep-closure detach they would be batched at the
+    // root and their emptied nodes pruned, deleting the hub.
+    const remainingBlades = output
+      .listNodes()
+      .filter((node) => node.getName().startsWith("blade_"));
+    expect(remainingBlades.length).toBeGreaterThan(0);
+    expect(
+      remainingBlades.every((blade) => blade.getParentNode()?.getName() === "PropellerHub"),
+    ).toBe(true);
+    expect(
+      output.listNodes().every((node) => node.getExtension("EXT_mesh_gpu_instancing") === null),
+    ).toBe(true);
+  });
+
+  it("leaves an instanced mesh out of the LOD join rung", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("crate").setBaseColorFactor([0.2, 0.6, 0.3, 1]);
+    const scene = document.createScene("Scene");
+    const mesh = triangleMesh(document, buffer, material, "crate");
+    for (let index = 0; index < 3; index += 1) {
+      scene.addChild(
+        document
+          .createNode(`crate_${String(index)}`)
+          .setMesh(mesh)
+          .setTranslation([index * 3, 0, 0]),
+      );
+    }
+    const result = await modelPass({
+      lod: { generation: { join: true, maxLevels: 1 } },
+      textures: "none",
+      virtual: "none",
+    }).apply(Buffer.from(await toGlb(document)), "crates.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    // Joining an instanced batch would collapse every placed copy onto one transform.
+    expect(output.listMeshes().some((entry) => entry.getName().endsWith("__lod_join"))).toBe(false);
   });
 
   it("reports every named node compaction removed", async () => {

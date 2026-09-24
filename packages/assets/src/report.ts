@@ -411,7 +411,7 @@ function compactLine(row: IModelSizeRow): readonly string[] {
   if (compact === undefined) return [];
   const parts: string[] = [];
   if (compact.flatten.enabled) {
-    parts.push(`flatten ${compact.flatten.nodesBefore} -> ${compact.flatten.nodesAfter} nodes`);
+    parts.push(`flatten moved ${compact.flatten.reparented} node(s)`);
   }
   if (compact.instance.enabled) {
     parts.push(

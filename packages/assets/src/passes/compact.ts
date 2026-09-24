@@ -67,8 +67,8 @@ export interface IModelCompactSummary {
   /** Whether each pass ran and how many primitives/nodes it removed. */
   readonly flatten: {
     readonly enabled: boolean;
-    readonly nodesAfter: number;
-    readonly nodesBefore: number;
+    /** Nodes reparented toward the scene root; a node left in place is not counted. */
+    readonly reparented: number;
   };
   readonly instance: {
     readonly batches: number;
@@ -142,18 +142,30 @@ export function countCompactPrimitives(document: Document): number {
   return countPrimitives(sceneNodes(document.getRoot()));
 }
 
-/** Sorted names of every named scene-reachable node, for reporting what compaction removed. */
+/**
+ * Sorted names of every named scene-reachable node that carries geometry or a child. A bare empty
+ * leaf is excluded: `prune` removes it whether or not compaction ran, so blaming compaction for it
+ * would be a false report.
+ */
 export function sceneNodeNames(document: Document): string[] {
   return sceneNodes(document.getRoot())
+    .filter((node) => node.getMesh() !== null || node.listChildren().length > 0)
     .map((node) => node.getName())
     .filter((name) => name !== "")
     .sort();
 }
 
-/** Names present in `before` and missing from `after`, sorted. */
+/** Multiset difference: names present in `before` more times than in `after`, sorted. */
 export function removedNames(before: readonly string[], after: readonly string[]): string[] {
-  const present = new Set(after);
-  return before.filter((name) => !present.has(name)).sort();
+  const counts = new Map<string, number>();
+  for (const name of after) counts.set(name, (counts.get(name) ?? 0) + 1);
+  const removed: string[] = [];
+  for (const name of before) {
+    const remaining = counts.get(name) ?? 0;
+    if (remaining > 0) counts.set(name, remaining - 1);
+    else removed.push(name);
+  }
+  return removed.sort();
 }
 
 /**
@@ -227,16 +239,21 @@ function detachProtectedMeshes(
   document: Document,
   protectedNodes: ReadonlyMap<Node, unknown>,
 ): void {
-  for (const node of protectedNodes.keys()) {
+  const keep = keepInPlaceNodes(document, protectedNodes);
+  // `instance()` has no predicate: a shared mesh anywhere in the keep closure — a protected
+  // node OR one of its descendants — would be batched at the scene root and its node pruned,
+  // which for a protected pivot means the lookup breaks and its children stop rotating with it.
+  // Cloning each such node's mesh keeps it out of the batch; `join` may still merge its
+  // primitive under its real parent.
+  for (const node of keep) {
     const mesh = node.getMesh();
-    if (mesh === null) continue;
-    if (isShared(mesh, node) || !isTrsExact(node)) node.setMesh(deepCloneMesh(document, mesh));
+    if (mesh !== null && isShared(mesh, node)) node.setMesh(deepCloneMesh(document, mesh));
   }
   // A node whose world transform a batch cannot represent must not be instanced even when it is
   // not protected and shares a mesh: `instance()` would re-express it and the pass would reject
   // its own output for a drift it introduced.
   for (const node of sceneNodes(document.getRoot())) {
-    if (protectedNodes.has(node)) continue;
+    if (keep.has(node)) continue;
     const mesh = node.getMesh();
     if (mesh === null || isTrsExact(node)) continue;
     node.setMesh(deepCloneMesh(document, mesh));
@@ -297,17 +314,15 @@ export function composeTrsMatrix(
 }
 
 /**
- * A protected-aware `flatten`: reparents every node that is safe to move up to its scene root,
- * and leaves the rest where the game expects them.
- *
- * gltf-transform's own `flatten()` skips animation targets and skeleton descendants but knows
- * nothing about a game's protected names. Without this, a protected pivot's mesh child is
- * reparented first, the pivot becomes an empty leaf and `prune` deletes it, and `join` merges
- * the child into the hull — the exact lookup the PRD forbids. A node is left in place when it,
- * or any ancestor, is protected, a skin joint, an animation target, or carries a world matrix
- * that `T * R * S` cannot represent (moving it would decompose a shear and drift).
+ * Nodes a compaction pass must not move or reparent: the protected set, skin joints, animation
+ * targets, and every descendant of those — plus any node whose world matrix `T * R * S` cannot
+ * represent (moving it would decompose a shear and drift the self-verify). One traversal feeds
+ * both `flatten` and the `instance` mesh detach, so the two passes agree on what is off limits.
  */
-function flattenProtected(document: Document, protectedNodes: ReadonlyMap<Node, unknown>): void {
+function keepInPlaceNodes(
+  document: Document,
+  protectedNodes: ReadonlyMap<Node, unknown>,
+): Set<Node> {
   const root = document.getRoot();
   const keepInPlace = new Set<Node>(protectedNodes.keys());
   for (const skin of root.listSkins()) {
@@ -320,24 +335,44 @@ function flattenProtected(document: Document, protectedNodes: ReadonlyMap<Node, 
       if (target !== null && channel.getTargetPath() !== "weights") keepInPlace.add(target);
     }
   }
+  // A single top-down pass: by the time a node is visited its parent's decision is known, so a
+  // kept ancestor propagates to every descendant.
   for (const scene of root.listScenes()) {
     scene.traverse((node) => {
       if (keepInPlace.has(node)) return;
       const parent = node.getParentNode();
-      if (parent !== null && (keepInPlace.has(parent) || !isTrsExact(parent))) {
+      if (
+        parent !== null &&
+        (keepInPlace.has(parent) || !isTrsExact(parent) || !isTrsExact(node))
+      ) {
         keepInPlace.add(node);
-        return;
       }
-      if (!isTrsExact(node)) keepInPlace.add(node);
     });
   }
+  return keepInPlace;
+}
+
+/**
+ * A protected-aware `flatten`: reparents every node that is safe to move up to its scene root,
+ * and leaves the rest where the game expects them.
+ *
+ * gltf-transform's own `flatten()` skips animation targets and skeleton descendants but knows
+ * nothing about a game's protected names. Without this, a protected pivot's mesh child is
+ * reparented first, the pivot becomes an empty leaf and `prune` deletes it, and `join` merges
+ * the child into the hull — the exact lookup the PRD forbids.
+ */
+function flattenProtected(document: Document, protectedNodes: ReadonlyMap<Node, unknown>): number {
+  const keepInPlace = keepInPlaceNodes(document, protectedNodes);
+  let reparented = 0;
   // Top-down, so a parent's reparent does not strand a child that is staying put.
-  for (const scene of root.listScenes()) {
+  for (const scene of document.getRoot().listScenes()) {
     scene.traverse((node) => {
       if (keepInPlace.has(node)) return;
       clearNodeParent(node);
+      reparented += 1;
     });
   }
+  return reparented;
 }
 
 /**
@@ -406,11 +441,7 @@ export async function compactModel(
   // than joined into one oversized primitive. Order is flatten → instance → join: `join`
   // merges sibling primitives by material, which would otherwise destroy the shared mesh an
   // `instance` batch needs, and `flatten` gathers the siblings that make `join` effective.
-  let nodesAfterFlatten = nodesBefore;
-  if (flattenEnabled) {
-    flattenProtected(document, protectedNodes);
-    nodesAfterFlatten = sceneNodes(root).length;
-  }
+  const reparented = flattenEnabled ? flattenProtected(document, protectedNodes) : 0;
 
   // The mesh detach exists only to keep a node out of an `instance` batch; with instancing off
   // it would clone meshes for no draw reduction.
@@ -453,7 +484,7 @@ export async function compactModel(
 
   const nodesAfter = sceneNodes(root).length;
   const summary: IModelCompactSummary = {
-    flatten: { enabled: flattenEnabled, nodesAfter: nodesAfterFlatten, nodesBefore },
+    flatten: { enabled: flattenEnabled, reparented },
     instance: instanceSummary,
     join: {
       enabled: joinEnabled,
@@ -477,6 +508,9 @@ export function compactRequested(options: boolean | IModelCompactOptions | undef
   return options.flatten !== false || options.join !== false || options.instance !== false;
 }
 
+/** Bump when a compaction algorithm change makes a previously cached output stale. */
+export const COMPACT_VERSION = 2;
+
 /** The compaction policy with every default resolved, so it is a stable cache key. */
 export interface IResolvedCompactOptions {
   readonly flatten: boolean;
@@ -484,6 +518,8 @@ export interface IResolvedCompactOptions {
   readonly join: boolean;
   readonly protectedNames: readonly string[];
   readonly protectedPattern: string;
+  /** Algorithm identity, so an upgraded pass never re-serves a cache from an older build. */
+  readonly version: number;
 }
 
 export function resolveCompactOptions(
@@ -496,6 +532,7 @@ export function resolveCompactOptions(
       join: true,
       protectedNames: [],
       protectedPattern: DEFAULT_PROTECTED_PATTERN,
+      version: COMPACT_VERSION,
     };
   }
   if (options === false) {
@@ -505,17 +542,22 @@ export function resolveCompactOptions(
       join: false,
       protectedNames: [],
       protectedPattern: DEFAULT_PROTECTED_PATTERN,
+      version: COMPACT_VERSION,
     };
   }
   const instance = options.instance;
+  const min = typeof instance === "object" ? (instance.min ?? 2) : 2;
+  if (min < 2) {
+    throw new Error(
+      "TN_ASSETS_COMPACT_INVALID: assets.models.compact.instance.min must be an integer of at least 2.",
+    );
+  }
   return {
     flatten: options.flatten !== false,
-    instance:
-      instance === false
-        ? false
-        : { min: Math.max(2, typeof instance === "object" ? (instance.min ?? 2) : 2) },
+    instance: instance === false ? false : { min },
     join: options.join !== false,
     protectedNames: options.protectedNames ?? [],
     protectedPattern: options.protectedPattern ?? DEFAULT_PROTECTED_PATTERN,
+    version: COMPACT_VERSION,
   };
 }
