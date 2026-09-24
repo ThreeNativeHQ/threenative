@@ -66,6 +66,71 @@ function nodeNamed(root: ReturnType<Document["getRoot"]>, name: string): Node | 
   return root.listNodes().find((node) => node.getName() === name);
 }
 
+/** An accessor no mesh, skin, animation or instancing batch references is dead weight. */
+function orphanAccessors(root: ReturnType<Document["getRoot"]>): number {
+  const referenced = new Set<unknown>();
+  for (const mesh of root.listMeshes()) {
+    for (const primitive of mesh.listPrimitives()) {
+      for (const semantic of primitive.listSemantics())
+        referenced.add(primitive.getAttribute(semantic));
+      referenced.add(primitive.getIndices());
+      for (const target of primitive.listTargets()) {
+        for (const semantic of target.listSemantics())
+          referenced.add(target.getAttribute(semantic));
+      }
+    }
+  }
+  for (const skin of root.listSkins()) referenced.add(skin.getInverseBindMatrices());
+  for (const animation of root.listAnimations()) {
+    for (const sampler of animation.listSamplers()) {
+      referenced.add(sampler.getInput());
+      referenced.add(sampler.getOutput());
+    }
+  }
+  for (const node of root.listNodes()) {
+    const batch = node.getExtension("EXT_mesh_gpu_instancing") as {
+      getAttribute(s: string): unknown;
+      listSemantics(): string[];
+    } | null;
+    if (batch === null) continue;
+    for (const semantic of batch.listSemantics()) referenced.add(batch.getAttribute(semantic));
+  }
+  return root.listAccessors().filter((accessor) => !referenced.has(accessor)).length;
+}
+
+/** One dense indexed mesh, so a leak shows as vertex data rather than header noise. */
+function polyMesh(
+  document: Document,
+  buffer: ReturnType<Document["createBuffer"]>,
+  material: Material,
+  name: string,
+  seed: number,
+): Mesh {
+  const count = 63;
+  const positions = new Float32Array(count * 3);
+  for (let index = 0; index < count; index += 1) {
+    positions[index * 3] = index * 0.01 + seed * 0.001;
+    positions[index * 3 + 1] = (index % 2) * 0.02;
+    positions[index * 3 + 2] = (index % 3) * 0.01;
+  }
+  const indices = new Uint16Array((count - 2) * 3);
+  for (let index = 0; index < count - 2; index += 1) {
+    indices[index * 3] = index;
+    indices[index * 3 + 1] = index + 1;
+    indices[index * 3 + 2] = index + 2;
+  }
+  const mesh = document.createMesh(name);
+  const primitive = document.createPrimitive();
+  primitive.setAttribute(
+    "POSITION",
+    accessor(document, buffer, `${name}-positions`, positions).setType("VEC3"),
+  );
+  primitive.setIndices(accessor(document, buffer, `${name}-indices`, indices).setType("SCALAR"));
+  primitive.setMaterial(material);
+  mesh.addPrimitive(primitive);
+  return mesh;
+}
+
 /**
  * Static (unskinned, unnimated) fixture: two unprotected hull nodes share one material and
  * are the only pair `join` may merge; a regex-matching propeller node and an allow-listed
@@ -665,13 +730,13 @@ describe("model compaction", () => {
     const buffer = document.createBuffer("fixture");
     const material = document.createMaterial("tile").setBaseColorFactor([0.3, 0.5, 0.7, 1]);
     const scene = document.createScene("Scene");
-    // 40 unique same-material meshes at the root: `join` merges them, orphaning the source
-    // primitives/accessors, which previously shipped when `passes.prune` was off.
+    // 40 unique same-material meshes at the root: `join` merges them, unlinking the source
+    // primitives whose compacted accessors previously shipped when `passes.prune` was off.
     for (let index = 0; index < 40; index += 1) {
       scene.addChild(
         document
           .createNode(`tile_${String(index)}`)
-          .setMesh(triangleMesh(document, buffer, material, `tile-${String(index)}`, index)),
+          .setMesh(polyMesh(document, buffer, material, `tile-${String(index)}`, index)),
       );
     }
     const input = Buffer.from(await toGlb(document));
@@ -681,7 +746,9 @@ describe("model compaction", () => {
       virtual: "none",
     }).apply(input, "tiles.glb");
     if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
-    expect(result.buffer.length).toBeLessThan(input.length * 1.5);
+    const output = await readVerified(result.buffer);
+    expect(orphanAccessors(output)).toBe(0);
+    expect(result.buffer.length).toBeLessThan(input.length * 2);
   });
 
   it("reports every named node compaction removed", async () => {

@@ -4,6 +4,7 @@ import {
   MathUtils,
   type Mesh,
   type Node,
+  type Primitive,
   PropertyType,
   type mat4,
 } from "@gltf-transform/core";
@@ -544,17 +545,24 @@ export async function compactModel(
     // vertices N times — the N× file growth that made a 50-rivet animated prop 13× larger. Those
     // nodes were recorded before the detach (a protected descendant's clone is not shared any
     // more, but it is still one of a repeated set), and stay authored for `instance`/runtime.
-    const accessorsBeforeJoin = collectAccessors(root);
+    const sourcePrimitives = collectPrimitives(root);
     await join({
       cleanup: false,
       filter: (node) => !protectedNodes.has(node) && !sharedBefore.has(node),
     })(document);
-    // With `cleanup: false` `join` leaves the source primitives and accessors behind for the
-    // game-configured `prune` to remove. With `passes.prune: false` they shipped as raw float32
-    // (8× the compacted file), so remove this pass's own leftovers here regardless.
-    for (const accessor of accessorsBeforeJoin) {
-      if (accessor.listParents().every((parent) => parent.propertyType === PropertyType.ROOT)) {
-        accessor.dispose();
+    // With `cleanup: false`, `join` unlinks each source primitive from its mesh but never disposes
+    // it, and its compacted accessor clones keep a non-Root parent. Remove this pass's own
+    // leftovers here so `passes.prune: false` does not ship them (measured 3x the file).
+    for (const primitive of sourcePrimitives) {
+      if (primitive.listParents().some((parent) => parent.propertyType !== PropertyType.ROOT)) {
+        continue;
+      }
+      const accessors = accessorsOfPrimitive(primitive);
+      primitive.dispose();
+      for (const accessor of accessors) {
+        if (accessor.listParents().every((parent) => parent.propertyType === PropertyType.ROOT)) {
+          accessor.dispose();
+        }
       }
     }
     for (const mesh of root.listMeshes()) {
@@ -582,19 +590,24 @@ export async function compactModel(
   return summary;
 }
 
-/** Every accessor a mesh primitive's attributes, indices or morph targets reference. */
-function collectAccessors(root: ReturnType<Document["getRoot"]>): Set<Accessor> {
-  const accessors = new Set<Accessor>();
-  const add = (accessor: Accessor | null): void => {
-    if (accessor !== null) accessors.add(accessor);
-  };
-  for (const mesh of root.listMeshes()) {
-    for (const primitive of mesh.listPrimitives()) {
-      for (const semantic of primitive.listSemantics()) add(primitive.getAttribute(semantic));
-      add(primitive.getIndices());
-      for (const target of primitive.listTargets()) {
-        for (const semantic of target.listSemantics()) add(target.getAttribute(semantic));
-      }
+/** Every primitive in the document, recorded before `join` unlinks the ones it merges. */
+function collectPrimitives(root: ReturnType<Document["getRoot"]>): Primitive[] {
+  return root.listMeshes().flatMap((mesh) => mesh.listPrimitives());
+}
+
+/** Every accessor one primitive's attributes, indices and morph targets reference. */
+function accessorsOfPrimitive(primitive: Primitive): Accessor[] {
+  const accessors: Accessor[] = [];
+  for (const semantic of primitive.listSemantics()) {
+    const attribute = primitive.getAttribute(semantic);
+    if (attribute !== null) accessors.push(attribute);
+  }
+  const indices = primitive.getIndices();
+  if (indices !== null) accessors.push(indices);
+  for (const target of primitive.listTargets()) {
+    for (const semantic of target.listSemantics()) {
+      const attribute = target.getAttribute(semantic);
+      if (attribute !== null) accessors.push(attribute);
     }
   }
   return accessors;
@@ -608,7 +621,7 @@ export function compactRequested(options: boolean | IModelCompactOptions | undef
 }
 
 /** Bump when a compaction algorithm change makes a previously cached output stale. */
-export const COMPACT_VERSION = 5;
+export const COMPACT_VERSION = 6;
 
 /** The compaction policy with every default resolved, so it is a stable cache key. */
 export interface IResolvedCompactOptions {
