@@ -326,18 +326,20 @@ desktop` writes `dist-native/mygame` and it starts.
 
 **Implementation:**
 
-- [ ] `templatePinCensus`: for every dependency in every shipped template manifest, resolve
+- [x] `templatePinCensus`: for every dependency in every shipped template manifest, resolve
       `name@version` against the registry; an unresolvable pin is a `fail` finding naming the
       template and the pin. Treat a registry it cannot reach as `blocked` (exit 2), matching the
-      existing contract.
-- [ ] `prebuiltReleaseCensus`: `HEAD` the `prebuilt-lock.json` for the current `runtime-native`
-      version; absent → `fail`.
+      existing contract. — `scripts/check-publish-state.ts:308`; spec `:423` (fail) and `:399` (blocked).
+- [x] `prebuiltReleaseCensus`: `HEAD` the `prebuilt-lock.json` for the current `runtime-native`
+      version; absent → `fail`. — `scripts/check-publish-state.ts:452`; spec `:536` (fail) and `:543` (blocked).
 - [ ] Publish `@threenative/assets` and `threenative-engine-mcp`, then the rest of the set.
+      — OPEN: needs npm publish rights; the 0.3.3 pins are committed but unresolvable until published.
 
 **Wiring:**
 
-- [ ] Caller edited: `scripts/check-publish-state.ts` report assembly; the workflow already runs it.
-- [ ] Ledger rows filled: #4, #5.
+- [x] Caller edited: `scripts/check-publish-state.ts` report assembly; the workflow already runs it.
+      — `scripts/check-publish-state.ts:861` (`templatePinCensus`) and `:870` (`prebuiltReleaseCensus`) in the report.
+- [x] Ledger rows filled: #4, #5. — both censuses have non-test callers in the report assembly.
 
 **Tests Required:**
 
