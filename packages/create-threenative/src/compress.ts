@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { constants, brotliCompressSync, gzipSync } from "node:zlib";
@@ -39,6 +40,11 @@ export async function writeCompressionSidecars(
   outputDirectory: string,
 ): Promise<ICompressionReport | undefined> {
   const files: string[] = [];
+  // A project whose vite config moves `build.outDir` leaves nothing here; its build still stands.
+  if (!existsSync(outputDirectory)) {
+    process.stdout.write(`web compression skipped: no build output at ${outputDirectory}\n`);
+    return undefined;
+  }
   await walk(outputDirectory, files);
   for (const file of files) {
     if (!COMPRESSIBLE_EXTENSIONS.has(path.extname(file).toLowerCase())) continue;

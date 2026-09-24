@@ -7,10 +7,10 @@
  * strip step — and no `.pdb` ever enters the container's copy list.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 // @ts-expect-error -- the packagers are plain ESM with no type declarations.
 import { packageDesktopContainer } from "../scripts/desktop-distribution.mjs";
@@ -18,7 +18,7 @@ import { packageDesktopContainer } from "../scripts/desktop-distribution.mjs";
 import { stripDesktopRuntime } from "../scripts/package-desktop.mjs";
 
 function fixture(contents = "runtime bytes") {
-  const directory = mkdtempSync(join(tmpdir(), "tn-desktop-strip-"));
+  const directory = makeTempDirSync("tn-desktop-strip-");
   const file = join(directory, "mystral");
   writeFileSync(file, contents);
   return { directory, file, cleanup: () => rmSync(directory, { force: true, recursive: true }) };
@@ -100,7 +100,7 @@ describe("stripDesktopRuntime", () => {
 
 describe("windows container copy list", () => {
   it("carries no .pdb file", () => {
-    const directory = mkdtempSync(join(tmpdir(), "tn-desktop-pdb-"));
+    const directory = makeTempDirSync("tn-desktop-pdb-");
     try {
       const executable = join(directory, "game.exe");
       const bundle = join(directory, "game.bundle");
