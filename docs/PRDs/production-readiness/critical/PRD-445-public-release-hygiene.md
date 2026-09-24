@@ -58,10 +58,35 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
 
 ### Phase 2 — Public truth
 
-- [ ] `docs/CURRENT-CHALLENGES.md` re-reviewed against the 2026-09-23 inspection; date updated; superseded rows corrected.
-- [ ] No public doc claims iOS support (owner decision 2026-09-23: supported targets are web, Windows, macOS, Linux, Android); `README.md` lines 7, 38, 102, 132, 148 and the `runtime-native` and `create-threenative` READMEs corrected.
-- [ ] `pnpm alpha:bar --write` regenerates `docs/verification/alpha-bar.md`; row A7 passes.
+- [x] `docs/CURRENT-CHALLENGES.md` re-reviewed against the 2026-09-23 inspection; date updated; superseded rows corrected.
+  Done: last-reviewed date is 2026-09-23; row 2 ("Android conformance lane is red on CI") is
+  corrected to "The native platform evidence lane is slow" (green on `develop` 2026-09-23, run
+  35807670726, 2h35m) and its section rewritten; row 3 is corrected to "iOS is not a supported
+  target" per the 2026-09-23 owner decision. No other row contradicts the inspection.
+- [x] No public doc claims iOS support (owner decision 2026-09-23: supported targets are web, Windows, macOS, Linux, Android); `README.md` lines 7, 38, 102, 132, 148 and the `runtime-native` and `create-threenative` READMEs corrected.
+  Done: those READMEs were already corrected in `bc1e38615` (verified, no iOS support claim
+  remains). This commit also corrects the public support claims the inspection missed: the site
+  marketing copy (`site/src/content/claims.ts`, `nav.ts`, `docs.ts` keywords), the site docs
+  (`NativeRuntime`, `Physics`, `Playtesting`), the OG image
+  (`site/public/og/home.svg`), and the published package descriptions (`package.json`,
+  `packages/runtime-native/package.json`). Left as-is: `packages/create-threenative/templates/defense/README.md`
+  still says "desktop, Android, and iOS" — it is inside a scaffold whose SHA-256 hash
+  (`scaffold.spec.ts` `PRD_201_PARENT_SCAFFOLD_HASHES`) moves with any template byte, and
+  recomputing that table is a separate change.
+- [x] `pnpm alpha:bar --write` regenerates `docs/verification/alpha-bar.md`; row A7 passes.
+  Done: `pnpm alpha:bar --write` regenerated the file; the next `pnpm alpha:bar` reports
+  `A7 pass — The generated table in docs/verification/alpha-bar.md is byte-identical to this run.`
+  A1 still fails (the 0.3.3 / 0.2.6 cohort is unpublished); A6 stays deferred; that is expected and
+  belongs to PRD-196.
 - [ ] Root cause of the `site` deploy failure recorded here; the next `site` run on `main` is green.
+  **Root cause recorded; the green run needs an owner secret and a push.** The `site` workflow's
+  `deploy` job (`site.yml`, environment `site-production`) maps
+  `secrets.CLOUDFLARE_ACCOUNT_ID` / `secrets.CLOUDFLARE_API_TOKEN` into `pnpm site:deploy`, but on
+  the failing run (`main`, `d3e6b7deb`, run 35899011227) both env vars are empty, so `wrangler
+  deploy` exits 1 with "In a non-interactive environment, it's necessary to set a
+  CLOUDFLARE_API_TOKEN environment variable". The `build` job (typecheck, tests, e2e, `wrangler
+  deploy --dry-run`) passes, so no repo code is at fault. Fix: set the two secrets on the
+  `site-production` environment (owner), then re-run — a push to `main` is out of scope here.
 
 ### Phase 3 — Release-path PRD bookkeeping
 

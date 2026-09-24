@@ -9,15 +9,15 @@ Nothing here is hidden elsewhere, and nothing elsewhere contradicts it. If you f
 this file does not name, that is a bug in this file — please
 [open an issue](https://github.com/ThreeNativeHQ/threenative/issues).
 
-**Last reviewed:** 2026-09-02.
+**Last reviewed:** 2026-09-23.
 
 ## At a glance
 
 | # | Challenge | Status | Next step |
 | --- | --- | --- | --- |
 | 1 | Mobile frame rate on physical hardware | Being measured | Reference workload on a Pixel 8, not a cube ladder |
-| 2 | Android conformance lane is red on CI | Root-caused, fixes in flight | Land the exclusion-aware lane check |
-| 3 | iOS is simulator-only | Evidence lane green, device lane absent | A physical-device run and a store-shaped build |
+| 2 | The native platform evidence lane is slow | Green on `develop` 2026-09-23, 2h35m | Cache the SDK/Gradle/Cargo trees and shard the conformance rows |
+| 3 | iOS is not a supported target | Owner decision, 2026-09-23 | No public text claims iOS; a later decision needs a device lane and a store-shaped build |
 | 4 | Native physics on device | Backend proven, device scenarios open | Run the shared conformance suite on hardware |
 | 5 | The agent head-to-head benchmark has never been run | Apparatus built and wired to CI | Execute six repeats against the sealed prompt |
 | 6 | Nobody outside the project has played a game for five minutes | Protocol written | Run the stranger test |
@@ -43,34 +43,30 @@ reference workload on it, and record the result in
 record, updated in place. The CPU-side frame cost is already decomposed there, with the host gap
 named down to the millisecond.
 
-## 2. The Android conformance lane is red on CI
+## 2. The native platform evidence lane is slow
 
-**Where it stands.** The advisory `native-platforms` workflow has been red since 2026-09-01. It is
-not a rendering regression — the conformance run itself passes 74 rows. Three stacked infrastructure
-defects are responsible, and all three are root-caused:
+**Where it stands.** The advisory `native-platforms` workflow was red from 2026-09-01 and is green
+again: the 2026-09-23 run on `develop` passed every job, including Android emulator parity, desktop
+parity and the iOS simulator handoff. The three stacked infrastructure defects are fixed — the lane
+check no longer counts a documented, unexpired registry exclusion as a block, the ledger step
+imports the shared exit rule instead of re-implementing it, and a single `--target android`
+invocation no longer overwrites the web reference. What remains is the run's cost: about 45 minutes
+of it is a serial, software-GL conformance comparison.
 
-- the lane check counted a documented, unexpired registry exclusion as an unexpected block;
-- the workflow's ledger step re-implemented the exit rule instead of importing it, so the ledger and
-  the checker disagreed;
-- a single `--target android` invocation also wrote web, desktop and iOS reports, overwriting a good
-  web reference.
-
-**The plan.** The exclusion-aware lane check is already on a branch whose run turned desktop parity
-green; the ledger step imports the shared exit rule instead of copying it; the target side effect is
-being removed. Full analysis, with run IDs:
+**The plan.** Cache the Android SDK, Gradle and Cargo trees and shard the conformance rows. The
+red-run analysis, with run IDs, stays at
 [`verification/native-platforms-red-2026-09-02.md`](verification/native-platforms-red-2026-09-02.md).
 
-**Also in flight:** the same lane is slow — 45 minutes of it is a serial, software-GL conformance
-comparison. Caching the Android SDK, Gradle and Cargo trees and sharding the rows is the fix.
-
-## 3. iOS is simulator-only
+## 3. iOS is not a supported target
 
 **Where it stands.** iOS evidence is produced on a hosted macOS runner against the simulator: the
-runtime builds, boots, and renders. There is no physical-device lane and no store-shaped build.
+runtime builds, boots, and renders. That lane is a regression signal, not a support claim. The
+owner decided on 2026-09-23 that iOS is not a supported target — not in the current preview, not in
+the beta, and not in 1.0 — and no public text claims it.
 
-**The plan.** The simulator lane holds the regression line while a device lane is stood up. Until
-then the project says "simulator evidence", never "iOS support" — the Charter's release ladder
-refuses to call any platform ready while its hardware row is open.
+**The plan.** Keep the simulator lane green. If iOS is ever added as a target it needs a
+physical-device lane and a store-shaped build, and the Charter's release ladder still refuses to
+call a platform ready while its hardware row is open.
 
 ## 4. Native physics on device
 

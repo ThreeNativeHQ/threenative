@@ -104,7 +104,7 @@
     "typescript": "catalog:",
     "vitest": "4.1.10"
   },
-  "description": "ThreeNative is an application framework for games whose same vanilla Three.js source runs in the browser on WebGPU and on an owned C++ runtime for desktop, Android, and iOS. It uses Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every surface.",
+  "description": "ThreeNative is an application framework for games whose same vanilla Three.js source runs in the browser on WebGPU and on an owned C++ runtime for desktop and Android. It uses Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every surface.",
   "pnpm": {
     "overrides": {
       "sharp": ">=0.35.4"
