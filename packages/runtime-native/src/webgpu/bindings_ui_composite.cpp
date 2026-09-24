@@ -240,10 +240,17 @@ bool ensureUiPipeline(BindingsState* state, WGPUTextureFormat format) {
     return true;
 }
 
-/** Create or resize the UI texture, dropping any bind group that named the old view. */
-bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
+/**
+ * Create or resize the UI texture, dropping any bind group that named the old view.
+ *
+ * `format` follows the source's channel order: cairo hands over `B,G,R,A` on a little-endian host
+ * (`BGRA8Unorm`), Android's `ImageReader` hands over `R,G,B,A` (`RGBA8Unorm`). The shader decodes
+ * whichever was uploaded; only the storage layout differs, so the same pipeline serves both.
+ */
+bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height,
+                     WGPUTextureFormat format) {
     if (state->ui.texture != nullptr && state->ui.textureWidth == width &&
-        state->ui.textureHeight == height)
+        state->ui.textureHeight == height && state->ui.textureFormat == format)
         return true;
     if (state->ui.bindGroup != nullptr) {
         wgpuBindGroupRelease(state->ui.bindGroup);
@@ -264,9 +271,9 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
     descriptor.mipLevelCount = 1;
     descriptor.sampleCount = 1;
     descriptor.dimension = WGPUTextureDimension_2D;
-    // Not `BGRA8UnormSrgb`: the shader does the decode, because the same shader has to serve a
-    // linear target and an sRGB one.
-    descriptor.format = WGPUTextureFormat_BGRA8Unorm;
+    // Not `*-Srgb`: the shader does the decode, because the same shader has to serve a linear
+    // target and an sRGB one.
+    descriptor.format = format;
     descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     state->ui.texture = wgpuDeviceCreateTexture(state->device, &descriptor);
     if (!requireHandleHostSide(state->ui.texture, "uiComposite.createTexture")) {
@@ -275,7 +282,7 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
     }
 
     WGPUTextureViewDescriptor viewDescriptor = {};
-    viewDescriptor.format = WGPUTextureFormat_BGRA8Unorm;
+    viewDescriptor.format = format;
     viewDescriptor.dimension = WGPUTextureViewDimension_2D;
     viewDescriptor.baseMipLevel = 0;
     viewDescriptor.mipLevelCount = 1;
@@ -288,6 +295,7 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
     }
     state->ui.textureWidth = width;
     state->ui.textureHeight = height;
+    state->ui.textureFormat = format;
     // The new texture holds nothing, so the next frame uploads whatever the page already has
     // rather than waiting for it to change again.
     state->ui.uploadedCounter = 0;
@@ -321,7 +329,9 @@ bool uploadUiFrame(BindingsState* state, const platform::UiOverlayFrame& frame) 
         traceUiComposite(frame.counter, false);
         return true;
     }
-    if (!ensureUiTexture(state, frame.width, frame.height)) return false;
+    const WGPUTextureFormat sourceFormat =
+        frame.isRgba ? WGPUTextureFormat_RGBA8Unorm : WGPUTextureFormat_BGRA8Unorm;
+    if (!ensureUiTexture(state, frame.width, frame.height, sourceFormat)) return false;
 
     WGPUImageCopyTexture_Compat destination = {};
     destination.texture = state->ui.texture;

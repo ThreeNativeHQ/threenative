@@ -441,6 +441,8 @@ struct UiComposite {
     WGPUSampler sampler = nullptr;
     uint32_t textureWidth = 0;
     uint32_t textureHeight = 0;
+    /// The format `texture` was created with; the source's channel order, not the target's.
+    WGPUTextureFormat textureFormat = WGPUTextureFormat_Undefined;
     /// The mailbox counter the texture holds. Zero means nothing has been uploaded yet.
     uint64_t uploadedCounter = 0;
     /// Frames where the upload was skipped because the page had not changed.
