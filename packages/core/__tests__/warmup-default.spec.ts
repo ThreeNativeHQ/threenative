@@ -1,4 +1,4 @@
-import { Mesh, MeshBasicMaterial, SphereGeometry } from "three";
+import { DirectionalLight, Mesh, MeshBasicMaterial, SphereGeometry } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // PRD-327 Phase 2. The `warmUp` default is resolved per platform, so the platform seam is what
@@ -128,5 +128,56 @@ describe("the warmUp option", () => {
     expect(await bootAndCountCompiles(false)).toBe(0);
     platform.native = false;
     expect(await bootAndCountCompiles(false)).toBe(0);
+  });
+});
+
+describe("the warm-up render's world matrices", () => {
+  it("walks the draw root before it draws, so pipelines are not compiled against stale transforms", async () => {
+    // The engine tells three not to walk the scene (`matrixWorldAutoUpdate = false`) and owns the
+    // walk itself. A projection that declines returns from `reconcile()` without walking, and the
+    // warm-up draws before the frame loop's own pass — so without an explicit walk the warm render
+    // compiles against stale world matrices and the real frames build the rest synchronously. On a
+    // software adapter each of those compiles takes tens of seconds and the GPU device is lost,
+    // which is how the racing and puzzle templates failed their non-visual lanes.
+    const canvas = testCanvas();
+    let mesh: Mesh | undefined;
+    const worldX: number[] = [];
+    class WarmRenderScene extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        mesh = new Mesh(new SphereGeometry(0.1, 3, 2), new MeshBasicMaterial());
+        mesh.position.set(5, 0, 0);
+        const light = new DirectionalLight();
+        light.castShadow = true;
+        ctx.add(light);
+        ctx.add(mesh);
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: () => Promise.resolve(),
+          domElement: canvas,
+          // The world pass is handed the scene the mesh lives in; the overlay pass is not.
+          render: (scene: { children: readonly unknown[] }) => {
+            if (mesh !== undefined && scene.children.includes(mesh))
+              worldX.push(mesh.matrixWorld.elements[12] as number);
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: WarmRenderScene },
+      start: "test",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    try {
+      await game.start();
+    } finally {
+      game.stop();
+    }
+    // The first world draw is the warm render; it must see the mesh where the game put it.
+    expect(worldX[0]).toBe(5);
   });
 });

@@ -24,6 +24,7 @@ import { runIosPlaytest } from "./iosRunner.js";
 import { recordToScenario } from "./recording.js";
 import { runStandalonePlaytest, runStandalonePlaytests, type IStandalonePlaytestReport } from "./runner.js";
 import { audioCommand } from "./audioRun.js";
+import { assertCpuProfileTargetSupported } from "./cpuProfile.js";
 import { traceCommand } from "./traceRun.js";
 import { safePart } from "./shared.js";
 
@@ -106,6 +107,20 @@ export function classifyRunnerError(
       "TN_PLAYTEST_DEVICE_FAILED",
       message,
       "Confirm adb can reach the requested serial and Android Chrome exposes its CDP socket, then rerun.",
+    );
+  }
+  if (message.startsWith("TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED")) {
+    return diagnostic(
+      "TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED",
+      message,
+      "Point --cpu-prof at a writable path; the run is not green without the profile it was asked for.",
+    );
+  }
+  if (message.startsWith("TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED")) {
+    return diagnostic(
+      "TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED",
+      message,
+      "Run --cpu-prof on the browser or desktop target, where the profile can be produced.",
     );
   }
   if (message.startsWith("browserType.launch")) {
@@ -270,6 +285,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return await recordToScenarioCommand(argv.slice(1));
     }
     config = parseStandalonePlaytestArgs(argv);
+    assertCpuProfileTargetSupported(config.target ?? "browser", config.cpuProfilePath);
     const scenarioPaths = config.scenarioPaths ?? [config.scenarioPath];
     const reports = config.target === "browser"
       ? config.device === undefined
