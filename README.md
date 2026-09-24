@@ -4,7 +4,7 @@
 
 **The application framework for Three.js games — one codebase, web and native.**
 
-Write ordinary `three/webgpu`. Ship it to the browser, desktop, Android, and iOS.
+Write ordinary `three/webgpu`. Ship it to the browser, Windows, macOS, Linux, and Android.
 
 [![CI](https://github.com/ThreeNativeHQ/threenative/actions/workflows/ci.yml/badge.svg)](https://github.com/ThreeNativeHQ/threenative/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@threenative/core?label=%40threenative%2Fcore&color=cb3837)](https://www.npmjs.com/package/@threenative/core)
@@ -35,7 +35,7 @@ Three.js tutorial from the last decade still applies inside a ThreeNative scene.
 | **HUD and menus** | Hand-rolled DOM, or a second render loop | React 19 + Tailwind bound to game state at ~10 Hz |
 | **Assets** | Manual copies and paths | `assets/` in, hashed output and a manifest out |
 | **Proof it still works** | Screenshots and hope | Playtest scenarios that drive a real build and assert |
-| **Desktop, Android, iOS** | Browser only | An owned C++ runtime running the same source |
+| **Desktop and Android** | Browser only | An owned C++ runtime running the same source |
 | **The look** | Yours | Yours — visual code is generated into `src/render/`, never hidden in a package |
 
 The framework owns the wiring and never the look. Anything that decides how a frame looks —
@@ -99,7 +99,7 @@ lifecycle.
 - **A real test harness.** Playtest scenarios drive the actual build in a browser or on a device
   and assert what happened — frames, transforms, state, performance.
 - **An asset pipeline.** Models and textures compile to hashed, manifest-tracked output.
-- **An owned native runtime.** The same TypeScript runs on a C++ host for desktop, Android and iOS.
+- **An owned native runtime.** The same TypeScript runs on a C++ host for desktop and Android.
 - **Built for agents.** A searchable capability manifest ships with the library and is exposed over
   MCP, so an authoring agent finds what already exists instead of rewriting it.
 
@@ -129,7 +129,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `create-threenative` | Scaffold a readable game project from eight templates |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
-| `@threenative/runtime-native` | Owned C++ host for desktop, Android, and iOS |
+| `@threenative/runtime-native` | Owned C++ host for desktop and Android |
 | `@threenative/raw-unreal` | Raw Unreal editor `.uasset` static-mesh loader — UE5 FMeshDescription and UE4.18 FRawMesh, no interchange conversion |
 | `@threenative/ui` | React bindings for HUD and game state |
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
@@ -140,12 +140,19 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 
 ThreeNative is **alpha**: the API is settling and versions are `0.x`.
 
+**Supported targets: web, Windows, macOS, Linux and Android. iOS is not supported yet.**
+
+**You sign your own game.** A desktop or Android release is signed with *your* certificate and
+keys, because the signature names the publisher of the game a player downloads. ThreeNative ships
+no certificate; `threenative build --mode release` signs with yours. See
+[`docs/RELEASE-SIGNING.md`](docs/RELEASE-SIGNING.md).
+
 | Platform | Renderer | State |
 | --- | --- | --- |
 | Web | WebGPU, WebGL2 fallback | Verified every CI run |
 | Desktop (Linux, macOS, Windows) | Owned native host | Verified — 300 native frames and a non-blank capture |
 | Android | Owned native host | Emulator lane runs; physical-device performance is being measured |
-| iOS | Owned native host | Simulator evidence produced on a hosted macOS runner |
+| iOS | — | **Not supported.** Experimental host code exists; no release supports it |
 
 Every claim here is backed by a run. The current numbers live in
 [`docs/verification/runtime-perf-state.md`](docs/verification/runtime-perf-state.md), and

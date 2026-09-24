@@ -1147,6 +1147,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       let failure: string | undefined;
       try {
         projection.reconcile();
+        // The frame loop's own walk, run here too because the warm-up draws before that loop does.
+        // Three is told not to walk the scene (`matrixWorldAutoUpdate = false`), and a declined
+        // projection returns from `reconcile()` without walking it, so without this the warm render
+        // compiles every pipeline against stale world matrices and the real frames then build the
+        // rest synchronously -- tens of seconds each on a software adapter, which loses the device.
+        this.#matrixWorld?.apply(projection.root);
         report = await warmUpScene(renderer, projection.root, camera, {
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
@@ -1914,6 +1920,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       let failure: string | undefined;
       try {
         projection.reconcile();
+        // Same walk as the held warm-up above: the explicit warm-up also draws before the frame
+        // loop's own matrix pass, and a declined projection left the scene un-walked.
+        this.#matrixWorld?.apply(projection.root);
         const warmUpOptions: IWarmUpOptions = this.#warmUpOptions();
         report = await warmUpScene(this.#renderer, projection.root, camera, {
           ...warmUpOptions,

@@ -22,7 +22,7 @@ now sits at the top of `METRICS.md` — **friction rows per cold-agent build**.
 `fps-legacy-requirements.md` (§1), which must be complete before §2 seals anything.
 
 **Blocks:** nothing. It supersedes nothing. It does, however, settle what
-[PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) is for — see §8.
+[PRD-080](../production-readiness/critical/PRD-080-five-minute-stranger-test.md) is for — see §8.
 
 **Complexity: 7 → HIGH mode, operator-run.** Two cold builds, a sealed corpus addition, a blind
 judging pass, and a set of validity controls that are the actual subject of the PRD.
@@ -175,7 +175,7 @@ a claim about the legacy framework, which is quoted for scale and never scored.
 
 ## 8. What happens to PRD-080
 
-[PRD-080](../BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md) is the
+[PRD-080](../production-readiness/critical/PRD-080-five-minute-stranger-test.md) is the
 five-minute stranger test, parked under `requires-external-person/`. It stays there and it stays
 open. What changes is what it grades: **the game, which means the templates — not the framework.**
 `METRICS.md` no longer routes any framework result through it.

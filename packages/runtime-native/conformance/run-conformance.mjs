@@ -1252,6 +1252,18 @@ function androidArgs(serial, ...args) {
   return ["-s", serial, ...args];
 }
 
+// A device-settings restore after a row. The emulator's adbd drops for a moment under load
+// ("adb: device offline") and that failed rows that had already rendered and compared, on a
+// different row each run. Wait for the device once and retry; one that stays gone still fails.
+function restoreOnDevice(adb, serial, ...shellArgs) {
+  const run = () =>
+    runCommand(adb, androidArgs(serial, "shell", ...shellArgs), { allowFailure: true, timeout: 10_000 });
+  const first = run();
+  if (first.status === 0) return first;
+  runCommand(adb, androidArgs(serial, "wait-for-device"), { allowFailure: true, timeout: 30_000 });
+  return run();
+}
+
 function writeAndroidRemoteFile(adb, serial, remotePath, contents) {
   const directory = mkdtempSync(join(tmpdir(), "threenative-conformance-android-file-"));
   const localPath = join(directory, "payload");
@@ -1993,11 +2005,7 @@ async function runAndroid(
       );
     }
     if (displayRestore !== null) {
-      const restored = runCommand(
-        tools.adb,
-        androidArgs(serial, "shell", "wm", "size", displayRestore),
-        { allowFailure: true, timeout: 10_000 },
-      );
+      const restored = restoreOnDevice(tools.adb, serial, "wm", "size", displayRestore);
       if (restored.status !== 0) {
         result.status = "fail";
         result.native = {
@@ -2026,11 +2034,7 @@ async function runAndroid(
     }
     if (rotationRestore !== null) {
       for (const [setting, value] of Object.entries(rotationRestore)) {
-        const restored = runCommand(
-          tools.adb,
-          androidArgs(serial, "shell", "settings", "put", "system", setting, value),
-          { allowFailure: true, timeout: 10_000 },
-        );
+        const restored = restoreOnDevice(tools.adb, serial, "settings", "put", "system", setting, value);
         if (restored.status !== 0) {
           result.status = "fail";
           result.native = {
