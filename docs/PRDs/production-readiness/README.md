@@ -1,5 +1,7 @@
 # Production readiness — install, author, build and distribute
 
+**Current state (2026-09-23): [RELEASE-READINESS-2026-09-23.md](RELEASE-READINESS-2026-09-23.md)** — verdict, ranked blockers per release rung, and two new PRDs ([PRD-445](PRD-445-public-release-hygiene.md), [PRD-446](PRD-446-stable-api-and-upgrade-contract.md)).
+
 **Start PRD-196 phase 1, PRD-078 phase 1, PRD-221 phase 1 and PRD-217 phase 1 in parallel.** Use the phase schedule below; whole PRDs are not independent work units. This batch closes the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md): a developer installs public packages, gets the authoring tools, changes game files and branding, then builds playable web, desktop and Android artifacts without engine source.
 
 **Status: PLANNED.** Nine existing PRDs were moved here and revised; two are new. No implementation or release readiness is claimed by filing the plans. Source baseline: `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is excluded from this batch's acceptance; existing iOS implementations, simulator gates and unclosed external PRD criteria are preserved.
