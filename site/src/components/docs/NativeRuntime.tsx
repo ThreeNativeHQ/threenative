@@ -24,8 +24,8 @@ export function NativeRuntime() {
       <DocSection id="contract" title="The native host consumes the portable game entry">
         <p>
           <code className="font-mono text-tn-fg">@threenative/runtime-native</code> is an optional
-          host for desktop, Android and iOS. It is not a second renderer or scene API: the
-          project&apos;s portable game entry remains the contract, with Three.js and the same
+          host for desktop and Android. It is not a second renderer or scene API: the project&apos;s
+          portable game entry remains the contract, with Three.js and the same
           <code className="ml-1 font-mono text-tn-fg">src/game.ts</code> at the center.
         </p>
         <DocCallout title="No WebView">

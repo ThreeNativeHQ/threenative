@@ -16,6 +16,6 @@
   <text x="128" y="112" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="34" font-weight="600" letter-spacing="-0.5">ThreeNative</text>
   <text x="72" y="300" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="700" letter-spacing="-2">Build native 3D apps</text>
   <text x="72" y="382" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="700" letter-spacing="-2">with the Three.js API</text>
-  <text x="72" y="452" fill="#c1c3c7" font-family="Inter, system-ui, sans-serif" font-size="26">Web, desktop, Android and iOS from one Three.js codebase.</text>
+  <text x="72" y="452" fill="#c1c3c7" font-family="Inter, system-ui, sans-serif" font-size="26">Web, desktop and Android from one Three.js codebase.</text>
   <rect x="72" y="510" width="196" height="8" rx="4" fill="#e0fb50"/>
 </svg>

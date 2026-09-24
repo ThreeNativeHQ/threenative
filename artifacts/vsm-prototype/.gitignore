@@ -1,9 +1,0 @@
-node_modules/
-.DS_Store
-*.log
-report/*.json.tmp
-__pycache__/
-report/*.exit
-report/diagnostic-*
-vendor/
-standalone.html

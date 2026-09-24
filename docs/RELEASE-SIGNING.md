@@ -114,5 +114,5 @@ That work belongs to [PRD-365](PRDs/production-readiness/critical/PRD-365-consum
 
 - [PRD-262](PRDs/done/PRD-262-the-runtime-native-prebuilt-release-exists.md) — the
   published runtime cohort, and the build tool helper that belongs in it.
-- [PRD-060](PRDs/BLOCKED/requires-release-credentials/PRD-060-promoted-consumer-distribution.md) —
+- [PRD-060](PRDs/production-readiness/PRD-060-promoted-consumer-distribution.md) —
   candidate staging, npm promotion, and signing when it is wanted.
