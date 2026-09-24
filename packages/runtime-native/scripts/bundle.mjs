@@ -369,14 +369,26 @@ void game.start().catch((error) => console.error(
         fileName: () => basename(absoluteOutput),
         formats: ['es'],
       },
-      minify: false,
+      // Minified for the shipped asset (roughly half the raw bytes). `keepNames` is not optional:
+      // core reads `backend.constructor.name` for the renderer's backend stamp (`renderer.ts`,
+      // `geometry-capture.ts`), and the runtime's structured-clone description reads
+      // `value.constructor.name` (`url-worker-polyfill.js`). Without it those class names mangle
+      // and the reports lie. `comments.legal` keeps the bundled dependencies' `@license`/SPDX
+      // banners minification would otherwise strip; sourcemaps stay off, as today.
+      minify: true,
       outDir: dirname(absoluteOutput),
       rollupOptions: {
         input: virtualEntry,
         output: {
-          banner: `/* TN_NATIVE_BUNDLE_SCOPE */\n(() => {\n${nativePrelude}`,
+          // `/*!` makes the scope marker a legal comment, the one class the minifier keeps.
+          banner: `/*! TN_NATIVE_BUNDLE_SCOPE */\n(() => {\n${nativePrelude}`,
           codeSplitting: false,
           footer: '})();',
+          // Vite's lib path defaults the minifier to `{ codegen: false }` for an ES lib, which
+          // mangles identifiers but keeps every newline and indent. Force the full pass.
+          minify: true,
+          keepNames: true,
+          comments: { legal: true },
         },
       },
       target: 'es2022',

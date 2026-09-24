@@ -92,10 +92,10 @@ Out of scope, with reasons:
 
 #### Phase 2: JS payload
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **ACs:** AC-3, AC-5, AC-7
 
-- [ ] `bundle.mjs` minifies; any name-dependent failure is fixed at its engine source, not by turning minify back off.
+- [x] `bundle.mjs` minifies; any name-dependent failure is fixed at its engine source, not by turning minify back off. — `minify: true` with `keepNames: true` (core's backend stamp reads `constructor.name` at `renderer.ts:755`, `geometry-capture.ts:453`) and `comments.legal` (8 licence banners kept). Consumer game, same source: android 4,918,166 → 2,063,155 B, desktop 7,311,684 → 4,399,418 B; `keepNames:false` would save only ~117 KB more. `bundle-minify.spec.ts` red (stashed `bundle.mjs`) → green; runs the minified bundle and reads back a class name.
 - [ ] Consumer playtest passes on desktop and on the Android emulator with the minified bundle (AC-3).
 - [ ] One Basis transcoder and one Draco variant emitted (AC-5).
 - [ ] Rapier WASM-as-file measured and kept or reverted (AC-7).
