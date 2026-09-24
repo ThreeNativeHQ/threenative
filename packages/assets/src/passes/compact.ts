@@ -171,7 +171,9 @@ export function removedNames(before: readonly string[], after: readonly string[]
 /**
  * Builds the protected-node set once, before any pass mutates the graph. A node matched by
  * more than one rule keeps the first rule that fires, in priority order: allow-list, then the
- * structural rules a broken lookup would be hardest to debug, then the regex.
+ * structural rules a broken lookup would be hardest to debug, then the regex, and finally the
+ * `animation-ancestor` fallback (claimed last so a node that is also a target or a name match
+ * keeps the rule that spreads the keep closure to its children).
  */
 export function buildProtectedSet(
   document: Document,
@@ -244,19 +246,39 @@ export function buildProtectedSet(
  * and quantize() later assumes one accessor per mesh — a shared accessor leaves the protected
  * node's transform uncompensated, which the pass's own drift check then rejects.
  */
+/** A node whose shared mesh was temporarily replaced so `instance()` would not batch it. */
+interface IDetachedMesh {
+  readonly clone: Mesh;
+  readonly node: Node;
+  readonly original: Mesh;
+}
+
 function detachProtectedMeshes(
   document: Document,
   protectedNodes: ReadonlyMap<Node, unknown>,
-): void {
+): IDetachedMesh[] {
   const keep = keepInPlaceNodes(document, protectedNodes);
   // `instance()` has no predicate: a shared mesh anywhere in the keep closure — a protected
   // node OR one of its descendants — would be batched at the scene root and its node pruned,
   // which for a protected pivot means the lookup breaks and its children stop rotating with it.
-  // Cloning each such node's mesh keeps it out of the batch; `join` may still merge its
-  // primitive under its real parent.
+  // The clone only has to exist for the `instance()` call; the caller restores the original
+  // afterward, so an N-times-shared mesh is never shipped N times.
+  const detached: IDetachedMesh[] = [];
   for (const node of keep) {
     const mesh = node.getMesh();
-    if (mesh !== null && isShared(mesh, node)) node.setMesh(deepCloneMesh(document, mesh));
+    if (mesh === null || !isShared(mesh, node)) continue;
+    const clone = deepCloneMesh(document, mesh);
+    node.setMesh(clone);
+    detached.push({ clone, node, original: mesh });
+  }
+  return detached;
+}
+
+/** Puts every temporarily detached node back on its original mesh and drops the clones. */
+function restoreDetachedMeshes(detached: readonly IDetachedMesh[]): void {
+  for (const { clone, node, original } of detached) {
+    if (node.getMesh() === clone) node.setMesh(original);
+    clone.dispose();
   }
 }
 
@@ -445,14 +467,18 @@ export async function compactModel(
   // `instance` batch needs, and `flatten` gathers the siblings that make `join` effective.
   const reparented = flattenEnabled ? flattenProtected(document, protectedNodes) : 0;
 
-  // The mesh detach exists only to keep a node out of an `instance` batch; with instancing off
-  // it would clone meshes for no draw reduction.
+  // The mesh detach exists only to keep a node out of an `instance` batch, and `instance()`
+  // refuses any document with animations, so it is skipped there and the meshes are restored
+  // immediately after the call either way.
   const sharedBefore = new Set<Node>();
   for (const node of sceneNodes(root)) {
     const mesh = node.getMesh();
     if (mesh !== null && isShared(mesh, node)) sharedBefore.add(node);
   }
-  if (instanceEnabled) detachProtectedMeshes(document, protectedNodes);
+  let detached: readonly IDetachedMesh[] = [];
+  if (instanceEnabled && root.listAnimations().length === 0) {
+    detached = detachProtectedMeshes(document, protectedNodes);
+  }
 
   let instanceSummary: IModelCompactSummary["instance"] = {
     batches: 0,
@@ -482,6 +508,7 @@ export async function compactModel(
       ...(reason === undefined ? {} : { reason }),
     };
   }
+  restoreDetachedMeshes(detached);
 
   const primitivesBeforeJoin = countPrimitives(sceneNodes(root));
   if (joinEnabled) {

@@ -589,12 +589,65 @@ describe("model compaction", () => {
       );
 
     const input = Buffer.from(await toGlb(document));
-    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
-      input,
-      "rivets.glb",
-    );
+    // Quantize off is the case that exposed the N-times growth: with quantize on, its accessor
+    // dedup hid the clone; with it off nothing relinks the clones. The mesh detach is also
+    // skipped entirely on an animated document, because `instance()` refuses one.
+    const result = await modelPass({
+      passes: { dedup: true, meshopt: false, prune: true, quantize: false, reorder: false },
+      textures: "none",
+      virtual: "none",
+    }).apply(input, "rivets.glb");
     if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
     expect(result.buffer.length).toBeLessThan(input.length * 3);
+  });
+
+  it("does not ship an N-times clone of a protected node's shared mesh", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("rivet").setBaseColorFactor([0.4, 0.4, 0.4, 1]);
+    const scene = document.createScene("Scene");
+    const positions = new Float32Array(300 * 3);
+    for (let index = 0; index < 300; index += 1) positions[index * 3] = index * 0.01;
+    const indices = new Uint16Array(298 * 3);
+    for (let index = 0; index < 298; index += 1) {
+      indices[index * 3] = index;
+      indices[index * 3 + 1] = index + 1;
+      indices[index * 3 + 2] = index + 2;
+    }
+    const mesh = document.createMesh("rivet");
+    const primitive = document.createPrimitive();
+    primitive.setAttribute(
+      "POSITION",
+      accessor(document, buffer, "rivet-positions", positions).setType("VEC3"),
+    );
+    primitive.setIndices(accessor(document, buffer, "rivet-indices", indices).setType("SCALAR"));
+    primitive.setMaterial(material);
+    mesh.addPrimitive(primitive);
+    // A regex-protected static hub with 50 shared rivets: the detach clones each rivet's mesh so
+    // `instance()` cannot batch it, and the clones must not survive to the writer.
+    const hub = document.createNode("Wheel_hub");
+    for (let index = 0; index < 50; index += 1) {
+      hub.addChild(
+        document
+          .createNode(`rivet_${String(index)}`)
+          .setMesh(mesh)
+          .setTranslation([index, 0, 0]),
+      );
+    }
+    scene.addChild(hub);
+    const input = Buffer.from(await toGlb(document));
+    const result = await modelPass({
+      passes: { dedup: true, meshopt: false, prune: true, quantize: false, reorder: false },
+      textures: "none",
+      virtual: "none",
+    }).apply(input, "hub-rivets.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const authoredVertices = output
+      .listMeshes()
+      .flatMap((entry) => entry.listPrimitives())
+      .reduce((total, entry) => total + (entry.getAttribute("POSITION")?.getCount() ?? 0), 0);
+    expect(authoredVertices).toBe(300);
   });
 
   it("reports every named node compaction removed", async () => {
