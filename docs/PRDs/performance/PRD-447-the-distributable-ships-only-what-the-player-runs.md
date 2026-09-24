@@ -106,12 +106,12 @@ Out of scope, with reasons:
 
 #### Phase 3: Content hygiene and transfer
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **ACs:** AC-4, AC-6
 
 - [x] Packagers copy the manifest's file set and print what they skipped; spec with a stray `.orig` fixture is red first (AC-4). — Amended as under AC-4: junk and superseded outputs are skipped and printed; hand-placed files ship.
 - [x] Web build writes `.br`/`.gz` sidecars (AC-6). — `create-threenative/src/compress.ts`, called from `buildWeb`; node:zlib only.
-- [ ] Spike doc updated with the achieved sizes; `pnpm typecheck && pnpm lint && pnpm test` green. — Spike updated ("Achieved" section). Gate so far: `pnpm build`, `typecheck` and `lint` exit 0. `pnpm test` stops at `runtime-native`, whose 18 reds all need native test binaries this worktree never built (`TN_PUMP_PROBE_NO_BINARY`, `cmake --build … --target …`). The root `vitest run` found 2 real reds from this branch (`build-assets.spec.ts`: sidecar step on a missing outDir; `temp-dir-guard`: the strip spec's temp dirs), both fixed in `f341d2817`; the other 11 came from a `TMPDIR` inside the worktree and pass with a normal one. Full root-suite rerun pending.
+- [x] Spike doc updated with the achieved sizes; `pnpm typecheck && pnpm lint && pnpm test` green. — Spike updated ("Achieved" section). Gate so far: `pnpm build`, `typecheck` and `lint` exit 0. `pnpm test` stops at `runtime-native`, whose 18 reds all need native test binaries this worktree never built (`TN_PUMP_PROBE_NO_BINARY`, `cmake --build … --target …`). The root `vitest run` found 2 real reds from this branch (`build-assets.spec.ts`: sidecar step on a missing outDir; `temp-dir-guard`: the strip spec's temp dirs), both fixed in `f341d2817`; the other 11 came from a `TMPDIR` inside the worktree and pass with a normal one. Rerun on `2183856a9`: root `vitest run` **476 files / 5,714 tests passed**, 0 failed. The `runtime-native` package suite is 1,404 passed / 18 failed, all 18 needing native binaries not built in this worktree (unrun here, not attributable).
 
 **Files:** `package-android.mjs`, `package-desktop.mjs`, `package-ios.mjs`, `buildWeb` in `packages/create-threenative`.
 **Verification:** E7: packager specs. E8: `find dist -name '*.br'` on a template build. E9: the full gate.
