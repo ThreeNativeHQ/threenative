@@ -230,7 +230,7 @@ describe("playtest plugin", () => {
       await game.start();
       callbacks.shift()?.(0);
       callbacks.shift()?.(16);
-      const series = (await bridge().sample({})).runtimeDiagnosticsSeries ?? [];
+      const series = (await bridge().sample({ include: ["runtimeDiagnosticsSeries"] })).runtimeDiagnosticsSeries ?? [];
       // The frame budget is on by default, so each sample also carries its phase split.
       expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
       expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
@@ -288,7 +288,7 @@ describe("playtest plugin", () => {
     try {
       const installed = bridge();
       const description = await installed.describe();
-      const snapshot = await installed.sample({});
+      const snapshot = await installed.sample({ include: ["runtimeDiagnosticsSeries"] });
       const expected = [
         "camera.observe",
         "entity.bounds",
@@ -826,7 +826,7 @@ describe("playtest holdUntilAttached", () => {
       // Enough frames to leave the first (zero-delta) frame behind: the series is one sample per
       // presented frame with a positive delta, so a single frame proves nothing either way.
       for (let i = 0; i < 6; i++) callbacks.shift()?.(i * 16);
-      const series = (await bridge().sample({})).runtimeDiagnosticsSeries ?? [];
+      const series = (await bridge().sample({ include: ["runtimeDiagnosticsSeries"] })).runtimeDiagnosticsSeries ?? [];
       // A non-empty series, not `every(...)` on an empty array: a vacuous green here is the
       // defect this test exists for.
       expect(series.length).toBeGreaterThan(0);
