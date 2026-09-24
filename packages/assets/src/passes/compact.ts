@@ -249,15 +249,6 @@ function detachProtectedMeshes(
     const mesh = node.getMesh();
     if (mesh !== null && isShared(mesh, node)) node.setMesh(deepCloneMesh(document, mesh));
   }
-  // A node whose world transform a batch cannot represent must not be instanced even when it is
-  // not protected and shares a mesh: `instance()` would re-express it and the pass would reject
-  // its own output for a drift it introduced.
-  for (const node of sceneNodes(document.getRoot())) {
-    if (keep.has(node)) continue;
-    const mesh = node.getMesh();
-    if (mesh === null || isTrsExact(node)) continue;
-    node.setMesh(deepCloneMesh(document, mesh));
-  }
 }
 
 function isShared(mesh: Mesh, node: Node): boolean {
@@ -314,38 +305,40 @@ export function composeTrsMatrix(
 }
 
 /**
- * Nodes a compaction pass must not move or reparent: the protected set, skin joints, animation
- * targets, and every descendant of those — plus any node whose world matrix `T * R * S` cannot
- * represent (moving it would decompose a shear and drift the self-verify). One traversal feeds
- * both `flatten` and the `instance` mesh detach, so the two passes agree on what is off limits.
+ * Nodes a compaction pass must not move or reparent: the protected set, and every descendant of a
+ * node that can actually move (an animation target, a skin joint, a regex or allow-list match) —
+ * plus any node whose world matrix `T * R * S` cannot represent, because moving it would decompose
+ * a shear and drift the self-verify. One traversal feeds both `flatten` and the `instance` mesh
+ * detach, so the two passes agree on what is off limits.
+ *
+ * An `animation-ancestor` is kept itself but does **not** spread the closure to its descendants:
+ * otherwise a whole animated aircraft, whose every chain descends from the protected root, would
+ * be frozen and the pass would reduce nothing (the a6m3 shape the PRD exists to fix).
  */
 function keepInPlaceNodes(
   document: Document,
   protectedNodes: ReadonlyMap<Node, unknown>,
 ): Set<Node> {
-  const root = document.getRoot();
   const keepInPlace = new Set<Node>(protectedNodes.keys());
-  for (const skin of root.listSkins()) {
-    for (const joint of skin.listJoints()) keepInPlace.add(joint);
-  }
-  for (const animation of root.listAnimations()) {
-    for (const channel of animation.listChannels()) {
-      const target = channel.getTargetNode();
-      // A weights channel targets a mesh, not a transform; gltf-transform keeps it too.
-      if (target !== null && channel.getTargetPath() !== "weights") keepInPlace.add(target);
-    }
+  const spreading = new Set<Node>();
+  for (const [node, rule] of protectedNodes) {
+    if (rule !== "animation-ancestor") spreading.add(node);
   }
   // A single top-down pass: by the time a node is visited its parent's decision is known, so a
-  // kept ancestor propagates to every descendant.
-  for (const scene of root.listScenes()) {
+  // spreading ancestor propagates to every descendant.
+  for (const scene of document.getRoot().listScenes()) {
     scene.traverse((node) => {
-      if (keepInPlace.has(node)) return;
       const parent = node.getParentNode();
-      if (
-        parent !== null &&
-        (keepInPlace.has(parent) || !isTrsExact(parent) || !isTrsExact(node))
-      ) {
+      if (parent === null) {
+        if (!isTrsExact(node)) {
+          keepInPlace.add(node);
+          spreading.add(node);
+        }
+        return;
+      }
+      if (spreading.has(parent) || !isTrsExact(parent) || !isTrsExact(node)) {
         keepInPlace.add(node);
+        spreading.add(node);
       }
     });
   }
@@ -367,7 +360,7 @@ function flattenProtected(document: Document, protectedNodes: ReadonlyMap<Node, 
   // Top-down, so a parent's reparent does not strand a child that is staying put.
   for (const scene of document.getRoot().listScenes()) {
     scene.traverse((node) => {
-      if (keepInPlace.has(node)) return;
+      if (keepInPlace.has(node) || node.getParentNode() === null) return;
       clearNodeParent(node);
       reparented += 1;
     });
@@ -445,6 +438,11 @@ export async function compactModel(
 
   // The mesh detach exists only to keep a node out of an `instance` batch; with instancing off
   // it would clone meshes for no draw reduction.
+  const sharedBefore = new Set<Node>();
+  for (const node of sceneNodes(root)) {
+    const mesh = node.getMesh();
+    if (mesh !== null && isShared(mesh, node)) sharedBefore.add(node);
+  }
   if (instanceEnabled) detachProtectedMeshes(document, protectedNodes);
 
   let instanceSummary: IModelCompactSummary["instance"] = {
@@ -478,7 +476,19 @@ export async function compactModel(
 
   const primitivesBeforeJoin = countPrimitives(sceneNodes(root));
   if (joinEnabled) {
-    await join({ cleanup: false, filter: (node) => !protectedNodes.has(node) })(document);
+    // `join` merges a primitive whose Mesh several nodes share once per node, duplicating its
+    // vertices N times — the N× file growth that made a 50-rivet animated prop 13× larger. Those
+    // nodes were recorded before the detach (a protected descendant's clone is not shared any
+    // more, but it is still one of a repeated set), and stay authored for `instance`/runtime.
+    await join({
+      cleanup: false,
+      filter: (node) => !protectedNodes.has(node) && !sharedBefore.has(node),
+    })(document);
+    // With `cleanup: false` a joined-away Mesh can be left with no primitives; `quantize` throws
+    // on that, so the pass that would normally remove it (`prune`) must not be relied on.
+    for (const mesh of root.listMeshes()) {
+      if (mesh.listPrimitives().length === 0) mesh.dispose();
+    }
   }
   const primitivesAfterJoin = countPrimitives(sceneNodes(root));
 
@@ -547,7 +557,7 @@ export function resolveCompactOptions(
   }
   const instance = options.instance;
   const min = typeof instance === "object" ? (instance.min ?? 2) : 2;
-  if (min < 2) {
+  if (!Number.isSafeInteger(min) || min < 2) {
     throw new Error(
       "TN_ASSETS_COMPACT_INVALID: assets.models.compact.instance.min must be an integer of at least 2.",
     );

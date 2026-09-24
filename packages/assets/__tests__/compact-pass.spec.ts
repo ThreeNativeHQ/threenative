@@ -7,7 +7,7 @@ import {
   buildFixtureDocument,
   buildFixtureGlb,
 } from "../../../test-support/generate-fixture-model.js";
-import { buildProtectedSet } from "../src/passes/compact.js";
+import { buildProtectedSet, resolveCompactOptions } from "../src/passes/compact.js";
 import type { IModelCompactSummary } from "../src/passes/compact.js";
 import { modelPass, reachableStats } from "../src/passes/model.js";
 
@@ -391,13 +391,64 @@ describe("model compaction", () => {
     const remainingBlades = output
       .listNodes()
       .filter((node) => node.getName().startsWith("blade_"));
-    expect(remainingBlades.length).toBeGreaterThan(0);
+    expect(remainingBlades).toHaveLength(3);
     expect(
       remainingBlades.every((blade) => blade.getParentNode()?.getName() === "PropellerHub"),
     ).toBe(true);
     expect(
       output.listNodes().every((node) => node.getExtension("EXT_mesh_gpu_instancing") === null),
     ).toBe(true);
+  });
+
+  it("still flattens an animated model whose protected ancestor is near the root", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer("fixture");
+    const material = document.createMaterial("parts").setBaseColorFactor([0.3, 0.4, 0.5, 1]);
+    const scene = document.createScene("Scene");
+    const airframe = document.createNode("Airframe");
+    // 40 empty transform chains under the protected root, each ending in a mesh part — the a6m3
+    // shape. Protecting every animation ancestor must not freeze the whole tree.
+    for (let index = 0; index < 40; index += 1) {
+      const a = document.createNode(`chain_${String(index)}_a`);
+      const b = document.createNode(`chain_${String(index)}_b`);
+      const c = document
+        .createNode(`part_${String(index)}`)
+        .setMesh(triangleMesh(document, buffer, material, `part-${String(index)}`, index));
+      b.addChild(c);
+      a.addChild(b);
+      airframe.addChild(a);
+    }
+    const pivot = document
+      .createNode("VINTThreeNativePivot")
+      .setMesh(triangleMesh(document, buffer, material, "pivot", 99));
+    airframe.addChild(pivot);
+    scene.addChild(airframe);
+    const animation = document.createAnimation("spin");
+    const sampler = document
+      .createAnimationSampler("spin-sampler")
+      .setInput(accessor(document, buffer, "times", new Float32Array([0, 1])).setType("SCALAR"))
+      .setOutput(
+        accessor(document, buffer, "rots", new Float32Array([0, 0, 0, 1, 0, 0, 0, 1])).setType(
+          "VEC4",
+        ),
+      );
+    animation
+      .addSampler(sampler)
+      .addChannel(
+        document
+          .createAnimationChannel("spin-channel")
+          .setSampler(sampler)
+          .setTargetNode(pivot)
+          .setTargetPath("rotation"),
+      );
+    const result = await modelPass({ textures: "none", virtual: "none" }).apply(
+      Buffer.from(await toGlb(document)),
+      "animated.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const metadata = result.entry?.compact as IModelCompactSummary | undefined;
+    expect(metadata?.flatten.reparented).toBeGreaterThan(0);
+    expect(metadata?.nodesAfter ?? 0).toBeLessThan(metadata?.nodesBefore ?? 0);
   });
 
   it("leaves an instanced mesh out of the LOD join rung", async () => {
@@ -414,6 +465,14 @@ describe("model compaction", () => {
           .setTranslation([index * 3, 0, 0]),
       );
     }
+    // A same-material sibling makes the join rung eligible, so the spec fails if the instanced
+    // batch is ever joined.
+    scene.addChild(
+      document
+        .createNode("floor")
+        .setMesh(triangleMesh(document, buffer, material, "floor", 42))
+        .setTranslation([0, -3, 0]),
+    );
     const result = await modelPass({
       lod: { generation: { join: true, maxLevels: 1 } },
       textures: "none",
@@ -435,6 +494,27 @@ describe("model compaction", () => {
     const metadata = result.entry?.compact as IModelCompactSummary | undefined;
     // The hull pair is merged into one node, so the other hull node's name is gone.
     expect(metadata?.removed).toEqual(["hull_02"]);
+  });
+
+  it("compacts when the prune sub-pass is off, leaving no empty mesh for quantize", async () => {
+    // `join({cleanup:false})` leaves a joined-away mesh with zero primitives; with prune off,
+    // quantize would throw "Missing POSITION attribute" on it.
+    const result = await modelPass({
+      passes: { dedup: true, meshopt: false, prune: false, quantize: true, reorder: false },
+      textures: "none",
+      virtual: "none",
+    }).apply(Buffer.from(await toGlb(buildJoinFixture())), "join-fixture.glb");
+    expect(Buffer.isBuffer(result)).toBe(false);
+  });
+
+  it("rejects an instance minimum below 2 through the programmatic path", () => {
+    expect(() => resolveCompactOptions({ instance: { min: 1 } })).toThrow(
+      /TN_ASSETS_COMPACT_INVALID/u,
+    );
+    expect(() => resolveCompactOptions({ instance: { min: Number.NaN } })).toThrow(
+      /TN_ASSETS_COMPACT_INVALID/u,
+    );
+    expect(resolveCompactOptions({ instance: { min: 3 } }).instance).toEqual({ min: 3 });
   });
 
   it("ships the buffer untouched when compact and the geometry passes are all off", async () => {
