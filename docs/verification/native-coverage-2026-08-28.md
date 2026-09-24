@@ -26,7 +26,7 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **24018** | **18878** | **78.60%** |
 
-Source digest: `sha256:9b01449628058923f7836fde4844c12cc07db0564468ad927622cfed7ff584c6`
+Source digest: `sha256:67ba14e806fc68ed7cb898485202440687a8f8eb40cde0c3807e88385b735fab`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -136,7 +136,7 @@ The registration test was red before `enable_testing()` and the 27 primary regis
 ```text
 FAIL should register every native executable with CTest
 The input did not match /enable_testing\(\)/
-Test Files 1 failed (1)
+Test Files 1 failed (1); Tests no tests
 ```
 
 After registration, the focused gate and full runner were green:
