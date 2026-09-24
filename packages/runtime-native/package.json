@@ -87,7 +87,7 @@
     "profile:production": "node scripts/profile-production.mjs",
     "parity": "node conformance/run-conformance.mjs",
     "install": "node scripts/install-prebuilt.mjs",
-    "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity && publint --strict && pnpm native:coverage && printf '\\nTN_NATIVE_COVERAGE_REPORT_BEGIN\\n' && cat ../../docs/verification/native-coverage-2026-08-28.md && printf '\\nTN_NATIVE_COVERAGE_REPORT_END\\n'"
+    "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity && publint --strict"
   },
   "devDependencies": {
     "@threenative/playtest": "workspace:*",
