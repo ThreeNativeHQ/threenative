@@ -278,8 +278,36 @@ function detachProtectedMeshes(
 function restoreDetachedMeshes(detached: readonly IDetachedMesh[]): void {
   for (const { clone, node, original } of detached) {
     if (node.getMesh() === clone) node.setMesh(original);
-    clone.dispose();
+    disposeMeshDeep(clone);
   }
+}
+
+/**
+ * Disposes a cloned Mesh and everything under it. `Mesh.dispose()` only drops the Mesh; its
+ * primitives still own the cloned accessors, and only the chain's `prune` would remove them —
+ * with `passes.prune: false` they were written out 33×.
+ */
+function disposeMeshDeep(mesh: Mesh): void {
+  for (const primitive of mesh.listPrimitives()) {
+    for (const semantic of primitive.listSemantics()) {
+      const attribute = primitive.getAttribute(semantic);
+      primitive.setAttribute(semantic, null);
+      attribute?.dispose();
+    }
+    const indices = primitive.getIndices();
+    primitive.setIndices(null);
+    indices?.dispose();
+    for (const target of primitive.listTargets()) {
+      for (const semantic of target.listSemantics()) {
+        const attribute = target.getAttribute(semantic);
+        target.setAttribute(semantic, null);
+        attribute?.dispose();
+      }
+      target.dispose();
+    }
+    primitive.dispose();
+  }
+  mesh.dispose();
 }
 
 function isShared(mesh: Mesh, node: Node): boolean {
@@ -555,7 +583,7 @@ export function compactRequested(options: boolean | IModelCompactOptions | undef
 }
 
 /** Bump when a compaction algorithm change makes a previously cached output stale. */
-export const COMPACT_VERSION = 3;
+export const COMPACT_VERSION = 4;
 
 /** The compaction policy with every default resolved, so it is a stable cache key. */
 export interface IResolvedCompactOptions {

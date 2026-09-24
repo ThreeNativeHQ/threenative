@@ -636,18 +636,28 @@ describe("model compaction", () => {
     }
     scene.addChild(hub);
     const input = Buffer.from(await toGlb(document));
-    const result = await modelPass({
-      passes: { dedup: true, meshopt: false, prune: true, quantize: false, reorder: false },
-      textures: "none",
-      virtual: "none",
-    }).apply(input, "hub-rivets.glb");
-    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
-    const output = await readVerified(result.buffer);
-    const authoredVertices = output
-      .listMeshes()
-      .flatMap((entry) => entry.listPrimitives())
-      .reduce((total, entry) => total + (entry.getAttribute("POSITION")?.getCount() ?? 0), 0);
-    expect(authoredVertices).toBe(300);
+    for (const prune of [true, false]) {
+      for (const quantize of [true, false]) {
+        const result = await modelPass({
+          passes: { dedup: true, meshopt: false, prune, quantize, reorder: false },
+          textures: "none",
+          virtual: "none",
+        }).apply(input, "hub-rivets.glb");
+        if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+        const output = await readVerified(result.buffer);
+        const authoredVertices = output
+          .listMeshes()
+          .flatMap((entry) => entry.listPrimitives())
+          .reduce((total, entry) => total + (entry.getAttribute("POSITION")?.getCount() ?? 0), 0);
+        // With prune off the clones' primitives and accessors must already be disposed, so one
+        // copy of the mesh ships regardless of quantize or prune.
+        expect(authoredVertices, `prune=${String(prune)} quantize=${String(quantize)}`).toBe(300);
+        expect(
+          result.buffer.length,
+          `prune=${String(prune)} quantize=${String(quantize)}`,
+        ).toBeLessThan(input.length * 2);
+      }
+    }
   });
 
   it("reports every named node compaction removed", async () => {
