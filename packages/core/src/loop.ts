@@ -1,4 +1,5 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
+import type { SpanRecorder } from "./profiling/Spans.js";
 import type { IRenderPassSample } from "./render-pass-budget.js";
 
 export type AfterPhysicsCallback = (dt: number) => void;
@@ -79,6 +80,14 @@ export interface IFixedStepLoopOptions {
    * wrapping `requestAnimationFrame` from outside has to guess that boundary.
    */
   readonly budget?: FrameBudget;
+  /**
+   * The render-phase span tree, when `TN_FRAME_SPANS` asked for one.
+   *
+   * The loop is where the frame budget's own phase split becomes a number, so it is the only place
+   * that can close the span tree against the same render phase the meter charged. A tree closed
+   * anywhere else would be arithmetic against a second, slightly different interval.
+   */
+  readonly spans?: SpanRecorder;
   /** Monotonic clock for phase boundaries. Defaults to `performance.now`. */
   readonly now?: () => number;
 }
@@ -117,6 +126,7 @@ export class FixedStepLoop {
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
   #frameCallback: (time: number) => void;
   #budget: FrameBudget | undefined;
+  #spans: SpanRecorder | undefined;
   #now: () => number;
   // Sample collection is opt-in because nothing outside a diagnostics consumer reads the series:
   // collecting unconditionally spent allocations on every rendered frame of every game.
@@ -141,6 +151,7 @@ export class FixedStepLoop {
     this.maxSteps = maxSteps;
     this.#collectMetrics = options.collectMetrics ?? false;
     this.#budget = options.budget;
+    this.#spans = options.spans;
     this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
     this.#onUpdate = options.onUpdate;
     this.#onAfterPhysics = options.onAfterPhysics ?? (() => undefined);
@@ -266,6 +277,19 @@ export class FixedStepLoop {
       // Close the budget before propagating that error so later frames report the real failure
       // instead of flooding the console with beginFrame calls against a poisoned budget.
       phases = budget?.endFrame(this.#now(), this.#collectMetrics);
+      // Closed against the meter's own render phase, so the tree's residual is arithmetic against
+      // the number the window reports rather than against a second measurement of the same work.
+      // A frame that threw keeps its half-open stack out of the window instead of contributing a
+      // fabricated zero.
+      const spans = this.#spans;
+      if (spans !== undefined) {
+        // From the meter's own reading, never from the optional phase sample: `endFrame` builds a
+        // sample only when a consumer asked for one, and shipping games do not, so closing the
+        // tree on `phases` abandoned every frame and the span window never appeared.
+        const renderMs = budget?.lastRenderMs;
+        if (renderMs !== undefined && spans.depth === 0) spans.endFrame(renderMs);
+        else spans.abandonFrame();
+      }
       const callbackFinishedAt = this.#now();
       if (Number.isFinite(callbackStartedAt) && Number.isFinite(callbackFinishedAt)) {
         callbackMs = Math.max(0, callbackFinishedAt - callbackStartedAt);

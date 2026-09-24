@@ -10,6 +10,21 @@ MCP server is available.
 
 ## `@threenative/assets`
 
+### `atlasManifest`
+
+`function` — Pack texture sources into deterministic atlas pages and answer each source's UV transform, so a build can stop giving every material a private texture.
+
+```ts
+export function atlasManifest(result: IAtlasResult): string { … }
+```
+
+- **Use when:** a merge found nothing to collapse because each imported part owns its own texture · cut the material count of an imported model pack at build time
+- **Constraints:** deterministic by construction: the packing order is derived from the sources, never from directory order, so a rebuild places every source at the same pixel · a source the scene samples outside [0, 1] is excluded and reported, never clamped onto a shared page · page bounds hold regardless of input order; padding keeps a mip tap from reaching the next source
+
+```ts
+const { pages, transforms, excluded } = packAtlas(sources, { pageSize: 4096, padding: 4 });
+```
+
 ### `audioPass`
 
 `function` — Conditions a game's audio and proves the conditioning did not destroy it.
@@ -25,6 +40,21 @@ export function audioPass(options: IAudioPassOptions = { … }
 const pass = audioPass({ overrides: [{ glob: "audio/*-bed.ogg", loop: true }] });
 ```
 
+### `censusDocument`
+
+`function` — Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.
+
+```ts
+export function censusDocument( model: string, document: Document, pageSize = 4_096, ): IContentCensus { … }
+```
+
+- **Use when:** find out whether "fewer objects" is available in this content before promising it · explain why a per-material merge collapsed nothing
+- **Constraints:** reads geometry and materials only: no GPU, no runtime, no game · a texture whose size the document does not state is reported excluded, never assumed square · a model the reader cannot open is named, never skipped silently
+
+```ts
+pnpm census:content public/assets
+```
+
 ### `compileAssets`
 
 `function` — Compiles a project's source assets into content-addressed runtime files and a manifest.
@@ -38,6 +68,21 @@ export async function compileAssets( options: IAssetCompileOptions = { … }
 
 ```ts
 const result = await compileAssets({ source: "assets", output: "public" });
+```
+
+### `dedupeMaterials`
+
+`function` — Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.
+
+```ts
+export function dedupeMaterials(materials: readonly IMaterialState[]): { … }
+```
+
+- **Use when:** decide whether fewer objects is actually available in this content · report why a per-material merge collapsed nothing
+- **Constraints:** the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand · the census reads geometry and materials only: no GPU, no runtime, no game
+
+```ts
+pnpm census:content public/assets
 ```
 
 ### `formatAudioSizes`
@@ -130,6 +175,36 @@ export function lightmapPass(options: ILightmapPassOptions): IAssetPass { … }
 const pass = lightmapPass({ atlasSize: 1024, padding: 2 });
 ```
 
+### `materialSignature`
+
+`function` — Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.
+
+```ts
+export function materialSignature(material: IMaterialState): string { … }
+```
+
+- **Use when:** decide whether fewer objects is actually available in this content · report why a per-material merge collapsed nothing
+- **Constraints:** the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand · the census reads geometry and materials only: no GPU, no runtime, no game
+
+```ts
+pnpm census:content public/assets
+```
+
+### `materialStateOf`
+
+`function` — Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.
+
+```ts
+export function materialStateOf(material: Material): IMaterialState { … }
+```
+
+- **Use when:** find out whether "fewer objects" is available in this content before promising it · explain why a per-material merge collapsed nothing
+- **Constraints:** reads geometry and materials only: no GPU, no runtime, no game · a texture whose size the document does not state is reported excluded, never assumed square · a model the reader cannot open is named, never skipped silently
+
+```ts
+pnpm census:content public/assets
+```
+
 ### `modelPass`
 
 `function` — Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.
@@ -143,6 +218,21 @@ export function modelPass(options: IModelPassOptions = { … }
 
 ```ts
 const pass = modelPass({ simplify: { ratio: 0.5 } });
+```
+
+### `packAtlas`
+
+`function` — Pack texture sources into deterministic atlas pages and answer each source's UV transform, so a build can stop giving every material a private texture.
+
+```ts
+export function packAtlas( sources: readonly IAtlasSource[], options: IAtlasOptions = { … }
+```
+
+- **Use when:** a merge found nothing to collapse because each imported part owns its own texture · cut the material count of an imported model pack at build time
+- **Constraints:** deterministic by construction: the packing order is derived from the sources, never from directory order, so a rebuild places every source at the same pixel · a source the scene samples outside [0, 1] is excluded and reported, never clamped onto a shared page · page bounds hold regardless of input order; padding keeps a mip tap from reaching the next source
+
+```ts
+const { pages, transforms, excluded } = packAtlas(sources, { pageSize: 4096, padding: 4 });
 ```
 
 ### `parseAudioConfig`
@@ -190,6 +280,36 @@ export function resolveBasisTranscoder(cwd: string): IBasisTranscoder { … }
 const transcoder = resolveBasisTranscoder(process.cwd());
 ```
 
+### `resolveSourceTexel`
+
+`function` — Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.
+
+```ts
+export function resolveSourceTexel( atlasUv: readonly [number, number], transform: IAtlasTransform, source: { … }
+```
+
+- **Use when:** rewrite a model's texture coordinates after packing its images into an atlas · tell a surface that tiles from one that merely has a repeating sampler
+- **Constraints:** a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test · the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate · `resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself
+
+```ts
+if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
+```
+
+### `rewriteUvs`
+
+`function` — Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.
+
+```ts
+export function rewriteUvs(uv: Float32Array, transform: IAtlasTransform): Float32Array { … }
+```
+
+- **Use when:** rewrite a model's texture coordinates after packing its images into an atlas · tell a surface that tiles from one that merely has a repeating sampler
+- **Constraints:** a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test · the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate · `resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself
+
+```ts
+if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
+```
+
 ### `runHealthReport`
 
 `function` — Measures compiled assets and grades them against declared project targets.
@@ -220,6 +340,36 @@ export function texturePass(options: ITexturePassOptions = { … }
 const pass = texturePass({ quality: 150 });
 ```
 
+### `totalCensus`
+
+`function` — Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.
+
+```ts
+export function totalCensus(entries: readonly IContentCensus[]): Omit<IContentCensus, "model"> { … }
+```
+
+- **Use when:** find out whether "fewer objects" is available in this content before promising it · explain why a per-material merge collapsed nothing
+- **Constraints:** reads geometry and materials only: no GPU, no runtime, no game · a texture whose size the document does not state is reported excluded, never assumed square · a model the reader cannot open is named, never skipped silently
+
+```ts
+pnpm census:content public/assets
+```
+
+### `uvsTile`
+
+`function` — Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.
+
+```ts
+export function uvsTile(uv: ArrayLike<number>): boolean { … }
+```
+
+- **Use when:** rewrite a model's texture coordinates after packing its images into an atlas · tell a surface that tiles from one that merely has a repeating sampler
+- **Constraints:** a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test · the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate · `resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself
+
+```ts
+if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
+```
+
 ### `watchAssets`
 
 `function` — Watches an asset source directory and recompiles settled changes during development.
@@ -233,6 +383,36 @@ export function watchAssets(options: IAssetWatchOptions = { … }
 
 ```ts
 const watcher = watchAssets({ cwd: process.cwd() });
+```
+
+### `withAtlasTextures`
+
+`function` — Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.
+
+```ts
+export function withAtlasTextures( materials: readonly IMaterialState[], pageOf: (texture: string) => string | undefined, ): IMaterialState[] { … }
+```
+
+- **Use when:** decide whether fewer objects is actually available in this content · report why a per-material merge collapsed nothing
+- **Constraints:** the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand · the census reads geometry and materials only: no GPU, no runtime, no game
+
+```ts
+pnpm census:content public/assets
+```
+
+### `wrapTiles`
+
+`function` — Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.
+
+```ts
+export function wrapTiles(wrapS: number | undefined, wrapT: number | undefined): boolean { … }
+```
+
+- **Use when:** rewrite a model's texture coordinates after packing its images into an atlas · tell a surface that tiles from one that merely has a repeating sampler
+- **Constraints:** a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test · the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate · `resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself
+
+```ts
+if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
 ```
 
 ## `@threenative/core`
@@ -254,6 +434,21 @@ const report = await addInSlices(objects, (object) => ctx.add(object), {
   onProgress: ({ added, total }) => setProgress(added / total),
   while: () => generation.live,
 });
+```
+
+### `addSpan`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function addSpan(id: SpanId, ms: number): void { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
 ```
 
 ### `aerodynamicCoefficients`
@@ -443,6 +638,21 @@ export function baseGeometryOf(mesh: Mesh): BufferGeometry { … }
 
 ```ts
 const geometry = baseGeometryOf(mesh);
+```
+
+### `beginSpan`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function beginSpan(id: SpanId): void { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
 ```
 
 ### `Billboard3D`
@@ -641,6 +851,21 @@ export class ComputeDrivenRegistry { … }
 const registry = new ComputeDrivenRegistry(); registry.add(cloth, ctx.renderer.raw);
 ```
 
+### `counterDeviceOf`
+
+`function` — Count the frame's host-boundary crossings and the bytes it writes into GPU buffers, off unless `TN_FRAME_SPANS` asks for them. On the frame budget's own window as `counters`, so a crossing count and a millisecond split describe the same frames.
+
+```ts
+export function counterDeviceOf(raw: unknown): unknown { … }
+```
+
+- **Use when:** decide whether a CPU-bound frame is paying for the V8-to-host boundary · measure how many bytes a frame writes into GPU buffers, and how many commands it issues
+- **Constraints:** counts command-encoder and queue methods only; `mapAsync` and the presentation path are named, not folded in · `gpuBytes` is `queue.writeBuffer` exactly, so it reconciles against a driver; texture uploads are not included · `jsAllocBytes` needs `performance.memory` and stays absent where the platform lacks it
+
+```ts
+const counters = FrameCounters.install(counterDeviceOf(renderer.raw));
+```
+
 ### `createAssetLoader`
 
 `function` — Create the portable asset loader a scene also receives as `ctx.assets`.
@@ -720,6 +945,36 @@ export function defineGame<TState extends Record<string, unknown>, TPhysics = un
 const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play }, start: "Play" });
 ```
 
+### `describeSceneShape`
+
+`function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
+
+```ts
+export function describeSceneShape( window: IFrameBudgetWindow, cull: IRenderCameraCullReport | undefined, ): ISceneShape | undefined { … }
+```
+
+- **Use when:** find out whether a slow frame is the scene's shape or the device · tell an authoring agent what to reduce before it promises a merge
+- **Constraints:** the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant · no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence · the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking
+
+```ts
+defineGame({ display: { maxFps: 60 }, scenes: { Play } });
+```
+
+### `describeSceneWarning`
+
+`function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
+
+```ts
+export function describeSceneWarning(warning: ISceneWarning): string { … }
+```
+
+- **Use when:** find out whether a slow frame is the scene's shape or the device · tell an authoring agent what to reduce before it promises a merge
+- **Constraints:** the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant · no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence · the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking
+
+```ts
+defineGame({ display: { maxFps: 60 }, scenes: { Play } });
+```
+
 ### `directionalTransmittance`
 
 `function` — Approximate direct transmittance for a ray leaving the game surface.
@@ -748,6 +1003,36 @@ export function directionFromSolarPosition(elevation: number, azimuth: number): 
 
 ```ts
 const direction = directionFromSolarPosition(sun.elevation, sun.azimuth);
+```
+
+### `displayPeriodMs`
+
+`function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
+
+```ts
+export function displayPeriodMs( declaredTargetFps: number | undefined, ): { … }
+```
+
+- **Use when:** find out whether a slow frame is the scene's shape or the device · tell an authoring agent what to reduce before it promises a merge
+- **Constraints:** the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant · no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence · the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking
+
+```ts
+defineGame({ display: { maxFps: 60 }, scenes: { Play } });
+```
+
+### `endSpan`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function endSpan(id: SpanId): void { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
 ```
 
 ### `ensureVelocityOutput`
@@ -805,6 +1090,51 @@ ctx.add(field);
 field.splat({ x: 0.5, y: 0.5 }, { x: 0.2, y: 0 }, 1);
 ```
 
+### `formatSceneWarning`
+
+`function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
+
+```ts
+export function formatSceneWarning(warning: ISceneWarning): string { … }
+```
+
+- **Use when:** find out whether a slow frame is the scene's shape or the device · tell an authoring agent what to reduce before it promises a merge
+- **Constraints:** the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant · no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence · the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking
+
+```ts
+defineGame({ display: { maxFps: 60 }, scenes: { Play } });
+```
+
+### `formatSpansWindow`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function formatSpansWindow(window: ISpanWindow): string { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
+```
+
+### `formatValidationReport`
+
+`function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
+
+```ts
+export function formatValidationReport(report: IValidationReport): string { … }
+```
+
+- **Use when:** prove a static freeze did not leave a stale transform on screen · gate a scene in CI against silent transform divergence
+- **Constraints:** off by default and expensive by construction — it does the work it is checking, twice · it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads · it proves the frames it ran on and nothing else
+
+```ts
+if (renderListValidationRequested()) console.log(formatValidationReport(report));
+```
+
 ### `FrameBudget`
 
 `class` — Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and triangles each render pass submitted.
@@ -818,6 +1148,21 @@ export class FrameBudget { … }
 
 ```ts
 defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
+```
+
+### `FrameCounters`
+
+`class` — Count the frame's host-boundary crossings and the bytes it writes into GPU buffers, off unless `TN_FRAME_SPANS` asks for them. On the frame budget's own window as `counters`, so a crossing count and a millisecond split describe the same frames.
+
+```ts
+export class FrameCounters { … }
+```
+
+- **Use when:** decide whether a CPU-bound frame is paying for the V8-to-host boundary · measure how many bytes a frame writes into GPU buffers, and how many commands it issues
+- **Constraints:** counts command-encoder and queue methods only; `mapAsync` and the presentation path are named, not folded in · `gpuBytes` is `queue.writeBuffer` exactly, so it reconciles against a driver; texture uploads are not included · `jsAllocBytes` needs `performance.memory` and stays absent where the platform lacks it
+
+```ts
+const counters = FrameCounters.install(counterDeviceOf(renderer.raw));
 ```
 
 ### `gearClearance`
@@ -913,6 +1258,21 @@ import { GroundSnap } from "@threenative/core";
 const snap = new GroundSnap(character, { enabled: true });
 ```
 
+### `installSpanProbes`
+
+`function` — Attach the span probes to a renderer: three's `render`, `_projectObject`, the render list's `sort`, the per-draw submission, and the scene-graph walk. Installed for you when `TN_FRAME_SPANS` asks; exported so a harness can wrap a renderer it owns.
+
+```ts
+export function installSpanProbes(target: ISpanProbeTarget, root: Object3D): () => void { … }
+```
+
+- **Use when:** measure which part of three's render path costs the frame · attach the span tree to a renderer a test or a tool constructed itself
+- **Constraints:** returns an uninstall that restores every wrapper, asserted by test · a renderer whose internals have moved loses that span rather than throwing, and it is absent from the report rather than zero · only the outermost `_projectObject` opens a span, because three's recurses per child
+
+```ts
+const uninstall = installSpanProbes(renderer.raw, scene);
+```
+
 ### `InstancedBatch`
 
 `class` — Collapse many copies of one game-authored shape into a single draw, without counting them first. `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a procedural builder ends up walking its layout twice or over-allocating. Place as you go and `build()` once; the shape, the surface and every transform stay the game's, and the built mesh is returned so instances can still be animated by the index `place` and `span` hand back.
@@ -929,6 +1289,21 @@ export class InstancedBatch { … }
 const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });
 curbs.place({ position: [x, 0.08, z], rotation: [0, angle, 0], scale: [length, 0.18, 0.42] });
 curbs.build({ castShadow: true, name: "curbs", parent: ctx.scene });
+```
+
+### `invalidateStatic`
+
+`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+
+```ts
+export function invalidateStatic(object: Object3D): number | undefined { … }
+```
+
+- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+
+```ts
+markStatic(island); invalidateStatic(drawbridge);
 ```
 
 ### `isMobile`
@@ -959,6 +1334,21 @@ export function isNative(): boolean { … }
 
 ```ts
 if (isMobile()) showTouchControls();
+```
+
+### `isStatic`
+
+`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+
+```ts
+export function isStatic(root: Object3D): boolean { … }
+```
+
+- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+
+```ts
+markStatic(island); invalidateStatic(drawbridge);
 ```
 
 ### `isTouchscreenAvailable`
@@ -1005,6 +1395,38 @@ export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TI
 
 ```ts
 const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));
+```
+
+### `markStatic`
+
+`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+
+```ts
+export function markStatic(root: Object3D): number { … }
+```
+
+- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+
+```ts
+markStatic(island); invalidateStatic(drawbridge);
+```
+
+### `MatrixWorldPass`
+
+`class` — Walk the scene graph's world matrices each frame without recursing into a hidden subtree. On by default as `renderer.matrixWorld: "visible"`. three's `updateMatrixWorld` recurses into every child whatever its `visible` flag, so a hidden LOD body, a merged stand-in and a parked model cost a world-matrix multiply each while nothing under them can draw. This pass mirrors three exactly for every visible node and defers a hidden node's subtree until the frame it shows again. A class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a hidden node that holds bones is walked, so no skeleton or view matrix goes stale.
+
+```ts
+export class MatrixWorldPass { … }
+```
+
+- **Use when:** the per-frame world matrix walk is hot in a profile · stop multiplying matrices for hidden models, LOD levels and merged stand-ins · a game needs every node walked, exactly as three's own updateMatrixWorld does
+- **Constraints:** a game that reads a hidden object's matrixWorld directly must use getWorldPosition or updateWorldMatrix(true, false) first · `renderer.matrixWorld: "all"` visits every node; `TN_PROJECTION` reports the visited count either way
+- **Overrides:** renderer.matrixWorld: "all" runs three's full walk instead of the visible-only default
+
+```ts
+import { MatrixWorldPass } from "@threenative/core";
+const pass = new MatrixWorldPass(); // renderer.matrixWorld defaults to "visible"
 ```
 
 ### `measureThreePose`
@@ -1056,6 +1478,20 @@ export function normaliseToMetres(object: Object3D, options: INormaliseToMetresO
 
 ```ts
 normaliseToMetres(character, { metres: 1.8, axis: "height" });
+```
+
+### `onLaunchFailure`
+
+`function` — Called for every launch failure the engine notices, with the message to show the player.
+
+```ts
+export function onLaunchFailure(listener: (failure: ILaunchFailure) => void): () => void { … }
+```
+
+- **Use when:** show the player why the game stopped loading instead of leaving the loading screen up · report a stalled launch or a lost GPU device in the game's own UI
+
+```ts
+const off = onLaunchFailure((failure) => shell.loading({ failure: failure.message }));
 ```
 
 ### `parseReplayRecording`
@@ -1306,6 +1742,21 @@ import { reconcileMirroredClips } from "@threenative/core";
 if (reconcileMirroredClips(gltf.scene, gltf.animations)) console.info("clips were z-mirrored; repaired");
 ```
 
+### `refreshStaticTransforms`
+
+`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+
+```ts
+export function refreshStaticTransforms(): void { … }
+```
+
+- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+
+```ts
+markStatic(island); invalidateStatic(drawbridge);
+```
+
 ### `RenderChain`
 
 `class` — Compose game-provided render nodes in a measured, fail-closed chain. Authored stages use an opaque id and anchor before or after a built-in or another supplied stage; the engine does not need to know the effect's visual vocabulary.
@@ -1321,6 +1772,36 @@ export class RenderChain { … }
 const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
 ```
 
+### `renderListValidationRequested`
+
+`function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
+
+```ts
+export function renderListValidationRequested(): boolean { … }
+```
+
+- **Use when:** prove a static freeze did not leave a stale transform on screen · gate a scene in CI against silent transform divergence
+- **Constraints:** off by default and expensive by construction — it does the work it is checking, twice · it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads · it proves the frames it ran on and nothing else
+
+```ts
+if (renderListValidationRequested()) console.log(formatValidationReport(report));
+```
+
+### `RenderListValidator`
+
+`class` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
+
+```ts
+export class RenderListValidator { … }
+```
+
+- **Use when:** prove a static freeze did not leave a stale transform on screen · gate a scene in CI against silent transform divergence
+- **Constraints:** off by default and expensive by construction — it does the work it is checking, twice · it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads · it proves the frames it ran on and nothing else
+
+```ts
+if (renderListValidationRequested()) console.log(formatValidationReport(report));
+```
+
 ### `replay`
 
 `function` — Record or replay deterministic game input and state.
@@ -1334,6 +1815,35 @@ export function replay< TState extends Record<string, unknown> = Record<string, 
 
 ```ts
 const driver = createReplayDriver(recording, ctx.renderer.domElement);
+```
+
+### `resetAudioCueLedger`
+
+`function` — Forgets every recorded cue.
+
+```ts
+export function resetAudioCueLedger(): void { … }
+```
+
+- **Use when:** clear the recorded audio cue counts between tests so one test cannot read another's plays
+
+```ts
+resetAudioCueLedger();
+```
+
+### `resetStaticTransforms`
+
+`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+
+```ts
+export function resetStaticTransforms(): void { … }
+```
+
+- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+
+```ts
+markStatic(island); invalidateStatic(drawbridge);
 ```
 
 ### `resolveAtmosphereLutResolutions`
@@ -1416,6 +1926,21 @@ export class ScenePicker { … }
 const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: () => ctx.input.raw.pointer, viewport: ctx.viewport });
 ```
 
+### `sceneWarning`
+
+`function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
+
+```ts
+export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, ): ISceneWarning | undefined { … }
+```
+
+- **Use when:** find out whether a slow frame is the scene's shape or the device · tell an authoring agent what to reduce before it promises a merge
+- **Constraints:** the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant · no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence · the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking
+
+```ts
+defineGame({ display: { maxFps: 60 }, scenes: { Play } });
+```
+
 ### `Scheduler`
 
 `class` — Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.
@@ -1446,6 +1971,21 @@ export function setAttitude( state: IFlightState, heading = 0, pitch = 0, roll =
 ```ts
 const model = new FlightModel({ airframe: sbd, state: aircraft, wind: seaWind });
 model.step(1 / 60, { turn: -1, pitch: 0.4 });
+```
+
+### `setSpanRecorder`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function setSpanRecorder(next: SpanRecorder | undefined): void { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
 ```
 
 ### `SkeletalMesh3D`
@@ -1546,6 +2086,66 @@ export function solarPositionAt( date: Date | string, latitude: number, longitud
 const sun = solarPositionAt(new Date(), 49.28, -123.12);
 ```
 
+### `spanNow`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function spanNow(): number { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
+```
+
+### `spanRecorder`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function spanRecorder(): SpanRecorder | undefined { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
+```
+
+### `SpanRecorder`
+
+`class` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export class SpanRecorder { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
+```
+
+### `spansRequested`
+
+`function` — Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks. Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as a residual instead of being filed under "other"; a child that outlives its parent reports a negative residual rather than a clamped zero.
+
+```ts
+export function spansRequested(): boolean { … }
+```
+
+- **Use when:** find out what inside the render phase is actually costing the frame · tell a shadow pass's traversal from the main pass's, with the residual computed · price an optimisation against a measured part of the phase rather than the whole of it
+- **Constraints:** off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return · the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames · measurement only: no span changes what is drawn, in what order, or with which renderer
+
+```ts
+if (spansRequested()) setSpanRecorder(new SpanRecorder());
+```
+
 ### `SpectralOcean`
 
 `class` — Simulate a spectral ocean — cascaded wave spectra inverse-transformed on the GPU each frame.
@@ -1576,6 +2176,21 @@ export class SpriteAnimator3D { … }
 const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: "pingPong" });
 ```
 
+### `staticTransformCensus`
+
+`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+
+```ts
+export function staticTransformCensus(): IStaticTransformCensus { … }
+```
+
+- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+
+```ts
+markStatic(island); invalidateStatic(drawbridge);
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.
@@ -1590,6 +2205,21 @@ export class TracerPool3D { … }
 ```ts
 const tracers = new TracerPool3D(ctx.scene, tracerOptions);
 tracers.spawn(muzzle, shotDirection, hit.distance);
+```
+
+### `unmarkStatic`
+
+`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+
+```ts
+export function unmarkStatic(root: Object3D): void { … }
+```
+
+- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+
+```ts
+markStatic(island); invalidateStatic(drawbridge);
 ```
 
 ### `updateAtmosphereParameters`
@@ -1637,6 +2267,21 @@ export function updateModelLods( root: { … }
 // Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.
 const hull = await ctx.assets.model("hull.glb");
 ctx.scene.add(hull.scene);
+```
+
+### `validateWorldMatrices`
+
+`function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
+
+```ts
+export function validateWorldMatrices(root: Object3D): { … }
+```
+
+- **Use when:** prove a static freeze did not leave a stale transform on screen · gate a scene in CI against silent transform divergence
+- **Constraints:** off by default and expensive by construction — it does the work it is checking, twice · it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads · it proves the frames it ran on and nothing else
+
+```ts
+if (renderListValidationRequested()) console.log(formatValidationReport(report));
 ```
 
 ### `velocityTexture`
@@ -4394,6 +5039,22 @@ const score = useUiState<GameState, number>((state) => state.score);
 ```
 
 ## `src/game.ts`
+
+### `renderer.matrixWorld`
+
+`function` — The per-frame world-matrix walk, on by default as `"visible"`: a hidden subtree — a full-detail body behind a merged stand-in, a hidden LOD level, a parked or hangared model — is not recursed into, so nothing that cannot draw pays a world-matrix multiply. Every visible node is composed exactly as three does, a class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a hidden node that holds bones is still walked. `"all"` restores three's every-node walk.
+
+```ts
+renderer.matrixWorld?: "visible" | "all"
+```
+
+- **Use when:** updateMatrixWorld and multiplyMatrices are hot in a profile · the per-frame matrix walk is slow with many hidden LOD bodies or paired full/hull models · stop paying for matrices of models nothing can draw · a skinned mesh or camera goes stale because its world matrix was not refreshed · restore three's own full updateMatrixWorld walk · compare how many scene nodes the engine walks per frame
+- **Constraints:** Unset is the shipping behaviour: `"visible"`, which does not recurse into a hidden subtree. `"all"` visits every node exactly as three's own `updateMatrixWorld` does. · A game that reads a hidden object's `matrixWorld` directly must not rely on the walk reaching it: use `getWorldPosition`/`getWorldQuaternion`/`getWorldScale` or call `object.updateWorldMatrix(true, false)` first. · The walk is the engine's either way, so three's renderer never walks the scene a second time; the count of nodes visited is reported as `matrixWorld` in every `TN_PROJECTION` window. · Bones are never skipped: a hidden node that holds a `Bone` is walked, because a visible `SkinnedMesh` draws with its skeleton's matrices wherever the armature sits.
+- **Overrides:** renderer.matrixWorld: "all" restores three's every-node walk; the visited count still reports
+
+```ts
+renderer: { matrixWorld: "all" } // in threenative.config.ts; omit for the visible-only default
+```
 
 ### `renderer.minimumProjectedPixels`
 

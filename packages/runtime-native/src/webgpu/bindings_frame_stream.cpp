@@ -15,6 +15,9 @@
 #endif
 #endif
 
+#include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -136,6 +139,44 @@ const char* walkFramePlanPatch(const FramePlanState& plan, const uint8_t* body, 
     return nullptr;
 }
 
+/** A replay this long is why the loop is not iterating, and it is worth a line. */
+constexpr uint64_t kSlowReplayNs = 250'000'000;
+
+/**
+ * Per-opcode cost inside one replay.
+ *
+ * `TN_SLOW_PHASE` names `endDawnFrame` as the phase that ate a startup and stops there. On a game
+ * whose first frame uploads 886 MB the phase is 16 s long, and the next question is always which
+ * opcode — a question the frame meters cannot answer, because they close a window every 300 frames
+ * and a startup iterates the loop a handful of times in forty seconds.
+ */
+struct ReplayOpTiming {
+    uint64_t ns = 0;
+    uint32_t count = 0;
+};
+
+/** The slowest opcodes first, as one line, only when the replay itself was slow. */
+void reportSlowReplay(const uint64_t totalNs, const std::vector<ReplayOpTiming>& timing,
+                      const char* const* names, const size_t nameCount, const uint32_t seen) {
+    std::vector<std::pair<uint64_t, uint32_t>> ranked;
+    for (uint32_t opcode = 1; opcode < nameCount; opcode += 1) {
+        if (timing[opcode].count > 0) ranked.emplace_back(timing[opcode].ns, opcode);
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const auto& left, const auto& right) {
+        return left.first > right.first;
+    });
+    std::cout << "TN_SLOW_FRAME_OPS:{\"replayMs\":" << static_cast<double>(totalNs) / 1e6
+              << ",\"ops\":" << seen << ",\"top\":[";
+    const size_t limit = std::min<size_t>(ranked.size(), 6);
+    for (size_t index = 0; index < limit; index += 1) {
+        const auto& [ns, opcode] = ranked[index];
+        if (index > 0) std::cout << ",";
+        std::cout << "{\"op\":\"" << names[opcode] << "\",\"n\":" << timing[opcode].count
+                  << ",\"ms\":" << static_cast<double>(ns) / 1e6 << "}";
+    }
+    std::cout << "]}" << std::endl;
+}
+
 }  // namespace
 
 
@@ -251,6 +292,8 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
     auto readExtent = [&]() { return WGPUExtent3D{r.u32(), r.u32(), r.u32()}; };
     uint32_t seen = 0;
     uint32_t replaySubmits = 0;
+    std::vector<ReplayOpTiming> opTiming(kFrameOpCount);
+    const auto replayBegin = std::chrono::steady_clock::now();
     while (r.cursor < declaredBytes && r.ok) {
         const size_t start = r.cursor;
         uint32_t opcode = 0;
@@ -278,6 +321,7 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
             state->profiling.frameOpStreamLastOrder.emplace_back(kFrameOpNames[opcode]);
         }
         seen += 1;
+        const auto opBegin = std::chrono::steady_clock::now();
 #if TN_ANDROID_JS_PROFILE
         const auto opProfileStart = beginProfiledBinding();
 #endif
@@ -986,6 +1030,9 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
             default: break;
         }
 #endif
+        opTiming[opcode].ns += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now() - opBegin).count());
+        opTiming[opcode].count += 1;
         if (!r.ok) break;
         if (r.cursor > r.recordEnd) { fail("record length mismatch"); break; }
         for (size_t padding = r.cursor; padding < r.recordEnd; ++padding) {
@@ -996,6 +1043,11 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
     }
     flushUploadStaging(state);
     state->profiling.frameOpStreamLastOpCount = seen;
+    const uint64_t replayNs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - replayBegin)
+            .count());
+    if (replayNs >= kSlowReplayNs)
+        reportSlowReplay(replayNs, opTiming, kFrameOpNames, kFrameOpCount, seen);
     if (r.ok && (!renderPasses.empty() || !renderOwners.empty() || !computePasses.empty() ||
                  !computeOwners.empty() || !encoders.empty() || !commandBuffers.empty())) {
         fail("frame ended with unfinished GPU objects");

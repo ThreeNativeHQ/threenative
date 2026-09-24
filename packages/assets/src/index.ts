@@ -193,3 +193,68 @@ export type { IAssetWatchHandle, IAssetWatchOptions, IAssetWatchSummary } from "
  * @example const watcher = watchAssets({ cwd: process.cwd() });
  */
 export { watchAssets } from "./watch.js";
+/**
+ * Pack texture sources into deterministic atlas pages and answer each source's UV transform, so a
+ * build can stop giving every material a private texture.
+ * @situation a merge found nothing to collapse because each imported part owns its own texture
+ * @situation cut the material count of an imported model pack at build time
+ * @constraint deterministic by construction: the packing order is derived from the sources, never from directory order, so a rebuild places every source at the same pixel
+ * @constraint a source the scene samples outside [0, 1] is excluded and reported, never clamped onto a shared page
+ * @constraint page bounds hold regardless of input order; padding keeps a mip tap from reaching the next source
+ * @example const { pages, transforms, excluded } = packAtlas(sources, { pageSize: 4096, padding: 4 });
+ */
+export { atlasManifest, packAtlas } from "./atlas/packer.js";
+export type {
+  AtlasExclusionReason,
+  IAtlasExclusion,
+  IAtlasOptions,
+  IAtlasPage,
+  IAtlasPlacement,
+  IAtlasResult,
+  IAtlasSource,
+} from "./atlas/packer.js";
+/**
+ * Move a mesh's UVs onto its atlas page, and decide from the geometry which meshes may not go.
+ * @situation rewrite a model's texture coordinates after packing its images into an atlas
+ * @situation tell a surface that tiles from one that merely has a repeating sampler
+ * @constraint a surface is tiling when its own UVs leave [0, 1]; glTF's default wrap is REPEAT, so the sampler alone excludes almost everything and is the wrong test
+ * @constraint the rewrite is in place, and a buffer that does not hold pairs throws rather than rewriting half a coordinate
+ * @constraint `resolveSourceTexel` is the inverse, so a build can round-trip a texel instead of asserting the arithmetic against itself
+ * @example if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
+ */
+export {
+  WRAP_CLAMP_TO_EDGE,
+  WRAP_MIRRORED_REPEAT,
+  WRAP_REPEAT,
+  resolveSourceTexel,
+  rewriteUvs,
+  uvsTile,
+  wrapTiles,
+} from "./atlas/rewrite-uvs.js";
+/**
+ * Collapse materials that became identical once their textures shared an atlas page, and count the
+ * buckets a merge would find — before and after — so the promise can be checked rather than made.
+ * @situation decide whether fewer objects is actually available in this content
+ * @situation report why a per-material merge collapsed nothing
+ * @constraint the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand
+ * @constraint the census reads geometry and materials only: no GPU, no runtime, no game
+ * @example pnpm census:content public/assets
+ */
+export {
+  dedupeMaterials,
+  materialSignature,
+  withAtlasTextures,
+} from "./content/dedupe-materials.js";
+export type { IDedupeCensus, IMaterialBucket, IMaterialState } from "./content/dedupe-materials.js";
+/**
+ * Census one glTF document, or a directory of them: the merge buckets a scene has now, and the
+ * buckets it would have once its atlasable textures shared pages.
+ * @situation find out whether "fewer objects" is available in this content before promising it
+ * @situation explain why a per-material merge collapsed nothing
+ * @constraint reads geometry and materials only: no GPU, no runtime, no game
+ * @constraint a texture whose size the document does not state is reported excluded, never assumed square
+ * @constraint a model the reader cannot open is named, never skipped silently
+ * @example pnpm census:content public/assets
+ */
+export { censusDocument, materialStateOf, totalCensus } from "./content/census.js";
+export type { IContentCensus } from "./content/census.js";

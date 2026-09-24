@@ -15,8 +15,24 @@ using namespace std::chrono_literals;
 using mystral::webgpu::AsyncImageDecoder;
 using mystral::webgpu::DecodedImage;
 
+// Inject exactly one RGBA-vector allocation failure after the fake codec allocates pixels.
+// This tests the real decoder's exception/ownership path without exhausting the test machine.
+thread_local bool failNextAllocation = false;
+void* operator new(std::size_t size) {
+    if (failNextAllocation) {
+        failNextAllocation = false;
+        throw std::bad_alloc();
+    }
+    if (void* value = std::malloc(size == 0 ? 1 : size)) return value;
+    throw std::bad_alloc();
+}
+void operator delete(void* value) noexcept { std::free(value); }
+void operator delete(void* value, std::size_t) noexcept { std::free(value); }
+
 namespace {
 std::atomic<bool> releaseCodec{false};
+std::atomic<size_t> freedPixels{0};
+thread_local bool nullFailureReason = false;
 std::atomic<size_t> enteredCodec{0};
 
 void require(bool condition, const char* message) {
@@ -152,6 +168,71 @@ void saturatedQueueDoesNotDecodeInline() {
     require(rejected == 8, "overload did not reject exactly the excess queued decodes");
 }
 
+void shutdownKeepsCallbackDestructionOnOwner() {
+    auto& decoder = AsyncImageDecoder::instance();
+    const auto owner = std::this_thread::get_id();
+    std::atomic<int> destroyed{0};
+    std::atomic<int> destroyedOffOwner{0};
+    struct OwnerBoundState {
+        std::thread::id owner;
+        std::atomic<int>& destroyed;
+        std::atomic<int>& destroyedOffOwner;
+        ~OwnerBoundState() {
+            ++destroyed;
+            if (std::this_thread::get_id() != owner) ++destroyedOffOwner;
+        }
+    };
+    const size_t workers = mystral::webgpu::imageDecodeWorkerCount();
+    for (size_t index = 0; index < workers; ++index) {
+        // The lambda owns the final reference, as a native callback can own engine handles.
+        auto state = std::shared_ptr<OwnerBoundState>(
+            new OwnerBoundState{owner, destroyed, destroyedOffOwner});
+        decoder.decode({254}, [state](DecodedImage) {});
+    }
+    until([&] { return enteredCodec.load() == workers; });
+    std::thread release([] {
+        std::this_thread::sleep_for(20ms);
+        releaseCodec = true;
+    });
+    decoder.shutdown();
+    release.join();
+    require(destroyed == static_cast<int>(workers), "shutdown retained callback captures");
+    require(destroyedOffOwner == 0, "shutdown destroyed owner-bound captures on decoder workers");
+}
+
+void allocationFailureSettlesAndReleasesPixels() {
+    auto& decoder = AsyncImageDecoder::instance();
+    const auto owner = std::this_thread::get_id();
+    int callbacks = 0;
+    decoder.decode({252}, [&](DecodedImage image) {
+        require(std::this_thread::get_id() == owner, "failure callback ran on a worker");
+        require(!image.error.empty(), "RGBA allocation failure did not reject the image");
+        require(image.rgba.empty() && image.width == 0 && image.height == 0,
+                "failed decode retained a partial image");
+        ++callbacks;
+    });
+    until([&] { decoder.drain(); return callbacks == 1; });
+    require(freedPixels == 1, "RGBA allocation failure leaked the codec's pixel buffer");
+    decoder.decode({1}, [&](DecodedImage image) {
+        require(image.error.empty() && image.rgba.size() == 4, "worker did not recover after failure");
+        ++callbacks;
+    });
+    until([&] { decoder.drain(); return callbacks == 2; });
+    decoder.shutdown();
+    require(freedPixels == 2, "successful retry leaked codec pixels");
+}
+
+void missingCodecErrorIsSafe() {
+    auto& decoder = AsyncImageDecoder::instance();
+    bool called = false;
+    decoder.decode({253}, [&](DecodedImage image) {
+        require(!image.error.empty() && image.rgba.empty(), "missing codec error was not reported");
+        called = true;
+    });
+    until([&] { decoder.drain(); return called; });
+    decoder.shutdown();
+}
+
 void destroyedOwnerCannotBeReentered() {
     auto& decoder = AsyncImageDecoder::instance();
     struct Owner { int marker; };
@@ -195,6 +276,8 @@ void destroyedOwnerCannotBeReentered() {
 unsigned char* stbi_load_from_memory(const unsigned char* bytes, int, int* width, int* height,
                                     int* channels, int) {
     ++enteredCodec;
+    nullFailureReason = bytes[0] == 253;
+    if (nullFailureReason) return nullptr;
     if (bytes[0] == 254) {
         while (!releaseCodec.load()) std::this_thread::sleep_for(1ms);
     }
@@ -205,10 +288,16 @@ unsigned char* stbi_load_from_memory(const unsigned char* bytes, int, int* width
     pixels[0] = bytes[0];
     pixels[1] = pixels[2] = 0;
     pixels[3] = 255;
+    failNextAllocation = bytes[0] == 252;
     return pixels;
 }
-void stbi_image_free(void* pixels) { std::free(pixels); }
-const char* stbi_failure_reason() { return "test codec allocation failed"; }
+void stbi_image_free(void* pixels) {
+    if (pixels) ++freedPixels;
+    std::free(pixels);
+}
+const char* stbi_failure_reason() {
+    return nullFailureReason ? nullptr : "test codec allocation failed";
+}
 
 int main(int argc, char** argv) {
     try {
@@ -219,6 +308,9 @@ int main(int argc, char** argv) {
         else if (mode == "shutdown") shutdownDoesNotCallJs();
         else if (mode == "shutdown-full") shutdownWakesBackpressuredWorkers();
         else if (mode == "saturation") saturatedQueueDoesNotDecodeInline();
+        else if (mode == "shutdown-owner") shutdownKeepsCallbackDestructionOnOwner();
+        else if (mode == "allocation-failure") allocationFailureSettlesAndReleasesPixels();
+        else if (mode == "missing-error") missingCodecErrorIsSafe();
         else if (mode == "owner-lifetime") destroyedOwnerCannotBeReentered();
         else throw std::runtime_error("unknown contract mode");
         std::cout << "async image decode " << mode << " passed\n";

@@ -24,11 +24,13 @@
 
 #include "bindings_state.h"
 #include "bindings_presentation.h"
+#include "mystral/cold_start.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/checked_handle.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -292,10 +294,31 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
     return true;
 }
 
+/**
+ * One line per composited frame, only when `TN_UI_COMPOSITE_TRACE` is set.
+ *
+ * `TN_UI_COMPOSITE` aggregates a second, which is enough for a rate and useless for a gap: a
+ * second with forty uploads and a 300 ms hole in it reads the same as one without. AC-2 and AC-4 of
+ * PRD-398 ask for update-gap percentiles and display latency, which need the per-frame timeline —
+ * every frame the compositor reached, the page counter it saw, and whether that frame uploaded. Off
+ * unless the variable is set, because a line per frame is noise in every other run.
+ *
+ * The clock is the same launch clock `TN_UI_COMPOSITE` uses, so these frames and the once-a-second
+ * summaries can be lined up without subtracting two unrelated origins.
+ */
+void traceUiComposite(uint64_t counter, bool uploaded) {
+    static const bool enabled = std::getenv("TN_UI_COMPOSITE_TRACE") != nullptr;
+    if (!enabled) return;
+    std::cout << "TN_UI_COMPOSITE_TRACE:{\"atMs\":" << coldStartNowMs()
+              << ",\"counter\":" << counter
+              << ",\"uploaded\":" << (uploaded ? "true" : "false") << "}" << std::endl;
+}
+
 /** Upload the page's frame, or skip it because the page has not changed since the last one. */
 bool uploadUiFrame(BindingsState* state, const platform::UiOverlayFrame& frame) {
     if (state->ui.uploadedCounter == frame.counter) {
         state->ui.skippedUploads += 1;
+        traceUiComposite(frame.counter, false);
         return true;
     }
     if (!ensureUiTexture(state, frame.width, frame.height)) return false;
@@ -316,6 +339,7 @@ bool uploadUiFrame(BindingsState* state, const platform::UiOverlayFrame& frame) 
                           &writeSize);
     state->ui.uploadedCounter = frame.counter;
     state->ui.uploads += 1;
+    traceUiComposite(frame.counter, true);
     return true;
 }
 }  // namespace
@@ -343,9 +367,12 @@ void reportUiComposite(BindingsState* state, const platform::UiOverlayFrame& fra
     // The very first line has no interval behind it; report it anyway, with the totals, so a run
     // that lasts under a second still says the UI composited at all.
     last = now;
-    std::cout << "TN_UI_COMPOSITE:{\"uploads\":" << uploads << ",\"skipped\":" << skipped
+    std::cout << "TN_UI_COMPOSITE:{\"atMs\":" << coldStartNowMs()
+              << ",\"uploads\":" << uploads << ",\"skipped\":" << skipped
               << ",\"uploadsPerSecond\":" << deltaUploads << ",\"skippedPerSecond\":" << deltaSkipped
-              << ",\"frame\":" << frame.width << "x" << frame.height
+              // Quoted, because every other field here is JSON and this one used to be the only
+              // thing making the whole payload unparseable: `"frame":1280x720` is not a value.
+              << ",\"frame\":\"" << frame.width << "x" << frame.height << "\""
               << ",\"counter\":" << frame.counter
               << ",\"uploadedCounter\":" << state->ui.uploadedCounter
               << ",\"format\":" << static_cast<int>(state->ui.pipelineFormat)

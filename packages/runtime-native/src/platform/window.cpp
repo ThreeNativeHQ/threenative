@@ -16,6 +16,7 @@
 #endif
 #include <cstdlib>
 #include <array>
+#include <string>
 #include <vector>
 #include <SDL3/SDL.h>
 #include "stb_image.h"
@@ -370,10 +371,20 @@ bool routePointerToUi(const SDL_Event& event) {
     float nx = 0.0f;
     float ny = 0.0f;
     if (!uiViewportPoint(x, y, nx, ny)) return false;
+    const bool pressed = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
     const char* type = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown"
         : event.type == SDL_EVENT_MOUSE_BUTTON_UP               ? "pointerup"
                                                                 : "pointermove";
-    return uiOverlayRoutePointer(type, nx, ny, g_domButtons, 1);
+    const bool hit = uiOverlayRoutePointer(type, nx, ny, g_domButtons, 1);
+    // The synthetic bridge already logs every routed pointer (`TN_UI_POINTER_ROUTE` in runtime.cpp);
+    // this is the same verdict for a real press, which otherwise leaves no trace at all. Presses
+    // only — a move is not a decision, and logging each one would drown the line it belongs to.
+    if (pressed) {
+        std::cout << "TN_UI_POINTER_ROUTE:{\"source\":\"os\",\"hit\":" << (hit ? "true" : "false")
+                  << ",\"x\":" << nx << ",\"y\":" << ny
+                  << ",\"regions\":" << uiOverlayHitRegionCount() << "}" << std::endl;
+    }
+    return hit;
 }
 
 /**
@@ -419,6 +430,12 @@ bool pollEvents() {
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 case SDL_EVENT_MOUSE_BUTTON_UP:
                     if (routePointerToUi(event)) continue;
+                    break;
+                case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+                    // The pointer left the window, so no further move will carry the hover off the
+                    // last element. One move outside the viewport makes the page's own hover machine
+                    // fire pointerout/pointerleave and clear `tn-hover`; the game sees no pointer.
+                    uiOverlayInjectPointer("pointermove", -1.0f, -1.0f, g_domButtons, 1);
                     break;
                 case SDL_EVENT_WINDOW_FOCUS_LOST:
                     uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1);
@@ -583,12 +600,25 @@ void setWindowSize(int width, int height) {
 }
 
 /**
- * Set window title
+ * Set window title, or restore the one the window was created with when given `nullptr`.
+ *
+ * Restoring matters because the title is also the one channel a failure can use when the game's
+ * own JavaScript is dead: a stall writes its reason there, and a run that recovers must not keep
+ * carrying a diagnosis that is no longer true.
  */
 void setWindowTitle(const char* title) {
-    if (g_window.sdlWindow) {
-        SDL_SetWindowTitle(g_window.sdlWindow, title);
+    if (!g_window.sdlWindow) return;
+    static std::string baseTitle;
+    if (title == nullptr) {
+        if (baseTitle.empty()) return;
+        SDL_SetWindowTitle(g_window.sdlWindow, baseTitle.c_str());
+        return;
     }
+    if (baseTitle.empty()) {
+        const char* current = SDL_GetWindowTitle(g_window.sdlWindow);
+        if (current != nullptr) baseTitle = current;
+    }
+    SDL_SetWindowTitle(g_window.sdlWindow, title);
 }
 
 }  // namespace platform

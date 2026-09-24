@@ -391,6 +391,24 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "An entity can be present and in-frame before input; the scenario must prove visibility after its setup or document why that presence is held.",
   },
   {
+    description: "Proves which labelled audio cues the game actually played, and how often.",
+    example: { audio: [{ cue: "speech:p01", maxPlays: 1 }] },
+    fields: [
+      { description: "Cue label the game passed to AudioBus.play/playAt.", name: "cue", required: true, type: "string" },
+      { description: "Fewest plays required. Defaults to 1, so naming a cue asserts it was heard.", name: "minPlays", type: "non-negative integer" },
+      { description: "Most plays allowed; 0 proves silence and 1 proves a one-shot stayed one.", name: "maxPlays", type: "non-negative integer" },
+      { description: "Fewest milliseconds between this cue and the cue played before it, so one line cannot cut another.", name: "minGapMs", type: "non-negative integer" },
+    ],
+    cardinality: "array",
+    kind: "audio",
+    observationPath: "runtimeObservations",
+    requiredCapabilities: ["runtime.audio"],
+    resultIdPrefix: "audio.",
+    supportedOn: ["web", "desktop"],
+    triviality: "not-applicable",
+    trivialityRationale: "A cue count starts at zero and only a played cue moves it, so there is no initial value to reject.",
+  },
+  {
     description: "Proves runtime world metadata exposed by the application bridge.",
     example: { world: { seed: 90210 } },
     fields: [
