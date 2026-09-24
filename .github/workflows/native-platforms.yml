@@ -1282,13 +1282,15 @@ jobs:
           # verification failed during PKCS12 import" — so lead with the legacy algorithms macOS
           # accepts, and fall back to the modern default only where -legacy is unavailable (LibreSSL,
           # whose default is already importable).
+          # macOS `security import` fails the MAC check on an empty-password PKCS#12, so use a throwaway one.
+          p12_password="$(openssl rand -hex 16)"
           p12="$RUNNER_TEMP/tn-signing-proof.p12"
           if ! openssl pkcs12 -export -legacy -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
-              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout pass: 2>/dev/null; then
+              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout "pass:$p12_password" 2>/dev/null; then
             openssl pkcs12 -export -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
-              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout pass:
+              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout "pass:$p12_password"
           fi
-          security import "$p12" -k "$keychain" -P "" -T /usr/bin/codesign
+          security import "$p12" -k "$keychain" -P "$p12_password" -T /usr/bin/codesign
           # Without the partition list `codesign` blocks on a keychain-access prompt a hosted runner
           # cannot answer, which reads as a signing failure.
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
