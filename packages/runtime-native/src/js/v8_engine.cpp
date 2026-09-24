@@ -12,6 +12,7 @@
 #include "mystral/cold_start.h"
 #include "mystral/js/module_system.h"
 #include <deque>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -292,14 +293,17 @@ public:
                       << rows[i].first << "\t" << rows[i].second.location << std::endl;
         }
         if (!g_cpuProfilePath.empty()) {
-            CpuProfileFileStream stream(g_cpuProfilePath);
+            // Write beside the target and rename, so a kill mid-write cannot leave a truncated
+            // `.cpuprofile` that still looks like a profile.
+            const std::string temporaryPath = g_cpuProfilePath + ".tmp";
+            CpuProfileFileStream stream(temporaryPath);
             if (!stream.ok()) {
-                std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: cannot open " << g_cpuProfilePath
+                std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: cannot open " << temporaryPath
                           << std::endl;
                 g_cpuProfileFailed = true;
             } else {
                 profile->Serialize(&stream, v8::CpuProfile::kJSON);
-                if (!stream.ok()) {
+                if (!stream.ok() || std::rename(temporaryPath.c_str(), g_cpuProfilePath.c_str()) != 0) {
                     std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: write failed for "
                               << g_cpuProfilePath << std::endl;
                     g_cpuProfileFailed = true;
