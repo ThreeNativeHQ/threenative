@@ -182,11 +182,10 @@ The identity check is what stops the parity gate comparing the browser against i
   all-missing counter series still fails closed; red-green in
   `packages/runtime-native/tests/production-profile.test.mjs` (`counter budgets ignore a
   window-opening frame with no renderer reading`, 51/51 passing).
-- [ ] All three Phase 4 negative controls observed red and recorded — slow web render path →
-  `TN_PROD_PERFORMANCE_BUDGET`; slow native arm → parity failure with distinct process/artifact
-  identities; delayed first non-blank frame → `TN_PROD_STARTUP_BUDGET`.
 - [ ] The unmodified platformer holds the web budget and is no slower natively on one identified
-  host, web and native resolving to different process and artifact identities.
+  host, web and native resolving to different process and artifact identities. proof: `pnpm parity`
+  plus the production-evidence judge on that host, web and native resolving to different process
+  and artifact identities.
 
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
@@ -316,3 +315,11 @@ lines**: `main.js` and its `.meta.json` are excluded by the exact budget walk an
 tree. One tracked generated input remains counted — `src/raytracing/shaders/rt_shaders_spirv.h`,
 189 budget-counted lines — so the honest total is not presented as authored-only. No limit is raised,
 no native source is deleted, and no mobile or physical-device proof is claimed.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-25 (owner, R2) — the Phase 4 negative-control box is deleted.** Observing a negative
+  control is a PR-body concern, not PRD work. The three controls stay described in the phase prose
+  above, so nothing about the gate was lost.

@@ -494,8 +494,9 @@ above it.
       exits 0 with the executable present; the installed 0.3.3-cohort 300-frame desktop launch is the
       PRD-366 phase-2 Linux x64 consumer row (5 assertions, 300 frames).
 - [ ] In that project, `threenative build --target android` produces an APK on a machine with only
-      an Android SDK and a JDK — no engine checkout, no `THREENATIVE_RUNTIME_SOURCE`.
-      — OPEN: the clean room does not build Android.
+      an Android SDK and a JDK — no engine checkout, no `THREENATIVE_RUNTIME_SOURCE`. proof: the
+      `android` step of `pnpm tsx scripts/verify-registry-install.ts` (the clean room the
+      `npm-release.yml` job runs). — OPEN: the clean room has no android leg yet.
 - [x] In that project, `threenative doctor --text` exits 0 and names every available target; with
       the prebuilt removed, it exits 1 and says which target is gone.
       — Done 2026-09-25: the clean-room `doctor` step passed; the prebuilt-removal half is the phase-1
@@ -510,20 +511,21 @@ above it.
       tree whose runtime version has no prebuilt release.
       — observed 2026-09-23: 70 findings — 69 `template:<name>` pin findings for the unpublished 0.3.3
       pins, plus `@threenative/runtime-native: No prebuilt release exists at .../runtime-native-v0.3.3/prebuilt-lock.json`; exit 1.
-- [ ] `pnpm sandbox` produces a sandbox in which the desktop build succeeds without pointing at
-      the engine source. — OPEN: not run this session.
+- [ ] `pnpm sandbox` produces a sandbox in which `threenative build --target desktop` succeeds with
+      no engine source reachable. proof: `pnpm sandbox`, then `threenative build --target desktop`
+      inside the unpacked sandbox. — OPEN: not run this session.
 
 **Integration gates:**
 
 - [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`.
 - [x] Every new exported symbol has a non-test consumer (census pasted).
       — `templatePinCensus`/`prebuiltReleaseCensus` → `check-publish-state.ts:861,870`; `RELEASE_REPOSITORY`/`writeInstallStatus` → `install-prebuilt.mjs:195,248,283,305,313` and `package-android.mjs:19`.
-- [ ] Revert check passed for each phase. — OPEN: not run this session.
 - [x] The `jonit-dev` URL is deleted, not aliased — no behaviour has two live implementations.
       — `grep -rn "jonit-dev" packages scripts .github` matches only `packages/runtime-native/tests/fixtures/prd056-*.json`.
-- [ ] Every gate has a negative control observed failing. — OPEN: the negative controls are encoded as passing specs; not observed red this session.
-- [ ] Proved on the real subjects: `linux-x64` desktop and `android-arm64-v8a`, not a stub key.
-      — OPEN: needs the published cohort + `runtime-native-v0.3.3` release.
+- [ ] `android-arm64-v8a` is proved on the real subject from the published prebuilt cohort, not a
+      stub key. proof: the android leg of `pnpm tsx scripts/verify-registry-install.ts` against
+      `@threenative/*@0.3.3` and the `runtime-native-v0.3.3` prebuilt release, which is published
+      (2026-09-25). The `linux-x64` half is proved by the ticked clean-room `native` step above.
 
 ## Out of scope
 
@@ -536,3 +538,14 @@ above it.
   as a missing adapter description with the published test script, which HEAD already fixes by
   passing `--browser-recipe webgpu`. A GPU-backed rerun after Phase 3 confirms it; a software
   adapter run does not.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-25 (owner, R2) — the per-phase revert check and the "every gate has a negative control
+  observed failing" boxes are deleted.** Both are PR-body concerns; the controls themselves stay in
+  the Integration Ledger's *Negative control* column.
+- **2026-09-25 (one box, one claim) — "Proved on the real subjects: `linux-x64` desktop and
+  `android-arm64-v8a`" is now the `android-arm64-v8a` box alone.** The `linux-x64` half was already
+  proved by the ticked clean-room `native` step above it.

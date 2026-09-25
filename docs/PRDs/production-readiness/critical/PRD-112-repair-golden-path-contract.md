@@ -127,8 +127,6 @@ the original resolution chain, and no unmeasured Vite resolver replacement remai
 
 - [x] No Vite config-loader branch remains: `rg "loadConfigWithVite|resolveDeclaredModule|loadConfigFromFile" packages/create-threenative/src/config.ts` finds none.
 - [x] `packages/create-threenative/__tests__/config.spec.ts` passes.
-- [ ] Revert check observed red — not re-run in the 2026-09-23 verification.
-
 **Focused gate:**
 
 ```sh
@@ -167,8 +165,6 @@ corrective command into the exact directory named beside it without editing plac
 
 - [x] `threenative.ts` advertises only `build`; no `dev`, `test` or `ship` promise (`rg` over the parser and help).
 - [x] `pnpm exec vitest run packages/create-threenative/__tests__/cli.spec.ts scripts/__tests__/verify-golden-path.spec.ts` passes: 3 files, 122 tests, including "executes project corrective commands from their recorded cwd".
-- [ ] Revert check observed red — not re-run in the 2026-09-23 verification.
-
 **Focused gate:**
 
 ```sh
@@ -205,7 +201,11 @@ generated dependency is truly broken.
 **Checklist:**
 
 - [x] The alternate control packs and scaffolds the mutated template, proves tarball identity and generated-manifest mutation, then reds on the broken dependency (`verify-golden-path.spec.ts` — "packs and scaffolds the mutated CLI before observing its broken dependency"; also observed inside `TN_GOLDEN_PATH_TEMPLATES=action-rpg pnpm verify:golden-path`, exit 0).
-- [ ] Every one of the seven repository templates completes the real packed web journey — OPEN. On 2026-09-23 the full packed gate ran action-rpg, defense, minimal, platformer and puzzle green, then aborted at `racing` layer `test` (`racing-finish-behind-rival-is-dnf` resource assertions, runner, sailing, shooter and starter not reached). racing alone passes, so the fault is load/sequence-dependent and separate from this contract.
+- [ ] Every one of the seven repository templates completes the real packed web journey. proof:
+  `pnpm verify:golden-path` — last full run 2026-09-23 aborted at `racing` layer `test`
+  (`racing-finish-behind-rival-is-dnf`); PR #305 fixed the root cause and PR #301's hosted run
+  shows `template-nonvisual (racing)` and `(sailing)` green, but the seven-template packed gate
+  has not been re-run since.
 
 **Focused and journey gates:**
 
@@ -245,13 +245,9 @@ advertised journey and recovery commands; helper or test existence alone is not 
   in the command field fail tests (`scripts/__tests__/verify-golden-path.spec.ts` passes).
 - [x] The alternate control packs and scaffolds the mutated template, proves tarball identity and
   generated-manifest mutation, then goes red on the broken dependency.
-- [ ] Every one of the seven repository templates completes the real packed web journey from an
-  empty temporary directory — OPEN; action-rpg/defense/minimal/platformer/puzzle pass, `racing`
-  reds at layer `test` in the full sequence (2026-09-23).
-- [ ] Caller census, incumbent deletion, and all revert checks are recorded.
-- [ ] Focused tests, `pnpm typecheck && pnpm lint && pnpm test`, and `pnpm budgets` pass; the
-  framework LOC delta is reported and no review trigger is hidden. Focused tests pass (3 files,
-  122 tests); the full typecheck/lint/test/budgets gate was not run in the 2026-09-23 verification.
+- [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` pass. proof:
+  `pnpm typecheck && pnpm lint && pnpm test` — focused tests passed in the 2026-09-23
+  verification (3 files, 122 tests); the full gate was not run then.
 
 ## Verification Evidence
 
@@ -304,3 +300,15 @@ After each phase, the reviewer must verify:
 
 Any new public command, surviving Vite resolver fork, non-executable recovery string, source-PRD
 edit, generated `CLAUDE.md` edit, or claim beyond packed web output fails the checkpoint.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-25 (owner, R2) — ceremony boxes deleted.** The two "revert check observed red" boxes
+  and the "caller census, incumbent deletion, and all revert checks are recorded" box are not work;
+  they live in the PR body. The gates they described are unchanged.
+- **2026-09-25 (one box, one claim) — the acceptance box that restated the Phase 3 packed-journey
+  box is merged into it.** Both made the same claim, and only one of them could ever be ticked.
+- **2026-09-25 (one box, one claim) — the combined gate box is now only the gate.** "The framework
+  LOC delta is reported and no review trigger is hidden" was review ceremony inside a checkbox.

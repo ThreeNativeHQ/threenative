@@ -136,7 +136,9 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 - [x] Implemented and wired: caches keyed so no stale product or test verdict is reused — existing cache wiring audited below; CI efficiency contracts and actual repack tests pass. Equivalent cold/warm measurements remain open.
 - [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
 - [x] Observed red recorded, then restored green — gating `.github/actions/workspace-dist/action.yml`'s "Pack current workspace files" step on `steps.dist.outputs.cache-hit != 'true'` (i.e. shipping a cached archive) made `scripts/__tests__/ci-efficiency.spec.ts` fail on "caches compiled bundles but always repacks and verifies shipped templates" (`expected … not to contain 'cache-hit'`, 2026-09-13); restored, the test passes. The equivalent-SHA warm timing comparison remains open below.
-- [ ] Verified on a real PR, not only locally
+- [ ] Verified on a real PR, not only locally. proof: two hosted runs of the same SHA — one cold,
+      one warm — read from the PR's Actions summary, with the warm run's timings beside the cold
+      run's. — OPEN: the equivalent-SHA warm comparison is still unmeasured.
 
 
 Audit the existing workspace-dist, pnpm, browser, compiler and Android caches before adding
@@ -227,17 +229,27 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
 
 ## Acceptance criteria
 
-- [ ] Real feature PRs for inert docs and isolated website changes omit native jobs, report why,
-  and can merge into protected develop after their selected checks pass.
+- [x] An inert-docs feature PR omits the native jobs and reports why. proof: PR #324, run
+  [36185453408](https://github.com/ThreeNativeHQ/threenative/actions/runs/36185453408) — the
+  `native-platforms` job is SKIPPED (job 108238414411) on a docs-only diff.
+- [ ] An isolated website change selects its own coverage the same way, and both kinds merge into
+  protected develop after their selected checks pass. proof: a website-only PR whose run skips the
+  native jobs, then a squash-merge into `develop` with `ci-required` green.
 - [x] Regression fixtures for shared-core/native dependencies, renames, deletions, lockfile
   changes and unknown paths select the necessary coverage. A selected failed, missing,
   cancelled or unexpectedly skipped job makes `ci-required` fail.
 - [ ] A daily develop run executes one fixed SHA. A promotion cannot merge with failed or stale
-  full checks. Release checks reject mismatched candidate/main/artifact provenance.
+  full checks. Release checks reject mismatched candidate/main/artifact provenance. proof: the
+  scheduled `develop` run for one SHA, a promotion PR whose `ci-required` rejects a failed or
+  stale check, and `pnpm release:prepare` refusing a mismatched candidate.
 - [ ] Warm caches reduce measured execution time; changing a relevant input invalidates the
   affected cache or regenerates the product. Template-only changes produce current tarballs.
+  proof: the cold/warm timing pair above plus `pnpm exec vitest run
+  scripts/__tests__/ci-efficiency.spec.ts` (the repack assertions, 262 tests in run 34653691910).
 - [ ] Branch rules, workflow triggers, local verification and generated agent instructions
-  agree. The implementation PR records actual queue/execution timings and the cutover result.
+  agree. proof: `pnpm ci:local --affected --base origin/develop --target develop` selects the same
+  families CI does, and `pnpm sync:agents --check` reports no drift between `AGENTS.md` and the
+  generated `CLAUDE.md` mirrors.
 
 ## Verification for implementation
 
@@ -532,3 +544,11 @@ verdict on a real PR. The canary was closed and its branch deleted without mergi
 
 Remaining, all hosted and/or owner-gated: a real promotion/cutover proof and equivalent cold/warm
 cache measurements.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-25 (owner, R2) — "The implementation PR records actual queue/execution timings and
+  the cutover result" is deleted from the branch-rules box.** Filing that record is the PR's job; the
+  box now claims only that the rules, triggers, local commands and generated instructions agree.

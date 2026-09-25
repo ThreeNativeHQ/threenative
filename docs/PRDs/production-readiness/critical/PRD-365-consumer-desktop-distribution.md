@@ -289,8 +289,10 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
     `TN_NATIVE_SMOKE_READY:webgpu` and a completed frame count.
 - [x] Every claimed OS documents its player-side WebView/library prerequisite, and the Linux one is machine-checked with an actionable failure naming the library and its install step.
   - `packages/runtime-native/README.md` documents WebKitGTK/GTK, WebView2 Evergreen and system WebKit. A missing `libwebkit2gtk-4.1.so.0` refuses with `TN_NATIVE_STARTER_PREREQUISITE_MISSING` and its install step; covered by `tests/starter-desktop.test.mjs`.
-- [ ] The same launch is performed by a consumer installed from the public registry rather than local tarballs.
-  - Blocked: the public-registry cohort is PRD-196 and the public consumer run is PRD-060/PRD-366. Local tarballs prove the mechanics only.
+- [ ] The same launch is performed by a consumer installed from the public registry rather than
+  local tarballs. proof: `pnpm tsx scripts/verify-registry-install.ts` plus the PRD-366 phase-2
+  Linux x64 consumer row. — OPEN: the public cohort shipped as 0.3.3 on 2026-09-25; the consumer
+  launch has not been run against it. Local tarballs prove the mechanics only.
 
 **Signing separates prepared from signed**
 
@@ -298,13 +300,6 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
   - The produced Linux manifest carries `"signed": false`; `tests/distribution.test.mjs` covers the unsigned-preparation and missing-credentials rows.
 - [x] windows-x64: the `signtool` path signs the distributed executable and verifies it on a real Windows host.
   - CI run [35130296569](https://github.com/ThreeNativeHQ/threenative/actions/runs/35130296569), `Windows desktop core` on `windows-2025`: a certificate generated on the runner and anchored with `certutil`, then `signDesktopArtifact` itself signing the container's own executable through `signtool /n` — `TN_DESKTOP_SIGNING_PROOF_SCHEME:signtool`. `Get-AuthenticodeSignature` read the result back independently of the code that wrote it: `status=Valid signer=CN=ThreeNative CI Signing Proof`. The certificate is self-signed and the artifact is discarded, so this proves the adapter, the tool and the host, not public trust.
-- [ ] windows-x64: the artifact is signed with a publicly trusted Authenticode certificate.
-  - SUPERSEDED by owner decision 2026-09-23: each developer signs their own game with their own
-    certificate; ThreeNative ships no certificate and no public Authenticode trust is claimed by the
-    framework. Delegation to PRD-060 is retired.
-- [ ] macOS: the artifact is notarized by Apple, stapled, and assessed with `spctl` on a real macOS host.
-  - SUPERSEDED by owner decision 2026-09-23: no Apple Developer account is used by this repository;
-    each developer notarizes their own game. Delegation to PRD-060 is retired.
 
 **Nothing was invented and nothing regressed**
 
@@ -319,8 +314,16 @@ first. Not built here because nothing needs it; recorded so it is not mistaken f
 
 - [x] The container archive hash and its manifest are published as retrievable evidence that another PRD can consume.
   - Each lane uploads `archive.sha256` and `container-manifest.json` as `native-desktop-release-<platform>`. Both the Linux and macOS artifacts of run 35017332390 were downloaded and read back.
-- [ ] PRD-375 appearance consumes this container's hash.
-  - Blocked: PRD-375 phase 2 is its own PRD and its own PR; it was parked on these containers reaching `develop`.
-- [ ] PRD-366 gameplay consumes this container's hash.
-  - Blocked: PRD-366 phase 2, waiting on the same public cohort as the registry-consumer box above.
 - [x] Public promotion stays in PRD-060; this PRD publishes nothing.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-23 (owner) — no framework Authenticode certificate and no Apple notarization.** Each
+  developer signs and notarizes their own game with their own credentials; ThreeNative claims no
+  public trust. Both boxes are deleted (the self-signed CI proof scheme that remains is a different
+  claim and is ticked).
+- **2026-09-25 (one box, one claim) — the two "PRD-375/PRD-366 consume this container's hash" boxes
+  are deleted.** That consumption is PRD-375's and PRD-366's own work, already tracked in their
+  phases; here it could only be ticked by someone else.

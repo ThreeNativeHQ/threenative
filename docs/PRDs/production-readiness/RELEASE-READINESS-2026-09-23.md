@@ -100,7 +100,7 @@ to 0.3.3 and not released.
 3. **Security and honesty debt a stranger sees first**: the high `sharp` advisory, `SECURITY.md`
    naming the wrong supported line, no 0.3.x changelog, stale `CURRENT-CHALLENGES.md` and
    `alpha-bar.md`, and a red site deploy on `main`. No PRD owned these. **New:
-   [PRD-445](critical/PRD-445-public-release-hygiene.md).**
+   [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md).**
 
 ### R2 — a public beta that ships a game
 
@@ -139,7 +139,7 @@ acceptance) and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-bran
    its implemented Phase 1 exact-candidate preflight was removed by PRD-445 Phase 3).
 5. **iOS is not a supported target** (decision 2). [PRD-065](../BLOCKED/requires-ios-ecossystem/PRD-065-ios-evidence-lane.md)
    (3/15) and iOS rows in other PRDs block nothing; the public README still claims iOS, which
-   [PRD-445](critical/PRD-445-public-release-hygiene.md) removes.
+   [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) removes.
 
 ## The critical path
 
@@ -189,7 +189,7 @@ cohort that R1 and R2 fix.
 
 ## Housekeeping found while inspecting
 
-These fold into [PRD-445](critical/PRD-445-public-release-hygiene.md):
+These fold into [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md):
 
 - PRD-060 exists twice, with different titles and progress
   ([here](PRD-060-promoted-consumer-distribution.md) and its former
@@ -199,4 +199,4 @@ These fold into [PRD-445](critical/PRD-445-public-release-hygiene.md):
   PRD-066 and PRD-112-repair.
 
 **Next action (under two minutes):** open
-[PRD-445](critical/PRD-445-public-release-hygiene.md) phase 1 — the `sharp` bump is the first box.
+[PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) phase 1 — the `sharp` bump is the first box.
