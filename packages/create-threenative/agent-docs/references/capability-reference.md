@@ -1525,14 +1525,14 @@ const measurement = measureThreePose(model);
 
 ### `mergeByMaterial`
 
-`function` — Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in. already made; nothing here decides appearance vertices are not its own to bake texture mapping; a missing normal is recomputed
+`function` — Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in. already made; nothing here decides appearance tree: add them to root and remove the sources yourself, or both draw vertices are not its own to bake texture mapping; a missing normal is recomputed
 
 ```ts
 export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }
 ```
 
 - **Use when:** collapse a building or ship of dozens of boxes into one draw call per material · consolidate the static parts of a group before adding it to the scene
-- **Constraints:** the material is the game's own instance and the split follows the materials the game · a skinned or instanced mesh, and a mesh with several materials, is left out — its · a group where only some meshes carry uv throws naming the label rather than losing the
+- **Constraints:** the material is the game's own instance and the split follows the materials the game · the meshes come back in root's local space and unparented, with the originals still in the · a skinned or instanced mesh, and a mesh with several materials, is left out — its · a group where only some meshes carry uv throws naming the label rather than losing the
 - **Overrides:** skip leaves one mesh out of its group and out of the result
 
 ```ts

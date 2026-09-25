@@ -81,6 +81,9 @@ export interface ITextureOptions {
    * image linear, which washes out every albedo, so an options call never inherits that.
    */
   readonly data?: boolean;
+  // A normal or roughness map asking only for `wrap` still passes `data: true`: options always pick
+  // the space. The configured copy is outside the cache, so `release` cannot reclaim it — dispose it
+  // with the material that uses it.
   /** Both axes at once. Absent leaves the loaded texture's own wrapping. */
   readonly wrap?: Wrapping;
   /** Tiling counts, one for both axes or one per axis. Absent leaves the loaded texture's own. */

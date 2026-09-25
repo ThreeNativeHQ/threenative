@@ -285,6 +285,8 @@ export type { IMergePart, IMergePartsOptions } from "./merge-parts.js";
  * @situation consolidate the static parts of a group before adding it to the scene
  * @constraint the material is the game's own instance and the split follows the materials the game
  * already made; nothing here decides appearance
+ * @constraint the meshes come back in root's local space and unparented, with the originals still in the
+ * tree: add them to root and remove the sources yourself, or both draw
  * @constraint a skinned or instanced mesh, and a mesh with several materials, is left out — its
  * vertices are not its own to bake
  * @constraint a group where only some meshes carry uv throws naming the label rather than losing the

@@ -1,6 +1,6 @@
 # PRD-451 — Games stop rewriting what the engine ships
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phases 1–2 done, phase 3 in its sandbox PR
 **Complexity:** 4 (MEDIUM): 6–10 implementation files, +2 for the crossing to the sandbox game, which installs from a tarball
 **Owner:** unassigned
 **Depends on:** None. Related: PRD-354/355 (reinvention gate), PRD-325 (seams not repeated here)
@@ -68,7 +68,7 @@ Kill switch: `pnpm tsx scripts/count-loc.ts` must score each API below the copie
 - [x] `texture` options apply, and `texture(path)` behaves exactly as before. proof: `packages/core/__tests__/assets.spec.ts` — 48/48, including the shared cached instance left untouched and sRGB whenever options omit `data` (the loader default is linear).
 - [x] `debugFlag` reads the URL, and `exposeDebug` publishes nothing in a production build. proof: `pnpm exec vitest run packages/core/__tests__/debug.spec.ts` — 7/7. The production branch cannot be reached from inside vitest (its `import.meta.env` is always the bundler's), so it is proven by a separate node process loading `dist/index.js`: `debugFlag("freeCam")` reads `TN_DEBUG_FREE_CAM` and `exposeDebug` publishes nothing — the same plain ESM the native bundle is.
 - [x] `debugFlag` reads `TN_DEBUG_*` on native. proof: `examples/native-smoke/playtests/debug-flag.playtest.json --target desktop` on a freshly built `build/tn-linux/mystral` (V8, Vulkan) — RED exit 1 without the variable (`resource.GameState.debugProbe` false), GREEN exit 0 with `TN_DEBUG_PROBE=1` (true). The build caught a real compile error in the forward loop, fixed in the same commit. Run on the clean-console bundle variant (`THREENATIVE_UI_FRAME_GATE=enabled`): the default bundle's deliberate empty-audio proof logs one error line that reds every desktop scenario, the untouched `geometry-capture-desktop` control included. Not wired into CI, which names desktop scenarios individually.
-- **count-loc** (code lines, comments excluded): `mergeByMaterial` 31 (interface 4 + const 1 + function 26) against midway `render/assets.ts:119-157` `consolidate` 35 per copy, which the PRD counts 10 times across 6 games. `texture` options 16 (interface 6 + `configuredTexture` 10) against midway `render/cockpit-detail.ts:41-70` 21 in the closest one file, plus lumen, wildwood, soul-cave and fps. `debugFlag` + `exposeDebug` 37 for the whole of `debug.ts`, against roughly 20 hand-guarded toggles in 5 games — **over a single 4-line copy, under the second.** The kill switch holds per copy for A and B and per corpus for C; C's single-copy miss is the honest reading.
+- **count-loc** (code lines, comments and blanks excluded, counted by hand): `mergeByMaterial` 37 (interface 4 + const 1 + function 32) against midway `render/assets.ts:119-157` `consolidate` 35 — **over one copy, under two**; `devastator.ts` and `rear-station.ts` hold two more group-by-material loops. `texture` options 16 against midway `render/cockpit-detail.ts:41-70` 21 in one file, plus lumen, wildwood, soul-cave and fps. `debug.ts` 36 against roughly 20 hand-guarded toggles in 5 games — over one 4-line copy, under the second. The kill switch scores every repetition, so all three hold across the games they replace; none holds against a single copy by itself, except texture options.
 
 #### Phase 3: Midway deletes its copies
 **Status:** NOT STARTED

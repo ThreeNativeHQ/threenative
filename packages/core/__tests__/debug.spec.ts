@@ -47,6 +47,9 @@ describe("debugFlag", () => {
 
     vi.stubEnv("TN_DEBUG_FREE_CAM", "false");
     expect(debugFlag("freeCam")).toBe(false);
+    // Exported but empty is off, as `DEV_MODE=` is to the engine's own dev reader.
+    vi.stubEnv("TN_DEBUG_FREE_CAM", "");
+    expect(debugFlag("freeCam")).toBe(false);
   });
 
   it("should answer false on a host that publishes neither global", () => {

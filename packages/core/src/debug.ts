@@ -31,9 +31,9 @@ function envValue(name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** Asked for and not one of the two spellings of off. A bare `?freeCam` is asked for. */
-function isOn(value: string | null | undefined): boolean {
-  return value !== undefined && value !== null && value !== "0" && value !== "false";
+/** Not one of the two spellings of off. */
+function isOn(value: string): boolean {
+  return value !== "0" && value !== "false";
 }
 
 /**
@@ -47,10 +47,14 @@ function isOn(value: string | null | undefined): boolean {
  * "off" rather than quietly turning it back on.
  */
 export function debugFlag(name: string): boolean {
-  if (isOn(envValue(envName(name)))) return true;
+  // An exported-but-empty variable is off, as `DEV_MODE=` is to the engine's own reader; a bare
+  // `?freeCam` is on, because the query string has no other way to say it.
+  const env = envValue(envName(name));
+  if (env !== undefined && env !== "" && isOn(env)) return true;
   const search: unknown = globalThis.location?.search;
   if (typeof search !== "string") return false;
-  return isOn(new URLSearchParams(search).get(name));
+  const value = new URLSearchParams(search).get(name);
+  return value !== null && isOn(value);
 }
 
 /**
