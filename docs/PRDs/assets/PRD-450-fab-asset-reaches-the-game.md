@@ -1,6 +1,6 @@
 # PRD-450 — A FAB asset reaches the game
 
-**Status:** IN PROGRESS — Phase 2/3
+**Status:** PARTIAL — phases 1–2 done, phase 3 code landed; the publish and final pin move remain
 **Complexity:** 4 (MEDIUM): 1–5 implementation files (+1), two independently released packages
 (asset MCP on npm, engine pin) (+2), external API (Fab/FabCLI) (+1).
 **Owner:** João
@@ -61,10 +61,15 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
   one live stdio call on this machine — Evidence: 2026-09-25, `env -u DBUS_SESSION_BUS_ADDRESS -u
   XDG_RUNTIME_DIR` stdio `fab_list_owned {query:"European Hornbeam"}`: 0.9.3 → `FABCLI_UNAUTHENTICATED`;
   A/ `9ff6940` build → the `c6f917b6…` listing.
-- [ ] AC-2 [local]: `asset_import_unreal` on the Hornbeam pack with
+- [x] AC-2 [local]: `asset_import_unreal` on the Hornbeam pack with
   `packages:["SM_EuropeanHornbeam_Forest_01"]` passes the disk pre-flight on this machine's free
   space and writes a GLB under the sandbox game's `public/assets/`, or fails with a diagnostic that
-  names the UE version and cause — proof: live MCP call — Evidence: pending.
+  names the UE version and cause — proof: live MCP call — Evidence: 2026-09-25, stdio call against
+  the A/ `2ca39f5` build: exported 1, failed 0,
+  `sandbox/fab-import-proof/assets/fab/c6f917b6/Models/SM_EuropeanHornbeam_Forest_01.glb` (127 MB with
+  `maxTextureSize: 2048`). That is the game's asset source directory; `threenative build` emits it to
+  `public/fab/…`. Source: the cached `MS_Hornbeam_UE4` pack, not the UE5 download that failed in the
+  2026-09-24 session.
 - [x] AC-3 [local]: That GLB loads in a sandbox game, and its reported height is between 3 m and
   40 m — proof: playtest scenario asserting the loaded node's bounds — Evidence: 2026-09-25,
   `sandbox/fab-import-proof` `8a1b4ea`, `playtests/hornbeam.playtest.json` pass on build + preview
@@ -77,6 +82,7 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 - [ ] AC-4 [local]: A fresh `pnpm sandbox` scaffold launches the published asset MCP version
   carrying these fixes, not 0.9.1 — proof: `tools/list` from the scaffold matches the regenerated
   `asset-mcp-tools.json` — Evidence: pending.
+  Blocked on the npm publish (see Blocked on). The engine now launches 0.9.3, not 0.9.1.
 
 ## Blocked on
 
@@ -99,6 +105,12 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 - 2026-09-25 (Claude): the "giant trunk" is fixed by reporting size, not by auto-rescaling. A
   unit guess on arbitrary Fab files is wrong often enough to hide the problem again. The engine's
   "one metre is one metre" convention applies at placement, where the game can measure the size.
+- 2026-09-25 (Claude): the bus fallback also derives `/run/user/<uid>/bus`. Stripping only
+  `DBUS_SESSION_BUS_ADDRESS` did not reproduce the failure, because libdbus falls back to `XDG_RUNTIME_DIR`. The Codex
+  host had neither variable, so the PRD's `$XDG_RUNTIME_DIR/bus` fallback alone would not have fixed it.
+- 2026-09-25 (Claude): follow-up, not in scope: a full-resolution Fab import embeds 720 MB of PNGs, which
+  stalls a web game at 0%. A game should pass `maxTextureSize`. Whether the importer should default to a
+  ceiling is a product call for a later PRD.
 - 2026-09-25 (Claude): WebView login crashes on Wayland (`Error 71`) are FabCLI's, not the MCP's.
   They are out of scope. Fix 1 removes the need to log in again when a session already exists.
 
@@ -117,13 +129,14 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 - [x] Bus-address fallback plus `FABCLI_KEYSTORE_UNREACHABLE`; red first with a stripped env (AC-1). — 2026-09-25, A/ `9ff6940`: stripping only `DBUS_SESSION_BUS_ADDRESS` did not reproduce (libdbus reads `XDG_RUNTIME_DIR`); stripping both reproduced the session's exact "X11 autolaunch" `FABCLI_UNAUTHENTICATED` on 0.9.3. The fallback therefore also derives `/run/user/<uid>/bus`. Red specs seen first; `unreal-import` + `fab-import` 111/111.
 
 #### Phase 3: An Unreal pack lands in the game at a known size
-**Status:** NOT STARTED
+**Status:** PARTIAL — code landed in A/, the publish and pin move are the owner's
 **Files:** `A/src/unreal/importer.ts`, `A/src/fab/api-download.ts` (size field),
 `A/src/fab/client.ts` (drop `formats`), tool descriptions in `A/src/tools/*.ts`, a sandbox playtest.
-- [ ] Pre-flight sizes only the requested packages; red first from a fixture where the whole tree exceeds free space and one package fits.
-- [ ] Modern-converter no-geometry retries through the UE Viewer branch, or returns the full diagnostic (AC-2).
-- [ ] Results report bounding-box metres; `formats` no longer advertised (AC-3).
+- [x] Pre-flight sizes only the requested packages; red first from a fixture where the whole tree exceeds free space and one package fits. — A/ `2ca39f5`: red first (the whole-tree fixture imported instead of refusing, because the injected free space was ignored). Live on this machine the volume has 477 GB free, so the live call cannot show the old refusal; the spec carries it.
+- [x] Modern-converter no-geometry retries through the UE Viewer branch, or returns the full diagnostic (AC-2). — A/ `2ca39f5`: red first on both halves, with a fake converter that prints several lines and exits 1. The cached Hornbeam is the `MS_Hornbeam_UE4` variant, which imports cleanly, so the UE5 failure path is proven by spec only.
+- [x] Results report bounding-box metres; `formats` no longer advertised (AC-3). — A/ `2ca39f5`: `sizeMeters` on import models/scenes and on Fab/direct GLB downloads. Live Hornbeam import reports 9.98 × 16.13 × 8.55, matching an independent `getBounds` read. `formats` is out of the search schema, `fab_list_filters` and the docs. Also A/ `c50872f`: `FAB_FORMAT_UNAVAILABLE` on an Unreal-only listing now names its formats and routes to `fab_import_asset` (live on `c6f917b6…`).
 - [ ] Engine pins moved to the newly published version, tools snapshot regenerated (AC-4).
+  Blocked: `threenative-asset-mcp` with these fixes is not published. The AFK run does not publish packages; the pins stay at 0.9.3.
 
 **Verification:** `npm run typecheck && npx vitest run` in `A/` (its only gate; no CI). In the
 engine: `pnpm exec vitest run packages/create-threenative packages/core`, a `pnpm sandbox`
