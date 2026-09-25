@@ -76,7 +76,7 @@ let browser;
 let page;
 try {
   await server.listen();
-  browser = await chromium.launch({ headless: true, args });
+  browser = await chromium.launch({ headless: false, args });
   page = await browser.newPage({ viewport: { width: 800, height: 600 } });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
