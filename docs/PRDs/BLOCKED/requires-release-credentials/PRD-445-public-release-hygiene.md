@@ -1,11 +1,11 @@
 # PRD-445 — Public release hygiene
 
-**Status:** BLOCKED — every box is ticked (19/19, `prd:100%`); the only remaining work is the
-`## Blocked on` list: the owner-set `CLOUDFLARE_API_TOKEN`, an upstream `threenative-sculpt-mcp`
-release, and three owner calls on tracked junk. Filed in
-`docs/PRDs/BLOCKED/requires-release-credentials/` on 2026-09-25 under R6 so it stops reading as a
-live release blocker while the owner can still validate it. Phases 1–4 landed; the `site` deploy
-root cause is recorded and ticked, and `pnpm audit --prod --audit-level high` is clean (2026-09-25).
+**Status:** BLOCKED — every box is ticked (20/20, `prd:100%`); the only remaining work is the
+`## Blocked on` list: an upstream `threenative-sculpt-mcp` release and three owner calls on
+tracked junk. Filed in `docs/PRDs/BLOCKED/requires-release-credentials/` on 2026-09-25 under R6 so
+it stops reading as a live release blocker while the owner can still validate it. Phases 1–4
+landed; `pnpm audit --prod --audit-level high` is clean and the `site` deploy is green on `main`
+(run 36063649413, 2026-09-25).
 **Complexity:** 3 → LOW; all local, no credentials.
 **Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../../production-readiness/RELEASE-READINESS-2026-09-23.md).
 
@@ -25,6 +25,7 @@ owned them:
 - `README.md` promises iOS ("Ship it to the browser, desktop, Android, and iOS"), which is not a
   supported target.
 - The `site` workflow failed on `main` at `d3e6b7deb` in its Cloudflare deploy step (exit 1).
+  Fixed 2026-09-25 by the owner setting the two `site-production` secrets; see the box in Phase 2.
 - PRD-060 exists twice with different progress; PRD-375's file carries the heading "PRD-153"; five
   release-blocking PRDs have no phase boxes, so `pnpm prd:progress` exits 1 on them.
 
@@ -76,16 +77,14 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
 - [x] Root cause of the `site` deploy failure recorded here. proof: the failing run named in the
       note below — `CLOUDFLARE_API_TOKEN` unset on the `site-production` environment, so
       `wrangler deploy` exits 1 while the `build` job passes.
-  **Root cause recorded, box deliberately unticked: the `CLOUDFLARE_API_TOKEN` repo secret is
-  unset; `wrangler` exits "In a non-interactive environment, it's necessary to set a
-  CLOUDFLARE_API_TOKEN". Owner will set it.** The `site` workflow's
+  **Root cause recorded and closed 2026-09-25.** The `site` workflow's
   `deploy` job (`site.yml`, environment `site-production`) maps
   `secrets.CLOUDFLARE_ACCOUNT_ID` / `secrets.CLOUDFLARE_API_TOKEN` into `pnpm site:deploy`, but on
-  the failing run (`main`, `d3e6b7deb`, run 35899011227) both env vars are empty, so `wrangler
-  deploy` exits 1 with "In a non-interactive environment, it's necessary to set a
+  the failing run (`main`, `d3e6b7deb`, run 35899011227) both env vars were empty, so `wrangler
+  deploy` exited 1 with "In a non-interactive environment, it's necessary to set a
   CLOUDFLARE_API_TOKEN environment variable". The `build` job (typecheck, tests, e2e, `wrangler
-  deploy --dry-run`) passes, so no repo code is at fault. Fix: set the two secrets on the
-  `site-production` environment (owner), then re-run — a push to `main` is out of scope here.
+  deploy --dry-run`) passed, so no repository code was at fault. The owner set both secrets on
+  `site-production` on 2026-09-25; the acceptance box below records the green rerun.
 
 ### Phase 3 — Release-path PRD bookkeeping
 
@@ -149,12 +148,17 @@ excluding `docs/PRDs/done`, 0 hits). About 5.7 MiB of tracked bytes.
       specs (check-doc-links, evidence-budget, evidence-citations, sync-agent-docs, ci-structure,
       ci-needs) ran 178 passed / 0 failed.
 
+- [x] The latest `site` run on `main` is a success, including the Cloudflare deploy. proof: run
+      36063649413.
+      — Done 2026-09-25: `gh run view 36063649413` reports workflow `site`, branch `main`, head
+      `44d7d948a`, `status: completed`, `conclusion: success`, with both jobs green —
+      `build and prove` and `deploy to cloudflare`. It is the newest `site` run on `main`
+      (`gh run list --workflow=site --branch=main --limit 5`), the one after the failure
+      `35899011227` at `d3e6b7deb`, so the secrets the root-cause box names are now set and
+      consumed.
+
 ## Blocked on
 
-- **The `site` deploy needs the owner-set `CLOUDFLARE_API_TOKEN`** (and `CLOUDFLARE_ACCOUNT_ID`) on
-  the `site-production` environment: unblocked when the owner sets the two secrets and a `site` run
-  on `main` goes green. The root cause is recorded and ticked above; no repository code is at
-  fault.
 - **An upstream `threenative-sculpt-mcp` release** that moves its `sharp` pin off exactly `0.35.3`:
   unblocked when that external repository publishes it. Until then a fresh consumer install nests
   `sharp@0.35.3` and `npm audit --omit=dev` reports 3 high. The local cohort is clean through its
@@ -185,3 +189,7 @@ excluding `docs/PRDs/done`, 0 hits). About 5.7 MiB of tracked bytes.
   `sharp` release, the owner-set Cloudflare secrets and the three owner calls on tracked junk are
   dependencies, not checkboxes; they no longer hold this PRD open. Per R6 the file now lives in
   `docs/PRDs/BLOCKED/requires-release-credentials/`.
+- **2026-09-25 (owner) — the Cloudflare block is gone.** The owner set `CLOUDFLARE_API_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID` on the `site-production` environment and the `site` run on `main`
+  (36063649413) went green including the deploy, so that `## Blocked on` line was deleted and the
+  run added as a ticked acceptance box. The upstream `sharp` release and the three owner calls stay.

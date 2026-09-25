@@ -14,8 +14,8 @@ UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-06
 controls and web/native parity · PRD-365/375 CI signing proof green, public Authenticode/notarization
 superseded (each developer signs their own), registry-consumer rows remain · PRD-445 is filed in
 [`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
-19 boxes ticked; only the owner-set `CLOUDFLARE_API_TOKEN`, an upstream `threenative-sculpt-mcp`
-release and three owner calls remain).
+20 boxes ticked; the `site` deploy is green on `main`, run 36063649413, so only an upstream
+`threenative-sculpt-mcp` release and three owner calls remain).
 
 **Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
 `max(50 ms, 4 panel frames)` with in-frame behind the off flag.
