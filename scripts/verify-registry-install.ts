@@ -181,6 +181,7 @@ export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
       cwd,
       encoding: "utf8",
       env,
+      maxBuffer: 64 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 900_000,
     });
@@ -211,7 +212,7 @@ function safeOperation(
     name === "asset_search_sources"
       ? { category: "all", query: "game" }
       : name === "sculpt_grimoire"
-        ? { topic: "build/geometry_patterns" }
+        ? { topic: "glossary/3d_vocabulary" }
         : name === "engine_search_capabilities"
           ? { scope: "mechanic", situation: "enemy walks around a wall" }
           : {};
@@ -700,16 +701,22 @@ function mcpStep(project: string, runner: McpRunner): string {
           throw new Error("sculpt_grimoire returned no technique-safe topic and text.");
         results.push(`${name}: initialize, tools/list and sculpt_grimoire ok`);
       } else if (name === "threenative-engine") {
-        if (!Array.isArray(payload) || payload.length === 0)
+        const searchRecord = objectRecord(payload);
+        const hits = Array.isArray(payload)
+          ? payload
+          : Array.isArray(searchRecord?.results)
+            ? searchRecord.results
+            : undefined;
+        if (hits === undefined || hits.length === 0)
           throw new Error(
             "engine_search_capabilities returned no capability hits for the plain-words query.",
           );
-        const malformedIndex = payload.findIndex((hit) => !isCapabilitySearchHit(hit));
+        const malformedIndex = hits.findIndex((hit) => !isCapabilitySearchHit(hit));
         if (malformedIndex !== -1)
           throw new Error(
             `engine_search_capabilities returned malformed capability hit at index ${malformedIndex}.`,
           );
-        const hit = payload[0] as ICapabilitySearchHit;
+        const hit = hits[0] as ICapabilitySearchHit;
         const detailOperation = {
           arguments: { symbol: hit.symbol },
           name: "engine_capability_detail",
@@ -736,7 +743,7 @@ function mcpStep(project: string, runner: McpRunner): string {
             `engine_capability_detail did not return the searched capability '${hit.symbol}'.`,
           );
         results.push(
-          `${name}: initialize, tools/list, search and detail ok (${hit.symbol}; ${payload.length} hit(s))`,
+          `${name}: initialize, tools/list, search and detail ok (${hit.symbol}; ${hits.length} hit(s))`,
         );
       } else if (name === "threenative-blender") {
         if (record === undefined || record.available !== true) {
