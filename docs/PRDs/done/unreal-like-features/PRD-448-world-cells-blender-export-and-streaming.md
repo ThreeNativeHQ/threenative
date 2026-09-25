@@ -1,6 +1,6 @@
 # PRD-448 — World cells: Blender-authored worlds, exported once and streamed by cell
 
-**Status:** IN PROGRESS: engine side complete; waiting only on AC-8 (first-consumer evidence)
+**Status:** DONE (2026-09-25)
 **Complexity:** 6 (MEDIUM); risk override: none. About 9 implementation files across `core` and `blender-mcp`, a new runtime module, and async residency (loads racing eviction).
 **Owner:** unassigned (drafted by Claude, 2026-09-25)
 **Depends on:** None. First consumer: Machinefall (private game), whose PRD-001 adopts this.
@@ -77,9 +77,9 @@ flowchart LR
 - [x] AC-3 [local; actor: agent]: `TerrainTiles` built through `heightSamplerFromHeightmap` from an exported heightmap reproduces the source mesh heights within ±2 cm at 1 000 sampled points — Evidence: `packages/core/__tests__/world-heightmap.spec.ts` (101×101 grid, ~275 m range, quantised to uint16, heights read back through `TerrainTiles` tile fields), passing 2026-09-25.
 - [x] AC-4 [local; actor: agent]: `WorldCells` following a moving position keeps only in-ring cells resident. Leaving a cell disposes its batches and releases its asset keys (refcount back to 0). A `maxDistance` asset never appears beyond its distance — Evidence: `packages/core/__tests__/world-cells.spec.ts` runs a scripted follow path over the committed fixture. It checks resident sets against an independent ring computation, batch dispose spies, `assetRefCounts()` returning to 0, and no rendered `ground_cover` instance beyond `maxDistance`. Passing 2026-09-25.
 - [x] AC-5 [local; actor: agent]: moving out of range while a chunk load is in flight (delayed loader) leaves nothing attached and the key released; budget overflow reports pressure instead of throwing mid-frame — Evidence: `world-cells.spec.ts`: a delayed loader resolves after the cell has left, so nothing attaches, the key is released and `failures` is unchanged; `residentCells: 2` with ring 1 gives `pressure.cells > 0` and no throw. Passing 2026-09-25.
-- [x] AC-6 [local; actor: agent]: a web (webgpu recipe) playtest flies across the fixture world through the public API. `stats()` shows cells entering and leaving, zero failed loads, and p95 frame time within the scenario's budget — Evidence: web run on 2026-09-25 with `--browser-recipe webgpu --headed`. Adapter turing/nvidia (headless falls back to SwiftShader here). Resident cells 3→6 (max 12), 6 evictions, 0 failures, 0 loads in flight at the end, 533→1 463 instances. p95 was 39.9–46.1 ms against a 93 ms budget (2× the measured value). That p95 is taken under the private-Xvfb present throttle and is not a performance claim. Red control: `failures equals 1` exits 1 with `TN_PLAYTEST_COMPONENT_ASSERTION_FAILED`.
-- [x] AC-7 [local; actor: agent]: the same fixture scenario runs on the desktop native runtime with matching residency counts — Evidence: desktop run on 2026-09-25 against `tn-linux/mystral` built in the lane: `runtime:"native"`, adapter NVIDIA RTX 2080, `pass:true`. Residency matches web exactly: resident cells 3→6 (peaks 9 and 12), 6 evictions, 0 failures, 0 loads in flight at the end, 533→1 463 instances. The desktop variant keeps all 7 residency assertions and drops only the Xvfb-throttled frame-time budget and the web-only `diagnostics` block. Red control: `failures equals 1` exits 1.
-- [ ] AC-8 [local; actor: agent]: production-representative proof. The first consumer's 2 km package (≈50 k instances), exported by this recipe, validates and streams through `WorldCells` in that game's playtest with zero failed loads (evidence referenced from the consumer's PRD) — Evidence: pending.
+- [x] AC-6 [local; actor: agent]: a web (webgpu recipe) playtest flies across the fixture world through the public API. `stats()` shows cells entering and leaving, zero failed loads, and p95 frame time within the scenario's budget — Evidence: web run on 2026-09-25 with `--browser-recipe webgpu --headed`. Adapter turing/nvidia (headless falls back to SwiftShader here). Resident cells 3→6 (max 12), 6 evictions, 0 failures, 0 loads in flight at the end, 533→1 463 instances. p95 was 39.9–46.1 ms against a 93 ms budget (2× the measured value). That p95 is taken under the private-Xvfb present throttle and is not a performance claim. Red control: `failures equals 1` exits 1 with `TN_PLAYTEST_COMPONENT_ASSERTION_FAILED`. It passed again after the load limiter landed (Turing/NVIDIA).
+- [x] AC-7 [local; actor: agent]: the same fixture scenario runs on the desktop native runtime with matching residency counts — Evidence: desktop run on 2026-09-25 against `tn-linux/mystral` built in the lane: `runtime:"native"`, adapter NVIDIA RTX 2080, `pass:true`. Residency matches web exactly: resident cells 3→6 (peaks 9 and 12), 6 evictions, 0 failures, 0 loads in flight at the end, 533→1 463 instances. The desktop variant keeps all 7 residency assertions and drops only the Xvfb-throttled frame-time budget and the web-only `diagnostics` block. Red control: `failures equals 1` exits 1. After the load limiter landed, it was re-run on a freshly built host (RTX 2080) with identical residency: 6 evictions, 0 failures, 0 loads in flight at the end, max 12 resident cells, 1 463 instances.
+- [x] AC-8 [local; actor: agent]: production-representative proof. The first consumer's 2 km package (≈50 k instances), exported by this recipe, validates and streams through `WorldCells` in that game's playtest with zero failed loads (evidence referenced from the consumer's PRD) — Evidence: Machinefall's work `.blend`, exported by this recipe, gives 218 assets / 436 GLBs (0 empty), 128 233 instances, 256 cells of 128 m and 6.4 GiB, and `validateWorldPackage` accepts it. Its `map-walk` playtest (camp → highway → bridge, RTX 2080 WebGPU, engine default loader) records 21 evictions, 0 failed loads, loads in flight 6 → 0, the bridge reached, and 0 console or network errors (2026-09-25; jonit-dev/machinefall#2, PRD-001 status note). The consumer run found two engine bugs, both fixed here with red-green specs. First, the recipe wrote empty GLBs for sources under a hidden parent collection. Second, `WorldCells` model loads were unbounded: 215 in flight caused `ERR_BLOB_OUT_OF_MEMORY`, and a shared `concurrency` limiter now caps them.
 
 ## Integration Ledger
 
@@ -156,7 +156,7 @@ flowchart LR
 **Checkpoint:** pending
 
 #### Phase 4: Proof on web, native and the first consumer
-**Status:** IN PROGRESS: web, native and the how-to are done; only the first consumer's evidence (AC-8) is open, and it lands from that game's PRD
+**Status:** DONE (2026-09-25)
 **ACs:** AC-6, AC-7, AC-8
 **Files:**
 - A playtest scenario plus a fixture scene in the existing playtest fixtures (web and native).
@@ -170,7 +170,7 @@ flowchart LR
 - E6: link to the consumer PRD's map-walk evidence.
 - [x] web scenario: `examples/abyss-framework/playtests/world-flythrough.playtest.json` (`?world` → `WorldProbe`), run with `pnpm --filter abyss-framework playtest:world`
 - [x] native scenario: `world-flythrough.desktop.playtest.json` + `src/world-native.ts`. Bundle it with `runtime-native/scripts/bundle.mjs --entry src/world-native.ts --target desktop`, package it with `package-desktop.mjs --assets packages/core/__tests__/fixtures/world-v1`, then run `cli.js --target desktop --executable <pkg>`
-- [ ] consumer evidence linked
+- [x] consumer evidence linked: Machinefall `feat/prd-001-world-cells` (jonit-dev/machinefall#2) and its PRD-001 status note
 - [x] how-to doc: `docs/guides/world-streaming.md` (`pnpm check:docs` passes; `check-doc-links` + `primary-docs` 19/19)
 
 **Checkpoint:** pending
