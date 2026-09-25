@@ -87,9 +87,15 @@ completes (`found 0 vulnerabilities`) and `sharp` loads with `vips 8.18.6`, whil
 (`BLOCKED — requires-release-credentials`); the ten templates still need the override to reach
 consumers.
 
+**Forward fix (#323):** every template now carries `sharp: ">=0.35.4"` in both npm `overrides` and
+`pnpm.overrides`, with a contract test asserting it per template and ten re-pinned scaffold hashes
+(red on the unedited templates → 716 passed). It reaches consumers on the next publish; the
+published 0.3.3 template still carries the old pins, so the box stays open.
+
 ## Remaining
 
-- The npm install failure above (fix forward).
+- The npm install failure above reaches consumers only after the next publish (forward-fixed in
+  #323).
 
 - Phase 3's collector edits and its physical-Android user-verification box.
 

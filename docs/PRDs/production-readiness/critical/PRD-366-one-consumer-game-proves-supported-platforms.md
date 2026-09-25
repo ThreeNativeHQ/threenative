@@ -241,7 +241,11 @@ npm 11.18.0, pnpm 10.25.0, NVIDIA RTX 2080 / Vulkan 1.4.351; full commands and h
       whose prebuilt does not load on Linux 7.2.6; `sharp@0.35.4` installs and loads clean in
       isolation, and `pnpm install` succeeds only because `pnpm.onlyBuiltDependencies` skips sharp's
       build script. Owner: PRD-196 (`BLOCKED — requires-release-credentials`); a forward fix also
-      needs the ten templates to force `sharp >=0.35.4` so it reaches consumers.
+      needs the ten templates to force `sharp >=0.35.4` so it reaches consumers. Forward fix landed
+      as **#323**: all ten templates now pin `sharp: ">=0.35.4"` in both npm `overrides` and
+      `pnpm.overrides` (contract test + ten re-pinned scaffold hashes; red undefined → 716 passed).
+      This box stays open only until a cohort republishes with the fix, since the published 0.3.3
+      template still carries the old pins.
 
 **Implementation and wiring:** Extend the existing physical collector with validated project/scenario inputs; retain its required evidence/provenance schema and default native-smoke compatibility. Do not remove PRD-056 prerequisite checks or count iOS as a required target for this non-iOS batch. Use actual signed Android artifact, correct applicationId and arm64 GPU device; record touch, back navigation, suspend/resume, cold restart, saves and telemetry. Measure the unmodified platformer reference against its existing performance budget, with default starter startup/steady-state recorded separately. Raw performance results update runtime-perf-state.md in a separate evidence-only checkpoint if the five-file budget is exhausted.
 
