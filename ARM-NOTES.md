@@ -43,3 +43,42 @@
 - Machine is heavily loaded (several other agent lanes building concurrently) — this IS the load the brief
   describes; confirms the sequence/load dependence.
 - Next: `CI=true pnpm build` (dist serves the gate's packWorkspace(build=false)), typecheck+lint, then full 7-template gate twice.
+- [resume 16:15] orchestrator: paid models hit usage limit; now on space-bunny-free. Resume from 'Next'.
+- [resume 16:12] Reviewed committed fix a2a2ca8ba (freezeClock in loop.ts/game.ts/playtest.ts + 2 regression
+  tests). Commit is local-only, no PR yet. Load average 10.9 (other lanes building) = the load the bug needs.
+  Next: CI=true pnpm build → typecheck+lint → full 7-template gate x2 → push + PR + auto-merge.
+  TMPDIR=/home/joao/.tn-tmp (disk, outside repo — an in-repo TMPDIR makes scaffold installs walk up into
+  the workspace and layer `mcp` dies MODULE_NOT_FOUND).
+- [16:16] `CI=true pnpm build` exit 0; typecheck exit 0; lint exit 0 (after deleting a stray
+  `.tmp/opencode-data` pnpm store the worktree's own scratch dir had left for biome to scan — all
+  373 "errors" were json formatting in that store, none in the change).
+- [16:16] GATE RUN 1 (all 7 templates, full non-visual sweep): exit 1, but NOT racing —
+  `action-rpg` layer `test` died on its 4th scenario `action-rpg-touch-controls` with
+  `$.entities[1].bounds.height must contain only finite JSON numbers`. A symptom the fix introduced.
+- [16:19] A/B on the single template (TN_GOLDEN_PATH_TEMPLATES=action-rpg, ~90s/run):
+  HEAD (freeze) → touch-controls NaN, 90s, deterministic. HEAD~1 core/src rebuilt → touch-controls
+  PASSES (firstTick 81, lastTick 140) and the run dies later on `action-rpg-boss-win` with
+  TN_PLAYTEST_PAGE_NAVIGATED / "Target page, context or browser has been closed" (a load-related
+  crash on this loaded machine, separate from my change).
+- [16:23] MECHANISM, measured not guessed: action-rpg's `render/touch-controls.ts` lays itself out
+  in `update()` (Play.ts:436 → `touch?.update(...)` → `#layout`), parenting a 72-unit ring group to
+  the camera at local z=-1. A frozen clock means `update` never runs, so at the run's FIRST sample
+  (taken before the run's first `advance()`) the overlay is still at its constructed pose: parented
+  at the camera's own origin. Reproduced the observation math standalone (`projectedBounds` +
+  `point.project`): un-laid-out overlay -> bounds 1.9e19 (NaN at the run's camera pose); after
+  `#layout` -> 144px. w=0 -> Infinity -> Infinity-Infinity = NaN. The overlay is the entity the
+  scenario asks about (`movement`/`visibility` on touch-controls).
+- [16:24] ROOT CAUSE, second half: freezing the clock correctly stops wall-clock time reaching a
+  tick-counting run, but a *frozen* clock must not stop the game being *called* — scenes compute
+  per-frame state in `update`, and a run reads its first observation before its first tick. Fix:
+  `FixedStepLoop.#primeFrame()` — one `onUpdate(0)` on the first live frame after the freeze, not
+  spent while the boot hold is set (the scene has not entered then), and armed by the transition
+  into frozen only, so `advance()`'s implied freeze does not spend one per counted step.
+  dt 0 = no time lands, `#tick` does not move.
+- [16:25] RED/GREEN: disabling the `#primeFrame()` call fails 3 tests (`expected [] to deeply equal
+  [ +0 ]` ×2, `expected +0 to be 1`); with it 50/50 pass in loop.spec + playtest.spec.
+  Next: rebuild core, re-run action-rpg alone, then the full 7-template gate twice.
+- [16:26] Baseline observation for the report: HEAD~1 pass/fail per scenario is
+  fail/inventory/progress/touch-controls PASS, boss-win PAGE_NAVIGATED crash — so the golden path
+  is ALSO not green on this machine before my change. The gate target is the 7-template sweep with
+  racing's `racing-finish-behind-rival-is-dnf` green; any other red must be reported by name.

@@ -121,6 +121,7 @@ export class FixedStepLoop {
   #running = false;
   #held = false;
   #clockFrozen = false;
+  #primePending = false;
   #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
@@ -222,8 +223,19 @@ export class FixedStepLoop {
    * 42.7s of headroom is spent by boot time rather than by the scenario. The same scenario then
    * fails its `completedLaps` assertion on a loaded runner and passes on a quiet one, from the
    * same build. Idempotent, and implied by `advance()`.
+   *
+   * Frozen stops *time*, not the frame function, so the loop still delivers one update with the
+   * fixed step — see `#primeFrame`. A game lays out per-frame state in `update` (action-rpg's touch
+   * overlay places itself against the viewport there and is parented to the camera), and a run
+   * reads its first observation before it takes its first tick, so a freeze that skipped updates
+   * outright left that state at its constructed pose: the overlay sat on the camera's own origin
+   * and `point.project` divided by a zero w, which is `NaN` bounds in the entity observation and
+   * took the scenario down before it asserted anything.
    */
   freezeClock(): void {
+    // Armed by the *transition* into frozen, so `advance()` — which implies the freeze — does not
+    // re-arm it and spend a zero-dt update after every tick-counted step the runner takes.
+    if (!this.#clockFrozen) this.#primePending = true;
     this.#clockFrozen = true;
     this.#lastTime = Number.POSITIVE_INFINITY;
   }
@@ -259,6 +271,7 @@ export class FixedStepLoop {
       // determinism contract every playtest hold depends on. The clock still moves forward so
       // the hold banks no time.
       this.#lastTime = Math.max(this.#lastTime ?? now, now);
+      this.#primeFrame();
       return 0;
     }
     const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
@@ -274,6 +287,34 @@ export class FixedStepLoop {
     }
     if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
     return updates;
+  }
+
+  /**
+   * One update, delivered once, on the first live frame after the clock froze.
+   *
+   * `freezeClock` means the wall clock stops moving the simulation, not that the game stops being
+   * called: a scene computes per-frame state in `update` — action-rpg's touch overlay measures the
+   * viewport and parents itself to the camera there — and a playtest run reads its first
+   * observation before it takes its first tick. Without this pass that state is still whatever its
+   * constructor left it, which for a camera-parented overlay is a 72-unit ring sitting on the
+   * camera's own origin: `point.project` divides by a zero `w`, and the observation the run reads
+   * carries `NaN` bounds, which takes the scenario down before it asserts anything.
+   *
+   * It is one *fixed* step and nothing else, so what it costs the run is a constant 1/60s that no
+   * machine speed can change — the whole defect was wall-clock time, not a tick. A zero dt is not
+   * available: the physics simulation rejects it (`IPhysicsSimulation.step requires a positive
+   * finite deltaTime`), and a fail-closed engine should not be taught to accept a nonsense tick.
+   * `#tick` deliberately does not move, which keeps the hold's contract — the run counts ticks,
+   * and this is not one of them.
+   *
+   * A held boot frame is not that frame: the scene has not entered yet, so there is nothing of the
+   * game's to prime, and the arm survives the hold to fire when the loop is genuinely live. Once,
+   * because a second call would repeat input edge detection and per-frame bookkeeping for nothing.
+   */
+  #primeFrame(): void {
+    if (!this.#primePending || this.#held) return;
+    this.#primePending = false;
+    this.#onUpdate(this.step);
   }
 
   #recordFrameTiming(now: number): number | undefined {
@@ -350,8 +391,11 @@ export class FixedStepLoop {
       throw new Error("advance ticks must be a positive integer.");
     // Driving one tick is a statement that the run counts ticks, so it also stops the live clock
     // racing it. `freezeClock()` exists for the frames *before* that statement, which is where a
-    // boot's wall clock used to reach the simulation.
-    this.freezeClock();
+    // boot's wall clock used to reach the simulation. The prime is not armed from here: this line
+    // has just delivered a real update, so the game has had its pass, and arming it would spend
+    // one more zero-dt update after every step a run counts.
+    this.#clockFrozen = true;
+    this.#lastTime = Number.POSITIVE_INFINITY;
     for (let index = 0; index < ticks; index += 1) {
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);

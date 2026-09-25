@@ -203,23 +203,44 @@ describe("FixedStepLoop", () => {
     // through the whole startup compile wait. Those frames used to advance a tick-counting
     // simulation by wall clock, so the run began with an arbitrary amount of game time already
     // spent -- and racing's `elapsed` DNFs a 90s race that the scenario needs only 47s to finish.
-    let updates = 0;
-    const loop = new FixedStepLoop({ onUpdate: () => updates++ });
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
     loop.freezeClock();
     expect(loop.clockFrozen).toBe(true);
     loop.start(0);
 
-    // Two seconds of live frames at 60 Hz: 120 updates if the clock still drove the loop.
+    // Two seconds of live frames at 60 Hz: 120 updates if the clock still drove the loop, and
+    // the single fixed-step prime the freeze owes the game either way.
     for (let frame = 1; frame <= 120; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
 
-    expect(updates).toBe(0);
+    expect(dts).toEqual([1 / 60]);
     expect(loop.tick()).toBe(0);
 
-    // The manual clock is still the one that moves the simulation.
+    // The manual clock is still the one that moves the simulation, and it does not re-arm the
+    // prime: a run must not gain a second update per step the runner counts.
     expect(loop.advance(3)).toBe(3);
     expect(loop.tick()).toBe(3);
     for (let frame = 121; frame <= 240; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
+    expect(dts).toEqual([1 / 60, 1 / 60, 1 / 60, 1 / 60]);
     expect(loop.tick()).toBe(3);
+  });
+
+  it("primes the first live frame after the freeze, not a held boot frame", () => {
+    // The boot hold covers the load, and the scene has not entered while it is set, so a prime
+    // spent there would prime nothing. The arm survives it and fires when the loop is live.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop.freezeClock();
+    loop.setHeld(true);
+    loop.start(0);
+    loop.stepFrame(16.6667);
+    loop.stepFrame(33.3333);
+    expect(dts).toEqual([]);
+
+    loop.setHeld(false);
+    loop.stepFrame(50);
+    loop.stepFrame(66.6667);
+    expect(dts).toEqual([1 / 60]);
   });
 
   it("reports the actual callback duration separately from presentation timestamps", () => {
