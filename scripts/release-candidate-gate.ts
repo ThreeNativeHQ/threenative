@@ -478,7 +478,14 @@ function validateRun(
     errors.push(`${where}.headSha must equal candidateSha.`);
   if (value.status !== "completed") errors.push(`${where}.status must be 'completed'.`);
   if (value.conclusion !== "success") errors.push(`${where}.conclusion must be 'success'.`);
-  if (value.event !== "push") errors.push(`${where}.event must be 'push'.`);
+  // native-platforms.yml never runs on push on its own: ci.yml calls it as a reusable workflow, so
+  // the only standalone run of it is a manual dispatch on main. Demanding `push` for it made every
+  // release candidate unsatisfiable.
+  const events = workflowPath.endsWith("native-platforms.yml")
+    ? ["push", "workflow_dispatch"]
+    : ["push"];
+  if (typeof value.event !== "string" || !events.includes(value.event))
+    errors.push(`${where}.event must be ${events.map((event) => `'${event}'`).join(" or ")}.`);
   if (value.headBranch !== "main") errors.push(`${where}.headBranch must be 'main'.`);
   if (value.workflowPath !== workflowPath)
     errors.push(`${where}.workflowPath must be '${workflowPath}'.`);
