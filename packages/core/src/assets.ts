@@ -18,9 +18,10 @@ export interface IAssetLoaderOptions {
   /**
    * URL of the manifest written by the asset compile step (`public/assets.manifest.json`).
    * Defaults to `assets.manifest.json` resolved against `basePath`. A logical path is resolved
-   * to its compiled output through it; a manifest that is absent — 404 or unfetchable — falls
-   * back to loading every path verbatim, while one that is served malformed or with an unknown
-   * version throws.
+   * to its compiled output through it; a manifest that is absent — 404, or an app shell served
+   * in its place — falls back to loading every path verbatim, while one that is served malformed,
+   * with an unknown version, or cannot be read at all throws rather than degrading to the
+   * fallback.
    */
   readonly manifest?: string;
   /**
@@ -70,6 +71,15 @@ export interface ICompressedTextureSupport {
   readonly ready: Promise<void>;
 }
 
+/** Which pipeline served a logical path: the compile step's manifest, or the project's own files. */
+export type AssetSource = "manifest" | "source";
+
+/** Where one settled load's bytes actually came from. */
+export interface IResolvedAsset {
+  readonly url: string;
+  readonly via: AssetSource;
+}
+
 export interface IAssetLoader {
   readonly compressedTextures?: ICompressedTextureSupport;
   model<T = unknown>(path: string): Promise<T>;
@@ -107,6 +117,17 @@ export interface IAssetLoader {
     readonly settled: number;
     readonly settledBytes: number;
   };
+  /**
+   * Where each settled load was actually served from, keyed by the logical path asked for.
+   *
+   * `progress` counts loads and cannot say which of a path's candidate urls answered, so a game
+   * whose manifest 404s and a game whose manifest named the output look identical from the game's
+   * own side — which is how an unreadable manifest became a silent uncompiled fallback on the
+   * native hosts, where a failed read arrives as a rejected fetch rather than a 404. `via` is
+   * `"manifest"` only for the compiled output the manifest named; `"source"` is the verbatim or
+   * source-directory path, and an external url, which no manifest governs.
+   */
+  readonly resolved: ReadonlyMap<string, IResolvedAsset>;
   clear(): void;
 }
 
@@ -179,17 +200,42 @@ function resolvePath(basePath: string, path: string): string {
 }
 
 /**
- * Reads the compile step's manifest. A 404 — or a url that cannot be fetched at all, which is
- * how "no manifest" presents in bare-node tests and on hosts without a web root — is the
- * documented no-manifest case and resolves to `undefined`. Anything that *is* served must be a
- * valid version-1 manifest; anything else throws.
+ * Whether this host could have turned the manifest url into a request at all.
+ *
+ * A relative url with no document to resolve it against — bare node, a headless unit test — never
+ * leaves the process, so its rejected fetch is the no-manifest case these hosts have always had
+ * rather than a file that could not be read. Every host that serves a game resolves it: a browser
+ * against its page, the native host against `document.location`. There a rejected read is a real
+ * answer and throws.
+ */
+function hostCanFetch(url: string): boolean {
+  if (isExternalAssetPath(url)) return true;
+  const base =
+    (globalThis as { location?: { href?: string } }).location?.href ??
+    (globalThis as { document?: { location?: { href?: string } } }).document?.location?.href;
+  return base !== undefined;
+}
+
+/**
+ * Reads the compile step's manifest. A 404, or a response that is the app shell rather than a
+ * manifest, is the documented no-manifest case and resolves to `undefined`. Anything else that
+ * *is* served must be a valid version-1 manifest.
+ *
+ * A **rejected** fetch is not that case, and the distinction is what this host's own transports
+ * turn on: the desktop and Android fetch polyfills report a failed file read as a rejection, not a
+ * 404, so reading an unreadable manifest as "no pipeline" quietly loaded every asset uncompiled
+ * from the source directory while the game ran and looked healthy. Failing closed here names the
+ * url instead. `hostCanFetch` is the one exception, and only where no request existed to fail.
  */
 async function readManifest(url: string): Promise<IAssetManifest | undefined> {
   let response: Response;
   try {
     response = await fetch(url);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (!hostCanFetch(url)) return undefined;
+    throw new Error(
+      `TN_ASSETS_MANIFEST_UNREADABLE: asset manifest '${url}' could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`Failed to load asset manifest '${url}': ${response.status}.`);
@@ -230,6 +276,12 @@ interface IAssetEntry {
   promise: Promise<unknown>;
   released: boolean;
   value?: unknown;
+}
+
+/** The candidate urls for a logical path, and the pipeline that produced them. */
+interface ICandidateUrls {
+  readonly urls: readonly string[];
+  readonly via: AssetSource;
 }
 
 interface IDisposableResource {
@@ -592,6 +644,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           return { loader, ready };
         })();
   const cache = new Map<string, IAssetEntry>();
+  /** Logical path → the url that actually served it, and the pipeline that url came from. */
+  const resolvedAssets = new Map<string, IResolvedAsset>();
   const disposed: IResourceDisposalSets = {
     geometries: new WeakSet(),
     surfaces: new WeakSet(),
@@ -675,8 +729,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
    * identically, just slower* — and it could not pass while only the first was tried: the loader
    * asked for `/rock.png`, which exists nowhere in a compiled project, and the game never booted.
    */
-  const resolveCandidates = async (path: string): Promise<readonly string[]> => {
-    if (isExternalAssetPath(path)) return [path];
+  const resolveCandidates = async (path: string): Promise<ICandidateUrls> => {
+    if (isExternalAssetPath(path)) return { urls: [path], via: "source" };
     const manifest = await manifestOnce();
     if (manifest !== undefined) {
       const listed = manifest.entries[path];
@@ -684,12 +738,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       if (typeof output !== "string") {
         throw new Error(`Asset '${path}' is not listed in the asset manifest '${manifestUrl}'.`);
       }
-      return [resolvePath(basePath, output)];
+      return { urls: [resolvePath(basePath, output)], via: "manifest" };
     }
     const verbatim = resolvePath(basePath, path);
-    if (sourcePath === "") return [verbatim];
+    if (sourcePath === "") return { urls: [verbatim], via: "source" };
     const fromSource = resolvePath(basePath, `${sourcePath}/${path}`);
-    return fromSource === verbatim ? [verbatim] : [verbatim, fromSource];
+    return fromSource === verbatim
+      ? { urls: [verbatim], via: "source" }
+      : { urls: [verbatim, fromSource], via: "source" };
   };
 
   /**
@@ -701,13 +757,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
    */
   const loadFirst = async <T>(
     path: string,
-    urls: readonly string[],
+    { urls, via }: ICandidateUrls,
     load: (url: string) => Promise<T>,
   ): Promise<T> => {
     const failures: string[] = [];
     for (const url of urls) {
       try {
-        return await load(url);
+        const value = await load(url);
+        // Recorded here, where the winner is known and nowhere else: a caller that asks which
+        // url served its bytes gets the one that did, not the first one that was tried.
+        resolvedAssets.set(path, { url, via });
+        return value;
       } catch (error) {
         failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
       }
@@ -910,7 +970,12 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     get progress() {
       return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
     },
-    resolve: (path) => resolveCandidates(path),
+    resolve: async (path) => (await resolveCandidates(path)).urls,
+    // A copy per read, like `progress`: a caller inspecting the record must not be able to
+    // rewrite what the loader reports for the next asset that settles.
+    get resolved(): ReadonlyMap<string, IResolvedAsset> {
+      return new Map(resolvedAssets);
+    },
     release: (kind, path) => {
       const key = `${kind}:${path}`;
       const entry = cache.get(key);
