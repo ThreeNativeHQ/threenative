@@ -175,6 +175,13 @@ describe("threenative build", () => {
     });
     expect(() => parseBuildArgs(["package"])).toThrow(/Usage: threenative build/u);
     expect(() => parseBuildArgs(["build", "--target", "console"])).toThrow(/console/u);
+    // PRD-448: the CLI consumes --profile itself; Vite never sees it.
+    expect(parseBuildArgs(["build", "--profile", "compact", "--base", "/g/"])).toEqual({
+      profile: "compact",
+      target: "web",
+      viteArgs: ["--base", "/g/"],
+    });
+    expect(() => parseBuildArgs(["build", "--profile"])).toThrow(/--profile requires a value/u);
   });
 
   // PRD-212 phase 2. The CLI must reject an unsupported request before any work, and pass a

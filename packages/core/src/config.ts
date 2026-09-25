@@ -293,6 +293,31 @@ export interface IThreeNativeConfig {
     readonly maximized?: boolean;
     readonly resizable?: boolean;
   };
+  /**
+   * Named cook profiles: one authored asset tree, one compiler, a different representation per
+   * artifact. `--profile` on `threenative build` wins over `defaults[target]`; with neither, the
+   * `assets` block is used exactly as declared. An overlay changes resource-processing options
+   * only — the source root, the output root, worker concurrency and exclusions stay in `assets`.
+   */
+  readonly buildProfiles?: {
+    readonly defaults?: {
+      readonly android?: string;
+      readonly desktop?: string;
+      readonly ios?: string;
+      readonly web?: string;
+    };
+    readonly profiles: Readonly<
+      Record<
+        string,
+        {
+          readonly assets?: Pick<
+            NonNullable<IThreeNativeConfig["assets"]>,
+            "audio" | "budget" | "lod" | "models" | "targets" | "textures"
+          >;
+        }
+      >
+    >;
+  };
   readonly assets?: {
     /**
      * Audio conditioning options, or `"none"` to ship every clip exactly as committed. Absent

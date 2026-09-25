@@ -16,6 +16,7 @@ import type {
   ThreeNativeOrientation,
   ThreeNativeUiRenderer,
 } from "@threenative/core";
+import type { BuildTarget } from "./build.js";
 
 export type {
   IThreeNativeAudioConfig,
@@ -59,6 +60,12 @@ export interface IResolvedThreeNativeConfig {
   };
   readonly bootSplash?: IThreeNativeBootSplash;
   readonly nativeEntry: string;
+  /** Which cook profile produced this configuration, and whether the flag or the default chose it. */
+  readonly buildProfile?: {
+    readonly name: string;
+    readonly source: "flag" | "default";
+    readonly target: BuildTarget;
+  };
   readonly renderer: {
     readonly preferWebGPU: boolean;
     readonly resolutionScale?: number | "auto";
@@ -1560,7 +1567,178 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   };
 }
 
-async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeConfig> {
+/** One safe output-directory segment: no traversal, no separator, no case collision. */
+const PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/u;
+const PROFILE_ASSET_KEYS: readonly string[] = [
+  "audio",
+  "budget",
+  "lod",
+  "models",
+  "targets",
+  "textures",
+];
+const PROFILE_TARGETS: readonly BuildTarget[] = ["android", "desktop", "ios", "web"];
+
+/** What the caller asked for: the target being built, and a profile name when one was named. */
+interface IProfileSelection {
+  readonly profile?: string;
+  readonly target: BuildTarget;
+}
+
+interface IResolvedProfile {
+  /** The overlay as declared, still unvalidated: `validateAssets` sees the merged result. */
+  readonly assets: Record<string, unknown>;
+  readonly name: string;
+  readonly source: "flag" | "default";
+  readonly target: BuildTarget;
+}
+
+/**
+ * Validates the declaration, then picks the one profile this build cooks with.
+ *
+ * Selection is the flag first, the target's default second, and no overlay at all otherwise —
+ * which is exactly what every project without `buildProfiles` gets, so a name that cannot be
+ * honoured is a failure here rather than a build that quietly shipped the wrong representation.
+ */
+function resolveBuildProfile(
+  raw: unknown,
+  selection: IProfileSelection | undefined,
+): IResolvedProfile | undefined {
+  if (raw === undefined) {
+    if (selection?.profile !== undefined) {
+      fail(
+        "TN_CONFIG_PROFILE_UNKNOWN",
+        `--profile ${selection.profile} was requested but ${CONFIG_FILE} declares no buildProfiles.`,
+      );
+    }
+    return undefined;
+  }
+  const group = assertRecord(raw, "buildProfiles");
+  assertKeys(group, "buildProfiles", ["defaults", "profiles"]);
+  const defaults = assertRecord(group.defaults, "buildProfiles.defaults");
+  assertKeys(defaults, "buildProfiles.defaults", PROFILE_TARGETS);
+  for (const [target, name] of Object.entries(defaults)) {
+    if (typeof name !== "string" || name.length === 0) {
+      fail("TN_CONFIG_PROFILE_INVALID", `buildProfiles.defaults.${target} must name a profile.`);
+    }
+  }
+  const profiles = assertRecord(group.profiles, "buildProfiles.profiles");
+  const declared = Object.keys(profiles);
+  if (declared.length === 0) {
+    fail("TN_CONFIG_GROUP_INVALID", "buildProfiles.profiles must declare at least one profile.");
+  }
+  for (const name of declared) {
+    const label = `buildProfiles.profiles['${name}']`;
+    if (!PROFILE_NAME.test(name)) {
+      fail(
+        "TN_CONFIG_PROFILE_NAME_INVALID",
+        `${label} is not a usable profile name ('${name}'): names are one lower-case path segment matching /^[a-z0-9][a-z0-9_-]{0,63}$/, so no name can traverse out of the build directory or collide by case.`,
+      );
+    }
+    const profile = assertRecord(profiles[name], label);
+    assertKeys(profile, label, ["assets"]);
+    assertKeys(
+      assertRecord(profile.assets, `${label}.assets`),
+      `${label}.assets`,
+      PROFILE_ASSET_KEYS,
+    );
+  }
+  for (const [target, name] of Object.entries(defaults)) {
+    if (typeof name === "string" && !Object.hasOwn(profiles, name)) {
+      fail(
+        "TN_CONFIG_PROFILE_UNKNOWN",
+        `buildProfiles.defaults.${target} names '${name}', which is not declared. Declared profiles: ${declared.join(", ")}.`,
+      );
+    }
+  }
+  if (selection === undefined) return undefined;
+  const requested = selection.profile;
+  const name = requested ?? (defaults[selection.target] as string | undefined);
+  if (name === undefined) return undefined;
+  const profile = profiles[name] as Record<string, unknown> | undefined;
+  if (profile === undefined) {
+    const asked =
+      requested === undefined ? `buildProfiles.defaults.${selection.target}` : `--profile ${name}`;
+    fail(
+      "TN_CONFIG_PROFILE_UNKNOWN",
+      `${asked} names a profile this project does not declare. Declared profiles: ${declared.join(", ")}.`,
+    );
+  }
+  return {
+    assets: isRecord(profile.assets) ? profile.assets : {},
+    name,
+    source: requested === undefined ? "default" : "flag",
+    target: selection.target,
+  };
+}
+
+/**
+ * The whole merge rule, in one place: two plain objects merge field by field, anything else is
+ * the overlay's. So arrays replace, `"none"` and `false` in the overlay win, an overlay object
+ * replaces a base `"none"`, and a base `"none"` the overlay says nothing about stays `"none"`.
+ * Every level returns a new object, so the project's own config object is never written to.
+ */
+function mergeProfileOverlay(base: unknown, overlay: Record<string, unknown>): unknown {
+  if (!isRecord(base)) return overlay;
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overlay)) {
+    const current = merged[key];
+    merged[key] =
+      isRecord(current) && isRecord(value) ? mergeProfileOverlay(current, value) : value;
+  }
+  return merged;
+}
+
+/**
+ * `codec: "none"` is how a project says "ship these bytes as authored" — both texture passes
+ * return them before they resize. A profile cap asking for smaller pixels and an override asking
+ * for the original ones are a contradiction the pass would settle by ignoring the cap, so it is
+ * settled here instead, naming the selector that would have been ignored.
+ */
+function assertProfileCapReachable(
+  assets: NonNullable<IResolvedThreeNativeConfig["assets"]>,
+  overlay: Record<string, unknown>,
+  name: string,
+): void {
+  const overlayTextures = overlay.textures;
+  const overlayModels = overlay.models;
+  const caps =
+    (isRecord(overlayTextures) && overlayTextures.maxSize !== undefined) ||
+    (isRecord(overlayModels) &&
+      isRecord(overlayModels.textures) &&
+      overlayModels.textures.maxSize !== undefined);
+  if (!caps) return;
+  const conflicts: string[] = [];
+  if (assets.textures !== undefined && assets.textures !== "none") {
+    for (const override of assets.textures.overrides ?? []) {
+      if (override.codec === "none") {
+        conflicts.push(`assets.textures.overrides glob '${override.glob}' declares codec "none"`);
+      }
+    }
+  }
+  const models = assets.models;
+  const modelTextures = models === undefined || models === "none" ? undefined : models.textures;
+  if (modelTextures !== undefined && modelTextures !== "none") {
+    for (const override of modelTextures.overrides ?? []) {
+      if (override.codec === "none") {
+        conflicts.push(
+          `assets.models.textures.overrides slot '${override.slot}' declares codec "none"`,
+        );
+      }
+    }
+  }
+  if (conflicts.length > 0) {
+    fail(
+      "TN_CONFIG_PROFILE_CONFLICT",
+      `profile '${name}' caps texture size, and ${conflicts.join("; ")}, which returns the authored bytes before resizing. Drop the override, or take the cap out of the profile.`,
+    );
+  }
+}
+
+async function loadConfigInternal(
+  root: string,
+  selection?: IProfileSelection,
+): Promise<IResolvedThreeNativeConfig> {
   const packagePath = path.join(root, "package.json");
   const sourcePath = path.join(root, CONFIG_FILE);
   const manifest = await withConfigContext(packageContext(root), "TN_CONFIG_PACKAGE_INVALID", () =>
@@ -1590,6 +1768,7 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
           "renderer",
           "ui",
           "assets",
+          "buildProfiles",
         ]);
       }
       const configuredEntry = raw?.nativeEntry;
@@ -1601,7 +1780,15 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
       }
       const app = await validateApp(raw?.app, name, root);
       const bootSplash = await validateBootSplash(raw?.bootSplash, root);
-      const assets = raw?.assets === undefined ? undefined : validateAssets(raw.assets);
+      // The overlay lands on the raw declaration before validation, so every rule above applies
+      // to the merged result and an overlay can never smuggle an unvalidated value to a pass.
+      const profile = resolveBuildProfile(raw?.buildProfiles, selection);
+      const rawAssets =
+        profile === undefined ? raw?.assets : mergeProfileOverlay(raw?.assets, profile.assets);
+      const assets = rawAssets === undefined ? undefined : validateAssets(rawAssets);
+      if (assets !== undefined && profile !== undefined) {
+        assertProfileCapReachable(assets, profile.assets, profile.name);
+      }
       return {
         app,
         display: validateDisplay(raw?.display),
@@ -1611,16 +1798,24 @@ async function loadConfigInternal(root: string): Promise<IResolvedThreeNativeCon
         ui: validateUi(raw?.ui),
         ...(bootSplash === undefined ? {} : { bootSplash }),
         ...(assets === undefined ? {} : { assets }),
+        ...(profile === undefined
+          ? {}
+          : {
+              buildProfile: { name: profile.name, source: profile.source, target: profile.target },
+            }),
       };
     },
   );
 }
 
-export async function loadConfig(cwd: string): Promise<IResolvedThreeNativeConfig> {
+export async function loadConfig(
+  cwd: string,
+  selection?: IProfileSelection,
+): Promise<IResolvedThreeNativeConfig> {
   const root = path.resolve(cwd);
   return withConfigContext(
     validationContext(root, [path.join(root, CONFIG_FILE), path.join(root, "package.json")]),
     "TN_CONFIG_VALIDATION_FAILED",
-    () => loadConfigInternal(root),
+    () => loadConfigInternal(root, selection),
   );
 }

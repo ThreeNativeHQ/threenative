@@ -1,10 +1,10 @@
 # PRD-448 — Cross-Platform Asset Cooking and Device Budgets
 
-**Status:** PROPOSED  
+**Status:** IN PROGRESS (Phase 1 done)  
 **Complexity:** 9 (HIGH); risk override: none.  
 **Owner:** ThreeNative maintainers; implementation owner to be assigned.  
 **Depends on:** Existing `@threenative/assets`, native packaging, and playtest infrastructure. Reuse the PRD-377 discrete-LOD contract; do not reopen or duplicate that PRD.  
-**Progress:** 0%; implementation not started.  
+**Progress:** Phase 1 of 6 done (AC-1).  
 **Source snapshot:** `ThreeNativeHQ/threenative`, `main` at `af60e210aa500e504e9370b3657caaf8340f5650`, inspected September 25, 2026.  
 **Authorization:** Planning-only scope. Owner explicitly authorized filing this documentation directly on `develop`; this does not authorize implementation, publishing, or deployment.  
 **Filing:** `docs/PRDs/assets/PRD-448-cross-platform-asset-cooking-and-device-budgets.md` on `develop`.  
@@ -310,7 +310,7 @@ All paths below exist in the inspected tree unless explicitly marked **new**. Im
 
 **Lane notation:** `unreachable-now/local` identifies checks intended for an implementation checkout that this planning session does not have. `shared` identifies native qualification through the repository's target lanes, not a claim those lanes have run. All evidence is pending. Native jobs belong to one qualification matrix dependency; each platform verdict remains separate. No human aesthetic sign-off is required to accept this plumbing feature.
 
-- [ ] **AC-1 [unreachable-now/local; actor: implementation agent]:** The public `threenative build` path applies the selected cook profile to the emitted asset representation. **Evidence:** E1, pending.
+- [x] **AC-1 [unreachable-now/local; actor: implementation agent]:** The public `threenative build` path applies the selected cook profile to the emitted asset representation. **Evidence:** E1 — `packages/create-threenative/__tests__/build-profiles.spec.ts` (7 tests) drives `build()` — the function `threenative build` calls after `parseBuildArgs` — with the real asset compile (only Vite's child process stubbed): a 256² PNG cooks to 128² under the web default `compact` and 64² under `--profile tiny`, read back from the emitted KTX2 header; `build.spec.ts` proves the parser consumes `--profile` and forwards the rest to Vite. `pnpm exec vitest run packages/create-threenative/__tests__/` 722/722, 2026-09-25.
 - [ ] **AC-2 [unreachable-now/local; actor: implementation agent]:** A decoder-free target produces a decodable image satisfying its explicitly requested dimension cap. **Evidence:** E2, pending.
 - [ ] **AC-3 [unreachable-now/local; actor: implementation agent]:** Output-changing input changes cannot reuse stale cooked output. **Evidence:** E2, pending.
 - [ ] **AC-4 [unreachable-now/local; actor: implementation agent]:** Concurrent or interrupted builds cannot publish a mixed-generation artifact. **Evidence:** E3, pending.
@@ -329,7 +329,7 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 #### Phase 1: Resolve a profile through the real build entry point
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-1  
 **Files:** `packages/core/src/config.ts`; `packages/create-threenative/src/config.ts`; `packages/create-threenative/src/build.ts`; existing CLI/config tests; a small resolver module only if splitting is warranted.
 
@@ -337,8 +337,8 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E1 — invoke the actual CLI against a fixture project with two different texture caps. Inspect emitted image dimensions/manifest output identity. Unknown profile/key/flag and conflicting preservation cases must fail clearly. A config-only unit test is insufficient.
 
-- [ ] The compiler receives the public CLI's resolved profile configuration.
-- [ ] Unknown profile selection is rejected before asset encoding.
+- [x] The compiler receives the public CLI's resolved profile configuration. — see AC-1 (E1).
+- [x] Unknown profile selection is rejected before asset encoding. — `TN_CONFIG_PROFILE_UNKNOWN` names the declared profiles; the end-to-end case asserts no `public/` was written. Unsafe names, unknown/forbidden overlay keys and a cap a `codec: "none"` override would ignore fail too (same spec).
 
 **Checkpoint:** Pending; self-review reachability and configuration precedence. Independent review only when a reviewer is actually available.
 

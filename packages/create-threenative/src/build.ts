@@ -27,6 +27,8 @@ export interface IBuildOptions {
   mode?: BuildMode;
   /** Android only. `aab` requires `mode: "release"`. */
   format?: BuildFormat;
+  /** A `buildProfiles` name; wins over `buildProfiles.defaults[target]`. */
+  profile?: string;
   viteArgs?: readonly string[];
 }
 
@@ -191,6 +193,15 @@ export async function assertNativeAssetsCompatible(
   }
 }
 
+/** Which representation a build is cooking, and whether the flag or the project's default chose it. */
+function announceProfile(config: IResolvedThreeNativeConfig): void {
+  const selected = config.buildProfile;
+  if (selected === undefined) return;
+  process.stdout.write(
+    `threenative build: profile ${selected.name} (${selected.source}) for ${selected.target}\n`,
+  );
+}
+
 /** The one UI entry every target mounts. Convention, not configuration. */
 const UI_ENTRY = path.join("src", "ui", "main.tsx");
 /**
@@ -305,8 +316,13 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
   ].join("\n")}\n`;
 }
 
-export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
-  const config = await loadConfig(cwd);
+export async function buildWeb(
+  cwd: string,
+  viteArgs: readonly string[] = [],
+  profile?: string,
+): Promise<void> {
+  const config = await loadConfig(cwd, { target: "web", profile });
+  announceProfile(config);
   await compileAssets({ config: config.assets, cwd, platform: "web" });
   await run(
     process.execPath,
@@ -495,8 +511,10 @@ async function buildNative(
   allowSourceBuild = false,
   mode: BuildMode = "debug",
   format: BuildFormat = "apk",
+  profile?: string,
 ): Promise<void> {
-  const config = await loadConfig(cwd);
+  const config = await loadConfig(cwd, { target, profile });
+  announceProfile(config);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
   // A native host without WebAssembly cannot run Rapier as WASM or decode meshopt/KTX2, so it
   // takes the native physics backend and a decoder-free bake. The capability is the runtime
@@ -620,14 +638,21 @@ export async function build(options: IBuildOptions): Promise<void> {
     throw new Error("--format aab requires --mode release.");
   }
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  if (options.target === "web") await buildWeb(cwd, options.viteArgs);
+  if (options.target === "web") await buildWeb(cwd, options.viteArgs, options.profile);
   else {
     if ((options.viteArgs?.length ?? 0) > 0) {
       throw new Error(
         `${options.target} build does not accept ${options.viteArgs?.join(" ")}. iOS output is simulator-only; device signing remains OPEN.`,
       );
     }
-    await buildNative(options.target, cwd, options.allowSourceBuild === true, mode, format);
+    await buildNative(
+      options.target,
+      cwd,
+      options.allowSourceBuild === true,
+      mode,
+      format,
+      options.profile,
+    );
   }
 }
 
@@ -639,6 +664,7 @@ export function buildHelp(): string {
     "  --target <target>  Choose web, desktop, android, or ios (default: web).",
     "  --mode <mode>      debug (default) or release. Desktop release wraps the executable in one complete OS container.",
     "  --format <format>  Android only: apk (default) or aab. aab requires --mode release.",
+    "  --profile <name>   A buildProfiles name; wins over buildProfiles.defaults for the target.",
     "  --allow-source-build  Explicitly allow Android maintainer source compilation.",
     "  --help             Show this help.",
   ].join("\n")}\n`;
@@ -665,6 +691,7 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   if (format !== undefined && format !== "apk" && format !== "aab") {
     throw new Error(`Unknown build format '${format}'. Choose apk or aab.`);
   }
+  const profile = flagValue(argv, "--profile");
   if (
     (mode !== undefined && value !== "android" && value !== "desktop") ||
     (format !== undefined && value !== "android")
@@ -682,7 +709,7 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
       if (argv[index] === "--allow-source-build") consumed.add(index);
     }
   }
-  for (const flag of ["--mode", "--format"]) {
+  for (const flag of ["--mode", "--format", "--profile"]) {
     for (let index = 1; index < argv.length; index += 1) {
       if (argv[index] === flag) {
         consumed.add(index);
@@ -699,6 +726,7 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
     ...(allowSourceBuild ? { allowSourceBuild: true } : {}),
     ...(mode === undefined ? {} : { mode: mode as BuildMode }),
     ...(format === undefined ? {} : { format: format as BuildFormat }),
+    ...(profile === undefined ? {} : { profile }),
     viteArgs: argv.filter((_, index) => !consumed.has(index)),
   };
 }
