@@ -55,7 +55,11 @@ Pure tests cover binary subarray offsets, truncated/false lengths, wrong/duplica
 
 ## Verification
 
-Executed locally: pure format tests 10/10 and strict TypeScript 5.8.3 checking of document.ts. npm test includes strict TypeScript 5.9.3 build, pure contracts and real three-vrm/Three tests. Dependency downloads are unavailable locally, so their result is not reported green. The dedicated PR workflow runs the complete command because examples are excluded from root Vitest. Formal capability tools, installed audit/lockfile, Biome, repository suite, independent review and all GPU/native lanes remain open. No iOS claim. Keep draft and do not advertise material/native support until executed inside the actual patched framework runtime.
+Executed locally: pure format tests 10/10 and strict TypeScript 5.8.3 checking of document.ts. npm test includes strict TypeScript 5.9.3 build, pure contracts and real three-vrm/Three tests. Dependency downloads are unavailable locally.
+
+**Dependency-backed CI, 2026-09-25:** Integration vrm run 36202262331 installed the actual dependencies and failed TS2305 importing VRMUtils. The upstream entry re-exports a directory (`./VRMUtils`); its class exists but NodeNext does not resolve that declaration export. A minimal local declaration-package reproduction produced the same TS2305 in NodeNext and exited 0 with Bundler resolution. This commit sets this example's compiler to ESNext/Bundler, retains strict/noEmitOnError and all tests, and emits ordinary ESM with the existing .js relative imports. The actual dependency-backed rerun remains unverified until observed; no runtime disposal helper was replaced or suppressed.
+
+The dedicated PR workflow runs the complete command because examples are excluded from root Vitest. Formal capability tools, installed audit/lockfile, Biome, repository suite, independent review and all GPU/native lanes remain open. No iOS claim. Keep draft and do not advertise material/native support until executed inside the actual patched framework runtime.
 
 ## References
 
