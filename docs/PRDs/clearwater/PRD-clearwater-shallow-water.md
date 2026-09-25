@@ -40,13 +40,14 @@ MIT notice (Copyright 2026 Lumaris).
 
 ## Phase 3 — integration qualification (not complete)
 
-- [ ] Run real-Three graph/factory tests and full workspace typecheck, formatting and tests.
-  Added Vitest numerical, installation and real graph-construction specs. Local syntax emission
-  passed for all 12 TS files; this is NOT external type resolution or WGSL compilation.
-  Attempted `pnpm test`: exit 127, pnpm unavailable. The container also lacks installed Three.js,
-  Vitest and Biome; the downloaded pinned CI package artifact supplies engine interfaces, not
-  third-party dependencies. Do not infer full-suite success from the isolated tests.
-- [ ] Compile the new TSL graph and render the shallow-water scene in browser WebGPU.
+- [x] Run real-Three graph/factory tests and full workspace typecheck, formatting and tests.
+  Evidence: exact-head CI run 36141527525 completed green on 2026-09-25, including typecheck,
+  lint, all three unit shards, browser tests, playtests, native tests, build artifacts, budgets,
+  performance contracts, benchmark, supply-chain and golden/template coverage.
+- [x] Compile the new TSL graph and render the shallow-water scene in browser WebGPU.
+  Evidence: exact-head Clearwater source qualification run 36141526854 completed green on
+  2026-09-25; the source lane executed the real browser WebGPU fixture and retained its render
+  evidence.
 - [ ] Run the same fixture on desktop native and compare water/refraction/caustics.
 - [ ] Qualify Android separately; no Android execution performed.
 - [ ] Qualify iOS separately; no iOS execution performed.
