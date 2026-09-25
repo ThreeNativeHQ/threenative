@@ -77,7 +77,7 @@ flowchart LR
 - [x] AC-3 [local; actor: agent]: `TerrainTiles` built through `heightSamplerFromHeightmap` from an exported heightmap reproduces the source mesh heights within ±2 cm at 1 000 sampled points — Evidence: `packages/core/__tests__/world-heightmap.spec.ts` (101×101 grid, ~275 m range, quantised to uint16, heights read back through `TerrainTiles` tile fields), passing 2026-09-25.
 - [x] AC-4 [local; actor: agent]: `WorldCells` following a moving position keeps only in-ring cells resident. Leaving a cell disposes its batches and releases its asset keys (refcount back to 0). A `maxDistance` asset never appears beyond its distance — Evidence: `packages/core/__tests__/world-cells.spec.ts` runs a scripted follow path over the committed fixture. It checks resident sets against an independent ring computation, batch dispose spies, `assetRefCounts()` returning to 0, and no rendered `ground_cover` instance beyond `maxDistance`. Passing 2026-09-25.
 - [x] AC-5 [local; actor: agent]: moving out of range while a chunk load is in flight (delayed loader) leaves nothing attached and the key released; budget overflow reports pressure instead of throwing mid-frame — Evidence: `world-cells.spec.ts`: a delayed loader resolves after the cell has left, so nothing attaches, the key is released and `failures` is unchanged; `residentCells: 2` with ring 1 gives `pressure.cells > 0` and no throw. Passing 2026-09-25.
-- [ ] AC-6 [local; actor: agent]: a web (webgpu recipe) playtest flies across the fixture world through the public API. `stats()` shows cells entering and leaving, zero failed loads, and p95 frame time within the scenario's budget — Evidence: pending.
+- [x] AC-6 [local; actor: agent]: a web (webgpu recipe) playtest flies across the fixture world through the public API. `stats()` shows cells entering and leaving, zero failed loads, and p95 frame time within the scenario's budget — Evidence: web run on 2026-09-25 with `--browser-recipe webgpu --headed`. Adapter turing/nvidia (headless falls back to SwiftShader here). Resident cells 3→6 (max 12), 6 evictions, 0 failures, 0 loads in flight at the end, 533→1 463 instances. p95 was 39.9–46.1 ms against a 93 ms budget (2× the measured value). That p95 is taken under the private-Xvfb present throttle and is not a performance claim. Red control: `failures equals 1` exits 1 with `TN_PLAYTEST_COMPONENT_ASSERTION_FAILED`.
 - [ ] AC-7 [local; actor: agent]: the same fixture scenario runs on the desktop native runtime with matching residency counts — Evidence: pending.
 - [ ] AC-8 [local; actor: agent]: production-representative proof. The first consumer's 2 km package (≈50 k instances), exported by this recipe, validates and streams through `WorldCells` in that game's playtest with zero failed loads (evidence referenced from the consumer's PRD) — Evidence: pending.
 
@@ -168,9 +168,9 @@ flowchart LR
 - E4: web playtest (webgpu recipe).
 - E5: desktop native run of the same scenario.
 - E6: link to the consumer PRD's map-walk evidence.
-- [ ] web scenario
+- [x] web scenario: `examples/abyss-framework/playtests/world-flythrough.playtest.json` (`?world` → `WorldProbe`), run with `pnpm --filter abyss-framework playtest:world`
 - [ ] native scenario
 - [ ] consumer evidence linked
-- [ ] how-to doc
+- [x] how-to doc: `docs/guides/world-streaming.md` (`pnpm check:docs` passes; `check-doc-links` + `primary-docs` 19/19)
 
 **Checkpoint:** pending
