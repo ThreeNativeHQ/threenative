@@ -2091,6 +2091,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     target_link_libraries(mystral PRIVATE mystral-runtime)
 
+    # Linux desktop only: put every function and datum in its own section so the link can drop
+    # what the runtime never reaches. Android already carries section GC; macOS and Windows keep
+    # their own dead-code story, so this is scoped to Linux.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
+        target_compile_options(mystral-runtime PRIVATE -ffunction-sections -fdata-sections)
+        target_link_options(mystral PRIVATE -Wl,--gc-sections)
+    endif()
+
     # Build-time tools stay out of the runtime executable that gets copied into compiled games.
     # The runtime CLI preserves `mystral compile` and `mystral bake` by dispatching to this
     # sibling helper at build time.
