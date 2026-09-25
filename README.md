@@ -210,3 +210,5 @@ follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 ## Licence
 
 MIT — see [`LICENSE`](LICENSE). ThreeNative is MIT end to end, including the native runtime.
+
+The name and logo are not covered by the MIT licence — see [`TRADEMARKS.md`](TRADEMARKS.md).
