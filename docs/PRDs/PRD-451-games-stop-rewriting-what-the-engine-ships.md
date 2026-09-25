@@ -55,10 +55,10 @@ Kill switch: `pnpm tsx scripts/count-loc.ts` must score each API below the copie
 ## Execution Phases
 
 #### Phase 1: a search in the games' words finds what they rewrote
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `scripts/fixtures/capability-recall/corpus.json`; `@situation` tags on whichever symbols fail, starting with `packages/core/src/input.ts`
-- [ ] One recall row for each of the seven misses above, observed red first. proof: `pnpm caps:recall`
-- [ ] Every row resolves, with no reject hits. proof: `pnpm build && pnpm caps:recall` exit 0
+- [x] One recall row for each of the seven misses above, observed red first. proof: `pnpm caps:recall` — 8 `prd451.*` rows (the seven plus `mergeParts`); red first, 7 of 8 missed and `InputMap`, `captureMouse`, `lodPixelScale` were absent from `capabilities.json` (only their types were exported, so the manifest builder never saw them).
+- [x] Every row resolves, with no reject hits. proof: `pnpm build && pnpm caps:recall` exit 0 — recallAtK 0.897 (61/68), all 8 new rows recalled with no reject hits; the 7 misses and 16 reject hits are the 60 baseline rows' own, unchanged. Fixes: `@situation` lines on `MatrixWorldPass`, `markStatic` (now its own doc block, since the family's shared summary collapsed to `invalidateStatic`), `createRandom`, `FrameBudget`; value exports of `InputMap`, `captureMouse` (lifted out of `InputMap.captureMouse()`, which delegates) and `lodPixelScale`. Rows cite `sandbox:<game>#<file>`, provenance only.
 
 #### Phase 2: three one-call APIs
 **Status:** NOT STARTED

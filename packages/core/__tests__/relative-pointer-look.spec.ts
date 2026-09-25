@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InputMap } from "../src/input.js";
+import { InputMap, captureMouse } from "../src/input.js";
 
 function mouseMove(movementX: number, movementY: number): Event {
   const event = new Event("mousemove");
@@ -120,5 +120,13 @@ describe("InputMap relative pointer look", () => {
     if (clickListener === undefined) throw new Error("automatic capture click listener is missing");
     expect(() => clickListener?.(new Event("click"))).toThrow(/Pointer capture is unavailable/u);
     input.dispose();
+  });
+
+  it("captures through the standalone call and names a target that cannot lock", async () => {
+    const target = new EventTarget() as EventTarget & { requestPointerLock: () => Promise<void> };
+    target.requestPointerLock = () => Promise.resolve();
+
+    await expect(captureMouse(target)).resolves.toBeUndefined();
+    expect(() => captureMouse(new EventTarget())).toThrow(/Pointer capture is unavailable/u);
   });
 });
