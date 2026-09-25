@@ -74,6 +74,26 @@ function rgb(name: string, value: WaterRgb): WaterRgb {
   ];
 }
 
+function booleanOption(
+  name: "reflection" | "caustics",
+  value: boolean | undefined,
+  fallback: boolean,
+): boolean {
+  if (value !== undefined && typeof value !== "boolean")
+    throw new TypeError(`Clearwater.${name} must be a boolean.`);
+  return value ?? fallback;
+}
+
+function optionalInteger(
+  name: string,
+  value: number | undefined,
+  min: number,
+  max: number,
+): number | undefined {
+  if (value !== undefined) integer(name, value, min, max);
+  return value;
+}
+
 export function waterSunDirection(value: WaterRgb): WaterRgb {
   if (!Array.isArray(value) || value.length !== 3)
     throw new TypeError("Clearwater.sunDirection needs three components.");
@@ -95,12 +115,9 @@ export function resolveClearwaterOptions(
   const center = input.center ?? [0, 0];
   if (!Array.isArray(center) || center.length !== 2)
     throw new TypeError("Clearwater.center needs x and z.");
-  for (const key of ["reflection", "caustics"] as const) {
-    if (input[key] !== undefined && typeof input[key] !== "boolean")
-      throw new TypeError(`Clearwater.${key} must be a boolean.`);
-  }
-  const layers = input.reflectionLayers;
-  if (layers !== undefined) integer("reflectionLayers", layers, 0, 0xffffffff);
+  const reflection = booleanOption("reflection", input.reflection, true);
+  const caustics = booleanOption("caustics", input.caustics, true);
+  const layers = optionalInteger("reflectionLayers", input.reflectionLayers, 0, 0xffffffff);
   return {
     size: range("size", input.size ?? 16, 0.1, 4096),
     level: finiteWaterNumber("level", input.level ?? 0),
@@ -119,7 +136,7 @@ export function resolveClearwaterOptions(
     sunDirection: waterSunDirection(input.sunDirection ?? [0.45, 0.82, 0.3]),
     sunColor: rgb("sunColor", input.sunColor ?? [6, 5.4, 4.44]),
     distortion: range("distortion", input.distortion ?? 0.018, 0, 0.1),
-    reflection: input.reflection ?? true,
+    reflection,
     reflectionScale: range("reflectionScale", input.reflectionScale ?? 0.5, 0.0625, 1),
     reflectionLayers: layers,
     reflectionRefreshInterval: integer(
@@ -128,7 +145,7 @@ export function resolveClearwaterOptions(
       1,
       60,
     ),
-    caustics: input.caustics ?? true,
+    caustics,
     causticsResolution: powerOfTwo("causticsResolution", input.causticsResolution ?? 512, 64, 1024),
     causticsSegments: integer("causticsSegments", input.causticsSegments ?? 128, 8, 256),
     causticsStrength: range("causticsStrength", input.causticsStrength ?? 0.65, 0, 1),

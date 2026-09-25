@@ -18,6 +18,8 @@ import { createClearwater } from '/src/clearwater.ts';
 import { setupClearwaterDemo } from '/src/render/clearwaterDemo.ts';
 const observation = window.clearwaterTest = { frames: 0, errors: [], ready: false };
 class WaterScene extends Scene {
+  static initialState = {};
+
   enter(ctx) {
     observation.frames = 0;
     this.release = setupClearwaterDemo(ctx.scene, ctx.camera);
