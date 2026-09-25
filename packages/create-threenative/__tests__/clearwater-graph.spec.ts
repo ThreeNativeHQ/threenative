@@ -15,13 +15,25 @@ describe("Clearwater graph construction", () => {
   it("composes real fields, three dispersion passes and idempotent owned-resource disposal", () => {
     const options = resolveClearwaterOptions({ center: [4, -3], level: 2 });
     const ocean = new SpectralOcean({
-      resolution: 32, cascades: [{ patchSize: 8 }, { patchSize: 2 }], windSpeed: 1.8,
-      windDirection: 0.55, gravity: 9.81, amplitude: 0.00012, directionality: 1.5,
-      choppiness: 0, smallWaveCutoff: 0.08, seed: 1,
-      readbackResolution: 0, readbackEveryFrames: 1,
+      resolution: 32,
+      cascades: [{ patchSize: 8 }, { patchSize: 2 }],
+      windSpeed: 1.8,
+      windDirection: 0.55,
+      gravity: 9.81,
+      amplitude: 0.00012,
+      directionality: 1.5,
+      choppiness: 0,
+      smallWaveCutoff: 0.08,
+      seed: 1,
+      readbackResolution: 0,
+      readbackEveryFrames: 1,
     });
     const ripples = new RippleField({ resolution: 32, size: 7, speed: 1.2 });
-    const surface = new WaterSurface3D({ level: 2, maxThickness: 24, reflection: { resolutionScale: 0.5 } });
+    const surface = new WaterSurface3D({
+      level: 2,
+      maxThickness: 24,
+      reflection: { resolutionScale: 0.5 },
+    });
     try {
       const water = createClearwaterAppearance(ocean, ripples, surface, options);
       try {
@@ -34,8 +46,12 @@ describe("Clearwater graph construction", () => {
         expect(water.level.value).toBe(2);
         let geometryReleases = 0;
         let materialReleases = 0;
-        water.mesh.geometry.addEventListener("dispose", () => { geometryReleases++; });
-        water.material.addEventListener("dispose", () => { materialReleases++; });
+        water.mesh.geometry.addEventListener("dispose", () => {
+          geometryReleases++;
+        });
+        water.material.addEventListener("dispose", () => {
+          materialReleases++;
+        });
         ripples.impulse(0, 0, 0.3, -0.04);
         ripples.advance(1 / 60);
         water.uploadRipples();

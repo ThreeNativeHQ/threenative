@@ -32,19 +32,30 @@ jobs:
       - uses: ./.github/actions/workspace-dist
       - name: Construct real shader graphs and test installation and ownership
         run: pnpm exec vitest run packages/create-threenative/__tests__/clearwater*.spec.ts
+      - uses: ./.github/actions/playwright-chromium
+      - name: Compile and render water on browser WebGPU
+        if: ${{ !cancelled() }}
+        run: node packages/create-threenative/__tests__/clearwater-browser.mjs
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: clearwater-browser-evidence
+          path: artifacts/clearwater-browser
+          if-no-files-found: error
+          retention-days: 7
       - name: Check the submitted source against engine and Three.js types
         if: ${{ !cancelled() }}
         run: pnpm exec tsc --noEmit -p tsconfig.json
       - name: Check source formatting without suppressing errors
         if: ${{ !cancelled() }}
-        run: pnpm exec biome check packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts --max-diagnostics=1000
+        run: pnpm exec biome check packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater* --max-diagnostics=1000
       - name: Produce a reviewable formatter patch, never a branch write
         if: ${{ failure() }}
         run: |
           mkdir -p artifacts/clearwater
-          pnpm exec biome check --write packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts --max-diagnostics=1000
-          git diff -- packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts > artifacts/clearwater/formatting.patch
-          tar -czf artifacts/clearwater/formatted-source.tar.gz packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts
+          pnpm exec biome check --write packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater* --max-diagnostics=1000
+          git diff -- packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater* > artifacts/clearwater/formatting.patch
+          tar -czf artifacts/clearwater/formatted-source.tar.gz packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*
       - uses: actions/upload-artifact@v7
         if: ${{ failure() }}
         with:

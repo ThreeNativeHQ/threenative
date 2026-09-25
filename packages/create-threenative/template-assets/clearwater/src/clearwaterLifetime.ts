@@ -17,7 +17,11 @@ export class DisposalScope {
     this.#disposed = true;
     const errors: unknown[] = [];
     for (const cleanup of this.#cleanups.splice(0).reverse()) {
-      try { cleanup(); } catch (error) { errors.push(error); }
+      try {
+        cleanup();
+      } catch (error) {
+        errors.push(error);
+      }
     }
     if (errors.length > 0) throw new AggregateError(errors, "Clearwater resource cleanup failed.");
   }

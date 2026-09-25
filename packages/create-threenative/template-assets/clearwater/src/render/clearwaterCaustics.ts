@@ -1,7 +1,30 @@
 // Refracted-grid caustics adapted from Clearwater, MIT (Lumaris 2026).
 // See CLEARWATER-LICENSE.txt. No WebGL handles, DOM, extra animation loop or asset fetches.
-import { AdditiveBlending, Camera, Color, DoubleSide, HalfFloatType, LinearFilter, Mesh, PlaneGeometry, RenderTarget, Scene } from "three";
-import { attribute, dFdx, dFdy, float, mix, refract, texture, varying, vec2, vec3, vec4 } from "three/tsl";
+import {
+  AdditiveBlending,
+  Camera,
+  Color,
+  DoubleSide,
+  HalfFloatType,
+  LinearFilter,
+  Mesh,
+  PlaneGeometry,
+  RenderTarget,
+  Scene,
+} from "three";
+import {
+  attribute,
+  dFdx,
+  dFdy,
+  float,
+  mix,
+  refract,
+  texture,
+  varying,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import type { Node, WebGPURenderer } from "three/webgpu";
 import { DisposalScope } from "../clearwaterLifetime.js";
@@ -15,18 +38,29 @@ export interface IClearwaterHeightSource {
 
 /** A finite ray grid: caustics are transported from the same waves/ripples as the surface. */
 export function createClearwaterCaustics(
-  field: IClearwaterHeightSource, level: Node<"float">, sun: Node<"vec3">,
+  field: IClearwaterHeightSource,
+  level: Node<"float">,
+  sun: Node<"vec3">,
   options: IResolvedClearwaterOptions,
 ) {
   const scope = new DisposalScope();
   try {
     const target = new RenderTarget(options.causticsResolution, options.causticsResolution, {
-      type: HalfFloatType, minFilter: LinearFilter, magFilter: LinearFilter,
-      depthBuffer: false, stencilBuffer: false, generateMipmaps: false,
+      type: HalfFloatType,
+      minFilter: LinearFilter,
+      magFilter: LinearFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+      generateMipmaps: false,
     });
     target.texture.name = "clearwater-caustic-flux";
     scope.defer(() => target.dispose());
-    const geometry = new PlaneGeometry(options.size, options.size, options.causticsSegments, options.causticsSegments);
+    const geometry = new PlaneGeometry(
+      options.size,
+      options.size,
+      options.causticsSegments,
+      options.causticsSegments,
+    );
     scope.defer(() => geometry.dispose());
     const scene = new Scene();
     const camera = new Camera(); // vertexNode supplies clip-space positions directly.
@@ -39,14 +73,23 @@ export function createClearwaterCaustics(
     const dy = dFdy(rayOrigin);
     // The inverse mapping's Jacobian measures incoming area per receiving pixel.
     // A flat, unperturbed surface is exactly one, independent of texture or grid resolution.
-    const flux = dx.x.mul(dy.y).sub(dx.y.mul(dy.x)).abs()
-      .mul((options.causticsResolution / options.size) ** 2).min(40);
+    const flux = dx.x
+      .mul(dy.y)
+      .sub(dx.y.mul(dy.x))
+      .abs()
+      .mul((options.causticsResolution / options.size) ** 2)
+      .min(40);
     const masks = [vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1)];
     const dispersion = [-0.002, 0, 0.003];
     for (let channel = 0; channel < 3; channel += 1) {
       const material = new MeshBasicNodeMaterial({
-        transparent: true, blending: AdditiveBlending, side: DoubleSide,
-        depthTest: false, depthWrite: false, toneMapped: false, fog: false,
+        transparent: true,
+        blending: AdditiveBlending,
+        side: DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+        fog: false,
       });
       scope.defer(() => material.dispose());
       const ior = Math.max(1.0001, options.ior + (dispersion[channel] ?? 0));
@@ -75,12 +118,20 @@ export function createClearwaterCaustics(
       },
       render(renderer: WebGPURenderer): void {
         if (scope.disposed) return;
-        withClearwaterTarget(renderer, target, black, previousColor, () => renderer.render(scene, camera));
+        withClearwaterTarget(renderer, target, black, previousColor, () =>
+          renderer.render(scene, camera),
+        );
       },
-      dispose(): void { scope.dispose(); },
+      dispose(): void {
+        scope.dispose();
+      },
     };
   } catch (error) {
-    try { scope.dispose(); } catch { /* Keep the construction failure as the primary error. */ }
+    try {
+      scope.dispose();
+    } catch {
+      /* Keep the construction failure as the primary error. */
+    }
     throw error;
   }
 }

@@ -34,7 +34,8 @@ export interface IClearwaterOptions {
   readonly causticsStrength?: number;
 }
 
-export interface IResolvedClearwaterOptions extends Required<Omit<IClearwaterOptions, "reflectionLayers">> {
+export interface IResolvedClearwaterOptions
+  extends Required<Omit<IClearwaterOptions, "reflectionLayers">> {
   readonly reflectionLayers?: number;
 }
 
@@ -45,7 +46,8 @@ export function finiteWaterNumber(name: string, value: number): number {
 
 function range(name: string, value: number, min: number, max: number): number {
   finiteWaterNumber(name, value);
-  if (value < min || value > max) throw new RangeError(`Clearwater.${name} must be in ${min}..${max}.`);
+  if (value < min || value > max)
+    throw new RangeError(`Clearwater.${name} must be in ${min}..${max}.`);
   return value;
 }
 
@@ -57,30 +59,45 @@ function integer(name: string, value: number, min: number, max: number): number 
 
 function powerOfTwo(name: string, value: number, min: number, max: number): number {
   integer(name, value, min, max);
-  if ((value & (value - 1)) !== 0) throw new RangeError(`Clearwater.${name} must be a power of two.`);
+  if ((value & (value - 1)) !== 0)
+    throw new RangeError(`Clearwater.${name} must be a power of two.`);
   return value;
 }
 
 function rgb(name: string, value: WaterRgb): WaterRgb {
-  if (!Array.isArray(value) || value.length !== 3) throw new TypeError(`Clearwater.${name} needs three components.`);
-  return [range(name, value[0], 0, 100), range(name, value[1], 0, 100), range(name, value[2], 0, 100)];
+  if (!Array.isArray(value) || value.length !== 3)
+    throw new TypeError(`Clearwater.${name} needs three components.`);
+  return [
+    range(name, value[0], 0, 100),
+    range(name, value[1], 0, 100),
+    range(name, value[2], 0, 100),
+  ];
 }
 
 export function waterSunDirection(value: WaterRgb): WaterRgb {
-  if (!Array.isArray(value) || value.length !== 3) throw new TypeError("Clearwater.sunDirection needs three components.");
+  if (!Array.isArray(value) || value.length !== 3)
+    throw new TypeError("Clearwater.sunDirection needs three components.");
   for (const v of value) finiteWaterNumber("sunDirection", v);
   const length = Math.hypot(...value);
-  if (length === 0 || value[1] / length < 0.05) throw new RangeError("Clearwater sun must be at least 0.05 above the horizon after normalization.");
+  if (length === 0 || value[1] / length < 0.05)
+    throw new RangeError(
+      "Clearwater sun must be at least 0.05 above the horizon after normalization.",
+    );
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
 /** Validate before allocating any GPU resource. Returned arrays never alias caller/default arrays. */
-export function resolveClearwaterOptions(input: IClearwaterOptions = {}): IResolvedClearwaterOptions {
-  if (input === null || typeof input !== "object") throw new TypeError("Clearwater options must be an object.");
+export function resolveClearwaterOptions(
+  input: IClearwaterOptions = {},
+): IResolvedClearwaterOptions {
+  if (input === null || typeof input !== "object")
+    throw new TypeError("Clearwater options must be an object.");
   const center = input.center ?? [0, 0];
-  if (!Array.isArray(center) || center.length !== 2) throw new TypeError("Clearwater.center needs x and z.");
+  if (!Array.isArray(center) || center.length !== 2)
+    throw new TypeError("Clearwater.center needs x and z.");
   for (const key of ["reflection", "caustics"] as const) {
-    if (input[key] !== undefined && typeof input[key] !== "boolean") throw new TypeError(`Clearwater.${key} must be a boolean.`);
+    if (input[key] !== undefined && typeof input[key] !== "boolean")
+      throw new TypeError(`Clearwater.${key} must be a boolean.`);
   }
   const layers = input.reflectionLayers;
   if (layers !== undefined) integer("reflectionLayers", layers, 0, 0xffffffff);
@@ -105,7 +122,12 @@ export function resolveClearwaterOptions(input: IClearwaterOptions = {}): IResol
     reflection: input.reflection ?? true,
     reflectionScale: range("reflectionScale", input.reflectionScale ?? 0.5, 0.0625, 1),
     reflectionLayers: layers,
-    reflectionRefreshInterval: integer("reflectionRefreshInterval", input.reflectionRefreshInterval ?? 1, 1, 60),
+    reflectionRefreshInterval: integer(
+      "reflectionRefreshInterval",
+      input.reflectionRefreshInterval ?? 1,
+      1,
+      60,
+    ),
     caustics: input.caustics ?? true,
     causticsResolution: powerOfTwo("causticsResolution", input.causticsResolution ?? 512, 64, 1024),
     causticsSegments: integer("causticsSegments", input.causticsSegments ?? 128, 8, 256),

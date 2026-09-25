@@ -2,14 +2,25 @@ import { type ICtx, RippleField, SpectralOcean, WaterSurface3D } from "@threenat
 import type { WebGPURenderer } from "three/webgpu";
 import { DisposalScope } from "./clearwaterLifetime.js";
 import { createClearwaterAppearance } from "./render/clearwater.js";
-import { type IClearwaterOptions, type WaterRgb, finiteWaterNumber, resolveClearwaterOptions, waterSunDirection } from "./render/clearwaterOptions.js";
+import {
+  type IClearwaterOptions,
+  type WaterRgb,
+  finiteWaterNumber,
+  resolveClearwaterOptions,
+  waterSunDirection,
+} from "./render/clearwaterOptions.js";
 
 export type { IClearwaterOptions } from "./render/clearwaterOptions.js";
 export type Clearwater = ReturnType<typeof createClearwater>;
 type WaterContext = Pick<ICtx, "renderer" | "scene" | "camera" | "add" | "every" | "beforeRender">;
 
 function isWebGPURenderer(value: unknown): value is WebGPURenderer {
-  return typeof value === "object" && value !== null && "isWebGPURenderer" in value && value.isWebGPURenderer === true;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "isWebGPURenderer" in value &&
+    value.isWebGPURenderer === true
+  );
 }
 
 /**
@@ -21,7 +32,9 @@ export function createClearwater(ctx: WaterContext, input: IClearwaterOptions = 
   const options = resolveClearwaterOptions(input);
   const renderer = ctx.renderer.raw;
   if (ctx.renderer.kind !== "webgpu" || !isWebGPURenderer(renderer)) {
-    throw new Error("Clearwater requires ThreeNative's WebGPU renderer (FFT storage/compute); WebGL2 is not a supported fallback.");
+    throw new Error(
+      "Clearwater requires ThreeNative's WebGPU renderer (FFT storage/compute); WebGL2 is not a supported fallback.",
+    );
   }
   const scope = new DisposalScope();
   try {
@@ -44,18 +57,23 @@ export function createClearwater(ctx: WaterContext, input: IClearwaterOptions = 
     });
     scope.defer(() => ocean.detach());
     const ripples = new RippleField({
-      resolution: options.rippleResolution, size: options.rippleSize,
-      speed: 1.2, damping: 0.9, maxSteps: 8,
+      resolution: options.rippleResolution,
+      size: options.rippleSize,
+      speed: 1.2,
+      damping: 0.9,
+      maxSteps: 8,
     });
     ripples.recenter(options.center[0], options.center[1]);
     const surface = new WaterSurface3D({
       level: options.level,
       maxThickness: options.depth * 12,
-      reflection: options.reflection ? {
-        resolutionScale: options.reflectionScale,
-        refreshInterval: options.reflectionRefreshInterval,
-        layers: options.reflectionLayers,
-      } : undefined,
+      reflection: options.reflection
+        ? {
+            resolutionScale: options.reflectionScale,
+            refreshInterval: options.reflectionRefreshInterval,
+            layers: options.reflectionLayers,
+          }
+        : undefined,
     });
     scope.defer(() => surface.dispose());
     const appearance = createClearwaterAppearance(ocean, ripples, surface, options);
@@ -90,7 +108,9 @@ export function createClearwater(ctx: WaterContext, input: IClearwaterOptions = 
       causticsTexture: appearance.caustics?.texture,
       ocean,
       ripples,
-      get disposed(): boolean { return scope.disposed; },
+      get disposed(): boolean {
+        return scope.disposed;
+      },
       /** World-space disturbance. Returns false outside either the surface or the current patch. */
       disturb(x: number, z: number, radius = 0.2, strength = -0.04): boolean {
         assertLive();
@@ -98,8 +118,13 @@ export function createClearwater(ctx: WaterContext, input: IClearwaterOptions = 
         finiteWaterNumber("disturb.z", z);
         finiteWaterNumber("disturb.radius", radius);
         finiteWaterNumber("disturb.strength", strength);
-        if (radius <= 0 || Math.abs(strength) > 10) throw new RangeError("Clearwater disturbance needs radius > 0 and |strength| <= 10.");
-        if (Math.abs(x - options.center[0]) > options.size / 2 || Math.abs(z - options.center[1]) > options.size / 2) return false;
+        if (radius <= 0 || Math.abs(strength) > 10)
+          throw new RangeError("Clearwater disturbance needs radius > 0 and |strength| <= 10.");
+        if (
+          Math.abs(x - options.center[0]) > options.size / 2 ||
+          Math.abs(z - options.center[1]) > options.size / 2
+        )
+          return false;
         return ripples.impulse(x, z, radius, strength);
       },
       /** Keep the finite interaction grid near a character without tiling or wrapping old ripples. */
@@ -122,15 +147,28 @@ export function createClearwater(ctx: WaterContext, input: IClearwaterOptions = 
         assertLive();
         finiteWaterNumber("sampleHeight.x", x);
         finiteWaterNumber("sampleHeight.z", z);
-        if (Math.abs(x - options.center[0]) > options.size / 2 || Math.abs(z - options.center[1]) > options.size / 2) return undefined;
+        if (
+          Math.abs(x - options.center[0]) > options.size / 2 ||
+          Math.abs(z - options.center[1]) > options.size / 2
+        )
+          return undefined;
         const sample = ocean.sampleHeight(x, z);
         if (sample === undefined) return undefined;
-        return { height: appearance.level.value + sample.height + ripples.heightAt(x, z), staleFrames: sample.staleFrames };
+        return {
+          height: appearance.level.value + sample.height + ripples.heightAt(x, z),
+          staleFrames: sample.staleFrames,
+        };
       },
-      dispose(): void { scope.dispose(); },
+      dispose(): void {
+        scope.dispose();
+      },
     };
   } catch (error) {
-    try { scope.dispose(); } catch { /* Preserve the initialization failure, after releasing everything possible. */ }
+    try {
+      scope.dispose();
+    } catch {
+      /* Preserve the initialization failure, after releasing everything possible. */
+    }
     throw error;
   }
 }

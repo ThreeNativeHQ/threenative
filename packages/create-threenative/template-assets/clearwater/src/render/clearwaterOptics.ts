@@ -15,7 +15,13 @@ export interface IOpticalScalar<T> {
 /** Exact unpolarized air-to-water dielectric Fresnel; ior > 1 is validated at construction. */
 export function dielectricFresnel<T extends IOpticalScalar<T>>(cosine: T, ior: number): T {
   const ci = cosine.clamp(0, 1);
-  const ct = ci.mul(ci).oneMinus().div(ior * ior).oneMinus().max(0).sqrt();
+  const ct = ci
+    .mul(ci)
+    .oneMinus()
+    .div(ior * ior)
+    .oneMinus()
+    .max(0)
+    .sqrt();
   const rs = ci.sub(ct.mul(ior)).div(ci.add(ct.mul(ior)));
   const rp = ci.mul(ior).sub(ct).div(ci.mul(ior).add(ct));
   return rs.mul(rs).add(rp.mul(rp)).mul(0.5);

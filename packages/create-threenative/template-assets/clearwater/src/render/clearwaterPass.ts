@@ -19,7 +19,11 @@ export interface IClearwaterPassRenderer<T, C, M> {
  * Separate scratch colours belong to each water body. The private caustics scene cannot recurse.
  */
 export function withClearwaterTarget<T, C, M>(
-  renderer: IClearwaterPassRenderer<T, C, M>, target: T, black: C, savedColor: C, draw: () => void,
+  renderer: IClearwaterPassRenderer<T, C, M>,
+  target: T,
+  black: C,
+  savedColor: C,
+  draw: () => void,
 ): void {
   const previousTarget = renderer.getRenderTarget();
   const face = renderer.getActiveCubeFace();

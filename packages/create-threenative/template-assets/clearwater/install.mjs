@@ -29,4 +29,6 @@ for (const relative of files) {
   await mkdir(path.dirname(target), { recursive: true });
   await cp(path.join(source, relative), target, { errorOnExist: true, force: false });
 }
-console.log(`Installed Clearwater source into ${destination}. Import createClearwater from ./clearwater.js.`);
+console.log(
+  `Installed Clearwater source into ${destination}. Import createClearwater from ./clearwater.js.`,
+);
