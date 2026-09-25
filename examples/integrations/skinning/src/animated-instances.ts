@@ -1,6 +1,6 @@
 import { BufferAttribute, InstancedBufferGeometry, Matrix4, Mesh, Vector3, type Intersection, type Object3D, type Raycaster, type SkinnedMesh } from 'three';
 import { MeshStandardNodeMaterial, StorageBufferAttribute } from 'three/webgpu';
-import { Fn, attribute, instanceIndex, normalGeometry, normalLocal, positionGeometry, positionPrevious, storage, vec4 } from 'three/tsl';
+import { Fn, attribute, instanceIndex, normalGeometry, normalLocal, positionGeometry, positionPrevious, storage, uvec4, vec4 } from 'three/tsl';
 import { FramePalette, skinPoint, type IInstanceHandle, type IFrameSnapshot } from './palette.js';
 export interface IAnimatedInstanceOptions {
   readonly source: SkinnedMesh;
@@ -75,7 +75,7 @@ export class AnimatedInstances {
     const previous = storage(this.#buffers[1], 'mat4', options.capacity * this.palette.bones).toReadOnly();
     const transforms = storage(this.#buffers[2], 'mat4', options.capacity).toReadOnly();
     const oldTransforms = storage(this.#buffers[3], 'mat4', options.capacity).toReadOnly();
-    const boneIndex = attribute('skinIndex', 'uvec4'), weight = attribute('skinWeight', 'vec4');
+    const boneIndex = uvec4(attribute('skinIndex', 'uvec4')), weight = vec4(attribute('skinWeight', 'vec4'));
     const base = instanceIndex.mul(this.palette.bones);
     const skin = (palette: typeof current) => palette.element(base.add(boneIndex.x)).mul(weight.x)
       .add(palette.element(base.add(boneIndex.y)).mul(weight.y))
@@ -98,9 +98,13 @@ export class AnimatedInstances {
     if (source.geometry !== this.#source.geometry || source.skeleton.bones.length !== this.#source.skeleton.bones.length ||
         source.skeleton.bones.some((bone, i) => bone.name !== this.#source.skeleton.bones[i].name))
       throw new Error('Animated instances must share geometry and bone ordering.');
-    source.updateWorldMatrix(true, true); source.updateMatrixWorld(true); source.skeleton.update();
+    source.updateWorldMatrix(true, true); source.updateMatrixWorld(true);
+    const boneMatrices = source.skeleton.boneMatrices;
+    if (!boneMatrices || boneMatrices.length !== this.#pose.length)
+      throw new Error('Animated instances require an initialized bone matrix palette.');
+    source.skeleton.update();
     for (let i = 0; i < source.skeleton.bones.length; i++) {
-      this.#matrix.fromArray(source.skeleton.boneMatrices, i * 16)
+      this.#matrix.fromArray(boneMatrices, i * 16)
         .premultiply(source.bindMatrixInverse).multiply(source.bindMatrix);
       rigidScale(this.#matrix); this.#matrix.toArray(this.#pose, i * 16);
     }

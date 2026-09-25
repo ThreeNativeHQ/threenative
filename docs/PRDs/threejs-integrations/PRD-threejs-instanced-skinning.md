@@ -57,7 +57,11 @@ Before performance admission, establish identical 8/128/512-instance content and
 
 ## Verification and limitations
 
-Executed locally: pure contracts 13/13 and strict checking of palette.ts. Actual Three integration/picking tests are written and included in npm test, alongside a dependency-backed TypeScript 5.9.3 build. Dependencies could not be downloaded locally; no full build, donor/GPU execution, native test or performance result is reported. A focused PR workflow runs the command because examples are outside root Vitest. Formal capability tools, installed audit/lockfile, Biome, full repository suite and independent review remain open. Keep draft. The standalone Three pin does not apply the framework renderer patch. No iOS claim.
+Executed locally: pure contracts 13/13 and strict checking of palette.ts. Actual Three integration/picking tests are written and included in npm test, alongside a dependency-backed TypeScript 5.9.3 build. Local dependency downloads are unavailable.
+
+**Dependency-backed CI, 2026-09-25:** Integration skinning run 36202048620 installed successfully and reported attribute-node swizzle typing errors plus a nullable skeleton palette. This commit explicitly constructs uvec4/vec4 nodes around the typed attributes and checks the actual bone matrix palette before updating/reading it. No any cast, disabled strict check or dropped test is used. The rerun must establish full-build/Three-test success. This does not prove GPU shadow/velocity behavior.
+
+A focused PR workflow runs the command because examples are outside root Vitest. Formal capability tools, installed audit/lockfile, Biome, full repository suite and independent review remain open. Keep draft. The standalone Three pin does not apply the framework renderer patch. No iOS claim.
 
 ## References
 
