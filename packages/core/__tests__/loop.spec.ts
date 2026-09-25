@@ -209,28 +209,30 @@ describe("FixedStepLoop", () => {
     expect(loop.clockFrozen).toBe(true);
     loop.start(0);
 
-    // Two seconds of live frames at 60 Hz: 120 updates if the clock still drove the loop, and
-    // the single fixed-step prime the freeze owes the game either way.
+    // Two seconds of live frames at 60 Hz: 120 updates if the clock still drove the loop, and the
+    // one fixed settling pass the freeze owes the world instead -- 60 steps, every one of them the
+    // same 1/60s whatever the machine is doing.
     for (let frame = 1; frame <= 120; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
 
-    expect(dts).toEqual([1 / 60]);
-    expect(loop.tick()).toBe(0);
+    expect(dts).toHaveLength(60);
+    expect(new Set(dts)).toEqual(new Set([1 / 60]));
+    expect(loop.tick()).toBe(60);
 
     // The manual clock is still the one that moves the simulation, and it does not re-arm the
-    // prime: a run must not gain a second update per step the runner counts.
+    // settle: a run must not gain a second world per step the runner counts.
     expect(loop.advance(3)).toBe(3);
-    expect(loop.tick()).toBe(3);
+    expect(loop.tick()).toBe(63);
     for (let frame = 121; frame <= 240; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
-    expect(dts).toEqual([1 / 60, 1 / 60, 1 / 60, 1 / 60]);
-    expect(loop.tick()).toBe(3);
+    expect(dts).toHaveLength(63);
+    expect(loop.tick()).toBe(63);
   });
 
-  it("primes the first live frame after the freeze, not a held boot frame", () => {
-    // The boot hold covers the load, and the scene has not entered while it is set, so a prime
-    // spent there would prime nothing. The arm survives it and fires when the loop is live.
+  it("settles on the first live frame after the freeze, not on a held boot frame", () => {
+    // The boot hold covers the load, and the scene has not entered while it is set, so a settle
+    // spent there would settle nothing. The arm survives it and fires when the loop is live.
     const dts: number[] = [];
     const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
-    loop.freezeClock();
+    loop.freezeClock(3);
     loop.setHeld(true);
     loop.start(0);
     loop.stepFrame(16.6667);
@@ -239,8 +241,24 @@ describe("FixedStepLoop", () => {
 
     loop.setHeld(false);
     loop.stepFrame(50);
+    expect(dts).toHaveLength(3);
     loop.stepFrame(66.6667);
-    expect(dts).toEqual([1 / 60]);
+    expect(dts).toHaveLength(3);
+  });
+
+  it("settles nothing when the freeze is asked for no steps", () => {
+    // The count is the knob, and zero is a real answer: a caller that wants the world exactly as
+    // the game built it says so rather than having it settle anyway.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop.freezeClock(0);
+    loop.start(0);
+    loop.stepFrame(16.6667);
+    expect(dts).toEqual([]);
+    expect(loop.tick()).toBe(0);
+    expect(loop.clockFrozen).toBe(true);
+    expect(() => loop.freezeClock(-1)).toThrow(/settleSteps/u);
+    expect(() => loop.freezeClock(1.5)).toThrow(/settleSteps/u);
   });
 
   it("reports the actual callback duration separately from presentation timestamps", () => {

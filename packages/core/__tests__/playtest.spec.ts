@@ -903,19 +903,19 @@ describe("playtest holdUntilAttached", () => {
 
     try {
       await game.start();
-      // Two seconds of live frames: 120 updates if the wall clock still drove the loop. One of
-      // them is the frozen clock's one fixed-step prime, so the scene still gets the pass that
-      // lays out its per-frame state — a game whose camera-parented overlay is placed in `update`
-      // reads `NaN` bounds without it — while no real second reaches the simulation.
+      // Two seconds of live frames: 120 updates if the wall clock still drove the loop. What is
+      // left is the frozen clock's fixed settling pass, so the scene still lays out its per-frame
+      // state — a game whose camera-parented overlay is placed in `update` reads `NaN` bounds
+      // without it — and no real second reaches the simulation.
       for (let i = 0; i < 120; i++) callbacks.shift()?.(i * 16.6667);
-      expect(updates).toBe(1);
-      expect(dts).toEqual([1 / 60]);
+      expect(updates).toBe(60);
+      expect(new Set(dts)).toEqual(new Set([1 / 60]));
 
-      // The runner's own advance is what moves the simulation.
+      // The runner's own advance is what moves the simulation from here.
       await bridge().advance?.(3);
-      expect(updates).toBe(4);
+      expect(updates).toBe(63);
       for (let i = 120; i < 240; i++) callbacks.shift()?.(i * 16.6667);
-      expect(updates).toBe(4);
+      expect(updates).toBe(63);
     } finally {
       game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {

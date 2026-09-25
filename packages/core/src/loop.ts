@@ -106,6 +106,21 @@ export interface IRenderPerformanceSample extends IRenderPerformanceMetrics {
 
 const MAX_RENDER_PERFORMANCE_SAMPLES = 1_024;
 
+/**
+ * How many fixed steps a frozen clock runs once, before the run's first observation.
+ *
+ * This is the settling the boot used to do by accident, counted instead of measured. Live frames
+ * during the startup compile wait advanced the simulation at whatever rate the machine managed —
+ * 59 ticks before the first sample on a quiet one, thousands on a loaded one — and games leaned on
+ * that: the platformer character captures its visual-attachment baseline on its first grounded
+ * contact, so a run that started at tick 0 read `visualAttached: false` where a run that started at
+ * tick 59 read `true`, from the same build. A fixed count is the same settling with the machine out
+ * of it, and one second is what the quiet machine actually delivered. A run's own steps are
+ * unaffected: this happens once, before the runner takes its first tick, and `#tick` counts it, so
+ * the report says how old the simulation is.
+ */
+const FROZEN_SETTLE_STEPS = 60;
+
 export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
@@ -122,6 +137,7 @@ export class FixedStepLoop {
   #held = false;
   #clockFrozen = false;
   #primePending = false;
+  #settleSteps = FROZEN_SETTLE_STEPS;
   #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
@@ -224,19 +240,25 @@ export class FixedStepLoop {
    * fails its `completedLaps` assertion on a loaded runner and passes on a quiet one, from the
    * same build. Idempotent, and implied by `advance()`.
    *
-   * Frozen stops *time*, not the frame function, so the loop still delivers one update with the
-   * fixed step — see `#primeFrame`. A game lays out per-frame state in `update` (action-rpg's touch
-   * overlay places itself against the viewport there and is parented to the camera), and a run
-   * reads its first observation before it takes its first tick, so a freeze that skipped updates
-   * outright left that state at its constructed pose: the overlay sat on the camera's own origin
-   * and `point.project` divided by a zero w, which is `NaN` bounds in the entity observation and
-   * took the scenario down before it asserted anything.
+   * Frozen stops *time*, not the frame function: the loop still settles the world with a fixed
+   * number of steps — see `#primeFrame`. A game lays out per-frame state in `update` (action-rpg's
+   * touch overlay places itself against the viewport there and is parented to the camera), and a
+   * run reads its first observation before it takes its first tick, so a freeze that skipped
+   * updates outright left that state at its constructed pose: the overlay sat on the camera's own
+   * origin and `point.project` divided by a zero w, which is `NaN` bounds in the entity observation
+   * and took the scenario down before it asserted anything.
+   *
+   * @param settleSteps Fixed steps to run once the loop is live. Defaults to one second; zero
+   *   leaves the world exactly as the game built it.
    */
-  freezeClock(): void {
+  freezeClock(settleSteps = FROZEN_SETTLE_STEPS): void {
     // Armed by the *transition* into frozen, so `advance()` — which implies the freeze — does not
-    // re-arm it and spend a zero-dt update after every tick-counted step the runner takes.
+    // re-arm it and spend a settling pass after every tick-counted step the runner takes.
     if (!this.#clockFrozen) this.#primePending = true;
     this.#clockFrozen = true;
+    if (!Number.isInteger(settleSteps) || settleSteps < 0)
+      throw new Error("settleSteps must be a non-negative integer.");
+    this.#settleSteps = settleSteps;
     this.#lastTime = Number.POSITIVE_INFINITY;
   }
   /** True once the live clock no longer drives the simulation. */
@@ -290,7 +312,7 @@ export class FixedStepLoop {
   }
 
   /**
-   * One update, delivered once, on the first live frame after the clock froze.
+   * Settle the world once, on the first live frame after the clock froze.
    *
    * `freezeClock` means the wall clock stops moving the simulation, not that the game stops being
    * called: a scene computes per-frame state in `update` — action-rpg's touch overlay measures the
@@ -300,21 +322,19 @@ export class FixedStepLoop {
    * camera's own origin: `point.project` divides by a zero `w`, and the observation the run reads
    * carries `NaN` bounds, which takes the scenario down before it asserts anything.
    *
-   * It is one *fixed* step and nothing else, so what it costs the run is a constant 1/60s that no
-   * machine speed can change — the whole defect was wall-clock time, not a tick. A zero dt is not
-   * available: the physics simulation rejects it (`IPhysicsSimulation.step requires a positive
-   * finite deltaTime`), and a fail-closed engine should not be taught to accept a nonsense tick.
-   * `#tick` deliberately does not move, which keeps the hold's contract — the run counts ticks,
-   * and this is not one of them.
+   * It is `advance()` over a fixed count, so it is a tick-counted settle rather than a timed one:
+   * what it costs is a constant no machine speed can change, and `#tick` moves with it, because the
+   * simulation really is that many steps old and the run's report should say so. `FROZEN_SETTLE_STEPS`
+   * is where the count comes from.
    *
-   * A held boot frame is not that frame: the scene has not entered yet, so there is nothing of the
-   * game's to prime, and the arm survives the hold to fire when the loop is genuinely live. Once,
-   * because a second call would repeat input edge detection and per-frame bookkeeping for nothing.
+   * A held boot frame cannot spend it: the scene has not entered yet, so there is nothing of the
+   * game's to settle, and the arm survives the hold to fire when the loop is genuinely live. Once,
+   * because a second pass would repeat input edge detection and per-frame bookkeeping for nothing.
    */
   #primeFrame(): void {
     if (!this.#primePending || this.#held) return;
     this.#primePending = false;
-    this.#onUpdate(this.step);
+    if (this.#settleSteps > 0) this.advance(this.#settleSteps);
   }
 
   #recordFrameTiming(now: number): number | undefined {
