@@ -92,6 +92,9 @@ patchedDependencies:
   three@0.185.1:
     hash: 95255b38a876c1eebc77ee516bf12b6405126aa2586e9c6c420775800d6e5888
     path: patches/three@0.185.1.patch
+  threenative-asset-mcp@0.9.1:
+    hash: e831826641aa78ec391d713beb8ee8ef010e1e7bd1e7d87d40b108cfdcc5bcbd
+    path: patches/threenative-asset-mcp@0.9.1.patch
 
 importers:
 
@@ -645,7 +648,7 @@ importers:
         version: 0.9.14(three@0.185.1(patch_hash=95255b38a876c1eebc77ee516bf12b6405126aa2586e9c6c420775800d6e5888))
       threenative-asset-mcp:
         specifier: 0.9.1
-        version: 0.9.1(@types/node@20.19.43)
+        version: 0.9.1(patch_hash=e831826641aa78ec391d713beb8ee8ef010e1e7bd1e7d87d40b108cfdcc5bcbd)(@types/node@20.19.43)
       threenative-sculpt-mcp:
         specifier: 0.1.1
         version: 0.1.1(@types/node@20.19.43)
@@ -5965,7 +5968,7 @@ snapshots:
 
   three@0.185.1(patch_hash=95255b38a876c1eebc77ee516bf12b6405126aa2586e9c6c420775800d6e5888): {}
 
-  threenative-asset-mcp@0.9.1(@types/node@20.19.43):
+  threenative-asset-mcp@0.9.1(patch_hash=e831826641aa78ec391d713beb8ee8ef010e1e7bd1e7d87d40b108cfdcc5bcbd)(@types/node@20.19.43):
     dependencies:
       '@gltf-transform/core': 4.4.2
       '@gltf-transform/extensions': 4.4.2

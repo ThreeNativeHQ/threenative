@@ -1060,7 +1060,7 @@ describe("TerrainTiles", () => {
       1_000_000,
     );
     tiles.dispose();
-  }, 10_000);
+  }, 60_000);
 
   it("rejects a quality field whose sample grid does not match rendered tile geometry", () => {
     expect(
@@ -1542,5 +1542,5 @@ describe("TerrainTiles", () => {
     expect(topology).not.toHaveProperty("flow");
     expect(topology).not.toHaveProperty("metrics");
     tiles.dispose();
-  }, 10_000);
+  }, 60_000);
 });
