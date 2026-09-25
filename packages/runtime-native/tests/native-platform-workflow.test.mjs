@@ -873,6 +873,14 @@ test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   expect(job).toContain('--web evidence/desktop/conformance/web/report.json');
   // `warn` is what let a green run ship with no reports; both uploads fail closed now.
   expect(job).not.toContain('if-no-files-found: warn');
+  // The artifact must carry `reports/parity.json`, the exact path the candidate gate resolves.
+  // upload-artifact strips everything before the first wildcard, so a bare `reports/parity.json`
+  // flattened to `parity.json` and the gate refused it ("missing the exact report path"). The
+  // leading wildcard keeps the `reports/` directory inside the artifact.
+  expect(job).toContain('path: "*/parity.json"');
+  expect(job).toContain('path: "*/provenance.json"');
+  expect(job).not.toMatch(/path: reports\/parity\.json/u);
+  expect(job).not.toMatch(/path: reports\/provenance\.json/u);
 });
 
 // --- PRD-221 phase 3: an observed page size, or no 16 KB qualification -------------------------
