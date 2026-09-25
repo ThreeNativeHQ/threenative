@@ -69,7 +69,8 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
   `sandbox/fab-import-proof/assets/fab/c6f917b6/Models/SM_EuropeanHornbeam_Forest_01.glb` (127 MB with
   `maxTextureSize: 2048`). That is the game's asset source directory; `threenative build` emits it to
   `public/fab/…`. Source: the cached `MS_Hornbeam_UE4` pack, not the UE5 download that failed in the
-  2026-09-24 session.
+  2026-09-24 session. Re-run on A/ `dbe7a52` (after the fresh-eyes review fixes) wrote a byte-identical
+  GLB with the same `sizeMeters`.
 - [x] AC-3 [local]: That GLB loads in a sandbox game, and its reported height is between 3 m and
   40 m — proof: playtest scenario asserting the loaded node's bounds — Evidence: 2026-09-25,
   `sandbox/fab-import-proof` `8a1b4ea`, `playtests/hornbeam.playtest.json` pass on build + preview
@@ -129,7 +130,7 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 - [x] Bus-address fallback plus `FABCLI_KEYSTORE_UNREACHABLE`; red first with a stripped env (AC-1). — 2026-09-25, A/ `9ff6940`: stripping only `DBUS_SESSION_BUS_ADDRESS` did not reproduce (libdbus reads `XDG_RUNTIME_DIR`); stripping both reproduced the session's exact "X11 autolaunch" `FABCLI_UNAUTHENTICATED` on 0.9.3. The fallback therefore also derives `/run/user/<uid>/bus`. Red specs seen first; `unreal-import` + `fab-import` 111/111.
 
 #### Phase 3: An Unreal pack lands in the game at a known size
-**Status:** PARTIAL — code landed in A/, the publish and pin move are the owner's
+**Status:** PARTIAL — code landed in A/ (jonit-dev/threenative-asset-mcp#12; review fixes `dbe7a52`, vitest 414/414); the publish and pin move are the owner's
 **Files:** `A/src/unreal/importer.ts`, `A/src/fab/api-download.ts` (size field),
 `A/src/fab/client.ts` (drop `formats`), tool descriptions in `A/src/tools/*.ts`, a sandbox playtest.
 - [x] Pre-flight sizes only the requested packages; red first from a fixture where the whole tree exceeds free space and one package fits. — A/ `2ca39f5`: red first (the whole-tree fixture imported instead of refusing, because the injected free space was ignored). Live on this machine the volume has 477 GB free, so the live call cannot show the old refusal; the spec carries it.
