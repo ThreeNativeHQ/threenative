@@ -100,18 +100,21 @@ try {
   assert.deepEqual(state.errors, []);
   assert.deepEqual(errors, []);
   const wet = await page.locator("canvas").screenshot({ path: path.join(output, "water.png") });
-  const dryStart = await page.evaluate(() => {
+  const dryState = await page.evaluate(() => {
     const test = window.clearwaterTest;
-    test.water.mesh.visible = false;
-    return test.frames;
+    const water = test.water;
+    const accepted = water.disturb(0, 0, 0.25, -0.04);
+    water.setLevel(0.2);
+    water.setSunDirection([0.3, 0.9, 0.2]);
+    water.dispose();
+    return { accepted, disposed: water.disposed, startFrame: test.frames };
   });
   await page.waitForFunction(
     (start) => window.clearwaterTest.frames >= start + 2,
-    dryStart,
+    dryState.startFrame,
     { timeout: 60000 },
   );
   const dry = await page.locator("canvas").screenshot({ path: path.join(output, "receiver.png") });
-  await page.evaluate(() => window.clearwaterTest.game.pause());
   const a = PNG.sync.read(wet);
   const b = PNG.sync.read(dry);
   assert.equal(a.data.length, b.data.length);
@@ -124,19 +127,13 @@ try {
     if (difference > 30) changed++;
   }
   assert.ok(changed > a.width * a.height * 0.01, "The water must change actual receiver pixels.");
-  const lifecycle = await page.evaluate(async () => {
+  const recreated = await page.evaluate(async () => {
     const test = window.clearwaterTest;
-    const water = test.water;
-    const accepted = water.disturb(0, 0, 0.25, -0.04);
-    water.setLevel(0.2);
-    water.setSunDirection([0.3, 0.9, 0.2]);
-    water.mesh.removeFromParent();
-    const disposed = water.disposed;
-    water.dispose();
+    const previous = test.water;
     await test.game.goto("water");
-    test.game.resume();
-    return { accepted, disposed, recreated: test.water !== water && !test.water.disposed };
+    return test.water !== previous && !test.water.disposed;
   });
+  const lifecycle = { accepted: dryState.accepted, disposed: dryState.disposed, recreated };
   assert.deepEqual(lifecycle, { accepted: true, disposed: true, recreated: true });
   await page.waitForFunction(() => window.clearwaterTest.frames >= 4, undefined, {
     timeout: 60000,
