@@ -1,7 +1,7 @@
 import { type ICtx, Scene } from "@threenative/core";
 import { WorldCells } from "@threenative/core/world";
 import { Color, DirectionalLight, HemisphereLight } from "three";
-import manifestUrl from "../../../../packages/core/__tests__/fixtures/world-v1/world.json?url";
+import fixtureManifestUrl from "../../../../packages/core/__tests__/fixtures/world-v1/world.json?url";
 import { terrainMaterial } from "../render/terrain.js";
 
 /**
@@ -44,6 +44,13 @@ type WorldCtx = ICtx<WorldState>;
 export class WorldProbe extends Scene<WorldState> {
   static override readonly initialState = initialState;
 
+  /**
+   * The package URL the scene streams. Defaults to the committed fixture through Vite's `?url`;
+   * a native entry that stages the same package as an asset sets it to a host-loadable path
+   * (e.g. `/world.json`) before `game.start()`.
+   */
+  static manifestUrl: string | undefined;
+
   #world: WorldCells | undefined;
   #elapsed = 0;
   #previousResident = -1;
@@ -57,7 +64,7 @@ export class WorldProbe extends Scene<WorldState> {
       ring: RING,
       surface: terrainMaterial(),
       terrain: { tileResolution: 65 },
-      url: manifestUrl,
+      url: WorldProbe.manifestUrl ?? fixtureManifestUrl,
     });
   }
 

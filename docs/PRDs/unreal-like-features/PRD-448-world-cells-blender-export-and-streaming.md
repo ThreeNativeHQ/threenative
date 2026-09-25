@@ -1,6 +1,6 @@
 # PRD-448 — World cells: Blender-authored worlds, exported once and streamed by cell
 
-**Status:** IN PROGRESS (Phase 4)
+**Status:** IN PROGRESS: engine side complete; waiting only on AC-8 (first-consumer evidence)
 **Complexity:** 6 (MEDIUM); risk override: none. About 9 implementation files across `core` and `blender-mcp`, a new runtime module, and async residency (loads racing eviction).
 **Owner:** unassigned (drafted by Claude, 2026-09-25)
 **Depends on:** None. First consumer: Machinefall (private game), whose PRD-001 adopts this.
@@ -78,7 +78,7 @@ flowchart LR
 - [x] AC-4 [local; actor: agent]: `WorldCells` following a moving position keeps only in-ring cells resident. Leaving a cell disposes its batches and releases its asset keys (refcount back to 0). A `maxDistance` asset never appears beyond its distance — Evidence: `packages/core/__tests__/world-cells.spec.ts` runs a scripted follow path over the committed fixture. It checks resident sets against an independent ring computation, batch dispose spies, `assetRefCounts()` returning to 0, and no rendered `ground_cover` instance beyond `maxDistance`. Passing 2026-09-25.
 - [x] AC-5 [local; actor: agent]: moving out of range while a chunk load is in flight (delayed loader) leaves nothing attached and the key released; budget overflow reports pressure instead of throwing mid-frame — Evidence: `world-cells.spec.ts`: a delayed loader resolves after the cell has left, so nothing attaches, the key is released and `failures` is unchanged; `residentCells: 2` with ring 1 gives `pressure.cells > 0` and no throw. Passing 2026-09-25.
 - [x] AC-6 [local; actor: agent]: a web (webgpu recipe) playtest flies across the fixture world through the public API. `stats()` shows cells entering and leaving, zero failed loads, and p95 frame time within the scenario's budget — Evidence: web run on 2026-09-25 with `--browser-recipe webgpu --headed`. Adapter turing/nvidia (headless falls back to SwiftShader here). Resident cells 3→6 (max 12), 6 evictions, 0 failures, 0 loads in flight at the end, 533→1 463 instances. p95 was 39.9–46.1 ms against a 93 ms budget (2× the measured value). That p95 is taken under the private-Xvfb present throttle and is not a performance claim. Red control: `failures equals 1` exits 1 with `TN_PLAYTEST_COMPONENT_ASSERTION_FAILED`.
-- [ ] AC-7 [local; actor: agent]: the same fixture scenario runs on the desktop native runtime with matching residency counts — Evidence: pending.
+- [x] AC-7 [local; actor: agent]: the same fixture scenario runs on the desktop native runtime with matching residency counts — Evidence: desktop run on 2026-09-25 against `tn-linux/mystral` built in the lane: `runtime:"native"`, adapter NVIDIA RTX 2080, `pass:true`. Residency matches web exactly: resident cells 3→6 (peaks 9 and 12), 6 evictions, 0 failures, 0 loads in flight at the end, 533→1 463 instances. The desktop variant keeps all 7 residency assertions and drops only the Xvfb-throttled frame-time budget and the web-only `diagnostics` block. Red control: `failures equals 1` exits 1.
 - [ ] AC-8 [local; actor: agent]: production-representative proof. The first consumer's 2 km package (≈50 k instances), exported by this recipe, validates and streams through `WorldCells` in that game's playtest with zero failed loads (evidence referenced from the consumer's PRD) — Evidence: pending.
 
 ## Integration Ledger
@@ -156,7 +156,7 @@ flowchart LR
 **Checkpoint:** pending
 
 #### Phase 4: Proof on web, native and the first consumer
-**Status:** NOT STARTED
+**Status:** IN PROGRESS: web, native and the how-to are done; only the first consumer's evidence (AC-8) is open, and it lands from that game's PRD
 **ACs:** AC-6, AC-7, AC-8
 **Files:**
 - A playtest scenario plus a fixture scene in the existing playtest fixtures (web and native).
@@ -169,7 +169,7 @@ flowchart LR
 - E5: desktop native run of the same scenario.
 - E6: link to the consumer PRD's map-walk evidence.
 - [x] web scenario: `examples/abyss-framework/playtests/world-flythrough.playtest.json` (`?world` → `WorldProbe`), run with `pnpm --filter abyss-framework playtest:world`
-- [ ] native scenario
+- [x] native scenario: `world-flythrough.desktop.playtest.json` + `src/world-native.ts`. Bundle it with `runtime-native/scripts/bundle.mjs --entry src/world-native.ts --target desktop`, package it with `package-desktop.mjs --assets packages/core/__tests__/fixtures/world-v1`, then run `cli.js --target desktop --executable <pkg>`
 - [ ] consumer evidence linked
 - [x] how-to doc: `docs/guides/world-streaming.md` (`pnpm check:docs` passes; `check-doc-links` + `primary-docs` 19/19)
 
