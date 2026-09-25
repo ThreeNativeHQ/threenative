@@ -54,7 +54,11 @@ Cover reproducible seeded geometry, index values 65535/65536, invalid indices, c
 
 ## Verification and stop conditions
 
-Executed: pure Node contracts 10/10 and TypeScript 5.8.3 strict checking of geometry.ts. Actual EZ Tree/Three integration tests and a strict dependency build are included in npm test and the focused PR workflow, but locally dependency downloads are unavailable. Do not infer their result, GPU compilation, native rendering or actual LOD behavior from CPU tests. Formal capability tools, installed transitive audit, lockfile, Biome, repository suite and independent review remain open. Keep draft; no iOS claim. Retain existing authored vegetation if the donor fails generation/quality admission instead of loosening geometry checks.
+Executed: pure Node contracts 10/10 and TypeScript 5.8.3 strict checking of geometry.ts. Actual EZ Tree/Three integration tests and a strict dependency build are included in npm test and the focused PR workflow, but locally dependency downloads are unavailable. Do not infer GPU compilation, native rendering or actual LOD behavior from CPU tests.
+
+**Dependency-backed CI, 2026-09-25:** Integration vegetation run 36201842596 installed the real packages successfully and found two TS7006 errors in the TSL Fn callback. Its overload did not contextually type the arguments. This commit explicitly types the unused argument as unknown and the builder's two inspected public fields. Strict checking is retained. The real build is the red regression; a rerun must establish green. No test or GPU claim is added merely by fixing the types.
+
+Formal capability tools, installed transitive audit, lockfile, Biome, repository suite and independent review remain open. Keep draft; no iOS claim. Retain existing authored vegetation if the donor fails generation/quality admission instead of loosening geometry checks.
 
 ## References
 

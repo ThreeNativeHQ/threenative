@@ -1,6 +1,6 @@
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { Fn, float, normalGeometry, normalLocal, positionGeometry, uniform, vec3 } from 'three/tsl';
-import type { BufferGeometry } from 'three';
+import type { BufferGeometry, Object3D } from 'three';
 import { validateWind, type IWind } from '../geometry.js';
 
 /** Editable appearance, intentionally not an engine preset. This lane is for ordinary meshes. */
@@ -10,7 +10,7 @@ export function createTreeWind(base: MeshStandardNodeMaterial, options: IWind) {
     throw new Error('Tree wind needs an unmodified vertex path; compose custom appearance in this source file.');
   const material=base.clone(); const simulationTime=uniform(0); let disposed=false;
   const direction=vec3(wind.direction[0],0,wind.direction[1]);
-  material.positionNode=Fn((_,builder)=>{
+  material.positionNode=Fn((_: unknown, builder: { readonly object: Object3D | null; readonly geometry: BufferGeometry | null })=>{
     const object=builder.object;
     if (!object || 'isInstancedMesh' in object || 'isSkinnedMesh' in object || (builder.geometry && 'isInstancedBufferGeometry' in builder.geometry))
       throw new Error('Tree wind currently supports ordinary meshes only; use static generated variants for instanced forests.');
