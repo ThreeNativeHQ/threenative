@@ -9,9 +9,11 @@ import { createServer } from "vite";
 
 // Headed Chromium needs a display in CI. Re-exec this fixture under Xvfb when none exists.
 if (!process.env.DISPLAY && process.env.TN_CLEARWATER_XVFB !== "1") {
+  const env = { ...process.env };
+  env.TN_CLEARWATER_XVFB = "1";
   const child = spawnSync("xvfb-run", ["-a", process.execPath, ...process.argv.slice(1)], {
     stdio: "inherit",
-    env: { ...process.env, TN_CLEARWATER_XVFB: "1" },
+    env,
   });
   process.exit(child.status ?? 1);
 }
