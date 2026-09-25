@@ -14,8 +14,8 @@ const args = ["--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-b
 const html = `<!doctype html><html><head><link rel="icon" href="data:,"></head>
 <body style="margin:0"><script type="module">
 import { Scene, defineGame } from '@threenative/core';
-import { createClearwater } from './src/clearwater.ts';
-import { setupClearwaterDemo } from './src/render/clearwaterDemo.ts';
+import { createClearwater } from '/src/clearwater.ts';
+import { setupClearwaterDemo } from '/src/render/clearwaterDemo.ts';
 const observation = window.clearwaterTest = { frames: 0, errors: [], ready: false };
 class WaterScene extends Scene {
   enter(ctx) {
