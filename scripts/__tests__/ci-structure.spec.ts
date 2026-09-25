@@ -2890,6 +2890,19 @@ describe("PRD-373 selective feature verification", () => {
     },
   );
 
+  it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
+    // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
+    // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
+    // hand; this setting answers it for every install. pnpm reads workspace config from
+    // pnpm-workspace.yaml, so a plain grep of package.json would not prove it.
+    const result = spawnSync("pnpm", ["config", "get", "confirmModulesPurge"], {
+      cwd: repo,
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("false");
+  });
+
   it.each([
     "packages/runtime-native/native/CMakeLists.txt",
     "packages/runtime-native/src/host.cpp",
