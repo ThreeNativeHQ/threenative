@@ -33,6 +33,9 @@ async function typecheckTemplates(): Promise<string[]> {
 // numbers twice, and in shooter the overlap was unreadable.
 const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
+// PRD-449: the engine guards a template without shipping them to a new game, so they live beside
+// the templates rather than inside one. `pnpm test:templates` copies them into the scaffold.
+const templatePlaytestRoot = path.resolve(templateRoot, "..", "template-playtests");
 const authoringSkills = [
   ["prd-creator", ".agent/prd/PRD.md", "explicit approval"],
   ["threenative-capabilities", "engine_search_capabilities", "@threenative/physics/navigation"],
@@ -347,10 +350,7 @@ describe("template contracts", () => {
 
   it("requires the starter boot-failure screenshot to keep its error text readable", async () => {
     const scenario = JSON.parse(
-      await readFile(
-        path.join(templateRoot, "starter/playtests/boot-failure.playtest.json"),
-        "utf8",
-      ),
+      await readFile(path.join(templatePlaytestRoot, "starter/boot-failure.playtest.json"), "utf8"),
     ) as {
       assert?: {
         visual?: Array<{
@@ -639,7 +639,7 @@ describe("template contracts", () => {
     expect(gameEntry).toContain('game.goto("play")');
 
     const restart = JSON.parse(
-      await readFile(path.join(templateRoot, "starter/playtests/restart.playtest.json"), "utf8"),
+      await readFile(path.join(templatePlaytestRoot, "starter/restart.playtest.json"), "utf8"),
     ) as {
       assert: {
         resources: Array<{
@@ -1160,7 +1160,7 @@ describe("template contracts", () => {
       expect(agents).toContain("`-move.y` conversion");
     }
     const forward = JSON.parse(
-      await readFile(path.join(templateRoot, "starter/playtests/forward.playtest.json"), "utf8"),
+      await readFile(path.join(templatePlaytestRoot, "starter/forward.playtest.json"), "utf8"),
     ) as { assert?: { movement?: { minAxisDelta?: { axis?: string; min?: number } } } };
     expect(forward.assert?.movement?.minAxisDelta).toEqual({ axis: "-z", min: 0.5 });
   });

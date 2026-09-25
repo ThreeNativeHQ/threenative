@@ -400,11 +400,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "b29600c5150b1b57a25a333d17edf05ccf6e42ef5b74ee52be13928329752a0d",
   racing: "f35a27598d20a02944c4d8714cd1dd165ebc8e25c7f5be01d1c676685de6d9a1",
   shooter: "774e07b5e4c9f16120f263b56f6ee0aca76368e727ac707425cde185fdfe2af9",
-  // Recomputed 2026-09-12 for PRD-366: the starter ships a new
-  // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
-  // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
-  // only the starter tree moves.
-  starter: "939ceaa932cb2cf5e91e62d6d54dd605f3efc449c1eac3caee9df09b0c5b418e",
+  // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
+  // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
+  // generated project, so only the starter tree moves.
+  starter: "3d5a79f30c36fbe9af81186e6b91d4007a35e2e5628f4fd8aa5320a0a8c3b201",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -585,20 +584,12 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
+  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
+  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
+  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
   "playtests/survives.playtest.json",
-  "playtests/assets.playtest.json",
   "playtests/play.playtest.json",
-  "playtests/forward.playtest.json",
   "native-playtests/react-hud.playtest.json",
-  "playtests/coyote.playtest.json",
-  "playtests/buffer.playtest.json",
-  "playtests/look.playtest.json",
-  "playtests/pause.playtest.json",
-  "playtests/respawn.playtest.json",
-  "playtests/goal.playtest.json",
-  "playtests/gameover.playtest.json",
-  "playtests/seed.playtest.json",
-  "playtests/cloth.playtest.json",
   "playtests/production-readiness.playtest.json",
   "assets/native-proof.glb",
   "assets/native-proof.png",
@@ -1107,6 +1098,18 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
+      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
+      // membership, so a file nobody added to the list still fails here.
+      expect(
+        (await readdir(path.join(result.target, "playtests"))).filter((name) =>
+          name.endsWith(".playtest.json"),
+        ),
+      ).toEqual([
+        "play.playtest.json",
+        "production-readiness.playtest.json",
+        "survives.playtest.json",
+      ]);
       // A scaffolded project must land with audio every target can decode, WAV included, or its
       // first `--target android` build installs and shows nothing.
       const pickupAudio = await readFile(path.join(result.target, "assets/pickup.wav"));

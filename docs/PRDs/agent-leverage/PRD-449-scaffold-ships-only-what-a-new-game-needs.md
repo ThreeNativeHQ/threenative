@@ -1,6 +1,6 @@
 # PRD-449 — The scaffold ships only what a new game needs
 
-**Status:** IN PROGRESS (Phases 1–2 done)
+**Status:** IN PROGRESS (Phases 1–3 code done; AC-4/AC-5 pending the sandbox run)
 **Complexity:** 1 (LOW)
 **Owner:** João
 **Depends on:** None
@@ -98,7 +98,7 @@ closed.
 | Capability search in a new game | `.mcp.json` → `engine-mcp` `resolveManifest` (`packages/engine-mcp/src/index.ts:220`) | project copy deleted; installed-core copy is the only path | AC-1 |
 | Skills | host reads `.claude/skills` / `.agents/skills` | duplicate copy → symlink | AC-2 |
 | Reference docs | `AGENTS.md:91-94` links | project copy → installed `create-threenative` copy | AC-3 |
-| Starter scenarios | `pnpm test` glob (`package.json`) | 24 → 3; removed guards moved to engine playtests | AC-4 |
+| Starter scenarios | `pnpm test` glob (`package.json`) | 24 → 3; the other 21 moved to `create-threenative/template-playtests/starter/` and are copied in by `runTemplatePlaytests` and by CI's `template-nonvisual` lane, so the guards run without shipping | AC-4 |
 
 ## Decisions
 
@@ -140,13 +140,37 @@ each other, `scripts/instruction-budget.ts` (reference-target budget), `scripts/
   resolved because the scaffold still copied the bundle. Green after `copyReferenceBundle` went.
 
 #### Phase 3: Starter proves the game, not the engine
-**Status:** NOT STARTED
-**Files:** `templates/starter/playtests/` (keep 3; the two `*-baseline.png` files go with
-`models`/`textures`), `scaffold.spec.ts:513` `STARTER_PATHS`, `scripts/verify-template-playtests.ts:63`; engine
-playtests absorbing any guard still worth keeping.
-- [ ] Starter runs exactly 3 scenarios, green (AC-4).
-- [ ] Size target met and recorded (AC-5).
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green; `pnpm budgets` clean.
+**Status:** PARTIAL — the cut, the readers and both engine lanes are done and green; AC-4 and AC-5
+wait on the owner's `pnpm sandbox` run.
+**Files:** `templates/starter/playtests/` (3 kept), `template-playtests/starter/` (21 scenarios + 2
+baselines, never published), `scripts/verify-template-playtests.ts:88` (copies the guards into the
+scaffold before `pnpm test`), `.github/workflows/ci.yml` `template-nonvisual` (same copy),
+`scripts/__tests__/ci-structure.spec.ts:1200` (classifies the union), `scaffold.spec.ts:513`
+`STARTER_PATHS`, `template.spec.ts`, `playtest.spec.ts`, `looks.spec.ts`, two starter comments.
+- [x] The 21 scenarios and both baselines moved to `template-playtests/starter/`, and nothing is
+  deleted: `npm pack --dry-run` in the package lists 0 `template-playtests` entries and exactly
+  `templates/starter/playtests/{play,production-readiness,survives}.playtest.json` (623 entries).
+- [x] The engine sweep still runs all 24: `runTemplatePlaytests` copies
+  `template-playtests/<template>/` into `<target>/playtests/` between `create(...)` and
+  `execute("pnpm", ["test"])`, and a new assertion in
+  `scripts/__tests__/verify-template-playtests.spec.ts` fails if the copy has not landed by the
+  time `run` is called (7 files / 7 tests green).
+- [x] The per-PR `template-nonvisual` CI lane copies the same directory into its scaffold, so the
+  21 keep their every-PR proof. Without it the starter has 1 non-visual scenario and its 3 shards
+  select nothing in 2 legs (the classifier reads 14 with the guards, 1 without);
+  `ci-structure.spec.ts` classifies the same union (119 files / 1454 tests green).
+- [x] Every reader repointed (`STARTER_PATHS` + the new "exactly three" `readdir` assertion,
+  `template.spec.ts` ×3, `playtest.spec.ts` ×2, `looks.spec.ts`), and the two starter comments
+  naming a moved scenario reworded. `platformer/src/entities/Character.ts` and
+  `platformer/src/scenes/Level.ts` are left alone: they name scenarios that kit still ships.
+  Red first: `scaffold.spec.ts:1117` listed 24 files where 3 were expected.
+- [ ] Starter runs exactly 3 scenarios, green (AC-4). The count is proven by a unit test; the run
+  itself is `pnpm test:templates`, not run in this lane.
+- [ ] Size target met and recorded (AC-5) — the owner's `pnpm sandbox` scaffold count.
+- [ ] `pnpm typecheck && pnpm lint && pnpm test` green; `pnpm budgets` clean. 2026-09-25:
+  `typecheck`, `lint` and `budgets` all exit 0, and `pnpm test` is green except 18 tests in
+  `packages/runtime-native` that fail with "executable is not built. Run: cmake --build …" — the
+  opt-in native build is absent in this worktree, and no native path is in this diff.
 
 **Verification:** `pnpm exec vitest run packages/create-threenative`, `pnpm test:templates`, and one
 `pnpm sandbox` scaffold counted with `find`. CI's `golden-path` and `template-nonvisual` jobs rerun
