@@ -95,20 +95,23 @@ try {
   );
   const state = await page.evaluate(() => {
     const test = window.clearwaterTest;
-    test.game.pause();
     return { adapter: test.adapter, errors: test.errors, frames: test.frames };
   });
   assert.deepEqual(state.errors, []);
   assert.deepEqual(errors, []);
   const wet = await page.locator("canvas").screenshot({ path: path.join(output, "water.png") });
-  await page.evaluate(async () => {
+  const dryStart = await page.evaluate(() => {
     const test = window.clearwaterTest;
     test.water.mesh.visible = false;
-    const ctx = test.game.ctx;
-    ctx.renderer.raw.render(ctx.scene, ctx.camera);
-    await ctx.renderer.raw.backend.device.queue.onSubmittedWorkDone();
+    return test.frames;
   });
+  await page.waitForFunction(
+    (start) => window.clearwaterTest.frames >= start + 2,
+    dryStart,
+    { timeout: 60000 },
+  );
   const dry = await page.locator("canvas").screenshot({ path: path.join(output, "receiver.png") });
+  await page.evaluate(() => window.clearwaterTest.game.pause());
   const a = PNG.sync.read(wet);
   const b = PNG.sync.read(dry);
   assert.equal(a.data.length, b.data.length);
