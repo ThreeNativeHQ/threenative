@@ -109,11 +109,9 @@ try {
     water.dispose();
     return { accepted, disposed: water.disposed, startFrame: test.frames };
   });
-  await page.waitForFunction(
-    (start) => window.clearwaterTest.frames >= start + 2,
-    dryState.startFrame,
-    { timeout: 60000 },
-  );
+  await page.waitForFunction((start) => window.clearwaterTest.frames >= start + 2, dryState.startFrame, {
+    timeout: 60000,
+  });
   const dry = await page.locator("canvas").screenshot({ path: path.join(output, "receiver.png") });
   const a = PNG.sync.read(wet);
   const b = PNG.sync.read(dry);
