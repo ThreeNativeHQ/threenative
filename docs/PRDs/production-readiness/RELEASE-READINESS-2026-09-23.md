@@ -12,8 +12,10 @@ PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pn
 repair re-run of the seven-template packed journey after the racing fix (#305) · PRD-399 Android 60 Hz
 UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
 controls and web/native parity · PRD-365/375 CI signing proof green, public Authenticode/notarization
-superseded (each developer signs their own), registry-consumer rows remain · PRD-445 `site` deploy
-(`CLOUDFLARE_API_TOKEN`) plus three owner-call deletions.
+superseded (each developer signs their own), registry-consumer rows remain · PRD-445 is filed in
+[`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
+19 boxes ticked; only the owner-set `CLOUDFLARE_API_TOKEN`, an upstream `threenative-sculpt-mcp`
+release and three owner calls remain).
 
 **Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
 `max(50 ms, 4 panel frames)` with in-frame behind the off flag.
@@ -36,7 +38,9 @@ target, and no public text may claim iOS until a later decision adds it.
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
-**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): eleven files.**
+**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): eight files**
+(nine on 2026-09-23; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25 because
+its only remaining work is blocked).
 The 1.0 PRDs under R3 stay in their own folders and block nothing until the beta ships.
 
 ## What was measured today
