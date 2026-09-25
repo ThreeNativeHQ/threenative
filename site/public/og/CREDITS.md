@@ -5,8 +5,8 @@ actually done, not an intention to do one.
 
 | File | Origin | Licence |
 | --- | --- | --- |
-| `public/favicon.svg` | Drawn for this repository | MIT, with the rest of the repository |
-| `public/og/home.svg` | Drawn for this repository | MIT, with the rest of the repository |
+| `public/favicon.svg` | Drawn for this repository | ThreeNative brand artwork, all rights reserved — not MIT; see [`TRADEMARKS.md`](../../../TRADEMARKS.md) |
+| `public/og/home.svg` | Drawn for this repository | ThreeNative brand artwork, all rights reserved — not MIT; see [`TRADEMARKS.md`](../../../TRADEMARKS.md) |
 | Hero art (`.tn-hero-art` in `src/styles/tailwind.css`, `src/components/sections/HeroArt.tsx`) | Drawn for this repository as CSS gradients and a deterministic star lattice; no raster asset | MIT, with the rest of the repository |
 
 ## What is deliberately absent
