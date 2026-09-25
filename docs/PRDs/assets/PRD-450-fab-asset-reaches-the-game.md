@@ -65,8 +65,15 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
   `packages:["SM_EuropeanHornbeam_Forest_01"]` passes the disk pre-flight on this machine's free
   space and writes a GLB under the sandbox game's `public/assets/`, or fails with a diagnostic that
   names the UE version and cause — proof: live MCP call — Evidence: pending.
-- [ ] AC-3 [local]: That GLB loads in a sandbox game, and its reported height is between 3 m and
-  40 m — proof: playtest scenario asserting the loaded node's bounds — Evidence: pending.
+- [x] AC-3 [local]: That GLB loads in a sandbox game, and its reported height is between 3 m and
+  40 m — proof: playtest scenario asserting the loaded node's bounds — Evidence: 2026-09-25,
+  `sandbox/fab-import-proof` `8a1b4ea`, `playtests/hornbeam.playtest.json` pass on build + preview
+  (`--browser-recipe webgpu`, adapter nvidia turing): `fabImportHeights.hornbeam` 16.13 m, 755,677
+  triangles, textures loaded 5/5, 0 console errors; `fab-import.playtest.json` control still green.
+  Imported with `maxTextureSize: 2048`: the full-resolution import embeds 720 MB of PNGs and the
+  page stalls at 0% (`TN_STARTUP_STALLED`, bridge never installs) while the control boots in 2.0 s.
+  The game also needed `assets.exclude` for the importer's unmappable `textures/` and a raised
+  `assets.budget.uncooked` for the 127 MB GLB.
 - [ ] AC-4 [local]: A fresh `pnpm sandbox` scaffold launches the published asset MCP version
   carrying these fixes, not 0.9.1 — proof: `tools/list` from the scaffold matches the regenerated
   `asset-mcp-tools.json` — Evidence: pending.
