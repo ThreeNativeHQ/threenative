@@ -1,6 +1,15 @@
 # PRD-399 — Playable dev distributables with responsive React UI
 
 **Status:** IN PROGRESS
+
+**Owner decision 2026-09-24 — 60 Hz latency bound.** In-frame composition through a CPU copy measured
+87.93 / 87.38 ms p95 at 60 Hz on the Pixel 8 (worse than the child-window path's 53.22 / 53.62 ms),
+and removing the remaining frame needs a zero-copy AHardwareBuffer import that the Android wgpu
+lane does not have. The bound is therefore `max(50 ms, 4 panel frames)` on Android
+(`scripts/ui-cadence.mjs`): 50 ms at 120 Hz, ~66.7 ms at 60 Hz. The child-window path passes it
+at 60 Hz (53.22 / 53.62 ms). The in-frame code stays behind the off-by-default `TN_UI_INFRAME`
+flag. Red-green: `tests/ui-cadence.test.mjs` "a 60 Hz Android panel is held to four panel frames"
+fails on the previous analyzer and passes on the new one (10/10).
 **Complexity:** 9 → HIGH; risk override: release integrity and cross-platform execution.
 **Owner:** Codex, thread 01a0c7c0-0940-75b1-80f4-7da03413d298
 **Depends on:** Existing packaging and playtest mechanisms from PRD-365/366; UI work from PRD-393/398 is evaluated before reuse.
