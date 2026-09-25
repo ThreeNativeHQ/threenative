@@ -1,37 +1,65 @@
 # Clearwater shallow-water integration
 
-Status: PARTIAL — implementation in progress; platform evidence is not yet claimed.
+Status: PARTIAL — implementation submitted; GPU and full-workspace qualification outstanding.
 
 ## Goal and ownership
 
-Expose `createClearwater(ctx, options)` as generated, editable game source. Compose the existing `SpectralOcean`, `RippleField`, and `WaterSurface3D` mechanisms. Keep all materials, TSL, sunlight, absorption, and quality choices in `src/render/`; add no runtime dependency, core look, renderer wrapper, or CLI command. The default game must not silently change appearance.
+Expose `createClearwater(ctx, options)` as editable game source. Compose the existing
+`SpectralOcean`, `RippleField`, and `WaterSurface3D` mechanisms. Keep materials, TSL, sunlight,
+absorption and quality choices in `src/render/`; add no runtime dependency, core look,
+renderer wrapper or CLI command. The default game must not silently change appearance.
 
-Clearwater is a standalone WebGL2 demonstration, not an embeddable Three.js package. Port its dielectric Fresnel, Beer–Lambert extinction and refracted-grid caustic transport to Three.js TSL rather than embedding its HTML or taking over the game's renderer. Reuse ThreeNative's FFT rather than duplicating the upstream spectral solver. Preserve the upstream MIT notice.
+Delivery is an opt-in source bundle in `packages/create-threenative/template-assets/clearwater/`,
+which the existing package already includes in its published files. Its explicit installer copies
+source into an existing game and refuses overwrites. No default template source or scaffold hash
+changes. This avoids shipping an unqualified visual change into every generated game.
 
-## Implementation plan
+Clearwater is a standalone WebGL2 demonstration, not an embeddable Three.js package. Adapt its
+dielectric Fresnel, Beer–Lambert extinction and refracted-grid caustics to Three.js TSL rather than
+embedding HTML or taking over the renderer. Reuse ThreeNative's FFT and preserve the upstream
+MIT notice (Copyright 2026 Lumaris).
 
-### Phase 1 — contract and numerical regression tests
+## Phase 1 — numerical and ownership contracts
 
-- [ ] Add validated options and renderer-state/lifecycle contracts with failing tests first.
-- [ ] Verify normal-incidence/grazing Fresnel, extinction, finite input handling and state restoration.
+- [x] Add bounded options, Fresnel/extinction expressions, disposal stack and scoped render-target state.
+- [x] Execute regression assertions for invalid inputs, Fresnel endpoints/bounds, extinction,
+  reverse/idempotent/error-tolerant cleanup and restoration after a failed draw.
+  Evidence: 23/23 assertions passed with Node's test runner against emitted production modules;
+  strict TypeScript + noUncheckedIndexedAccess passed for these four dependency-free modules.
+  The renderer-state negative control failed before its helper was implemented (22 passed/1 failed).
 
-### Phase 2 — composed water
+## Phase 2 — source integration
 
-- [ ] Implement the factory, FFT/ripple sampling, transparent refractive material and RGB ray-grid caustics.
-- [ ] Provide bounded quality controls, disturbance and water-level APIs, and idempotent teardown.
-- [ ] Ship usage instructions and upstream attribution without replacing an existing game's look.
+- [x] Write the composed factory, FFT/ripple sampling, refractive material and RGB ray-grid caustics.
+  Evidence is source/syntax inspection only here; real node-graph and GPU gates are below.
+- [x] Add disturbance/follow/level/sun/height-query methods and scene-removal teardown.
+- [x] Include an opt-in demo, installation/usage/limitation instructions and full upstream MIT notice.
+- [x] Verify installation and refusal to overwrite edited game files.
+  Evidence: Node child-process installation check passed, including source/license presence and
+  preservation of an edited sentinel on a rejected second invocation.
 
-### Phase 3 — integration evidence
+## Phase 3 — integration qualification (not complete)
 
-- [ ] Run the package tests, typecheck and formatting checks.
+- [ ] Run real-Three graph/factory tests and full workspace typecheck, formatting and tests.
+  Added Vitest numerical, installation and real graph-construction specs. Local syntax emission
+  passed for all 12 TS files; this is NOT external type resolution or WGSL compilation.
+  Attempted `pnpm test`: exit 127, pnpm unavailable. The container also lacks installed Three.js,
+  Vitest and Biome; the downloaded pinned CI package artifact supplies engine interfaces, not
+  third-party dependencies. Do not infer full-suite success from the isolated tests.
 - [ ] Compile the new TSL graph and render the shallow-water scene in browser WebGPU.
-- [ ] Run the same fixture on desktop native and compare its visible water/refraction/caustics.
-- [ ] Record Android and iOS status separately; do not infer either from desktop success.
+- [ ] Run the same fixture on desktop native and compare water/refraction/caustics.
+- [ ] Qualify Android separately; no Android execution performed.
+- [ ] Qualify iOS separately; no iOS execution performed.
 
-## Review focus
+## Review focus and boundaries
 
-Renderer target/clear/MRT state must survive a failed auxiliary pass. Foreground objects must not bleed into refracted water. Caustics must use the same heightfield as the visible surface and must not tile local interaction outside its patch. No GPU work may continue after disposal or scene removal. Unsupported renderer paths must fail explicitly, not produce a nominally successful empty effect.
+Auxiliary passes must restore target/face/mip/MRT/clear/XR state. Foreground objects must not bleed
+into refraction. Caustics and geometry must read the same wave/ripple fields. Local interaction
+must not tile outside its finite patch. Disposal must stop both callbacks and release resources.
+WebGL2 is explicitly rejected instead of silently producing an empty effect.
 
-## Explicit scope boundaries
-
-The game's real terrain, sky, lighting and postprocessing replace Clearwater's baked pebble bed, procedural headland, camera, adaptive full-screen resolution and lens-glare pipeline. This is a reusable shallow-water surface, not an underwater camera/postprocessing system. Planar caustic receivers are an approximation on strongly varying terrain; platform and visual-parity claims require executed evidence.
+This is an above-water finite horizontal surface. Refraction reads opaque screen-space scenery;
+transparent/offscreen objects are not traced. Caustics focus on a representative planar receiver
+and modulate captured colour, not per-light irradiance/shadow visibility. The game's terrain,
+sky, lighting and postprocessing replace upstream's baked bed, headland, camera and lens-glare
+pipeline. No underwater-camera system or pixel-identical reproduction is claimed.
