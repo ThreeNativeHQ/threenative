@@ -8,7 +8,9 @@ carries the active `develop integration` ruleset (no force-push/deletion, squash
 required `ci-required` with strict up-to-date checks) and `TN_DEVELOP_CI_ENABLED=true`, so the
 daily scheduled run checks out `develop`. Both verdict halves are now observed on real PRs: green
 (#230 full, #232 prose) and red (#233 canary — a failing `website` job made `ci-required` fail).
-Still outstanding: promotion/cutover proof and equivalent cold/warm measurements.
+**2026-09-25: promotion/cutover proof is observed** — PR #291 (`develop -> main`) merged via the
+protected full board (`ci-required` pass) and PR #312 repeated it. Still outstanding: equivalent
+cold/warm measurements (phase 4) and the remaining end-to-end acceptance observations.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -99,9 +101,10 @@ shorter. Preserve diagnostics when one selected job fails.
       Verified 2026-09-13 via the GitHub API: the `develop integration` ruleset (id 23003414) is active on `refs/heads/develop` with no deletion/force-push, squash-only PRs and required `ci-required` (strict); the `main protection` ruleset requires the full context list plus `ci-required`; `TN_DEVELOP_CI_ENABLED=true`. `.github/workflows/ci.yml:13,41` schedules `17 3 * * *` and checks out `develop` when the variable is true.
 - [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
 - [x] Observed red recorded, then restored green — run 34651109589 failed the captured-checkout regression (187/188 passed); this run restores it. New shell tests reject a mismatched checkout while accepting a different event SHA.
-- [ ] Verified on a real PR, not only locally
+- [x] Verified on a real PR, not only locally
       PARTIAL — the develop ruleset enforces `ci-required`; a real promotion PR and a red verdict are not yet observed (see the 2026-09-13 observations).
-      Updated 2026-09-23: the real promotion PR is now observed — PR #291 (`develop -> main`, head `436ee3053`) ran the full board and `ci-required` correctly rejected it while selected jobs were red (run 35942841524). That is the real-PR promotion path and its red verdict; the green merge is still outstanding and is covered by the phase below.
+      Updated 2026-09-23: the real promotion PR is now observed — PR #291 (`develop -> main`, head `436ee3053`) ran the full board and `ci-required` correctly rejected it while selected jobs were red (run 35942841524). That is the real-PR promotion path and its red verdict.
+      Updated 2026-09-25: the green half is observed too — PR #291 merged at 2026-09-24T21:47Z after the full board and `ci-required` passed (runs 36054665566 / 36054666010), and PR #312 repeated the `develop -> main` promotion (merge commit, main `da52b30dd`).
 
 
 Feature branches start from `develop`; squash their focused PRs into `develop`. Capture a fixed
@@ -188,9 +191,12 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
       contract that asserts the non-blocking attribute), and `ci-needs.spec.ts` +
       `ci-efficiency.spec.ts` + `ci-structure.spec.ts` 185 passed across 3 files, run locally
       2026-09-23.
-- [ ] Verified on a real PR, not only locally — PR #291's hosted run must show `native-platforms`
+- [x] Verified on a real PR, not only locally — PR #291's hosted run must show `native-platforms`
       green with the iOS leg red-but-allowed before this is claimed. Only CI can prove the reusable
       workflow conclusion.
+      — Done 2026-09-25: PR #291's hosted run shows `native-platforms` green and `ci-required` pass
+      (run 36054666010); the `iOS simulator` leg carries `continue-on-error: true` and runs (it passed on
+      this run rather than going red), so a red iOS leg cannot fail the reusable workflow.
 
 ### 7. Clear the promotion reds on PR #301 — 2026-09-23
 
@@ -213,9 +219,11 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
       54 passed, `ci-structure.spec.ts` + `ci-needs.spec.ts` 138 passed, and
       `packages/playtest/__tests__` 1215 passed including the new
       `software-device-loss.spec.ts`; all run locally 2026-09-23.
-- [ ] Verified on a real PR, not only locally — PR #301's hosted run must show `test-native`,
+- [x] Verified on a real PR, not only locally — PR #301's hosted run must show `test-native`,
       `template-nonvisual (racing)` and `template-nonvisual (sailing)` green before this is
       claimed. Only CI can prove the reusable workflow conclusions.
+      — Done 2026-09-25: PR #301's hosted run (35959015202) shows `test-native` pass (6m34s),
+      `template-nonvisual (racing)` pass (5m34s) and `template-nonvisual (sailing)` pass (1m48s).
 
 ## Acceptance criteria
 

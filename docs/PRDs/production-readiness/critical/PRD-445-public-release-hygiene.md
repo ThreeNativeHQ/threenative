@@ -1,8 +1,10 @@
 # PRD-445 — Public release hygiene
 
-**Status:** IN PROGRESS — Phases 1–4 landed; 15/20 boxes ticked (`prd:75%`). Open: the upstream
-`threenative-sculpt-mcp` `sharp` release (box 44), the owner-set `CLOUDFLARE_API_TOKEN` and a green
-`site` run (box 81), and three owner-call Phase 4 deletions (boxes 113–115).
+**Status:** IN PROGRESS — Phases 1–4 landed; 15/20 boxes ticked (`prd:75%`). Acceptance is
+3/4 green as of 2026-09-25 (`pnpm audit` 0 high, `alpha:bar` A7 pass, `check:docs` + prose specs
+pass). Open: the upstream `threenative-sculpt-mcp` `sharp` release (box 44), the owner-set
+`CLOUDFLARE_API_TOKEN` and a green `site` run (box 81), and three owner-call Phase 4 deletions
+(boxes 113–115).
 **Complexity:** 3 → LOW; all local, no credentials.
 **Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../RELEASE-READINESS-2026-09-23.md).
 
@@ -148,7 +150,16 @@ excluding `docs/PRDs/done`, 0 hits). About 5.7 MiB of tracked bytes.
 
 ## Acceptance criteria
 
-- [ ] `pnpm audit --prod --audit-level high` exits 0 on `develop`.
-- [ ] `pnpm alpha:bar` reports A7 pass.
+- [x] `pnpm audit --prod --audit-level high` exits 0 on `develop`.
+      — Done 2026-09-25: `CI=true pnpm audit --prod --audit-level high` prints "No known vulnerabilities
+      found", exit 0, on the box-sweep checkout of `develop` (`c318cba68`).
+- [x] `pnpm alpha:bar` reports A7 pass.
+      — Done 2026-09-25: `pnpm alpha:bar --write` regenerated `docs/verification/alpha-bar.md`; the next
+      `pnpm alpha:bar` reports `A7 pass — byte-identical to this run`, exit 0, with `6 of 7 rows pass,
+      1 deferred` (A6 stranger deferred).
 - [ ] The latest `site` run on `main` is a success.
-- [ ] `pnpm check:docs` and the prose-lane specs listed in the root `AGENTS.md` pass.
+      — OPEN: still needs the owner-set `CLOUDFLARE_API_TOKEN` on the `site-production` environment.
+- [x] `pnpm check:docs` and the prose-lane specs listed in the root `AGENTS.md` pass.
+      — Done 2026-09-25: `pnpm check:docs` checked 2204 links across 1128 files, exit 0; the prose-lane
+      specs (check-doc-links, evidence-budget, evidence-citations, sync-agent-docs, ci-structure,
+      ci-needs) ran 178 passed / 0 failed.

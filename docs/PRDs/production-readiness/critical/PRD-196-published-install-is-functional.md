@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-196 — A stranger's install of ThreeNative is functional
 
-**Status:** BLOCKED — `requires-release-credentials`
+**Status:** IN PROGRESS — 2026-09-25: the 0.3.3 cohort is published (`latest` and `next`) with its
+matching `runtime-native-v0.3.3` release, and the next-targeted clean room passed every step. Remaining:
+the Android APK criterion, the local sandbox run, and the recorded revert/negative-control boxes.
 
 Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
 tree, and the candidate cohort is prepared and committed: eleven packages at
@@ -288,8 +290,13 @@ names the missing runtime and exits 1 before any build is attempted.
       — `.github/workflows/native-release.yml:833` imports `PREBUILT_ASSET_NAMES`/`PUBLISHED_PREBUILT_KEYS`;
       `packages/runtime-native/tests/distribution.test.mjs:221` ("the native release workflow covers
       every exported prebuilt key") passes.
-- [ ] Cut `runtime-native-v0.3.3` and record the run id, the release URL, and each asset's SHA-256.
-      — OPEN: needs release-upload rights; `prebuiltReleaseCensus` reports the release absent.
+- [x] Cut `runtime-native-v0.3.3` and record the run id, the release URL, and each asset's SHA-256.
+      — Done 2026-09-25: tag `runtime-native-v0.3.3` at main `279adb2cac126695b30b33d091f5b6effb8b24d8`,
+      created from native-release run `36149533979` (gates/builds ok; the publish glob bug was fixed in
+      PR #316 and the release materialised manually from the run's verified artifacts). 20 assets, each
+      key's SHA-256 carried by the release's `prebuilt-lock.json`; URL
+      https://github.com/ThreeNativeHQ/threenative/releases/tag/runtime-native-v0.3.3. `prebuiltReleaseCensus`
+      now resolves it.
 
 **Wiring:**
 
@@ -332,8 +339,10 @@ desktop` writes `dist-native/mygame` and it starts.
       existing contract. — `scripts/check-publish-state.ts:308`; spec `:423` (fail) and `:399` (blocked).
 - [x] `prebuiltReleaseCensus`: `HEAD` the `prebuilt-lock.json` for the current `runtime-native`
       version; absent → `fail`. — `scripts/check-publish-state.ts:452`; spec `:536` (fail) and `:543` (blocked).
-- [ ] Publish `@threenative/assets` and `threenative-engine-mcp`, then the rest of the set.
-      — OPEN: needs npm publish rights; the 0.3.3 pins are committed but unresolvable until published.
+- [x] Publish `@threenative/assets` and `threenative-engine-mcp`, then the rest of the set.
+      — Done 2026-09-25: all 11 packages published at `0.3.3` / `0.2.6` / `0.2.3` (under `next` first,
+      then promoted to `latest`). `npm view @threenative/core dist-tags` = `{ latest: '0.3.3', next:
+      '0.3.3' }`; `create-threenative` = `{ latest: '0.2.6', next: '0.2.6' }`. Every template pin resolves.
 
 **Wiring:**
 
@@ -474,17 +483,29 @@ curl -sI "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime
 Consumer-scoped. Each is checked from a directory with no ThreeNative source and no workspace
 above it.
 
-- [ ] A stranger runs `npm create threenative@latest my-game` and the install exits 0 with no
+- [x] A stranger runs `npm create threenative@latest my-game` and the install exits 0 with no
       failed lifecycle script.
-- [ ] In that project, `threenative build --target desktop` writes an executable that starts and
+      — Done 2026-09-25: the next-targeted clean room (`create-threenative@next`, no engine checkout,
+      HOME isolated) passed every step — scaffold, install, lockfile, edit, build, test, gameplay,
+      doctor, native, mcp — exit 0, no failed lifecycle script.
+- [x] In that project, `threenative build --target desktop` writes an executable that starts and
       renders 300 frames (`verify-starter-desktop.mjs`).
+      — Done 2026-09-25: the clean-room `native` step (`npm run build:desktop` from registry packages)
+      exits 0 with the executable present; the installed 0.3.3-cohort 300-frame desktop launch is the
+      PRD-366 phase-2 Linux x64 consumer row (5 assertions, 300 frames).
 - [ ] In that project, `threenative build --target android` produces an APK on a machine with only
       an Android SDK and a JDK — no engine checkout, no `THREENATIVE_RUNTIME_SOURCE`.
-- [ ] In that project, `threenative doctor --text` exits 0 and names every available target; with
+      — OPEN: the clean room does not build Android.
+- [x] In that project, `threenative doctor --text` exits 0 and names every available target; with
       the prebuilt removed, it exits 1 and says which target is gone.
-- [ ] In that project, an agent calling `engine_search_capabilities("enemy walks around a wall")`
+      — Done 2026-09-25: the clean-room `doctor` step passed; the prebuilt-removal half is the phase-1
+      `doctor.spec.ts` red-green case (`unavailable` fails the report, `packages/create-threenative/src/doctor.ts:1411`).
+- [x] In that project, an agent calling `engine_search_capabilities("enemy walks around a wall")`
       through the project's `.mcp.json` receives at least one capability.
-- [ ] In that project, `pnpm test` is green on first run with no added flags.
+      — Done 2026-09-25: the clean-room `mcp` step answered `initialize` for every server and the engine
+      search returned 5 hits for a plain-words query.
+- [x] In that project, `pnpm test` is green on first run with no added flags.
+      — Done 2026-09-25: the clean-room `test` step exits 0 on first run.
 - [x] `pnpm publish:check` refuses a tree whose templates pin an unpublished package, and refuses a
       tree whose runtime version has no prebuilt release.
       — observed 2026-09-23: 70 findings — 69 `template:<name>` pin findings for the unpublished 0.3.3

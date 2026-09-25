@@ -11,10 +11,13 @@ death is named `TN_PLAYTEST_PAGE_NAVIGATED` / `TN_PLAYTEST_PAGE_CRASHED`, never 
 action-rpg enemies acting during launch. All three are ancestors of `develop`. Locally, the
 packed gate drives action-rpg's five non-visual scenarios green on the GPU and under a forced
 SwiftShader adapter, and action-rpg also passes inside the seven-template run. The exact
-seven-template gate is still red, but at `racing` layer `test` — a flaky template-scenario fault
+seven-template gate was red at `racing` layer `test` — a load-dependent template-scenario fault
 (`racing-finish-behind-rival-is-dnf` asserts `state.completedLaps` / `state.rescues`; racing alone
-passes, it fails only after five templates have run) unrelated to this contract. Keep this PRD
-active until the seven-template gate is green.
+passes, it failed only after five templates had run) unrelated to this contract. **2026-09-25:** PR #305
+fixed the root cause (`playtestStepHoldTicks` now honours `holdTicks` on pointer-only steps) and racing
+is deterministic; PR #301's hosted run shows `template-nonvisual (racing)` and `(sailing)` green. The
+packed seven-template journey and the revert/full-gate boxes have not been re-run since, so keep this
+PRD active until `pnpm verify:golden-path` completes all seven and those boxes are recorded.
 
 Fresh repair for the review-2 blocker on capped lane
 `linchpin/prd-112-golden-path-from-packed-artifacts-r2` at `c005d91`. The source PRD remains

@@ -243,3 +243,5 @@ No implementation gate was run by this planning revision. Every new phase is **N
 - [ ] Physical Android evidence uses the exact signed artifact and real hardware; emulator runs cannot provide physical performance credit.
 - [ ] Unsupported codecs/browser globals/extensions and workload limits are explicitly inventoried; no absolute “any game” guarantee is made.
 - [ ] External developer/player acceptance remains PRD-060/080; no template/build/unit pass silently substitutes for it.
+  - The PRD-080 (stranger-test) half is SUPERSEDED by owner decision 2026-09-24: PRD-080 was removed;
+    external developer/player acceptance is PRD-060 only. The PRD-060 half remains open.

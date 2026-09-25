@@ -6,6 +6,10 @@ emulator `27/40/0/1`; the three Phase 4 controls are **UNVERIFIED** with exit `2
 makes no mobile-readiness claim. Every phase below is executable on this host. No physical
 device, no Apple identity, no release credential, no CI minute is required.
 
+**2026-09-25:** the desktop production judge now passes a healthy run (PR #304,
+`packages/runtime-native/scripts/production-evidence.mjs`; box 1 of Phase 4 green). The Phase 4
+negative controls and the unmodified-platformer web/native parity proof remain open.
+
 **Complexity: 6 → MEDIUM mode.** Two red conformance rows, one blocked row decision, one
 unrun emulator matrix, one same-hardware performance proof, one ledger.
 

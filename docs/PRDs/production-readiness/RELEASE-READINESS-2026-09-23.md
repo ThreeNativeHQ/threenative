@@ -1,5 +1,23 @@
 # Release readiness — 2026-09-23
 
+## Status 2026-09-25
+
+**R1 shipped.** 0.3.3 is published (`@threenative/core` `latest`=`next`=`0.3.3`; `create-threenative`
+`0.2.6`) with [runtime-native-v0.3.3](https://github.com/ThreeNativeHQ/threenative/releases/tag/runtime-native-v0.3.3)
+(tag `279adb2ca`, 20 assets). The next-targeted clean room passed all ten steps. Tickable and ticked:
+PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
+`alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
+
+**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-112
+repair re-run of the seven-template packed journey after the racing fix (#305) · PRD-399 Android 60 Hz
+UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
+controls and web/native parity · PRD-365/375 CI signing proof green, public Authenticode/notarization
+superseded (each developer signs their own), registry-consumer rows remain · PRD-445 `site` deploy
+(`CLOUDFLARE_API_TOKEN`) plus three owner-call deletions.
+
+**Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
+`max(50 ms, 4 panel frames)` with in-frame behind the off flag.
+
 **Verdict: not ready for a production (1.0) release.** ThreeNative is *already public* as an
 alpha: the repository is public under MIT and `@threenative/*@0.3.2` is the npm `latest`. By the
 project's own bar it does not currently qualify even as that alpha: `pnpm alpha:bar` prints
