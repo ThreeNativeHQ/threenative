@@ -137,6 +137,28 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
 }
 
 describe("release candidate gate", () => {
+  it("accepts a dispatched native-platforms run, the only standalone run that workflow can have", () => {
+    const base = candidate();
+    const dispatched = {
+      ...base,
+      requiredRuns: {
+        ...base.requiredRuns,
+        native: { ...base.requiredRuns.native, event: "workflow_dispatch" },
+      },
+    };
+    expect(validateReleaseCandidate(dispatched, "ThreeNativeHQ/threenative").errors).toEqual([]);
+    const ciDispatched = {
+      ...base,
+      requiredRuns: {
+        ...base.requiredRuns,
+        ci: { ...base.requiredRuns.ci, event: "workflow_dispatch" },
+      },
+    };
+    expect(validateReleaseCandidate(ciDispatched, "ThreeNativeHQ/threenative").errors).toContain(
+      "requiredRuns.ci.event must be 'push'.",
+    );
+  });
+
   it("should accept a complete exact-candidate release input", () => {
     expect(validateReleaseCandidate(candidate(), "ThreeNativeHQ/threenative")).toEqual({
       status: "PASS",
