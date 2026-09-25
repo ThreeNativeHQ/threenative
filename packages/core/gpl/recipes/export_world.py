@@ -292,19 +292,30 @@ def write_glb(path, objects):
         os.makedirs(directory, exist_ok=True)
     for candidate in bpy.context.view_layer.objects:
         candidate.select_set(False)
+    # Scatter sources commonly live in an excluded collection; Blender refuses to select an object
+    # outside the view layer, so link those into a temporary collection for the export only.
+    staging = bpy.data.collections.new("_tn_export_staging")
+    bpy.context.scene.collection.children.link(staging)
+    for item in objects:
+        if item.name not in bpy.context.view_layer.objects:
+            staging.objects.link(item)
+    bpy.context.view_layer.update()
     for item in objects:
         item.hide_set(False)
         item.hide_viewport = False
         item.hide_render = False
         item.select_set(True)
     bpy.context.view_layer.objects.active = objects[0]
-    bpy.ops.export_scene.gltf(
-        filepath=path,
-        export_apply=True,
-        export_format="GLB",
-        export_yup=True,
-        use_selection=True,
-    )
+    try:
+        bpy.ops.export_scene.gltf(
+            filepath=path,
+            export_apply=True,
+            export_format="GLB",
+            export_yup=True,
+            use_selection=True,
+        )
+    finally:
+        bpy.data.collections.remove(staging)
     if not os.path.isfile(path):
         fail("export wrote no file at '%s'" % path)
 

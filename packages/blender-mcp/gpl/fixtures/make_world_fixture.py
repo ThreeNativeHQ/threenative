@@ -139,6 +139,13 @@ def main():
     cover["tn_max_distance"] = 30.0
     make_emitter(cover, 0.05, 0.005, 13)
 
+    # Real worlds keep scatter sources in an excluded collection so only their instances show.
+    sources = bpy.data.collections.new("_src")
+    bpy.context.scene.collection.children.link(sources)
+    for source in (pine, rock, cover):
+        move_to_collection(source, sources)
+    bpy.context.view_layer.layer_collection.children["_src"].exclude = True
+
     yard = bpy.data.collections.new("yard")
     yard["tn_world_chunk"] = 1
     bpy.context.scene.collection.children.link(yard)
