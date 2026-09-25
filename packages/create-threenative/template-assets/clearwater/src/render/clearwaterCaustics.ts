@@ -3,11 +3,11 @@
 import {
   AdditiveBlending,
   Color,
-  OrthographicCamera,
   DoubleSide,
   HalfFloatType,
   LinearFilter,
   Mesh,
+  OrthographicCamera,
   PlaneGeometry,
   RenderTarget,
   Scene,

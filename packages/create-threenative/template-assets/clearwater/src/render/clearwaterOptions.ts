@@ -106,10 +106,7 @@ export function waterSunDirection(value: WaterRgb): WaterRgb {
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
-function resolveSpatialOptions(
-  input: IClearwaterOptions,
-  center: readonly [number, number],
-) {
+function resolveSpatialOptions(input: IClearwaterOptions, center: readonly [number, number]) {
   return {
     size: range("size", input.size ?? 16, 0.1, 4096),
     level: finiteWaterNumber("level", input.level ?? 0),
@@ -143,12 +140,7 @@ function resolveReflectionOptions(input: IClearwaterOptions) {
   return {
     reflection: booleanOption("reflection", input.reflection, true),
     reflectionScale: range("reflectionScale", input.reflectionScale ?? 0.5, 0.0625, 1),
-    reflectionLayers: optionalInteger(
-      "reflectionLayers",
-      input.reflectionLayers,
-      0,
-      0xffffffff,
-    ),
+    reflectionLayers: optionalInteger("reflectionLayers", input.reflectionLayers, 0, 0xffffffff),
     reflectionRefreshInterval: integer(
       "reflectionRefreshInterval",
       input.reflectionRefreshInterval ?? 1,
@@ -161,12 +153,7 @@ function resolveReflectionOptions(input: IClearwaterOptions) {
 function resolveCausticsOptions(input: IClearwaterOptions) {
   return {
     caustics: booleanOption("caustics", input.caustics, true),
-    causticsResolution: powerOfTwo(
-      "causticsResolution",
-      input.causticsResolution ?? 512,
-      64,
-      1024,
-    ),
+    causticsResolution: powerOfTwo("causticsResolution", input.causticsResolution ?? 512, 64, 1024),
     causticsSegments: integer("causticsSegments", input.causticsSegments ?? 128, 8, 256),
     causticsStrength: range("causticsStrength", input.causticsStrength ?? 0.65, 0, 1),
   };
