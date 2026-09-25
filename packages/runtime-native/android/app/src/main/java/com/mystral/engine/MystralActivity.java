@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Choreographer;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.View;
@@ -135,6 +136,7 @@ public class MystralActivity extends SDLActivity {
         // Belt and braces: a callback left registered when the native library unloads would call
         // into freed code. onPause normally precedes this, so the guard makes it a no-op.
         disarmPresentationFrames();
+        if (uiOverlay != null) uiOverlay.releaseProducer();
         super.onDestroy();
     }
 
@@ -208,7 +210,39 @@ public class MystralActivity extends SDLActivity {
     private void attachUiOverlay(Bundle metadata) {
         String renderer = metadata == null ? "native" : metadata.getString("TN_UI_RENDERER", "native");
         if (!"web".equals(renderer)) return;
-        uiOverlay = TnUiOverlay.attach(this);
+        uiOverlay = inFrameRequested(metadata)
+            ? TnUiOverlay.attachInFrame(this)
+            : TnUiOverlay.attach(this);
+    }
+
+    /**
+     * Whether this run opts into in-frame UI composition (`TN_UI_INFRAME`), default off.
+     *
+     * The intent extra is the device-run override the verification harness uses; the manifest
+     * metadata is the packaged switch the config writes. Both default false, so a game that did
+     * not ask for it runs exactly today's child-WebView path.
+     */
+    private boolean inFrameRequested(Bundle metadata) {
+        boolean fromIntent = getIntent().getBooleanExtra("TN_UI_INFRAME", false);
+        boolean fromMetadata = metadata != null && metadata.getBoolean("TN_UI_INFRAME", false);
+        Log.i(LOG_TAG, "TN_UI_INFRAME_REQUEST:{\"intent\":" + fromIntent
+            + ",\"metadata\":" + fromMetadata + "}");
+        if (fromIntent) return true;
+        return fromMetadata;
+    }
+
+    /**
+     * Keep the overlay's own hit test authoritative when it composites in-frame.
+     *
+     * The in-frame WebView is not a sibling view, so the system will not route touches to it. This
+     * forwards each gesture to the same WebView first — its published hit regions decide ownership,
+     * exactly as before — and only what it does not own reaches SDL and the game.
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        TnUiOverlay overlay = uiOverlay;
+        if (overlay != null && overlay.isInFrame() && overlay.dispatchTouchEvent(event)) return true;
+        return super.dispatchTouchEvent(event);
     }
 
     /**
