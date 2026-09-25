@@ -2676,6 +2676,21 @@ const mirror = subscribeUiState(bridge);
 
 ## `@threenative/core/world`
 
+### `cellPlacements`
+
+`function` — Borrow the run's placement records as a live view over the placement buffer.
+
+```ts
+export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32Array { … }
+```
+
+- **Use when:** feed one cell's instance transforms into a batch without copying
+- **Constraints:** the returned view aliases the caller's buffer; writing to it mutates the source
+
+```ts
+const records = cellPlacements(buffer, { asset: "tree", offset: 0, count: 120 });
+```
+
 ### `getWorldCapabilities`
 
 `function` — Resolve the active world-generation path from host capability facts. The function accepts the adapter facts instead of reaching through a renderer-specific global, so browser and native hosts can report the same object. Missing limits are not treated as infinite: a host must either provide a valid GPU limit report or explicitly choose CPU fallback. GPU generation remains unavailable until a GPU readback can own the canonical field; a host adapter report therefore never upgrades a CPU fallback into a GPU generation claim.
@@ -2708,6 +2723,36 @@ export class Heightfield extends Group implements IComputeDriven { … }
 const field = Heightfield.fromSampler({ rows: 65, columns: 65, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: terrainHeight });
 ```
 
+### `heightSamplerFromHeightmap`
+
+`function` — Build a game-usable `sampleHeight` from a raw v1 heightmap. The returned function interpolates bilinearly in world units and clamps to the map edges, so it plugs straight into `Heightfield.fromSampler` and `TerrainTiles`. Height is `heightMin + v / 65535 * (heightMax - heightMin)` at vertex `(column, row)`.
+
+```ts
+export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWorldExtent, data: Uint16Array, ): (x: number, z: number) => number { … }
+```
+
+- **Use when:** turn an exported raw heightmap into terrain collision and rendering · query ground height from a Blender-authored world package
+- **Constraints:** the sampler reads the game's data; the framework never selects a terrain shape
+
+```ts
+const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));
+```
+
+### `loadWorldHeightmap`
+
+`function` — Fetch a raw little-endian uint16 heightmap and expose it as samples.
+
+```ts
+export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { … }
+```
+
+- **Use when:** load a world package's heightmap once before building terrain
+- **Constraints:** a non-OK response throws; bytes are byte-swapped only on a big-endian host
+
+```ts
+const data = await loadWorldHeightmap("/world/terrain/heightmap.u16");
+```
+
 ### `TerrainTiles`
 
 `class` — Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.
@@ -2722,6 +2767,21 @@ export class TerrainTiles extends Object3D implements IComputeDriven { … }
 
 ```ts
 const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
+```
+
+### `validateWorldPackage`
+
+`function` — Validate a `world.json` manifest against the v1 contract. Never throws on garbage input: a non-object manifest is `WORLD_MALFORMED`. Every problem is collected, so an exporter sees the complete list at once.
+
+```ts
+export function validateWorldPackage( manifest: unknown, options: IWorldPackageValidationOptions, ): { … }
+```
+
+- **Use when:** check a Blender-exported world package before the runtime attaches anything · report why a world package cannot be streamed
+- **Constraints:** validation only checks structure and ranges; it never fetches the heightmap or GLBs
+
+```ts
+const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });
 ```
 
 ## `@threenative/physics`

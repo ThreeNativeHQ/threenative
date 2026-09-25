@@ -475,3 +475,20 @@ export type { IWorldTileColliderInput, IWorldTilesTopologyObservation } from "./
 
 export { getWorldCapabilities } from "./world-capabilities.js";
 export type { IWorldCapabilities } from "./world-capabilities.js";
+
+export { cellPlacements, validateWorldPackage } from "./world-package.js";
+export type {
+  IWorldAsset,
+  IWorldAssetBounds,
+  IWorldAssetLod,
+  IWorldCell,
+  IWorldExtent,
+  IWorldPackage,
+  IWorldPackageError,
+  IWorldPackageValidationOptions,
+  IWorldRun,
+  IWorldTerrain,
+  WorldPackageErrorCode,
+} from "./world-package.js";
+
+export { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";

@@ -3412,6 +3412,22 @@
     {
       "aliases": [],
       "constraints": [
+        "the returned view aliases the caller's buffer; writing to it mutates the source"
+      ],
+      "example": "const records = cellPlacements(buffer, { asset: \"tree\", offset: 0, count: 120 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32Array { … }",
+      "situations": ["feed one cell's instance transforms into a batch without copying"],
+      "summary": "Borrow the run's placement records as a live view over the placement buffer.",
+      "supersedes": [],
+      "symbol": "cellPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "unsupported is returned when compute limits are unknown or below the requirement; callers must not silently continue"
       ],
       "example": "const capabilities = getWorldCapabilities({ limits: adapter.limits, cpuFallbackIterations: 8 });",
@@ -3456,6 +3472,39 @@
       "symbol": "Heightfield"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "the sampler reads the game's data; the framework never selects a terrain shape"
+      ],
+      "example": "const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWorldExtent, data: Uint16Array, ): (x: number, z: number) => number { … }",
+      "situations": [
+        "turn an exported raw heightmap into terrain collision and rendering",
+        "query ground height from a Blender-authored world package"
+      ],
+      "summary": "Build a game-usable `sampleHeight` from a raw v1 heightmap. The returned function interpolates bilinearly in world units and clamps to the map edges, so it plugs straight into `Heightfield.fromSampler` and `TerrainTiles`. Height is `heightMin + v / 65535 * (heightMax - heightMin)` at vertex `(column, row)`.",
+      "supersedes": [],
+      "symbol": "heightSamplerFromHeightmap"
+    },
+    {
+      "aliases": [],
+      "constraints": ["a non-OK response throws; bytes are byte-swapped only on a big-endian host"],
+      "example": "const data = await loadWorldHeightmap(\"/world/terrain/heightmap.u16\");",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { … }",
+      "situations": ["load a world package's heightmap once before building terrain"],
+      "summary": "Fetch a raw little-endian uint16 heightmap and expose it as samples.",
+      "supersedes": [],
+      "symbol": "loadWorldHeightmap"
+    },
+    {
       "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",
@@ -3477,6 +3526,25 @@
       "summary": "Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.",
       "supersedes": [],
       "symbol": "TerrainTiles"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "validation only checks structure and ranges; it never fetches the heightmap or GLBs"
+      ],
+      "example": "const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function validateWorldPackage( manifest: unknown, options: IWorldPackageValidationOptions, ): { … }",
+      "situations": [
+        "check a Blender-exported world package before the runtime attaches anything",
+        "report why a world package cannot be streamed"
+      ],
+      "summary": "Validate a `world.json` manifest against the v1 contract. Never throws on garbage input: a non-object manifest is `WORLD_MALFORMED`. Every problem is collected, so an exporter sees the complete list at once.",
+      "supersedes": [],
+      "symbol": "validateWorldPackage"
     },
     {
       "aliases": ["pick up item"],
