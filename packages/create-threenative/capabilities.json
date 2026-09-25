@@ -1988,7 +1988,7 @@
         "a skinned or instanced mesh, and a mesh with several materials, is left out — its",
         "a group where only some meshes carry uv throws naming the label rather than losing the"
       ],
-      "example": "const [hull, deck] = mergeByMaterial(ship, { label: \"ship\" });\n// a piece that must keep moving at run time:\nconst [hull] = mergeByMaterial(ship, { label: \"ship\", skip: (mesh) => mesh.name === \"radar\" });",
+      "example": "const [hull, deck] = mergeByMaterial(ship, { label: \"ship\" });\n// a piece that must keep moving at run time:\nconst [steady] = mergeByMaterial(ship, { label: \"ship\", skip: (mesh) => mesh.name === \"radar\" });",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": ["skip leaves one mesh out of its group and out of the result"],

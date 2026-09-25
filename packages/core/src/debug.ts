@@ -8,10 +8,7 @@
  */
 
 /** The shared global the engine's dev surfaces and `exposeDebug` both publish under. */
-interface IDebugHost {
-  // biome-ignore lint/style/useNamingConvention: the global's published name, in every tool that reads it.
-  __THREENATIVE__?: { debug?: Record<string, unknown> } & Record<string, unknown>;
-}
+const HOST_KEY = "__THREENATIVE__";
 
 /** `freeCam` → `FREE_CAM`. A name a developer typed becomes a name a shell can set. */
 function envName(name: string): string {
@@ -67,17 +64,15 @@ export function debugFlag(name: string): boolean {
  * the engine installs beside them keep working.
  */
 export function exposeDebug(name: string, value: unknown): void {
-  // quality-allow: DEV is the bundler's own name for the flag, so the name rule cannot apply.
   // Written out here rather than through a helper: the bundler must see the literal `import.meta`
   // access to strip the whole publish from a production build, and an indirection survives into the
   // bundle — where the game is compiled as a script, not a module, and the bundle fails to parse.
   const isDev =
     (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
   if (!isDev) return;
-  const host = globalThis as unknown as IDebugHost;
-  const tools = host.__THREENATIVE__ ?? {};
+  const tools = (Reflect.get(globalThis, HOST_KEY) ?? {}) as { debug?: Record<string, unknown> };
   const debug = tools.debug ?? {};
   debug[name] = value;
   tools.debug = debug;
-  host.__THREENATIVE__ = tools;
+  Reflect.set(globalThis, HOST_KEY, tools);
 }

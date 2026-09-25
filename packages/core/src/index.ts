@@ -292,7 +292,7 @@ export type { IMergePart, IMergePartsOptions } from "./merge-parts.js";
  * @override skip leaves one mesh out of its group and out of the result
  * @example const [hull, deck] = mergeByMaterial(ship, { label: "ship" });
  * // a piece that must keep moving at run time:
- * const [hull] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
+ * const [steady] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
  */
 export { mergeByMaterial } from "./merge-parts.js";
 export type { IMergeByMaterialOptions } from "./merge-parts.js";

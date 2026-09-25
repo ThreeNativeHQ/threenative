@@ -1538,7 +1538,7 @@ export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions
 ```ts
 const [hull, deck] = mergeByMaterial(ship, { label: "ship" });
 // a piece that must keep moving at run time:
-const [hull] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
+const [steady] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
 ```
 
 ### `mergeParts`
