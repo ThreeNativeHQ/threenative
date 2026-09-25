@@ -360,8 +360,11 @@ async function renderTemplate(
   }
 }
 
-/** Long recipes live here in the package and ship as `<target>/agent-docs/*.md`. */
-const REFERENCE_BUNDLE_DIRECTORY = "agent-docs";
+/** Long recipes live in this package and are read where it installs them: every generated project
+ * already depends on `create-threenative`, so the scaffold copies no `agent-docs/` of its own
+ * (PRD-449). This is the one definition of that path; the link pattern and the existence check
+ * both read it. */
+const REFERENCE_BUNDLE_PREFIX = "node_modules/create-threenative/agent-docs/references/";
 const REFERENCE_FILE_NAME = /^[a-z0-9][a-z0-9-]*\.md$/u;
 const AGENT_FILES_DIRECTORY = "agent-files";
 const AUTHORING_GITIGNORE_RULES = [
@@ -373,40 +376,11 @@ const AUTHORING_GITIGNORE_RULES = [
   "!.env.example",
 ] as const;
 /** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
-const REFERENCE_TOKEN_PATTERN =
-  /`agent-docs\/([a-z0-9][a-z0-9./-]*\.md)`|\[[^\]]*\]\(agent-docs\/([^)#]+\.md)\)/gu;
-
-/**
- * Copies the searchable reference pages into the generated project with the same placeholder
- * substitution as source templates. Path-safe by construction: only flat, validated file names
- * are read from the bundle directory and written under `<target>/agent-docs/`.
- */
-async function copyReferenceBundle(
-  target: string,
-  templateRootDirectory: string,
-  replacements: Readonly<Record<string, string>>,
-): Promise<void> {
-  const bundle = path.join(
-    path.dirname(templateRootDirectory),
-    REFERENCE_BUNDLE_DIRECTORY,
-    "references",
-  );
-  if (!existsSync(bundle)) return;
-  const destination = path.join(target, REFERENCE_BUNDLE_DIRECTORY);
-  await mkdir(destination, { recursive: true });
-  for (const entry of await readdir(bundle, { withFileTypes: true })) {
-    if (!entry.isFile() || !REFERENCE_FILE_NAME.test(entry.name)) continue;
-    const content = substituteTemplateVariables(
-      await readFile(path.join(bundle, entry.name), "utf8"),
-      replacements,
-    );
-    const destinationPath = path.join(destination, entry.name);
-    if (path.relative(target, destinationPath).startsWith("..")) {
-      throw new Error(`Reference page '${entry.name}' resolves outside '${target}'.`);
-    }
-    await writeFile(destinationPath, content);
-  }
-}
+const REFERENCE_TOKEN_PATTERN = new RegExp(
+  `\`${REFERENCE_BUNDLE_PREFIX}([a-z0-9][a-z0-9./-]*\\.md)\`|` +
+    `\\[[^\\]]*\\]\\(${REFERENCE_BUNDLE_PREFIX}([^)#]+\\.md)\\)`,
+  "gu",
+);
 
 /** Links each stored skill into the Claude host directory. Both host directories must resolve the
  * same bytes, and a duplicated skill drifts the day one adapter is edited, so `.claude/skills` is a
@@ -465,9 +439,15 @@ async function installAuthoringGitignore(target: string): Promise<void> {
   );
 }
 
-/** Fails closed: an instruction that names a recipe the project does not ship strands the
- * agent on a link that goes nowhere. Checks both files of the generated pair. */
-async function assertReferenceBundle(target: string): Promise<void> {
+/** Fails closed: an instruction that names a recipe the package does not ship strands the agent
+ * on a link that goes nowhere. The pages are read from the package's own bundle directory — the
+ * exact directory its `files` list installs — because the project has no copy at scaffold time. */
+async function assertReferenceBundle(target: string, templateRootDirectory: string): Promise<void> {
+  const bundleDirectory = path.join(
+    path.dirname(templateRootDirectory),
+    "agent-docs",
+    "references",
+  );
   for (const file of [
     "AGENTS.md",
     "CLAUDE.md",
@@ -477,14 +457,14 @@ async function assertReferenceBundle(target: string): Promise<void> {
     ".claude/skills/threenative-assets/SKILL.md",
   ]) {
     const filePath = path.join(target, file);
-    if (existsSync(filePath)) await assertReferenceTargets(target, file, filePath);
+    if (existsSync(filePath)) await assertReferenceTargets(file, filePath, bundleDirectory);
   }
 }
 
 async function assertReferenceTargets(
-  target: string,
   from: string,
   filePath: string,
+  bundleDirectory: string,
 ): Promise<void> {
   const content = await readFile(filePath, "utf8");
   for (const match of content.matchAll(REFERENCE_TOKEN_PATTERN)) {
@@ -495,10 +475,9 @@ async function assertReferenceTargets(
         `RED observed: referenced recipe missing: '${from}' names '${referenced}', which is not a shipped reference page.`,
       );
     }
-    const resolved = path.join(target, REFERENCE_BUNDLE_DIRECTORY, referenced);
-    if (!existsSync(resolved)) {
+    if (!existsSync(path.join(bundleDirectory, referenced))) {
       throw new Error(
-        `RED observed: referenced recipe missing: '${from}' links 'agent-docs/${referenced}', which the scaffold did not copy.`,
+        `RED observed: referenced recipe missing: '${from}' links '${REFERENCE_BUNDLE_PREFIX}${referenced}', which the package does not ship.`,
       );
     }
   }
@@ -708,11 +687,10 @@ export async function createProject(
   await stampTemplateLoading(target, source, root);
   await copyAgentFiles(target, root);
   await renderTemplate(target, replacements);
-  await copyReferenceBundle(target, root, replacements);
   await copyFrameworkPatches(target, root);
   await applyPackageSources(target, options.packageSources);
   await assertMcpConfig(target);
-  await assertReferenceBundle(target);
+  await assertReferenceBundle(target, root);
 
   const installed = options.install ?? true;
   if (installed) await runInstall(target);

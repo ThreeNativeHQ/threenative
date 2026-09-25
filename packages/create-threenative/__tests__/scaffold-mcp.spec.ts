@@ -579,17 +579,16 @@ describe("scaffolded engine MCP", () => {
 
 describe("scaffolded asset MCP", () => {
   it(
-    "copies the complete creature workflow through the generated agent bundle",
+    "exposes the complete creature workflow through the generated agent bundle",
     async () => {
       for (const template of templates) {
         const root = await makeTempDir(`threenative-scaffold-creatures-${template}-`);
         temporaryRoots.push(root);
         const { target } = await createProject({ install: false, target: "game", template }, root);
+        // PRD-449: the pages are read from the installed package, not copied into the project.
+        const bundleDirectory = path.resolve("packages/create-threenative/agent-docs/references");
 
-        const recipe = await readFile(
-          path.join(target, "agent-docs", "creating-creatures.md"),
-          "utf8",
-        );
+        const recipe = await readFile(path.join(bundleDirectory, "creating-creatures.md"), "utf8");
         expect(recipe).toContain("creature_status");
         expect(recipe).toContain("creature_guide");
         expect(recipe).toContain("creature_compile");
@@ -602,14 +601,16 @@ describe("scaffolded asset MCP", () => {
         expect(recipe).toContain("assets/");
 
         const findingAssets = await readFile(
-          path.join(target, "agent-docs", "finding-assets.md"),
+          path.join(bundleDirectory, "finding-assets.md"),
           "utf8",
         );
         expect(findingAssets).toContain("creating-creatures.md");
         for (const host of [".agents", ".claude"]) {
           await expect(
             readFile(path.join(target, host, "skills", "threenative-assets", "SKILL.md"), "utf8"),
-          ).resolves.toContain("agent-docs/creating-creatures.md");
+          ).resolves.toContain(
+            "node_modules/create-threenative/agent-docs/references/creating-creatures.md",
+          );
         }
       }
     },

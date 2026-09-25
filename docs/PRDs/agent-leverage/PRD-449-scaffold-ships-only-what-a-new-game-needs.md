@@ -1,6 +1,6 @@
 # PRD-449 — The scaffold ships only what a new game needs
 
-**Status:** IN PROGRESS (Phase 1 done)
+**Status:** IN PROGRESS (Phases 1–2 done)
 **Complexity:** 1 (LOW)
 **Owner:** João
 **Depends on:** None
@@ -55,12 +55,12 @@ command, no new generator, no "add a test later" CLI.
    today). Where a scenario still guards something, move it to the matching engine playtest instead
    of deleting it.
 
-Flow: `pnpm create threenative my-game` → `copyTemplate` / `copyAgentFiles` /
-`copyReferenceBundle` (`src/index.ts:355,384,412`) → files on disk → an agent reads `AGENTS.md`
-and follows its links, and `pnpm test` runs the kept scenarios.
+Flow: `pnpm create threenative my-game` → `copyTemplate` / `copyAgentFiles` → files on disk → an
+agent reads `AGENTS.md` and follows its links into the installed `create-threenative`, and
+`pnpm test` runs the kept scenarios.
 
-Risk: an agent following an `agent-docs/` link hits a dead path. Mitigation: the reference-bundle
-check (`assertReferenceBundle`, `src/index.ts:440`) re-points to the installed path and fails
+Risk: an agent following a reference link hits a dead path. Mitigation: `assertReferenceBundle`
+(`src/index.ts`) checks every named page against the package's own bundle directory and fails
 closed.
 
 ## Acceptance Criteria
@@ -76,9 +76,14 @@ closed.
   packages/create-threenative/__tests__/template.spec.ts` — Evidence: 2026-09-25, red first
   (`scaffold.spec.ts` "store each skill once": `file-engine-bug is a second stored copy`), green
   after `linkClaudeSkills` (relative per-skill symlinks, EPERM/EACCES copy fallback).
-- [ ] AC-3 [local]: Every `agent-docs` link in each template's `AGENTS.md` resolves to a file in a
-  tarball-installed project — proof: `pnpm sandbox` scaffold plus the reference-bundle check —
-  Evidence: pending.
+- [ ] AC-3 [local]: Every `agent-docs` link in each template's `AGENTS.md` resolves to a file the
+  installed `create-threenative` carries — Evidence (open until the `pnpm sandbox` install runs): 2026-09-25, `pnpm pack` + tar listing shows
+  the 17 pages at `package/agent-docs/references/`, and a scan of the packed bytes resolves all 356
+  backticked links across the 10 templates' `AGENTS.md`/`CLAUDE.md` and every `SKILL.md` with zero
+  missing; `build.spec.ts` pins each template's `create-threenative` devDependency;
+  `scaffold.spec.ts` scaffolds a kit, asserts no `agent-docs/` and re-checks every link against
+  the bundle, and still fails closed on a page the package does not ship. `pnpm sandbox` was not
+  run in this lane — the install step is the package manager placing that same tarball.
 - [ ] AC-4 [local]: `pnpm test` in a fresh starter runs exactly 3 scenarios, all green — proof:
   `pnpm test:templates` (starter) — Evidence: pending.
 - [ ] AC-5 [local]: Fresh starter is ≤ 95 files and ≤ 8k text lines, excluding `node_modules`,
@@ -119,12 +124,20 @@ symlink with copy fallback in `copyAgentFiles`), `agent-files/.claude/skills/` (
 - [x] Skills stored once and resolved by both hosts; red first, from the test asserting a single copy (AC-2). Builder/verifier stay subagent-only for Claude Code (`.claude/agents/`).
 
 #### Phase 2: References come from the installed package
-**Status:** NOT STARTED
-**Files:** `src/index.ts` (`copyReferenceBundle` becomes a link check, `assertReferenceBundle`
-re-pointed), each `templates/*/AGENTS.md` reference line, `scripts/instruction-budget.ts`
-(reference-target budget), `__tests__/publication.spec.ts:337`.
-- [ ] Every template's reference links resolve in a tarball install (AC-3).
-- [ ] `pnpm sync:agents` and the instruction-budget spec are green.
+**Status:** DONE
+**Files:** `src/index.ts` (`copyReferenceBundle` deleted, `assertReferenceBundle` re-pointed at
+the package bundle), each `templates/*/AGENTS.md` reference line, the seven
+`agent-files/.agents/skills/*/SKILL.md` reference links, the three reference pages that cross-link
+each other, `scripts/instruction-budget.ts` (reference-target budget), `scripts/not-owned-capabilities.ts`
+(guidance text), `__tests__/publication.spec.ts:337`.
+- [x] Every template's reference links resolve in the package the project installs (AC-3).
+  `pnpm build` repacks `capabilities.json`; `vitest run packages/create-threenative` scaffolds every
+  kit and fails closed when a link names a page the package does not ship
+  (45 files / 739 tests green, 2026-09-25).
+- [x] `pnpm sync:agents` and the instruction-budget spec are green — 19 mirrors written, all ten
+  templates OK, `sync:agents --check` clean, 2026-09-25.
+- [x] Red first: `scaffold.spec.ts:784` rejected the promise wrongly — `lstat(<target>/agent-docs)`
+  resolved because the scaffold still copied the bundle. Green after `copyReferenceBundle` went.
 
 #### Phase 3: Starter proves the game, not the engine
 **Status:** NOT STARTED

@@ -908,7 +908,9 @@ describe("template contracts", () => {
       "utf8",
     );
     expect(skill.split(/\s+/u).filter(Boolean).length).toBeLessThan(260);
-    expect(skill).toContain("agent-docs/assertion-reference.md#performance");
+    expect(skill).toContain(
+      "node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance",
+    );
     expect(skill).toMatch(performanceBoundPattern);
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
