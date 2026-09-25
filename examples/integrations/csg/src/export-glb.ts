@@ -48,7 +48,11 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
     for (const group of groups) {
       const material = materials[group.materialIndex ?? 0];
       if (!material) throw new Error('CSG export group references a missing material.');
-      const indices = geometry.index.array.slice(group.start, group.start + group.count) as Uint16Array | Uint32Array;
+      const sourceIndices = geometry.index.array.subarray(group.start, group.start + group.count);
+      // Allocate an owned ArrayBuffer; do not widen the result back to ArrayBufferLike.
+      const indices = sourceIndices instanceof Uint32Array
+        ? new Uint32Array(sourceIndices)
+        : new Uint16Array(sourceIndices);
       const primitive = document.createPrimitive().setMaterial(material).setIndices(document.createAccessor()
         .setType(Accessor.Type.SCALAR).setBuffer(buffer).setArray(indices));
       for (const [semantic, attribute] of attributes) primitive.setAttribute(semantic, attribute);

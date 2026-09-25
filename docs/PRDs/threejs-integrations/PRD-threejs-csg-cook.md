@@ -56,7 +56,9 @@ Use a 4m x 3m x 0.3m wall minus a through-cutter making a 1m x 2m opening. Rays 
 
 ## Verification and remaining work
 
-Executed: `node --experimental-strip-types --test tests/contracts.test.mjs` — 10 passed, 0 failed. `tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext src/active-geometry.ts` — exit 0 using available TypeScript 5.8.3. Complete `npm test` attempted: build fails because Three/donor/glTF/node type dependencies cannot be resolved in the network-restricted sandbox. The real integration tests are written, not reported green. Dedicated CI is configured but its result must be read separately.
+Executed: `node --experimental-strip-types --test tests/contracts.test.mjs` — 10 passed, 0 failed. `tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext src/active-geometry.ts` — exit 0 using available TypeScript 5.8.3. Complete local `npm test` attempted: build fails because dependencies cannot be resolved in the network-restricted sandbox.
+
+**Dependency-backed CI, 2026-09-25:** Integration csg run 36201601920 installed successfully and failed TypeScript 5.9.3 at export-glb.ts: the explicit Uint16Array/Uint32Array cast widened the new buffer to ArrayBufferLike, which glTF Transform does not accept. This commit creates an owned Uint16Array or Uint32Array without the widening cast. The real build was the failing regression; the rerun result remains unverified until observed. No check or test was disabled. Pure contracts remain 10/10 locally; no GLB round-trip success is claimed yet.
 
 Formal engine capability tools, transitive-license audit, lockfile generation, Biome, full repository tests and all GPU/native/collision lanes are unrun. No iOS support claim. Keep draft. Reject adoption rather than relaxing topology/export or platform gates. Removing the authoring dependency must leave cooked GLBs loadable. Do not change WorldCells #317 or cook profiles #330 implicitly.
 
