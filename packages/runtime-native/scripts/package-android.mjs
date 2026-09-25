@@ -14,9 +14,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, posix, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { downloadReleaseArtifact, releaseManifestUrl, verifyChecksum } from './install-prebuilt.mjs';
+import { listFiles, selectManifestAssets } from './asset-manifest.mjs';
 import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
 import {
   assertAndroidArtifact16KbAlignment,
@@ -762,17 +763,6 @@ export async function ensureGradleWrapper(options = {}) {
   return output;
 }
 
-function listFiles(directory, relative = '') {
-  const files = [];
-  for (const entry of readdirSync(join(directory, relative), { withFileTypes: true })) {
-    const path = relative ? posix.join(relative, entry.name) : entry.name;
-    if (entry.isDirectory()) files.push(...listFiles(directory, path));
-    else if (entry.isFile()) files.push(path);
-    else throw new Error(`Unsupported Android asset entry: ${join(directory, path)}`);
-  }
-  return files.sort();
-}
-
 export function stageAndroidAssets(
   assets,
   destination = join(runtimeRoot, 'android', 'app', 'build', 'generated', 'threenative', 'assets', 'game'),
@@ -790,7 +780,7 @@ export function stageAndroidAssets(
   // Derived from the runtime this build is about to pack, not declared here. A hardcoded claim
   // goes stale the moment the build changes under it, which is exactly what happened to WebP.
   assertAndroidAssetsDecodable(assets, { webp: deriveAndroidWebpSupport(runtimeSource) });
-  const files = listFiles(assets);
+  const files = selectManifestAssets(assets);
   for (const file of files) {
     const output = join(destination, file);
     mkdirSync(dirname(output), { recursive: true });
@@ -872,6 +862,36 @@ export function androidBuildRequest(mode = 'debug', format = 'apk') {
         ? 'assembleRelease'
         : 'assembleDebug';
   return { format: resolvedFormat, mode: resolvedMode, task };
+}
+
+/**
+ * The ABI override the packager hands Gradle.
+ *
+ * A release is what Play installs on a phone, where only `arm64-v8a` runs, so release names that
+ * one slice; the `x86_64` emulator dev lane lives in debug, which keeps Gradle's both-ABI default. An explicit
+ * `-PthreenativeAbis` from the caller wins in both modes — no default overrides a named set.
+ */
+export function androidAbiGradleArgs(mode, extraGradleArgs = []) {
+  const namesAbis = extraGradleArgs.some((arg) =>
+    /^(?:-P|--project-prop=)threenativeAbis=/u.test(arg),
+  );
+  return mode === 'release' && !namesAbis ? ['-PthreenativeAbis=arm64-v8a'] : [];
+}
+
+/**
+ * The ABI set a Gradle invocation builds: its last `-PthreenativeAbis`, or `undefined` for Gradle's
+ * own default. The 16 KB census checks exactly this set, so a release (arm64-v8a) or an
+ * emulator-only (x86_64) build is not failed for the slice it deliberately left out.
+ */
+export function androidRequestedAbis(gradleArgs) {
+  const value = gradleArgs
+    .map((arg) => /^(?:-P|--project-prop=)threenativeAbis=(.*)$/u.exec(arg)?.[1])
+    .filter((entry) => entry !== undefined)
+    .at(-1);
+  return value
+    ?.split(',')
+    .map((abi) => abi.trim())
+    .filter((abi) => abi.length > 0);
 }
 
 /**
@@ -1065,7 +1085,13 @@ export async function packageAndroid(
     const extraGradleArgs = (process.env.THREENATIVE_GRADLE_ARGS ?? '')
       .split(' ')
       .filter((entry) => entry.length > 0);
-    const baseArgs = [request.task, '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
+    const baseArgs = [
+      request.task,
+      '-x',
+      'buildAndroidFirstProofBundle',
+      ...androidAbiGradleArgs(request.mode, extraGradleArgs),
+      ...extraGradleArgs,
+    ];
     const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];
     const spawn = options.spawnSync ?? spawnSync;
     const result = spawn(command, args, {
@@ -1119,7 +1145,11 @@ export async function packageAndroid(
         });
       }
       // The 16 KB census runs on the artifact that ships, not on the build directory it came from.
-      const census = assertAndroidArtifact16KbAlignment(output, options.artifact16Kb ?? {});
+      const abis = androidRequestedAbis(baseArgs);
+      const census = assertAndroidArtifact16KbAlignment(output, {
+        ...(abis === undefined ? {} : { abis }),
+        ...(options.artifact16Kb ?? {}),
+      });
       for (const library of census.libraries) {
         console.log(
           `  16 KB ok: ${library.entry} (${library.compression}, offset 0x${library.dataOffset.toString(16)}, ` +
