@@ -1,6 +1,6 @@
 # PRD-448 — World cells: Blender-authored worlds, exported once and streamed by cell
 
-**Status:** IN PROGRESS (Phase 3)
+**Status:** IN PROGRESS (Phase 4)
 **Complexity:** 6 (MEDIUM); risk override: none. About 9 implementation files across `core` and `blender-mcp`, a new runtime module, and async residency (loads racing eviction).
 **Owner:** unassigned (drafted by Claude, 2026-09-25)
 **Depends on:** None. First consumer: Machinefall (private game), whose PRD-001 adopts this.
@@ -75,8 +75,8 @@ flowchart LR
 - [x] AC-1 [local; actor: agent]: `validateWorldPackage` accepts the committed v1 fixture and rejects each malformed variant (unknown asset, out-of-range run, cell outside extent, wrong version) with its named error — Evidence: `world-fixture.spec.ts` (committed recipe output validates) + `world-package.spec.ts` malformed table, passing 2026-09-25.
 - [x] AC-2 [local; actor: agent; needs Blender ≥ 4.2]: `blender_export_world` on the fixture `.blend` writes a package that validates. Its instance total equals the scatter's evaluated render-density count, each asset GLB is written exactly once, and a chunk collection spanning two cells lands in both — Evidence: `packages/blender-mcp/__tests__/export-world.spec.ts` on Blender 5.2: 3 586 render instances (viewport: 356), counted by a separate Blender process; `pine`/`rock`/`ground_cover` GLBs written once each (+ LOD1); `yard` chunks in cells (0,2) and (1,1); blender-mcp suite 41/41, 2026-09-25. Chunks are assigned by object origin, not clipped (`ponytail:` ceiling in the recipe).
 - [x] AC-3 [local; actor: agent]: `TerrainTiles` built through `heightSamplerFromHeightmap` from an exported heightmap reproduces the source mesh heights within ±2 cm at 1 000 sampled points — Evidence: `packages/core/__tests__/world-heightmap.spec.ts` (101×101 grid, ~275 m range, quantised to uint16, heights read back through `TerrainTiles` tile fields), passing 2026-09-25.
-- [ ] AC-4 [local; actor: agent]: `WorldCells` following a moving position keeps only in-ring cells resident. Leaving a cell disposes its batches and releases its asset keys (refcount back to 0). A `maxDistance` asset never appears beyond its distance — Evidence: pending.
-- [ ] AC-5 [local; actor: agent]: moving out of range while a chunk load is in flight (delayed loader) leaves nothing attached and the key released; budget overflow reports pressure instead of throwing mid-frame — Evidence: pending.
+- [x] AC-4 [local; actor: agent]: `WorldCells` following a moving position keeps only in-ring cells resident. Leaving a cell disposes its batches and releases its asset keys (refcount back to 0). A `maxDistance` asset never appears beyond its distance — Evidence: `packages/core/__tests__/world-cells.spec.ts` runs a scripted follow path over the committed fixture. It checks resident sets against an independent ring computation, batch dispose spies, `assetRefCounts()` returning to 0, and no rendered `ground_cover` instance beyond `maxDistance`. Passing 2026-09-25.
+- [x] AC-5 [local; actor: agent]: moving out of range while a chunk load is in flight (delayed loader) leaves nothing attached and the key released; budget overflow reports pressure instead of throwing mid-frame — Evidence: `world-cells.spec.ts`: a delayed loader resolves after the cell has left, so nothing attaches, the key is released and `failures` is unchanged; `residentCells: 2` with ring 1 gives `pressure.cells > 0` and no throw. Passing 2026-09-25.
 - [ ] AC-6 [local; actor: agent]: a web (webgpu recipe) playtest flies across the fixture world through the public API. `stats()` shows cells entering and leaving, zero failed loads, and p95 frame time within the scenario's budget — Evidence: pending.
 - [ ] AC-7 [local; actor: agent]: the same fixture scenario runs on the desktop native runtime with matching residency counts — Evidence: pending.
 - [ ] AC-8 [local; actor: agent]: production-representative proof. The first consumer's 2 km package (≈50 k instances), exported by this recipe, validates and streams through `WorldCells` in that game's playtest with zero failed loads (evidence referenced from the consumer's PRD) — Evidence: pending.
@@ -135,7 +135,7 @@ flowchart LR
 **Checkpoint:** pending
 
 #### Phase 3: `WorldCells` runtime
-**Status:** NOT STARTED
+**Status:** DONE (2026-09-25). API: `await WorldCells.load({ url, surface, follow, ring, budgets, … })`, driven like `TerrainTiles` (`processCadence: "render"`)
 **ACs:** AC-4, AC-5
 **Files:**
 - `packages/core/src/world-cells.ts`.
@@ -149,9 +149,9 @@ flowchart LR
 - Budgets and `stats()`. Terrain is delegated to `TerrainTiles` with the Phase 1 sampler.
 
 **Verification:** E3: the spec drives a scripted follow path with a delayed asset loader and asserts the residency sets, the refcount returning to 0, the `maxDistance` filter, stale-load drop, and budget pressure.
-- [ ] residency + batches
-- [ ] chunk loads + cancellation
-- [ ] budgets + stats
+- [x] residency + batches: Chebyshev ring with eviction beyond `ring + 1`; one `InstancedBatch` per run; assets refcounted across cells. LOD1 is not used at runtime yet (`InstancedBatch` has no LOD container; `ponytail:` ceiling in `world-cells.ts`)
+- [x] chunk loads + cancellation: `loadAll` + `addInSlices` with `while: live`, where each cell carries a generation token and a stale completion is disposed, never attached
+- [x] budgets + stats: cell/instance/byte overflow counts `stats().pressure` and never throws; a terrain throw inside `update` is caught and counted. Spec: `world-cells.spec.ts` 5/5; the world specs plus constraints/packaging/world-capabilities 48/48, 2026-09-25
 
 **Checkpoint:** pending
 

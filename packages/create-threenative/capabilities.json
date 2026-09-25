@@ -3547,6 +3547,29 @@
       "symbol": "validateWorldPackage"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "surface is the game's; this class creates no material, colour or geometry",
+        "budgets are hard caps that report pressure instead of over-committing"
+      ],
+      "example": "const world = await WorldCells.load({ url: \"/world/world.json\", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });\nscene.add(world);\nworld.update();",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [
+        "ring, budgets, terrain tile size/resolution and the package's per-asset maxDistance"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class WorldCells extends Group implements IComputeDriven { … }",
+      "situations": [
+        "stream a large Blender-authored world by cell instead of one huge GLB",
+        "keep scattered props and hand-placed chunks resident around a moving player",
+        "honour per-asset draw distances and hard streaming budgets without a mid-frame throw"
+      ],
+      "summary": "Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game.",
+      "supersedes": [],
+      "symbol": "WorldCells"
+    },
+    {
       "aliases": ["pick up item"],
       "constraints": ["add the area to the physics context before stepping the world"],
       "example": "const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });",

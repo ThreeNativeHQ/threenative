@@ -2784,6 +2784,24 @@ export function validateWorldPackage( manifest: unknown, options: IWorldPackageV
 const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });
 ```
 
+### `WorldCells`
+
+`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game.
+
+```ts
+export class WorldCells extends Group implements IComputeDriven { … }
+```
+
+- **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing
+- **Overrides:** ring, budgets, terrain tile size/resolution and the package's per-asset maxDistance
+
+```ts
+const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
+scene.add(world);
+world.update();
+```
+
 ## `@threenative/physics`
 
 ### `Area3D`
