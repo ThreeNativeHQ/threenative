@@ -56,9 +56,11 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: From an MCP server launched with `DBUS_SESSION_BUS_ADDRESS` stripped,
+- [x] AC-1 [local]: From an MCP server launched with `DBUS_SESSION_BUS_ADDRESS` stripped,
   `fab_list_owned` returns the signed-in library — proof: `A/` vitest for `childEnvironment` plus
-  one live stdio call on this machine — Evidence: pending.
+  one live stdio call on this machine — Evidence: 2026-09-25, `env -u DBUS_SESSION_BUS_ADDRESS -u
+  XDG_RUNTIME_DIR` stdio `fab_list_owned {query:"European Hornbeam"}`: 0.9.3 → `FABCLI_UNAUTHENTICATED`;
+  A/ `9ff6940` build → the `c6f917b6…` listing.
 - [ ] AC-2 [local]: `asset_import_unreal` on the Hornbeam pack with
   `packages:["SM_EuropeanHornbeam_Forest_01"]` passes the disk pre-flight on this machine's free
   space and writes a GLB under the sandbox game's `public/assets/`, or fails with a diagnostic that
@@ -103,9 +105,9 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 - [x] The listing from the session that returned `FAB_ACQUISITION_REQUIRED` now downloads or routes to `fab_import_asset` through the engine launcher. — 2026-09-25: stdio call via `node packages/core/mcp/assets.mjs` (0.9.3) on `97b20cea…` (fbx) returns `FAB_ACQUISITION_REQUIRED` whose message now says to call `fab_import_asset`. The Hornbeam (`c6f917b6…`, glb) returns `FAB_FORMAT_UNAVAILABLE` with no route; Phase 3 adds the route.
 
 #### Phase 2: Owned assets work from any MCP host
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `A/src/unreal/toolchain.ts`, `A/src/fab/fabcli.ts` (error mapping), `A/tests/`.
-- [ ] Bus-address fallback plus `FABCLI_KEYSTORE_UNREACHABLE`; red first with a stripped env (AC-1).
+- [x] Bus-address fallback plus `FABCLI_KEYSTORE_UNREACHABLE`; red first with a stripped env (AC-1). — 2026-09-25, A/ `9ff6940`: stripping only `DBUS_SESSION_BUS_ADDRESS` did not reproduce (libdbus reads `XDG_RUNTIME_DIR`); stripping both reproduced the session's exact "X11 autolaunch" `FABCLI_UNAUTHENTICATED` on 0.9.3. The fallback therefore also derives `/run/user/<uid>/bus`. Red specs seen first; `unreal-import` + `fab-import` 111/111.
 
 #### Phase 3: An Unreal pack lands in the game at a known size
 **Status:** NOT STARTED
