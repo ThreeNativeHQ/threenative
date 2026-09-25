@@ -59,6 +59,11 @@ const server = await createServer({
       name: "clearwater-fixture",
       configureServer(instance) {
         instance.middlewares.use(async (request, response, next) => {
+          if (request.url === "/assets.manifest.json") {
+            response.setHeader("Content-Type", "application/json");
+            response.end(JSON.stringify({ version: 1, entries: {} }));
+            return;
+          }
           if (request.url !== "/") return next();
           response.setHeader("Content-Type", "text/html");
           response.end(await instance.transformIndexHtml("/", html));
