@@ -225,12 +225,13 @@ npm 11.18.0, pnpm 10.25.0, NVIDIA RTX 2080 / Vulkan 1.4.351; full commands and h
       `scenarioHash 4edb52f1fb8d6ded2159a4d39cb35b48089db917edbe79d3b52109edbf3146ed` — the same
       scenario hash and the same five assertion ids phase 2 recorded.
 - [ ] **Windows desktop** — CI-owned by owner decision: job `native-platforms / Windows desktop core`
-      in `.github/workflows/native-platforms.yml`. `workflow_dispatch` run
-      [36175962979](https://github.com/ThreeNativeHQ/threenative/actions/runs/36175962979) was
-      triggered on `develop`; it builds local tarballs, so it proves the source tree rather than the
-      published cohort, and no Windows host exists on this lane to run the registry install.
-- [ ] **macOS desktop** — CI-owned: job `native-platforms / macOS desktop core`, same triggered run and
-      the same source-vs-registry limitation.
+      in `.github/workflows/native-platforms.yml` completed **success** on
+      [run 36175962979](https://github.com/ThreeNativeHQ/threenative/actions/runs/36175962979)
+      (`workflow_dispatch`, `develop`, 2026-09-25). It builds local tarballs, so it proves the source
+      tree rather than the published cohort, and no Windows host exists on this lane to run the
+      registry install.
+- [ ] **macOS desktop** — CI-owned: job `native-platforms / macOS desktop core` completed **success**
+      on the same run, with the same source-vs-registry limitation.
 - [ ] **Android** — needs the physical device (owner rule: do not use the phone here). The published
       cohort carries `@threenative/runtime-native@0.3.3` for `android-arm64-v8a` / `android-x86_64`;
       no device or emulator row was run in this lane.

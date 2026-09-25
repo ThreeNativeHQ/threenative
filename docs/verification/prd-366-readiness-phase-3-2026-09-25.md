@@ -62,8 +62,8 @@ node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs
 
 | Target | Named proof | Status |
 | --- | --- | --- |
-| Windows desktop | CI job `native-platforms / Windows desktop core` | `workflow_dispatch` run [36175962979](https://github.com/ThreeNativeHQ/threenative/actions/runs/36175962979) triggered on `develop`; builds local tarballs, not the published cohort. No Windows host here. |
-| macOS desktop | CI job `native-platforms / macOS desktop core` | Same run, same source-vs-registry limitation. |
+| Windows desktop | CI job `native-platforms / Windows desktop core` | **success** on `workflow_dispatch` run [36175962979](https://github.com/ThreeNativeHQ/threenative/actions/runs/36175962979) (`develop`); builds local tarballs, not the published cohort. No Windows host here. |
+| macOS desktop | CI job `native-platforms / macOS desktop core` | **success** on the same run, same source-vs-registry limitation. |
 | Android physical | `packages/runtime-native/scripts/qualify-physical-mobile.mjs` | Needs the physical device; the owner rule forbids using the phone in this lane. |
 
 ## Observed red — npm install of the published template
