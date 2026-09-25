@@ -1,0 +1,14 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { safeIndices, windSample, validateWind } from '../src/geometry.ts';
+const settings={amplitude:2,frequency:1,phase:Math.PI/2,base:0,extent:4,direction:[1,0]};
+test('keeps index 65535 in uint16',()=>{const a=safeIndices([0,1,65535],65536);assert.ok(a instanceof Uint16Array);assert.equal(a[2],65535);});
+test('promotes raw index 65536 before truncation',()=>{const a=safeIndices([0,1,65536],65537);assert.ok(a instanceof Uint32Array);assert.equal(a[2],65536);});
+test('rejects fractional, negative, nonfinite and out-of-range indices',()=>{for(const i of [0.1,-1,NaN,Infinity,10])assert.throws(()=>safeIndices([0,1,i],10));});
+test('rejects partial triangles',()=>{assert.throws(()=>safeIndices([0,1],3),/triangle/);});
+test('copies raw indices instead of aliasing',()=>{const a=[0,1,2];const out=safeIndices(a,3);a[0]=2;assert.equal(out[0],0);});
+test('roots do not move; tips stay within the authored amplitude',()=>{assert.equal(windSample(-1,0,settings).offset,0);assert.equal(windSample(0,0,settings).slope,0);assert.equal(windSample(8,0,settings).offset,2);});
+test('analytic slope agrees with finite differences',()=>{const h=1e-5;for(const y of [0.1,1,2,3.9]){const f=windSample(y,0,settings);const derivative=(windSample(y+h,0,settings).offset-windSample(y-h,0,settings).offset)/(2*h);assert.ok(Math.abs(f.slope-derivative)<1e-8);}});
+test('wind is deterministic and bounded over a time series',()=>{for(let i=0;i<500;i++){const a=windSample(3,i/60,settings);assert.deepEqual(a,windSample(3,i/60,settings));assert.ok(Math.abs(a.offset)<=settings.amplitude);}});
+test('validates and normalizes a caller-owned direction',()=>{const s={...settings,direction:[3,4]};const result=validateWind(s);s.direction[0]=99;assert.deepEqual(result.direction,[0.6,0.8]);});
+test('rejects bad wind settings and nonfinite simulation time',()=>{for(const change of [{extent:0},{amplitude:NaN},{direction:[0,0]},{frequency:-1}])assert.throws(()=>validateWind({...settings,...change}));assert.throws(()=>windSample(1,NaN,settings));});
