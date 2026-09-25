@@ -198,6 +198,30 @@ describe("FixedStepLoop", () => {
     expect(loop.tick()).toBe(3);
   });
 
+  it("advances no frames after the clock is frozen before the run", () => {
+    // A browser playtest runner announces itself before the page loads and then pumps live frames
+    // through the whole startup compile wait. Those frames used to advance a tick-counting
+    // simulation by wall clock, so the run began with an arbitrary amount of game time already
+    // spent -- and racing's `elapsed` DNFs a 90s race that the scenario needs only 47s to finish.
+    let updates = 0;
+    const loop = new FixedStepLoop({ onUpdate: () => updates++ });
+    loop.freezeClock();
+    expect(loop.clockFrozen).toBe(true);
+    loop.start(0);
+
+    // Two seconds of live frames at 60 Hz: 120 updates if the clock still drove the loop.
+    for (let frame = 1; frame <= 120; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
+
+    expect(updates).toBe(0);
+    expect(loop.tick()).toBe(0);
+
+    // The manual clock is still the one that moves the simulation.
+    expect(loop.advance(3)).toBe(3);
+    expect(loop.tick()).toBe(3);
+    for (let frame = 121; frame <= 240; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
+    expect(loop.tick()).toBe(3);
+  });
+
   it("reports the actual callback duration separately from presentation timestamps", () => {
     let clock = 0;
     const frameDurations: number[] = [];

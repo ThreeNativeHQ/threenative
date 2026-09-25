@@ -120,6 +120,7 @@ export class FixedStepLoop {
   #frameHandle: number | undefined;
   #running = false;
   #held = false;
+  #clockFrozen = false;
   #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
@@ -206,11 +207,37 @@ export class FixedStepLoop {
   setHeld(held: boolean): void {
     this.#held = held;
   }
+  /**
+   * Stop the live clock: from here a rendered frame draws and simulates nothing, and banks no
+   * time. `advance()` is then the only thing that moves the simulation.
+   *
+   * This is the whole-run form of the hold above, and it exists because the hold is undone by the
+   * first tick while the clock is not. A tick-counting playtest run banks real wall-clock seconds
+   * into the same simulation its ticks measure: the runner pumps live frames for the rAF warmup
+   * and then for the whole startup wait -- compile settlement is 30s+ on a software adapter and
+   * is itself a function of how loaded the machine is -- and every one of those frames advanced
+   * the game. Measured on the racing template's `racing-finish-behind-rival-is-dnf`: 164 ticks
+   * (2.73s of race time) elapsed before the scenario pressed a key on a fast machine with a real
+   * GPU, and that scenario's third lap lands at 47.0s against a 90s in-game race limit, so the
+   * 42.7s of headroom is spent by boot time rather than by the scenario. The same scenario then
+   * fails its `completedLaps` assertion on a loaded runner and passes on a quiet one, from the
+   * same build. Idempotent, and implied by `advance()`.
+   */
+  freezeClock(): void {
+    this.#clockFrozen = true;
+    this.#lastTime = Number.POSITIVE_INFINITY;
+  }
+  /** True once the live clock no longer drives the simulation. */
+  get clockFrozen(): boolean {
+    return this.#clockFrozen;
+  }
   readonly tick = (): number => this.#tick;
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
     this.#running = true;
-    this.#lastTime = now;
+    // A freeze asked for before the loop ran outranks the start timestamp, or a playtest bridge
+    // that installs first would be undone by the boot it is supposed to cover.
+    this.#lastTime = this.#clockFrozen ? Number.POSITIVE_INFINITY : now;
     this.#lastRenderTime = undefined;
     this.#tick = 0;
     this.#fps = 0;
@@ -226,7 +253,7 @@ export class FixedStepLoop {
   }
 
   #advanceSimulation(now: number): number {
-    if (this.#held) {
+    if (this.#held || this.#clockFrozen) {
       // The whole accumulate-and-update block is skipped rather than just the callback: `#tick`
       // advances inside that loop, and a held frame that moved the tick would break the
       // determinism contract every playtest hold depends on. The clock still moves forward so
@@ -321,7 +348,10 @@ export class FixedStepLoop {
     if (!this.#running) throw new Error("Cannot advance a stopped loop.");
     if (!Number.isInteger(ticks) || ticks <= 0)
       throw new Error("advance ticks must be a positive integer.");
-    this.#lastTime = Number.POSITIVE_INFINITY;
+    // Driving one tick is a statement that the run counts ticks, so it also stops the live clock
+    // racing it. `freezeClock()` exists for the frames *before* that statement, which is where a
+    // boot's wall clock used to reach the simulation.
+    this.freezeClock();
     for (let index = 0; index < ticks; index += 1) {
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);
