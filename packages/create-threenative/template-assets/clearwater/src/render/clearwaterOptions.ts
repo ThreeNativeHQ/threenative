@@ -106,6 +106,72 @@ export function waterSunDirection(value: WaterRgb): WaterRgb {
   return [value[0] / length, value[1] / length, value[2] / length];
 }
 
+function resolveSpatialOptions(
+  input: IClearwaterOptions,
+  center: readonly [number, number],
+) {
+  return {
+    size: range("size", input.size ?? 16, 0.1, 4096),
+    level: finiteWaterNumber("level", input.level ?? 0),
+    depth: range("depth", input.depth ?? 2, 0.01, 100),
+    center: [
+      finiteWaterNumber("center.x", center[0]),
+      finiteWaterNumber("center.z", center[1]),
+    ] as const,
+    resolution: powerOfTwo("resolution", input.resolution ?? 64, 32, 256),
+    segments: integer("segments", input.segments ?? 128, 8, 512),
+    waveAmplitude: range("waveAmplitude", input.waveAmplitude ?? 0.00012, 0, 0.01),
+    windSpeed: range("windSpeed", input.windSpeed ?? 1.8, 0.01, 30),
+    seed: integer("seed", input.seed ?? 20260924, 0, 0xffffffff),
+    rippleResolution: powerOfTwo("rippleResolution", input.rippleResolution ?? 64, 16, 256),
+    rippleSize: range("rippleSize", input.rippleSize ?? 7, 0.1, 512),
+  };
+}
+
+function resolveOpticalOptions(input: IClearwaterOptions) {
+  return {
+    ior: range("ior", input.ior ?? 1.3335, 1.0001, 2),
+    absorption: rgb("absorption", input.absorption ?? [0.4, 0.074, 0.088]),
+    scattering: rgb("scattering", input.scattering ?? [0.028, 0.052, 0.068]),
+    sunDirection: waterSunDirection(input.sunDirection ?? [0.45, 0.82, 0.3]),
+    sunColor: rgb("sunColor", input.sunColor ?? [6, 5.4, 4.44]),
+    distortion: range("distortion", input.distortion ?? 0.018, 0, 0.1),
+  };
+}
+
+function resolveReflectionOptions(input: IClearwaterOptions) {
+  return {
+    reflection: booleanOption("reflection", input.reflection, true),
+    reflectionScale: range("reflectionScale", input.reflectionScale ?? 0.5, 0.0625, 1),
+    reflectionLayers: optionalInteger(
+      "reflectionLayers",
+      input.reflectionLayers,
+      0,
+      0xffffffff,
+    ),
+    reflectionRefreshInterval: integer(
+      "reflectionRefreshInterval",
+      input.reflectionRefreshInterval ?? 1,
+      1,
+      60,
+    ),
+  };
+}
+
+function resolveCausticsOptions(input: IClearwaterOptions) {
+  return {
+    caustics: booleanOption("caustics", input.caustics, true),
+    causticsResolution: powerOfTwo(
+      "causticsResolution",
+      input.causticsResolution ?? 512,
+      64,
+      1024,
+    ),
+    causticsSegments: integer("causticsSegments", input.causticsSegments ?? 128, 8, 256),
+    causticsStrength: range("causticsStrength", input.causticsStrength ?? 0.65, 0, 1),
+  };
+}
+
 /** Validate before allocating any GPU resource. Returned arrays never alias caller/default arrays. */
 export function resolveClearwaterOptions(
   input: IClearwaterOptions = {},
@@ -115,39 +181,10 @@ export function resolveClearwaterOptions(
   const center = input.center ?? [0, 0];
   if (!Array.isArray(center) || center.length !== 2)
     throw new TypeError("Clearwater.center needs x and z.");
-  const reflection = booleanOption("reflection", input.reflection, true);
-  const caustics = booleanOption("caustics", input.caustics, true);
-  const layers = optionalInteger("reflectionLayers", input.reflectionLayers, 0, 0xffffffff);
   return {
-    size: range("size", input.size ?? 16, 0.1, 4096),
-    level: finiteWaterNumber("level", input.level ?? 0),
-    depth: range("depth", input.depth ?? 2, 0.01, 100),
-    center: [finiteWaterNumber("center.x", center[0]), finiteWaterNumber("center.z", center[1])],
-    resolution: powerOfTwo("resolution", input.resolution ?? 64, 32, 256),
-    segments: integer("segments", input.segments ?? 128, 8, 512),
-    waveAmplitude: range("waveAmplitude", input.waveAmplitude ?? 0.00012, 0, 0.01),
-    windSpeed: range("windSpeed", input.windSpeed ?? 1.8, 0.01, 30),
-    seed: integer("seed", input.seed ?? 20260924, 0, 0xffffffff),
-    rippleResolution: powerOfTwo("rippleResolution", input.rippleResolution ?? 64, 16, 256),
-    rippleSize: range("rippleSize", input.rippleSize ?? 7, 0.1, 512),
-    ior: range("ior", input.ior ?? 1.3335, 1.0001, 2),
-    absorption: rgb("absorption", input.absorption ?? [0.4, 0.074, 0.088]),
-    scattering: rgb("scattering", input.scattering ?? [0.028, 0.052, 0.068]),
-    sunDirection: waterSunDirection(input.sunDirection ?? [0.45, 0.82, 0.3]),
-    sunColor: rgb("sunColor", input.sunColor ?? [6, 5.4, 4.44]),
-    distortion: range("distortion", input.distortion ?? 0.018, 0, 0.1),
-    reflection,
-    reflectionScale: range("reflectionScale", input.reflectionScale ?? 0.5, 0.0625, 1),
-    reflectionLayers: layers,
-    reflectionRefreshInterval: integer(
-      "reflectionRefreshInterval",
-      input.reflectionRefreshInterval ?? 1,
-      1,
-      60,
-    ),
-    caustics,
-    causticsResolution: powerOfTwo("causticsResolution", input.causticsResolution ?? 512, 64, 1024),
-    causticsSegments: integer("causticsSegments", input.causticsSegments ?? 128, 8, 256),
-    causticsStrength: range("causticsStrength", input.causticsStrength ?? 0.65, 0, 1),
+    ...resolveSpatialOptions(input, center),
+    ...resolveOpticalOptions(input),
+    ...resolveReflectionOptions(input),
+    ...resolveCausticsOptions(input),
   };
 }

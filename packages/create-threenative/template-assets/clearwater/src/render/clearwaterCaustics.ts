@@ -2,8 +2,8 @@
 // See CLEARWATER-LICENSE.txt. No WebGL handles, DOM, extra animation loop or asset fetches.
 import {
   AdditiveBlending,
-  Camera,
   Color,
+  OrthographicCamera,
   DoubleSide,
   HalfFloatType,
   LinearFilter,
@@ -63,7 +63,8 @@ export function createClearwaterCaustics(
     );
     scope.defer(() => geometry.dispose());
     const scene = new Scene();
-    const camera = new Camera(); // vertexNode supplies clip-space positions directly.
+    // WebGPURenderer still requires a projection-capable camera even though vertexNode emits clip space.
+    const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const center = vec2(options.center[0], options.center[1]);
     const sourceXZ = attribute<"vec3">("position", "vec3").xy.add(center);
     const sourcePosition = vec3(sourceXZ.x, level.add(field.heightAt(sourceXZ)), sourceXZ.y);

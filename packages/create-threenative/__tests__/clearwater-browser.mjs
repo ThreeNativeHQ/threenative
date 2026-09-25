@@ -75,7 +75,9 @@ try {
   page = await browser.newPage({ viewport: { width: 800, height: 600 } });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() !== "error") return;
+    const location = message.location();
+    errors.push(location.url ? `${message.text()} (${location.url})` : message.text());
   });
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForFunction(
