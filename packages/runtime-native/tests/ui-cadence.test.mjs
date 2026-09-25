@@ -162,3 +162,15 @@ test('retina screenshots decode visible state while rejecting blank and transpar
     assert.throws(() => decodeUiScreenshot(png, 96, 96), /SCREENSHOT/u);
   }
 });
+
+test('a 60 Hz Android panel is held to four panel frames, not the 120 Hz 50 ms bound (PRD-399)', () => {
+  const at60 = (latency) => {
+    const data = recording({ latency });
+    data.captures = data.captures.filter((_, index) => index % 4 === 0);
+    return data;
+  };
+  const report = analyzeUiCadence(at60(52), { sampling: 'android' });
+  assert.ok(report.p95Ms > 50 && report.p95Ms <= 68, `p95 ${report.p95Ms}`);
+  assert.throws(() => analyzeUiCadence(at60(72), { sampling: 'android' }), /LATENCY/u);
+  assert.throws(() => analyzeUiCadence(at60(45)), /SAMPLING|LATENCY/u);
+});
