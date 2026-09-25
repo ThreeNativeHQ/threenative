@@ -1,0 +1,429 @@
+{
+  "assets": {
+    "ground_cover": {
+      "bounds": {
+        "max": [
+          0.5,
+          0.0,
+          0.5
+        ],
+        "min": [
+          -0.5,
+          0.0,
+          -0.5
+        ]
+      },
+      "glb": "assets/ground_cover.glb",
+      "lods": [
+        {
+          "distance": 60.0,
+          "glb": "assets/ground_cover_lod1.glb"
+        }
+      ],
+      "maxDistance": 30.0
+    },
+    "pine": {
+      "bounds": {
+        "max": [
+          1.0,
+          2.0,
+          1.0
+        ],
+        "min": [
+          -1.0,
+          -2.0,
+          -1.0
+        ]
+      },
+      "glb": "assets/pine.glb",
+      "lods": [
+        {
+          "distance": 60.0,
+          "glb": "assets/pine_lod1.glb"
+        }
+      ]
+    },
+    "rock": {
+      "bounds": {
+        "max": [
+          0.8944249749183655,
+          1.0,
+          0.8506399989128113
+        ],
+        "min": [
+          -0.8944249749183655,
+          -1.0,
+          -0.8506399989128113
+        ]
+      },
+      "glb": "assets/rock.glb",
+      "lods": [
+        {
+          "distance": 60.0,
+          "glb": "assets/rock_lod1.glb"
+        }
+      ]
+    }
+  },
+  "cellSize": 64.0,
+  "cells": [
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 62,
+          "offset": 0
+        },
+        {
+          "asset": "pine",
+          "count": 28,
+          "offset": 62
+        },
+        {
+          "asset": "rock",
+          "count": 26,
+          "offset": 90
+        }
+      ],
+      "x": 0,
+      "z": 0
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 113,
+          "offset": 116
+        },
+        {
+          "asset": "pine",
+          "count": 44,
+          "offset": 229
+        },
+        {
+          "asset": "rock",
+          "count": 48,
+          "offset": 273
+        }
+      ],
+      "x": 0,
+      "z": 1
+    },
+    {
+      "chunks": [
+        "chunks/yard_0_2.glb"
+      ],
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 109,
+          "offset": 321
+        },
+        {
+          "asset": "pine",
+          "count": 50,
+          "offset": 430
+        },
+        {
+          "asset": "rock",
+          "count": 45,
+          "offset": 480
+        }
+      ],
+      "x": 0,
+      "z": 2
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 71,
+          "offset": 525
+        },
+        {
+          "asset": "pine",
+          "count": 25,
+          "offset": 596
+        },
+        {
+          "asset": "rock",
+          "count": 28,
+          "offset": 621
+        }
+      ],
+      "x": 0,
+      "z": 3
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 115,
+          "offset": 649
+        },
+        {
+          "asset": "pine",
+          "count": 46,
+          "offset": 764
+        },
+        {
+          "asset": "rock",
+          "count": 44,
+          "offset": 810
+        }
+      ],
+      "x": 1,
+      "z": 0
+    },
+    {
+      "chunks": [
+        "chunks/yard_1_1.glb"
+      ],
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 205,
+          "offset": 854
+        },
+        {
+          "asset": "pine",
+          "count": 85,
+          "offset": 1059
+        },
+        {
+          "asset": "rock",
+          "count": 79,
+          "offset": 1144
+        }
+      ],
+      "x": 1,
+      "z": 1
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 212,
+          "offset": 1223
+        },
+        {
+          "asset": "pine",
+          "count": 75,
+          "offset": 1435
+        },
+        {
+          "asset": "rock",
+          "count": 88,
+          "offset": 1510
+        }
+      ],
+      "x": 1,
+      "z": 2
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 110,
+          "offset": 1598
+        },
+        {
+          "asset": "pine",
+          "count": 49,
+          "offset": 1708
+        },
+        {
+          "asset": "rock",
+          "count": 40,
+          "offset": 1757
+        }
+      ],
+      "x": 1,
+      "z": 3
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 117,
+          "offset": 1797
+        },
+        {
+          "asset": "pine",
+          "count": 52,
+          "offset": 1914
+        },
+        {
+          "asset": "rock",
+          "count": 45,
+          "offset": 1966
+        }
+      ],
+      "x": 2,
+      "z": 0
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 203,
+          "offset": 2011
+        },
+        {
+          "asset": "pine",
+          "count": 77,
+          "offset": 2214
+        },
+        {
+          "asset": "rock",
+          "count": 86,
+          "offset": 2291
+        }
+      ],
+      "x": 2,
+      "z": 1
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 205,
+          "offset": 2377
+        },
+        {
+          "asset": "pine",
+          "count": 79,
+          "offset": 2582
+        },
+        {
+          "asset": "rock",
+          "count": 80,
+          "offset": 2661
+        }
+      ],
+      "x": 2,
+      "z": 2
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 114,
+          "offset": 2741
+        },
+        {
+          "asset": "pine",
+          "count": 41,
+          "offset": 2855
+        },
+        {
+          "asset": "rock",
+          "count": 44,
+          "offset": 2896
+        }
+      ],
+      "x": 2,
+      "z": 3
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 64,
+          "offset": 2940
+        },
+        {
+          "asset": "pine",
+          "count": 26,
+          "offset": 3004
+        },
+        {
+          "asset": "rock",
+          "count": 22,
+          "offset": 3030
+        }
+      ],
+      "x": 3,
+      "z": 0
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 116,
+          "offset": 3052
+        },
+        {
+          "asset": "pine",
+          "count": 44,
+          "offset": 3168
+        },
+        {
+          "asset": "rock",
+          "count": 45,
+          "offset": 3212
+        }
+      ],
+      "x": 3,
+      "z": 1
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 118,
+          "offset": 3257
+        },
+        {
+          "asset": "pine",
+          "count": 51,
+          "offset": 3375
+        },
+        {
+          "asset": "rock",
+          "count": 48,
+          "offset": 3426
+        }
+      ],
+      "x": 3,
+      "z": 2
+    },
+    {
+      "runs": [
+        {
+          "asset": "ground_cover",
+          "count": 64,
+          "offset": 3474
+        },
+        {
+          "asset": "pine",
+          "count": 27,
+          "offset": 3538
+        },
+        {
+          "asset": "rock",
+          "count": 21,
+          "offset": 3565
+        }
+      ],
+      "x": 3,
+      "z": 3
+    }
+  ],
+  "extent": {
+    "minX": -128.0,
+    "minZ": -128.0,
+    "sizeX": 256.0,
+    "sizeZ": 256.0
+  },
+  "placements": "placements.bin",
+  "terrain": {
+    "columns": 129,
+    "heightMax": 4.857554912567139,
+    "heightMin": -4.86436128616333,
+    "heightmap": "terrain/heightmap.u16",
+    "rows": 129,
+    "spacing": 2.0
+  },
+  "version": 1
+}

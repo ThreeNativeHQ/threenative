@@ -43,6 +43,7 @@
   },
   "devDependencies": {
     "@gltf-transform/core": "catalog:",
+    "@threenative/core": "workspace:*",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:"
