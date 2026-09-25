@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { PNG } from "pngjs";
 import { createServer } from "vite";
+
+// Headed Chromium needs a display in CI. Re-exec this fixture under Xvfb when none exists.
+if (!process.env.DISPLAY && process.env.TN_CLEARWATER_XVFB !== "1") {
+  const child = spawnSync("xvfb-run", ["-a", process.execPath, ...process.argv.slice(1)], {
+    stdio: "inherit",
+    env: { ...process.env, TN_CLEARWATER_XVFB: "1" },
+  });
+  process.exit(child.status ?? 1);
+}
 
 // Repository-only smoke. Hosted software WebGPU is useful for WGSL correctness, not FPS claims.
 const root = fileURLToPath(new URL("../template-assets/clearwater/", import.meta.url));
