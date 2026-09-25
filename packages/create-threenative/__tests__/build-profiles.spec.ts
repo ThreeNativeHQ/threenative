@@ -99,10 +99,10 @@ describe("build profile resolution", () => {
       );
     }
     const unknownKey = await project({
-      buildProfiles: { profiles: { compact: { artifactBudget: { packagedAssetBytes: 1 } } } },
+      buildProfiles: { profiles: { compact: { artifact: { limit: 1 } } } },
     });
     await expect(loadConfig(unknownKey, { target: "web" })).rejects.toThrow(
-      /buildProfiles\.profiles\['compact'\]\.artifactBudget is not recognised/u,
+      /buildProfiles\.profiles\['compact'\]\.artifact is not recognised/u,
     );
     for (const key of ["source", "output", "concurrency", "exclude"]) {
       const root = await project({
@@ -114,6 +114,44 @@ describe("build profile resolution", () => {
     }
     const empty = await project({ buildProfiles: { profiles: {} } });
     await expect(loadConfig(empty, { target: "web" })).rejects.toThrow(/at least one profile/u);
+  });
+
+  it("accepts a declared artifact budget and refuses a malformed one", async () => {
+    const valid = await project({
+      buildProfiles: {
+        defaults: { web: "capped" },
+        profiles: {
+          capped: {
+            artifactBudget: {
+              artifactBytes: { limit: 5_000_000, severity: "warn" },
+              packagedAssetBytes: { limit: 1, severity: "error" },
+            },
+          },
+        },
+      },
+    });
+    await expect(loadConfig(valid, { target: "web" })).resolves.toMatchObject({
+      buildProfile: {
+        name: "capped",
+        artifactBudget: {
+          artifactBytes: { limit: 5_000_000, severity: "warn" },
+          packagedAssetBytes: { limit: 1, severity: "error" },
+        },
+      },
+    });
+    for (const artifactBudget of [
+      { artifactBytes: { limit: 0, severity: "error" } },
+      { artifactBytes: { limit: 1.5, severity: "error" } },
+      { artifactBytes: { limit: 10, severity: "loud" } },
+      { artifactBytes: { limit: 10 } },
+      { artifactBytes: { limit: 10, severity: "error", tolerance: 1 } },
+      { packagedBytes: { limit: 10, severity: "error" } },
+    ]) {
+      const root = await project({ buildProfiles: { profiles: { capped: { artifactBudget } } } });
+      await expect(loadConfig(root, { target: "web" })).rejects.toThrow(
+        /TN_CONFIG_(?:PROFILE_INVALID|UNKNOWN_KEY)/u,
+      );
+    }
   });
 
   it("merges objects field by field, replaces everything else, and leaves the project's own config untouched", async () => {

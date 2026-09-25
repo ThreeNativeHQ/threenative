@@ -1,8 +1,8 @@
-import { execFile } from "node:child_process";
-import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile, spawnSync } from "node:child_process";
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { assertNativeBundleCompatible, build } from "../src/build.js";
 
@@ -50,6 +50,135 @@ async function bundle(
   );
   return output;
 }
+
+/** A project with a stub runtime-native whose desktop packager is `packager`. */
+async function stubRuntime(
+  project: string,
+  packager: string,
+  config = 'export default { ui: { renderer: "native" } };\n',
+): Promise<void> {
+  const runtime = path.join(project, "node_modules/@threenative/runtime-native");
+  await mkdir(path.join(runtime, "scripts"), { recursive: true });
+  await writeFile(
+    path.join(project, "package.json"),
+    JSON.stringify({ name: "native-staging", type: "module" }),
+  );
+  await writeFile(path.join(project, "threenative.config.ts"), config);
+  await writeFile(path.join(project, "src/game.ts"), "export default { start: async () => {} };\n");
+  await writeFile(
+    path.join(runtime, "package.json"),
+    '{"name":"@threenative/runtime-native","type":"module"}\n',
+  );
+  await writeFile(
+    path.join(runtime, "scripts/bundle.mjs"),
+    `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(output, "globalThis.__nativeProof = true;\\n");
+`,
+  );
+  await writeFile(path.join(runtime, "scripts/package-desktop.mjs"), packager);
+}
+
+/** The packager the staged-publish tests share: a complete run that writes its output. */
+const PACKAGES = `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(output, "a complete package");
+`;
+
+/** `PACKAGES` writes 18 bytes, so a 17-byte ceiling is one byte below what the build produces. */
+function budgetedProject(severity: "error" | "warn"): string {
+  return [
+    "export default {",
+    `  buildProfiles: { defaults: { desktop: "capped" }, profiles: { capped: { artifactBudget: { artifactBytes: { limit: 17, severity: "${severity}" } } } } },`,
+    '  ui: { renderer: "native" },',
+    "};",
+    "",
+  ].join("\n");
+}
+
+describe("atomic publish and the project build lock", () => {
+  it("leaves the previous artifact untouched when the packager fails, with no staging left", async () => {
+    const project = await projectRoot("threenative-native-atomic-");
+    await stubRuntime(
+      project,
+      `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(output, "half a package");
+process.exit(1);
+`,
+    );
+    const artifact = path.join(project, "dist-native", "native-staging");
+    await mkdir(path.dirname(artifact), { recursive: true });
+    await writeFile(artifact, "the previous package");
+
+    await expect(build({ cwd: project, target: "desktop" })).rejects.toThrow(/exited with code 1/u);
+    expect(await readFile(artifact, "utf8")).toBe("the previous package");
+    expect(await readdir(path.dirname(artifact))).toEqual(["native-staging"]);
+  });
+
+  it("refuses a second build while a live pid holds the lock, and reclaims a dead one", async () => {
+    const project = await projectRoot("threenative-native-lock-");
+    await stubRuntime(project, PACKAGES);
+    const lock = path.join(project, ".threenative", "build.lock");
+    await mkdir(path.dirname(lock), { recursive: true });
+    await writeFile(lock, String(process.pid));
+
+    await expect(build({ cwd: project, target: "desktop" })).rejects.toThrow(
+      new RegExp(`TN_BUILD_BUSY.*pid ${process.pid}`, "u"),
+    );
+
+    // A build that died mid-packaging leaves its pid behind; that must not lock the project out.
+    const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+    if (dead === undefined) throw new Error("no dead pid to reclaim with");
+    await writeFile(lock, String(dead));
+
+    await expect(build({ cwd: project, target: "desktop" })).resolves.toBeUndefined();
+    expect(await readFile(path.join(project, "dist-native", "native-staging"), "utf8")).toBe(
+      "a complete package",
+    );
+    await expect(readFile(lock, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("an artifact budget measured before publish", () => {
+  it("refuses an over-limit artifact and leaves the previous one in place", async () => {
+    const project = await projectRoot("threenative-native-budget-error-");
+    await stubRuntime(project, PACKAGES, budgetedProject("error"));
+    const artifact = path.join(project, "dist-native", "native-staging");
+    await mkdir(path.dirname(artifact), { recursive: true });
+    await writeFile(artifact, "the previous package");
+
+    await expect(build({ cwd: project, target: "desktop" })).rejects.toThrow(
+      /TN_BUILD_ARTIFACT_BUDGET_EXCEEDED.*artifactBytes measured 18 bytes over its 17-byte limit/u,
+    );
+    expect(await readFile(artifact, "utf8")).toBe("the previous package");
+    expect(await readdir(path.dirname(artifact))).toEqual(["native-staging"]);
+  });
+
+  it("prints the same sentence and publishes when the ceiling only warns", async () => {
+    const project = await projectRoot("threenative-native-budget-warn-");
+    await stubRuntime(project, PACKAGES, budgetedProject("warn"));
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+      lines.push(String(chunk));
+      return true;
+    });
+
+    await expect(build({ cwd: project, target: "desktop" })).resolves.toBeUndefined();
+    expect(await readFile(path.join(project, "dist-native", "native-staging"), "utf8")).toBe(
+      "a complete package",
+    );
+    expect(lines).toContain(
+      "threenative build: artifactBytes measured 18 bytes over its 17-byte limit.\n",
+    );
+  });
+});
 
 describe("native template contract", () => {
   it("keeps the portable graph and generated start while excluding the web entry", async () => {
@@ -167,7 +296,7 @@ export default { start: async () => console.info(marker) };
     expect(nativeDesktop).not.toContain("WEB_BACKEND");
   }, 15_000);
 
-  it("passes public assets to every native packager", async () => {
+  it("passes the configured asset root to every native packager", async () => {
     const project = await projectRoot("threenative-native-assets-");
     const runtime = path.join(project, "node_modules/@threenative/runtime-native");
     await writeFile(
@@ -179,16 +308,23 @@ export default { start: async () => console.info(marker) };
     );
     await writeFile(
       path.join(project, "threenative.config.ts"),
-      'export default { display: { orientation: "portrait" }, ui: { renderer: "native" } };\n',
+      [
+        "export default {",
+        '  assets: { output: "cooked" },',
+        '  display: { orientation: "portrait" },',
+        '  ui: { renderer: "native" },',
+        "};",
+        "",
+      ].join("\n"),
     );
-    await mkdir(path.join(project, "public"), { recursive: true });
+    await mkdir(path.join(project, "cooked"), { recursive: true });
     await mkdir(path.join(project, "assets"), { recursive: true });
     await mkdir(path.join(runtime, "scripts"), { recursive: true });
     await writeFile(
       path.join(project, "src/game.ts"),
       "export default { start: async () => {} };\n",
     );
-    await writeFile(path.join(project, "public/texture.png"), "texture\n");
+    await writeFile(path.join(project, "cooked/texture.png"), "texture\n");
     await writeFile(
       path.join(runtime, "package.json"),
       '{"name":"@threenative/runtime-native","type":"module"}\n',
@@ -205,7 +341,11 @@ await writeFile(output, "globalThis.__nativeProof = true;\\n");
     for (const target of ["desktop", "android", "ios"] as const) {
       await writeFile(
         path.join(runtime, `scripts/package-${target}.mjs`),
-        `import { writeFile } from "node:fs/promises";
+        `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(output, "packaged");
 await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringify(process.argv.slice(2)));
 `,
       );
@@ -213,8 +353,10 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
       const args = JSON.parse(
         await readFile(path.join(runtime, `${target}-args.json`), "utf8"),
       ) as string[];
-      expect(args, `${target} must receive public/`).toContain("--assets");
-      expect(args, `${target} must receive public/`).toContain(path.join(project, "public"));
+      expect(args, `${target} must receive --assets`).toContain("--assets");
+      expect(args[args.indexOf("--assets") + 1], `${target} asset root`).toBe(
+        path.join(project, "cooked"),
+      );
       if (target !== "desktop") {
         expect(args, `${target} must receive orientation`).toContain("--orientation");
         expect(args[args.indexOf("--orientation") + 1], `${target} orientation`).toBe("portrait");
@@ -253,7 +395,11 @@ await writeFile(output, "export default { start() {} };\\n");
     for (const target of ["desktop", "android", "ios"] as const) {
       await writeFile(
         path.join(runtime, `scripts/package-${target}.mjs`),
-        `import { writeFile } from "node:fs/promises";
+        `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(output, "packaged");
 await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringify(process.argv.slice(2)));
 `,
       );
@@ -263,6 +409,10 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
         await readFile(path.join(runtime, `${target}-args.json`), "utf8"),
       ) as string[];
       expect(args, `${target} must receive the resolved config`).toContain("--config");
+      expect(args, `${target} must receive the default asset root`).toContain("--assets");
+      expect(args[args.indexOf("--assets") + 1], `${target} asset root`).toBe(
+        path.join(project, "public"),
+      );
       expect(args, `${target} must receive the default UI`).toContain("--ui");
       const ui = args[args.indexOf("--ui") + 1];
       if (ui === undefined) throw new Error(`${target} must name its UI output`);

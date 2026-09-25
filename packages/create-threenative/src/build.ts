@@ -1,9 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { compileAssets } from "@threenative/assets";
 import { writeCompressionSidecars } from "./compress.js";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
@@ -130,6 +131,11 @@ function namedAssets(logicalPaths: readonly string[]): string {
   return rest > 0 ? `${shown} and ${rest} more` : shown;
 }
 
+/** The compiled asset root this project's config chose, resolved against the project directory. */
+export function assetRoot(cwd: string, config: IResolvedThreeNativeConfig): string {
+  return path.resolve(cwd, config.assets?.output ?? "public");
+}
+
 /**
  * Refuses compiled assets a mobile native target cannot decode, at the first point the build
  * knows about them — after the compile step, before a bundle or an APK exists.
@@ -147,7 +153,7 @@ export async function assertNativeAssetsCompatible(
   config: IResolvedThreeNativeConfig,
 ): Promise<void> {
   if (target === "desktop" || target === "web") return;
-  const outputRoot = path.resolve(cwd, config.assets?.output ?? "public");
+  const outputRoot = assetRoot(cwd, config);
   const manifestPath = path.join(outputRoot, "assets.manifest.json");
   let raw: string;
   try {
@@ -329,12 +335,35 @@ export async function buildWeb(
     [path.join(packageRoot(cwd, "vite"), "bin/vite.js"), "build", ...viteArgs],
     cwd,
   );
-  const report = await writeCompressionSidecars(path.resolve(cwd, viteOutDir(viteArgs)));
+  const outDir = path.resolve(cwd, viteOutDir(viteArgs));
+  await pruneUnpackagedAssets(cwd, config, outDir);
+  const report = await writeCompressionSidecars(outDir);
   if (report !== undefined) {
     process.stdout.write(
       `web main chunk ${report.entry}: raw ${report.raw} B, gzip ${report.gzip} B, brotli ${report.brotli} B\n`,
     );
   }
+}
+
+/**
+ * Remove from the Vite outDir exactly the compiled files packaging would have dropped.
+ *
+ * Vite copies the whole output root, so a cook output no current bake declares rides along into
+ * a web build. The rule is the packagers' own selector, imported from the runtime-native package
+ * every template installs; a web-only project that does not have it keeps Vite's copy, because
+ * there is no packaging selector shipped to ask.
+ */
+async function pruneUnpackagedAssets(
+  cwd: string,
+  config: IResolvedThreeNativeConfig,
+  outDir: string,
+): Promise<void> {
+  const assets = assetRoot(cwd, config);
+  if (!existsSync(assets)) return;
+  const selector = await packagingSelector(cwd);
+  if (selector === undefined) return;
+  for (const file of selector.selectManifestAssets(assets).dropped)
+    await rm(path.join(outDir, file), { force: true });
 }
 
 /** Vite's `--outDir`, or its `dist` default when the project left it to the config. */
@@ -505,6 +534,92 @@ async function bundleNative(
   return output;
 }
 
+/** The bytes one file or directory holds; a directory is the recursive sum, `.app` bundle included. */
+async function measureBytes(target: string): Promise<number> {
+  const info = await stat(target);
+  if (!info.isDirectory()) return info.size;
+  let total = 0;
+  for (const entry of await readdir(target, { withFileTypes: true })) {
+    total += await measureBytes(path.join(target, entry.name));
+  }
+  return total;
+}
+
+/** The one packaging selector, as `runtime-native/scripts/asset-manifest.mjs` exports it. */
+interface IPackagingSelector {
+  selectManifestAssets(
+    assets: string,
+    options?: { log?: (line: string) => void },
+  ): { dropped: string[]; selected: string[] };
+}
+
+/** The one packaging selector, from the installed native runtime; absent when it is not installed. */
+async function packagingSelector(cwd: string): Promise<IPackagingSelector | undefined> {
+  try {
+    const module = path.join(
+      packageRoot(cwd, "@threenative/runtime-native"),
+      "scripts",
+      "asset-manifest.mjs",
+    );
+    return (await import(pathToFileURL(module).href)) as IPackagingSelector;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The bytes of the asset files this build actually packages, and not the ones it drops. */
+async function measurePackagedAssetBytes(cwd: string, assets: string): Promise<number> {
+  if (!existsSync(assets)) return 0;
+  const selector = await packagingSelector(cwd);
+  if (selector === undefined) return measureBytes(assets);
+  let total = 0;
+  // Silent: the packager is seconds away printing these same skips and the unmanaged line.
+  for (const file of selector.selectManifestAssets(assets, { log: () => {} }).selected)
+    total += (await stat(path.join(assets, file))).size;
+  return total;
+}
+
+function budgetSentence(metric: string, measured: number, limit: number): string {
+  return `threenative build: ${metric} measured ${measured} bytes over its ${limit}-byte limit.`;
+}
+
+/**
+ * Measure what a staged build produced against its profile's `artifactBudget`, before publishing.
+ *
+ * An `error` ceiling refuses the build and leaves the previous artifact exactly where it was —
+ * the whole reason measurement happens here, on the staging path, and not after the publish.
+ * A `warn` ceiling prints the same sentence and publishes, because a game that ships over its own
+ * advisory ceiling is a decision its author made.
+ */
+async function assertArtifactBudget(
+  cwd: string,
+  config: IResolvedThreeNativeConfig,
+  final: string,
+  staged: string,
+  assets: string,
+): Promise<void> {
+  const budget = config.buildProfile?.artifactBudget;
+  if (budget === undefined) return;
+  const metrics = [
+    { declared: budget.artifactBytes, measured: await measureBytes(staged), name: "artifactBytes" },
+    {
+      declared: budget.packagedAssetBytes,
+      measured: await measurePackagedAssetBytes(cwd, assets),
+      name: "packagedAssetBytes",
+    },
+  ];
+  for (const { declared, measured, name } of metrics) {
+    if (declared === undefined || measured <= declared.limit) continue;
+    const sentence = budgetSentence(name, measured, declared.limit);
+    if (declared.severity === "error") {
+      throw new Error(
+        `TN_BUILD_ARTIFACT_BUDGET_EXCEEDED: ${sentence} The build did not publish, so ${final} is still the previous artifact.`,
+      );
+    }
+    process.stdout.write(`${sentence}\n`);
+  }
+}
+
 async function buildNative(
   target: NativeBuildTarget,
   cwd: string,
@@ -534,14 +649,18 @@ async function buildNative(
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
   const bundle = await bundleNative(cwd, runtimeRoot, entry, target, !webAssembly);
   await assertNativeBundleCompatible(bundle, target);
-  const assets = path.join(cwd, "public");
+  // The compiled root the project configured, which `compileAssets` above baked into — not the
+  // `public` default. A project whose cook profile writes elsewhere was packaging an empty
+  // directory while its own assets sat next to it, unread.
+  const assets = assetRoot(cwd, config);
   // The UI is built only when the game asked for the web renderer, so a `native` game ships no
   // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
   const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
   if (target === "ios") {
     const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
-    await run(
-      process.execPath,
+    await packageStaged(
+      output,
+      runtimeRoot,
       [
         path.join(runtimeRoot, "scripts", "package-ios.mjs"),
         "--bundle",
@@ -556,7 +675,7 @@ async function buildNative(
         "--output",
         output,
       ],
-      runtimeRoot,
+      { assets, config },
     );
     return;
   }
@@ -566,8 +685,9 @@ async function buildNative(
       "dist-native",
       `${await projectName(cwd)}.${format === "aab" ? "aab" : "apk"}`,
     );
-    await run(
-      process.execPath,
+    await packageStaged(
+      output,
+      runtimeRoot,
       [
         path.join(runtimeRoot, "scripts", "package-android.mjs"),
         ...(allowSourceBuild ? ["--allow-source-build"] : []),
@@ -591,13 +711,14 @@ async function buildNative(
         "--output",
         output,
       ],
-      runtimeRoot,
+      { assets, config },
     );
     return;
   }
   const output = path.join(cwd, "dist-native", await projectName(cwd));
-  await run(
-    process.execPath,
+  await packageStaged(
+    output,
+    cwd,
     [
       path.join(runtimeRoot, "scripts", "package-desktop.mjs"),
       "--mode",
@@ -615,8 +736,122 @@ async function buildNative(
       "--output",
       output,
     ],
-    cwd,
+    { assets, config },
   );
+}
+
+/**
+ * Run a packager against a staging sibling of the final artifact, then publish what it produced.
+ *
+ * A packager writes in place: an APK that fails halfway leaves a truncated `dist-native/<name>.apk`
+ * where a working one used to be, and a killed build leaves no way to tell the two apart. So the
+ * packager is handed `<final>.staging-<pid>`, and only a complete run publishes — a rename aside
+ * for the previous artifact, a rename in for the new one, then the old one goes. A failure never
+ * reaches the publish, so the previous artifact is still the artifact.
+ *
+ * The whole family is published, not just the named output: an iOS `.app` also writes
+ * `<output>.json`, and a desktop release container writes `<output>.tar.gz` and, on Windows,
+ * `<output>-setup.exe` beside the raw binary.
+ */
+async function packageStaged(
+  output: string,
+  cwd: string,
+  args: readonly string[],
+  budget?: { assets: string; config: IResolvedThreeNativeConfig },
+): Promise<void> {
+  const staged = `${output}.staging-${process.pid}`;
+  const index = args.indexOf("--output");
+  if (index < 0 || index + 1 >= args.length) {
+    throw new Error("packageStaged needs the packager's --output <path> argument to stage it.");
+  }
+  const packager = [...args];
+  packager[index + 1] = staged;
+  try {
+    await run(process.execPath, packager, cwd);
+    if (budget !== undefined)
+      await assertArtifactBudget(cwd, budget.config, output, staged, budget.assets);
+  } catch (error) {
+    await rm(staged, { force: true, recursive: true });
+    throw error;
+  }
+  await publishStagedArtifact(output, staged);
+}
+
+async function publishStagedArtifact(final: string, staging: string): Promise<void> {
+  const directory = path.dirname(final);
+  const stagedName = path.basename(staging);
+  const finalName = path.basename(final);
+  const produced = (existsSync(directory) ? await readdir(directory) : []).filter(
+    (name) => name === stagedName || name.startsWith(`${stagedName}.`),
+  );
+  if (produced.length === 0) {
+    throw new Error(
+      `TN_BUILD_ARTIFACT_MISSING: the packager exited successfully but wrote no artifact to ${staging}; ${final} is unchanged.`,
+    );
+  }
+  for (const name of produced) {
+    const from = path.join(directory, name);
+    const to = path.join(directory, `${finalName}${name.slice(stagedName.length)}`);
+    if (!existsSync(to)) {
+      await rename(from, to);
+      continue;
+    }
+    // Both live in one directory, so each rename is atomic: the window in which the artifact does
+    // not exist is a single syscall wide.
+    const previous = `${to}.previous-${process.pid}`;
+    await rename(to, previous);
+    try {
+      await rename(from, to);
+    } catch (error) {
+      // The new artifact did not land, so the previous one goes back: never leave neither.
+      await rename(previous, to);
+      throw error;
+    }
+    await rm(previous, { force: true, recursive: true });
+  }
+}
+
+/** The project-scoped build lock, holding the pid of the build that owns it. */
+const BUILD_LOCK = path.join(".threenative", "build.lock");
+
+/** Whether a pid is running; `EPERM` is a live process this user may not signal. */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Take the project build lock, or fail `TN_BUILD_BUSY` naming the build holding it.
+ *
+ * `.threenative/build/config.json` and `game.js` are shared mutable paths, so two builds in one
+ * project overwrite each other's inputs half-way through. A lock whose pid is gone is reclaimed —
+ * a crashed build must not lock a project out forever — and a crash mid-write leaves no pid,
+ * which reads the same way.
+ */
+async function acquireBuildLock(lock: string): Promise<void> {
+  for (;;) {
+    try {
+      const handle = await open(lock, "wx");
+      await handle.writeFile(String(process.pid));
+      await handle.close();
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const pid = Number.parseInt((await readFile(lock, "utf8").catch(() => "")).trim(), 10);
+      if (Number.isSafeInteger(pid) && pid > 0 && pidAlive(pid)) {
+        throw new Error(
+          `TN_BUILD_BUSY: another threenative build (pid ${pid}) holds ${lock}. Wait for it to finish; if that process is gone, delete the lock.`,
+        );
+      }
+      // ponytail: two builds reclaiming the same dead lock in the same instant can both win;
+      // move to an OS advisory lock if concurrent CI builds of one checkout ever hit it.
+      await rm(lock, { force: true });
+    }
+  }
 }
 
 export async function build(options: IBuildOptions): Promise<void> {
@@ -637,22 +872,31 @@ export async function build(options: IBuildOptions): Promise<void> {
   if (format === "aab" && mode !== "release") {
     throw new Error("--format aab requires --mode release.");
   }
+  // Every option is refused before the project is touched, the lock included: a request the
+  // build cannot honour must not leave a lock file or a `.threenative/` behind to explain itself.
+  if (options.target !== "web" && (options.viteArgs?.length ?? 0) > 0) {
+    throw new Error(
+      `${options.target} build does not accept ${options.viteArgs?.join(" ")}. iOS output is simulator-only; device signing remains OPEN.`,
+    );
+  }
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  if (options.target === "web") await buildWeb(cwd, options.viteArgs, options.profile);
-  else {
-    if ((options.viteArgs?.length ?? 0) > 0) {
-      throw new Error(
-        `${options.target} build does not accept ${options.viteArgs?.join(" ")}. iOS output is simulator-only; device signing remains OPEN.`,
+  const lock = path.join(cwd, BUILD_LOCK);
+  await mkdir(path.dirname(lock), { recursive: true });
+  await acquireBuildLock(lock);
+  try {
+    if (options.target === "web") await buildWeb(cwd, options.viteArgs, options.profile);
+    else {
+      await buildNative(
+        options.target,
+        cwd,
+        options.allowSourceBuild === true,
+        mode,
+        format,
+        options.profile,
       );
     }
-    await buildNative(
-      options.target,
-      cwd,
-      options.allowSourceBuild === true,
-      mode,
-      format,
-      options.profile,
-    );
+  } finally {
+    await rm(lock, { force: true });
   }
 }
 

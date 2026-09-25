@@ -253,6 +253,14 @@ export interface IThreeNativeLodConfig {
   readonly runtime?: IThreeNativeLodRuntimeConfig;
 }
 
+/** One measured byte ceiling on a produced artifact, and what crossing it does. */
+export interface IThreeNativeArtifactBudgetLimit {
+  /** Bytes, exclusive: a build measuring exactly the limit is inside it. */
+  readonly limit: number;
+  /** `"error"` refuses the build and keeps the previous artifact; `"warn"` prints and publishes. */
+  readonly severity: "error" | "warn";
+}
+
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -310,6 +318,18 @@ export interface IThreeNativeConfig {
       Record<
         string,
         {
+          /**
+           * Byte ceilings on what this profile actually produced, measured after packaging and
+           * checked before the artifact is published. `artifactBytes` is the artifact itself (a
+           * file, or the recursive sum of a directory, `.app` bundle or outDir);
+           * `packagedAssetBytes` is the sum of the asset files that survived the packaging
+           * selector. `"error"` refuses the build and leaves the previous artifact in place;
+           * `"warn"` prints and publishes.
+           */
+          readonly artifactBudget?: {
+            readonly artifactBytes?: IThreeNativeArtifactBudgetLimit;
+            readonly packagedAssetBytes?: IThreeNativeArtifactBudgetLimit;
+          };
           readonly assets?: Pick<
             NonNullable<IThreeNativeConfig["assets"]>,
             "audio" | "budget" | "lod" | "models" | "targets" | "textures"

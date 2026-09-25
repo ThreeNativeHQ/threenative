@@ -1,9 +1,11 @@
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   assertNativeAssetsCompatible,
@@ -257,6 +259,70 @@ describe("threenative build", () => {
       );
     }
   });
+
+  it("drops a cook output the current bake does not declare from the web outDir", async () => {
+    // Vite copies the whole output root, so without the packagers' own selector an orphan from
+    // an earlier bake ships in every web build and is never loaded by anything. The bake is the
+    // real one: only a bake that actually cooked something leaves a manifest naming its outputs.
+    const root = await makeTempDir("threenative-web-orphan-");
+    roots.push(root);
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    const runtime = path.join(root, "node_modules", "@threenative", "runtime-native", "scripts");
+    await mkdir(runtime, { recursive: true });
+    await writeFile(
+      path.join(runtime, "..", "package.json"),
+      '{"name":"@threenative/runtime-native","type":"module"}\n',
+    );
+    await writeFile(
+      path.join(runtime, "asset-manifest.mjs"),
+      await readFile(path.resolve("packages/runtime-native/scripts/asset-manifest.mjs"), "utf8"),
+    );
+    // The bake copies three's Basis transcoder next to its output, resolved through the project.
+    await symlink(
+      path.resolve("packages/core/node_modules/three"),
+      path.join(root, "node_modules", "three"),
+      "dir",
+    );
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-orphan" }));
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      "export default { assets: { concurrency: 1 } };\n",
+    );
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        blue: (x, y) => (x * 31 + y * 17) % 256,
+        green: (x, y) => (x * 7 + y * 29) % 256,
+        height: 64,
+        red: (x, y) => (x * 13 + y * 11) % 256,
+        width: 64,
+      }),
+    );
+    // A cook output from a bake this one knows nothing about: an orphan no game loads.
+    await mkdir(path.join(root, "public"), { recursive: true });
+    await writeFile(path.join(root, "public", "ghost.22222222.png"), "orphan");
+    const vite = await installDeterministicVite(root);
+    await writeFile(
+      vite,
+      `#!/usr/bin/env node
+import { cpSync, mkdirSync } from "node:fs";
+import path from "node:path";
+const out = path.resolve("dist");
+mkdirSync(out, { recursive: true });
+cpSync("public", out, { recursive: true });
+`,
+    );
+
+    await buildWeb(root);
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "dist", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+    expect(existsSync(path.join(root, "dist", manifest.entries["rock.png"]?.output ?? ""))).toBe(
+      true,
+    );
+    expect(existsSync(path.join(root, "dist", "ghost.22222222.png"))).toBe(false);
+  }, 60_000);
 
   it("emits index.html for the native overlay loader", async () => {
     const root = await makeTempDir("threenative-ui-build-");

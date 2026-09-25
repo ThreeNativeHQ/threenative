@@ -65,6 +65,8 @@ export interface IResolvedThreeNativeConfig {
     readonly name: string;
     readonly source: "flag" | "default";
     readonly target: BuildTarget;
+    /** The byte ceilings this build must measure against before publishing its artifact. */
+    readonly artifactBudget?: ArtifactBudget;
   };
   readonly renderer: {
     readonly preferWebGPU: boolean;
@@ -1588,9 +1590,53 @@ interface IProfileSelection {
 interface IResolvedProfile {
   /** The overlay as declared, still unvalidated: `validateAssets` sees the merged result. */
   readonly assets: Record<string, unknown>;
+  /** The validated byte ceilings on what this profile's build may produce. */
+  readonly artifactBudget?: ArtifactBudget;
   readonly name: string;
   readonly source: "flag" | "default";
   readonly target: BuildTarget;
+}
+
+/** The byte ceilings a profile declares on what a build produced. */
+type ArtifactBudget = NonNullable<
+  NonNullable<IThreeNativeConfig["buildProfiles"]>["profiles"][string]["artifactBudget"]
+>;
+type ArtifactBudgetLimit = Required<ArtifactBudget>["artifactBytes"];
+
+const ARTIFACT_BUDGET_KEYS: readonly string[] = ["artifactBytes", "packagedAssetBytes"];
+const ARTIFACT_BUDGET_SEVERITIES: readonly string[] = ["error", "warn"];
+
+function artifactBudgetLimit(raw: unknown, label: string): ArtifactBudgetLimit {
+  const limit = assertRecord(raw, label);
+  assertKeys(limit, label, ["limit", "severity"]);
+  const bytes = positiveInteger(limit.limit, 1, "TN_CONFIG_PROFILE_INVALID", `${label}.limit`);
+  if (typeof limit.severity !== "string" || !ARTIFACT_BUDGET_SEVERITIES.includes(limit.severity)) {
+    fail(
+      "TN_CONFIG_PROFILE_INVALID",
+      `${label}.severity must be one of ${ARTIFACT_BUDGET_SEVERITIES.join(", ")}.`,
+    );
+  }
+  return { limit: bytes, severity: limit.severity as ArtifactBudgetLimit["severity"] };
+}
+
+function validateArtifactBudget(raw: unknown, label: string): ArtifactBudget {
+  const budget = assertRecord(raw, `${label}.artifactBudget`);
+  assertKeys(budget, `${label}.artifactBudget`, ARTIFACT_BUDGET_KEYS);
+  const artifactBytes =
+    budget.artifactBytes === undefined
+      ? undefined
+      : artifactBudgetLimit(budget.artifactBytes, `${label}.artifactBudget.artifactBytes`);
+  const packagedAssetBytes =
+    budget.packagedAssetBytes === undefined
+      ? undefined
+      : artifactBudgetLimit(
+          budget.packagedAssetBytes,
+          `${label}.artifactBudget.packagedAssetBytes`,
+        );
+  return {
+    ...(artifactBytes === undefined ? {} : { artifactBytes }),
+    ...(packagedAssetBytes === undefined ? {} : { packagedAssetBytes }),
+  };
 }
 
 /**
@@ -1627,6 +1673,9 @@ function resolveBuildProfile(
   if (declared.length === 0) {
     fail("TN_CONFIG_GROUP_INVALID", "buildProfiles.profiles must declare at least one profile.");
   }
+  // Every declared profile is validated, not only the selected one: a broken budget that only
+  // bites when someone names that profile is a build that fails at the worst possible moment.
+  const budgets: Record<string, ArtifactBudget> = {};
   for (const name of declared) {
     const label = `buildProfiles.profiles['${name}']`;
     if (!PROFILE_NAME.test(name)) {
@@ -1636,12 +1685,15 @@ function resolveBuildProfile(
       );
     }
     const profile = assertRecord(profiles[name], label);
-    assertKeys(profile, label, ["assets"]);
+    assertKeys(profile, label, ["artifactBudget", "assets"]);
     assertKeys(
       assertRecord(profile.assets, `${label}.assets`),
       `${label}.assets`,
       PROFILE_ASSET_KEYS,
     );
+    if (profile.artifactBudget !== undefined) {
+      budgets[name] = validateArtifactBudget(profile.artifactBudget, label);
+    }
   }
   for (const [target, name] of Object.entries(defaults)) {
     if (typeof name === "string" && !Object.hasOwn(profiles, name)) {
@@ -1666,6 +1718,7 @@ function resolveBuildProfile(
   }
   return {
     assets: isRecord(profile.assets) ? profile.assets : {},
+    ...(budgets[name] === undefined ? {} : { artifactBudget: budgets[name] }),
     name,
     source: requested === undefined ? "default" : "flag",
     target: selection.target,
@@ -1801,7 +1854,14 @@ async function loadConfigInternal(
         ...(profile === undefined
           ? {}
           : {
-              buildProfile: { name: profile.name, source: profile.source, target: profile.target },
+              buildProfile: {
+                name: profile.name,
+                source: profile.source,
+                target: profile.target,
+                ...(profile.artifactBudget === undefined
+                  ? {}
+                  : { artifactBudget: profile.artifactBudget }),
+              },
             }),
       };
     },

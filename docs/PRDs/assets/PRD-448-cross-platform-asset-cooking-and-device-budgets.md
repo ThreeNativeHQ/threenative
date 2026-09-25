@@ -4,7 +4,7 @@
 **Complexity:** 9 (HIGH); risk override: none.  
 **Owner:** ThreeNative maintainers; implementation owner to be assigned.  
 **Depends on:** Existing `@threenative/assets`, native packaging, and playtest infrastructure. Reuse the PRD-377 discrete-LOD contract; do not reopen or duplicate that PRD.  
-**Progress:** Phases 1–2 of 6 done (AC-1, AC-2, AC-3).  
+**Progress:** Phases 1–2 of 6 done, Phase 3 in progress (AC-1, AC-2, AC-3, AC-5, AC-6).  
 **Source snapshot:** `ThreeNativeHQ/threenative`, `main` at `af60e210aa500e504e9370b3657caaf8340f5650`, inspected September 25, 2026.  
 **Authorization:** Planning-only scope. Owner explicitly authorized filing this documentation directly on `develop`; this does not authorize implementation, publishing, or deployment.  
 **Filing:** `docs/PRDs/assets/PRD-448-cross-platform-asset-cooking-and-device-budgets.md` on `develop`.  
@@ -314,8 +314,8 @@ All paths below exist in the inspected tree unless explicitly marked **new**. Im
 - [x] **AC-2 [unreachable-now/local; actor: implementation agent]:** A decoder-free target produces a decodable image satisfying its explicitly requested dimension cap. **Evidence:** E2 — decoder-free compiles (`runtimeDecoders.ktx2: false`) with `textures.maxSize: 1024` emit 4096² colour/normal/alpha sources as PNGs that decode to 1024² with alpha kept; a 512² source ships byte-identical and the source file is unchanged; corrupt PNG fails `TN_ASSETS_TEXTURE_UNDECODABLE` naming the path (`texture-pass.spec.ts`). Embedded .glb 4096 image → 1024 PNG, mimeType png, shared images still deduplicated, two caps key apart (`model-texture-pass.spec.ts`, `shared-images.spec.ts`). Red first: disabling the new pass / forcing `models.textures` to "none" failed each. `pnpm exec vitest run packages/assets/__tests__/ packages/create-threenative/__tests__/` 1122 passed / 2 skipped, 2026-09-25.
 - [x] **AC-3 [unreachable-now/local; actor: implementation agent]:** Output-changing input changes cannot reuse stale cooked output. **Evidence:** E2 — the digest is now per asset kind (passes declare `appliesTo`; an undeclared pass still hashes into every kind): `determinism.spec.ts` proves two cold compiles into independent directories match, a warm rebuild reuses every entry, a `textures.maxSize` change renames only the texture, and a `lod` change renames only the model (red first with the old global pass list). `PIPELINE_VERSION` 9→10.
 - [ ] **AC-4 [unreachable-now/local; actor: implementation agent]:** Concurrent or interrupted builds cannot publish a mixed-generation artifact. **Evidence:** E3, pending.
-- [ ] **AC-5 [unreachable-now/local; actor: implementation agent]:** The packaged managed payload is exactly the selected dependency closure. **Evidence:** E3, pending.
-- [ ] **AC-6 [unreachable-now/local; actor: implementation agent]:** A configured hard artifact-byte limit is enforced against the produced artifact through the build command. **Evidence:** E3, pending.
+- [x] **AC-5 [unreachable-now/local; actor: implementation agent]:** The packaged managed payload is exactly the selected dependency closure. **Evidence:** E3 — one selector (`selectManifestAssets`) now stages desktop, Android and iOS and prunes the web outDir: a digest-named output the current manifest does not declare is dropped, manifest-declared auxiliaries and unmanaged files are kept (`runtime-native/__tests__/asset-manifest.spec.ts`, `build.spec.ts` web prune; red first — iOS staged the orphan). Proven through the real staging functions with stubbed packagers; no real APK/.app/desktop container was built here.
+- [x] **AC-6 [unreachable-now/local; actor: implementation agent]:** A configured hard artifact-byte limit is enforced against the produced artifact through the build command. **Evidence:** E3 — `artifactBudget.{artifactBytes,packagedAssetBytes}` × `warn|error` on a profile, measured on the staged artifact before publish: a limit one byte below the measured size fails `TN_BUILD_ARTIFACT_BUDGET_EXCEEDED` and leaves the previous artifact in place; `warn` prints and publishes (`templates-native.spec.ts`, red first with the measurement removed). `vitest run packages/create-threenative/__tests__/ packages/runtime-native/__tests__/asset-manifest.spec.ts packages/assets/__tests__/` 1148 passed / 2 skipped, 2026-09-25.
 - [ ] **AC-7 [unreachable-now/local; actor: implementation agent]:** The documented no-manifest source fallback continues to run the same representative game. **Evidence:** E4, pending.
 - [ ] **AC-8 [unreachable-now/local; actor: implementation agent on a supported browser adapter]:** A packaged browser fixture renders the selected representation through the ordinary asset-loading API. **Evidence:** E4, pending; GPU/adapter execution not performed here.
 - [ ] **AC-9 [shared; actor: native qualification runner]:** The same fixture consumes the selected packaged representation on one explicitly identified supported desktop OS/architecture. **Evidence:** E4, pending; record the actual target, not “all PCs.”
@@ -359,7 +359,7 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 #### Phase 3: Package the selected output atomically
 
-**Status:** NOT STARTED  
+**Status:** IN PROGRESS  
 **ACs:** AC-4, AC-5, AC-6  
 **Files:** `packages/create-threenative/src/build.ts`; `src/compress.ts`; existing native package scripts where their input contract needs changes; `packages/assets/src/report.ts`; **new** `packages/create-threenative/src/build-report.ts` if needed; packaging/build tests.
 
@@ -367,8 +367,8 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E3 — package from a non-default output root with a stale alternate-profile texture present elsewhere. Inspect actual artifact entries and byte sums. Inject an encoder/packager failure, overlap conflicting builds, corrupt a cache payload, and set a byte ceiling one byte below the measured result. A safe refusal/serialization is valid for conflicting builds; silent overwrite is not.
 
-- [ ] Packaging consumes the resolved selected asset root.
-- [ ] Publication preserves the last successful artifact after a failed build.
+- [x] Packaging consumes the resolved selected asset root. — `assets.output: "cooked"` reaches every native packager as `--assets` (`templates-native.spec.ts`, red first: the old literal handed `public/`).
+- [ ] Publication preserves the last successful artifact after a failed build. — native done (staging sibling + rename publish, failed packager leaves the previous artifact byte-identical; `TN_BUILD_BUSY` project lock with dead-pid reclaim); **web still writes Vite's outDir in place**, so open.
 
 **Checkpoint:** Pending; review filesystem ownership, cleanup boundaries, closure completeness, and byte definitions.
 

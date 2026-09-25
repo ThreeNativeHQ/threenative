@@ -42,7 +42,11 @@ async function desktopCallerFixture(): Promise<{ root: string; log: string }> {
   await writeFile(
     path.join(runtime, "scripts/package-desktop.mjs"),
     `
-    import { writeFileSync } from 'node:fs';
+    import { mkdirSync, writeFileSync } from 'node:fs';
+    import { dirname } from 'node:path';
+    const output = process.argv[process.argv.indexOf('--output') + 1];
+    mkdirSync(dirname(output), { recursive: true });
+    writeFileSync(output, 'packaged');
     writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));
   `,
   );
