@@ -1,11 +1,17 @@
-import { RippleField, SpectralOcean, WaterSurface3D } from "@threenative/core";
+import { RippleField, Scene, SpectralOcean, WaterSurface3D } from "@threenative/core";
 import { describe, expect, it } from "vitest";
+import { createClearwater } from "../template-assets/clearwater/src/clearwater.js";
+import { ClearwaterDemo } from "../template-assets/clearwater/src/clearwaterDemo.js";
 import { createClearwaterAppearance } from "../template-assets/clearwater/src/render/clearwater.js";
 import { resolveClearwaterOptions } from "../template-assets/clearwater/src/render/clearwaterOptions.js";
 
 // Real Three.js/engine nodes, not a fake shader API. This catches graph construction errors;
 // it does not pretend to compile WGSL or prove pixels without a WebGPU adapter.
 describe("Clearwater graph construction", () => {
+  it("loads the public factory and optional scene without allocating a renderer", () => {
+    expect(createClearwater).toBeTypeOf("function");
+    expect(new ClearwaterDemo()).toBeInstanceOf(Scene);
+  });
   it("composes real fields, three dispersion passes and idempotent owned-resource disposal", () => {
     const options = resolveClearwaterOptions({ center: [4, -3], level: 2 });
     const ocean = new SpectralOcean({
@@ -24,7 +30,7 @@ describe("Clearwater graph construction", () => {
         expect(water.material.transparent).toBe(true);
         expect(water.material.depthWrite).toBe(false);
         expect(water.caustics?.scene.children).toHaveLength(3);
-        expect(water.caustics?.texture.image.width).toBe(512);
+        expect(water.caustics?.texture.image).toMatchObject({ width: 512 });
         expect(water.level.value).toBe(2);
         let geometryReleases = 0;
         let materialReleases = 0;

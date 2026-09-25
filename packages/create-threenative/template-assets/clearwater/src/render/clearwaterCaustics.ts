@@ -1,7 +1,7 @@
 // Refracted-grid caustics adapted from Clearwater, MIT (Lumaris 2026).
 // See CLEARWATER-LICENSE.txt. No WebGL handles, DOM, extra animation loop or asset fetches.
 import { AdditiveBlending, Camera, Color, DoubleSide, HalfFloatType, LinearFilter, Mesh, PlaneGeometry, RenderTarget, Scene } from "three";
-import { attribute, dFdx, dFdy, float, refract, texture, varying, vec2, vec3, vec4 } from "three/tsl";
+import { attribute, dFdx, dFdy, float, mix, refract, texture, varying, vec2, vec3, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import type { Node, WebGPURenderer } from "three/webgpu";
 import { DisposalScope } from "../clearwaterLifetime.js";
@@ -31,7 +31,7 @@ export function createClearwaterCaustics(
     const scene = new Scene();
     const camera = new Camera(); // vertexNode supplies clip-space positions directly.
     const center = vec2(options.center[0], options.center[1]);
-    const sourceXZ = attribute("position", "vec3").xy.add(center);
+    const sourceXZ = attribute<"vec3">("position", "vec3").xy.add(center);
     const sourcePosition = vec3(sourceXZ.x, level.add(field.heightAt(sourceXZ)), sourceXZ.y);
     const normal = field.normalAt(sourceXZ);
     const rayOrigin = varying(sourceXZ);
@@ -71,7 +71,7 @@ export function createClearwaterCaustics(
         const edge = uv.min(uv.oneMinus());
         const inside = edge.x.min(edge.y).smoothstep(0, 0.025);
         // A finite receiver is not RepeatWrapping: local interaction must not tile across the sea.
-        return vec3(1).mix(image.sample(uv.clamp(0, 1)).rgb, inside);
+        return mix(vec3(1), image.sample(uv.clamp(0, 1)).rgb, inside);
       },
       render(renderer: WebGPURenderer): void {
         if (scope.disposed) return;

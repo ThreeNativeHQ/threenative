@@ -1,0 +1,54 @@
+name: Clearwater source qualification
+
+on:
+  pull_request:
+    paths:
+      - "packages/create-threenative/template-assets/clearwater/**"
+      - "packages/create-threenative/__tests__/clearwater*"
+      - ".github/workflows/clearwater.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clearwater-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+      - name: Construct real shader graphs and test installation and ownership
+        run: pnpm exec vitest run packages/create-threenative/__tests__/clearwater*.spec.ts
+      - name: Check the submitted source against engine and Three.js types
+        if: ${{ !cancelled() }}
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+      - name: Check source formatting without suppressing errors
+        if: ${{ !cancelled() }}
+        run: pnpm exec biome check packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts --max-diagnostics=1000
+      - name: Produce a reviewable formatter patch, never a branch write
+        if: ${{ failure() }}
+        run: |
+          mkdir -p artifacts/clearwater
+          pnpm exec biome check --write packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts --max-diagnostics=1000
+          git diff -- packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts > artifacts/clearwater/formatting.patch
+          tar -czf artifacts/clearwater/formatted-source.tar.gz packages/create-threenative/template-assets/clearwater packages/create-threenative/__tests__/clearwater*.spec.ts
+      - uses: actions/upload-artifact@v7
+        if: ${{ failure() }}
+        with:
+          name: clearwater-format-review
+          path: artifacts/clearwater
+          if-no-files-found: ignore
+          retention-days: 3

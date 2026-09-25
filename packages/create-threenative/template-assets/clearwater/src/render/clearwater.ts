@@ -55,7 +55,7 @@ export function createClearwaterAppearance(
       const inside = edge.x.min(edge.y).smoothstep(0, 2 / ripples.resolution);
       // Core stores endpoint samples, not texel-centre samples. Match its CPU heightAt convention.
       const sampleUV = uv.mul((ripples.resolution - 1) / ripples.resolution).add(0.5 / ripples.resolution);
-      return rippleImage.sample(sampleUV.clamp(0, 1)).level(0).mul(inside);
+      return rippleImage.sample(sampleUV.clamp(0, 1)).level(float(0)).mul(inside);
     }
     function waveHeight(xz: Node<"vec2">): Node<"float"> {
       let height: Node<"float"> = float(0);
