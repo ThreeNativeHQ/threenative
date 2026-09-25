@@ -1,6 +1,6 @@
 # PRD-450 — A FAB asset reaches the game
 
-**Status:** IN PROGRESS — Phase 1
+**Status:** IN PROGRESS — Phase 2/3
 **Complexity:** 4 (MEDIUM): 1–5 implementation files (+1), two independently released packages
 (asset MCP on npm, engine pin) (+2), external API (Fab/FabCLI) (+1).
 **Owner:** João
@@ -96,11 +96,11 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 ## Execution Phases
 
 #### Phase 1: The engine runs the MCP that already has the fixes
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/core/package.json`, `packages/core/mcp/servers.mjs`,
 `packages/create-threenative/asset-mcp-tools.json`, `pnpm-lock.yaml`.
 - [x] All three pins move to 0.9.3 together, and the tools snapshot is regenerated from the registry. — 2026-09-25: `capture-asset-mcp-tools.ts` recorded 46 tools from the registry; the 11 pin-consuming specs pass (339 tests).
-- [ ] The listing from the session that returned `FAB_ACQUISITION_REQUIRED` now downloads or routes to `fab_import_asset` through the engine launcher.
+- [x] The listing from the session that returned `FAB_ACQUISITION_REQUIRED` now downloads or routes to `fab_import_asset` through the engine launcher. — 2026-09-25: stdio call via `node packages/core/mcp/assets.mjs` (0.9.3) on `97b20cea…` (fbx) returns `FAB_ACQUISITION_REQUIRED` whose message now says to call `fab_import_asset`. The Hornbeam (`c6f917b6…`, glb) returns `FAB_FORMAT_UNAVAILABLE` with no route; Phase 3 adds the route.
 
 #### Phase 2: Owned assets work from any MCP host
 **Status:** NOT STARTED
