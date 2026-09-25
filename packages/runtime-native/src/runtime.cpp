@@ -2119,7 +2119,7 @@ private:
         for (char** entry = tnEnviron(); entry != nullptr && *entry != nullptr; ++entry) {
             const char* value = std::strchr(*entry, '=');
             if (value == nullptr || std::strncmp(*entry, "TN_DEBUG_", 9) != 0) continue;
-            const std::string name(*entry, value);
+            const std::string name(*entry, static_cast<size_t>(value - *entry));
             jsEngine_->setProperty(env, name.c_str(), jsEngine_->newString(value + 1));
         }
         jsEngine_->setProperty(process, "env", env);
