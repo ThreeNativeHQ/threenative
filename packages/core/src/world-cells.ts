@@ -13,7 +13,7 @@ import { createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import type { IRendererLike } from "./renderer.js";
-import { addInSlices, loadAll } from "./streaming.js";
+import { DEFAULT_CONCURRENCY, addInSlices, loadAll } from "./streaming.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
   type IWorldAsset,
@@ -67,6 +67,11 @@ export interface IWorldCellsLoadOptions {
   readonly terrain?: IWorldCellsTerrainOptions;
   /** `(url) => Promise<Object3D>`; defaults to the engine GLB loader. */
   readonly loadModel?: (url: string) => Promise<Object3D>;
+  /**
+   * Model loads in flight at once, assets and chunks together. Defaults to `loadAll`'s
+   * `concurrency`, six.
+   */
+  readonly concurrency?: number;
 }
 
 export interface IWorldCellsStats {
@@ -75,6 +80,8 @@ export interface IWorldCellsStats {
   /** Placement instances the resident cells hold, before any `maxDistance` filter. */
   readonly instances: number;
   readonly loadsInFlight: number;
+  /** Model loads waiting for a free lane; served nearest-cell first, in admission order. */
+  readonly loadsQueued: number;
   readonly evictions: number;
   readonly failures: number;
   /** Cumulative rejected requests: cells skipped, instances or bytes refused, terrain retries. */
@@ -173,6 +180,74 @@ function cellKey(x: number, z: number): string {
   return `${String(x)}:${String(z)}`;
 }
 
+interface IQueuedModelLoad {
+  readonly run: () => Promise<Object3D>;
+  readonly wanted: () => boolean;
+  readonly resolve: (model: Object3D | undefined) => void;
+  readonly reject: (error: unknown) => void;
+}
+
+/**
+ * One bounded lane for every model load a `WorldCells` starts. Assets and chunks share it, so the
+ * number of `loadModel` calls in flight at once cannot grow with the number of admitted cells.
+ * Queued loads keep admission order, which is nearest-cell first, and one whose cell left (or
+ * whose asset was released) before its turn resolves `undefined` without touching the loader.
+ */
+class ModelLoadLimiter {
+  readonly #concurrency: number;
+  readonly #queue: IQueuedModelLoad[] = [];
+  #inFlight = 0;
+
+  constructor(concurrency: number) {
+    this.#concurrency = concurrency;
+  }
+
+  get inFlight(): number {
+    return this.#inFlight;
+  }
+
+  get queued(): number {
+    return this.#queue.length;
+  }
+
+  load(run: () => Promise<Object3D>, wanted: () => boolean): Promise<Object3D | undefined> {
+    return new Promise((resolve, reject) => {
+      this.#queue.push({ reject, resolve, run, wanted });
+      this.#pump();
+    });
+  }
+
+  #pump(): void {
+    while (this.#inFlight < this.#concurrency && this.#queue.length > 0) {
+      const job = this.#queue.shift() as IQueuedModelLoad;
+      if (!job.wanted()) {
+        job.resolve(undefined);
+        continue;
+      }
+      this.#inFlight += 1;
+      try {
+        job.run().then(
+          (model) => {
+            this.#inFlight -= 1;
+            job.resolve(model);
+            this.#pump();
+          },
+          (error: unknown) => {
+            this.#inFlight -= 1;
+            job.reject(error);
+            this.#pump();
+          },
+        );
+      } catch (error) {
+        // A loader that throws instead of rejecting must not strand its lane.
+        this.#inFlight -= 1;
+        job.reject(error);
+        this.#pump();
+      }
+    }
+  }
+}
+
 /**
  * Stream a Blender-authored world package by cell and keep it resident around a followed point.
  *
@@ -187,7 +262,8 @@ function cellKey(x: number, z: number): string {
  * @situation honour per-asset draw distances and hard streaming budgets without a mid-frame throw
  * @constraint surface is the game's; this class creates no material, colour or geometry
  * @constraint budgets are hard caps that report pressure instead of over-committing
- * @override ring, budgets, terrain tile size/resolution and the package's per-asset maxDistance
+ * @constraint model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell
+ * @override ring, budgets, terrain tile size/resolution, load `concurrency` and the package's per-asset maxDistance
  * @example
  * const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
  * scene.add(world);
@@ -200,6 +276,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #cellSize: number;
   readonly #follow: IWorldCellsFollow;
   readonly #loadModel: (url: string) => Promise<Object3D>;
+  readonly #limiter: ModelLoadLimiter;
   readonly #manifest: IWorldPackage;
   readonly #minX: number;
   readonly #minZ: number;
@@ -216,7 +293,6 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
   #instances = 0;
   #bytes = 0;
-  #loadsInFlight = 0;
   #evictions = 0;
   #failures = 0;
   #generation = 0;
@@ -239,6 +315,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#placements = init.placements;
     this.#baseUrl = init.baseUrl;
     this.#loadModel = init.loadModel ?? defaultLoadModel;
+    this.#limiter = new ModelLoadLimiter(
+      positiveInteger(init.concurrency ?? DEFAULT_CONCURRENCY, "concurrency"),
+    );
     const tileCount = (2 * this.#ring + 1) ** 2;
     this.#terrain = new TerrainTiles({
       ...(init.createCollider === undefined ? {} : { createCollider: init.createCollider }),
@@ -358,7 +437,8 @@ export class WorldCells extends Group implements IComputeDriven {
       evictions: this.#evictions,
       failures: this.#failures,
       instances: this.#instances,
-      loadsInFlight: this.#loadsInFlight,
+      loadsInFlight: this.#limiter.inFlight,
+      loadsQueued: this.#limiter.queued,
       pressure: { ...this.#pressure },
       residentCells: this.#resident.size,
       residentKeys: [...this.#resident.keys()].sort(),
@@ -462,38 +542,44 @@ export class WorldCells extends Group implements IComputeDriven {
 
   #startAssetLoad(asset: IAssetState): void {
     asset.pending = true;
-    this.#loadsInFlight += 1;
     const url = resolveRelative(this.#baseUrl, asset.definition.glb);
-    this.#loadModel(url).then(
-      (model) => {
-        this.#loadsInFlight -= 1;
-        asset.pending = false;
-        if (this.#released || this.#assets.get(asset.id) !== asset || asset.disposed) {
-          disposeModel(model);
-          return;
-        }
-        const renderable = firstRenderable(model);
-        if (renderable === undefined) {
+    this.#limiter
+      .load(
+        () => this.#loadModel(url),
+        () => !this.#released && this.#assets.get(asset.id) === asset && !asset.disposed,
+      )
+      .then(
+        (model) => {
+          asset.pending = false;
+          if (model !== undefined) this.#adoptAsset(asset, model);
+        },
+        () => {
+          asset.pending = false;
           this.#failures += 1;
-          disposeModel(model);
-          this.#assets.delete(asset.id);
-          return;
-        }
-        asset.geometry = renderable.geometry;
-        asset.material = renderable.material;
-        for (const cell of [...this.#resident.values()]) {
-          for (const run of cell.cell.runs) {
-            if (run.asset === asset.id) this.#buildBatch(asset, cell, run);
-          }
-        }
-      },
-      () => {
-        this.#loadsInFlight -= 1;
-        asset.pending = false;
-        this.#failures += 1;
-        if (this.#assets.get(asset.id) === asset) this.#assets.delete(asset.id);
-      },
-    );
+          if (this.#assets.get(asset.id) === asset) this.#assets.delete(asset.id);
+        },
+      );
+  }
+
+  #adoptAsset(asset: IAssetState, model: Object3D): void {
+    if (this.#released || this.#assets.get(asset.id) !== asset || asset.disposed) {
+      disposeModel(model);
+      return;
+    }
+    const renderable = firstRenderable(model);
+    if (renderable === undefined) {
+      this.#failures += 1;
+      disposeModel(model);
+      this.#assets.delete(asset.id);
+      return;
+    }
+    asset.geometry = renderable.geometry;
+    asset.material = renderable.material;
+    for (const cell of [...this.#resident.values()]) {
+      for (const run of cell.cell.runs) {
+        if (run.asset === asset.id) this.#buildBatch(asset, cell, run);
+      }
+    }
   }
 
   #buildBatch(asset: IAssetState, cell: IResidentCell, run: IWorldRun): void {
@@ -563,18 +649,33 @@ export class WorldCells extends Group implements IComputeDriven {
     if (run !== undefined) this.#buildBatch(asset, cell, run);
   }
 
+  #cellLive(cell: IResidentCell, generation: number): boolean {
+    return (
+      !this.#released && this.#resident.get(cell.key) === cell && cell.generation === generation
+    );
+  }
+
   #startChunkLoad(cell: IResidentCell): void {
     const generation = cell.generation;
     const paths: string[] = [];
     for (const chunk of cell.cell.chunks ?? []) paths.push(resolveRelative(this.#baseUrl, chunk));
-    this.#loadsInFlight += 1;
-    loadAll(paths, (url) => this.#loadModel(url), { marker: false }).then(
+    loadAll(
+      paths,
+      (url) =>
+        this.#limiter.load(
+          () => this.#loadModel(url),
+          () => this.#cellLive(cell, generation),
+        ),
+      { marker: false },
+    ).then(
       (models) => {
-        this.#loadsInFlight -= 1;
-        void this.#attachChunks(cell, generation, models);
+        void this.#attachChunks(
+          cell,
+          generation,
+          models.filter((model): model is Object3D => model !== undefined),
+        );
       },
       () => {
-        this.#loadsInFlight -= 1;
         this.#failures += 1;
       },
     );
@@ -585,8 +686,7 @@ export class WorldCells extends Group implements IComputeDriven {
     generation: number,
     models: readonly Object3D[],
   ): Promise<void> {
-    const live = (): boolean =>
-      !this.#released && this.#resident.get(cell.key) === cell && cell.generation === generation;
+    const live = (): boolean => this.#cellLive(cell, generation);
     let attached = 0;
     try {
       const report = await addInSlices(

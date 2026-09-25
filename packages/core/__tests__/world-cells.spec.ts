@@ -91,6 +91,80 @@ function stubFixtureFetch(): void {
   );
 }
 
+function stubManifestFetch(override: IWorldPackage): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown): Promise<IResponseLike> => {
+      const url = String(input);
+      if (url.endsWith("world.json")) {
+        const body = JSON.stringify(override);
+        return {
+          ok: true,
+          status: 200,
+          arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
+          json: async () => override,
+        };
+      }
+      if (url.endsWith("placements.bin"))
+        return fileResponse(readFileSync(path.join(fixture, "placements.bin")));
+      if (url.endsWith("heightmap.u16"))
+        return fileResponse(readFileSync(path.join(fixture, "terrain", "heightmap.u16")));
+      return {
+        ok: false,
+        status: 404,
+        arrayBuffer: async () => new ArrayBuffer(0),
+        json: async () => ({}),
+      };
+    }),
+  );
+}
+
+/** A loader that never settles until `release`, so concurrency can be measured mid-flight. */
+interface IGatedLoader {
+  readonly probe: { current: number; max: number; total: number };
+  readonly load: (url: string) => Promise<Object3D>;
+  readonly release: () => void;
+}
+
+function gatedLoader(): IGatedLoader {
+  const probe = { current: 0, max: 0, total: 0 };
+  const waiting: Array<() => void> = [];
+  let open = false;
+  return {
+    probe,
+    load: () => {
+      probe.total += 1;
+      probe.current += 1;
+      probe.max = Math.max(probe.max, probe.current);
+      return new Promise<Object3D>((resolve) => {
+        const settle = (): void => {
+          probe.current -= 1;
+          resolve(makeModel());
+        };
+        if (open) settle();
+        else waiting.push(settle);
+      });
+    },
+    release: () => {
+      open = true;
+      for (const settle of waiting.splice(0)) settle();
+    },
+  };
+}
+
+function withChunks(
+  cell: IWorldPackage["cells"][number],
+  prefix: string,
+): IWorldPackage["cells"][number] {
+  return {
+    ...cell,
+    chunks: Array.from(
+      { length: 8 },
+      (_, index) => `chunks/${prefix}_${String(cell.x)}_${String(cell.z)}_${String(index)}.glb`,
+    ),
+  };
+}
+
 interface IControlledLoader {
   readonly calls: string[];
   holdChunks: boolean;
@@ -320,6 +394,99 @@ describe("WorldCells", () => {
     expect(() => world.update()).not.toThrow();
     expect(world.stats().residentCells).toBe(2);
     expect(world.stats().pressure.cells).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("rejects a load concurrency that could never start a load", async () => {
+    stubFixtureFetch();
+    for (const concurrency of [0, -1, 1.5, Number.NaN])
+      await expect(
+        WorldCells.load({
+          budgets: { residentCells: 9, instances: 1_000_000, bytes: 1_000_000_000 },
+          concurrency,
+          follow: followAt(0, 0),
+          loadModel: controlledLoader().load,
+          ring: 1,
+          surface,
+          url: "/world/world.json",
+        }),
+      ).rejects.toThrow(/concurrency/u);
+  });
+
+  it("bounds model loads across every admitted cell, not per cell", async () => {
+    stubManifestFetch({
+      ...manifest,
+      cells: manifest.cells.map((cell) => withChunks(cell, "synth")),
+    });
+    const follow = followAt(0, 0);
+    const gate = gatedLoader();
+    const concurrency = 3;
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      concurrency,
+      follow,
+      loadModel: gate.load,
+      ring: 3,
+      surface,
+      url: "/world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+    await flush();
+
+    expect(world.stats().loadsInFlight).toBe(concurrency);
+    expect(world.stats().loadsQueued).toBeGreaterThan(0);
+    expect(gate.probe.max).toBeLessThanOrEqual(concurrency);
+
+    gate.release();
+    await flush();
+    expect(gate.probe.total).toBeGreaterThan(concurrency);
+    expect(gate.probe.max).toBeLessThanOrEqual(concurrency);
+    expect(world.stats().loadsInFlight).toBe(0);
+    expect(world.stats().loadsQueued).toBe(0);
+    world.dispose();
+  });
+
+  it("skips a queued load whose cell was evicted, without loading or failing", async () => {
+    stubManifestFetch({
+      ...manifest,
+      cells: manifest.cells.map((cell) => ({ ...withChunks(cell, "skip"), runs: [] })),
+    });
+    const follow = followAt(0, 0);
+    const gate = gatedLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      concurrency: 1,
+      follow,
+      loadModel: gate.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+    await flush();
+    const started = gate.probe.total;
+    expect(started).toBe(1);
+    expect(world.stats().loadsQueued).toBeGreaterThan(0);
+
+    follow.position.x = 100_000;
+    follow.position.z = 100_000;
+    world.update();
+    await flush();
+
+    gate.release();
+    await flush();
+    expect(gate.probe.total).toBe(started);
+    expect(world.stats().failures).toBe(0);
+    expect(world.stats().loadsInFlight).toBe(0);
+    expect(world.stats().loadsQueued).toBe(0);
     world.dispose();
   });
 });

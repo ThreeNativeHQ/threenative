@@ -82,6 +82,49 @@ function jsonFiles(directory: string): string[] {
     .sort();
 }
 
+/**
+ * Every asset a run references must carry geometry. A scatter source kept in a hidden collection
+ * would otherwise export as an empty GLB and load as a runtime failure.
+ */
+function expectRunGeometry(out: string, manifest: IWorldPackage): void {
+  for (const cell of manifest.cells) {
+    for (const run of cell.runs) {
+      const asset = manifest.assets[run.asset];
+      expect(asset, `run references asset '${run.asset}'`).toBeDefined();
+      if (asset === undefined) continue;
+      const glbs = [asset.glb, ...(asset.lods ?? []).map((lod) => lod.glb)];
+      for (const glb of glbs) {
+        expect(
+          glbMeshCount(path.join(out, glb)),
+          `${glb} exports at least one mesh`,
+        ).toBeGreaterThan(0);
+      }
+    }
+  }
+}
+
+/** Count the meshes in a GLB by reading its JSON chunk; 0 means the export wrote no geometry. */
+function glbMeshCount(file: string): number {
+  const buffer = readFileSync(file);
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  let offset = 12;
+  while (offset + 8 <= buffer.byteLength) {
+    const length = view.getUint32(offset, true);
+    const type = view.getUint32(offset + 4, true);
+    offset += 8;
+    if (type === 0x4e4f534a) {
+      const chunk = buffer
+        .subarray(offset, offset + length)
+        .toString("utf8")
+        .replace(/\0+$/u, "");
+      const json = JSON.parse(chunk) as { meshes?: unknown[] };
+      return json.meshes?.length ?? 0;
+    }
+    offset += length;
+  }
+  return 0;
+}
+
 withBlender("blender_export_world against a real Blender", () => {
   it("writes a validating package whose count is the render-density count", async () => {
     const root = await makeTempDir("tn-export-world-");
@@ -152,6 +195,9 @@ withBlender("blender_export_world against a real Blender", () => {
     for (const cell of chunkCells) {
       for (const chunk of cell.chunks ?? []) expect(existsSync(path.join(out, chunk))).toBe(true);
     }
+
+    // Every asset a run references must carry geometry.
+    expectRunGeometry(out, manifest);
 
     // The contract the runtime enforces, against the bytes actually on disk.
     const validation = validateWorldPackage(manifest, {

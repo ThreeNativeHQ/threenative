@@ -142,9 +142,20 @@ def main():
     # Real worlds keep scatter sources in an excluded collection so only their instances show.
     sources = bpy.data.collections.new("_src")
     bpy.context.scene.collection.children.link(sources)
-    for source in (pine, rock, cover):
+    for source in (pine, cover):
         move_to_collection(source, sources)
     bpy.context.view_layer.layer_collection.children["_src"].exclude = True
+
+    # Other real worlds nest a source in a visible collection under a hidden one, which is a
+    # different shape from an excluded collection: the object is in the view layer, so the glTF
+    # exporter skips it for not being in any visible collection unless the recipe stages it.
+    hidden = bpy.data.collections.new("hidden_sources")
+    hidden.hide_viewport = True
+    hidden.hide_render = True
+    bpy.context.scene.collection.children.link(hidden)
+    nested = bpy.data.collections.new("_src nested")
+    hidden.children.link(nested)
+    move_to_collection(rock, nested)
 
     yard = bpy.data.collections.new("yard")
     yard["tn_world_chunk"] = 1

@@ -28,6 +28,7 @@ import array
 import json
 import math
 import os
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -286,27 +287,48 @@ def capture_render_depsgraph(data):
         fail("could not obtain a render-mode depsgraph")
 
 
+def glb_mesh_count(path):
+    """Meshes in a written GLB, read from its JSON chunk. Zero means no geometry was exported."""
+    with open(path, "rb") as handle:
+        data = handle.read()
+    offset = 12
+    while offset + 8 <= len(data):
+        length, chunk_type = struct.unpack_from("<II", data, offset)
+        offset += 8
+        if chunk_type == 0x4E4F534A:
+            chunk = data[offset : offset + length].rstrip(b"\x00 ")
+            return len(json.loads(chunk.decode("utf-8")).get("meshes", []))
+        offset += length
+    return 0
+
+
 def write_glb(path, objects):
     directory = os.path.dirname(path)
     if directory and not os.path.isdir(directory):
         os.makedirs(directory, exist_ok=True)
     for candidate in bpy.context.view_layer.objects:
         candidate.select_set(False)
-    # Scatter sources commonly live in an excluded collection; Blender refuses to select an object
-    # outside the view layer, so link those into a temporary collection for the export only.
+    # A scatter source can sit in an excluded collection, or in a visible collection nested under
+    # a hidden one. The glTF exporter skips an object that is in neither a visible collection nor
+    # an excluded-but-selected one, and Blender refuses to select an object outside the view
+    # layer, so relink every object into a temporary visible collection for the export only and
+    # put it back where it came from afterwards.
     staging = bpy.data.collections.new("_tn_export_staging")
     bpy.context.scene.collection.children.link(staging)
+    previous = []
     for item in objects:
-        if item.name not in bpy.context.view_layer.objects:
-            staging.objects.link(item)
+        previous.append((item, list(item.users_collection)))
+        for collection in list(item.users_collection):
+            collection.objects.unlink(item)
+        staging.objects.link(item)
     bpy.context.view_layer.update()
-    for item in objects:
-        item.hide_set(False)
-        item.hide_viewport = False
-        item.hide_render = False
-        item.select_set(True)
-    bpy.context.view_layer.objects.active = objects[0]
     try:
+        for item in objects:
+            item.hide_set(False)
+            item.hide_viewport = False
+            item.hide_render = False
+            item.select_set(True)
+        bpy.context.view_layer.objects.active = objects[0]
         bpy.ops.export_scene.gltf(
             filepath=path,
             export_apply=True,
@@ -315,9 +337,14 @@ def write_glb(path, objects):
             use_selection=True,
         )
     finally:
+        for item, collections in previous:
+            for collection in collections:
+                collection.objects.link(item)
         bpy.data.collections.remove(staging)
     if not os.path.isfile(path):
         fail("export wrote no file at '%s'" % path)
+    if glb_mesh_count(path) < 1:
+        fail("export of '%s' wrote no geometry; its source has no exportable mesh" % path)
 
 
 def excluded_collections(layer):
