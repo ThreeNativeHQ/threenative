@@ -79,7 +79,7 @@ console.info(arena, uiMarker);
 
     const output = await bundle(project, "desktop");
     const source = await readFile(output, "utf8");
-    expect(source).toContain("/* TN_NATIVE_BUNDLE_SCOPE */\n(() => {");
+    expect(source).toMatch(/\/\*! TN_NATIVE_BUNDLE_SCOPE \*\/\n\(\(\)=>\{/u);
     expect(source.trimEnd()).toMatch(/\}\)\(\);$/u);
     expect(source).toContain("TN_PORTABLE_MODULE_PRESENT");
     expect(source).toContain("TN_NATIVE_START_FAILED");
