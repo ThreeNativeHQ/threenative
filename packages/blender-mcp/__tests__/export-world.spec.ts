@@ -3,9 +3,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { type IWorldPackage, validateWorldPackage } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { type IWorldPackage, validateWorldPackage } from "../../core/src/world-package.js";
 import { resolveBlender } from "../src/detect.js";
 import { handleToolCall } from "../src/index.js";
 
