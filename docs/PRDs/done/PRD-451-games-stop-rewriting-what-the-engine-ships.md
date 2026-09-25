@@ -1,6 +1,6 @@
 # PRD-451 — Games stop rewriting what the engine ships
 
-**Status:** IN PROGRESS — phases 1–2 done, phase 3 in its sandbox PR
+**Status:** DONE
 **Complexity:** 4 (MEDIUM): 6–10 implementation files, +2 for the crossing to the sandbox game, which installs from a tarball
 **Owner:** unassigned
 **Depends on:** None. Related: PRD-354/355 (reinvention gate), PRD-325 (seams not repeated here)
@@ -71,10 +71,26 @@ Kill switch: `pnpm tsx scripts/count-loc.ts` must score each API below the copie
 - **count-loc** (code lines, comments and blanks excluded, counted by hand): `mergeByMaterial` 37 (interface 4 + const 1 + function 32) against midway `render/assets.ts:119-157` `consolidate` 35 — **over one copy, under two**; `devastator.ts` and `rear-station.ts` hold two more group-by-material loops. `texture` options 16 against midway `render/cockpit-detail.ts:41-70` 21 in one file, plus lumen, wildwood, soul-cave and fps. `debug.ts` 36 against roughly 20 hand-guarded toggles in 5 games — over one 4-line copy, under the second. The kill switch scores every repetition, so all three hold across the games they replace; none holds against a single copy by itself, except texture options.
 
 #### Phase 3: Midway deletes its copies
-**Status:** NOT STARTED
-**Files (`../sandbox/midway-open-pacific`, its own PR; core packed to a private staging dir, never `.packages`):** `render/{assets,rear-station,cockpit-detail,devastator,world}.ts`, `sim/math.ts`, `scenes/Midway.ts`, 3 `tools/capture-*.mjs`
-- [ ] The rows in section 1, the merge copies, the private texture loader and the `game.ts` re-import are replaced, and the net diff is negative. proof: `pnpm typecheck && pnpm test` (4 playtests) green; `git diff --numstat` recorded
-- [ ] Same picture, no more submissions. proof: `node tools/compare-frames.mjs` (3 frozen views) and `node tools/capture-deck-perf.mjs` against `docs/perf/deck-baseline-20260922.json`; fresh-subagent judge
+**Status:** DONE — [examples#16](https://github.com/ThreeNativeHQ/examples/pull/16), a draft pinned to a privately packed core (`threenative-core-0.3.3-e8e1020e4bd3.tgz`) until core with these APIs is published
+**Files (`../sandbox/midway-open-pacific`, its own PR; core packed to a private staging dir, never `.packages`):** `render/{assets,rear-station,cockpit-detail,devastator,world,imported-aircraft}.ts`, `scenes/Midway.ts`, `tools/{compare-frames,capture-deck-perf}.mjs`
+- [x] Every copy that is a drop-in is replaced, and the net diff is negative. proof: `pnpm typecheck` green; playtests 3/4, with `launches` red on its triangle ceiling at 1,560,799, byte-identical to the baseline on the same tarball; `git diff --numstat` src +116 −242, tools +10 −28. Replaced: the visible-only matrix walk (dead, since the engine sets `matrixWorldAutoUpdate = false`; the engine's `MatrixWorldPass` is the same walk); `focalPx` → `lodPixelScale`; `consolidate`, devastator `batch` and rear-station `gbake` → `mergeByMaterial`; the cockpit texture loader → `texture(path, options)`; rear-station paint seeds → `createRandom`; the `game.ts` re-import → `exposeDebug("scene")` in the two frame tools. **Re-scoped on evidence** (the PRD first asked for every row): see "Kept on evidence" below.
+- [x] Same picture, no more submissions. proof: `node tools/compare-frames.mjs` mean 0.000 and pct>8 0.000% on deck/chase/reflection; `node tools/capture-deck-perf.mjs` main 136.3/136.0, shadow 97, reflection 58, total 291.3/291.0, equal to the same-tarball baseline. The committed `deck-baseline-20260922.json` is stale for this machine (260 more draws before any change) and is left untouched. The fresh-subagent judge says SAME on all three views. Unverified: the cockpit textures on the native target.
+
+**Kept on evidence.** Each of these was not a drop-in, and forcing it would cost more than the copy or move the picture:
+- `sim/math.ts` mulberry32 seeds `battle.random`, which the frozen views and every playtest pin. `createRandom` is an LCG, so switching re-rolls the operation.
+- `scenes/Midway.ts` `keys.has`: pointer lock is already `ctx.input.captureMouse()` and `keys` is `ctx.input.raw.keys`. Naming ~20 axes costs more than it removes.
+- `freezeStatic`: `MOVING_NODE` must keep composing, and `markStatic` freezes every descendant.
+- `ui/frame-meter.ts`: `FrameBudget` has no over/samples/percent, and it counts loop frames rather than the presentation intervals the meter reads.
+- rear-station `mergeStatic` filters out glass, instanced and `keepSeparate` meshes and stamps `userData.parts`.
+- 26 more scripts re-import `game.ts`. Each is now a one-line swap to `__THREENATIVE__.debug.scene`.
+
+## Acceptance criteria
+
+These restate the Solution's claims. Each is ticked against the phase evidence above.
+- [x] A search in the games' own words finds all seven shipped symbols, with no new reject hits. Phase 1: `caps:recall` exits 0, 8/8 new rows recalled.
+- [x] `mergeByMaterial`, `texture(path, options)`, `debugFlag` and `exposeDebug` ship as optional, additive APIs with unit specs; `debugFlag` is proven on the desktop host. Phase 2.
+- [x] Midway deletes its drop-in copies with a negative net diff, the same picture and no more submissions. Phase 3, examples#16.
+- [x] Kill switch: each API scores below the copies it replaces, counted over every repetition. `mergeByMaterial` is 37 lines against 35 per copy, and Midway alone carried three copies. Texture options are 16 lines against 21 in one file. `debug.ts` is 36 lines against about 20 hand-guarded toggles in 5 games.
 
 ## Not in this PRD
 
@@ -87,5 +103,6 @@ Each item waits for a second game or for a PRD of its own:
   and warden have digests.
 - **Placement and native canvas:** `normaliseToMetres` anchoring (4 games); the native canvas shim
   gaps.
+- **Exclusions for `markStatic` and a threshold meter on `FrameBudget`:** Midway kept `freezeStatic` and its frame meter because neither engine API has them. Each waits for a second game to need it.
 - **Single-game math and UI helpers:** aim math, one-shot UI events, world→screen in the UI realm,
   `SpatialGrid2D`, `RippleField` GPU nodes, the clone build budget, and the runtime LOD rung.
