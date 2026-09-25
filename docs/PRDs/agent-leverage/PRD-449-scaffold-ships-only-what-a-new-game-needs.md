@@ -1,6 +1,6 @@
 # PRD-449 — The scaffold ships only what a new game needs
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (Phase 1 done)
 **Complexity:** 1 (LOW)
 **Owner:** João
 **Depends on:** None
@@ -65,12 +65,17 @@ closed.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A fresh `starter` scaffold contains no `capabilities.json` and no
+- [x] AC-1 [local]: A fresh `starter` scaffold contains no `capabilities.json` and no
   `AGENT-ROLES.md`, and `engine_search_capabilities` still answers from inside it — proof: scaffold
-  spec plus an `engine-mcp` smoke run from the generated project's root — Evidence: pending.
-- [ ] AC-2 [local]: Each skill exists once on disk, and both Claude Code (`.claude/skills`) and
+  spec plus an `engine-mcp` smoke run from the generated project's root — Evidence: 2026-09-25,
+  `scaffold.spec.ts` asserts both files absent; `scaffold-mcp.spec.ts` probes the real engine MCP
+  from each scaffold root with core linked and reads the installed-core manifest (6 files / 199
+  tests green).
+- [x] AC-2 [local]: Each skill exists once on disk, and both Claude Code (`.claude/skills`) and
   Codex (`.agents/skills`) resolve it — proof: `pnpm exec vitest run
-  packages/create-threenative/__tests__/template.spec.ts` — Evidence: pending.
+  packages/create-threenative/__tests__/template.spec.ts` — Evidence: 2026-09-25, red first
+  (`scaffold.spec.ts` "store each skill once": `file-engine-bug is a second stored copy`), green
+  after `linkClaudeSkills` (relative per-skill symlinks, EPERM/EACCES copy fallback).
 - [ ] AC-3 [local]: Every `agent-docs` link in each template's `AGENTS.md` resolves to a file in a
   tarball-installed project — proof: `pnpm sandbox` scaffold plus the reference-bundle check —
   Evidence: pending.
@@ -105,13 +110,13 @@ closed.
 ## Execution Phases
 
 #### Phase 1: Delete what nothing reads
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/create-threenative/src/index.ts` (drop `copyCapabilityManifest`; skills
 symlink with copy fallback in `copyAgentFiles`), `agent-files/.claude/skills/` (delete),
 `agent-files/AGENT-ROLES.md` (delete), `__tests__/scaffold.spec.ts` and `__tests__/template.spec.ts`
 (update the pinned paths).
-- [ ] No `capabilities.json` or `AGENT-ROLES.md` in the scaffold; the MCP answers from the project root (AC-1).
-- [ ] Skills stored once and resolved by both hosts; red first, from the test asserting a single copy (AC-2).
+- [x] No `capabilities.json` or `AGENT-ROLES.md` in the scaffold; the MCP answers from the project root (AC-1). `githooks/pre-commit` and `scripts/verify-golden-path.ts` no longer name the removed copies.
+- [x] Skills stored once and resolved by both hosts; red first, from the test asserting a single copy (AC-2). Builder/verifier stay subagent-only for Claude Code (`.claude/agents/`).
 
 #### Phase 2: References come from the installed package
 **Status:** NOT STARTED

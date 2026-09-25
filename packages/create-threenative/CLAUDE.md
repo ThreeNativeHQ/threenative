@@ -43,8 +43,9 @@ fixed generated `public/icon.png` path after the template copy. Any new placehol
 same treatment in `renderTemplate`. `pnpm budgets` reports each template's LOC but no longer caps
 it.
 
-Reusable workflows live in `agent-files/.agents/skills/` and `agent-files/.claude/skills/`; each
-template links both adapters, and the scaffolder copies them unchanged. Every scaffold also gets
+Reusable workflows live once in `agent-files/.agents/skills/`; each template links both adapters,
+and the scaffolder copies that single copy and symlinks `.claude/skills` into it (falling back to
+a copy only where a symlink is not permitted). Every scaffold also gets
 `ponytail` — the lazy-first skill whose reuse rung *is* the mandatory capability search — and a
 project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`, both launching
 `.claude/hooks/ponytail-context.mjs`) that re-injects its ruleset every session, prompt and

@@ -557,8 +557,13 @@ describe("scaffolded engine MCP", () => {
         devDependencies?: Record<string, string>;
       };
       expect(project.devDependencies?.[engineMcp], template).toBeUndefined();
+      // The scaffold ships no manifest: the engine MCP reads the one inside the installed core,
+      // which `linkCore` put under `node_modules`, and that is the copy the probe below loads.
       const manifest = JSON.parse(
-        await readFile(path.join(target, "capabilities.json"), "utf8"),
+        await readFile(
+          path.join(target, "node_modules/@threenative/core/capabilities.json"),
+          "utf8",
+        ),
       ) as {
         entries?: unknown[];
       };

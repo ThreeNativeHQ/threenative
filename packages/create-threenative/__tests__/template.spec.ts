@@ -818,19 +818,14 @@ describe("template contracts", () => {
       }
     }
 
+    // One stored copy per skill: the scaffolder links `.claude/skills` into it, so a drifted
+    // second adapter is no longer expressible and only the stored body needs its markers.
     for (const [skill, ...markers] of authoringSkills) {
-      const bodies = await Promise.all(
-        [".agents/skills", ".claude/skills"].map(async (host) => {
-          const body = await readFile(
-            path.resolve("packages/create-threenative/agent-files", host, skill, "SKILL.md"),
-            "utf8",
-          );
-          for (const marker of markers)
-            expect(body, `${host}/${skill}/${marker}`).toContain(marker);
-          return body;
-        }),
+      const body = await readFile(
+        path.resolve("packages/create-threenative/agent-files/.agents/skills", skill, "SKILL.md"),
+        "utf8",
       );
-      expect(new Set(bodies).size, `${skill} host adapters drifted`).toBe(1);
+      for (const marker of markers) expect(body, `${skill}/${marker}`).toContain(marker);
     }
   });
 

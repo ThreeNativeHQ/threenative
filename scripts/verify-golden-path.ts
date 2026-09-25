@@ -568,7 +568,11 @@ async function probeProjectManifestFallback(
   if (!isRecord(engine) || typeof engine.command !== "string" || !Array.isArray(engine.args)) {
     throw new Error(`TN_GOLDEN_PATH_MCP_SERVER_MISSING: ${configPath} lacks 'threenative-engine'.`);
   }
-  await rename(projectManifest, hiddenManifest);
+  // The scaffold ships no project copy, so the installed-core fallback is the only path there is.
+  // A copy that does exist is still moved aside, so a project that grows one back cannot hide a
+  // broken packaged manifest behind it.
+  const hidden = existsSync(projectManifest);
+  if (hidden) await rename(projectManifest, hiddenManifest);
   try {
     await probeMcpServer(
       "threenative-engine",
@@ -583,7 +587,7 @@ async function probeProjectManifestFallback(
       target,
     );
   } finally {
-    await rename(hiddenManifest, projectManifest);
+    if (hidden) await rename(hiddenManifest, projectManifest);
   }
 }
 
@@ -722,9 +726,8 @@ export async function assertMcpServers(target: string): Promise<void> {
     );
   }
 
-  // A project that adds @threenative/core by hand has no scaffold-owned capabilities.json.
-  // Temporarily remove the generated copy and prove the packed core shim falls back to the
-  // manifest inside its own tarball, which is the only source-less surface that adopter has.
+  // No scaffold-owned capabilities.json exists to hide behind: prove the packed core shim answers
+  // from the manifest inside its own tarball, which is the only surface a project has.
   await probeProjectManifestFallback(target, configPath, parsed.mcpServers);
 }
 

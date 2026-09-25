@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
@@ -408,6 +408,35 @@ async function copyReferenceBundle(
   }
 }
 
+/** Links each stored skill into the Claude host directory. Both host directories must resolve the
+ * same bytes, and a duplicated skill drifts the day one adapter is edited, so `.claude/skills` is a
+ * relative symlink into the single `.agents/skills` copy — except where Claude Code takes the
+ * workflow as a subagent instead, which it already has under `.claude/agents/<name>.md`.
+ *
+ * Symlinks need a privilege Windows only grants with developer mode, so a failed link falls back
+ * to a copy: a duplicated skill beats a scaffold that cannot be created. */
+async function linkClaudeSkills(target: string): Promise<void> {
+  const stored = path.join(target, ".agents", "skills");
+  if (!existsSync(stored)) return;
+  const hostSkills = path.join(target, ".claude", "skills");
+  const subagents = path.join(target, ".claude", "agents");
+  await mkdir(hostSkills, { recursive: true });
+  for (const entry of await readdir(stored, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (existsSync(path.join(subagents, `${entry.name}.md`))) continue;
+    const link = path.join(hostSkills, entry.name);
+    const relative = path.relative(hostSkills, path.join(stored, entry.name));
+    try {
+      await symlink(relative, link, "dir");
+    } catch (error) {
+      // Only the privilege refusal falls back; any other failure is a scaffold bug, not a host.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EACCES") throw error;
+      await cp(path.join(stored, entry.name), link, { recursive: true });
+    }
+  }
+}
+
 /** Copies the canonical role contracts and thin provider adapters after the selected template. */
 async function copyAgentFiles(target: string, templateRootDirectory: string): Promise<void> {
   const source = path.join(path.dirname(templateRootDirectory), AGENT_FILES_DIRECTORY);
@@ -417,6 +446,7 @@ async function copyAgentFiles(target: string, templateRootDirectory: string): Pr
     );
   }
   await cp(source, target, { recursive: true });
+  await linkClaudeSkills(target);
 }
 
 /** Installs the same authoring/dependency ignores for every kit without replacing a kit's own
@@ -516,21 +546,6 @@ async function applyPackageSources(
     packageJson.pnpm.overrides[name] = resolvedSource;
   }
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
-}
-
-async function copyCapabilityManifest(
-  target: string,
-  templateRootDirectory: string,
-): Promise<void> {
-  const source = path.join(path.dirname(templateRootDirectory), "capabilities.json");
-  // Fail closed: a scaffold without the manifest looks fine and every generated project
-  // silently loses the capability search its AGENTS.md tells the user's agent to run.
-  if (!existsSync(source)) {
-    throw new Error(
-      `TN_KIT_CAPABILITIES_MISSING: '${source}' is not in the package; the generated project needs the capability manifest for its agent tooling.`,
-    );
-  }
-  await cp(source, path.join(target, "capabilities.json"));
 }
 
 const FRAMEWORK_PATCH_DIRECTORY = "patches";
@@ -694,7 +709,6 @@ export async function createProject(
   await copyAgentFiles(target, root);
   await renderTemplate(target, replacements);
   await copyReferenceBundle(target, root, replacements);
-  await copyCapabilityManifest(target, root);
   await copyFrameworkPatches(target, root);
   await applyPackageSources(target, options.packageSources);
   await assertMcpConfig(target);
