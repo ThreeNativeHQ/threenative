@@ -1,10 +1,10 @@
 # PRD-448 — Cross-Platform Asset Cooking and Device Budgets
 
-**Status:** IN PROGRESS (Phase 1 done)  
+**Status:** IN PROGRESS (Phases 1–2 done)  
 **Complexity:** 9 (HIGH); risk override: none.  
 **Owner:** ThreeNative maintainers; implementation owner to be assigned.  
 **Depends on:** Existing `@threenative/assets`, native packaging, and playtest infrastructure. Reuse the PRD-377 discrete-LOD contract; do not reopen or duplicate that PRD.  
-**Progress:** Phase 1 of 6 done (AC-1).  
+**Progress:** Phases 1–2 of 6 done (AC-1, AC-2, AC-3).  
 **Source snapshot:** `ThreeNativeHQ/threenative`, `main` at `af60e210aa500e504e9370b3657caaf8340f5650`, inspected September 25, 2026.  
 **Authorization:** Planning-only scope. Owner explicitly authorized filing this documentation directly on `develop`; this does not authorize implementation, publishing, or deployment.  
 **Filing:** `docs/PRDs/assets/PRD-448-cross-platform-asset-cooking-and-device-budgets.md` on `develop`.  
@@ -311,8 +311,8 @@ All paths below exist in the inspected tree unless explicitly marked **new**. Im
 **Lane notation:** `unreachable-now/local` identifies checks intended for an implementation checkout that this planning session does not have. `shared` identifies native qualification through the repository's target lanes, not a claim those lanes have run. All evidence is pending. Native jobs belong to one qualification matrix dependency; each platform verdict remains separate. No human aesthetic sign-off is required to accept this plumbing feature.
 
 - [x] **AC-1 [unreachable-now/local; actor: implementation agent]:** The public `threenative build` path applies the selected cook profile to the emitted asset representation. **Evidence:** E1 — `packages/create-threenative/__tests__/build-profiles.spec.ts` (7 tests) drives `build()` — the function `threenative build` calls after `parseBuildArgs` — with the real asset compile (only Vite's child process stubbed): a 256² PNG cooks to 128² under the web default `compact` and 64² under `--profile tiny`, read back from the emitted KTX2 header; `build.spec.ts` proves the parser consumes `--profile` and forwards the rest to Vite. `pnpm exec vitest run packages/create-threenative/__tests__/` 722/722, 2026-09-25.
-- [ ] **AC-2 [unreachable-now/local; actor: implementation agent]:** A decoder-free target produces a decodable image satisfying its explicitly requested dimension cap. **Evidence:** E2, pending.
-- [ ] **AC-3 [unreachable-now/local; actor: implementation agent]:** Output-changing input changes cannot reuse stale cooked output. **Evidence:** E2, pending.
+- [x] **AC-2 [unreachable-now/local; actor: implementation agent]:** A decoder-free target produces a decodable image satisfying its explicitly requested dimension cap. **Evidence:** E2 — decoder-free compiles (`runtimeDecoders.ktx2: false`) with `textures.maxSize: 1024` emit 4096² colour/normal/alpha sources as PNGs that decode to 1024² with alpha kept; a 512² source ships byte-identical and the source file is unchanged; corrupt PNG fails `TN_ASSETS_TEXTURE_UNDECODABLE` naming the path (`texture-pass.spec.ts`). Embedded .glb 4096 image → 1024 PNG, mimeType png, shared images still deduplicated, two caps key apart (`model-texture-pass.spec.ts`, `shared-images.spec.ts`). Red first: disabling the new pass / forcing `models.textures` to "none" failed each. `pnpm exec vitest run packages/assets/__tests__/ packages/create-threenative/__tests__/` 1122 passed / 2 skipped, 2026-09-25.
+- [x] **AC-3 [unreachable-now/local; actor: implementation agent]:** Output-changing input changes cannot reuse stale cooked output. **Evidence:** E2 — the digest is now per asset kind (passes declare `appliesTo`; an undeclared pass still hashes into every kind): `determinism.spec.ts` proves two cold compiles into independent directories match, a warm rebuild reuses every entry, a `textures.maxSize` change renames only the texture, and a `lod` change renames only the model (red first with the old global pass list). `PIPELINE_VERSION` 9→10.
 - [ ] **AC-4 [unreachable-now/local; actor: implementation agent]:** Concurrent or interrupted builds cannot publish a mixed-generation artifact. **Evidence:** E3, pending.
 - [ ] **AC-5 [unreachable-now/local; actor: implementation agent]:** The packaged managed payload is exactly the selected dependency closure. **Evidence:** E3, pending.
 - [ ] **AC-6 [unreachable-now/local; actor: implementation agent]:** A configured hard artifact-byte limit is enforced against the produced artifact through the build command. **Evidence:** E3, pending.
@@ -344,7 +344,7 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 #### Phase 2: Cook safe, reproducible target representations
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-2, AC-3  
 **Files:** `packages/assets/src/compile.ts`; `passes/texture.ts`; `passes/model-textures.ts`; `passes/shared-images.ts`; `passes/decode-image.ts`; existing texture/model/determinism tests. Reuse `lod/generate.ts` rather than replacing it.
 
@@ -352,8 +352,8 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E2 — extend existing texture, embedded-image, shared-image, and determinism fixtures. Decode actual output for 4096→1024 caps, alpha/normal/color cases, retained originals, and corrupt data. Compare cold independent directories and warm rebuilds. A changed source or maximum size must change affected output; a runtime-only LOD policy must not force unrelated image encodes.
 
-- [ ] Decoder-free dimension caps affect the actual emitted image bytes.
-- [ ] Cache reuse is validated against output-changing dependencies.
+- [x] Decoder-free dimension caps affect the actual emitted image bytes. — see AC-2. Unverified: a `.jpg` logical path now ships as a `.png` output; runtime loading of that output is Phase 4 evidence.
+- [x] Cache reuse is validated against output-changing dependencies. — see AC-3.
 
 **Checkpoint:** Pending; examine source integrity, image semantics, decoder requirements, and exact reused cache identities.
 

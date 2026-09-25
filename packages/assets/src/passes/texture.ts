@@ -1,5 +1,6 @@
 import { read as readKTX2 } from "ktx-parse";
-import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
+import { PNG } from "pngjs";
+import { type AssetKind, type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
 import { textureStats } from "../health.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
@@ -89,6 +90,7 @@ export async function encodeLinearRgbaKtx2(
  */
 export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
   return {
+    appliesTo: ["texture"],
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
       keepSmallerSource: true,
@@ -147,6 +149,100 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     },
     name: "ktx2",
   };
+}
+
+export interface ITextureResizeOptions {
+  /** Longest edge to retain; larger sources are downsampled, never upscaled. */
+  readonly maxSize: number;
+}
+
+/**
+ * The decoder-free half of a size cap: on a target with no Basis transcoder a requested
+ * `textures.maxSize` cannot ship as KTX2, but it must still ship *somewhere*. This pass resizes
+ * an over-cap PNG or JPEG with the same `cappedSize`/`resampleRgba` the encoder path uses —
+ * alpha preserved, colour averaged in linear light, normal maps left as data — and writes the
+ * result as a PNG. A source already within the cap keeps its authored bytes untouched, and the
+ * file on disk is never rewritten.
+ *
+ * Only containers the decoder-free path can actually read are touched: a `.webp` or another
+ * format with no pure-JS decoder is passed through rather than failing a build over art the
+ * project already ships. A PNG/JPEG whose bytes are corrupt fails naming the logical path.
+ */
+export function textureResizePass(options: ITextureResizeOptions): IAssetPass {
+  const { maxSize } = options;
+  return {
+    appliesTo: ["texture"],
+    // Part of the compile cache key: a different cap must not re-serve the previous output.
+    configuration: { maxSize, resample: "png" },
+    name: "texture-resize",
+    apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
+      if (classify(logicalPath) !== "texture") return input;
+      const stats = textureStats(input);
+      let decoded: { data: Uint8Array; height: number; width: number } | undefined;
+      if (stats.width <= 0 || stats.height <= 0) {
+        // A supported container with an unreadable header is a corrupt source, not an
+        // unsupported one. Let the decoder name it or hand back its real dimensions; anything
+        // else (webp, a stray file with a texture extension) is not this pass's to rewrite.
+        if (!isPngOrJpeg(input)) return input;
+        decoded = await decodeForResize(input, logicalPath);
+      }
+      const width = decoded?.width ?? stats.width;
+      const height = decoded?.height ?? stats.height;
+      const target = cappedSize(width, height, maxSize);
+      if (target.width === width && target.height === height) return input;
+      const source = decoded ?? (await decodeForResize(input, logicalPath));
+      const data = resampleRgba(
+        source.data,
+        source.width,
+        source.height,
+        target.width,
+        target.height,
+        !NORMAL_MAP_BASENAME.test(baseNameOf(logicalPath)),
+      );
+      const png = new PNG({ height: target.height, width: target.width });
+      png.data = Buffer.from(data);
+      return {
+        buffer: PNG.sync.write(png),
+        entry: { resizedFrom: `${String(width)}x${String(height)}` },
+        // Emitted as PNG whatever the source extension was: the manifest records the logical
+        // path unchanged and the served output name carries the bytes' real container, so a
+        // `.jpg` logical path resolves to a `.png` output the loader sniffs by content.
+        outputExtension: ".png",
+      };
+    },
+  };
+}
+
+/** PNG signature or JPEG SOI, the two containers `decodeImageBytes` reads. */
+function isPngOrJpeg(bytes: Buffer): boolean {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return true;
+  }
+  return (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  );
+}
+
+async function decodeForResize(
+  input: Buffer,
+  logicalPath: string,
+): Promise<{ data: Uint8Array; height: number; width: number }> {
+  try {
+    return await decodeImageBytes(input, logicalPath);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `TN_ASSETS_TEXTURE_UNDECODABLE: '${logicalPath}' could not be decoded to apply its size cap: ${detail}`,
+    );
+  }
 }
 
 function resizeForEncoding(
