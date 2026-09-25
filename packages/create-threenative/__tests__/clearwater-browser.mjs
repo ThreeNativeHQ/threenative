@@ -52,16 +52,18 @@ const server = await createServer({
   root,
   resolve: { dedupe: ["three"] },
   server: { host: "127.0.0.1", port: 0 },
-  plugins: [{
-    name: "clearwater-fixture",
-    configureServer(instance) {
-      instance.middlewares.use(async (request, response, next) => {
-        if (request.url !== "/") return next();
-        response.setHeader("Content-Type", "text/html");
-        response.end(await instance.transformIndexHtml("/", html));
-      });
+  plugins: [
+    {
+      name: "clearwater-fixture",
+      configureServer(instance) {
+        instance.middlewares.use(async (request, response, next) => {
+          if (request.url !== "/") return next();
+          response.setHeader("Content-Type", "text/html");
+          response.end(await instance.transformIndexHtml("/", html));
+        });
+      },
     },
-  }],
+  ],
 });
 let browser;
 let page;
@@ -69,15 +71,19 @@ try {
   await server.listen();
   browser = await chromium.launch({ headless: true, args });
   page = await browser.newPage({ viewport: { width: 800, height: 600 } });
-  page.on("pageerror", error => errors.push(error.message));
-  page.on("console", message => {
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
   await page.goto(server.resolvedUrls.local[0]);
-  await page.waitForFunction(() => {
-    const test = window.clearwaterTest;
-    return test?.errors.length || (test?.ready && test.frames >= 8);
-  }, undefined, { timeout: 120000 });
+  await page.waitForFunction(
+    () => {
+      const test = window.clearwaterTest;
+      return test?.errors.length || (test?.ready && test.frames >= 8);
+    },
+    undefined,
+    { timeout: 120000 },
+  );
   const state = await page.evaluate(() => {
     const test = window.clearwaterTest;
     test.game.pause();
@@ -99,8 +105,10 @@ try {
   assert.equal(a.data.length, b.data.length);
   let changed = 0;
   for (let i = 0; i < a.data.length; i += 4) {
-    const difference = Math.abs(a.data[i] - b.data[i]) + Math.abs(a.data[i + 1] - b.data[i + 1])
-      + Math.abs(a.data[i + 2] - b.data[i + 2]);
+    const difference =
+      Math.abs(a.data[i] - b.data[i]) +
+      Math.abs(a.data[i + 1] - b.data[i + 1]) +
+      Math.abs(a.data[i + 2] - b.data[i + 2]);
     if (difference > 30) changed++;
   }
   assert.ok(changed > a.width * a.height * 0.01, "The water must change actual receiver pixels.");
@@ -118,13 +126,27 @@ try {
     return { accepted, disposed, recreated: test.water !== water && !test.water.disposed };
   });
   assert.deepEqual(lifecycle, { accepted: true, disposed: true, recreated: true });
-  await page.waitForFunction(() => window.clearwaterTest.frames >= 4, undefined, { timeout: 60000 });
+  await page.waitForFunction(() => window.clearwaterTest.frames >= 4, undefined, {
+    timeout: 60000,
+  });
   assert.deepEqual(await page.evaluate(() => window.clearwaterTest.errors), []);
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, "result.json"), JSON.stringify({
-    passed: true, target: "browser-webgpu", hardwarePerformanceQualified: false,
-    ...state, changedPixels: changed, lifecycle, browserArgs: args,
-  }, null, 2));
+  await writeFile(
+    path.join(output, "result.json"),
+    JSON.stringify(
+      {
+        passed: true,
+        target: "browser-webgpu",
+        hardwarePerformanceQualified: false,
+        ...state,
+        changedPixels: changed,
+        lifecycle,
+        browserArgs: args,
+      },
+      null,
+      2,
+    ),
+  );
   console.log("Clearwater browser WebGPU: compiled, rendered, disturbed, disposed and re-entered.");
 } finally {
   await writeFile(path.join(output, "console-errors.json"), JSON.stringify(errors, null, 2));

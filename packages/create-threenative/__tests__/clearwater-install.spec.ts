@@ -1,14 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir";
 
 const run = promisify(execFile);
 const bundle = path.resolve("packages/create-threenative/template-assets/clearwater");
 it("installs source and license, then refuses to overwrite an edited game", async () => {
-  const target = await mkdtemp(path.join(os.tmpdir(), "clearwater-install-"));
+  const target = await makeTempDir("clearwater-install-");
   try {
     await run(process.execPath, [path.join(bundle, "install.mjs"), target]);
     expect(await readFile(path.join(target, "src/clearwater.ts"), "utf8")).toContain(
