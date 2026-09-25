@@ -207,6 +207,41 @@ pnpm exec threenative-playtest playtests/production-readiness.playtest.json --ta
    retained only `failureReport()`'s generic pre-assertion shape, not the `diagnostics[0]` that named
    the real cause. Retaining that entry on the row is the prerequisite for diagnosing a repeat.
 
+**Published 0.3.3 `next` cohort per-target verification — 2026-09-25** (Linux host, Node v20.19.6,
+npm 11.18.0, pnpm 10.25.0, NVIDIA RTX 2080 / Vulkan 1.4.351; full commands and hashes in
+`docs/verification/prd-366-readiness-phase-3-2026-09-25.md`):
+
+- [x] **Browser / web, Linux** — scaffolded `create-threenative@next` 0.2.6, installed the 0.3.3 cohort
+      (lockfile names `@threenative/{core,physics,ui,playtest,assets,runtime-native}@0.3.3`, zero
+      `file:`/`link:` specifiers), `pnpm build:web`, then the installed `threenative-playtest` on
+      `playtests/production-readiness.playtest.json --browser-recipe webgpu --headed`: `pass: true`,
+      **5 assertions / 0 failures** (`diagnostics`, `movement.axisDelta`,
+      `resource.state.entityCount.atSteps`, `resource.state.score.atSteps`, `visibility.player`),
+      941 frames, exit 0.
+- [x] **Linux x64 desktop** — `pnpm build:desktop` produced `dist-native/my-game` (142,629,115 B) from
+      the downloaded prebuilt runtime. 300-frame gate: `300 frames, 22504 colors, 335 asset pixels,
+      overlayAttached true`. Consumer row: **5 assertions / 0 failures**, artifact
+      `85a8202802e0a49f…`, app `com.threenative.mygame`, `linux/x64`, `session wayland`,
+      `scenarioHash 4edb52f1fb8d6ded2159a4d39cb35b48089db917edbe79d3b52109edbf3146ed` — the same
+      scenario hash and the same five assertion ids phase 2 recorded.
+- [ ] **Windows desktop** — CI-owned by owner decision: job `native-platforms / Windows desktop core`
+      in `.github/workflows/native-platforms.yml`. `workflow_dispatch` run
+      [36175962979](https://github.com/ThreeNativeHQ/threenative/actions/runs/36175962979) was
+      triggered on `develop`; it builds local tarballs, so it proves the source tree rather than the
+      published cohort, and no Windows host exists on this lane to run the registry install.
+- [ ] **macOS desktop** — CI-owned: job `native-platforms / macOS desktop core`, same triggered run and
+      the same source-vs-registry limitation.
+- [ ] **Android** — needs the physical device (owner rule: do not use the phone here). The published
+      cohort carries `@threenative/runtime-native@0.3.3` for `android-arm64-v8a` / `android-x86_64`;
+      no device or emulator row was run in this lane.
+- [ ] **npm install of the published template** — red on this host and at the root, not yet fixed:
+      `npm install` dies at `sharp@0.34.5` (`node install/check.js || npm run build`, then a source
+      build) because the template's `@gltf-transform/cli@4.4.2` devDependency drags `sharp ~0.34.5`,
+      whose prebuilt does not load on Linux 7.2.6; `sharp@0.35.4` installs and loads clean in
+      isolation, and `pnpm install` succeeds only because `pnpm.onlyBuiltDependencies` skips sharp's
+      build script. Owner: PRD-196 (`BLOCKED — requires-release-credentials`); a forward fix also
+      needs the ten templates to force `sharp >=0.35.4` so it reaches consumers.
+
 **Implementation and wiring:** Extend the existing physical collector with validated project/scenario inputs; retain its required evidence/provenance schema and default native-smoke compatibility. Do not remove PRD-056 prerequisite checks or count iOS as a required target for this non-iOS batch. Use actual signed Android artifact, correct applicationId and arm64 GPU device; record touch, back navigation, suspend/resume, cold restart, saves and telemetry. Measure the unmodified platformer reference against its existing performance budget, with default starter startup/steady-state recorded separately. Raw performance results update runtime-perf-state.md in a separate evidence-only checkpoint if the five-file budget is exhausted.
 
 **Required test:** `packages/runtime-native/tests/physical-mobile-qualification.test.mjs`: should reject consumer qualification when device identity is an emulator or the scenario/project does not match the installed artifact.
