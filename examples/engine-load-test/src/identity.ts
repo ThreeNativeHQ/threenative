@@ -1867,7 +1867,9 @@ function serializeModuleGraph(
   return concatenate(chunks);
 }
 
-async function sha256(bytes: Uint8Array): Promise<string> {
+// The one SHA-256 in the benchmark: `crypto.subtle` is the only primitive available in both the
+// browser arm and the Node collector, and a second hand-written digest would be a second answer.
+export async function sha256(bytes: Uint8Array): Promise<string> {
   if (globalThis.crypto?.subtle === undefined)
     throw new Error("TN_BENCH_IDENTITY_HASH_UNAVAILABLE");
   const copy = new Uint8Array(bytes.byteLength);

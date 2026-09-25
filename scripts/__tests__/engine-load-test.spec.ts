@@ -9,8 +9,10 @@ import {
   isBenchmarkWorkloadModule,
 } from "../../examples/engine-load-test/src/identity.js";
 import {
+  canonicalCubeFixtureBytes,
   createLcg,
   createPlacements,
+  cubeFixtureHash,
   positionHash,
 } from "../../examples/engine-load-test/src/workload.js";
 import {
@@ -313,6 +315,80 @@ describe("engine load test workload", () => {
     expect(positionHash(createPlacements(1024))).toBe(positionHash(createPlacements(1024)));
     expect(positionHash(createPlacements(1024))).not.toBe(positionHash(createPlacements(256)));
     expect(positionHash(createPlacements(1024))).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("should reject a cube moved past the eighth object that the legacy hash cannot see", async () => {
+    // PRD-449 §11 negative control, row 1. `positionHash` covers the first eight placements only, so
+    // the legacy gate calls these two arms the same scene. That stays true — old reports, baselines
+    // and the GDScript port keep the meaning they had — and the full-fixture identity is what makes
+    // the ninth object count.
+    const placements = createPlacements(1024);
+    const mutated = placements.map((placement, index) =>
+      index === 9 ? { ...placement, y: placement.y + 1 } : placement,
+    );
+    expect(positionHash(mutated)).toBe(positionHash(placements));
+    expect(await cubeFixtureHash(mutated)).not.toBe(await cubeFixtureHash(placements));
+
+    // Same bytes, same identity; one placement's worth of difference, a different one.
+    expect(await cubeFixtureHash(placements)).toBe(await cubeFixtureHash(createPlacements(1024)));
+    expect(await cubeFixtureHash(placements)).toMatch(/^[0-9a-f]{64}$/u);
+    // 1024 placements rather than 8: the identity is over the whole fixture, not a sample of it.
+    expect(canonicalCubeFixtureBytes(placements).byteLength).toBeGreaterThan(24 * 1024);
+
+    const left = report({ rungs: [rung({ fixtureHash: await cubeFixtureHash(placements) })] });
+    const right = report({ rungs: [rung({ fixtureHash: await cubeFixtureHash(mutated) })] });
+    const strict = { requireFullFixture: true };
+    expect(checkEquivalence(left, right, strict).map((row) => row.field)).toContain("fixtureHash");
+    expect(checkEquivalence(left, left, strict)).toEqual([]);
+
+    // Repeats of one rung must agree on the full fixture too, in either mode.
+    const disagreeingRepeats = report({
+      rungs: [
+        rung({ fixtureHash: await cubeFixtureHash(placements), repeat: 0 }),
+        rung({ fixtureHash: await cubeFixtureHash(mutated), repeat: 1 }),
+      ],
+    });
+    for (const options of [{}, strict]) {
+      expect(
+        checkEquivalence(disagreeingRepeats, disagreeingRepeats, options).map((row) => row.field),
+      ).toContain("fixtureHash (repeats disagree within an arm)");
+    }
+
+    // The Godot arm emits no full-fixture identity and the native arm cannot produce one, so the v2
+    // gate refuses a rung that is missing it — on either arm, or on one repeat of a pair.
+    const legacy = report({ arm: "godot-web", engine: { name: "godot", version: "4.7.1" } });
+    expect(checkEquivalence(left, legacy, strict).map((row) => row.field)).toContain(
+      "fixtureHash (absent on a required arm)",
+    );
+    const halfIdentified = report({
+      rungs: [rung({ fixtureHash: await cubeFixtureHash(placements) }), rung({ repeat: 1 })],
+    });
+    expect(
+      checkEquivalence(halfIdentified, halfIdentified, strict).map((row) => row.field),
+    ).toContain("fixtureHash (absent on a required arm)");
+  });
+
+  it("should keep a current report comparable with a legacy arm that has no full-fixture identity", async () => {
+    // The development workflow PRD-449 must not break: a current TN report against a Godot report
+    // collected before the field existed — or from a GDScript arm that still emits none — compares
+    // on exactly the fields it always did, and no baseline in `lanes.json` changes verdict because
+    // a field was added. Default mode is what keeps that true; only the opt-in v2 gate demands the
+    // identity, and it is the only thing allowed to refuse this pair.
+    const current = report({
+      rungs: [rung({ fixtureHash: await cubeFixtureHash(createPlacements(4096)) })],
+    });
+    const legacy = report({ arm: "godot-web", engine: { name: "godot", version: "4.7.1" } });
+    expect(checkEquivalence(current, legacy)).toEqual([]);
+    expect(checkEquivalence(legacy, current)).toEqual([]);
+    // Neither arm carrying it is the same story: an untouched v1 pair is still comparable.
+    expect(checkEquivalence(report(), report())).toEqual([]);
+    expect(checkEquivalence(report(), report({ arm: "tn-desktop" }))).toEqual([]);
+    // And the field is still compared wherever both arms have one, in default mode: a mismatch is a
+    // wrong-scene comparison, not a missing observation.
+    const moved = report({
+      rungs: [rung({ fixtureHash: await cubeFixtureHash(createPlacements(256)) })],
+    });
+    expect(checkEquivalence(current, moved).map((row) => row.field)).toContain("fixtureHash");
   });
 
   it("should keep artifact identity independent of source labels and workload identity byte-sensitive", async () => {
@@ -1746,6 +1822,12 @@ describe("engine load test workload", () => {
 });
 
 describe("engine load test scorer", () => {
+  it("should reject a malformed full-fixture digest", () => {
+    expect(() =>
+      parseRunReport(report({ rungs: [rung({ fixtureHash: "not-a-sha256" })] })),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/);
+  });
+
   it("should reject a rung with an empty frame series", () => {
     expect(() => parseRunReport(report({ rungs: [rung({ frameMs: [] })] }))).toThrow(
       /TN_BENCH_EMPTY_SERIES/,

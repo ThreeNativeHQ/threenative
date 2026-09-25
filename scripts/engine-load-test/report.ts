@@ -51,6 +51,14 @@ export interface IRunReportRung {
   frameMs: number[];
   mode: RenderMode;
   objectCount: number;
+  /**
+   * The full-fixture identity of PRD-449 §6.1, over every placement and the fixed
+   * geometry/material/camera/update parameters. Optional and additive: absent means a v1 report, which
+   * keeps comparing on `positionHash` alone. Compared whenever both arms carry it — a mismatch means
+   * the arms never built the same scene — while `IEquivalenceOptions.requireFullFixture` is what
+   * makes a missing value a failure, because the Godot arm still emits none.
+   */
+  fixtureHash?: string;
   positionHash: string;
   repeat: number;
   triangles: number;
@@ -335,11 +343,18 @@ export function parseRunReport(value: unknown): IRunReport {
       if (typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
         throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.frameMs holds a non-finite sample`);
     }
+    const fixtureHash = rung.fixtureHash;
+    if (
+      fixtureHash !== undefined &&
+      (typeof fixtureHash !== "string" || !/^[0-9a-f]{64}$/u.test(fixtureHash))
+    )
+      throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.fixtureHash must be SHA-256 hex`);
     return {
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
       mode: mode as RenderMode,
       objectCount: requireNumber(rung, "objectCount", path),
+      ...(fixtureHash === undefined ? {} : { fixtureHash }),
       positionHash: requireString(rung, "positionHash", path),
       repeat: requireNumber(rung, "repeat", path),
       triangles: requireNumber(rung, "triangles", path),
@@ -1193,6 +1208,18 @@ function groupRungs(report: IRunReport): Map<string, IRunReportRung[]> {
   return groups;
 }
 
+// The stand-in for a rung that carries no full-fixture identity, so "absent" is a value the set logic
+// can reason about instead of a filter that hides it. A 64-character hex digest can never be this.
+const ABSENT_IDENTITY = "absent";
+
+// One entry per distinct identity across a rung's repeats, in report order, so a rung with three
+// agreeing repeats is one value and a rung where only one repeat carries the field is two.
+function fixtureIdentities(rungs: readonly IRunReportRung[]): string[] {
+  const seen = new Set<string>();
+  for (const entry of rungs) seen.add(entry.fixtureHash ?? ABSENT_IDENTITY);
+  return [...seen];
+}
+
 // A frame interval that barely moves while the object count grows 16x is the display pacing the
 // arm, not the engine costing anything. Godot's Android export ignores VSYNC_DISABLED and reported
 // ~19 ms at every rung of a 16x ladder; the requested `display.vsync` said false and the gate let
@@ -1210,11 +1237,25 @@ export function looksVsyncPinned(summaries: readonly IRungSummary[], mode: Rende
   return costGrowth < 1.25;
 }
 
+export interface IEquivalenceOptions {
+  /**
+   * The v2 gate of PRD-449 §6.1: every repeat of both arms must carry `fixtureHash`, and one that
+   * does not is a failure rather than a fallback to the eight-placement `positionHash`. Off by
+   * default, because the Godot arm still emits no full identity and no collected baseline carries
+   * one — a v1 report keeps the comparison it always had.
+   */
+  requireFullFixture?: boolean;
+}
+
 export function isSoftwareRasteriser(adapter: string): boolean {
   return /swiftshader|llvmpipe|softwarerasterizer|software adapter/i.test(adapter);
 }
 
-export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivalenceFailure[] {
+export function checkEquivalence(
+  left: IRunReport,
+  right: IRunReport,
+  options: IEquivalenceOptions = {},
+): IEquivalenceFailure[] {
   const failures: IEquivalenceFailure[] = [];
   const push = (field: string, a: unknown, b: unknown, rung = "-"): void => {
     failures.push({ field, left: String(a), right: String(b), rung });
@@ -1288,6 +1329,42 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
     } else if ([...leftHashSet][0] !== [...rightHashSet][0]) {
       push("positionHash", [...leftHashSet][0], [...rightHashSet][0], key);
     }
+
+    // The full-fixture identity of PRD-449 §6.1, which `positionHash` cannot replace: it covers the
+    // first eight placements, so two arms can agree on it while describing different scenes. Default
+    // semantics are the ones this gate had before the field existed — it is compared whenever both
+    // arms carry it, and a report that omits it still compares on `positionHash` alone, which is
+    // what keeps a current TN report against a legacy Godot one a comparison rather than a refusal.
+    // `requireFullFixture` is the opt-in v2 gate: every repeat of both arms must carry the field.
+    const leftFixture = fixtureIdentities(leftRungs);
+    const rightFixture = fixtureIdentities(rightRungs);
+    const required = options.requireFullFixture === true;
+    if (
+      required &&
+      (leftFixture.includes(ABSENT_IDENTITY) || rightFixture.includes(ABSENT_IDENTITY))
+    ) {
+      push(
+        "fixtureHash (absent on a required arm)",
+        leftFixture.join(","),
+        rightFixture.join(","),
+        key,
+      );
+    } else if (leftFixture.length > 1 || rightFixture.length > 1) {
+      push(
+        "fixtureHash (repeats disagree within an arm)",
+        leftFixture.join(","),
+        rightFixture.join(","),
+        key,
+      );
+    } else if (
+      leftFixture.length === 1 &&
+      rightFixture.length === 1 &&
+      leftFixture[0] !== ABSENT_IDENTITY &&
+      rightFixture[0] !== ABSENT_IDENTITY &&
+      leftFixture[0] !== rightFixture[0]
+    ) {
+      push("fixtureHash", leftFixture[0] as string, rightFixture[0] as string, key);
+    }
     if (leftSummary.sampleCount !== rightSummary.sampleCount)
       push("sampleCount", leftSummary.sampleCount, rightSummary.sampleCount, key);
     if (leftSummary.repeats !== rightSummary.repeats)
@@ -1311,7 +1388,11 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
   return failures;
 }
 
-export function compare(left: IRunReport, right: IRunReport): IComparison {
+export function compare(
+  left: IRunReport,
+  right: IRunReport,
+  options: IEquivalenceOptions = {},
+): IComparison {
   for (const [label, report] of [
     ["left", left],
     ["right", right],
@@ -1343,7 +1424,7 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
       );
     }
   }
-  const failures = checkEquivalence(left, right);
+  const failures = checkEquivalence(left, right, options);
   if (failures.length > 0) {
     const detail = failures
       .map(

@@ -38,6 +38,7 @@ interface IRungReport {
   frameMs: number[];
   stageReport?: unknown;
   stepMs?: number[];
+  fixtureHash: string;
   mode: RenderMode;
   objectCount: number;
   positionHash: string;
@@ -206,6 +207,7 @@ async function measureRung(
     frameMs,
     stageReport,
     stepMs,
+    fixtureHash: await harness.fixtureHash(),
     mode: rung.mode,
     objectCount: rung.objectCount,
     positionHash: harness.positionHash,

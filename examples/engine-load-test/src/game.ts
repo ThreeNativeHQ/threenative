@@ -19,18 +19,22 @@ import {
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
 import {
+  CUBE_FIXTURE,
   type ICubePlacement,
   type RenderMode,
   cameraPose,
   createPlacements,
   cubeBobY,
+  cubeFixtureHash,
   cubeRotationX,
   cubeRotationY,
   positionHash,
 } from "./workload.js";
 
-export const VIEWPORT_WIDTH = 1280;
-export const VIEWPORT_HEIGHT = 720;
+// Read off the hashed fixture descriptor rather than restated here: the full-fixture identity is
+// only worth anything if the constants it hashes are the ones the scene is built from.
+export const VIEWPORT_WIDTH = CUBE_FIXTURE.viewportWidth;
+export const VIEWPORT_HEIGHT = CUBE_FIXTURE.viewportHeight;
 
 export interface ILoadTestRung {
   mode: RenderMode;
@@ -50,6 +54,7 @@ export interface ILoadTestHarness {
   collapseMs: number;
   collapseStatus(): string;
   dispose(): void;
+  fixtureHash(): Promise<string>;
   positionHash: string;
   render(): Promise<void>;
   renderer: WebGPURenderer;
@@ -72,8 +77,8 @@ export async function createLoadTestHarness(
   adapterLabel = "unknown",
   animateObjects = true,
 ): Promise<ILoadTestHarness> {
-  const renderer = new WebGPURenderer({ antialias: false, canvas });
-  renderer.setPixelRatio(1);
+  const renderer = new WebGPURenderer({ antialias: CUBE_FIXTURE.antialias, canvas });
+  renderer.setPixelRatio(CUBE_FIXTURE.pixelRatio);
   renderer.setSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, false);
   await renderer.init();
   // three's own rAF clears the per-frame counters even when no animation loop is set, so a
@@ -81,18 +86,31 @@ export async function createLoadTestHarness(
   renderer.info.autoReset = false;
 
   const scene = new Scene();
-  const camera = new PerspectiveCamera(60, VIEWPORT_WIDTH / VIEWPORT_HEIGHT, 0.1, 4000);
+  const camera = new PerspectiveCamera(
+    CUBE_FIXTURE.cameraFov,
+    VIEWPORT_WIDTH / VIEWPORT_HEIGHT,
+    CUBE_FIXTURE.cameraNear,
+    CUBE_FIXTURE.cameraFar,
+  );
   // One shared lit material for ground and cubes, one directional light, no shadows: two shaders
   // would be two experiments (PRD-117 §3.1).
-  const material = new MeshStandardMaterial({ color: 0xb8c4cc, metalness: 0, roughness: 0.75 });
-  const cubeGeometry = new BoxGeometry(1, 1, 1);
-  const ground = new Mesh(new PlaneGeometry(200, 200), material);
-  ground.rotation.x = -Math.PI / 2;
+  const material = new MeshStandardMaterial({
+    color: CUBE_FIXTURE.materialColor,
+    metalness: CUBE_FIXTURE.materialMetalness,
+    roughness: CUBE_FIXTURE.materialRoughness,
+  });
+  const cubeSize = CUBE_FIXTURE.cubeSize;
+  const cubeGeometry = new BoxGeometry(cubeSize, cubeSize, cubeSize);
+  const ground = new Mesh(
+    new PlaneGeometry(CUBE_FIXTURE.groundSize, CUBE_FIXTURE.groundSize),
+    material,
+  );
+  ground.rotation.x = CUBE_FIXTURE.groundRotationX;
   ground.matrixAutoUpdate = false;
   ground.updateMatrix();
   scene.add(ground);
-  const light = new DirectionalLight(0xffffff, 2.4);
-  light.position.set(40, 80, 25);
+  const light = new DirectionalLight(CUBE_FIXTURE.lightColor, CUBE_FIXTURE.lightIntensity);
+  light.position.set(CUBE_FIXTURE.lightX, CUBE_FIXTURE.lightY, CUBE_FIXTURE.lightZ);
   scene.add(light);
 
   const dummy = new Object3D();
@@ -222,6 +240,10 @@ export async function createLoadTestHarness(
       clearRung();
       renderer.dispose();
     },
+    // Async because the identity is a SHA-256 over the whole fixture, and the browser's only digest
+    // is the promise-returning one. A rung without a rung state hashes the empty fixture rather than
+    // the previous rung's, exactly as `positionHash` below does.
+    fixtureHash: () => cubeFixtureHash(state?.placements ?? []),
     get positionHash() {
       return positionHash(state?.placements ?? []);
     },

@@ -264,6 +264,25 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 - [ ] Prove the native completed-work boundary with a render-suppression negative control.
 - [ ] Prove asynchronous GPU sample attribution and missing-data behavior.
 - [ ] Add full-fixture identity and reject a mutation beyond the first eight objects.
+  Built and unit-proved, deliberately unticked: the identity (`cubeFixtureHash`, SHA-256 over a
+  documented canonical byte representation — version line, sorted `name=value` fixture parameters as
+  ECMAScript `Number::toString`, `u32` count, then IEEE-754 binary64 little-endian `x,y,z` per
+  placement, unquantised — over all placements plus the fixed geometry/material/camera/update
+  constants that `game.ts` and `workload.ts` read from the hashed `CUBE_FIXTURE` descriptor) exists,
+  and `pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts` (exit 0, 96 pass) shows that
+  moving object 9 keeps `positionHash` byte-identical, changes the full identity, and is refused by
+  `checkEquivalence`/`compare` under the opt-in `requireFullFixture` v2 gate, alongside repeats that
+  disagree and a rung whose identity is missing from one repeat or one arm. The box stays open
+  because the gate needs a *comparable pair* and no such pair exists yet: the Godot arm emits no
+  `fixtureHash` (Phase 3's GDScript port must carry the same encoding), and the native arm cannot
+  produce one — the host's JS runtime has no `crypto` global at all, so `crypto.subtle` is
+  undefined and `native.ts` omits the field rather than crash every run. No native or competitor
+  report supplies a full identity, so the negative control has not run on the real path. What
+  remains: WebCrypto in the host (or a second digest, deliberately not added), the GDScript port, then
+  one real cross-arm comparison under `requireFullFixture`. Legacy default semantics are unchanged
+  and tested: a current TN report with a hash still compares against a hashless Godot report.
+  `positionHash` re-checked after the descriptor refactor: `94e73aef/78812d31/e9a32f01` for
+  256/1024/4096 cubes, and the hashed constants are value-identical to the literals they replaced.
 - [ ] Complete A/A calibration and retain the minimal-meter overhead measurements.
 - [ ] Prove the paired-block statistics with known-ratio and high-variance fixtures.
 
