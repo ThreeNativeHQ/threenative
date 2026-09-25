@@ -356,7 +356,7 @@ export function assertAndroidArtifact16KbAlignment(artifactPath, options = {}) {
 }
 
 /** Check the APK Google bundletool actually produces, not the AAB's compressed library entries. */
-export function assertAndroidBundle16KbAlignment(artifactPath, bundletoolPath) {
+export function assertAndroidBundle16KbAlignment(artifactPath, bundletoolPath, options = {}) {
   if (!bundletoolPath || !existsSync(bundletoolPath)) {
     throw new Error('AAB verification requires --bundletool /path/to/bundletool-all.jar');
   }
@@ -381,7 +381,7 @@ export function assertAndroidBundle16KbAlignment(artifactPath, bundletoolPath) {
     }
     const apk = join(scratch, 'universal.apk');
     writeFileSync(apk, entry.compression === ZIP_STORED ? raw : inflateRawSync(raw));
-    return { ...assertAndroidArtifact16KbAlignment(apk), artifactPath };
+    return { ...assertAndroidArtifact16KbAlignment(apk, options), artifactPath };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -391,15 +391,20 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
     import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     const { values, positionals } = parseArgs({
-      options: { bundletool: { type: 'string' } }, allowPositionals: true,
+      options: { abis: { type: 'string' }, bundletool: { type: 'string' } }, allowPositionals: true,
     });
     if (positionals.length !== 1 || !['.apk', '.aab'].includes(extname(positionals[0]))) {
-      throw new Error('Usage: check-android-16kb-alignment.mjs <game.apk|game.aab> [--bundletool <jar>]');
+      throw new Error(
+        'Usage: check-android-16kb-alignment.mjs <game.apk|game.aab> [--bundletool <jar>] [--abis arm64-v8a[,x86_64]]',
+      );
     }
     const artifact = resolve(positionals[0]);
+    // The ABI set the artifact was built for: a release ships arm64-v8a alone. Unnamed, both
+    // 64-bit ABIs are required, so an omitted slice still fails unless the caller declares it.
+    const options = values.abis === undefined ? {} : { abis: values.abis.split(',').map((abi) => abi.trim()) };
     const result = extname(artifact) === '.aab'
-      ? assertAndroidBundle16KbAlignment(artifact, values.bundletool)
-      : assertAndroidArtifact16KbAlignment(artifact);
+      ? assertAndroidBundle16KbAlignment(artifact, values.bundletool, options)
+      : assertAndroidArtifact16KbAlignment(artifact, options);
     console.log(`Android 16 KB check passed: ${artifact} (${result.libraries.length} native libraries)`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

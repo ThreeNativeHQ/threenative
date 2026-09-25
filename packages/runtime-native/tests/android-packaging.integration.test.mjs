@@ -93,14 +93,18 @@ if [ -f app/build/generated/threenative/assets/game/level.bin ]; then
   jar --update --file "$out" \\
     -C app/build/generated/threenative/assets game/level.bin
 fi
-# A real Android app ships native libraries for both 64-bit ABIs, and PRD-221's census refuses to
-# credit an artifact that contains none. These stand in for them so the gate has something to read.
-mkdir -p app/build/fake-libs/lib/arm64-v8a app/build/fake-libs/lib/x86_64
-printf 'runtime' > app/build/fake-libs/lib/arm64-v8a/libmystral-runtime.so
-printf 'runtime' > app/build/fake-libs/lib/x86_64/libmystral-runtime.so
-jar --update --file "$out" \\
-  -C app/build/fake-libs lib/arm64-v8a/libmystral-runtime.so \\
-  -C app/build/fake-libs lib/x86_64/libmystral-runtime.so
+# Native libraries for the ABIs the build asked for, exactly as build.gradle.kts resolves them:
+# \`-PthreenativeAbis\` when given, both 64-bit ABIs otherwise. PRD-221's census refuses to credit an
+# artifact that omits a requested ABI, so these stand in for them and give the gate something to read.
+abis="arm64-v8a x86_64"
+for arg in "$@"; do
+  case "$arg" in -PthreenativeAbis=*) abis=$(printf '%s' "\${arg#*=}" | tr ',' ' ');; esac
+done
+for abi in $abis; do
+  mkdir -p "app/build/fake-libs/lib/$abi"
+  printf 'runtime' > "app/build/fake-libs/lib/$abi/libmystral-runtime.so"
+  jar --update --file "$out" -C app/build/fake-libs "lib/$abi/libmystral-runtime.so"
+done
 `,
 
   );
