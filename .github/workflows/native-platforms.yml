@@ -747,15 +747,19 @@ jobs:
           test -s reports/parity.json
           test -s reports/provenance.json
       # `error`, not `warn`. A warn here is what let a green run ship with no reports at all.
+      # The leading wildcard is load-bearing: upload-artifact strips everything before the first
+      # wildcard, and a bare `reports/parity.json` flattened to `parity.json`, which the candidate
+      # gate resolves as `reports/parity.json` and then refuses. `*/parity.json` matches `reports`
+      # and keeps `reports/parity.json` inside the artifact.
       - uses: actions/upload-artifact@v7
         with:
           name: native-release-parity
-          path: reports/parity.json
+          path: "*/parity.json"
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
           name: native-release-provenance
-          path: reports/provenance.json
+          path: "*/provenance.json"
           if-no-files-found: error
 
   desktop-parity:
