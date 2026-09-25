@@ -13,9 +13,16 @@ import { loadConfig } from "../src/config.js";
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const { EventEmitter } = await import("node:events");
-  const spawn = (() => {
+  const spawn = ((_command: string, args: readonly string[]) => {
     const child = new EventEmitter();
-    queueMicrotask(() => child.emit("exit", 0));
+    queueMicrotask(async () => {
+      // A real Vite build creates the outDir it was pointed at, and the web build refuses to
+      // publish one that is still missing — so the stub has to be as complete as what it replaces.
+      const index = args.indexOf("--outDir");
+      const out = args[index + 1];
+      if (index >= 0 && out !== undefined) await mkdir(path.resolve(out), { recursive: true });
+      child.emit("exit", 0);
+    });
     return child;
   }) as unknown as typeof actual.spawn;
   return { ...actual, spawn };

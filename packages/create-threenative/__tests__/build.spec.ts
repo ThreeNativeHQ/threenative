@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promis
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -16,6 +16,7 @@ import {
   buildWeb,
   nativeOrientation,
   parseBuildArgs,
+  publishStagedArtifact,
   runtimeHasWebAssembly,
   writePackagingConfig,
 } from "../src/build.js";
@@ -24,6 +25,25 @@ import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
+
+// Putting the previous artifact back only happens on a rename that failed, so one `rename` is made
+// to fail for the staged path alone. The put-back renames from the `.previous-` sibling instead, so
+// the restore itself still goes through the real filesystem — a mock that failed every rename would
+// leave the previous artifact stranded in the aside, which is the opposite of what this proves.
+const renameFault = vi.hoisted(() => ({ from: undefined as string | undefined }));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    rename: async (from: string, to: string) => {
+      if (from === renameFault.from) {
+        throw Object.assign(new Error(`EXDEV: rename ${from} -> ${to} refused`), { code: "EXDEV" });
+      }
+      return original.rename(from, to);
+    },
+  };
+});
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
@@ -260,6 +280,75 @@ describe("threenative build", () => {
     }
   });
 
+  // PRD-448. The web build publishes the way a native artifact already does, so the last working
+  // `dist` is what a player is served until a build that finished replaces it. A Vite run that
+  // dies half-way through its write must not take that with it.
+  it("leaves the previous web outDir byte-identical when Vite fails", async () => {
+    const root = await makeTempDir("threenative-web-failed-");
+    roots.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-failed" }));
+    // Writes into whatever outDir it was handed, then fails: the shape of a real build that dies
+    // after emptying the directory, which is the write the old in-place outDir could not survive.
+    const vite = await installDeterministicVite(root);
+    await writeFile(
+      vite,
+      `#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const index = process.argv.indexOf("--outDir");
+const out = path.resolve(index === -1 ? "dist" : process.argv[index + 1]);
+await mkdir(out, { recursive: true });
+await writeFile(path.join(out, "index.html"), "half-written\\n");
+process.exit(1);
+`,
+    );
+    await mkdir(path.join(root, "dist"), { recursive: true });
+    await writeFile(path.join(root, "dist", "index.html"), "previous\n");
+    const previous = await tree(path.join(root, "dist"));
+
+    await expect(buildWeb(root)).rejects.toThrow(/exited with code 1/u);
+
+    expect(await tree(path.join(root, "dist"))).toEqual(previous);
+    expect((await readdir(root)).filter((name) => name.startsWith("dist.staging-"))).toEqual([]);
+  });
+
+  it("replaces the previous web outDir with the finished build", async () => {
+    const root = await makeTempDir("threenative-web-published-");
+    roots.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-published" }));
+    await installDeterministicVite(root);
+    // A file only the previous build wrote: a published outDir is replaced, never merged into.
+    await mkdir(path.join(root, "dist"), { recursive: true });
+    await writeFile(path.join(root, "dist", "stale.txt"), "last release\n");
+
+    await buildWeb(root);
+
+    await expect(readFile(path.join(root, "dist", "index.html"), "utf8")).resolves.toContain(
+      "web-published",
+    );
+    expect(existsSync(path.join(root, "dist", "stale.txt"))).toBe(false);
+    expect((await readdir(root)).filter((name) => name.startsWith("dist.staging-"))).toEqual([]);
+  });
+
+  it("puts the previous artifact back when the rename-in fails", async () => {
+    const root = await makeTempDir("threenative-publish-restore-");
+    roots.push(root);
+    const final = path.join(root, "game.js");
+    const staging = `${final}.staging-4242`;
+    await writeFile(final, "previous artifact\n");
+    await writeFile(staging, "new artifact\n");
+    renameFault.from = staging;
+
+    await expect(publishStagedArtifact(final, staging)).rejects.toThrow(/EXDEV/u);
+
+    renameFault.from = undefined;
+    await expect(readFile(final, "utf8")).resolves.toBe("previous artifact\n");
+    // The aside the previous artifact was moved to is gone: it went back rather than being left
+    // stranded under a second name. The staged artifact itself is the caller's to remove, which
+    // is what `buildWeb` and `packageStaged` do with it.
+    expect((await readdir(root)).filter((name) => name.includes("previous-"))).toEqual([]);
+  });
+
   it("drops a cook output the current bake does not declare from the web outDir", async () => {
     // Vite copies the whole output root, so without the packagers' own selector an orphan from
     // an earlier bake ships in every web build and is never loaded by anything. The bake is the
@@ -307,7 +396,9 @@ describe("threenative build", () => {
       `#!/usr/bin/env node
 import { cpSync, mkdirSync } from "node:fs";
 import path from "node:path";
-const out = path.resolve("dist");
+// The outDir it was handed, as Vite honours it: the build stages its own sibling.
+const index = process.argv.indexOf("--outDir");
+const out = path.resolve(index === -1 ? "dist" : process.argv[index + 1]);
 mkdirSync(out, { recursive: true });
 cpSync("public", out, { recursive: true });
 `,

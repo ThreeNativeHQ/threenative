@@ -330,18 +330,36 @@ export async function buildWeb(
   const config = await loadConfig(cwd, { target: "web", profile });
   announceProfile(config);
   await compileAssets({ config: config.assets, cwd, platform: "web" });
-  await run(
-    process.execPath,
-    [path.join(packageRoot(cwd, "vite"), "bin/vite.js"), "build", ...viteArgs],
-    cwd,
-  );
+  // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a
+  // truncated `dist` where a working one used to be — the same failure a native artifact had, and
+  // the same repair. Vite is handed a staging sibling, every post-step runs against it, and only a
+  // finished build publishes. Nothing the UI adds lands here: the web view is part of this one
+  // Vite build through `index.html`, and `buildUi`'s own output is native packaging's, under
+  // `.threenative/build/ui`.
   const outDir = path.resolve(cwd, viteOutDir(viteArgs));
-  await pruneUnpackagedAssets(cwd, config, outDir);
-  const report = await writeCompressionSidecars(outDir);
-  if (report !== undefined) {
-    process.stdout.write(
-      `web main chunk ${report.entry}: raw ${report.raw} B, gzip ${report.gzip} B, brotli ${report.brotli} B\n`,
+  const staging = `${outDir}.staging-${process.pid}`;
+  try {
+    await run(
+      process.execPath,
+      [
+        path.join(packageRoot(cwd, "vite"), "bin/vite.js"),
+        "build",
+        ...stagedViteArgs(viteArgs, staging),
+      ],
+      cwd,
     );
+    await pruneUnpackagedAssets(cwd, config, staging);
+    const report = await writeCompressionSidecars(staging);
+    if (report !== undefined) {
+      process.stdout.write(
+        `web main chunk ${report.entry}: raw ${report.raw} B, gzip ${report.gzip} B, brotli ${report.brotli} B\n`,
+      );
+    }
+    await publishStagedArtifact(outDir, staging);
+  } catch (error) {
+    // Nothing half-written survives the failure, and `outDir` was never written to.
+    await rm(staging, { force: true, recursive: true });
+    throw error;
   }
 }
 
@@ -374,6 +392,16 @@ function viteOutDir(viteArgs: readonly string[]): string {
   return flag.startsWith("--outDir=")
     ? flag.slice("--outDir=".length)
     : (viteArgs[index + 1] ?? "dist");
+}
+
+/** The same args with their `--outDir` pointed at the staging sibling, and nothing else changed. */
+function stagedViteArgs(viteArgs: readonly string[], staging: string): string[] {
+  const index = viteArgs.findIndex((arg) => arg === "--outDir" || arg.startsWith("--outDir="));
+  if (index === -1) return [...viteArgs, "--outDir", staging];
+  const staged = [...viteArgs];
+  if ((staged[index] as string).startsWith("--outDir=")) staged[index] = `--outDir=${staging}`;
+  else staged[index + 1] = staging;
+  return staged;
 }
 
 async function nativeEntry(cwd: string, config?: IResolvedThreeNativeConfig): Promise<string> {
@@ -777,7 +805,14 @@ async function packageStaged(
   await publishStagedArtifact(output, staged);
 }
 
-async function publishStagedArtifact(final: string, staging: string): Promise<void> {
+/**
+ * Publish what a staging build produced over the artifact it replaces, atomically.
+ *
+ * Every rename here is within one directory, so the window in which the artifact does not exist is
+ * a single syscall wide — and a rename that fails puts the previous one back rather than leaving
+ * neither. Exported for the test that can only reach this path by making a rename fail.
+ */
+export async function publishStagedArtifact(final: string, staging: string): Promise<void> {
   const directory = path.dirname(final);
   const stagedName = path.basename(staging);
   const finalName = path.basename(final);
