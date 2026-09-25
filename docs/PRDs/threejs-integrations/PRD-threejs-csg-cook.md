@@ -1,62 +1,21 @@
 # PRD: Offline CSG asset authoring
 
-**Status:** NOT STARTED — planning-only seed for one draft implementation PR.
+**Status:** PARTIAL — implementation and executable tests added; donor and platform qualification open.
 **Priority:** P1.
-**Base:** `develop` at `663de7c69fca3446303da8a39de7c8871bfe33c6` (2026-09-25).
-**Donor:** `gkjohnson/three-bvh-csg`.
-**Scope of this commit:** this PRD only; no implementation, dependency or runtime changes.
+**Base:** develop at `663de7c69fca3446303da8a39de7c8871bfe33c6`.
+**Donor:** gkjohnson/three-bvh-csg. **PR:** #331.
 
-## Goal and adoption decision
+## Goal and design
 
-Let an agent author a doorway, recess or intersecting pipe in TypeScript, then deliver a normal
-GLB through the existing asset cook. Adopt `three-bvh-csg` for controlled offline geometry,
-not as a runtime destruction system or an engine-owned modeling language. Use direct donor
-calls in editable authoring source first; extract export plumbing only if repeated consumers
-prove that the existing asset package should own it.
+Author a doorway, recess or intersecting pipe in TypeScript and deliver ordinary GLB through the existing cook/loader. No runtime destruction system, new renderer, modeling language or asset cache. The framework owns portable mechanism; materials and authored geometry remain game source. Keep original inputs and shared materials alive.
 
-## Source findings and overlap
+**Implementation ruling, 2026-09-25:** code lives in `examples/integrations/csg`, a standalone opt-in nested example, rather than bloating the benchmark arm or adding an unqualified core dependency. Its manifest pins Three 0.185.1, BVH 0.9.14, three-bvh-csg 0.0.18 and glTF Transform 4.4.2. Source compatibility is not execution evidence. The standalone renderer is not the framework's patched renderer.
 
-The inspected donor manifest declares MIT, Three >=0.179.0 and three-mesh-bvh >=0.9.7.
-The base catalog pins Three 0.185.1 and BVH 0.9.14, so declared peer ranges overlap. This is
-not a test result. Upstream requires watertight solid inputs and warns about numerical
-edge cases. Its README also warns that CSG draw ranges need special treatment for export.
-Existing `mergeParts` is mesh consolidation, not Boolean geometry; keep it for its own job.
-Do not duplicate the Blender Boolean workflow when that already solves the consumer's task.
-
-## Design and file ownership
-
-Use `examples/abyss-framework/tools/csg-assets.ts` for the authored solid operations and
-`examples/abyss-framework/src/render/csg-fixture.ts` for the appearance and playable fixture.
-Keep the donor in the example's development dependency graph. Reuse `@threenative/assets`
-for cooking and `ctx.assets.model` for loading. A proposed
-`packages/assets/__tests__/csg-export.spec.ts` exercises the export contract; it does not
-justify a new public package. Use one real Three installation, including its existing patch.
-
-Geometry output is ordinary BufferGeometry/GLB. Normalize only the active draw range, remap
-indices and material groups, preserve authored attributes and validate finite values before
-export. Do not serialize unused backing-buffer triangles. For indexed geometry, ranges count
-indices; for non-indexed geometry, they count vertices. Reject non-triangle-aligned ranges,
-invalid groups, unsupported attributes and non-invertible input transforms with an asset name.
-An empty intersection is an explicit empty result, never a full original mesh or a corrupt GLB.
-
-Preserve source brushes and game-owned materials. Clear the donor's acceleration data when
-geometry changes; disposal must not destroy shared inputs. Admit only a documented input
-corpus, not an assertion that every arbitrary mesh is manifold. Do not silently repair holes.
+`active-geometry.ts` compacts active triangles, remaps attributes/groups, preserves typed/normalized data and rejects malformed ranges. `csg.ts` executes real donor Boolean operations using owned scratch brushes. `export-glb.ts` writes bounded untextured standard-PBR GLBs via NodeIO. `generate.ts` authors the doorway without overwriting existing assets. README gives actual commands. A focused PR workflow runs strict build and both executable suites; root Vitest excludes examples.
 
 ## Test contract
 
-A synthetic 4 m by 3 m by 0.3 m wall minus a through-box 1 m wide by 2 m high is the main fixture.
-The cutter extends beyond both wall faces. Use interior sample points away from boundaries:
-rays through the doorway miss; rays through intact wall hit. After export, cooking and reload,
-those queries agree with the original Boolean result. The example creates collision from the
-same authoritative LOD0 geometry, not the currently selected visual LOD.
-
-Add union, disjoint and empty-intersection cases; rotated parents; multi-material cuts;
-nonzero drawRange starts; indexed/non-indexed output; NaN; singular transforms; and a
-repeated-generate/dispose case. A GLB validator must accept the output. Compare normalized
-geometry/attributes for repeatability, not arbitrary GLB metadata byte order. Desktop and
-Android load the cooked GLB without importing the CSG donor. Native parity is a runtime-asset
-claim, not a claim that the offline generator runs inside the host.
+Use a 4m x 3m x 0.3m wall minus a through-cutter making a 1m x 2m opening. Rays through the doorway miss; intact wall rays hit. Preserve this after export, cooking and reload, and build physics from LOD0. Test union, disjoint/empty intersection, transformed inputs, material groups, nonzero draw ranges, indexed/nonindexed attributes, invalid values and disposal. Require GLB validation and actual browser/desktop/Android playtests before admission. The exporter currently rejects textured/physical/interleaved/morphed assets instead of silently losing them. Watertight inputs remain required; no topology repair is claimed.
 
 ## Implementation order
 
@@ -64,11 +23,14 @@ claim, not a claim that the offline generator runs inside the host.
 - [ ] Record capability-search results and confirm the existing cook/export extension point.
 - [ ] Pin the donor and audit its code, transitive dependencies and fixture permissions.
 - [ ] Add the Boolean/export fixture tests and record their expected initial failures.
+- [x] Execute the dependency-free active-range regression corpus: 10 failing tests before implementation, then 10 passing tests on Node 22.16.0.
 
 ### Phase 2 — offline generation and round-trip
 - [ ] Implement the editable authoring script and active-range normalization.
+  Code is present; donor-backed build/generation must still execute before this combined claim is checked.
 - [ ] Pass the GLB validation and geometry round-trip tests.
 - [ ] Prove failure diagnostics and shared-input disposal behavior.
+- [x] Strict-check the dependency-free normalization module with local TypeScript 5.8.3: exit 0.
 
 ### Phase 3 — real game and collision proof
 - [ ] Wire the doorway fixture through the existing cook and model loader.
@@ -92,52 +54,15 @@ claim, not a claim that the offline generator runs inside the host.
 - [ ] Desktop-native evidence is recorded.
 - [ ] Android evidence is recorded.
 
-## Stop conditions and rollback
+## Verification and remaining work
 
-Do not expand into runtime fracture, navmesh rebuilding, networking or a CAD editor. If the
-admitted corpus cannot export reliably, retain the existing Blender path and record the failed
-admission rather than relaxing validation. Removing the authoring dependency must leave cooked
-GLBs loadable. No changes to WorldCells PR #317 or cook-profile PR #330 are required.
+Executed: `node --experimental-strip-types --test tests/contracts.test.mjs` — 10 passed, 0 failed. `tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext src/active-geometry.ts` — exit 0 using available TypeScript 5.8.3. Complete `npm test` attempted: build fails because Three/donor/glTF/node type dependencies cannot be resolved in the network-restricted sandbox. The real integration tests are written, not reported green. Dedicated CI is configured but its result must be read separately.
+
+Formal engine capability tools, transitive-license audit, lockfile generation, Biome, full repository tests and all GPU/native/collision lanes are unrun. No iOS support claim. Keep draft. Reject adoption rather than relaxing topology/export or platform gates. Removing the authoring dependency must leave cooked GLBs loadable. Do not change WorldCells #317 or cook profiles #330 implicitly.
 
 ## References
 
 - [Upstream](https://github.com/gkjohnson/three-bvh-csg)
-- [Donor manifest](https://github.com/gkjohnson/three-bvh-csg/blob/main/package.json)
-- [Asset loader](../../../packages/core/src/assets.ts)
-- [Dependency catalog](../../../pnpm-workspace.yaml)
+- [Implementation](../../../examples/integrations/csg/README.md)
+- [Original planning revision](https://github.com/ThreeNativeHQ/threenative/blob/0cfd44b3edafe75930a355f787c0f70e10ee5b26/docs/PRDs/threejs-integrations/PRD-threejs-csg-cook.md)
 - [Charter](../../architecture/CHARTER.md)
-
-## Cross-cutting requirements
-
-The framework owns portable mechanism, never the game's appearance or gameplay policy.
-Keep ordinary Three.js objects and the existing loop authoritative. Before implementation,
-run `engine_search_capabilities` and read `engine_capability_detail` for every relevant hit.
-Do not add a second renderer, scene format, ECS, CLI vocabulary, asset cache or world streamer.
-No dependency reaches `@threenative/core` merely because a demonstration imports it.
-Pin admitted dependencies and record the upstream commit/package integrity, code notices,
-transitive licenses and fixture-asset permissions. No unlicensed demo assets are copied.
-
-All new file names below are proposed, not shipped APIs. Read the nearest `AGENTS.md` before
-editing. Update the relevant template instructions and generated mirrors only when a capability
-actually ships. Keep this PRD and its one draft PR synchronized; no phase-sized replacement PRs.
-Do not merge this planning seed as evidence that the integration is complete.
-
-## Verification commands and initial evidence
-
-After implementation, run the focused tests named below, then `pnpm typecheck`, `pnpm lint`,
-`pnpm test`, `pnpm check:docs`, and the applicable playtest/native lanes. Record actual commands,
-exit codes and adapters beside their boxes. Missing observations are failures, not zero cost.
-Run `pnpm prd:progress` on this file before work and after every phase. Do not label a phase
-verified solely because code or a document exists.
-
-This initial change is planning-only. Source inspection used the GitHub connector. A local
-`git ls-remote` attempt failed because the sandbox could not resolve github.com; pnpm and a
-repository checkout were not available. Dependency installation, repository checks, browser
-execution and native execution have not been performed. iOS is not a supported target and is
-not added by this work. Platform support must name the lane actually executed.
-
-Document-only validation: the fetched `scripts/prd-progress.ts` blob
-`f3ec0a737a5b3bcfa06952a48b523ae56f7fd119` was hash-verified and executed directly with
-`node --experimental-strip-types`, returning four phases and `prd:0%` for this file.
-The PR checklist matches this PRD, and relative links were checked against inspected paths.
-These checks do not replace repository-wide documentation, build or runtime tests.
