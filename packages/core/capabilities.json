@@ -1212,6 +1212,23 @@
       "symbol": "createReplayDriver"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "a name in camelCase becomes UPPER_SNAKE: `debugFlag(\"freeCam\")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`",
+        "`0` and `false` are off, so a saved URL cannot turn a switch back on"
+      ],
+      "example": "import { debugFlag } from \"@threenative/core\";\nif (debugFlag(\"freeCam\")) camera.flyMode = true;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function debugFlag(name: string): boolean { … }",
+      "situations": ["read a debug toggle from the URL or an environment variable"],
+      "summary": "Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.",
+      "supersedes": [],
+      "symbol": "debugFlag"
+    },
+    {
       "aliases": [
         "firing line nearest target crosshair",
         "third-person camera",
@@ -1373,6 +1390,20 @@
       "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
       "supersedes": [],
       "symbol": "ensureVelocityOutput"
+    },
+    {
+      "aliases": [],
+      "constraints": ["development builds only; a production build publishes nothing"],
+      "example": "import { exposeDebug } from \"@threenative/core\";\nexposeDebug(\"player\", player);\n// then from the console: __THREENATIVE__.debug.player",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function exposeDebug(name: string, value: unknown): void { … }",
+      "situations": ["expose a game object to a capture script or the console in dev builds"],
+      "summary": "Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.",
+      "supersedes": [],
+      "symbol": "exposeDebug"
     },
     {
       "aliases": [],
@@ -1949,6 +1980,27 @@
       "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
       "supersedes": [],
       "symbol": "measureThreePose"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the material is the game's own instance and the split follows the materials the game",
+        "a skinned or instanced mesh, and a mesh with several materials, is left out — its",
+        "a group where only some meshes carry uv throws naming the label rather than losing the"
+      ],
+      "example": "const [hull, deck] = mergeByMaterial(ship, { label: \"ship\" });\n// a piece that must keep moving at run time:\nconst [hull] = mergeByMaterial(ship, { label: \"ship\", skip: (mesh) => mesh.name === \"radar\" });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["skip leaves one mesh out of its group and out of the result"],
+      "package": "@threenative/core",
+      "signature": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
+      "situations": [
+        "collapse a building or ship of dozens of boxes into one draw call per material",
+        "consolidate the static parts of a group before adding it to the scene"
+      ],
+      "summary": "Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in. already made; nothing here decides appearance vertices are not its own to bake texture mapping; a missing normal is recomputed",
+      "supersedes": [],
+      "symbol": "mergeByMaterial"
     },
     {
       "aliases": [],

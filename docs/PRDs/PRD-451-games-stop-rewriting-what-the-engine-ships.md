@@ -61,13 +61,14 @@ Kill switch: `pnpm tsx scripts/count-loc.ts` must score each API below the copie
 - [x] Every row resolves, with no reject hits. proof: `pnpm build && pnpm caps:recall` exit 0 — recallAtK 0.897 (61/68), all 8 new rows recalled with no reject hits; the 7 misses and 16 reject hits are the 60 baseline rows' own, unchanged. Fixes: `@situation` lines on `MatrixWorldPass`, `markStatic` (now its own doc block, since the family's shared summary collapsed to `invalidateStatic`), `createRandom`, `FrameBudget`; value exports of `InputMap`, `captureMouse` (lifted out of `InputMap.captureMouse()`, which delegates) and `lodPixelScale`. Rows cite `sandbox:<game>#<file>`, provenance only.
 
 #### Phase 2: three one-call APIs
-**Status:** NOT STARTED
-**Files:** `packages/core/src/{merge-parts,assets,debug,index}.ts`, matching `__tests__/*.spec.ts`
-**Verification:** `pnpm typecheck && pnpm lint`; `count-loc` numbers written here
-- [ ] `mergeByMaterial`: 3 materials × N meshes → 3 meshes, transforms baked, `skip` honoured, and a rejected group throws naming the label. proof: `pnpm exec vitest run packages/core/__tests__/merge-parts.spec.ts`
-- [ ] `texture` options apply, and `texture(path)` behaves exactly as before. proof: core assets spec
-- [ ] `debugFlag` reads the URL, and `exposeDebug` publishes nothing in a production build. proof: `pnpm exec vitest run packages/core/__tests__/debug.spec.ts`
-- [ ] `debugFlag` reads `TN_DEBUG_*` on native. proof: `--target desktop` playtest asserting the flagged state
+**Status:** CODE LANDED, one proof unrun
+**Files:** `packages/core/src/{merge-parts,assets,debug,index}.ts`, `packages/runtime-native/src/runtime.cpp`, matching `__tests__/*.spec.ts`
+**Verification:** `pnpm --filter @threenative/core build`, `pnpm typecheck`, `pnpm lint` all exit 0; `pnpm exec vitest run packages/core` 1552/1552
+- [x] `mergeByMaterial`: 3 materials × N meshes → 3 meshes, transforms baked, `skip` honoured, and a rejected group throws naming the label. proof: `pnpm exec vitest run packages/core/__tests__/merge-parts.spec.ts` — 22/22; a group where only some meshes carry uv throws naming the label rather than losing its mapping. `merge-parts.ts` joins the constraints allowlist (it reads a material's identity and the game's own instance) with a `no new Material|Color`, `no .material.x` assertion beside the exemption.
+- [x] `texture` options apply, and `texture(path)` behaves exactly as before. proof: `packages/core/__tests__/assets.spec.ts` — 48/48, including the shared cached instance left untouched and sRGB whenever options omit `data` (the loader default is linear).
+- [x] `debugFlag` reads the URL, and `exposeDebug` publishes nothing in a production build. proof: `pnpm exec vitest run packages/core/__tests__/debug.spec.ts` — 7/7. The production branch cannot be reached from inside vitest (its `import.meta.env` is always the bundler's), so it is proven by a separate node process loading `dist/index.js`: `debugFlag("freeCam")` reads `TN_DEBUG_FREE_CAM` and `exposeDebug` publishes nothing — the same plain ESM the native bundle is.
+- [ ] `debugFlag` reads `TN_DEBUG_*` on native. proof: `--target desktop` playtest asserting the flagged state. **Unrun:** the host is not built here (`pnpm native:build` not run). The TS half is covered by the node-process proof above; the C++ half is a 12-line `TN_DEBUG_` forward loop in `runtime.cpp` that compiles nowhere yet.
+- **count-loc** (code lines, comments excluded): `mergeByMaterial` 31 (interface 4 + const 1 + function 26) against midway `render/assets.ts:119-157` `consolidate` 35 per copy, which the PRD counts 10 times across 6 games. `texture` options 16 (interface 6 + `configuredTexture` 10) against midway `render/cockpit-detail.ts:41-70` 21 in the closest one file, plus lumen, wildwood, soul-cave and fps. `debugFlag` + `exposeDebug` 37 for the whole of `debug.ts`, against roughly 20 hand-guarded toggles in 5 games — **over a single 4-line copy, under the second.** The kill switch holds per copy for A and B and per corpus for C; C's single-copy miss is the honest reading.
 
 #### Phase 3: Midway deletes its copies
 **Status:** NOT STARTED

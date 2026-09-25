@@ -95,7 +95,7 @@ export { createAssetLoader } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
-export type { IAssetLoader, IAssetLoaderOptions } from "./assets.js";
+export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
 export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
 /**
  * Route effects through a named audio bus.
@@ -278,6 +278,42 @@ export type {
  */
 export { mergeParts } from "./merge-parts.js";
 export type { IMergePart, IMergePartsOptions } from "./merge-parts.js";
+/**
+ * Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in.
+ *
+ * @situation collapse a building or ship of dozens of boxes into one draw call per material
+ * @situation consolidate the static parts of a group before adding it to the scene
+ * @constraint the material is the game's own instance and the split follows the materials the game
+ * already made; nothing here decides appearance
+ * @constraint a skinned or instanced mesh, and a mesh with several materials, is left out — its
+ * vertices are not its own to bake
+ * @constraint a group where only some meshes carry uv throws naming the label rather than losing the
+ * texture mapping; a missing normal is recomputed
+ * @override skip leaves one mesh out of its group and out of the result
+ * @example const [hull, deck] = mergeByMaterial(ship, { label: "ship" });
+ * // a piece that must keep moving at run time:
+ * const [hull] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
+ */
+export { mergeByMaterial } from "./merge-parts.js";
+export type { IMergeByMaterialOptions } from "./merge-parts.js";
+/**
+ * Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
+ * @situation read a debug toggle from the URL or an environment variable
+ * @constraint a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`
+ * @constraint `0` and `false` are off, so a saved URL cannot turn a switch back on
+ * @example import { debugFlag } from "@threenative/core";
+ * if (debugFlag("freeCam")) camera.flyMode = true;
+ */
+export { debugFlag } from "./debug.js";
+/**
+ * Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
+ * @situation expose a game object to a capture script or the console in dev builds
+ * @constraint development builds only; a production build publishes nothing
+ * @example import { exposeDebug } from "@threenative/core";
+ * exposeDebug("player", player);
+ * // then from the console: __THREENATIVE__.debug.player
+ */
+export { exposeDebug } from "./debug.js";
 /**
  * Draw a model too detailed for the screen to resolve, without submitting the part it cannot.
  *

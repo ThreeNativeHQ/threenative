@@ -945,6 +945,22 @@ export function createReplayDriver( recording: Recording, target: EventTarget, p
 const driver = createReplayDriver(recording, ctx.renderer.domElement);
 ```
 
+### `debugFlag`
+
+`function` — Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
+
+```ts
+export function debugFlag(name: string): boolean { … }
+```
+
+- **Use when:** read a debug toggle from the URL or an environment variable
+- **Constraints:** a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM` · `0` and `false` are off, so a saved URL cannot turn a switch back on
+
+```ts
+import { debugFlag } from "@threenative/core";
+if (debugFlag("freeCam")) camera.flyMode = true;
+```
+
 ### `defineGame`
 
 `function` — Define the portable game entry shared by web and native.
@@ -1069,6 +1085,23 @@ const tracker = new VelocityTracker();
 tracker.update(scene);
 renderer.render(scene, camera);
 tracker.commit(scene);
+```
+
+### `exposeDebug`
+
+`function` — Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
+
+```ts
+export function exposeDebug(name: string, value: unknown): void { … }
+```
+
+- **Use when:** expose a game object to a capture script or the console in dev builds
+- **Constraints:** development builds only; a production build publishes nothing
+
+```ts
+import { exposeDebug } from "@threenative/core";
+exposeDebug("player", player);
+// then from the console: __THREENATIVE__.debug.player
 ```
 
 ### `FlightModel`
@@ -1488,6 +1521,24 @@ export function measureThreePose( object: Object3D, options: IMeasureThreePoseOp
 
 ```ts
 const measurement = measureThreePose(model);
+```
+
+### `mergeByMaterial`
+
+`function` — Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in. already made; nothing here decides appearance vertices are not its own to bake texture mapping; a missing normal is recomputed
+
+```ts
+export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }
+```
+
+- **Use when:** collapse a building or ship of dozens of boxes into one draw call per material · consolidate the static parts of a group before adding it to the scene
+- **Constraints:** the material is the game's own instance and the split follows the materials the game · a skinned or instanced mesh, and a mesh with several materials, is left out — its · a group where only some meshes carry uv throws naming the label rather than losing the
+- **Overrides:** skip leaves one mesh out of its group and out of the result
+
+```ts
+const [hull, deck] = mergeByMaterial(ship, { label: "ship" });
+// a piece that must keep moving at run time:
+const [hull] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
 ```
 
 ### `mergeParts`
