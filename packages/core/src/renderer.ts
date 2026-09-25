@@ -31,6 +31,7 @@ interface ITraversableOutputNode {
 }
 
 const prewarmedRoots = new WeakSet<Object3D>();
+const DEFAULT_GPU_TIMESTAMP_FRAME_INTERVAL = 8;
 
 function warmSurface(
   surface: WarmableSurface,
@@ -224,6 +225,7 @@ export interface IRendererOptions {
   /** Requests multisample antialiasing from the renderer. Defaults to true. */
   antialias?: boolean;
   canvas?: HTMLCanvasElement;
+  gpuTimestampFrameInterval?: number;
   preferWebGPU?: boolean;
   /** CSS-pixel multiplier for the drawing buffer. The default is intentional DPR 1. */
   resolutionScale?: number;
@@ -257,6 +259,7 @@ type RendererInstance = {
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
   info?: { frame?: number; render?: { timestamp?: number } };
   backend?: {
+    trackTimestamp?: boolean;
     getTimestampFrames?: (type: string) => number[];
     createRenderPipeline?: (...args: unknown[]) => unknown;
     createComputePipeline?: (...args: unknown[]) => unknown;
@@ -341,6 +344,8 @@ function wrapRenderer(
   reapply: { resize: (() => void) | undefined },
   alphaAntialiasing: AlphaAntialiasing,
   pipelineCensus: PipelineCensus | undefined,
+  timestampCapable: boolean,
+  timestampFrameInterval: number,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
   let outputPass: PassNode | undefined;
@@ -351,6 +356,15 @@ function wrapRenderer(
   let disposed = false;
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
+  let timestampFrame = -1;
+  const setTimestampTracking = (): void => {
+    const backend = raw.backend;
+    if (!timestampCapable || backend === undefined) return;
+    const frame = raw.info?.frame;
+    if (typeof frame === "number" && Number.isInteger(frame)) timestampFrame = frame;
+    else timestampFrame += 1;
+    backend.trackTimestamp = timestampFrame % timestampFrameInterval === 0;
+  };
 
   /**
    * The last resolved GPU timestamp and the frame id it belongs to.
@@ -575,6 +589,7 @@ function wrapRenderer(
       if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
       if (typeof raw.compute !== "function")
         throw new Error("webgpu renderer does not expose compute().");
+      setTimestampTracking();
       raw.compute(node);
     },
     readback: async (attribute) => {
@@ -598,6 +613,7 @@ function wrapRenderer(
       raw.dispose?.();
     },
     render: (scene, camera) => {
+      setTimestampTracking();
       renderingFrame += 1;
       try {
         renderFrame(scene, camera);
@@ -606,6 +622,7 @@ function wrapRenderer(
       }
     },
     renderOverlay: (scene, camera) => {
+      setTimestampTracking();
       renderingFrame += 1;
       try {
         renderOverlayFrame(scene, camera);
@@ -811,6 +828,12 @@ async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string 
 
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
+  const gpuTimestampFrameInterval =
+    options.gpuTimestampFrameInterval ?? DEFAULT_GPU_TIMESTAMP_FRAME_INTERVAL;
+  if (!Number.isInteger(gpuTimestampFrameInterval) || gpuTimestampFrameInterval < 1)
+    throw new Error(
+      `renderer.gpuTimestampFrameInterval must be a positive integer, received ${String(gpuTimestampFrameInterval)}.`,
+    );
   const resolutionScale = options.resolutionScale ?? 1;
   const pixelRatio = options.pixelRatio ?? 1;
   if (!Number.isFinite(pixelRatio) || pixelRatio <= 0)
@@ -824,10 +847,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   const applied = { height: 1, width: 1 };
   const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
   const preferWebGPU = options.preferWebGPU ?? true;
-  // `trackTimestamp` asks three to bracket its passes with GPU timestamps. It costs two queries
-  // per pass and is inert on an adapter without `timestamp-query`, which is why it is on rather
-  // than behind a flag: a measurement that only exists in a diagnostic build is the arrangement
-  // that left every GPU number in the record as wall-clock algebra.
+  // `trackTimestamp` is on so GPU time is measured, not inferred from wall clock; it is inert on an
+  // adapter without `timestamp-query`, and `gpuTimestampFrameInterval` samples it (PRD-446).
   const rendererParameters = {
     antialias: options.antialias ?? true,
     trackTimestamp: true,
@@ -852,6 +873,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       const instance = raw as RendererInstance;
       await instance.init?.();
       const alphaAntialiasing = arm(instance);
+      const timestampCapable = instance.backend?.trackTimestamp === true;
       const pipelineCensus = await createWebGpuPipelineCensus(instance, options);
       installDrawHook(instance, alphaAntialiasing);
       renderer = wrapRenderer(
@@ -862,6 +884,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         reapply,
         alphaAntialiasing,
         pipelineCensus,
+        timestampCapable,
+        gpuTimestampFrameInterval,
       );
     } catch {
       renderer = undefined;
@@ -885,6 +909,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       reapply,
       alphaAntialiasing,
       pipelineCensus,
+      false,
+      gpuTimestampFrameInterval,
     );
   }
 

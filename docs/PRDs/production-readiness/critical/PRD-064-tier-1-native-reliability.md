@@ -168,6 +168,22 @@ path → `TN_PROD_PERFORMANCE_BUDGET`; slow only the native arm → parity failu
 resolved process and artifact identities; delay the first non-blank frame → `TN_PROD_STARTUP_BUDGET`.
 The identity check is what stops the parity gate comparing the browser against itself.
 
+**Progress:**
+- [x] The judge stops failing a healthy desktop run on the counter budgets. A window-opening frame
+  that has not yet resolved its asynchronous renderer read is treated as unmeasured, not as a
+  full-series failure (`packages/runtime-native/scripts/production-evidence.mjs`, `maximumMetric`).
+  Evidence: the desktop artifact `.runtime/prd064/judge-display/production-evidence.json`
+  (p95 16.6 ≤ 33 ms, p99 17.0 ≤ 33 ms, mean 175 ≥ 60 fps, draw calls 80 ≤ 200, triangles 3,204 ≤ 7,700,
+  startup p95 584 ≤ 5,000 ms) re-evaluates offline to `codes: []`, `status: PASS`, exit 0, while an
+  all-missing counter series still fails closed; red-green in
+  `packages/runtime-native/tests/production-profile.test.mjs` (`counter budgets ignore a
+  window-opening frame with no renderer reading`, 51/51 passing).
+- [ ] All three Phase 4 negative controls observed red and recorded — slow web render path →
+  `TN_PROD_PERFORMANCE_BUDGET`; slow native arm → parity failure with distinct process/artifact
+  identities; delayed first non-blank frame → `TN_PROD_STARTUP_BUDGET`.
+- [ ] The unmodified platformer holds the web budget and is no slower natively on one identified
+  host, web and native resolving to different process and artifact identities.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:

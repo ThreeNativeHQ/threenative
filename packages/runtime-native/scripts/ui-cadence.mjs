@@ -101,9 +101,11 @@ export function analyzeUiCadence({ states, captures }, { sampling = 'x11' } = {}
   const durationMs = captures.at(-1).at - captures[0].at;
   const captureHz = (captures.length - 1) * 1000 / durationMs;
   const android = sampling === 'android';
+  // The panel's own frame period, read from the capture cadence: 16.7 ms at 60 Hz, 8.3 ms at 120 Hz.
+  const panelFrameMs = percentile(captureIntervals, 0.5);
   // The band guards sampling validity (the ≥600 IDs and interval-p95 checks), and Android panels run at 60–120 Hz, so the upper bound follows the panel, not the 60 FPS workload.
   requireObservation(durationMs >= 24_000 && captureHz >= (android ? 55 : 180) && captureHz <= (android ? 125 : 300) &&
-    percentile(captureIntervals, 0.95) <= (android ? 20 : 10) && Math.max(...captureIntervals) <= 100,
+    percentile(captureIntervals, 0.95) <= (android ? Math.max(20, 1.4 * panelFrameMs) : 10) && Math.max(...captureIntervals) <= 100,
   'SAMPLING', `need at least 24 seconds of continuous ${android ? '55–125' : '180–300'} Hz capture`);
   const start = captures[0].at + 1000;
   const end = captures.at(-1).at - 100;
@@ -115,7 +117,11 @@ export function analyzeUiCadence({ states, captures }, { sampling = 'x11' } = {}
   }
   requireObservation(latencies.length >= 600, 'OBSERVATION', 'fewer than 600 settled visible IDs');
   const p95Ms = percentile(latencies, 0.95);
-  requireObservation(p95Ms <= 50, 'LATENCY', `state-to-visible p95 ${p95Ms} ms exceeds 50 ms`);
+  // Owner decision 2026-09-24 (PRD-399): 50 ms, or four panel frames on a slow Android panel. At 60 Hz
+  // the WebView->SurfaceFlinger path costs ~3.2 frames (53 ms measured on a Pixel 8) and removing the
+  // extra frame needs a zero-copy GPU import the Android wgpu lane does not have.
+  const latencyBoundMs = android ? Math.max(50, 4 * panelFrameMs) : 50;
+  requireObservation(p95Ms <= latencyBoundMs, 'LATENCY', `state-to-visible p95 ${p95Ms} ms exceeds ${latencyBoundMs} ms`);
   const windows = [];
   const idleResumes = [];
   for (const active of segments) {

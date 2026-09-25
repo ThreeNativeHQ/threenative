@@ -2575,6 +2575,25 @@ describe("CI pipeline structure", () => {
     expect(simulator).not.toContain("--help");
   });
 
+  it("proves desktop release signing with test credentials on both hosted hosts", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const desktop = requiredJob(native, "desktop");
+    // Owner decision 2026-09-23: each developer signs their own game; the engine ships no
+    // certificate. The lane proves the credential path with a runner-generated certificate on each
+    // host, and reads the signature back independently of the adapter that wrote it. Without this
+    // the macOS half signs ad-hoc and the credentialed path the decision names stays unwired.
+    expect(desktop).toContain("Create a self-signed code-signing certificate for the proof");
+    expect(desktop).toContain("Create a self-signed code-signing certificate for the macOS proof");
+    expect(desktop).toContain("THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof");
+    expect(desktop).toContain('THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY"');
+    expect(desktop).toContain("Get-AuthenticodeSignature");
+    expect(desktop).toContain("codesign --verify --strict --deep");
+    expect(desktop).toContain("Authority=ThreeNative CI Signing Proof");
+  });
+
   it("plans real alternating pairs and rejects unsafe or incomparable hardware evidence", () => {
     expect(
       plannedPerformancePairs("native-android", "/repo/baseline", "/repo/candidate").map(
@@ -2870,6 +2889,19 @@ describe("PRD-373 selective feature verification", () => {
       }
     },
   );
+
+  it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
+    // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
+    // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
+    // hand; this setting answers it for every install. pnpm reads workspace config from
+    // pnpm-workspace.yaml, so a plain grep of package.json would not prove it.
+    const result = spawnSync("pnpm", ["config", "get", "confirmModulesPurge"], {
+      cwd: repo,
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("false");
+  });
 
   it.each([
     "packages/runtime-native/native/CMakeLists.txt",
