@@ -1,0 +1,46 @@
+name: PR306 native coverage diagnostic
+
+on:
+  push:
+    branches: [fix/prd-399-android-ui-latency]
+    paths: [.github/workflows/pr306-native-coverage-diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    if: github.repository == 'ThreeNativeHQ/threenative' && github.ref == 'refs/heads/fix/prd-399-android-ui-latency'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Require the inspected branch state
+        run: test "$(git rev-parse HEAD^)" = d3b210c76ac648d5625480dde35908a8c2093688
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install coverage exporter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm
+          command -v llvm-cov
+          llvm-cov --version
+      - name: Regenerate native coverage evidence
+        run: pnpm --filter @threenative/runtime-native native:coverage
+      - name: Verify relevant gates
+        run: |
+          pnpm exec vitest run scripts/__tests__/publint-gate.spec.ts
+          pnpm tsx scripts/check-budgets.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr306-native-coverage
+          path: docs/verification/native-coverage-2026-08-28.md
+          retention-days: 3
+          if-no-files-found: error
