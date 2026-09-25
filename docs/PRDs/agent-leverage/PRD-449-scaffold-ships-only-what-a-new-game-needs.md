@@ -1,6 +1,6 @@
 # PRD-449 — The scaffold ships only what a new game needs
 
-**Status:** IN PROGRESS (Phases 1–3 code done; AC-4/AC-5 pending the sandbox run)
+**Status:** IN REVIEW — Phases 1–3 shipped; open: AC-5's ≤ 8k line target (8,138 measured) is an owner call, and the full `pnpm test` box waits on CI (18 `runtime-native` tests need the opt-in native build, absent locally)
 **Complexity:** 1 (LOW)
 **Owner:** João
 **Depends on:** None
@@ -76,20 +76,39 @@ closed.
   packages/create-threenative/__tests__/template.spec.ts` — Evidence: 2026-09-25, red first
   (`scaffold.spec.ts` "store each skill once": `file-engine-bug is a second stored copy`), green
   after `linkClaudeSkills` (relative per-skill symlinks, EPERM/EACCES copy fallback).
-- [ ] AC-3 [local]: Every `agent-docs` link in each template's `AGENTS.md` resolves to a file the
+- [x] AC-3 [local]: Every `agent-docs` link in each template's `AGENTS.md` resolves to a file the
   installed `create-threenative` carries — Evidence (open until the `pnpm sandbox` install runs): 2026-09-25, `pnpm pack` + tar listing shows
   the 17 pages at `package/agent-docs/references/`, and a scan of the packed bytes resolves all 356
   backticked links across the 10 templates' `AGENTS.md`/`CLAUDE.md` and every `SKILL.md` with zero
   missing; `build.spec.ts` pins each template's `create-threenative` devDependency;
   `scaffold.spec.ts` scaffolds a kit, asserts no `agent-docs/` and re-checks every link against
-  the bundle, and still fails closed on a page the package does not ship. `pnpm sandbox` was not
-  run in this lane — the install step is the package manager placing that same tarball.
-- [ ] AC-4 [local]: `pnpm test` in a fresh starter runs exactly 3 scenarios, all green — proof:
-  `pnpm test:templates` (starter) — Evidence: pending.
+  the bundle, and still fails closed on a page the package does not ship. Sandbox, 2026-09-25:
+  `pnpm sandbox --genre platformer --out <private dir>` (starter, tarball install) — 66 distinct
+  `node_modules/create-threenative/agent-docs/references/…` links across `AGENTS.md`, `CLAUDE.md`
+  and every `SKILL.md` all resolve (0 missing); no `agent-docs/`, `capabilities.json` or
+  `AGENT-ROLES.md` in the project; `.claude/skills/*` are symlinks; and
+  `engine_search_capabilities` answers over stdio from the game root through
+  `node_modules/@threenative/core/mcp/engine.mjs` (AC-1).
+- [x] AC-4 [local]: `pnpm test` in a fresh starter runs exactly 3 scenarios, all green — proof:
+  `pnpm test:templates` (starter) — Evidence, 2026-09-25: `pnpm test` in the tarball-installed
+  sandbox starter ran exactly `survives`, `play`, `starter-production-readiness`, exit 0.
+  `test:templates` skips starter (`ALREADY_BOOTED_TEMPLATES`); the lane that runs starter's full
+  suite is `verify:golden-path`, which now copies the 21 guards back in:
+  `TN_GOLDEN_PATH_TEMPLATES=starter pnpm verify:golden-path` ran all 24 — 20 green, and `play`,
+  `textures`, `touch-controls`, `zoom-pinch` died with "Target page, context or browser has been
+  closed" at machine load ~18; the same 4 re-run in the sandbox starter at load ~9: all green.
 - [ ] AC-5 [local]: Fresh starter is ≤ 95 files and ≤ 8k text lines, excluding `node_modules`,
   `dist`, lockfile and the MCP host configs written by core's install (was ~144 / ~24k; the cuts
   above remove 52 files and ~17k lines) — proof: `find` count on the sandbox scaffold, recorded
-  here — Evidence: pending.
+  here — Evidence, 2026-09-25 (sandbox starter, also excluding the sandbox's own `brief.md`,
+  `reference.png`, `sweep.json`): **files met, lines missed by 138.** 87 regular files (+10
+  `.claude/skills` symlinks, no bytes) and **8,138** text lines. Before, measured from git at the
+  base: 87 + 1 + 1 + 10 + 17 + 23 = 139 files and 8,138 + 6,548 (`capabilities.json`) + 26
+  (`AGENT-ROLES.md`) + 475 (skill copies) + 7,884 (`agent-docs`) + 1,535 (moved scenarios) ≈
+  24.6k lines, so the cut is 52 files / 16.5k lines as planned; the ≤ 8k line target came from the
+  ~4.7k game-code estimate, which left out the kept 682-line `patches/three@0.185.1.patch` and the
+  1,087 lines of `scripts/reference.mjs` + `scripts/visual-loop.mjs`. Left open for the owner:
+  accept 8.1k or name a further cut (nothing in the PRD's "kept deliberately" list was touched).
 
 ## Integration Ledger
 
@@ -140,8 +159,8 @@ each other, `scripts/instruction-budget.ts` (reference-target budget), `scripts/
   resolved because the scaffold still copied the bundle. Green after `copyReferenceBundle` went.
 
 #### Phase 3: Starter proves the game, not the engine
-**Status:** PARTIAL — the cut, the readers and both engine lanes are done and green; AC-4 and AC-5
-wait on the owner's `pnpm sandbox` run.
+**Status:** PARTIAL — the cut, the readers and all three engine lanes are done; AC-4 green; AC-5 files
+met, lines 138 over (owner call); full `pnpm test` waits on CI's native build.
 **Files:** `templates/starter/playtests/` (3 kept), `template-playtests/starter/` (21 scenarios + 2
 baselines, never published), `scripts/verify-template-playtests.ts:88` (copies the guards into the
 scaffold before `pnpm test`), `.github/workflows/ci.yml` `template-nonvisual` (same copy),
@@ -164,9 +183,10 @@ scaffold before `pnpm test`), `.github/workflows/ci.yml` `template-nonvisual` (s
   naming a moved scenario reworded. `platformer/src/entities/Character.ts` and
   `platformer/src/scenes/Level.ts` are left alone: they name scenarios that kit still ships.
   Red first: `scaffold.spec.ts:1117` listed 24 files where 3 were expected.
-- [ ] Starter runs exactly 3 scenarios, green (AC-4). The count is proven by a unit test; the run
-  itself is `pnpm test:templates`, not run in this lane.
-- [ ] Size target met and recorded (AC-5) — the owner's `pnpm sandbox` scaffold count.
+- [x] Starter runs exactly 3 scenarios, green (AC-4) — sandbox `pnpm test`, 3 scenarios, exit 0.
+  `scripts/verify-golden-path.ts` copies `template-playtests/<template>/` into the scaffold too,
+  since golden-path (not `test:templates`) is where starter's GPU scenarios run.
+- [ ] Size target met and recorded (AC-5) — recorded, not met: 87 files ✓, 8,138 lines vs ≤ 8k ✗ (see AC-5).
 - [ ] `pnpm typecheck && pnpm lint && pnpm test` green; `pnpm budgets` clean. 2026-09-25:
   `typecheck`, `lint` and `budgets` all exit 0, and `pnpm test` is green except 18 tests in
   `packages/runtime-native` that fail with "executable is not built. Run: cmake --build …" — the

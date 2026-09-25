@@ -1084,6 +1084,12 @@ async function runTemplate(
       scaffold: async () => {
         await scaffold(template, target, sources, templatesRoot);
         await stat(target);
+        // The starter ships three scenarios; the guards it no longer ships live beside the
+        // templates (PRD-449). This lane is where starter's GPU scenarios run, so copy them back.
+        const guards = path.resolve(templatesRoot, "..", "template-playtests", template);
+        if (existsSync(guards)) {
+          await cp(guards, path.join(target, "playtests"), { recursive: true });
+        }
       },
       install: () =>
         runCommand("install", "pnpm", ["install", "--reporter", "append-only"], target),
