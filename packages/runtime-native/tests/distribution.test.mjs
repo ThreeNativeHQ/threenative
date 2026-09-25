@@ -1430,6 +1430,10 @@ async function packageSampleRelease(root, overrides = {}) {
     output,
     prerequisites: [{ name: 'libc.so.6' }],
     runtime: fakeRuntime,
+    // The strip step runs a real object-file tool on the packaged runtime copy. This fixture's
+    // "runtime" is a script, so inject the tool boundary here; the strip contract itself is
+    // asserted in __tests__/desktop-strip.spec.ts.
+    stripRun: () => ({ status: 0, stdout: '', stderr: '' }),
     ui,
     ...overrides,
   });
