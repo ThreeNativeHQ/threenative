@@ -337,8 +337,9 @@ export async function buildWeb(
   // Vite build through `index.html`, and `buildUi`'s own output is native packaging's, under
   // `.threenative/build/ui`.
   const outDir = path.resolve(cwd, viteOutDir(viteArgs));
-  const staging = `${outDir}.staging-${process.pid}`;
+  const staging = stagingPath(outDir);
   try {
+    await mkdir(path.dirname(staging), { recursive: true });
     await run(
       process.execPath,
       [
@@ -358,7 +359,7 @@ export async function buildWeb(
     await publishStagedArtifact(outDir, staging);
   } catch (error) {
     // Nothing half-written survives the failure, and `outDir` was never written to.
-    await rm(staging, { force: true, recursive: true });
+    await rm(path.dirname(staging), { force: true, recursive: true });
     throw error;
   }
 }
@@ -773,13 +774,9 @@ async function buildNative(
  *
  * A packager writes in place: an APK that fails halfway leaves a truncated `dist-native/<name>.apk`
  * where a working one used to be, and a killed build leaves no way to tell the two apart. So the
- * packager is handed `<final>.staging-<pid>`, and only a complete run publishes — a rename aside
+ * packager is handed `stagingPath(final)`, and only a complete run publishes — a rename aside
  * for the previous artifact, a rename in for the new one, then the old one goes. A failure never
  * reaches the publish, so the previous artifact is still the artifact.
- *
- * The whole family is published, not just the named output: an iOS `.app` also writes
- * `<output>.json`, and a desktop release container writes `<output>.tar.gz` and, on Windows,
- * `<output>-setup.exe` beside the raw binary.
  */
 async function packageStaged(
   output: string,
@@ -787,7 +784,7 @@ async function packageStaged(
   args: readonly string[],
   budget?: { assets: string; config: IResolvedThreeNativeConfig },
 ): Promise<void> {
-  const staged = `${output}.staging-${process.pid}`;
+  const staged = stagingPath(output);
   const index = args.indexOf("--output");
   if (index < 0 || index + 1 >= args.length) {
     throw new Error("packageStaged needs the packager's --output <path> argument to stage it.");
@@ -795,55 +792,66 @@ async function packageStaged(
   const packager = [...args];
   packager[index + 1] = staged;
   try {
+    await mkdir(path.dirname(staged), { recursive: true });
     await run(process.execPath, packager, cwd);
     if (budget !== undefined)
       await assertArtifactBudget(cwd, budget.config, output, staged, budget.assets);
   } catch (error) {
-    await rm(staged, { force: true, recursive: true });
+    await rm(path.dirname(staged), { force: true, recursive: true });
     throw error;
   }
   await publishStagedArtifact(output, staged);
 }
 
 /**
- * Publish what a staging build produced over the artifact it replaces, atomically.
+ * Where a build stages `final`: a private directory beside it, keeping the artifact's own name.
  *
- * Every rename here is within one directory, so the window in which the artifact does not exist is
- * a single syscall wide — and a rename that fails puts the previous one back rather than leaving
- * neither. Exported for the test that can only reach this path by making a rename fail.
+ * The name matters because packagers derive from it — a desktop release container is named after
+ * its output's basename — so a suffixed name would ship inside the artifact. The directory also
+ * collects the whole family a packager writes next to its output (`<name>.json` beside an iOS
+ * `.app`, `<name>.tar.gz` and `<name>-setup.exe` beside a desktop binary), so publish and cleanup
+ * never have to know those spellings.
+ */
+export function stagingPath(final: string): string {
+  return path.join(path.dirname(final), `.staging-${process.pid}`, path.basename(final));
+}
+
+/**
+ * Publish everything a staging build produced over the artifacts it replaces, then drop the
+ * staging directory.
+ *
+ * Staging and destination share a parent, so each rename is atomic: the window in which an
+ * artifact does not exist is a single syscall wide — and a rename that fails puts the previous one
+ * back rather than leaving neither. Exported for the test that can only reach this path by making
+ * a rename fail.
  */
 export async function publishStagedArtifact(final: string, staging: string): Promise<void> {
-  const directory = path.dirname(final);
-  const stagedName = path.basename(staging);
-  const finalName = path.basename(final);
-  const produced = (existsSync(directory) ? await readdir(directory) : []).filter(
-    (name) => name === stagedName || name.startsWith(`${stagedName}.`),
-  );
-  if (produced.length === 0) {
+  const from = path.dirname(staging);
+  const produced = existsSync(from) ? await readdir(from) : [];
+  if (!produced.includes(path.basename(staging))) {
     throw new Error(
       `TN_BUILD_ARTIFACT_MISSING: the packager exited successfully but wrote no artifact to ${staging}; ${final} is unchanged.`,
     );
   }
+  const directory = path.dirname(final);
   for (const name of produced) {
-    const from = path.join(directory, name);
-    const to = path.join(directory, `${finalName}${name.slice(stagedName.length)}`);
+    const source = path.join(from, name);
+    const to = path.join(directory, name);
     if (!existsSync(to)) {
-      await rename(from, to);
+      await rename(source, to);
       continue;
     }
-    // Both live in one directory, so each rename is atomic: the window in which the artifact does
-    // not exist is a single syscall wide.
-    const previous = `${to}.previous-${process.pid}`;
+    const previous = path.join(from, `${name}.previous`);
     await rename(to, previous);
     try {
-      await rename(from, to);
+      await rename(source, to);
     } catch (error) {
       // The new artifact did not land, so the previous one goes back: never leave neither.
       await rename(previous, to);
       throw error;
     }
-    await rm(previous, { force: true, recursive: true });
   }
+  await rm(from, { force: true, recursive: true });
 }
 
 /** The project-scoped build lock, holding the pid of the build that owns it. */

@@ -18,6 +18,7 @@ import {
   parseBuildArgs,
   publishStagedArtifact,
   runtimeHasWebAssembly,
+  stagingPath,
   writePackagingConfig,
 } from "../src/build.js";
 import { ANDROID_RELEASE_SIGNING_ENV } from "../src/doctor.js";
@@ -309,7 +310,7 @@ process.exit(1);
     await expect(buildWeb(root)).rejects.toThrow(/exited with code 1/u);
 
     expect(await tree(path.join(root, "dist"))).toEqual(previous);
-    expect((await readdir(root)).filter((name) => name.startsWith("dist.staging-"))).toEqual([]);
+    expect((await readdir(root)).filter((name) => name.startsWith(".staging-"))).toEqual([]);
   });
 
   it("replaces the previous web outDir with the finished build", async () => {
@@ -327,15 +328,41 @@ process.exit(1);
       "web-published",
     );
     expect(existsSync(path.join(root, "dist", "stale.txt"))).toBe(false);
-    expect((await readdir(root)).filter((name) => name.startsWith("dist.staging-"))).toEqual([]);
+    expect((await readdir(root)).filter((name) => name.startsWith(".staging-"))).toEqual([]);
+  });
+
+  it("stages under the artifact's own name and publishes every file the packager wrote beside it", async () => {
+    const root = await makeTempDir("threenative-publish-family-");
+    roots.push(root);
+    const final = path.join(root, "dist-native", "space-game");
+    const staging = stagingPath(final);
+    // Packagers name things after their output's basename, so the staged name must be the real one.
+    expect(path.basename(staging)).toBe("space-game");
+    await mkdir(path.dirname(staging), { recursive: true });
+    for (const name of ["space-game", "space-game.tar.gz", "space-game-setup.exe"])
+      await writeFile(path.join(path.dirname(staging), name), `${name}\n`);
+    await writeFile(`${final}.tar.gz`, "previous container\n");
+
+    await publishStagedArtifact(final, staging);
+
+    for (const name of ["space-game", "space-game.tar.gz", "space-game-setup.exe"])
+      await expect(readFile(path.join(root, "dist-native", name), "utf8")).resolves.toBe(
+        `${name}\n`,
+      );
+    expect(await readdir(path.join(root, "dist-native"))).toEqual([
+      "space-game",
+      "space-game-setup.exe",
+      "space-game.tar.gz",
+    ]);
   });
 
   it("puts the previous artifact back when the rename-in fails", async () => {
     const root = await makeTempDir("threenative-publish-restore-");
     roots.push(root);
     const final = path.join(root, "game.js");
-    const staging = `${final}.staging-4242`;
+    const staging = stagingPath(final);
     await writeFile(final, "previous artifact\n");
+    await mkdir(path.dirname(staging), { recursive: true });
     await writeFile(staging, "new artifact\n");
     renameFault.from = staging;
 
@@ -346,7 +373,7 @@ process.exit(1);
     // The aside the previous artifact was moved to is gone: it went back rather than being left
     // stranded under a second name. The staged artifact itself is the caller's to remove, which
     // is what `buildWeb` and `packageStaged` do with it.
-    expect((await readdir(root)).filter((name) => name.includes("previous-"))).toEqual([]);
+    expect(existsSync(path.join(path.dirname(staging), "game.js.previous"))).toBe(false);
   });
 
   it("drops a cook output the current bake does not declare from the web outDir", async () => {
