@@ -777,14 +777,17 @@ jobs:
       - name: Publish runtimes and checksum lock
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${{ github.ref_name }}" release/*
-          --repo "${{ github.repository }}"
-          --verify-tag
-          --title "ThreeNative runtime ${{ github.ref_name }}"
-          --prerelease
-          --latest=false
-          --generate-notes
+        run: |
+          # `release/*` expands to `release/compliance`, a directory, and `gh release create`
+          # fails on it. Upload files only, so a runtime release is created in one pass.
+          mapfile -t assets < <(find release -maxdepth 1 -type f)
+          gh release create "${{ github.ref_name }}" "${assets[@]}" \
+            --repo "${{ github.repository }}" \
+            --verify-tag \
+            --title "ThreeNative runtime ${{ github.ref_name }}" \
+            --prerelease \
+            --latest=false \
+            --generate-notes
 
   clean-consumer:
     needs: [validate-tag, gates, build, build-android, publish]
