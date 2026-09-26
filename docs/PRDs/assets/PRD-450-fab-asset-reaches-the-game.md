@@ -1,6 +1,6 @@
 # PRD-450 — A FAB asset reaches the game
 
-**Status:** PARTIAL — phases 1–2 done, phase 3 code landed; the publish and final pin move remain
+**Status:** COMPLETE — `threenative-asset-mcp@0.9.4` carries the phase-2/3 fixes, the engine pins it, and every acceptance criterion has evidence
 **Complexity:** 4 (MEDIUM): 1–5 implementation files (+1), two independently released packages
 (asset MCP on npm, engine pin) (+2), external API (Fab/FabCLI) (+1).
 **Owner:** João
@@ -80,17 +80,17 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
   page stalls at 0% (`TN_STARTUP_STALLED`, bridge never installs) while the control boots in 2.0 s.
   The game also needed `assets.exclude` for the importer's unmappable `textures/` and a raised
   `assets.budget.uncooked` for the 127 MB GLB.
-- [ ] AC-4 [local]: A fresh `pnpm sandbox` scaffold launches the published asset MCP version
+- [x] AC-4 [local]: A fresh `pnpm sandbox` scaffold launches the published asset MCP version
   carrying these fixes, not 0.9.1 — proof: `tools/list` from the scaffold matches the regenerated
-  `asset-mcp-tools.json` — Evidence: pending.
-  Blocked on the npm publish (see Blocked on). The engine now launches 0.9.3, not 0.9.1.
+  `asset-mcp-tools.json` — Evidence: 2026-09-26, `threenative-asset-mcp@0.9.4` published; all three
+  engine pins moved to 0.9.4 together; `capture-asset-mcp-tools.ts` installed the registry tarball
+  into a clean directory and recorded 46 tools, and `TN_GOLDEN_PATH_TEMPLATES=starter pnpm
+  verify:golden-path` launched the scaffold's asset server and matched that snapshot.
 
 ## Blocked on
 
-- npm publish of the new `threenative-asset-mcp` version — unblocked by João authorizing the
-  publish (repo has no CI; `npm publish --ignore-scripts` from a neutral cwd).
-- A live FabCLI session with the Hornbeam in the library (AC-1, AC-2) — unblocked by João's Fab
-  login on this machine if the 2026-09-24 session has expired.
+None. 2026-09-26: `threenative-asset-mcp@0.9.4` is published and the engine pins it in all three
+places, and the FabCLI session the 2026-09-24 run lacked was available for the AC-1/AC-2 calls.
 
 ## Integration Ledger
 
@@ -130,14 +130,13 @@ Consumer path: agent → `.mcp.json` → `packages/core/mcp/assets.mjs` → `lau
 - [x] Bus-address fallback plus `FABCLI_KEYSTORE_UNREACHABLE`; red first with a stripped env (AC-1). — 2026-09-25, A/ `9ff6940`: stripping only `DBUS_SESSION_BUS_ADDRESS` did not reproduce (libdbus reads `XDG_RUNTIME_DIR`); stripping both reproduced the session's exact "X11 autolaunch" `FABCLI_UNAUTHENTICATED` on 0.9.3. The fallback therefore also derives `/run/user/<uid>/bus`. Red specs seen first; `unreal-import` + `fab-import` 111/111.
 
 #### Phase 3: An Unreal pack lands in the game at a known size
-**Status:** PARTIAL — code landed in A/ (jonit-dev/threenative-asset-mcp#12; review fixes `dbe7a52`, vitest 414/414); the publish and pin move are the owner's
+**Status:** DONE — code landed in A/ (jonit-dev/threenative-asset-mcp#12, merged `b4a9ad0`) and published as `0.9.4` (`aa5296b`); the engine pins it in all three places
 **Files:** `A/src/unreal/importer.ts`, `A/src/fab/api-download.ts` (size field),
 `A/src/fab/client.ts` (drop `formats`), tool descriptions in `A/src/tools/*.ts`, a sandbox playtest.
 - [x] Pre-flight sizes only the requested packages; red first from a fixture where the whole tree exceeds free space and one package fits. — A/ `2ca39f5`: red first (the whole-tree fixture imported instead of refusing, because the injected free space was ignored). Live on this machine the volume has 477 GB free, so the live call cannot show the old refusal; the spec carries it.
 - [x] Modern-converter no-geometry retries through the UE Viewer branch, or returns the full diagnostic (AC-2). — A/ `2ca39f5`: red first on both halves, with a fake converter that prints several lines and exits 1. The cached Hornbeam is the `MS_Hornbeam_UE4` variant, which imports cleanly, so the UE5 failure path is proven by spec only.
 - [x] Results report bounding-box metres; `formats` no longer advertised (AC-3). — A/ `2ca39f5`: `sizeMeters` on import models/scenes and on Fab/direct GLB downloads. Live Hornbeam import reports 9.98 × 16.13 × 8.55, matching an independent `getBounds` read. `formats` is out of the search schema, `fab_list_filters` and the docs. Also A/ `c50872f`: `FAB_FORMAT_UNAVAILABLE` on an Unreal-only listing now names its formats and routes to `fab_import_asset` (live on `c6f917b6…`).
-- [ ] Engine pins moved to the newly published version, tools snapshot regenerated (AC-4).
-  Blocked: `threenative-asset-mcp` with these fixes is not published. The AFK run does not publish packages; the pins stay at 0.9.3.
+- [x] Engine pins moved to the newly published version, tools snapshot regenerated (AC-4). — 2026-09-26: `threenative-asset-mcp@0.9.4` published from A/ main `aa5296b`; `packages/core/package.json`, `packages/core/mcp/servers.mjs` and `pnpm-lock.yaml` all at 0.9.4; `capture-asset-mcp-tools.ts` recorded 46 tools from the registry.
 
 **Verification:** `npm run typecheck && npx vitest run` in `A/` (its only gate; no CI). In the
 engine: `pnpm exec vitest run packages/create-threenative packages/core`, a `pnpm sandbox`
