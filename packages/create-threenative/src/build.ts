@@ -331,6 +331,7 @@ export async function buildWeb(
   const config = await loadConfig(cwd, { target: "web", profile });
   announceProfile(config);
   await compileAssets({ config: config.assets, cwd, platform: "web" });
+  const assets = assetRoot(cwd, config);
   // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a
   // truncated `dist` where a working one used to be — the same failure a native artifact had, and
   // the same repair. Vite is handed a staging sibling, every post-step runs against it, and only a
@@ -339,14 +340,18 @@ export async function buildWeb(
   // `.threenative/build/ui`.
   const outDir = path.resolve(cwd, viteOutDir(viteArgs));
   const staging = stagingPath(outDir);
+  const driver = path.join(cwd, ".threenative", "build", "vite.web.mjs");
   try {
     await mkdir(path.dirname(staging), { recursive: true });
+    await mkdir(path.dirname(driver), { recursive: true });
+    await writeFile(driver, webBuildDriver(cwd, assets));
     await run(
       process.execPath,
       [
         path.join(packageRoot(cwd, "vite"), "bin/vite.js"),
         "build",
         ...stagedViteArgs(viteArgs, staging),
+        ...ownConfigArgs(viteArgs, driver, assets === path.resolve(cwd, "public")),
       ],
       cwd,
     );
@@ -357,11 +362,15 @@ export async function buildWeb(
         `web main chunk ${report.entry}: raw ${report.raw} B, gzip ${report.gzip} B, brotli ${report.brotli} B\n`,
       );
     }
+    // The web target's budget is measured exactly as a native artifact's is: on the staged
+    // outDir, before the publish, so an `error` ceiling leaves the previous `dist` alone and a
+    // `warn` one prints and publishes. Measured after the publish it would only ever report.
+    await assertArtifactBudget(cwd, config, outDir, staging, assets);
     await writeBuildReport({
       artifact: staging,
-      assets: assetRoot(cwd, config),
+      assets,
       config,
-      packagedAssetBytes: await measurePackagedAssetBytes(cwd, assetRoot(cwd, config)),
+      packagedAssetBytes: await measurePackagedAssetBytes(cwd, assets),
       target: "web",
     });
     await publishStagedArtifact(outDir, staging);
@@ -370,6 +379,47 @@ export async function buildWeb(
     await rm(path.dirname(staging), { force: true, recursive: true });
     throw error;
   }
+}
+
+/**
+ * The Vite config this build runs on: the project's own, plus the one thing Vite's command line
+ * cannot carry.
+ *
+ * A project that declared `assets.output` anywhere but `public/` had its cooked assets — the
+ * manifest every loader reads — sitting beside a `dist` Vite built out of its own `publicDir`.
+ * The build knows the asset root, so the build is what tells Vite, and it says so through a config
+ * rather than by editing a template's `vite.config.ts`: a generated file the project never sees.
+ *
+ * A `publicDir` the project set itself is left alone, detected by the same signal the choice has
+ * in every Vite version: the key is present in its own config (`false` is a choice too). A caller
+ * who passed `--config` gets exactly the config they named, for the same reason.
+ */
+function webBuildDriver(cwd: string, assets: string): string {
+  const literal = (value: string): string => JSON.stringify(value);
+  return `${[
+    'import { defineConfig, loadConfigFromFile, mergeConfig } from "vite";',
+    "",
+    `const root = ${literal(cwd)};`,
+    `const assets = ${literal(assets)};`,
+    "export default defineConfig(async ({ command, mode }) => {",
+    "  const own = (await loadConfigFromFile({ command, mode }, undefined, root))?.config ?? {};",
+    "  return mergeConfig(own, own.publicDir === undefined ? { publicDir: assets } : {});",
+    "});",
+    "",
+  ].join("\n")}\n`;
+}
+
+/**
+ * The generated config, unless the caller named a config of their own or the asset root is
+ * Vite's own default `public/`, where there is nothing to tell Vite and the build runs as before.
+ */
+function ownConfigArgs(
+  viteArgs: readonly string[],
+  driver: string,
+  defaultRoot: boolean,
+): string[] {
+  const named = viteArgs.some((arg) => arg === "--config" || arg.startsWith("--config="));
+  return named || defaultRoot ? [] : ["--config", driver];
 }
 
 /**
@@ -830,14 +880,16 @@ export function stagingPath(final: string): string {
 /**
  * The file a packager actually wrote for `staged`. Its name is not always the requested one: a
  * Windows executable gains `.exe`, and a desktop release writes only its container
- * (`<name>.tar.gz`, a zipped `.app`), never a bare `<name>`. Exact name first, then the
- * executable and bundle spellings, then the one other thing the packager left beside it.
+ * (`<name>.tar.gz` or `<name>.zip`, a zipped `.app`), never a bare `<name>`. A Windows release
+ * writes *both* a container and an installer, so the order below is what keeps the budget and the
+ * report on the container instead of on whichever sibling sorts first. Exact name, then the
+ * executable and bundle spellings, then the containers, then the one other thing left beside it.
  */
 async function producedArtifact(staged: string): Promise<string> {
   const directory = path.dirname(staged);
   const name = path.basename(staged);
   const entries = existsSync(directory) ? await readdir(directory) : [];
-  for (const candidate of [name, `${name}.exe`, `${name}.app`]) {
+  for (const candidate of [name, `${name}.exe`, `${name}.app`, `${name}.tar.gz`, `${name}.zip`]) {
     if (entries.includes(candidate)) return path.join(directory, candidate);
   }
   const other = entries.filter((entry) => !entry.endsWith(BUILD_REPORT_SUFFIX)).sort()[0];

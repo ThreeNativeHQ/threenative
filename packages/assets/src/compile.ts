@@ -1382,8 +1382,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       textures.maxSize !== undefined
     ) {
       // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
-      // decoder-free resize pass needs no runtime decoder and runs in its place.
-      const resize = { maxSize: textures.maxSize };
+      // decoder-free resize pass needs no runtime decoder and runs in its place. The overrides
+      // ride along so a `codec: "none"` glob keeps the authored bytes on this path too.
+      const resize = { maxSize: textures.maxSize, overrides: textures.overrides };
       registerBuiltin(textureResizePass(resize), {
         kind: "texture-resize",
         needsRuntimeDecoder: false,

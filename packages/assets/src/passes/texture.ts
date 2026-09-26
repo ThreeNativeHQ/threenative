@@ -154,6 +154,11 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
 export interface ITextureResizeOptions {
   /** Longest edge to retain; larger sources are downsampled, never upscaled. */
   readonly maxSize: number;
+  /**
+   * The project's `assets.textures.overrides`, unchanged. A `codec: "none"` glob says "ship the
+   * authored bytes", and a resize rewrites them.
+   */
+  readonly overrides?: readonly ITextureOverride[];
 }
 
 /**
@@ -167,16 +172,22 @@ export interface ITextureResizeOptions {
  * Only containers the decoder-free path can actually read are touched: a `.webp` or another
  * format with no pure-JS decoder is passed through rather than failing a build over art the
  * project already ships. A PNG/JPEG whose bytes are corrupt fails naming the logical path.
+ *
+ * An override of `codec: "none"` is honoured here too, for the same reason the KTX2 pass honours
+ * it: the project asked for those bytes exactly as authored, and a size cap is a project decision
+ * about *its* other textures, not a licence to rewrite the ones it excluded.
  */
 export function textureResizePass(options: ITextureResizeOptions): IAssetPass {
   const { maxSize } = options;
   return {
     appliesTo: ["texture"],
-    // Part of the compile cache key: a different cap must not re-serve the previous output.
-    configuration: { maxSize, resample: "png" },
+    // Part of the compile cache key: a different cap — or a different set of excluded globs — must
+    // not re-serve the previous output.
+    configuration: { maxSize, overrides: options.overrides ?? [], resample: "png" },
     name: "texture-resize",
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "texture") return input;
+      if (matchingOverride(logicalPath, options.overrides)?.codec === "none") return input;
       const stats = textureStats(input);
       let decoded: { data: Uint8Array; height: number; width: number } | undefined;
       if (stats.width <= 0 || stats.height <= 0) {
@@ -326,8 +337,8 @@ function chooseCodec(
 ): IChosenCodec {
   const normalMap = NORMAL_MAP_BASENAME.test(baseNameOf(logicalPath));
   const fallbackQuality = options.quality ?? DEFAULT_ETC1S_QUALITY;
-  for (const override of options.overrides ?? []) {
-    if (!globMatch(override.glob, logicalPath)) continue;
+  const override = matchingOverride(logicalPath, options.overrides);
+  if (override !== undefined) {
     return {
       codec: override.codec,
       explicit: true,
@@ -341,6 +352,14 @@ function chooseCodec(
     normalMap,
     quality: clampQuality(fallbackQuality),
   };
+}
+
+/** The one override that decides a path's codec: the first whose glob matches it. */
+function matchingOverride(
+  logicalPath: string,
+  overrides: readonly ITextureOverride[] | undefined,
+): ITextureOverride | undefined {
+  return overrides?.find((override) => globMatch(override.glob, logicalPath));
 }
 
 function encodeSettingsFor(choice: IChosenCodec): Record<string, unknown> {

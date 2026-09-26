@@ -87,6 +87,19 @@ await writeFile(path.join(out, "assets", "game.js"), "export const game = true;\
   return bin;
 }
 
+/** The workspace's own Vite, symlinked into a temp project that has no install of its own. */
+async function linkWorkspaceVite(project: string): Promise<void> {
+  const entry = (await readdir(path.resolve("node_modules/.pnpm"))).find((name) =>
+    name.startsWith("vite@"),
+  );
+  if (entry === undefined) throw new Error("The workspace Vite package is missing.");
+  await symlink(
+    path.resolve("node_modules/.pnpm", entry, "node_modules/vite"),
+    path.join(project, "node_modules/vite"),
+    "dir",
+  );
+}
+
 // A physically separate copy of a package the bundle may end up carrying twice: same name, same
 // export, a marker naming which copy answered.
 async function writeStubPackage(
@@ -330,6 +343,140 @@ process.exit(1);
     expect(existsSync(path.join(root, "dist", "stale.txt"))).toBe(false);
     expect((await readdir(root)).filter((name) => name.startsWith(".staging-"))).toEqual([]);
   });
+
+  /** A web project whose profile caps the artifact at a ceiling the stub Vite output exceeds. */
+  async function budgetedWebProject(severity: "error" | "warn"): Promise<string> {
+    const root = await makeTempDir("threenative-web-budget-");
+    roots.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-budget" }));
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      [
+        "export default {",
+        "  buildProfiles: {",
+        '    defaults: { web: "capped" },',
+        "    profiles: {",
+        `      capped: { artifactBudget: { artifactBytes: { limit: 10, severity: "${severity}" } } },`,
+        "    },",
+        "  },",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    await mkdir(path.join(root, "dist"), { recursive: true });
+    await writeFile(path.join(root, "dist", "index.html"), "previous\n");
+    await installDeterministicVite(root);
+    return root;
+  }
+
+  // PRD-448. `artifactBudget` was measured for native artifacts only, so a web build shipped
+  // whatever it produced under a profile that declared a hard ceiling: the one target a player
+  // downloads was the one the budget never saw.
+  it("refuses a web build over its profile's artifact budget and leaves the previous dist", async () => {
+    const root = await budgetedWebProject("error");
+
+    await expect(buildWeb(root)).rejects.toThrow(
+      /TN_BUILD_ARTIFACT_BUDGET_EXCEEDED.*artifactBytes measured \d+ bytes over its 10-byte limit/u,
+    );
+
+    expect(await readFile(path.join(root, "dist", "index.html"), "utf8")).toBe("previous\n");
+    expect((await readdir(root)).filter((name) => name.startsWith(".staging-"))).toEqual([]);
+  });
+
+  it("prints the same sentence and publishes a web build whose ceiling only warns", async () => {
+    const root = await budgetedWebProject("warn");
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+      lines.push(String(chunk));
+      return true;
+    });
+
+    await buildWeb(root);
+
+    expect(await readFile(path.join(root, "dist", "index.html"), "utf8")).toContain("web-budget");
+    expect(lines.join("")).toMatch(
+      /threenative build: artifactBytes measured \d+ bytes over its 10-byte limit\.\n/u,
+    );
+  });
+
+  /**
+   * A real Vite project whose cook writes to `cooked/`, so the only thing that can put the cooked
+   * bytes in `dist` is the build telling Vite where its `publicDir` is. `ownPublicDir` is the one
+   * choice the build must not overrule.
+   */
+  async function cookedOutputProject(ownPublicDir?: string): Promise<string> {
+    const root = await makeTempDir("threenative-web-cooked-");
+    roots.push(root);
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await mkdir(path.join(root, "node_modules"), { recursive: true });
+    await linkWorkspaceVite(root);
+    // The bake copies three's Basis transcoder next to its output, resolved through the project.
+    await symlink(
+      path.resolve("packages/core/node_modules/three"),
+      path.join(root, "node_modules/three"),
+      "dir",
+    );
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "cooked-output", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { assets: { concurrency: 1, output: "cooked" } };\n',
+    );
+    await writeFile(
+      path.join(root, "index.html"),
+      '<!doctype html><html><body><script type="module" src="/src/main.ts"></script></body></html>\n',
+    );
+    await writeFile(path.join(root, "src", "main.ts"), 'console.info("cooked");\n');
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        blue: (x, y) => (x * 31 + y * 17) % 256,
+        green: (x, y) => (x * 7 + y * 29) % 256,
+        height: 64,
+        red: (x, y) => (x * 13 + y * 11) % 256,
+        width: 64,
+      }),
+    );
+    if (ownPublicDir !== undefined) {
+      await mkdir(path.join(root, ownPublicDir), { recursive: true });
+      await writeFile(path.join(root, ownPublicDir, "brand.txt"), "the project's own choice\n");
+      await writeFile(
+        path.join(root, "vite.config.ts"),
+        `import { defineConfig } from "vite";\nexport default defineConfig({ publicDir: ${JSON.stringify(ownPublicDir)} });\n`,
+      );
+    }
+    return root;
+  }
+
+  // PRD-448. A project that cooked anywhere but `public/` shipped a `dist` with no
+  // `assets.manifest.json` in it: Vite copied its own `publicDir` and the cook's output sat next
+  // to the build, unread. The build knows the asset root, so the build is what has to say so.
+  it("builds a web dist out of the configured asset root, and keeps a publicDir the project set", async () => {
+    const cooked = await cookedOutputProject();
+
+    await buildWeb(cooked);
+
+    const manifest = JSON.parse(
+      await readFile(path.join(cooked, "dist", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string } | undefined> };
+    // Nothing was ever cooked into Vite's default, so the served manifest cannot have come from
+    // it: the bytes in `dist` are the ones the config named.
+    expect(existsSync(path.join(cooked, "public"))).toBe(false);
+    expect(
+      existsSync(path.join(cooked, "dist", String(manifest.entries["rock.png"]?.output))),
+    ).toBe(true);
+
+    // An explicit `publicDir` is the project's own decision, and the build leaves it alone.
+    const own = await cookedOutputProject("brand");
+    await buildWeb(own);
+    expect(await readFile(path.join(own, "dist", "brand.txt"), "utf8")).toBe(
+      "the project's own choice\n",
+    );
+    expect(existsSync(path.join(own, "dist", "assets.manifest.json"))).toBe(false);
+  }, 180_000);
 
   it("stages under the artifact's own name and publishes every file the packager wrote beside it", async () => {
     const root = await makeTempDir("threenative-publish-family-");

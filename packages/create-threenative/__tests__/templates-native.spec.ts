@@ -1,4 +1,5 @@
 import { execFile, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -90,10 +91,10 @@ await writeFile(output, "a complete package");
 `;
 
 /** `PACKAGES` writes 18 bytes, so a 17-byte ceiling is one byte below what the build produces. */
-function budgetedProject(severity: "error" | "warn"): string {
+function budgetedProject(severity: "error" | "warn", limit = 17): string {
   return [
     "export default {",
-    `  buildProfiles: { defaults: { desktop: "capped" }, profiles: { capped: { artifactBudget: { artifactBytes: { limit: 17, severity: "${severity}" } } } } },`,
+    `  buildProfiles: { defaults: { desktop: "capped" }, profiles: { capped: { artifactBudget: { artifactBytes: { limit: ${limit}, severity: "${severity}" } } } } },`,
     '  ui: { renderer: "native" },',
     "};",
     "",
@@ -146,6 +147,48 @@ await writeFile(\`\${output}.tar.gz\`, "a release container");
     expect(await readFile(path.join(dist, "native-staging.tar.gz"), "utf8")).toBe(
       "a release container",
     );
+  });
+
+  // A Windows release writes two artifacts — the container and the installer that installs it —
+  // and neither carries the requested name. Binding the budget and the report to whichever
+  // sibling sorted first bound both to the installer, which is not what the player downloads.
+  it("reports and budgets the container a Windows release shipped beside its installer", async () => {
+    const windows = `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(\`\${output}.zip\`, "the zipped container");
+await writeFile(\`\${output}-setup.exe\`, "installer");
+`;
+    const project = await projectRoot("threenative-native-windows-");
+    await stubRuntime(project, windows);
+
+    await expect(build({ cwd: project, target: "desktop" })).resolves.toBeUndefined();
+
+    const dist = path.join(project, "dist-native");
+    expect((await readdir(dist)).sort()).toEqual([
+      "native-staging-setup.exe",
+      "native-staging.zip",
+      "native-staging.zip.build-report.json",
+    ]);
+    const report = JSON.parse(
+      await readFile(path.join(dist, "native-staging.zip.build-report.json"), "utf8"),
+    ) as { artifact: { kind: string; name: string; sha256: string } };
+    expect(report.artifact).toEqual({
+      kind: "file",
+      name: "native-staging.zip",
+      sha256: createHash("sha256").update("the zipped container").digest("hex"),
+    });
+
+    // The ceiling sits above the installer and below the container, so a build that measured the
+    // installer would publish and one that measured the container refuses.
+    const capped = await projectRoot("threenative-native-windows-budget-");
+    await stubRuntime(capped, windows, budgetedProject("error", 15));
+
+    await expect(build({ cwd: capped, target: "desktop" })).rejects.toThrow(
+      /TN_BUILD_ARTIFACT_BUDGET_EXCEEDED.*artifactBytes measured 20 bytes over its 15-byte limit/u,
+    );
+    expect(await readdir(path.join(capped, "dist-native"))).toEqual([]);
   });
 
   it("refuses a second build while a live pid holds the lock, and reclaims a dead one", async () => {

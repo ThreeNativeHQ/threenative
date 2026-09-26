@@ -457,6 +457,48 @@ describe("the decoder-free size cap", () => {
     expect(smallOut.equals(small)).toBe(true);
   }, 180_000);
 
+  // A `codec: "none"` override is a project saying "ship these bytes as authored". The KTX2 pass
+  // honoured that; the decoder-free path that replaced it on a phone resized the same files
+  // anyway, so the opt-out only worked on the targets that still had a Basis transcoder.
+  it('keeps a texture a `codec: "none"` override excluded at its authored bytes', async () => {
+    const root = await makeTempDir("threenative-tex-resize-opt-out-");
+    await mkdir(path.join(root, "assets", "ui"), { recursive: true });
+    const rock = rgbaPng({
+      blue: (x, y) => noise(x, y, 97),
+      green: (x, y) => noise(x, y, 53),
+      height: 128,
+      red: (x, y) => noise(x, y, 11),
+      width: 128,
+    });
+    const icon = rgbaPng({
+      blue: (x, y) => noise(x, y, 17),
+      green: (x, y) => noise(x, y, 71),
+      height: 128,
+      red: (x, y) => noise(x, y, 23),
+      width: 128,
+    });
+    await writeFile(path.join(root, "assets", "rock.png"), rock);
+    await writeFile(path.join(root, "assets", "ui", "x.png"), icon);
+
+    await compileAssets({
+      config: { textures: { maxSize: 64, overrides: [{ codec: "none", glob: "ui/**" }] } },
+      cwd: root,
+      platform: "android",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string } | undefined> };
+    const excluded = await readFile(
+      path.join(root, "public", String(manifest.entries["ui/x.png"]?.output)),
+    );
+    expect(excluded.equals(icon)).toBe(true);
+    const capped = PNG.sync.read(
+      await readFile(path.join(root, "public", String(manifest.entries["rock.png"]?.output))),
+    );
+    expect([capped.width, capped.height]).toEqual([64, 64]);
+  });
+
   it("should reject corrupt image bytes, naming the logical path", async () => {
     const root = await makeTempDir("threenative-tex-resize-corrupt-");
     await mkdir(path.join(root, "assets"));

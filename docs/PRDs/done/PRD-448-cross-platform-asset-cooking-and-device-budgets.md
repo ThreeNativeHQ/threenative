@@ -1,10 +1,10 @@
 # PRD-448 — Cross-Platform Asset Cooking and Device Budgets
 
-**Status:** IN PROGRESS (Phases 1–5 done)  
+**Status:** COMPLETE  
 **Complexity:** 9 (HIGH); risk override: none.  
 **Owner:** ThreeNative maintainers; implementation owner to be assigned.  
 **Depends on:** Existing `@threenative/assets`, native packaging, and playtest infrastructure. Reuse the PRD-377 discrete-LOD contract; do not reopen or duplicate that PRD.  
-**Progress:** Phases 1–5 of 6 done (AC-1–AC-10, AC-12; AC-11 moot).  
+**Progress:** 100% — all six phases done; AC-1–AC-10 and AC-12 verified, AC-11 moot (iOS unsupported). Review follow-ups not required by any AC: the report carries `artifactBytes`/`packagedAssetBytes` only of §6's quantities; the runner does not separately compare `manifestSha256` (it is inside the hashed tree for directory artifacts); desktop Windows/macOS lanes were not run here.  
 **Source snapshot:** `ThreeNativeHQ/threenative`, `main` at `af60e210aa500e504e9370b3657caaf8340f5650`, inspected September 25, 2026.  
 **Authorization:** Planning-only scope. Owner explicitly authorized filing this documentation directly on `develop`; this does not authorize implementation, publishing, or deployment.  
 **Filing:** `docs/PRDs/assets/PRD-448-cross-platform-asset-cooking-and-device-budgets.md` on `develop`.  
@@ -404,7 +404,7 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 #### Phase 6: Ship the discoverable, backward-compatible workflow
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** Reconcile evidence for AC-1–AC-12; no new duplicate acceptance set.  
 **Files:** `packages/create-threenative/templates/*/threenative.config.ts` and generated agent references; `packages/assets/README.md`; appropriate package/architecture docs; capability annotations/generated manifests only for actual new public surfaces; this PRD.
 
@@ -412,8 +412,8 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E6 — build and consume a packed-tarball scaffold, not workspace-only imports. Inspect runtime bundles for encoder/compiler dependency leakage. Run required repository gates once for the combined candidate; reuse current valid earlier evidence rather than rerunning equivalent tests for ceremony.
 
-- [ ] A cold scaffold exposes the working profile workflow without custom asset routing.
-- [ ] Runtime packages remain free of build-time encoder dependencies.
+- [x] A cold scaffold exposes the working profile workflow without custom asset routing. — E6: every template's `threenative.config.ts` carries a commented `buildProfiles` example linked to `agent-docs/build-profiles.md`; a fresh starter scaffolded from this branch's packed tarballs, example uncommented, built `--target web --profile compact` and unprofiled, both exit 0, the first announcing `profile compact (flag) for web` and publishing `dist.build-report.json` with `"profile": "compact"`, the second `"profile": null`; a `maxSize: 8` variant emitted an 8×8 KTX2.
+- [x] Runtime packages remain free of build-time encoder dependencies. — `packages/core/__tests__/packaging.spec.ts` now bans `@gltf-transform`, `pngjs`, `sharp`, `wasm-media-encoders` and the vendored encoders from browser-tier and native-bundle imports (red first with a temporary import).
 
 **Checkpoint:** Pending. Update phase/AC evidence in place. Once implementation is authorized, follow the repository's one-draft-PR-per-PRD workflow against `develop`. Move to `done/` only after every required lane and acceptance claim is verified.
 
