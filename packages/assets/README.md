@@ -25,7 +25,7 @@ not a smaller texture, it is an unreadable one. The dimension requested is the d
 decodes to, alpha kept, and the source on disk is untouched.
 
 Everything about appearance stays the game's: a profile decides which bytes reach the disk, never
-what they look like. The generated project's `agent-docs/build-profiles.md` carries the full
+what they look like. `node_modules/create-threenative/agent-docs/references/build-profiles.md` carries the full
 contract, the `artifactBudget` / `performanceBudget` blocks and the `<artifact>.build-report.json`
 a build publishes.
 
