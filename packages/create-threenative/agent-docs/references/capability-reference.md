@@ -720,6 +720,21 @@ import { boneLengths } from "@threenative/core";
 const baseline = boneLengths(character);
 ```
 
+### `bvhIntersectFirstHit`
+
+`function` — Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
+
+```ts
+bvhIntersectFirstHit = upstream.bvhIntersectFirstHit
+```
+
+- **Use when:** trace thousands of scene rays inside a TSL kernel · build a contact-occlusion or visibility query over loaded meshes
+- **Constraints:** call rebuild() after a scene transform or geometry change; the snapshot is static by default · rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
+
+```ts
+const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
+```
+
 ### `CameraShake`
 
 `class` — Produce a game-authored camera shake offset for a template-owned camera rig.
@@ -3372,6 +3387,21 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
 
 ```ts
 assertCaptureNotBlank(png, "first frame");
+```
+
+### `assertFrameShowsSomething`
+
+`function` — Fail closed when a screenshot is blank or uniform.
+
+```ts
+assertFrameShowsSomething = assertCaptureNotBlank
+```
+
+- **Use when:** guard a visual playtest against a blank frame · prove a screenshot contains more than a loading surface
+- **Constraints:** the assertion throws instead of returning a false pass
+
+```ts
+assertFrameShowsSomething(png, "first frame");
 ```
 
 ### `CaptureGuardError`

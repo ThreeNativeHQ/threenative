@@ -675,12 +675,29 @@ export function searchCapabilities(
 export function capabilityDetail(
   symbol: string,
   manifestFile = defaultManifestPath(),
+  importPath?: string,
 ): ICapabilityDetail {
   if (typeof symbol !== "string" || symbol.trim().length === 0)
     throw new Error("engine_capability_detail requires a non-empty symbol string.");
   const manifest = loadCapabilityManifest(manifestFile);
-  const entry = manifest.entries.find((candidate) => candidate.symbol === symbol);
-  if (entry === undefined) throw new Error(`Unknown engine capability '${symbol}'.`);
+  const matches = manifest.entries.filter(
+    (candidate) =>
+      candidate.symbol === symbol &&
+      (importPath === undefined || candidate.importPath === importPath),
+  );
+  const entry = matches[0];
+  if (entry === undefined)
+    throw new Error(
+      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.`,
+    );
+  // Two packages can export one name (`createThreeObject` from raw-unreal and ueformat); answering
+  // with the first would make the second undiscoverable by detail, so the caller must choose.
+  if (matches.length > 1)
+    throw new Error(
+      `Ambiguous engine capability '${symbol}': pass importPath, one of ${matches
+        .map((match) => `'${match.importPath}'`)
+        .join(", ")}.`,
+    );
   return entry;
 }
 
@@ -712,7 +729,14 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
       "Inspect one engine capability's import, signature, example, constraints, and overrides.",
     inputSchema: {
       additionalProperties: false,
-      properties: { symbol: { type: "string" } },
+      properties: {
+        importPath: {
+          description:
+            "The search result's importPath; required when two packages export the same symbol.",
+          type: "string",
+        },
+        symbol: { type: "string" },
+      },
       required: ["symbol"],
       type: "object",
     },
@@ -790,8 +814,14 @@ function handleToolCall(
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
       throw new Error("engine_capability_detail requires a string 'symbol' argument.");
-    const detail = capabilityDetail(argumentsValue.symbol, manifestFile);
-    logToolCall({ symbol: argumentsValue.symbol, tool: name });
+    if (argumentsValue.importPath !== undefined && typeof argumentsValue.importPath !== "string")
+      throw new Error("engine_capability_detail 'importPath' must be a string when given.");
+    const detail = capabilityDetail(argumentsValue.symbol, manifestFile, argumentsValue.importPath);
+    logToolCall({
+      importPath: argumentsValue.importPath,
+      symbol: argumentsValue.symbol,
+      tool: name,
+    });
     return toolText(detail);
   }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
