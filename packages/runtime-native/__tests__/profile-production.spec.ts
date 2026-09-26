@@ -14,6 +14,10 @@ type Instrumentation = {
     paceTicks?: boolean,
   ): string;
   productionExecutionHold(paceTicks?: boolean): string;
+  nativeLaunchesExternalBundle(
+    artifactPath: string,
+    options: { prebuiltArtifact?: string },
+  ): boolean;
 };
 
 async function instrumentation(): Promise<Instrumentation> {
@@ -126,5 +130,14 @@ describe("production profile frame sampling", () => {
     expect(() => createSandbox(nativeFrameInstrumentation("slow-native", 0, true))).not.toThrow();
     expect(productionExecutionHold(true)).toContain("tnProductionPaceEnabled = true");
     expect(productionExecutionHold()).toContain("tnProductionPaceEnabled = false");
+  });
+
+  it("should pass an external bundle only to the bare prebuilt runtime", async () => {
+    const { nativeLaunchesExternalBundle } = await instrumentation();
+    const runtime = "/runtime/threenative";
+    const packagedGame = "/project/dist-native/game";
+    expect(nativeLaunchesExternalBundle(runtime, { prebuiltArtifact: runtime })).toBe(true);
+    expect(nativeLaunchesExternalBundle(packagedGame, { prebuiltArtifact: runtime })).toBe(false);
+    expect(nativeLaunchesExternalBundle(packagedGame, {})).toBe(false);
   });
 });
