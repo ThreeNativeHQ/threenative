@@ -1,7 +1,6 @@
 import { type ICtx, Scene } from "@threenative/core";
 import { WorldCells } from "@threenative/core/world";
 import { Color, DirectionalLight, HemisphereLight } from "three";
-import fixtureManifestUrl from "../../../../packages/core/__tests__/fixtures/world-v1/world.json?url";
 import { terrainMaterial } from "../render/terrain.js";
 
 /**
@@ -16,6 +15,11 @@ import { terrainMaterial } from "../render/terrain.js";
  * Nothing here decides how anything looks that belongs to the package: the terrain surface is this
  * example's own (`terrainMaterial`), the lights are the example's, and the props, colours and chunks
  * come from the GLBs the package names.
+ *
+ * Since PRD-452 the package is this example's own `assets/world/` source, compiled into
+ * content-addressed output, and it is read through `ctx.assets` — the one loader with a renderer, so
+ * `assets/world/assets/pine.glb`'s embedded 64x64 texture arrives as KTX2 rather than as a
+ * `TN_ASSETS_KTX2_NO_RENDERER` failure. Nothing else about the flight changed.
  */
 
 /** The fixture is 4x4 cells of 64 m starting at (-128, -128). */
@@ -44,13 +48,6 @@ type WorldCtx = ICtx<WorldState>;
 export class WorldProbe extends Scene<WorldState> {
   static override readonly initialState = initialState;
 
-  /**
-   * The package URL the scene streams. Defaults to the committed fixture through Vite's `?url`;
-   * a native entry that stages the same package as an asset sets it to a host-loadable path
-   * (e.g. `/world.json`) before `game.start()`.
-   */
-  static manifestUrl: string | undefined;
-
   #world: WorldCells | undefined;
   #elapsed = 0;
   #previousResident = -1;
@@ -59,12 +56,15 @@ export class WorldProbe extends Scene<WorldState> {
 
   override async load(ctx: WorldCtx): Promise<void> {
     this.#world = await WorldCells.load({
+      assets: ctx.assets,
       budgets: BUDGETS,
       follow: ctx.camera,
       ring: RING,
       surface: terrainMaterial(),
       terrain: { tileResolution: 65 },
-      url: WorldProbe.manifestUrl ?? fixtureManifestUrl,
+      // A logical path into this example's own `assets/world/` source, which both build targets
+      // compile into content-addressed output plus `assets.manifest.json`.
+      url: "world/world.json",
     });
   }
 
@@ -73,7 +73,7 @@ export class WorldProbe extends Scene<WorldState> {
     if (world === undefined) throw new Error("WorldProbe.enter ran before load() resolved.");
     ctx.add(world);
     ctx.scene.background = new Color(0x0b1a2a);
-    // The props' GLBs carry no materials, so three's default standard material needs a light to be
+    // Most props' GLBs carry no materials, so three's default standard material needs a light to be
     // visible. The look is this example's, exactly as a game's would be.
     const sky = new HemisphereLight(0xbfd8ff, 0x2a2f22, 2.2);
     const sun = new DirectionalLight(0xffffff, 2.6);
