@@ -399,8 +399,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // re-measured through `createProject` on the merged tree. No PRD-443 template source changed in
   // this recompute; the `models.compact` paragraph and the 0.3.4 `@threenative/assets` pin are the
   // branch's own bytes and are already counted in them.
-  "action-rpg": "a0a8038c5a4c50bbcedfcb27de86a28bfe0475840caf5d19b0ce4acd5ae115be",
-  defense: "6fc03ad2b89f12465e67e91dd4c221e0ea917e0ef585540141fcee577a650c25",
+  // Recomputed 2026-09-25 for PRD-196/366: every template's package.json forces
+  // `sharp >=0.35.4` (the `@gltf-transform/cli@4.4.2` → `sharp ~0.34.5` install and CVE), so all
+  // ten trees move by that one file each on top of PRD-449's tree; no other template source changed.
+  // Recomputed again 2026-09-25 when develop's PRD-196/366 sharp override (#327) was merged in
+  // on top of PRD-443's `models.compact` paragraph and 0.3.4 assets pin — neither side's values
+  // describe the tree that carries both, so all ten were re-measured through `createProject` on
+  // the merged tree.
+  "action-rpg": "23f5e04b9878d4aca1462929cd3ddd17fd5d118342c1aaafac18a9ccc483eb69",
+  defense: "6ea923642d813242fe270f2af1f18cfa1973f4ffa3c046ac3db34960f75a6966",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -412,16 +419,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
+  minimal: "dd3bbf1ff7af47eac3f7afdd1de11e0dd8f03b46c959728a4b472bb58afe5d7e",
+  platformer: "8458f24a1c27a71d84b89a1583bfd77a5078ec61a0edf24368b61be15f25bd3b",
+  runner: "ef31d8a705c22fc14c9559664162c405661f5cd4190cd6533088b1445a06dce7",
+  puzzle: "b394d8d4cba3673c456f2ab9d1884a62704cf4fc24c3d64ccf6c0a10b06d4982",
+  racing: "015208e079eb3345ed94ffe839cc6161aaf94fca647ab8d7dd04a90bb7f6da0b",
+  shooter: "4dfbd69c3453fc16d7b102e6849cfa3b14e42a7e274ca5e5566984ea562f6091",
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
   // generated project, so only the starter tree moves.
-  minimal: "e12c42105b1aa42926579e47ee54b6849a34746f1401cf1c8c78effb595115b5",
-  platformer: "eef24cb338b6bce09c84bba0428d536c6b6e699232cc55428008221d38f6b12e",
-  runner: "d5a39a625c0276214a3341d89e29f47a0f6cde140bf5a5c5d006aa6ad9b0202d",
-  puzzle: "e85fbc84a7d0e1b687eeb8c8941ea8f63fa98ba1f49e4300440967909fc7c01b",
-  racing: "1fa631169a70687e2cc96e993f664384a04fcc505d73c6c7d85b5c41424101fa",
-  shooter: "013674adec3f4bf90cebbc7cfe9a37dd0cf2003b63ef5cc275244846549342de",
-  starter: "0203c6ee664028265b69919a07b5e90521365d6c340a1cc1ebf99a07178ad923",
+  starter: "782751c368428a6a6040aab3c35bd3d9d7a10458a77f7b1ffbfe5fd440544f9a",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -447,7 +454,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "584cf472bcabcd797f12f8563b645aadec2deedc34d7845af79b18d082f161ce",
+  sailing: "2e79a6b05f9f035cdca87b1d0da163dfe73a6ccba0ddc21fa73109c4a719ccbb",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -1563,6 +1570,20 @@ describe("create-threenative", () => {
     expect(new Set(configs.map((config) => config.toString("utf8"))).size).toBe(1);
     expect(new Set(codexConfigs.map((config) => config.toString("utf8"))).size).toBe(1);
     expect(pins.every(({ asset, engine, sculpt }) => !asset && !engine && !sculpt)).toBe(true);
+  });
+
+  it("forces the broken sharp 0.34 line off every template's dependency tree", async () => {
+    // `@gltf-transform/cli@4.4.2` drags `sharp ~0.34.5`, whose prebuilt does not load on modern
+    // glibc: a plain `npm install` of a scaffold then dies trying to build it from source. The
+    // same line is covered by GHSA-rgj7-g3m4-5g8c (`sharp <0.35.4`). PRD-445's root override
+    // does not reach a consumer's own project, so every template carries the pin for npm and pnpm.
+    for (const template of ALL_TEMPLATES) {
+      const manifest = JSON.parse(
+        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+      ) as { overrides?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } };
+      expect(manifest.overrides?.sharp, `${template} npm override`).toBe(">=0.35.4");
+      expect(manifest.pnpm?.overrides?.sharp, `${template} pnpm override`).toBe(">=0.35.4");
+    }
   });
 
   it("should document only tools the pinned asset MCP actually serves", async () => {
