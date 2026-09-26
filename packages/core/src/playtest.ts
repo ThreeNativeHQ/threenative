@@ -14,6 +14,7 @@ import {
 } from "@threenative/playtest/protocol";
 import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenative/playtest/three";
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
+import type { IAssetLoader } from "./assets.js";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
@@ -670,9 +671,35 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // scenarios have migrated, then remove the alias in a future breaking release.
         ["state", value],
         ["GameState", value],
+        // Where every asset was actually served from, on every target and not only in a browser
+        // console log: a game whose manifest never loaded runs on the uncompiled source directory
+        // and looks healthy, and without this nothing observable says so.
+        ["assets", assetResolutions(ctx.assets)],
       ]);
     },
   };
+}
+
+/**
+ * The asset loader's `resolved` ledger, nested on the dots of each logical path.
+ *
+ * An observation path addresses a value with dots, so a logical path — which is itself dotted —
+ * cannot be a key here without being split first. Nesting keeps it lossless and makes
+ * `path: "native-proof.png.via"` read as what it is.
+ */
+function assetResolutions(assets: IAssetLoader): Record<string, JsonValue> {
+  const nested: Record<string, JsonValue> = {};
+  for (const [logical, record] of assets.resolved) {
+    const parts = logical.split(".");
+    let node = nested;
+    for (const part of parts.slice(0, -1)) {
+      const child = (node[part] ?? {}) as Record<string, JsonValue>;
+      node[part] = child;
+      node = child;
+    }
+    node[parts.at(-1) ?? logical] = { url: record.url, via: record.via };
+  }
+  return nested;
 }
 
 function cloneJsonValue(value: JsonValue): JsonValue {

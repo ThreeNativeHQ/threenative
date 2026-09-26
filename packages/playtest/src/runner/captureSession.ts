@@ -8,6 +8,7 @@ import type { IPlaytestBridgeClient } from "./bridgeClient.js";
 import { resolveBrowserArguments, softwareAdapterName, WEBGPU_BROWSER_ARGS } from "./browser.js";
 import { openRunnerPage, playwrightProfileDirectories, removeStrandedProfiles, teardownBrowserSession } from "./browserSession.js";
 import type { IProvidedDisplay } from "./captureEnvironment.js";
+import { withPerformanceBudget } from "./buildReport.js";
 import type { ICaptureLease } from "./captureLock.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { readCaptureProvenance } from "./observationSampling.js";
@@ -88,7 +89,10 @@ export async function withBrowserCapture<T>(
   };
   try {
     checkAbort();
-    const scenario = await stage("scenario load", () => loadPlaytestScenario(config.projectPath, config.scenarioPath));
+    const scenario = withPerformanceBudget(
+      await stage("scenario load", () => loadPlaytestScenario(config.projectPath, config.scenarioPath)),
+      config.performanceBudget,
+    );
     if (scenario.target !== "web") throw new Error("TN_CAPTURE_SESSION_TARGET: browser captures require a web scenario");
     if (scenario.bootFailure !== undefined || scenario.awaitStartup === false) {
       throw new Error("TN_CAPTURE_SESSION_READINESS_REQUIRED: custom captures cannot bypass startup; use the scenario runner for boot-failure tests");

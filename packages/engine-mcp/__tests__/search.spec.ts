@@ -239,8 +239,43 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
+  it("finds every manifest entry by its own words, and resolves it through detail", () => {
+    const { entries } = loadCapabilityManifest(workspaceManifest);
+    // Search collapses entries that share import path, summary and situations into one answer, so
+    // the collapsed twin counts as found; anything else a search can never return is an orphan.
+    const answerKey = (entry: { importPath: string; summary: string }): string =>
+      `${entry.importPath}\n${entry.summary}`;
+    const unreachable = entries.filter(
+      (entry) =>
+        ![...entry.situations, ...(entry.aliases ?? [])].some((situation) =>
+          searchCapabilities(situation, workspaceManifest).results.some(
+            (result) => answerKey(result) === answerKey(entry),
+          ),
+        ),
+    );
+    const undetailed = entries.filter(
+      (entry) =>
+        capabilityDetail(entry.symbol, workspaceManifest, entry.importPath).importPath !==
+        entry.importPath,
+    );
+
+    expect(entries.length).toBeGreaterThan(0);
+    expect(unreachable.map((entry) => `${entry.importPath}#${entry.symbol}`)).toEqual([]);
+    expect(undetailed.map((entry) => `${entry.importPath}#${entry.symbol}`)).toEqual([]);
+  });
+
+  it("refuses to guess between two packages exporting one symbol", () => {
+    expect(() => capabilityDetail("createThreeObject", workspaceManifest)).toThrow(
+      /Ambiguous.*'@threenative\/raw-unreal'.*'@threenative\/ueformat'/u,
+    );
+  });
+
   it("returns install requirements in detail and search results", () => {
-    const detail = capabilityDetail("createThreeObject", workspaceManifest);
+    const detail = capabilityDetail(
+      "createThreeObject",
+      workspaceManifest,
+      "@threenative/raw-unreal",
+    );
 
     expect(detail.importPath).toBe("@threenative/raw-unreal");
     expect(detail.requires).toContain("npm i @threenative/raw-unreal");
