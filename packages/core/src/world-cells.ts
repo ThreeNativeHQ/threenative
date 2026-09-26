@@ -141,6 +141,36 @@ interface IWorldCellsInit extends IWorldCellsLoadOptions {
   readonly logicalBase: string;
 }
 
+/** GPU resources already handed to a `dispose`, so no second path can tear the same one down. */
+const tornDown = new WeakSet<object>();
+
+/**
+ * Release one GPU resource: at most once per resource, and never by throwing.
+ *
+ * Exactly once is the streaming contract: an asset's geometry is shared by every cell batch drawn
+ * from it, so several residency paths can reach the same object, and a second teardown is the
+ * renderer's problem, not the game's.
+ *
+ * Never throwing is the other half. Three disposes a geometry by deleting each of its attributes,
+ * and `WebGPUAttributeUtils.destroyAttribute` reads the GPU buffer off the attribute and calls
+ * `destroy` on it with no guard — so disposing a geometry whose upload never produced that buffer
+ * throws `TypeError: Cannot read properties of undefined (reading 'destroy')` from wherever the
+ * teardown was called. A cell leaving range is the most ordinary thing a streaming world does, so
+ * that has to land as a counted failure here, not as a dead frame.
+ *
+ * @returns `true` when the teardown itself threw, for the caller to count.
+ */
+function release(target: { dispose: () => void } | undefined): boolean {
+  if (target === undefined || tornDown.has(target)) return false;
+  tornDown.add(target);
+  try {
+    target.dispose();
+  } catch {
+    return true;
+  }
+  return false;
+}
+
 async function loadModelWith(assets: IAssetLoader, path: string): Promise<Object3D> {
   const gltf = await assets.model<{ scene?: Object3D }>(path);
   const scene = gltf?.scene;
@@ -200,13 +230,17 @@ function firstRenderable(
   return found;
 }
 
-function disposeModel(model: Object3D): void {
+function disposeModel(model: Object3D): number {
+  let failed = 0;
   model.traverse((object: Object3D) => {
     if (!(object instanceof Mesh)) return;
-    object.geometry.dispose();
-    if (Array.isArray(object.material)) for (const material of object.material) material.dispose();
-    else object.material.dispose();
+    if (release(object.geometry)) failed += 1;
+    const materials: Material[] = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    for (const material of materials) if (release(material)) failed += 1;
   });
+  return failed;
 }
 
 function positiveInteger(value: number, name: string): number {
@@ -456,8 +490,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * Per-frame residency step; call it wherever `TerrainTiles.process` is called.
    *
    * Reads the follow target, keeps the in-ring cells, evicts cells beyond the hysteresis ring and
-   * refilters `maxDistance` batches. A terrain budget throw is caught and counted; every other
-   * error, the game's included, escapes.
+   * refilters `maxDistance` batches. A terrain budget throw is caught and counted, and so is a
+   * teardown that throws while releasing what left — `failures` in {@link stats} carries both. Every
+   * other error, the game's included, escapes.
    */
   update(renderer?: IRendererLike): void {
     if (this.#released) return;
@@ -640,14 +675,14 @@ export class WorldCells extends Group implements IComputeDriven {
 
   #adoptAsset(asset: IAssetState, model: Object3D): void {
     if (this.#released || this.#assets.get(asset.id) !== asset || asset.disposed) {
-      disposeModel(model);
+      this.#failures += disposeModel(model);
       return;
     }
     const renderable = firstRenderable(model);
     if (renderable === undefined) {
       // Same as a refused load: keep the refcounted state so the next acquire retries.
       this.#failures += 1;
-      disposeModel(model);
+      this.#failures += disposeModel(model);
       return;
     }
     asset.geometry = renderable.geometry;
@@ -722,7 +757,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (index === -1) return;
     cell.batches.splice(index, 1);
     entry.mesh?.removeFromParent();
-    entry.mesh?.dispose();
+    if (release(entry.mesh)) this.#failures += 1;
     if (run !== undefined) this.#buildBatch(asset, cell, run);
   }
 
@@ -779,22 +814,24 @@ export class WorldCells extends Group implements IComputeDriven {
         { marker: false, while: live },
       );
       if (report.stopped)
-        for (let i = report.added; i < models.length; i += 1) disposeModel(models[i] as Object3D);
+        for (let i = report.added; i < models.length; i += 1)
+          this.#failures += disposeModel(models[i] as Object3D);
     } catch {
       this.#failures += 1;
-      for (let i = attached; i < models.length; i += 1) disposeModel(models[i] as Object3D);
+      for (let i = attached; i < models.length; i += 1)
+        this.#failures += disposeModel(models[i] as Object3D);
     }
   }
 
   #evict(cell: IResidentCell): void {
     for (const entry of cell.batches) {
       entry.mesh?.removeFromParent();
-      entry.mesh?.dispose();
+      if (release(entry.mesh)) this.#failures += 1;
     }
     cell.batches.length = 0;
     for (const chunk of cell.chunks) {
       chunk.removeFromParent();
-      disposeModel(chunk);
+      this.#failures += disposeModel(chunk);
     }
     cell.chunks.length = 0;
     this.#resident.delete(cell.key);
@@ -811,9 +848,14 @@ export class WorldCells extends Group implements IComputeDriven {
     if (asset.refcount > 0) return;
     this.#assets.delete(id);
     asset.disposed = true;
-    asset.geometry?.dispose();
-    asset.material?.dispose();
+    // The last cell drawing this asset is gone, so this is the one teardown the geometry gets. It
+    // is also the one a lost device makes expensive, which is why it goes through `release`.
+    const geometry = asset.geometry;
+    const material = asset.material;
     asset.geometry = undefined;
     asset.material = undefined;
+    const geometryFailed = release(geometry);
+    const materialFailed = release(material);
+    if (geometryFailed || materialFailed) this.#failures += 1;
   }
 }
