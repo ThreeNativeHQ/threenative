@@ -1,6 +1,6 @@
 # PRD-452 — A world package goes through the asset pipeline
 
-**Status:** PARTIAL (Phases 1 and 2 landed and verified; the desktop run and Machinefall are open)
+**Status:** DONE (2026-09-26; all three phases and AC-1..AC-5 verified)
 **Complexity:** 4 (LOW-MEDIUM); risk override: none. One core module (`world-cells.ts`), one spec, one example move, and a consumer change in Machinefall.
 **Owner:** unassigned (drafted by Claude, 2026-09-25)
 **Depends on:** PRD-448 (merged in #317). First consumer: Machinefall PRD-001 (jonit-dev/machinefall#2).
@@ -32,7 +32,7 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 - [x] AC-2 [local; actor: agent]: the same spec with the manifest gone (the delete-test) still loads the package from the compiled project's own `assets/` sources, nothing answering under the authored names — proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts packages/core/__tests__/world-heightmap.spec.ts`, 20/20 green; the delete-test case `still loads the package from assets/ when the compiled output is gone` asserts the exact request log `["assets.manifest.json", "world/world.json", "assets/world/world.json", "world/placements.bin", "assets/world/placements.bin", "world/terrain/heightmap.u16", "assets/world/terrain/heightmap.u16"]` — 9 resident cells, 0 failures, each file asked for by its authored name first and then found under `assets/`, so the loader's second candidate is walked rather than dropped.
 - [x] AC-3 [local; actor: agent]: a GLB with an embedded texture, compiled to KTX2, loads through `WorldCells` with `assets: ctx.assets` inside a game — proof: the example's `assets/world/assets/pine.glb` carries a 64x64 embedded texture; `pnpm --filter abyss-framework build` compiles it to `world/assets/pine.e8619385.glb` with `KHR_texture_basisu` in `extensionsRequired`, `image/ktx2` and `shared/images/99eff915884b390e.etc1s.ktx2` (manifest `embeddedTextures.formats: {"probe_bark_tex":"etc1s"}`, 14179 -> 1925 B, GPU 21845 -> 2731 B), and the `world-flythrough` playtest on the compiled build passes with `failures` 0 -> 0. Red control, the same build with `assets: ctx.assets` removed: `failures` 1 -> 4 and the run exits 1, which is the renderer-less default loader refusing the KTX2 image.
 - [x] AC-4 [local; actor: agent]: `examples/abyss-framework` `world-flythrough` (webgpu recipe) passes against the compiled package with the same residency counts as PRD-448 AC-6 (6 evictions, 0 failures) — proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/world-flythrough.playtest.json --url 'http://127.0.0.1:5181/?world' --server-command 'pnpm --filter abyss-framework preview --host 127.0.0.1 --port 5181 --strictPort' --browser-recipe webgpu --headed` after `pnpm --filter abyss-framework build` — `pass: true`, 440 frames, adapter NVIDIA turing (not SwiftShader; `texture-compression-bc` present), resident cells 3 -> 6 with a peak of 12, 7 residence changes, 6 evictions, 0 failures, 1 463 instances, 0 loads in flight at the end, 0 console and 0 network errors, frame p95 47.2 ms against the 93 ms budget. The counts match PRD-448 AC-6/AC-7 exactly.
-- [ ] AC-5 [local; actor: agent]: Machinefall's package, compiled, is measured against the 6.4 GiB baseline (total bytes, uncooked bytes, compile wall time), and its `map-walk` playtest passes with 0 failed loads — proof: the four Phase 3 boxes below, each naming its own command.
+- [x] AC-5 [local; actor: agent]: Machinefall's package, compiled, is measured against the 6.4 GiB baseline (total bytes, uncooked bytes, compile wall time), and its `map-walk` playtest passes with 0 failed loads — proof: the four Phase 3 boxes below, each naming its own command.
 
 ## Decisions
 
@@ -85,7 +85,7 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 **Checkpoint:** the example's world package is compiled source, not a served fixture, and the web run proves the compiled names, the manifest and the KTX2 path in one flight.
 
 #### Phase 3: Machinefall compiles its world
-**Status:** NOT STARTED
+**Status:** DONE (2026-09-26)
 **ACs:** AC-5
 **Files (Machinefall repo):**
 - `apps/client/package.json`: `world:export` writes `assets/world`.
@@ -93,9 +93,22 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 - `apps/client/src/level/World.ts`: logical URL.
 
 **Implementation:** re-export to disk (needs ~7 GB free on `/home`), run `threenative build`, measure.
-- [ ] export on disk, not `/tmp`. proof: `apps/client/package.json` `world:export` writing `assets/world`, and the path listed in `apps/client/.gitignore` with a populated directory on `/home`.
-- [ ] compiled bytes vs 6.4 GiB baseline, uncooked bytes, and compile time recorded here. proof: the `threenative build` run's `TN_ASSETS_BUDGET` lines and wall time, pasted into this file.
-- [ ] LOD1 images deduped by `sharedImages` (count of distinct images in `shared/images/` vs the asset count). proof: `ls public/shared/images | wc -l` against the manifest's image count, with both numbers here.
-- [ ] `map-walk` passes, 0 failed loads. proof: the `map-walk.playtest.json` run against the compiled client, with the `failed loads` component reported as 0.
+- [x] export on disk, not `/tmp`. proof: `apps/client/package.json` `world:export` writing `assets/world`, and the path listed in `apps/client/.gitignore` with a populated directory on `/home`.
+- [x] compiled bytes vs 6.4 GiB baseline, uncooked bytes, and compile time recorded here. proof: the `threenative build` run's `TN_ASSETS_BUDGET` lines and wall time, pasted into this file.
+- [x] LOD1 images deduped by `sharedImages` (count of distinct images in `shared/images/` vs the asset count). proof: `ls public/shared/images | wc -l` against the manifest's image count, with both numbers here.
+- [x] `map-walk` passes, 0 failed loads. proof: the `map-walk.playtest.json` run against the compiled client, with the `failed loads` component reported as 0.
+
+**Phase 3 result (2026-09-26, Machinefall `feat/prd-001-world-cells` worktree, RTX 2080):**
+- Export: `WORLD_BLEND=<work .blend> pnpm world:export` writes `apps/client/assets/world/` on `/home` in 705 s: 218 assets, 498 GLBs, 128 233 instances, 256 cells, **7 077 853 807 B** (the 6.4 GiB baseline, re-measured). `.gitignore` lists `assets/world/` and the generated `public/` outputs.
+- Compile: `pnpm build:web` in 5 070 s. `models total: 7070368612 -> 91593564 bytes (-98.7%)`; `TN_ASSETS_BUDGET: uncooked 0 bytes; total 578415414 bytes`. Served package: `public/world` 99 MB + `public/shared` 479 MB, **12.2x smaller**.
+- Dedupe: 2 134 embedded image references across the 498 GLBs (558 of them in LOD1 copies) compile to **290** distinct `public/shared/images`.
+- `map-walk` (`--url "http://127.0.0.1:5190/?scene=map-walk" --browser-recipe webgpu --headed`, built + `vite preview`): `pass: true`, 1 141 frames, adapter `webgpu:architecture=turing|vendor=nvidia`; evictions 0 -> 21, residence changes 1 -> 6, max resident 25, failures 0, loads in flight 6 -> 0, bridge distance 611 -> 0 m, 0 console and 0 network errors.
+- The client passes `assets: ctx.assets` (`src/scenes/MapWalk.ts`) and loads `world/world.json`.
+
+**Engine bugs this phase found, each fixed in its own PR (standing order):**
+- #346: retained render samples carried one pass entry per `render()` call, so a heavy frame's 1 024-sample window reached 1.44 MB and `assert.performance` died with `TN_PLAYTEST_PAYLOAD_TOO_LARGE` before frame 0. Now summed per pass kind (269 KB).
+- #348: `TerrainTiles` threw `LOD pop threshold 16 exceeded by 16.64` mid-walk on Machinefall's cliffs. Each tile now clamps to the coarsest level inside the bound.
+- #347 (hardening): a WebGPU teardown that throws after a lost device no longer kills the streaming frame; it is released once and counted in `failures`.
+The `map-walk` run above used a local core with #346, #347 and #348 applied, so they merge before this PR.
 
 **Checkpoint:** pending
