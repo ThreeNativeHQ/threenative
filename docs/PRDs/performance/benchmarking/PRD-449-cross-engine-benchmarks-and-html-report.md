@@ -823,20 +823,22 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   [engine-load-test-cull-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cull-compare.spec.ts)
   refuses a pair whose middle vertex component or middle index moved while every count stayed
   identical — a change a count comparison cannot see.
-- [ ] Retain a real hardware comparison for the Godot culling family.
+- [x] Retain a real hardware comparison for the Godot culling family.
   **One qualified `basic_cull` smoke pair is retained; the family-wide campaign remains open.**
   The prior upstream-default Godot run below remains a historical refusal. A new Godot 600-frame /
   120-warmup run on the RTX 2080 used the pinned checkout staged with exactly
   `occlusion_culling/use_occlusion_culling=false`. The CLI verifies upstream `project.godot` SHA-256
   `e942995c…` before copying, staged SHA-256 `66e3d418…` before every run, and the adapter reports
-  `occlusionCulling: false`; the pinned checkout is unchanged. The staged run and comparison are
-  `artifacts/engine-load-test/diagnostics/cull-cli-off-{600f,comparison}.json` (local, ignored).
-  Against the retained TN arm, the comparator reports `qualified`, no problems, exact fixture and
-  five mesh-buffer hashes, six sampled transforms with zero delta, and coverage delta `0.000432`
-  at all four captured frames (declared limit `0.002`). Godot's visible count rises from 2,005 to
-  3,549 and completed-work mean is 1.544 ms; the retained TN mean is 18.011 ms. These arms are
-  one smoke block, the TN source record was dirty, and the new Godot arm ran after the TN one;
-  there is no calibrated speed verdict. A clean-source paired rerun and the other variants remain.
+  `occlusionCulling: false`; the pinned checkout is unchanged. The final pair at
+  `artifacts/engine-load-test/diagnostics/cull-final-{tn-basic_cull,godot-basic_cull,comparison}.json`
+  (local, ignored) measured 600 frames after 120 warmup on the RTX 2080. TN names clean commit
+  `cd9704817`, the host's effective `presentMode: immediate`, and 16.605 ms completed-work mean;
+  Godot names the patched project hash above, 3,549 visible objects and 1.549 ms mean. The
+  comparator reports `qualified`, no problems, exact fixture SHA-256 `3370588b…`, five equal
+  mesh-buffer hashes, six sampled transforms with zero delta, and coverage delta `0.000432` on all
+  four captured frames (declared limit `0.002`). This is one smoke block, with TN run first,
+  no thermal preflight, no seven-block interval and no A/A calibration: **no speed verdict**.
+  The other culling variants and publication profile remain open.
   A subsequent clean-commit TN run (`e8cdae142`, before the present-mode field was committed) exposed
   a false cadence refusal: 540/600 frames were within 2 ms of 16.667 ms while the host logged
   `Presentation cap: 0 fps` and `Present mode: immediate (vsync=false)`. The culling raw record now
@@ -849,6 +851,7 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 
   | cell | variant | TN authoring | TN mean ms | Godot mean ms | comparator status |
   |---|---|---|---|---|---|
+  | static, unshaded; occlusion off | `basic_cull` | `scene-node-independent` | 16.605 | 1.549 | `qualified` smoke, no verdict |
   | static, unshaded | `basic_cull` | `scene-node-independent` | 18.011 | 0.996 | `non-comparable`, ratio withheld |
   | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | superseded; not re-run |
   | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | not re-run this round |
