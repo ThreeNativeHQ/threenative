@@ -5,7 +5,7 @@ import {
   type CullingAuthoring,
   cullFixtureHash,
   cullProbe,
-  cullTimeAccum,
+  cullRenderedTimeAccum,
   cullVariant,
   parseCullFixture,
 } from "./cull-fixture.js";
@@ -168,7 +168,7 @@ async function main(): Promise<void> {
           index,
           ...cullProbe(fixture, variant, index, frame),
         })),
-        timeAccum: cullTimeAccum(frame),
+        timeAccum: cullRenderedTimeAccum(frame),
       })),
       stats,
       topology: harness.topology,

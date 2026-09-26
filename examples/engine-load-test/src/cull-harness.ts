@@ -29,7 +29,7 @@ import {
   type ICullFixture,
   type ICullTransform,
   type ICullVariant,
-  cullTimeAccum,
+  cullRenderedTimeAccum,
   cullTransform,
 } from "./cull-fixture.js";
 
@@ -192,7 +192,7 @@ export function buildCullScene(
     );
   };
   const step = (frame: number): void => {
-    const timeAccum = cullTimeAccum(frame);
+    const timeAccum = cullRenderedTimeAccum(frame);
     if (variant.dynamic === "objects") {
       for (let index = 0; index < objects.length; index++) {
         const base = fixture.placements[index] as readonly number[];

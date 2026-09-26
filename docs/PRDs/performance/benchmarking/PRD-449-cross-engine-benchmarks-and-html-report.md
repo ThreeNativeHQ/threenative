@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (one real-GPU hardware cell retained per TN authoring mode, one of them refused as cadence-capped), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks and the Godot-culling family's two single-block cells; no Bevy, fox, City or publication-grade cross-engine result is claimed.
+**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (three real-GPU hardware cells retained, one of them refused as cadence-capped), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks and the Godot-culling family's three single-block cells; no Bevy, fox, City or publication-grade cross-engine result is claimed.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -504,39 +504,57 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   motion checks pass on the real GPU. The remaining gap is depth/object-ID capture, and the
   comparison is qualified rather than matched-task for the three stated reasons it records.
 - [x] Retain a real hardware comparison for the Godot culling family.
-  One real-hardware smoke cell per required TN authoring mode on the RTX 2080 (TU104) through
-  `DISPLAY=:0`, driver `615.71.09` — 600 measured frames after 120 warmup, both arms on the
-  identical fixture `1283daf331d1`, retained under `artifacts/engine-load-test/`. Godot reported
-  its Forward+/Vulkan device, 1.066 ms wall mean with its own 0.894 ms GPU and 0.657 ms CPU
-  per-frame samples, 71 draw calls and 2,005 visible objects; the counterpart arm reported
-  `NVIDIA GeForce RTX 2080` through the host's wgpu-native backend at 3,562 draw calls and
-  4,593,345 triangles.
+  Three real-hardware smoke cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver `615.71.09`
+  — 600 measured frames after 120 warmup, both arms on the identical fixture `1283daf331d1`,
+  retained under `artifacts/engine-load-test/`. Godot reported its Forward+/Vulkan device with its own
+  per-frame CPU and GPU samples (its `drain` is `none-available`, and its wall mean therefore paces
+  on submission); the counterpart arm reported `NVIDIA GeForce RTX 2080` through the host's
+  wgpu-native backend and drained once at the measurement boundary.
 
-  | arm | authoring | optimization class | mean ms | verdict |
-  |---|---|---|---|---|
-  | `tn-desktop` | `scene-node-independent` | `independent-diagnostic` | 20.42 | `qualified`, ratio 0.052 |
-  | `tn-desktop` | `clustered-default` | `default` | 16.65 | **refused** |
+  | cell | variant | TN authoring | TN mean ms | Godot mean ms | Godot GPU/CPU ms | verdict |
+  |---|---|---|---|---|---|---|
+  | static, unshaded | `basic_cull` | `scene-node-independent` | 19.45 | 1.07 | 0.89 / 0.66 | `qualified`, ratio 0.055 |
+  | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | — | **refused** |
+  | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | 1.26 / 3.41 | `qualified`, ratio 0.152 |
 
-  The refused one is the point. Its frame intervals put 582 of 600 frames on the host's 16.667 ms
-  frame loop, so its mean is the present, not the work; the comparator fails closed on that
-  (`TN_BENCH_CULL_TN_CADENCE_CAPPED`, `non-comparable`, CLI exit 2) and the file is retained as the
-  proof rather than deleted. TN's ordinary authoring at 10,000 objects is at or below one host tick
-  on this lane, and this host's cap is baked into its embedded config, so the cell needs a lane
-  that is not cadence-bound before it can carry any number. The diagnostic arm is above the floor
-  (202/600 frames on a tick, p50 19.6 ms) and is readable — but two runs of that same cell read
-  20.42 and 35.34 ms, a 73% A/A spread far outside the 3% epsilon, so the retained ratio carries
-  `blocks: 1`, no interval and no verdict of faster or slower. Both comparisons are
-  `qualified`, never `matched-task`: the competitor authors `RenderingServer` RIDs, each engine
-  tessellates its own primitives (Godot/TN triangles per kind 12/12, 4224/3968, 3456/2176, 768/256,
-  8/12), and the shaded environments differ. The native host has no PNG encoder, so the retained
-  visual evidence is the read-back coverage grid both arms compute on the same 240x135 lattice
-  rather than a pair of image files.
+  The refusal is the result worth having. TN's ordinary authoring at 10,000 objects puts 588 of 600
+  frames on the host's 16.667 ms frame loop, so its mean is the present, not the work; the
+  comparator fails closed on that (`TN_BENCH_CULL_TN_CADENCE_CAPPED`, `non-comparable`, CLI exit 2)
+  and the file is retained as the proof rather than deleted. TN's ordinary authoring at 10,000
+  objects is at or below one host tick on this lane, and that cap is baked into the host's embedded
+  config rather than a flag, so the cell needs a lane that is not cadence-bound before it can carry
+  any number at all. The diagnostic arm sits above that floor (202/600 frames on a tick,
+  p50 19.6 ms) — and three runs of that same cell read 19.45, 20.42 and 35.34 ms, a spread far
+  outside the 3% epsilon, so every retained ratio carries `blocks: 1`, no interval and no verdict
+  of faster or slower.
+
+  The moving cell is what proved the conformance oracle is worth having: it rejected the first pair
+  with `TN_BENCH_CULL_STATE_OUT_OF_TOLERANCE` and 0.13 m of disagreement, and the cause was real on
+  both sides. The pinned scene's `time_accum` is a plain member nothing zeroes, so it reached the
+  arm already advanced by however long the window took to appear, and the pinned loop advances the
+  clock *before* it renders — so the two arms' frame 0 were one advance apart. The Godot arm now
+  zeroes the clock before the warmup and again at the scored boundary, and the counterpart renders
+  frame `k` at `(k+1)·δ`; the pair then agrees to 2.4e-6 m across six sampled frames, which is
+  float32 against float64, and both arms' own motion checks pass on the GPU (TN 1,075/6,128/6,183
+  and Godot 1,028/5,340/5,362 changed samples at the three later captures). A static workload would
+  have hidden both halves of that, because nothing moves.
+
+  All three comparisons are `qualified`, never `matched-task`: the competitor authors
+  `RenderingServer` RIDs, each engine tessellates its own primitives (Godot/TN triangles per kind
+  12/12, 4224/3968, 3456/2176, 768/256, 8/12), and the shaded environments differ. Coverage deltas
+  across the two arms are 0.0146–0.0224 of the frame. The native host has no PNG encoder, so the
+  retained visual evidence is the read-back coverage grid both arms compute on the same 240x135
+  lattice rather than a pair of image files. The remaining primary cell, `dynamic_rotate_cull`, and
+  every diagnostic light variant are still open, and `directional_light_cull` needs the counterpart
+  arm's shadow-enabled light path, which has not been executed on a GPU yet.
+
   [cull-compare.ts](../../../../scripts/engine-load-test/cull-compare.ts) is pure and unit-proved
   by [engine-load-test-cull-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cull-compare.spec.ts):
-  8/8 pass, and the two checks this slice added — the capture's frame-to-frame difference and the
-  cadence refusal — were each confirmed red against the pre-fix code. The ten focused benchmark
-  suites passed 149/149 and root `pnpm exec tsc --noEmit -p tsconfig.json` and
-  `pnpm exec biome check` (error level) exited 0.
+  9/9 pass, and each of the three checks this slice added — the capture's frame-to-frame difference,
+  the cadence refusal, and the clock ordering — was confirmed red against the pre-fix code. The
+  eleven focused suites passed 162/162 and root `pnpm exec tsc --noEmit -p tsconfig.json` and
+  `pnpm exec biome check --diagnostic-level=error` exited 0.
+
 
 - [ ] Pass lights/meshes conformance including requested-versus-actual counts and changing lights.
   The same probe passes all 13 upstream `lights_and_meshes.gd` variants headless. Requested 1,000

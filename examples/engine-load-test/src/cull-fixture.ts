@@ -310,6 +310,16 @@ export function cullTimeAccum(frame: number): number {
   return frame * CULL_FRAME_DELTA * 4;
 }
 
+/**
+ * The clock the pinned source renders frame `frame` at. Its loop advances the clock and *then*
+ * renders, so the first frame of an interval is one advance in, not zero — and the counterpart arm
+ * has to order its own step the same way or its frame `k` is a different workload state and the
+ * per-frame transform oracle rejects a pair that is in fact running the same frames.
+ */
+export function cullRenderedTimeAccum(frame: number): number {
+  return cullTimeAccum(frame + 1);
+}
+
 export interface ICullTransform {
   readonly axisX: readonly number[];
   readonly origin: readonly number[];
@@ -367,5 +377,11 @@ export function cullProbe(
   const base = bases[index];
   if (base === undefined) throw new Error(`TN_BENCH_CULL_PROBE_MISSING:${index}`);
   if (variant.dynamic === "none") return { axisX: [1, 0, 0], origin: base };
-  return cullTransform(base, index, bases.length, cullTimeAccum(frame), variant.dynamicRotate);
+  return cullTransform(
+    base,
+    index,
+    bases.length,
+    cullRenderedTimeAccum(frame),
+    variant.dynamicRotate,
+  );
 }

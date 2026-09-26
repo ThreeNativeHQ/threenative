@@ -1,4 +1,11 @@
 import { describe, expect, it } from "vitest";
+import {
+  type ICullFixture,
+  cullProbe,
+  cullRenderedTimeAccum,
+  cullTransform,
+  cullVariant,
+} from "../../examples/engine-load-test/src/cull-fixture.js";
 import { cullCapture } from "../../examples/engine-load-test/src/cull-harness.js";
 import { type ICullRun, compareCullRuns, parseCullRun } from "../engine-load-test/cull-compare.js";
 
@@ -200,6 +207,44 @@ describe("PRD-449 godot-culling smoke comparison", () => {
     // `-1` is the sentinel the capture used to emit; `null` is the absent difference it must emit.
     expect(() => parseCullRun(run({ captures: captures([-1, 0]) }))).toThrow(
       /TN_BENCH_CULL_RUN_MALFORMED/,
+    );
+  });
+});
+
+describe("PRD-449 godot-culling workload clock", () => {
+  it("renders frame k one clock advance in, because the pinned loop advances before it renders", () => {
+    // The real dynamic_cull pair: with the counterpart arm's frame k at clock k the two arms' frame
+    // 0 disagreed by one advance (0.13 m of displacement) and the transform oracle rejected a pair
+    // that was in fact rendering the same frames.
+    expect(cullRenderedTimeAccum(0)).toBeCloseTo((1 / 60) * 4, 12);
+    expect(cullRenderedTimeAccum(599)).toBeCloseTo(600 * ((1 / 60) * 4), 12);
+    // The oracle reads only the two placement sets, so the fixture is the shape it needs rather than
+    // 10,000 exported placements this test would have to invent.
+    const fixture = {
+      lights: {
+        placements: [
+          [1, 2, 3],
+          [4, 5, 6],
+        ],
+      },
+      objects: 10000,
+      placements: Array.from({ length: 10000 }, (_, index) => [index, index + 0.5, -index]),
+    } as unknown as ICullFixture;
+    const moving = cullProbe(fixture, cullVariant("dynamic_cull"), 0, 0);
+    const closed = cullTransform(
+      fixture.placements[0] as readonly number[],
+      0,
+      fixture.objects,
+      cullRenderedTimeAccum(0),
+      false,
+    );
+    expect(moving.origin).toEqual(closed.origin);
+    // A static variant's objects are reported where they were authored, which is what makes the
+    // basic_cull pair's zero displacement a real observation rather than two idle frames.
+    const still = cullProbe(fixture, cullVariant("basic_cull"), 0, 0);
+    expect(still.origin).toEqual(fixture.placements[0]);
+    expect(() => cullProbe(fixture, cullVariant("dynamic_omni_light_cull"), 9999, 0)).toThrow(
+      /TN_BENCH_CULL_PROBE_MISSING/,
     );
   });
 });

@@ -239,11 +239,20 @@ func _measure(frames: int, warmup: int, captures_dir: String) -> void:
 			if candidate < warmup:
 				_capture_frames.append(candidate)
 	_warmup_us = Time.get_ticks_usec()
+	# The workload clock is a plain member of the pinned scene and nothing zeroes it, so it arrives at
+	# the warmup already advanced by however long the window took to come up. It is zeroed here and
+	# again after the warmup: the first reset makes captured warmup frame k the same workload state as
+	# scored frame k, and the second makes the scored interval start from a declared initial state
+	# instead of a count of however many frames the host had already drawn. The counterpart arm resets
+	# the same way, so frame k is one workload state in both arms and the transform oracle means
+	# something.
+	_scene.time_accum = 0.0
 	for index in warmup:
 		_scene._process(FRAME_DELTA)
 		await process_frame
 		if _capture_frames.has(index):
 			await _capture(captures_dir, index, _variant, true)
+	_scene.time_accum = 0.0
 	_boundary_us.append(Time.get_ticks_usec())
 	for frame in frames:
 		_scene._process(FRAME_DELTA)
