@@ -41,7 +41,7 @@ async function buildFixtureRoot(options?: {
   await mkdir(templateDirectory, { recursive: true });
   const body =
     options?.agentsBody ??
-    `# AGENTS.md — __PROJECT_NAME__\n\n${FRAGMENT}\nSee \`agent-docs/finding-assets.md\` for the loop.\n`;
+    `# AGENTS.md — __PROJECT_NAME__\n\n${FRAGMENT}\nSee \`node_modules/create-threenative/agent-docs/references/finding-assets.md\` for the loop.\n`;
   await writeFile(path.join(templateDirectory, "AGENTS.md"), body);
   await writeFile(
     path.join(templateDirectory, "CLAUDE.md"),
@@ -79,8 +79,11 @@ describe("instruction budgets", () => {
 
   it("should collect backticked and linked reference targets", () => {
     expect(
-      referenceTargets("see `agent-docs/a.md` and [b](agent-docs/b.md) but not `docs/x.md`"),
-    ).toEqual(["agent-docs/a.md", "agent-docs/b.md"]);
+      referenceTargets(
+        "see `node_modules/create-threenative/agent-docs/references/a.md` and " +
+          "[b](node_modules/create-threenative/agent-docs/references/b.md) but not `docs/x.md`",
+      ),
+    ).toEqual(["a.md", "b.md"]);
   });
 
   it("should accept a bounded template with intact references and mirror", async () => {
@@ -95,7 +98,9 @@ describe("instruction budgets", () => {
     );
     expect(report.violations).toEqual([]);
     expect(report.wordCount).toBeLessThanOrEqual(1000);
-    expect(report.references).toEqual(["agent-docs/finding-assets.md"]);
+    expect(report.references).toEqual([
+      "node_modules/create-threenative/agent-docs/references/finding-assets.md",
+    ]);
   });
 
   it("should reject a template above its word budget", async () => {

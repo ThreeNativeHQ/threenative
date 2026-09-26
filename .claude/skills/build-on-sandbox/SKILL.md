@@ -50,7 +50,7 @@ preference; it is the difference between the two outcomes.
 
 4. **Lock the reference and use the generated Dream Loop workflow.** Copy the supplied image
    into one immutable `.dream-loop/<run-id>/target.png`, hash it in `run.json`, and read
-   `agent-docs/dream-loop.md`. Run the existing capture/playtest and performance recipes, give
+   `node_modules/create-threenative/agent-docs/references/dream-loop.md`. Run the existing capture/playtest and performance recipes, give
    the target and fresh gameplay frame to an independent verifier, then invoke:
 
    ```sh
