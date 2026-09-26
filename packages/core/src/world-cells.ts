@@ -16,7 +16,7 @@ import { InstancedBatch } from "./instanced-batch.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
 import { materialKey } from "./render/material-key.js";
 import type { IRendererLike } from "./renderer.js";
-import { DEFAULT_CONCURRENCY, addInSlices, loadAll } from "./streaming.js";
+import { addInSlices, loadAll } from "./streaming.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
   type IWorldAsset,
@@ -547,6 +547,13 @@ function levelAt(distances: readonly number[], distance: number): number {
   return level;
 }
 
+/**
+ * Model loads in flight for a streamed world. `loadAll`'s six suits a scene's one-off load; a
+ * world crossing new asset types as it moves spends most of each load waiting on the network and
+ * the transcoder workers, so more in flight keeps the ring ahead of a fast camera.
+ */
+const WORLD_LOAD_CONCURRENCY = 12;
+
 function poolKey(geometry: BufferGeometry, material: Material): string {
   return `${geometry.uuid}:${material.uuid}`;
 }
@@ -701,7 +708,7 @@ class AdmissionBudget implements IAdmissionBudget {
  * @situation honour per-asset draw distances and hard streaming budgets without a mid-frame throw
  * @constraint surface is the game's; this class creates no material, colour or geometry
  * @constraint budgets are hard caps that report pressure instead of over-committing
- * @constraint model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell
+ * @constraint model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
@@ -801,7 +808,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#loader = init.assets ?? createAssetLoader();
     this.#loadModel = init.loadModel;
     this.#limiter = new ModelLoadLimiter(
-      positiveInteger(init.concurrency ?? DEFAULT_CONCURRENCY, "concurrency"),
+      positiveInteger(init.concurrency ?? WORLD_LOAD_CONCURRENCY, "concurrency"),
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#castShadowLevels =

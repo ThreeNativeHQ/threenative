@@ -3733,7 +3733,7 @@
       "constraints": [
         "surface is the game's; this class creates no material, colour or geometry",
         "budgets are hard caps that report pressure instead of over-committing",
-        "model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell",
+        "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
         "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has",
         "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose"
