@@ -662,8 +662,8 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         ["state", value],
         ["GameState", value],
         // Where every asset was actually served from, on every target and not only in a browser
-        // console log: an unreadable manifest used to degrade to the uncompiled source directory
-        // while the game ran and looked healthy, and nothing observable said so.
+        // console log: a game whose manifest never loaded runs on the uncompiled source directory
+        // and looks healthy, and without this nothing observable says so.
         ["assets", assetResolutions(ctx.assets)],
       ]);
     },

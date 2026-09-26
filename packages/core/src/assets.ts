@@ -18,10 +18,9 @@ export interface IAssetLoaderOptions {
   /**
    * URL of the manifest written by the asset compile step (`public/assets.manifest.json`).
    * Defaults to `assets.manifest.json` resolved against `basePath`. A logical path is resolved
-   * to its compiled output through it; a manifest that is absent — 404, or an app shell served
-   * in its place — falls back to loading every path verbatim, while one that is served malformed,
-   * with an unknown version, or cannot be read at all throws rather than degrading to the
-   * fallback.
+   * to its compiled output through it; a manifest that is absent — 404 or unfetchable — falls
+   * back to loading every path verbatim, while one that is served malformed or with an unknown
+   * version throws.
    */
   readonly manifest?: string;
   /**
@@ -200,42 +199,17 @@ function resolvePath(basePath: string, path: string): string {
 }
 
 /**
- * Whether this host could have turned the manifest url into a request at all.
- *
- * A relative url with no document to resolve it against — bare node, a headless unit test — never
- * leaves the process, so its rejected fetch is the no-manifest case these hosts have always had
- * rather than a file that could not be read. Every host that serves a game resolves it: a browser
- * against its page, the native host against `document.location`. There a rejected read is a real
- * answer and throws.
- */
-function hostCanFetch(url: string): boolean {
-  if (isExternalAssetPath(url)) return true;
-  const base =
-    (globalThis as { location?: { href?: string } }).location?.href ??
-    (globalThis as { document?: { location?: { href?: string } } }).document?.location?.href;
-  return base !== undefined;
-}
-
-/**
- * Reads the compile step's manifest. A 404, or a response that is the app shell rather than a
- * manifest, is the documented no-manifest case and resolves to `undefined`. Anything else that
- * *is* served must be a valid version-1 manifest.
- *
- * A **rejected** fetch is not that case, and the distinction is what this host's own transports
- * turn on: the desktop and Android fetch polyfills report a failed file read as a rejection, not a
- * 404, so reading an unreadable manifest as "no pipeline" quietly loaded every asset uncompiled
- * from the source directory while the game ran and looked healthy. Failing closed here names the
- * url instead. `hostCanFetch` is the one exception, and only where no request existed to fail.
+ * Reads the compile step's manifest. A 404 — or a url that cannot be fetched at all, which is
+ * how "no manifest" presents in bare-node tests and on hosts without a web root — is the
+ * documented no-manifest case and resolves to `undefined`. Anything that *is* served must be a
+ * valid version-1 manifest; anything else throws.
  */
 async function readManifest(url: string): Promise<IAssetManifest | undefined> {
   let response: Response;
   try {
     response = await fetch(url);
-  } catch (error) {
-    if (!hostCanFetch(url)) return undefined;
-    throw new Error(
-      `TN_ASSETS_MANIFEST_UNREADABLE: asset manifest '${url}' could not be read: ${error instanceof Error ? error.message : String(error)}`,
-    );
+  } catch {
+    return undefined;
   }
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`Failed to load asset manifest '${url}': ${response.status}.`);

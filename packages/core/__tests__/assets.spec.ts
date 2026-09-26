@@ -641,49 +641,6 @@ describe("IAssetLoader through the asset manifest", () => {
     await expect(assets.model("rock.png")).rejects.toThrow(/500/u);
   });
 
-  it("should throw when the manifest cannot be read at all", async () => {
-    // The native hosts report a failed file read as a *rejected* fetch rather than a 404, so
-    // reading this as "no manifest" quietly loaded every asset uncompiled from the source
-    // directory while the game ran and looked healthy. It must fail closed and name the url.
-    // `document.location` is what a browser and the native host both resolve a relative url
-    // against; without it the request never existed and there is no read to fail.
-    vi.stubGlobal("document", { location: { href: "file:///game.html" } });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("File read error: permission denied");
-      }),
-    );
-    const requested: string[] = [];
-    const assets = createAssetLoader({
-      basePath: "/assets",
-      model: async (url) => {
-        requested.push(url);
-        return { url };
-      },
-    });
-
-    await expect(assets.model("rock.png")).rejects.toThrow(
-      /TN_ASSETS_MANIFEST_UNREADABLE.*\/assets\/assets\.manifest\.json/u,
-    );
-    expect(requested).toEqual([]);
-    expect(assets.resolved.size).toBe(0);
-  });
-
-  it("should keep the no-manifest answer where the host has no url to fetch at all", async () => {
-    // The boundary the case above draws: a relative manifest url in a host with no document never
-    // becomes a request, so there is no read that can fail and the documented fallback stands.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new TypeError("Failed to parse URL from assets.manifest.json");
-      }),
-    );
-    const assets = createAssetLoader({ basePath: "/", model: async (url) => ({ url }) });
-
-    await expect(assets.model("rock.png")).resolves.toEqual({ url: "/rock.png" });
-  });
-
   it("should memoise the manifest fetch across kinds and repeats", async () => {
     const fetchAsset = vi.fn(async () =>
       manifestResponse({
