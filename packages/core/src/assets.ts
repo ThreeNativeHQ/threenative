@@ -539,6 +539,30 @@ function widenQuantizedPositions(root: Object3D): void {
   });
 }
 
+/**
+ * Widens every normalized one-component integer attribute to float. three picks a one-component
+ * WebGPU vertex format from the array type alone and ignores `normalized`, so a cooked scalar in
+ * [0, 1] — a baked wind weight, say — reaches the pipeline as `uint16` where a TSL float attribute
+ * expects a float, and the pipeline fails to build. Same values, read through `getX`, so a meshopt
+ * interleaved attribute widens too.
+ */
+function widenNormalizedScalars(root: Object3D): void {
+  const widened = new Set<BufferGeometry>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const geometry = object.geometry as BufferGeometry;
+    if (widened.has(geometry)) return;
+    widened.add(geometry);
+    for (const [name, attribute] of Object.entries(geometry.attributes)) {
+      if (attribute.itemSize !== 1 || !attribute.normalized) continue;
+      const values = new Float32Array(attribute.count);
+      for (let index = 0; index < attribute.count; index += 1)
+        values[index] = attribute.getX(index);
+      geometry.setAttribute(name, new BufferAttribute(values, 1));
+    }
+  });
+}
+
 /** The `{ scene }` a GLTF result carries, when it carries one. */
 function modelRoot(value: unknown): Object3D | undefined {
   if (typeof value !== "object" || value === null) return undefined;
@@ -962,7 +986,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // three.js geometry call. See `widenQuantizedPositions`.
         const root = modelRoot(value);
         if (root !== undefined) widenQuantizedPositions(root);
-        // Built here, after `widenQuantizedPositions`, so the derived levels share the widened base
+        // And a normalized scalar is a trap for the WebGPU pipeline. See `widenNormalizedScalars`.
+        if (root !== undefined) widenNormalizedScalars(root);
+        // Built here, after both widenings, so the derived levels share the widened base
         // attributes instead of pinning the quantized ones.
         if (root !== undefined && discreteLod !== undefined)
           discreteLod.attach(root, await discretePolicy(path));
