@@ -4,6 +4,7 @@ import {
   BoxGeometry,
   BufferGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   Float32BufferAttribute,
   Group,
@@ -1385,17 +1386,30 @@ describe("SceneRenderProjection exact lane corpus", () => {
     // object space — TSL wind reading `modelWorldMatrixInverse`, a `displacementMap` — is wrong
     // there, or silently lost. Nothing about such a mesh looks batchable, so the mesh keeps its
     // own draw and the report names the reason instead of counting it as folded.
-    const material = new MeshStandardNodeMaterial();
-    material.positionNode = positionLocal.add(vec3(0, 0, 0.25));
-    const subject = new Mesh(new BoxGeometry(1, 1, 1), material);
+    const displacements: Array<(material: MeshStandardNodeMaterial) => void> = [
+      (material) => {
+        material.positionNode = positionLocal.add(vec3(0, 0, 0.25));
+      },
+      (material) => {
+        material.castShadowPositionNode = positionLocal.add(vec3(0, 0, 0.25));
+      },
+      (material) => {
+        material.displacementMap = new DataTexture(new Uint8Array(4), 1, 1);
+      },
+    ];
+    for (const displace of displacements) {
+      const material = new MeshStandardNodeMaterial();
+      displace(material);
+      const subject = new Mesh(new BoxGeometry(1, 1, 1), material);
 
-    const { projection } = withSubject(subject);
+      const { projection } = withSubject(subject);
 
-    expect(projection.report.exact.vertexDisplaced).toBe(1);
-    const proxy = proxyOf(projection, (o) => (o as Mesh).material === material);
-    expect(proxy).toBeDefined();
-    // The 300 props beside it are the same shape without the displacement, and still one draw.
-    expect(projection.report.projectedObjects).toBe(300);
+      expect(projection.report.exact.vertexDisplaced).toBe(1);
+      const proxy = proxyOf(projection, (o) => (o as Mesh).material === material);
+      expect(proxy).toBeDefined();
+      // The 300 props beside it are the same shape without the displacement, and still one draw.
+      expect(projection.report.projectedObjects).toBe(300);
+    }
   });
 
   it("keeps a mesh that asked for its own place in the draw order", () => {

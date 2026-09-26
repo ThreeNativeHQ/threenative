@@ -43,6 +43,7 @@ async function torusGlb(
   options: {
     alpha?: "BLEND" | "MASK";
     custom?: boolean;
+    customRange?: number;
     extraUv?: boolean;
     joints?: boolean;
     morph?: boolean;
@@ -88,7 +89,15 @@ async function torusGlb(
   if (options.custom === true)
     primitive.setAttribute(
       "_CUSTOM",
-      accessor(document, buffer, "VEC2", new Float32Array(count * 2)),
+      accessor(
+        document,
+        buffer,
+        "VEC2",
+        Float32Array.from(
+          { length: count * 2 },
+          (_, i) => ((i * 97) % 1000) * (options.customRange ?? 0),
+        ),
+      ),
     );
   if (options.extraUv === true)
     primitive.setAttribute(
@@ -410,6 +419,17 @@ describe("automatic discrete LOD generation", () => {
     const document = await readWithLod(result.buffer);
     const primitive = document.getRoot().listMeshes()[0]?.listPrimitives()[0];
     expect(primitive?.getAttribute("_CUSTOM")).not.toBeNull();
+  }, 120_000);
+
+  it("keeps application data out of the simplifier's error", async () => {
+    // Its range is the application's: raw ids in the hundreds would outweigh every geometric term
+    // and inflate the error, while a level shares the data unchanged whatever the simplifier does.
+    const plain = await cook(await mediumGlb(), { lod: GENERATE, virtual: "none" });
+    const tagged = await cook(await mediumGlb({ custom: true, customRange: 1 }), {
+      lod: GENERATE,
+      virtual: "none",
+    });
+    expect(tagged.primitives[0]?.levels).toEqual(plain.primitives[0]?.levels);
   }, 120_000);
 
   it("records the chain in the artifact and round-trips it", async () => {
