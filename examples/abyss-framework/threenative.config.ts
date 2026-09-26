@@ -1,6 +1,8 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
-export default {
+// Typed rather than `satisfies`, so `vite.config.ts` can read `config.assets` and hand the same
+// options to the dev watcher that `threenative build` uses.
+const config: IThreeNativeConfig = {
   app: {
     id: "com.threenative.loadingleak",
     name: "ThreeNative Loading Leak",
@@ -14,4 +16,6 @@ export default {
   },
   nativeEntry: "src/loading-leak-game.ts",
   renderer: { preferWebGPU: true },
-} satisfies IThreeNativeConfig;
+};
+
+export default config;
