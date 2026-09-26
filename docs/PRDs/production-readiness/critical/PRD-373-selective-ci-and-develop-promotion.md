@@ -9,10 +9,13 @@ moved the marketing site to a private repo, so this repository has no website la
 Corrected: the inert-docs acceptance box cited a cancelled `full` run; the real narrowed
 observation is run 36257140720 (`prose`, `native-platforms` skipped, `ci-required` pass) on PR
 #350, which merged into protected `develop` as `e2d8b0d09a`. Still open: the phase-4 cold/warm
-pair. That is blocked by a broken instrument, not by an unrun gate — every run's queue/execution
-table is empty because `ci.yml:1216` calls `gh api --paginate --slurp … --jq …`, and gh rejects
-that combination; the only same-SHA pair that exists (run 36240843002, attempts 1 and 2) is cold
-in both attempts because the bundle-cache save was refused in each.
+pair. That was blocked by a broken instrument, not by an unrun gate — every run's queue/execution
+table was empty because `ci.yml:1216` called `gh api --paginate --slurp … --jq …`, which gh
+rejects, and the only same-SHA pair that existed (run 36240843002, attempts 1 and 2) was cold in
+both because twelve jobs raced to save one `workspace-dist-v2` key. Both root causes are fixed
+locally as of 2026-09-26 (`--slurp` without `--jq`, pages flattened in `node`; one saver per run,
+from `build-artifacts`) and neither fix has left this worktree, so the pair still has to be measured
+on a hosted run before either box is ticked.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -135,8 +138,8 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 
 **Progress:**
 
-- [x] Implemented and wired: caches keyed so no stale product or test verdict is reused — existing cache wiring audited below; CI efficiency contracts and actual repack tests pass. Equivalent cold/warm measurements remain open.
-- [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
+- [x] Implemented and wired: caches keyed so no stale product or test verdict is reused — existing cache wiring audited below; CI efficiency contracts and actual repack tests pass. 2026-09-26: one reservation per run, from the job that produces the product — the composite action takes a `save-bundles` input and `ci.yml` passes `"false"` in all eight consumers but `build-artifacts` (which needs only `scope` and packs the archives), while `native-platforms.yml` publishes only on a standalone `workflow_dispatch` because a `workflow_call` from `ci.yml` shares `build-artifacts`' reservation. The key, its `hashFiles` inputs and every restore are untouched. Equivalent cold/warm measurements remain open.
+- [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files. 2026-09-26, local: `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts scripts/__tests__/workspace-dist-cache.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-efficiency.spec.ts scripts/__tests__/ci-local.spec.ts scripts/__tests__/ci-fast.spec.ts scripts/__tests__/compiler-cache-setup.spec.ts scripts/__tests__/workspace-packages.spec.ts` → 237 passed; `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/native-platform-workflow.test.mjs tests/android-16kb-alignment.test.mjs` → 83 passed. New guards: "calls gh with a flag pairing gh accepts" and "flattens the paginated pages into a populated table" (which runs the workflow's own `node -e` expression over a two-page fixture and asserts `| typecheck | 120s | 45s |` and `| build | unavailable | unavailable |`), and "holds one reservation per run, from the job that produces the product" (asserts `["build-artifacts"]` is the only `workspace-dist` saver in `ci.yml`). Each new guard was read red before green: re-adding `--jq` fails "calls gh with a flag pairing gh accepts", and dropping one `save-bundles: "false"` reports `contested savers: typecheck, build-artifacts`. Full `pnpm test` is red in `packages/runtime-native` only (18 tests across 5 files, every one `… is not built. Run: cmake --build`): this fresh worktree has no C++ host, and the identical 18 fail on the unmodified tree.
 - [x] Observed red recorded, then restored green — gating `.github/actions/workspace-dist/action.yml`'s "Pack current workspace files" step on `steps.dist.outputs.cache-hit != 'true'` (i.e. shipping a cached archive) made `scripts/__tests__/ci-efficiency.spec.ts` fail on "caches compiled bundles but always repacks and verifies shipped templates" (`expected … not to contain 'cache-hit'`, 2026-09-13); restored, the test passes. The equivalent-SHA warm timing comparison remains open below.
 - [ ] Verified on a real PR, not only locally. proof: two hosted runs of the same SHA — one cold,
       one warm — read from the PR's Actions summary, with the warm run's timings beside the cold
@@ -149,10 +152,15 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
       `1a7dfb1ec4e8e620e9c5d5eeaad0c6500706e8b1`, `full` in both), is cold in **both**: `typecheck`
       logs `Cache not found for input keys: workspace-dist-v2-Linux-X64-v20.20.2-15cebff1…` and
       `build-artifacts` logs `Unable to reserve cache with key workspace-dist-v2-…, another job may
-      be creating this cache` in each attempt. Next run, in order: land the `--slurp` fix on
-      `develop`; take the next full-selection run whose `build-artifacts` save actually publishes
-      `workspace-dist-v2-…` (that log line must be absent); then `gh run rerun <that run id>` —
-      attempt 1 cold, attempt 2 warm on the same candidate, with the table populated.
+      be creating this cache` in each attempt. Both root causes are fixed locally (2026-09-26,
+      not yet pushed): the call keeps `--paginate --slurp` and flattens the pages in `node`, and the
+      contested save is gone — twelve competing savers could not tell anyone whether the one
+      reservation holder published. `packages/*/dist` measures 9.5 MB built, so entry size is ruled
+      out as the reason nothing published. Next run, in order: land both fixes on `develop`; take
+      the next full-selection run whose `build-artifacts` save publishes `workspace-dist-v2-…`
+      (that log line must be absent, and its step summary now reads `publish: yes`); then
+      `gh run rerun <that run id>` — attempt 1 cold, attempt 2 warm on the same candidate, with
+      the table populated. No warm run has been manufactured, simulated or inferred.
 
 
 Audit the existing workspace-dist, pnpm, browser, compiler and Android caches before adding
@@ -275,9 +283,10 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
   proof: the cold/warm timing pair above plus `pnpm exec vitest run
   scripts/__tests__/ci-efficiency.spec.ts` (the repack assertions, 262 tests in run 34653691910).
   — OPEN, re-inspected 2026-09-26: the local half is green — that command reports 47 passed,
-  including "repacks changed template bytes even when compiled bundles remain unchanged" — and the
-  hosted half is the phase-4 blocker above. No warm run of any fixed SHA exists to read, so nothing
-  here is claimed.
+  including "repacks changed template bytes even when compiled bundles remain unchanged", and the
+  measurement instrument it needs is now repaired (the `gh api` pairing that emptied every timing
+  table, and the twelve competing `workspace-dist-v2` savers) — but the hosted half is still the
+  phase-4 blocker above. No warm run of any fixed SHA exists to read, so nothing here is claimed.
 - [x] Branch rules, workflow triggers, local verification and generated agent instructions
   agree. proof: `pnpm ci:local --affected --base origin/develop --target develop` selects the same
   families CI does, and `pnpm sync:agents --check` reports no drift between `AGENTS.md` and the

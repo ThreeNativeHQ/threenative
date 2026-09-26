@@ -43,7 +43,10 @@ describe("workspace bundle reuse without cached verdicts", () => {
   it("publishes only after both product validators, before returning to caller tests", () => {
     const save = step("Save validated workspace bundles");
     assert.match(save, /uses: actions\/cache\/save@v4/u);
-    assert.match(save, /^ {6}if: success\(\) && steps\.dist\.outputs\.cache-hit != 'true'$/mu);
+    assert.match(
+      save,
+      /^ {6}if: success\(\) && steps\.dist\.outputs\.cache-hit != 'true' && inputs\.save-bundles == 'true'$/mu,
+    );
     assert.doesNotMatch(save, /always\(\)|continue-on-error/u);
     for (const prerequisite of [
       "Build missing workspace bundles",
@@ -145,5 +148,30 @@ describe("workspace bundle reuse without cached verdicts", () => {
     assert.ifError(complete.error);
     assert.equal(complete.status, 0, complete.stderr);
     assert.match(complete.stdout, /workspace compiled bundles validated/u);
+  });
+
+  it("holds one reservation per run, from the job that produces the product", () => {
+    // The Actions cache service grants one reservation per key. Every saver past the first is
+    // refused with "another job may be creating this cache" — thirteen of those lines on a full run
+    // say nothing about whether the winner published, and the equivalent-SHA rerun stayed cold.
+    const workflow = readFileSync(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const jobs = workflow.split(/(?=^ {2}[a-z0-9-]+:$)/mu).slice(1);
+    const savers: string[] = [];
+    for (const job of jobs) {
+      const uses =
+        job.match(/uses: \.\/\.github\/actions\/workspace-dist\b[^\n]*\n(?:[ \t]+[^\n]*\n)*/gu) ??
+        [];
+      for (const use of uses) {
+        if (!/save-bundles: "false"/u.test(use))
+          savers.push(/^ {2}([a-z0-9-]+):$/mu.exec(job)?.[1] ?? "?");
+      }
+    }
+    assert.deepEqual(savers, ["build-artifacts"], `contested savers: ${savers.join(", ")}`);
+    // A native-platforms dispatch is its own run and still has to publish; called from ci.yml it
+    // shares build-artifacts' reservation.
+    const native = readFileSync(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8");
+    const gates = native.match(/^ *save-bundles: .*$/gmu) ?? [];
+    assert.equal(gates.length, 3);
+    for (const gate of gates) assert.match(gate, /github\.event_name == 'workflow_dispatch'/u);
   });
 });

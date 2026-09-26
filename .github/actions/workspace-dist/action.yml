@@ -13,6 +13,15 @@ inputs:
     description: Extra text to vary the cache key when a caller needs its own entry.
     required: false
     default: ""
+  save-bundles:
+    description: >-
+      Publish the restored key's bundles. The Actions cache service grants one reservation per key,
+      so every saver past the first is refused with "Unable to reserve cache with key ... another
+      job may be creating this cache" and its log is indistinguishable from a run that published
+      nothing. One run, one saver: the job that needs nothing but `scope` and produces the
+      workspace product.
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -136,8 +145,11 @@ runs:
     # Persist the product before caller tests run. A later test failure must not throw away a
     # successful build, and test-side mutations must not become the cached build for this key.
     # Keep success() explicit: failed builds or payload validation must never publish a cache.
+    # Gated on `save-bundles` so a run holds one reservation instead of one per consumer: the
+    # losing savers printed "another job may be creating this cache", which is noise that reads
+    # like a failure and tells nobody whether the winner ever published.
     - name: Save validated workspace bundles
-      if: success() && steps.dist.outputs.cache-hit != 'true'
+      if: success() && steps.dist.outputs.cache-hit != 'true' && inputs.save-bundles == 'true'
       uses: actions/cache/save@v4
       with:
         path: |
@@ -148,7 +160,8 @@ runs:
       shell: bash
       env:
         DIST_CACHE_HIT: ${{ steps.dist.outputs.cache-hit }}
+        DIST_SAVER: ${{ inputs.save-bundles == 'true' && 'yes' || 'no' }}
         DIST_STARTED: ${{ steps.toolchain.outputs.started }}
       run: |
-        printf 'Workspace bundle cache hit: `%s`; restore/build/repack/validation execution: `%ss`. This is product reuse, not a test verdict.\n' \
-          "${DIST_CACHE_HIT:-unavailable}" "$(( $(date +%s) - ${DIST_STARTED:-$(date +%s)} ))" >> "$GITHUB_STEP_SUMMARY"
+        printf 'Workspace bundle cache hit: `%s`; publish: `%s`; restore/build/repack/validation execution: `%ss`. This is product reuse, not a test verdict.\n' \
+          "${DIST_CACHE_HIT:-unavailable}" "${DIST_SAVER:-unavailable}" "$(( $(date +%s) - ${DIST_STARTED:-$(date +%s)} ))" >> "$GITHUB_STEP_SUMMARY"

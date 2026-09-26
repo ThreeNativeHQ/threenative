@@ -103,7 +103,11 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Called from ci.yml this is the same run as `build-artifacts`, which already holds the one
+      # reservation this key allows; a standalone dispatch has no such job.
       - uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: ./.github/actions/playwright-chromium
       - name: Capture commit-keyed browser reference
         run: |
@@ -367,6 +371,8 @@ jobs:
       # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
       - name: Build browser reference workspace imports
         uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
@@ -824,6 +830,8 @@ jobs:
       # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
       - name: Build browser reference workspace imports
         uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
