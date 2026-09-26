@@ -31,7 +31,13 @@ function record(overrides: Record<string, unknown> = {}): Record<string, unknown
     comparability: "matched-task",
     comparabilityReason: null,
     derivationVersion: "derive-1",
-    durationMs: { measure: 48_000, startup: 812.5, warmup: 4000 },
+    durationMs: {
+      measure: 48_000,
+      startup: 812.5,
+      startupReason: null,
+      warmup: 4000,
+      warmupReason: null,
+    },
     experiment: {
       fixtureRevision: "cubes-r1",
       load: "10000",
@@ -213,7 +219,13 @@ describe("the v2 result contract", () => {
     // that measured what it claims and is honest about the attempt status.
     const zeroed = parseV2RunRecord(
       record({
-        durationMs: { measure: 1200, startup: 0, warmup: 0 },
+        durationMs: {
+          measure: 1200,
+          startup: 0,
+          startupReason: null,
+          warmup: 0,
+          warmupReason: null,
+        },
         metrics: [
           { name: "completed-work-mean-ms", reason: null, unit: "ms", value: 8.25 },
           { name: "upload-bytes", reason: null, unit: "bytes", value: 0 },
@@ -222,6 +234,160 @@ describe("the v2 result contract", () => {
     );
     expect(zeroed.durationMs.startup).toBe(0);
     expect(zeroed.metrics[1]?.value).toBe(0);
+  });
+
+  it("keeps an untimed startup or warmup phase unavailable instead of a fake zero", () => {
+    // §7.4: startup and footprint are secondary, so a lane that never timed the phase separately
+    // says so with a reason instead of writing a zero nobody measured. The run stays valid.
+    const secondary = parseV2RunRecord(
+      record({
+        durationMs: {
+          measure: 48_000,
+          startup: null,
+          startupReason: "startup was not timed separately on this lane",
+          warmup: null,
+          warmupReason: "warmup frames ran inside the measure window",
+        },
+      }),
+    );
+    expect(secondary.durationMs.startup).toBeNull();
+    expect(secondary.durationMs.startupReason).toBe(
+      "startup was not timed separately on this lane",
+    );
+    expect(secondary.durationMs.warmup).toBeNull();
+    expect(secondary.durationMs.warmupReason).toBe("warmup frames ran inside the measure window");
+    // A real duration owes no explanation, and a true zero is still a real one.
+    const measured = parseV2RunRecord(
+      record({
+        durationMs: {
+          measure: 48_000,
+          startup: 0,
+          startupReason: null,
+          warmup: 4000,
+          warmupReason: null,
+        },
+      }),
+    );
+    expect(measured.durationMs.startup).toBe(0);
+    expect(measured.durationMs.startupReason).toBeNull();
+    expect(measured.durationMs.measure).toBe(48_000);
+  });
+
+  it("refuses an unavailable phase with no reason, a reason on a real duration, and an omitted reason", () => {
+    const cases: readonly [string, Record<string, unknown>, string][] = [
+      [
+        "startup null with no reason",
+        record({ durationMs: { measure: 1, startup: null, warmup: 1 } }),
+        "v2RunRecord.durationMs.startupReason",
+      ],
+      [
+        "empty reason beside a null startup",
+        record({ durationMs: { measure: 1, startup: null, startupReason: "", warmup: 1 } }),
+        "v2RunRecord.durationMs.startupReason",
+      ],
+      [
+        "warmup null with no reason",
+        record({
+          durationMs: { measure: 1, startup: 1, startupReason: null, warmup: null },
+        }),
+        "v2RunRecord.durationMs.warmupReason",
+      ],
+      [
+        "reason on a real startup",
+        record({
+          durationMs: {
+            measure: 1,
+            startup: 812.5,
+            startupReason: "cold",
+            warmup: 1,
+            warmupReason: null,
+          },
+        }),
+        "v2RunRecord.durationMs.startupReason",
+      ],
+      [
+        "reason on a real zero",
+        record({
+          durationMs: {
+            measure: 1,
+            startup: 0,
+            startupReason: "cold",
+            warmup: 1,
+            warmupReason: null,
+          },
+        }),
+        "v2RunRecord.durationMs.startupReason",
+      ],
+      [
+        "reason on a real warmup",
+        record({
+          durationMs: {
+            measure: 1,
+            startup: 1,
+            startupReason: null,
+            warmup: 0,
+            warmupReason: "cold",
+          },
+        }),
+        "v2RunRecord.durationMs.warmupReason",
+      ],
+      // No v2 record outside a test ever shipped without a reason, so a missing one is a lie about
+      // what the writer knew, not a legacy spelling to normalize away.
+      [
+        "omitted reason beside a real startup",
+        record({
+          durationMs: { measure: 1, startup: 812.5, warmup: 4000, warmupReason: null },
+        }),
+        "v2RunRecord.durationMs.startupReason",
+      ],
+      [
+        "omitted warmup reason beside a real warmup",
+        record({
+          durationMs: { measure: 1, startup: 812.5, startupReason: null, warmup: 4000 },
+        }),
+        "v2RunRecord.durationMs.warmupReason",
+      ],
+      [
+        "absent startup",
+        record({ durationMs: { measure: 1, warmup: 1, warmupReason: null } }),
+        "v2RunRecord.durationMs.startup",
+      ],
+      [
+        "absent warmup",
+        record({ durationMs: { measure: 1, startup: 1, startupReason: null } }),
+        "v2RunRecord.durationMs.warmup",
+      ],
+      [
+        "negative startup",
+        record({
+          durationMs: {
+            measure: 1,
+            startup: -1,
+            startupReason: null,
+            warmup: 1,
+            warmupReason: null,
+          },
+        }),
+        "v2RunRecord.durationMs.startup",
+      ],
+      [
+        "NaN warmup",
+        record({
+          durationMs: {
+            measure: 1,
+            startup: 1,
+            startupReason: null,
+            warmup: Number.NaN,
+            warmupReason: null,
+          },
+        }),
+        "v2RunRecord.durationMs.warmup",
+      ],
+    ];
+    for (const [label, value, path] of cases) {
+      expect(() => parseV2RunRecord(value), label).toThrow(TN_BENCH_BAD_SHAPE);
+      expect(() => parseV2RunRecord(value), label).toThrow(path);
+    }
   });
 
   it("refuses a valid run whose primary metric is unavailable, and a failure without a reason", () => {
@@ -304,12 +470,28 @@ describe("the v2 result contract", () => {
       [
         "negative duration",
         "v2RunRecord.durationMs.measure",
-        record({ durationMs: { measure: -1, startup: 1, warmup: 1 } }),
+        record({
+          durationMs: {
+            measure: -1,
+            startup: 1,
+            startupReason: null,
+            warmup: 1,
+            warmupReason: null,
+          },
+        }),
       ],
       [
         "NaN duration",
         "v2RunRecord.durationMs.measure",
-        record({ durationMs: { measure: Number.NaN, startup: 1, warmup: 1 } }),
+        record({
+          durationMs: {
+            measure: Number.NaN,
+            startup: 1,
+            startupReason: null,
+            warmup: 1,
+            warmupReason: null,
+          },
+        }),
       ],
       [
         "fractional frames",
@@ -374,7 +556,15 @@ describe("the v2 result contract", () => {
       ],
       [
         "no measure duration",
-        record({ durationMs: { measure: 0, startup: 812.5, warmup: 4000 } }),
+        record({
+          durationMs: {
+            measure: 0,
+            startup: 812.5,
+            startupReason: null,
+            warmup: 4000,
+            warmupReason: null,
+          },
+        }),
         "v2RunRecord.durationMs.measure",
       ],
       [
@@ -419,7 +609,13 @@ describe("the v2 result contract", () => {
       checksums: {},
       comparability: "non-comparable",
       comparabilityReason: "lane not provisioned for this campaign",
-      durationMs: { measure: 0, startup: 0, warmup: 0 },
+      durationMs: {
+        measure: 0,
+        startup: 0,
+        startupReason: null,
+        warmup: 0,
+        warmupReason: null,
+      },
       fixture: { conformance: "not-run", evidence: null, hash: HASH },
       machine: {
         ...(record().machine as Record<string, unknown>),

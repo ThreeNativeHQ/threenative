@@ -98,7 +98,21 @@ export interface IV2RunRecord {
   /** Why this comparison is not matched-task; absent when it is. */
   comparabilityReason?: string;
   derivationVersion: string;
-  durationMs: { measure: number; startup: number; warmup: number };
+  /**
+   * §7.4: startup and footprint are secondary, so a phase nobody timed separately is `null` plus a
+   * reason rather than a fake zero. `measure` stays the one duration every `valid` run owes, so it
+   * keeps a plain number with nothing to explain.
+   */
+  durationMs: {
+    measure: number;
+    /** `null` means the phase was not timed separately. Zero is a real observation. */
+    startup: number | null;
+    /** Always written: non-empty exactly when `startup` is `null`, else `null` beside a real number. */
+    startupReason: string | null;
+    warmup: number | null;
+    /** Always written: non-empty exactly when `warmup` is `null`, else `null` beside a real number. */
+    warmupReason: string | null;
+  };
   experiment: IExperimentKey;
   fixture: { conformance: "pass" | "fail" | "not-run"; evidence: string | null; hash: string };
   machine: {
@@ -245,6 +259,36 @@ function parseMetric(value: unknown, path: string): IV2Metric {
     fail(`${path}.reason`, `contradicts a real value for ${name}; unmeasured is null, not zero`);
   }
   return { name, unit, value: raw };
+}
+
+/**
+ * A secondary duration carries the same three-way claim as a metric, and both halves are always
+ * written: `null` is a phase the lane never timed separately and it owes an observer a reason, a
+ * real number — zero included — is kept, and a reason beside a real number is refused. An omitted
+ * reason is refused like an omitted metric is, because there is no v2 record in the wild to keep
+ * working; only synthetic fixtures ever wrote one.
+ */
+function parseSecondaryDuration(
+  source: Record<string, unknown>,
+  key: "startup" | "warmup",
+  path: string,
+): { reason: string | null; value: number | null } {
+  const raw = source[key];
+  if (raw === undefined) fail(`${path}.${key}`, "is absent; use null instead");
+  const reason = requireNullableString(source, `${key}Reason`, path);
+  if (raw === null) {
+    if (reason === null) {
+      fail(`${path}.${key}Reason`, `is required when ${key} is null; unmeasured is null, not zero`);
+    }
+    return { reason, value: null };
+  }
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
+    fail(`${path}.${key}`, "must be a finite non-negative number or null");
+  }
+  if (reason !== null) {
+    fail(`${path}.${key}Reason`, `contradicts a real ${key}; unmeasured is null, not zero`);
+  }
+  return { reason: null, value: raw };
 }
 
 /**
@@ -466,10 +510,14 @@ export function parseV2RunRecord(value: unknown): IV2RunRecord {
   }
 
   const durationSource = requireObject(source.durationMs, "v2RunRecord.durationMs");
+  const startup = parseSecondaryDuration(durationSource, "startup", "v2RunRecord.durationMs");
+  const warmup = parseSecondaryDuration(durationSource, "warmup", "v2RunRecord.durationMs");
   const durationMs: IV2RunRecord["durationMs"] = {
     measure: requireNonNegative(durationSource, "measure", "v2RunRecord.durationMs"),
-    startup: requireNonNegative(durationSource, "startup", "v2RunRecord.durationMs"),
-    warmup: requireNonNegative(durationSource, "warmup", "v2RunRecord.durationMs"),
+    startup: startup.value,
+    startupReason: startup.reason,
+    warmup: warmup.value,
+    warmupReason: warmup.reason,
   };
 
   const { metrics, primary } = parseMetrics(source.metrics);

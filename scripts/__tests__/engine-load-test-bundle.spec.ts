@@ -163,7 +163,13 @@ describe("campaign bundle writer", () => {
         comparability: "matched-task",
         comparabilityReason: null,
         derivationVersion: "derive-1",
-        durationMs: { measure: 20, startup: 1, warmup: 1 },
+        durationMs: {
+          measure: 20,
+          startup: 1,
+          startupReason: null,
+          warmup: 1,
+          warmupReason: null,
+        },
         experiment: cell.experiment,
         fixture: { conformance: "pass", evidence: "raw/conformance.json", hash: "b".repeat(64) },
         machine: {
@@ -251,7 +257,13 @@ describe("campaign bundle writer", () => {
               comparability: "matched-task",
               comparabilityReason: null,
               derivationVersion: "derive-1",
-              durationMs: { measure: 2 * ms, startup: 0, warmup: 1 },
+              durationMs: {
+                measure: 2 * ms,
+                startup: 0,
+                startupReason: null,
+                warmup: 1,
+                warmupReason: null,
+              },
               experiment: cell.experiment,
               fixture: {
                 conformance: "pass",

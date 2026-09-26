@@ -172,7 +172,7 @@ The primary completed-work metric requires a supported final-completion observat
 
 Quantify minimal-meter overhead using instrumented/uninstrumented A/A controls. Require less than 2% median throughput change or the measured A/A noise floor, whichever is larger, and no material tail distortion. Report that floor; a noisy calibration cannot justify small-effect claims. Store raw monotonic timestamps and clock resolution. Do not force GC between measured frames, hide GC pauses or drop shader stalls.
 
-Cold startup tests must state whether OS page caches, asset imports, browser caches and driver shader caches were cleared. A fresh process is not automatically a cold machine. Startup/footprint results are secondary and can be unavailable with an honest reason without turning a valid rendering experiment into a fake zero.
+Cold startup tests must state whether OS page caches, asset imports, browser caches and driver shader caches were cleared. A fresh process is not automatically a cold machine. Startup/footprint results are secondary and can be unavailable with an honest reason without turning a valid rendering experiment into a fake zero. A v2 record writes `durationMs.startup` and `durationMs.warmup` explicitly: `null` with a non-empty `startupReason`/`warmupReason` for a phase the lane never timed separately, or a real number — zero included — with a `null` reason. An omitted reason, or a reason beside a real duration, is refused. `durationMs.measure` stays a plain number, and only a `valid` run owes a positive one — a secondary phase the lane never timed separately does not make an otherwise valid run invalid.
 
 ## 8. Statistics and verdicts
 
