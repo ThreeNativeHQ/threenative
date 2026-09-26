@@ -1104,18 +1104,30 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   above, and any statement about TN's draw-call shape under a different authoring. No
   `qualified` or `matched-task` pair exists for this family and no family-level claim is made.
 - [ ] Pass City conformance for both frozen fixture sizes and both movement states.
-- [ ] Retain a real hardware comparison for the City family.
+- [x] Retain a real hardware comparison for the City family.
 
   The pinned Bevy City adapter and TN native counterpart now export and replay the small 8×8
   fixture with 14,082 nodes, 4,323 mesh nodes, 41 unique meshes, 16 materials, 9 images,
-  767 cars, 128 roads and 2,372,052 authored triangles. Both static and upstream-moving arms
-  completed a 2-frame conformance gate and a 600-frame/120-warmup smoke pair on the RTX 2080.
+  767 cars, 128 roads and 2,372,052 authored triangles. The moving arm completed a 2-frame
+  conformance gate; both static and moving arms completed a 600-frame/120-warmup smoke pair.
   The comparator accepts both 600-frame pairs with camera, node and car-state tolerances met;
-  Bevy's common profile records atmosphere, bloom, TAA, HDR and shadows off. These runs are
-  exploratory: the TN records identify the branch as dirty while the adapter was being fixed,
-  one block has no A/A calibration or cross-arm visual proof, and the upstream-default-size and
-  TN web cells have not run. Rerun from a committed source before ticking the hardware box or
-  publishing the observed means.
+  Bevy's common profile records atmosphere, bloom, TAA, HDR and shadows off. The final four arms
+  were rerun from clean engine commit `5ebb43aac` on the real NVIDIA GeForce RTX 2080, driver
+  `615.71.09`, at the actual 1920×1050 attachment. The source record names pinned Bevy commit
+  `c6f634ca9`, upstream source digest `3275eb9a94b2…`, and City adapter digest
+  `4a94975b73d9…`. The raw records and fixture are in the measuring checkout's ignored
+  `artifacts/engine-load-test/city-size8-*-600f-*.json`; this table is the portable retained
+  observation, not a downloadable raw bundle.
+
+  | Small 8×8 cell | Bevy mean ms | TN native mean ms | comparator | verdict |
+  |---|---:|---:|---|---|
+  | Moving cars | 5.987 | 28.917 | qualified | insufficient |
+  | Static cars | 5.708 | 24.360 | qualified | insufficient |
+
+  These are one-block smoke observations, with no A/A calibration or cross-arm visual proof;
+  the shader and light-unit differences are disclosed by the comparator. The
+  upstream-default-size and TN web cells have not run. This box records a real hardware pair,
+  not City-family completion or a faster/slower verdict.
 
 ### Phase 5: Deliver the offline report generator
 
