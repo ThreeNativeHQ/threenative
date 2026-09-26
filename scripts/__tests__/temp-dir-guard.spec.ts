@@ -99,6 +99,10 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/capture-asset-mcp-tools.ts",
     "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the Blender one above.",
   ],
+  [
+    "scripts/__tests__/workspace-dist-cache.spec.ts",
+    "The workspace-dist cache test removes its scratch workspace in a finally block.",
+  ],
 ]);
 
 async function sourceFiles(directory: string): Promise<string[]> {
