@@ -81,6 +81,8 @@ export interface IWorldTilesOptions {
    * cheap to simulate: a tile crossing the radius has its collider created or disposed as it goes.
    */
   readonly colliderRadius?: number;
+  /** Terrain tiles and seam bridges receive the scene's shadows. Default false. */
+  readonly receiveShadow?: boolean;
   /** Creates the physics body from the field's explicit collider-order copy. */
   readonly createCollider?: (input: IWorldTileColliderInput) => IWorldTileCollider;
   /** TSL pass options are game supplied and are forwarded to each resident field. */
@@ -1493,6 +1495,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #assets: Pick<IAssetLoader, "release"> | undefined;
   readonly #assetKey: IWorldTilesOptions["assetKey"];
   readonly #colliderRadius: number;
+  readonly #receiveShadow: boolean;
   readonly #createCollider: IWorldTilesOptions["createCollider"];
   readonly #factors: readonly number[];
   readonly #lodDistances: readonly number[];
@@ -1535,6 +1538,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.residentByteBudget = integerAtLeast(options.residentByteBudget, 1, "residentByteBudget");
     this.skirtDepth = positive(options.skirtDepth ?? this.tileSize, "skirtDepth");
     this.#streamRadius = integerAtLeast(options.streamRadius ?? 1, 0, "streamRadius");
+    this.#receiveShadow = options.receiveShadow === true;
     this.#colliderRadius = integerAtLeast(
       options.colliderRadius ?? this.#streamRadius,
       0,
@@ -1907,6 +1911,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         mesh.visible = index === 0;
         lod?.addLevel(mesh, index === 0 ? 0 : (this.#lodDistances[index - 1] as number));
         mesh.frustumCulled = true;
+        mesh.receiveShadow = this.#receiveShadow;
       });
       collider =
         this.#createCollider === undefined
@@ -2209,6 +2214,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         this.#stitchBytes += bridge.bytes - previousBytes;
       } else {
         this.#stitches.set(key, bridge);
+        bridge.mesh.receiveShadow = this.#receiveShadow;
         this.add(bridge.mesh);
         this.#stitchBytes += bridge.bytes;
       }

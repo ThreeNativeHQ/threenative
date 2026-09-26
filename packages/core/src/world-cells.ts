@@ -114,6 +114,17 @@ export interface IWorldCellsLoadOptions {
    */
   readonly transparentScatter?: "cutout" | "blend";
   /**
+   * Shadows for the streamed world, all off by default. `cast` makes scattered batches cast into
+   * the scene's shadow map, but only their `castLevels` finest distance levels (default 1: the
+   * near shape), since a far LOD's shadow is sub-texel in any open-world shadow window and every
+   * caster is redrawn per shadow level. `receive` lets scatter and terrain receive shadows.
+   */
+  readonly shadows?: {
+    readonly cast?: boolean;
+    readonly castLevels?: number;
+    readonly receive?: boolean;
+  };
+  /**
    * `(url) => Promise<Object3D>`, overriding `assets.model`; a raw `GLTFLoader` or a game's own
    * loader works. The url is the authored one, so a compiled package wants `assets` instead.
    */
@@ -712,6 +723,9 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #resident = new Map<string, IResidentCell>();
   /** Surfaces shared by material content across every asset part; see `materialKey`. */
   readonly #surfaces = new Map<string, ISharedSurface>();
+  /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
+  readonly #castShadowLevels: number;
+  readonly #receiveShadow: boolean;
   /** Cell-asset builds waiting for budget, in admission order: nearest cell first. */
   #jobs: IBuildJob[] = [];
   /** The (cell, asset) pairs already queued, so a refilter cannot queue itself twice. */
@@ -759,6 +773,11 @@ export class WorldCells extends Group implements IComputeDriven {
       positiveInteger(init.concurrency ?? DEFAULT_CONCURRENCY, "concurrency"),
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
+    this.#castShadowLevels =
+      init.shadows?.cast === true
+        ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
+        : 0;
+    this.#receiveShadow = init.shadows?.receive === true;
     if (this.#transparentScatter !== "cutout" && this.#transparentScatter !== "blend")
       throw new Error("WorldCells transparentScatter must be 'cutout' or 'blend'.");
     // Terrain can reach further than the props do, so its radius is its own option; the collider
@@ -776,6 +795,7 @@ export class WorldCells extends Group implements IComputeDriven {
       ...(init.createCollider === undefined
         ? {}
         : { colliderRadius, createCollider: init.createCollider }),
+      receiveShadow: init.shadows?.receive === true,
       ...(init.terrain?.lodDistances === undefined
         ? {}
         : { lodDistances: init.terrain.lodDistances }),
@@ -1205,7 +1225,9 @@ export class WorldCells extends Group implements IComputeDriven {
       }
       const batch = levelBatches[part] as InstancedBatch;
       const mesh = batch.build({
+        castShadow: this.#castShadowLevels > level,
         name: `${cell.key}:${asset.id}:${String(level)}:${String(part)}`,
+        receiveShadow: this.#receiveShadow,
       });
       job.fresh.push({
         asset: asset.id,
@@ -1441,6 +1463,13 @@ export class WorldCells extends Group implements IComputeDriven {
         (object) => {
           if (!live()) return;
           object.name = CHUNK_NAME;
+          // Hand-placed chunks are the buildings and set dressing: full shape, so they cast with the
+          // near scatter and receive like everything else when the game asks for shadows.
+          if (this.#castShadowLevels > 0 || this.#receiveShadow)
+            object.traverse((node) => {
+              node.castShadow = this.#castShadowLevels > 0;
+              node.receiveShadow = this.#receiveShadow;
+            });
           cell.chunks.push(object);
           this.add(object);
           attached += 1;

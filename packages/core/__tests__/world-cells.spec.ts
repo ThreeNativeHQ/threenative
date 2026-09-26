@@ -1390,6 +1390,63 @@ describe("WorldCells", () => {
     }
   });
 
+  it("casts shadows from the near levels and receives them everywhere only when asked", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const plain = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: treeLoader().load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    plain.update();
+    await flushed(plain);
+    const near = levelMesh(plain, "pine", 0, 0) as InstancedMesh;
+    expect(near.castShadow).toBe(false);
+    expect(near.receiveShadow).toBe(false);
+    plain.dispose();
+
+    const shaded = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: treeLoader().load,
+      ring: 0,
+      shadows: { cast: true, receive: true },
+      surface,
+      url: "/world/world.json",
+    });
+    shaded.update();
+    await flushed(shaded);
+    // Only the finest level casts by default: a far LOD's shadow is sub-texel and every caster is
+    // redrawn per shadow level.
+    expect((levelMesh(shaded, "pine", 0, 0) as InstancedMesh).castShadow).toBe(true);
+    expect((levelMesh(shaded, "pine", 1, 0) as InstancedMesh).castShadow).toBe(false);
+    expect((levelMesh(shaded, "pine", 1, 0) as InstancedMesh).receiveShadow).toBe(true);
+    const terrain: Mesh[] = [];
+    shaded.traverse((object) => {
+      if ((object as Mesh).isMesh && !(object as InstancedMesh).isInstancedMesh)
+        terrain.push(object as Mesh);
+    });
+    expect(terrain.length).toBeGreaterThan(0);
+    // Terrain tiles, seam bridges and hand-placed chunks all receive.
+    for (const mesh of terrain) expect(mesh.receiveShadow).toBe(true);
+    shaded.dispose();
+
+    await expect(
+      loadWorld({
+        budgets: largeBudgets,
+        follow,
+        loadModel: treeLoader().load,
+        ring: 0,
+        shadows: { cast: true, castLevels: 0 },
+        surface,
+        url: "/world/world.json",
+      }),
+    ).rejects.toThrow(/castLevels/u);
+  });
+
   it("batches every primitive of a multi-primitive asset, at its own offset and material", async () => {
     // A GLB with several primitives loads as a `Group` of one child `Mesh` per primitive. Batching
     // only the first is what drew 62k trees as bare trunks.
