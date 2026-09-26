@@ -25,8 +25,7 @@ for (const relative of directories) {
     const stat = await lstat(target);
     if (stat.isSymbolicLink())
       throw new Error(`Refusing to install through symbolic link ${target}.`);
-    if (!stat.isDirectory())
-      throw new Error(`Refusing to install into non-directory ${target}.`);
+    if (!stat.isDirectory()) throw new Error(`Refusing to install into non-directory ${target}.`);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
