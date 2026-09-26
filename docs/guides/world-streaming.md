@@ -83,7 +83,8 @@ import { WorldCells } from "@threenative/core/world";
 import { MeshNormalMaterial } from "three";
 
 const world = await WorldCells.load({
-  url: "/world/world.json",
+  assets: ctx.assets,
+  url: "world/world.json",
   surface: new MeshNormalMaterial(),
   follow: player,
   ring: 1,
@@ -92,7 +93,14 @@ const world = await WorldCells.load({
 scene.add(world);
 ```
 
-- `url` is `world.json`; every other path a manifest names resolves relative to it.
+- `url` is a **logical** path: the package's own `world.json`, every other file it names, and every
+  model GLB resolve through `IAssetLoader`, so a package under `assets/world/` served as
+  content-addressed output with an `assets.manifest.json` loads like a raw one. A leading `/` is
+  accepted and stripped, so an uncompiled `public/world` still works.
+- `assets` is the loader those paths resolve through. Pass `ctx.assets` inside a game — it is the
+  one built with the renderer, so a KTX2 texture decodes; the default is a fresh
+  `createAssetLoader()` per load, which reads a manifest and falls back to the authored name and
+  the project's `assets/` sources, but cannot transcode.
 - `surface` is the game's terrain material, handed straight to the composed `TerrainTiles`. The
   class creates no material, colour or geometry of its own.
 - `follow` is read once per update; any object with a `position` (`x`, `z`) works, including the
@@ -127,16 +135,20 @@ Call `dispose()` to release every cell, batch, chunk model and the terrain.
 
 The in-repo fixture
 [`world-flythrough.playtest.json`](../../examples/abyss-framework/playtests/world-flythrough.playtest.json)
-flies the camera across the committed fixture package and asserts residency rises, cells are
-evicted, loads settle and no load fails, with a measured p95 frame budget. The scene behind it is
+flies the camera across the `world-v1` package committed as the example's own
+[`assets/world/`](../../examples/abyss-framework/assets/world) source and asserts residency rises,
+cells are evicted, loads settle and no load fails, with a measured p95 frame budget. The scene
+behind it is
 [`WorldProbe.ts`](../../examples/abyss-framework/src/scenes/WorldProbe.ts), which uses only the
-public exports.
+public exports. Build first: the scenario runs against compiled, content-addressed output, not
+against a dev server.
 
 ```sh
+pnpm --filter abyss-framework build
 CI=true node packages/playtest/dist/runner/cli.js \
   examples/abyss-framework/playtests/world-flythrough.playtest.json \
-  --url 'http://127.0.0.1:5180/?world' \
-  --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5180 --strictPort' \
+  --url 'http://127.0.0.1:5181/?world' \
+  --server-command 'pnpm --filter abyss-framework preview --host 127.0.0.1 --port 5181 --strictPort' \
   --browser-recipe webgpu --headed
 ```
 
