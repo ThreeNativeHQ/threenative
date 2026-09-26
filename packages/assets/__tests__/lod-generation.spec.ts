@@ -43,6 +43,7 @@ async function torusGlb(
   options: {
     alpha?: "BLEND" | "MASK";
     custom?: boolean;
+    extraUv?: boolean;
     joints?: boolean;
     morph?: boolean;
     name?: string;
@@ -88,6 +89,11 @@ async function torusGlb(
     primitive.setAttribute(
       "_CUSTOM",
       accessor(document, buffer, "VEC2", new Float32Array(count * 2)),
+    );
+  if (options.extraUv === true)
+    primitive.setAttribute(
+      "COLOR_1",
+      accessor(document, buffer, "VEC4", new Float32Array(count * 4)),
     );
   if (options.morph === true) primitive.addTarget(document.createPrimitiveTarget());
   const name = options.name ?? "hull";
@@ -388,6 +394,24 @@ describe("automatic discrete LOD generation", () => {
     expect(summary.reasons).not.toContain("too-small");
   }, 120_000);
 
+  it("bakes a chain over an application attribute and keeps sharing it", async () => {
+    // glTF reserves the `_` prefix for application data — a per-vertex wind weight, say. A level
+    // only swaps the index buffer over the base vertices, so the attribute is shared exactly the
+    // way COLOR_0 is; refusing it cost the grove's tree bark every level.
+    const input = await mediumGlb({ custom: true });
+    const result = await modelPass({ compact: false, lod: GENERATE, virtual: "none" }).apply(
+      input,
+      "hull.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("unchanged");
+    const summary = result.entry?.lod as IModelLodSummary;
+    expect(summary.reasons).not.toContain("unsupported-attributes");
+    expect(summary.generated).toBe(1);
+    const document = await readWithLod(result.buffer);
+    const primitive = document.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    expect(primitive?.getAttribute("_CUSTOM")).not.toBeNull();
+  }, 120_000);
+
   it("records the chain in the artifact and round-trips it", async () => {
     const input = await mediumGlb();
     const result = await modelPass({ lod: GENERATE, virtual: "none" }).apply(input, "hull.glb");
@@ -584,7 +608,13 @@ describe("automatic discrete LOD generation", () => {
         build: () => rawGlb({ indices: [0, 1, 2], minVertices: 3, mode: 0 }),
         reason: "unsupported-topology",
       },
-      { build: () => smallGlb({ custom: true }), reason: "unsupported-attributes" },
+      {
+        // The default prune drops an unused COLOR_1 before eligibility sees it; keep it to prove
+        // a standard semantic the chain does not share is still declined by name.
+        build: () => smallGlb({ extraUv: true }),
+        lod: { lod: GENERATE, passes: { prune: false }, virtual: "none" },
+        reason: "unsupported-attributes",
+      },
       { build: () => smallGlb({ joints: true }), reason: "deforming" },
       { build: () => smallGlb({ morph: true }), reason: "deforming" },
       { build: () => smallGlb({ alpha: "BLEND" }), reason: "material-unsupported" },

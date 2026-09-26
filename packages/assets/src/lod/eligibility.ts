@@ -44,6 +44,15 @@ const SUPPORTED_ATTRIBUTES: ReadonlySet<string> = new Set([
   "TEXCOORD_1",
 ]);
 
+/**
+ * True when every level can draw the base's copy of this attribute. glTF reserves the `_` prefix
+ * for application data (a baked wind weight, say); a level only swaps the index buffer over the
+ * base vertices, so it shares that data exactly as it shares COLOR_0.
+ */
+function sharedByLevels(semantic: string): boolean {
+  return SUPPORTED_ATTRIBUTES.has(semantic) || semantic.startsWith("_");
+}
+
 const DEFORMING_ATTRIBUTES: ReadonlySet<string> = new Set(["JOINTS_0", "WEIGHTS_0"]);
 
 const TRIANGLES_MODE = 4;
@@ -173,7 +182,7 @@ export function classifyPrimitive(primitive: Primitive, flags: IEligibilityFlags
   const semantics = primitive.listSemantics();
   for (const semantic of semantics) {
     if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
-    if (!SUPPORTED_ATTRIBUTES.has(semantic))
+    if (!sharedByLevels(semantic))
       return { eligible: false, reason: "unsupported-attributes" };
   }
   if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
@@ -225,7 +234,7 @@ export function classifyJoinCandidate(
   const semantics = primitive.listSemantics();
   for (const semantic of semantics) {
     if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
-    if (!SUPPORTED_ATTRIBUTES.has(semantic))
+    if (!sharedByLevels(semantic))
       return { eligible: false, reason: "unsupported-attributes" };
   }
   if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
