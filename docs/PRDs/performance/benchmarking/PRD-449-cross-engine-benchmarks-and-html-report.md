@@ -1164,8 +1164,20 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   malformed or duplicate GPU frame IDs fail even when `gpu-ms` is null or the attempt measured
   zero frames; a numeric `gpu-ms` with zero frames also fails. The report displays observed/missing GPU timestamp counts. No physical samples are
   claimed.
-- [ ] Pass offline `file://` testing with network requests blocked. HTML has inline CSS/script and no external asset tags, but Chromium could not launch in this sandbox (`sandbox_host_linux.cc:41`, `Operation not permitted`) before `file://` navigation. No browser-open claim is made.
-- [ ] Pass keyboard/table/print usability checks.
+- [x] Pass offline `file://` testing with network requests blocked. A fresh draft bundle at
+  `artifacts/engine-load-test/prd449-offline-probe/` regenerated its HTML with the expected exit 2
+  because it has zero measured runs. Headless Chromium opened that `report.html` through `file://`
+  with every HTTP(S) request intercepted and aborted; the request count stayed zero. All six
+  families and 73 evidence links were present. This checks offline behavior of the report
+  generator, not completion of the measured campaign.
+- [x] Pass keyboard/table/print usability checks. Before the fix, pressing Enter on a table's
+  evidence link changed the fragment but left its `<details>` content closed. The report now opens
+  the targeted details on `hashchange` and on direct fragment load. The browser rerun confirmed
+  that keyboard activation exposes the evidence paragraph, family filtering shows only the chosen
+  family on screen, a 390 px viewport has no body-level horizontal overflow, and a 13-page print
+  PDF retains the `PARTIAL` banner, planned/not-run totals and all six family tables even after a
+  filter is selected. These checks used the draft's empty runs; populated report usability still
+  needs a final pass with the real campaign bundle.
 - [x] Pass escaping/path-safety tests using malicious fixture text. The focused HTML test injects `</script>`, an image handler, `javascript:` source URL and traversal artifact ref; output escapes the text and does not create unsafe links. Bundle tests reject a symlinked plan outside the bundle root and reject a changed raw timing file whose SHA-256 no longer matches the run record. The seven focused benchmark test files passed 123/123; root TypeScript check passed. Browser `file://` remains open above.
 - [x] Prove deterministic substantive regeneration from the retained bundle. A bundle test retains
   14 valid synthetic records across seven paired blocks, their raw timing files, conformance
