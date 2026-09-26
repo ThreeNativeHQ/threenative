@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:android": "threenative build --target android",
     "playtest:loading-leak": "node ../../packages/playtest/dist/runner/cli.js playtests/loading-leak.playtest.json --url 'http://127.0.0.1:5180/?loading-leak' --server-command 'pnpm dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
+    "playtest:world": "node ../../packages/playtest/dist/runner/cli.js playtests/world-flythrough.playtest.json --url 'http://127.0.0.1:5180/?world' --server-command 'pnpm dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "vite preview"
   },

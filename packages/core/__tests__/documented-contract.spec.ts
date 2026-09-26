@@ -6,7 +6,7 @@ import { playtest } from "../src/playtest.js";
 import { Scene } from "../src/scene.js";
 import { createGameStore } from "../src/state.js";
 
-const DOCUMENTED_RESOURCE_IDS = ["state", "GameState"] as const;
+const DOCUMENTED_RESOURCE_IDS = ["assets", "state", "GameState"] as const;
 const DOCUMENTED_FLUSH_INTERVAL_MS = 100;
 
 function testCanvas(): HTMLCanvasElement {
@@ -41,7 +41,7 @@ function bridge(): IPlaytestBridgeV1 {
 }
 
 describe("documented runtime contracts", () => {
-  it("keeps the documented state resource ids exact", async () => {
+  it("keeps the documented resource ids exact", async () => {
     const game = defineGame({
       initialState: { score: 0 },
       plugins: [playtest()],

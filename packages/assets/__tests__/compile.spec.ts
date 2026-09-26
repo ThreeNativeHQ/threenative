@@ -1101,6 +1101,56 @@ describe("compileAssets and assets.models.virtual", () => {
   });
 });
 
+describe("compileAssets and assets.models.compact", () => {
+  it("should accept compact: false and an object override, and reject the keys it cannot honour", async () => {
+    const root = await makeTempDir("threenative-compile-compact-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "character.glb"), await buildFixtureGlb());
+
+    await compileAssets({
+      config: {
+        models: { compact: false, textures: "none", virtual: "none" },
+      } as IAssetSourceConfig,
+      cwd: root,
+    });
+
+    const bogus = {
+      models: { compact: { flatten: "yes" } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: bogus, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*assets\.models\.compact\.flatten must be a boolean/u,
+    );
+
+    const unknown = {
+      models: { compact: { joins: true } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: unknown, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_UNKNOWN_KEY.*assets\.models\.compact\.joins/u,
+    );
+
+    const badMin = {
+      models: { compact: { instance: { min: 1 } } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: badMin, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*assets\.models\.compact\.instance\.min must be an integer of at least 2/u,
+    );
+
+    const badNames = {
+      models: { compact: { protectedNames: [1] } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: badNames, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*protectedNames must be an array of strings/u,
+    );
+
+    const badPattern = {
+      models: { compact: { protectedPattern: "(" } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: badPattern, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*protectedPattern is not a valid regular expression/u,
+    );
+  });
+});
+
 describe("compile cache", () => {
   it("should not run a pass again for an input whose bytes and pass configuration are unchanged", async () => {
     // Every build applied every pass to every input and only then compared the result with the

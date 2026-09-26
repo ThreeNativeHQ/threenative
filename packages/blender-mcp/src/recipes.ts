@@ -96,6 +96,22 @@ export const RECIPES: readonly IRecipe[] = Object.freeze([
     ]),
     script: "retarget.py",
   }),
+  Object.freeze({
+    description:
+      "Export a Blender-authored world as a ThreeNative world package v1: world.json, a raw uint16 heightmap, one GLB plus a decimated LOD1 per referenced scatter asset, per-cell chunk GLBs and placements.bin. Reads render-density instances, so viewport share tricks never leak in.",
+    name: "export_world",
+    parameters: Object.freeze([
+      { description: "Path to the .blend world to read.", name: "source", required: true },
+      { description: "Directory to write the package into.", name: "out", required: true },
+      { description: "Cell edge length in metres.", name: "cell", required: true },
+      {
+        description: "Heightmap sample spacing in metres. Default 2.",
+        name: "spacing",
+        required: false,
+      },
+    ]),
+    script: "export_world.py",
+  }),
 ]);
 
 export function recipeNames(): readonly string[] {

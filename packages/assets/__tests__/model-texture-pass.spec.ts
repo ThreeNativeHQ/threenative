@@ -458,6 +458,90 @@ describe("embedded textures through the compile step", () => {
     expect(manifest.entries["prop.glb"]?.extensions).not.toContain("KHR_texture_basisu");
   });
 
+  it("should cap an embedded image on a decoder-free target by resampling it to PNG", async () => {
+    // Android has no Basis transcoder, so the 4096-square image cannot become KTX2. The declared
+    // cap still has to reach the artifact: the pass resamples and re-emits a PNG, updating the
+    // image mime type, and never declares KHR_texture_basisu.
+    const root = await makeTempDir("threenative-model-textures-decoder-free-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ width: 4096 }),
+    );
+
+    await compileAssets({
+      config: { models: { sharedImages: false, textures: { maxSize: 1024 } } },
+      cwd: root,
+      platform: "android",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, Record<string, unknown>> };
+    const entry = manifest.entries["prop.glb"];
+    if (entry === undefined || typeof entry.output !== "string") {
+      throw new Error("no manifest entry for 'prop.glb'");
+    }
+    expect(entry.extensions ?? []).not.toContain("KHR_texture_basisu");
+    expect(entry.embeddedTextures).toMatchObject({ resized: 2 });
+
+    const root2 = (
+      await readOutput(await readFile(path.join(root, "public", entry.output)))
+    ).getRoot();
+    for (const texture of root2.listTextures()) {
+      expect(texture.getMimeType()).toBe("image/png");
+      const image = Buffer.from(texture.getImage() ?? new Uint8Array());
+      expect(parsePng(image)).toMatchObject({ height: 1024, width: 1024 });
+    }
+  }, 180_000);
+
+  // The same opt-out the standalone pass honours, on the embedded side: a slot declared
+  // `codec: "none"` is the project saying "ship these bytes as authored", and the decoder-free
+  // path that replaced the KTX2 encoder on a phone resized the excluded slot anyway.
+  it('keeps an embedded image a `codec: "none"` slot excluded at its authored bytes', async () => {
+    const root = await makeTempDir("threenative-model-textures-decoder-free-opt-out-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ width: 512 }),
+    );
+
+    await compileAssets({
+      config: {
+        models: {
+          sharedImages: false,
+          textures: { maxSize: 128, overrides: [{ codec: "none", slot: "baseColorTexture" }] },
+        },
+      },
+      cwd: root,
+      platform: "android",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, Record<string, unknown>> };
+    const entry = manifest.entries["prop.glb"];
+    if (entry === undefined || typeof entry.output !== "string") {
+      throw new Error("no manifest entry for 'prop.glb'");
+    }
+    // Only the slot the profile did not exclude is resampled.
+    expect(entry.embeddedTextures).toMatchObject({ resized: 1 });
+
+    const [excluded, capped] = (
+      await readOutput(await readFile(path.join(root, "public", entry.output)))
+    )
+      .getRoot()
+      .listTextures();
+    expect(parsePng(Buffer.from(excluded?.getImage() ?? new Uint8Array()))).toMatchObject({
+      height: 512,
+      width: 512,
+    });
+    expect(parsePng(Buffer.from(capped?.getImage() ?? new Uint8Array()))).toMatchObject({
+      height: 128,
+      width: 128,
+    });
+  });
+
   it("should reject malformed embedded-texture and simplify config", async () => {
     const root = await makeTempDir("threenative-model-textures-config-");
     await mkdir(path.join(root, "assets"));
