@@ -182,8 +182,7 @@ export function classifyPrimitive(primitive: Primitive, flags: IEligibilityFlags
   const semantics = primitive.listSemantics();
   for (const semantic of semantics) {
     if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
-    if (!sharedByLevels(semantic))
-      return { eligible: false, reason: "unsupported-attributes" };
+    if (!sharedByLevels(semantic)) return { eligible: false, reason: "unsupported-attributes" };
   }
   if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
   if (!finitePositions(primitive) || !validIndices(primitive))
@@ -234,8 +233,7 @@ export function classifyJoinCandidate(
   const semantics = primitive.listSemantics();
   for (const semantic of semantics) {
     if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
-    if (!sharedByLevels(semantic))
-      return { eligible: false, reason: "unsupported-attributes" };
+    if (!sharedByLevels(semantic)) return { eligible: false, reason: "unsupported-attributes" };
   }
   if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
   if (!finitePositions(primitive) || !validIndices(primitive))
