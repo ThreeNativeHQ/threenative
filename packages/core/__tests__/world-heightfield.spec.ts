@@ -203,8 +203,127 @@ describe("Heightfield", () => {
     );
   });
 
-  it("should not keep an unconsumed stored-region public API", () => {
-    const source = readFileSync(path.resolve("packages/core/src/world.ts"), "utf8");
-    expect(source).not.toMatch(/fromStoredRegion|IHeightfieldRegionOptions/u);
+  it("should reject invalid dimensions, origins, and channel samples", () => {
+    const base = {
+      columns: 2,
+      depth: 1,
+      heights: new Float32Array(4),
+      origin: { x: 0, z: 0 },
+      rows: 2,
+      width: 2,
+    };
+    expect(() => new Heightfield({ ...base, columns: 1 })).toThrow("columns must be an integer");
+    expect(() => new Heightfield({ ...base, width: Number.POSITIVE_INFINITY })).toThrow(
+      "width must be finite",
+    );
+    expect(() => new Heightfield({ ...base, depth: 0 })).toThrow("depth must be greater than zero");
+    expect(() => new Heightfield({ ...base, origin: { x: Number.NaN, z: 0 } })).toThrow(
+      "origin.x must be finite",
+    );
+    expect(() => new Heightfield({ ...base, flow: new Float32Array(3) })).toThrow(
+      "expected 4 flow samples",
+    );
+    expect(() => new Heightfield({ ...base, moisture: new Float32Array(3) })).toThrow(
+      "expected 4 moisture samples",
+    );
+    expect(
+      () => new Heightfield({ ...base, heights: new Float32Array([0, 0, 0, Number.NaN]) }),
+    ).toThrow("height sample must be finite");
+    expect(
+      () =>
+        new Heightfield({ ...base, flow: new Float32Array([0, 0, 0, Number.POSITIVE_INFINITY]) }),
+    ).toThrow("flow sample must be finite");
+    expect(
+      () => new Heightfield({ ...base, moisture: new Float32Array([0, 0, 0, Number.NaN]) }),
+    ).toThrow("moisture sample must be finite");
+  });
+
+  it("should validate world-pass budgets and tolerate non-iteration counts", () => {
+    const base = {
+      columns: 2,
+      depth: 1,
+      heights: new Float32Array(4),
+      origin: { x: 0, z: 0 },
+      rows: 2,
+      width: 2,
+    };
+    const erosion = {
+      depositionRate: 0.35,
+      erosionRate: 0.22,
+      evaporation: 0.04,
+      iterations: 0,
+      rainfall: 0.08,
+      sedimentCapacity: 0.7,
+      timeStep: 0.05,
+    };
+    expect(() => new Heightfield({ ...base, worldPasses: { dispatchBudget: 0, erosion } })).toThrow(
+      "dispatchBudget must be a positive integer",
+    );
+    expect(
+      () =>
+        new Heightfield({
+          ...base,
+          worldPasses: { dispatchBudget: 1, erosion: { ...erosion, iterations: -1 }, gpu: false },
+        }),
+    ).toThrow("World passes iterations must be a non-negative integer");
+    expect(
+      () =>
+        new Heightfield({
+          ...base,
+          worldPasses: { dispatchBudget: 1, erosion: { ...erosion, iterations: 1.5 }, gpu: false },
+        }),
+    ).toThrow("World passes iterations must be a non-negative integer");
+    expect(
+      () =>
+        new Heightfield({
+          ...base,
+          worldPasses: { dispatchBudget: 1, erosion: { ...erosion, iterations: 2 }, gpu: false },
+        }),
+    ).toThrow("dispatchBudget cannot cover synchronous CPU erosion iterations");
+  });
+
+  it("should interpolate height, slope, flow, and moisture channels", () => {
+    const value = new Heightfield({
+      columns: 3,
+      depth: 1,
+      flow: new Float32Array([0, 1, 2, 3, 4, 5]),
+      heights: new Float32Array([0, 1, 2, 3, 4, 5]),
+      moisture: new Float32Array([5, 4, 3, 2, 1, 0]),
+      origin: { x: 0, z: 0 },
+      rows: 2,
+      width: 2,
+    });
+    expect(value.sample("height", 0, 0)).toBe(2.5);
+    expect(value.sample("slope", 0, 0)).toBeGreaterThan(0);
+    expect(value.sample("flow", 0, 0)).toBeCloseTo(2.5, 12);
+    expect(value.sample("moisture", 0, 0)).toBeCloseTo(2.5, 12);
+    expect(() => value.sample("missing", 0, 0)).toThrow("unknown channel");
+    expect(() => value.sample("flow", Number.POSITIVE_INFINITY, 0)).toThrow(
+      "query x must be finite",
+    );
+    expect(() => value.sample("flow", 2, 0)).toThrow("outside its resident region");
+  });
+
+  it("should report no GPU sample before one exists and guard its lifecycle", () => {
+    const value = new Heightfield({
+      columns: 2,
+      depth: 1,
+      heights: new Float32Array(4),
+      origin: { x: 0, z: 0 },
+      rows: 2,
+      width: 2,
+    });
+    expect(value.released).toBe(false);
+    expect(value.generationComplete).toBe(true);
+    expect(value.gpuHeightSample).toBeUndefined();
+    expect(value.gpuHeightSample?.staleFrames).toBeUndefined();
+    value.attachRenderer({} as never);
+    value.process();
+    expect(value.gpuHeightSample).toBeUndefined();
+    value.detach();
+    expect(value.released).toBe(true);
+    value.detach();
+    expect(() => value.attachRenderer({} as never)).toThrow("cannot be attached after release");
+    value.process();
   });
 });

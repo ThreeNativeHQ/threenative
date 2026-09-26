@@ -120,6 +120,82 @@ describe("FluidField2D", () => {
     expect(mapped[1] * field.vorticity * field.timeStep).toBeCloseTo(-0.8);
   });
 
+  it("exposes the documented defaults for every optional knob", () => {
+    const field = new FluidField2D({ resolution: 8 });
+    expect(field.pressureIterations).toBe(20);
+    expect(field.maxSplats).toBe(8);
+    expect(field.timeStep).toBeCloseTo(1 / 60);
+    expect(field.viscosity).toBe(0);
+    expect(field.vorticity).toBeCloseTo(0.2);
+    expect(field.splatRadius).toBeCloseTo(0.08);
+    expect(field.released).toBe(false);
+    expect(field.steps).toBe(0);
+  });
+
+  it.each([
+    ["resolution below two", { resolution: 1 }, /resolution/u],
+    ["fractional resolution", { resolution: 4.5 }, /resolution/u],
+    ["pressureIterations", { resolution: 8, pressureIterations: -1 }, /pressureIterations/u],
+    [
+      "fractional pressureIterations",
+      { resolution: 8, pressureIterations: 1.5 },
+      /pressureIterations/u,
+    ],
+    ["maxSplats zero", { resolution: 8, maxSplats: 0 }, /maxSplats/u],
+    ["fractional maxSplats", { resolution: 8, maxSplats: 1.5 }, /maxSplats/u],
+    ["viscosity negative", { resolution: 8, viscosity: -1 }, /viscosity/u],
+    ["viscosity NaN", { resolution: 8, viscosity: Number.NaN }, /viscosity/u],
+    ["timeStep zero", { resolution: 8, timeStep: 0 }, /timeStep must be positive/u],
+    ["timeStep NaN", { resolution: 8, timeStep: Number.NaN }, /timeStep/u],
+    ["vorticity negative", { resolution: 8, vorticity: -1 }, /vorticity/u],
+    ["vorticity NaN", { resolution: 8, vorticity: Number.NaN }, /vorticity/u],
+    ["splatRadius zero", { resolution: 8, splatRadius: 0 }, /splatRadius must be positive/u],
+    ["splatRadius NaN", { resolution: 8, splatRadius: Number.NaN }, /splatRadius/u],
+  ])("fails closed for an invalid %s", (_label, options, pattern) => {
+    expect(() => new FluidField2D(options)).toThrow(pattern);
+  });
+
+  it("maps the vorticity force with a single negate call and preserves x order", () => {
+    const negate = vi.fn((value: number) => -value);
+    const mapped = mapVorticityForce({ x: 2, y: 3 }, negate);
+    expect(negate).toHaveBeenCalledTimes(1);
+    expect(negate).toHaveBeenCalledWith(3);
+    expect(mapped).toEqual([2, -3]);
+  });
+
+  it("guards attach, splat, process, and detach lifecycle edges", () => {
+    const names: string[] = [];
+    const gpu = renderer(names);
+    const other = renderer([]);
+    const field = new FluidField2D({ resolution: 8, pressureIterations: 1, maxSplats: 1 });
+
+    expect(() => field.process()).toThrow("FluidField2D is not attached to a renderer.");
+    field.attachRenderer(gpu);
+    expect(names).toHaveLength(8);
+    field.attachRenderer(gpu);
+    expect(names).toHaveLength(8);
+    expect(() => field.attachRenderer(other)).toThrow("FluidField2D is already attached");
+
+    expect(() => field.splat({ x: Number.NaN, y: 0 }, { x: 0, y: 0 }, 1)).toThrow(
+      "FluidField2D.splat arguments must be finite.",
+    );
+    expect(() => field.splat({ x: 0, y: 0 }, { x: 0, y: 0 }, -1)).toThrow(
+      "FluidField2D.splat amount must be non-negative.",
+    );
+    field.splat({ x: 0.5, y: 0.5 }, { x: 0, y: 0 }, 1);
+    field.splat({ x: 0.5, y: 0.5 }, { x: 0, y: 0 }, 1);
+    expect(field.queuedSplats).toBe(1);
+
+    field.detach();
+    expect(field.released).toBe(true);
+    field.detach();
+    expect(() => field.attachRenderer(gpu)).toThrow(
+      "FluidField2D cannot be attached after release.",
+    );
+    field.process();
+    expect(field.steps).toBe(0);
+  });
+
   it("builds the same named pass graph for the same options", () => {
     const first = new FluidField2D({ resolution: 16, viscosity: 0, pressureIterations: 4 });
     const second = new FluidField2D({ resolution: 16, viscosity: 0, pressureIterations: 4 });
