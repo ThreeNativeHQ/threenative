@@ -1,16 +1,18 @@
 # PRD-373 — Selective CI and develop-to-main promotion
 
-Status: PARTIAL — classifier/verdict negative controls re-executed. PR #199 repairs
-release-report candidate binding and the native-loading proof fixture. A real narrowed feature PR
-is observed: #232 selects the inert-prose lane (every non-scope job skipping, `ci-required` pass)
-and #230 selects `full` and passes on a real develop PR. **The cutover is applied**: `develop`
-carries the active `develop integration` ruleset (no force-push/deletion, squash-only PRs,
-required `ci-required` with strict up-to-date checks) and `TN_DEVELOP_CI_ENABLED=true`, so the
-daily scheduled run checks out `develop`. Both verdict halves are now observed on real PRs: green
-(#230 full, #232 prose) and red (#233 canary — a failing `website` job made `ci-required` fail).
-**2026-09-25: promotion/cutover proof is observed** — PR #291 (`develop -> main`) merged via the
-protected full board (`ci-required` pass) and PR #312 repeated it. Still outstanding: equivalent
-cold/warm measurements (phase 4) and the remaining end-to-end acceptance observations.
+Status: PARTIAL — 2026-09-26. Two of the five open boxes are now closed against current hosted
+evidence and one is moot. Closed: the daily `develop` qualification executes one fixed candidate
+(run 36115404075, candidate `d90b9216`) with a promotion blocked on a red verdict and a release
+gate that refuses a mismatched candidate; branch rules, workflow triggers, `ci:local --affected`
+and the generated mirrors agree. Moot and deleted under R4: the isolated-website box — PR #329
+moved the marketing site to a private repo, so this repository has no website lane left to select.
+Corrected: the inert-docs acceptance box cited a cancelled `full` run; the real narrowed
+observation is run 36257140720 (`prose`, `native-platforms` skipped, `ci-required` pass) on PR
+#350, which merged into protected `develop` as `e2d8b0d09a`. Still open: the phase-4 cold/warm
+pair. That is blocked by a broken instrument, not by an unrun gate — every run's queue/execution
+table is empty because `ci.yml:1216` calls `gh api --paginate --slurp … --jq …`, and gh rejects
+that combination; the only same-SHA pair that exists (run 36240843002, attempts 1 and 2) is cold
+in both attempts because the bundle-cache save was refused in each.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -138,7 +140,19 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 - [x] Observed red recorded, then restored green — gating `.github/actions/workspace-dist/action.yml`'s "Pack current workspace files" step on `steps.dist.outputs.cache-hit != 'true'` (i.e. shipping a cached archive) made `scripts/__tests__/ci-efficiency.spec.ts` fail on "caches compiled bundles but always repacks and verifies shipped templates" (`expected … not to contain 'cache-hit'`, 2026-09-13); restored, the test passes. The equivalent-SHA warm timing comparison remains open below.
 - [ ] Verified on a real PR, not only locally. proof: two hosted runs of the same SHA — one cold,
       one warm — read from the PR's Actions summary, with the warm run's timings beside the cold
-      run's. — OPEN: the equivalent-SHA warm comparison is still unmeasured.
+      run's. — OPEN, still unmeasured, re-inspected 2026-09-26: the instrument is broken, not
+      merely unrun. `.github/workflows/ci.yml:1216` calls `gh api --paginate --slurp … --jq …`, and
+      gh rejects that pairing ("the `--slurp` option is not supported with `--jq` or `--template`"),
+      so `job-timings.json` is `[]` and every run's `| Job | Queue | Execution |` table is
+      header-only — seen on run 36115404075 (2026-09-25) and run 36240843002 attempt 2 (2026-09-26).
+      The one same-SHA pair in existence, run 36240843002 attempts 1 and 2 (candidate
+      `1a7dfb1ec4e8e620e9c5d5eeaad0c6500706e8b1`, `full` in both), is cold in **both**: `typecheck`
+      logs `Cache not found for input keys: workspace-dist-v2-Linux-X64-v20.20.2-15cebff1…` and
+      `build-artifacts` logs `Unable to reserve cache with key workspace-dist-v2-…, another job may
+      be creating this cache` in each attempt. Next run, in order: land the `--slurp` fix on
+      `develop`; take the next full-selection run whose `build-artifacts` save actually publishes
+      `workspace-dist-v2-…` (that log line must be absent); then `gh run rerun <that run id>` —
+      attempt 1 cold, attempt 2 warm on the same candidate, with the table populated.
 
 
 Audit the existing workspace-dist, pnpm, browser, compiler and Android caches before adding
@@ -229,27 +243,55 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
 
 ## Acceptance criteria
 
-- [x] An inert-docs feature PR omits the native jobs and reports why. proof: PR #324, run
-  [36185453408](https://github.com/ThreeNativeHQ/threenative/actions/runs/36185453408) — the
-  `native-platforms` job is SKIPPED (job 108238414411) on a docs-only diff.
-- [ ] An isolated website change selects its own coverage the same way, and both kinds merge into
-  protected develop after their selected checks pass. proof: a website-only PR whose run skips the
-  native jobs, then a squash-merge into `develop` with `ci-required` green.
+- [x] An inert-docs feature PR omits the native jobs and reports why. proof: run
+  [36257140720](https://github.com/ThreeNativeHQ/threenative/actions/runs/36257140720) —
+  `scope=prose` ("all 17 changed path(s) match explicit prose dependency rules"), candidate
+  `2fd1711c8ae9bd9d6923dca028af2564465d623d`, `native-platforms` and all 17 other jobs `skipped`,
+  `ci-required` success, run success; PR #350 then merged into protected `develop` as `e2d8b0d09a`
+  with `ci-required: SUCCESS`. Corrected 2026-09-26: the run cited here before, 36185453408, was a
+  *cancelled* `full`-selection run, so its skipped `native-platforms` came from the cancellation and
+  not from any narrowing.
 - [x] Regression fixtures for shared-core/native dependencies, renames, deletions, lockfile
   changes and unknown paths select the necessary coverage. A selected failed, missing,
   cancelled or unexpectedly skipped job makes `ci-required` fail.
-- [ ] A daily develop run executes one fixed SHA. A promotion cannot merge with failed or stale
-  full checks. Release checks reject mismatched candidate/main/artifact provenance. proof: the
-  scheduled `develop` run for one SHA, a promotion PR whose `ci-required` rejects a failed or
-  stale check, and `pnpm release:prepare` refusing a mismatched candidate.
+- [x] A daily develop run executes one fixed SHA. A promotion cannot merge with failed or stale
+  full checks. Release checks reject mismatched candidate/main/artifact provenance. proof: run
+  [36115404075](https://github.com/ThreeNativeHQ/threenative/actions/runs/36115404075) (schedule,
+  2026-09-25) — the run's `head_sha` is main's `da52b30dd`, while `Change scope` checked out
+  `develop` and captured candidate `d90b9216cfedfd28f130fd22196b9148f87cdf15` with
+  `selection=full`, and `ci-required` checked out and verified that same candidate; run success.
+  Promotion blocked on red: run
+  [35942841524](https://github.com/ThreeNativeHQ/threenative/actions/runs/35942841524) (PR #291,
+  `develop -> main`, head `436ee3053`) — `ci-required` failure; that PR then merged green on runs
+  36054665566 / 36054666010. Provenance refusal, run locally 2026-09-26: the enforcing gate is
+  `scripts/release-candidate-gate.ts validate`, not `pnpm release:prepare` (which takes no candidate
+  argument) — fed the hosted candidate artifact from run 36149095163 it exits 1 with
+  `FAIL candidateSha must equal invoking commit SHA` when `GITHUB_SHA` is any other commit
+  (`af60e210`, main's HEAD). The accept path is the hosted run 36149095163 (success); the local run
+  proves the reject path only, because from this worktree the cohort check also fails
+  (`@threenative/assets must use workspace version 0.3.4`; develop is 0.3.3).
 - [ ] Warm caches reduce measured execution time; changing a relevant input invalidates the
   affected cache or regenerates the product. Template-only changes produce current tarballs.
   proof: the cold/warm timing pair above plus `pnpm exec vitest run
   scripts/__tests__/ci-efficiency.spec.ts` (the repack assertions, 262 tests in run 34653691910).
-- [ ] Branch rules, workflow triggers, local verification and generated agent instructions
+  — OPEN, re-inspected 2026-09-26: the local half is green — that command reports 47 passed,
+  including "repacks changed template bytes even when compiled bundles remain unchanged" — and the
+  hosted half is the phase-4 blocker above. No warm run of any fixed SHA exists to read, so nothing
+  here is claimed.
+- [x] Branch rules, workflow triggers, local verification and generated agent instructions
   agree. proof: `pnpm ci:local --affected --base origin/develop --target develop` selects the same
   families CI does, and `pnpm sync:agents --check` reports no drift between `AGENTS.md` and the
   generated `CLAUDE.md` mirrors.
+  — 2026-09-26: `gh api repos/ThreeNativeHQ/threenative/rulesets/23003414` (develop: active,
+  squash-only, requires `ci-required`, `strict_required_status_checks_policy: true`) and
+  `…/rulesets/21959171` (main: active, the ten contexts including `ci-required`);
+  `…/actions/variables` → `TN_DEVELOP_CI_ENABLED=true`; `ci.yml:4-15` triggers and `ci.yml:45`'s
+  `develop` checkout for the schedule. `pnpm ci:local --affected --base origin/develop --target
+  develop` printed a `full` plan whose 17 required jobs are byte-identical to today's hosted plan
+  (run 36240843002 attempt 2, `comm -3` empty), including the same `native-platforms` reason string.
+  The local board then went red in `test` only because this fresh worktree has no built C++ host
+  (`cmake --build build/tn-linux` never ran) — a local lane condition, not a claim about CI.
+  `pnpm sync:agents --check` → "agent docs in sync: 19 CLAUDE.md mirrors", exit 0.
 
 ## Verification for implementation
 
@@ -552,3 +594,12 @@ cache measurements.
 - **2026-09-25 (owner, R2) — "The implementation PR records actual queue/execution timings and
   the cutover result" is deleted from the branch-rules box.** Filing that record is the PR's job; the
   box now claims only that the rules, triggers, local commands and generated instructions agree.
+- **2026-09-26 (R4) — the isolated-website acceptance box is deleted as moot.** PR #329
+  ("chore(site): move the marketing site to a private repo and reserve the ThreeNative brand",
+  merged as `3127a23b1b`) removed 72 `site/` files. `develop` now has no `site/` or `website/` path,
+  `ci.yml` has no `website` job, and `scripts/ci-change-scope.mjs` no longer names either — a `full`
+  plan is 17 jobs today against the 18 the 2026-09-25 plan carried. There is no website lane left in
+  this repository for a change to select, so the box could never be ticked here and deleting it is
+  the honest outcome; the "a narrowed change merges into protected develop" half it carried is
+  proven by run 36257140720 and PR #350 above. The same removal is why the classifier's `website`
+  job no longer appears in the local-vs-hosted plan comparison.
