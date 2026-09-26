@@ -1805,6 +1805,7 @@ int runCli(int argc, char* argv[]) {
         opts.scriptPath = embeddedEntry;
     }
     applyEmbeddedConfig(opts);
+    if (!opts.vsync) opts.maxFps = 0;
 
     // Handle no args with no embedded entry
     if (opts.command.empty() && argc < 2) {

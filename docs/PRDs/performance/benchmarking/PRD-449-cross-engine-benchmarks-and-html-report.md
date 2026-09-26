@@ -642,12 +642,17 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 - [ ] Obtain seven valid paired blocks for the publication-grade primary comparisons at supported loads.
 - [ ] Retain the second-session stability evidence and any resulting qualifications.
 - [ ] Retain qualified native presentation evidence for the 20k independent-mesh comparison.
+  The desktop CLI's `--no-vsync` previously left the embedded 60 fps cap active. The host now
+  clears that cap after reading embedded configuration. A rebuilt RTX 2080 host logged
+  `Presentation cap: 0 fps`; a real-display 1,000-mesh, 120-frame smoke run measured 1.78 ms
+  mean. This proves the cap fix, not the 20k publication comparison or displayed FPS.
 - [ ] Retain qualified native presentation evidence for the 100-fox comparison.
 - [ ] Demonstrate actual slowdown sensitivity on the qualified measurement lane.
 - [ ] Generate the final HTML containing real TN-versus-upstream measurements for all six families.
 - [ ] Retain the downloadable raw-data/provenance bundle with verified checksums.
 - [ ] Reproduce at least one comparison per family from the bundle's documented commands in a clean build directory.
 - [ ] Link the delivered report and findings from the existing runtime performance state record.
+- [ ] Publish all six benchmark families and the final offline report on threenative.com/docs/benchmarks, with links to this PRD, pinned upstream sources, and the downloadable provenance bundle. The site branch `feat/prd-449-benchmarks` currently has six accurately marked in-progress entries; it is built and tested but not deployed.
 - [ ] Run relevant repository gates and record their actual outcomes beside the implementation evidence.
 
 A family is not complete without at least one supported load with valid TN and upstream measurements. Required high-load resource failures and genuinely unsupported feature variants remain visible and qualified; they do not authorize skipping an entire family. Open or unavailable evidence leaves its own checkbox open. Never change acceptance thresholds simply to make ThreeNative look faster.
