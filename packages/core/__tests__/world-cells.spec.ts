@@ -419,7 +419,12 @@ function terrainOf(world: WorldCells): TerrainTiles {
  * `world-cells-admission.spec.ts` is where that contract is proved.
  */
 function loadWorld(options: Parameters<typeof WorldCells.load>[0]): Promise<WorldCells> {
-  return WorldCells.load({ admissionBudgetMs: Number.POSITIVE_INFINITY, ...options });
+  // Residency tests place the follow point by teleport; prefetch is opted into where it is tested.
+  return WorldCells.load({
+    admissionBudgetMs: Number.POSITIVE_INFINITY,
+    prefetchSeconds: 0,
+    ...options,
+  });
 }
 
 /** The one surface a batch draws with: an `InstancedMesh` is built from one, unlike a source mesh. */
@@ -569,6 +574,42 @@ afterEach(() => {
 });
 
 describe("WorldCells", () => {
+  it("streams ahead of a moving follow point and keeps the cell it is in", async () => {
+    stubFixtureFetch();
+    let clock = 0;
+    const start = cellCenter(1, 1);
+    const follow = followAt(start.x, start.z);
+    const world = await loadWorld({
+      admissionNow: () => clock,
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      prefetchSeconds: 1.5,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    // 60 m/s along +x for half a second of 16 ms frames: the lead is ~90 m, most of a cell.
+    for (let frame = 0; frame < 30; frame += 1) {
+      clock += 16;
+      follow.position.x += 60 * 0.016;
+      world.update();
+    }
+    const followCell = Math.floor((follow.position.x - MIN_X) / CELL_SIZE);
+    const keys = world.stats().residentKeys;
+    const columns = keys.map((key) => Number(key.split(":")[0]));
+    expect(Math.max(...columns)).toBeGreaterThan(followCell + 1);
+    expect(columns).toContain(followCell);
+
+    // A teleport is not speed: the lead collapses instead of flinging the ring across the map.
+    follow.position.x += 1_000;
+    clock += 16;
+    world.update();
+    clock += 16;
+    world.update();
+    world.dispose();
+  });
+
   it("recycles batch meshes across cells instead of creating new ones", async () => {
     // three's WebGPU renderer rebuilds a node program for every new InstancedMesh, so a streamed
     // walk that creates fresh meshes per cell stalls on shader builds; recycled, it builds once.

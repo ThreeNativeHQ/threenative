@@ -140,6 +140,13 @@ export interface IWorldCellsLoadOptions {
    */
   readonly rebuildsPerUpdate?: number;
   /**
+   * Seconds of motion to stream ahead of, default 1.5: the ring centres on where the follow point
+   * will be (`position + velocity * prefetchSeconds`), so a fast camera finds cells already loaded
+   * instead of outrunning them. The lead is capped at three quarters of the ring, so the cell the
+   * follow point is in always stays resident. `0` streams around the follow point itself.
+   */
+  readonly prefetchSeconds?: number;
+  /**
    * Milliseconds one `update` may spend admitting streamed content — cell batches, terrain tiles,
    * colliders and `maxDistance`/`lods` refilters together. Defaults to 2, and `Infinity` opts out
    * of the ceiling entirely.
@@ -718,6 +725,11 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #minZ: number;
   readonly #placements: ArrayBuffer;
   readonly #rebuildsPerUpdate: number;
+  readonly #prefetchSeconds: number;
+  /** Smoothed follow velocity (m/s) and the sample it was last updated from. */
+  #velocityX = 0;
+  #velocityZ = 0;
+  #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
   readonly #terrain: TerrainTiles;
   readonly #transparentScatter: "cutout" | "blend";
@@ -781,6 +793,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
+    this.#prefetchSeconds = init.prefetchSeconds ?? 1.5;
+    if (!(this.#prefetchSeconds >= 0) || !Number.isFinite(this.#prefetchSeconds))
+      throw new Error("WorldCells prefetchSeconds must be a finite number >= 0.");
     this.#baseUrl = init.baseUrl;
     this.#logicalBase = init.logicalBase;
     this.#loader = init.assets ?? createAssetLoader();
@@ -917,13 +932,14 @@ export class WorldCells extends Group implements IComputeDriven {
       if (!(error instanceof TerrainTileBudgetError)) throw error;
       this.#pressure.bytes += 1;
     }
+    const ahead = this.#ahead(x, z);
     this.#updateResidency(
       {
-        x: Math.floor((x - this.#minX) / this.#cellSize),
-        z: Math.floor((z - this.#minZ) / this.#cellSize),
+        x: Math.floor((ahead.x - this.#minX) / this.#cellSize),
+        z: Math.floor((ahead.z - this.#minZ) / this.#cellSize),
       },
-      x,
-      z,
+      ahead.x,
+      ahead.z,
     );
     this.#updateMaxDistance(x, z);
     this.#drain(budget);
@@ -936,6 +952,45 @@ export class WorldCells extends Group implements IComputeDriven {
 
   process(renderer?: IRendererLike): void {
     this.update(renderer);
+  }
+
+  /**
+   * Where the ring centres: the follow point led by its smoothed velocity. Samples closer than a
+   * few milliseconds are the same frame and move nothing; a jump longer than the ring is a teleport
+   * and resets the velocity rather than reading as speed.
+   */
+  #ahead(x: number, z: number): { x: number; z: number } {
+    if (this.#prefetchSeconds === 0) return { x, z };
+    const now = this.#now();
+    const last = this.#lastSample;
+    if (last === undefined) {
+      this.#lastSample = { t: now, x, z };
+    } else {
+      const seconds = (now - last.t) / 1000;
+      if (seconds >= 0.004) {
+        const dx = x - last.x;
+        const dz = z - last.z;
+        if (Math.hypot(dx, dz) > this.#cellSize * this.#ring) {
+          this.#velocityX = 0;
+          this.#velocityZ = 0;
+        } else {
+          // ~0.25 s smoothing, so one jittery frame does not swing the ring.
+          const blend = Math.min(1, seconds / 0.25);
+          this.#velocityX += (dx / seconds - this.#velocityX) * blend;
+          this.#velocityZ += (dz / seconds - this.#velocityZ) * blend;
+        }
+        this.#lastSample = { t: now, x, z };
+      }
+    }
+    let leadX = this.#velocityX * this.#prefetchSeconds;
+    let leadZ = this.#velocityZ * this.#prefetchSeconds;
+    const limit = this.#cellSize * this.#ring * 0.75;
+    const length = Math.hypot(leadX, leadZ);
+    if (length > limit) {
+      leadX *= limit / length;
+      leadZ *= limit / length;
+    }
+    return { x: x + leadX, z: z + leadZ };
   }
 
   attachRenderer(renderer: IRendererLike): void {
