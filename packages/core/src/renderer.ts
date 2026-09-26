@@ -826,6 +826,38 @@ async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string 
   }
 }
 
+/** The per-stage texture limits worth raising past WebGPU's portable defaults (16 each). */
+const TEXTURE_LIMITS = ["maxSampledTexturesPerShaderStage", "maxSamplersPerShaderStage"] as const;
+
+/**
+ * The adapter's own texture limits, as `requiredLimits` for the device three creates.
+ *
+ * WebGPU grants a device the portable defaults — 16 sampled textures a stage — unless it asks for
+ * more, whatever the adapter supports. A splat terrain (masks, albedos, normals) that also
+ * receives an open-world shadow (three levels plus mover maps) needs ~20, and past 16 the pipeline
+ * is invalid and the surface silently never draws. Requesting what the adapter reports costs
+ * nothing on hardware that has it (desktop: 48+) and changes nothing where it does not.
+ */
+export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<string, number> }> {
+  const gpu = (
+    globalThis.navigator as { gpu?: { requestAdapter?: () => Promise<unknown> } } | undefined
+  )?.gpu;
+  if (gpu === undefined || typeof gpu.requestAdapter !== "function") return {};
+  try {
+    const adapter = await gpu.requestAdapter();
+    const limits = isObject(adapter) && isObject(adapter.limits) ? adapter.limits : undefined;
+    if (limits === undefined) return {};
+    const requiredLimits: Record<string, number> = {};
+    for (const key of TEXTURE_LIMITS) {
+      const value = (limits as Record<string, unknown>)[key];
+      if (typeof value === "number" && value > 16) requiredLimits[key] = value;
+    }
+    return Object.keys(requiredLimits).length === 0 ? {} : { requiredLimits };
+  } catch {
+    return {};
+  }
+}
+
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const gpuTimestampFrameInterval =
@@ -869,7 +901,11 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     try {
       const raw = options.webgpuFactory
         ? await options.webgpuFactory(canvas, rendererParameters)
-        : new (await import("three/webgpu")).WebGPURenderer({ canvas, ...rendererParameters });
+        : new (await import("three/webgpu")).WebGPURenderer({
+            canvas,
+            ...rendererParameters,
+            ...(await adapterTextureLimits()),
+          });
       const instance = raw as RendererInstance;
       await instance.init?.();
       const alphaAntialiasing = arm(instance);
