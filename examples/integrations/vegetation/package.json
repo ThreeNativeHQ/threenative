@@ -17,6 +17,7 @@
     "@types/three": "0.185.3",
     "@types/node": "24.3.0",
     "@dgreenheck/ez-tree": "1.1.0",
+    "@gltf-transform/core": "4.4.2",
     "ez-tree-source": "git+https://github.com/dgreenheck/ez-tree.git#dcf309bd86bd521083d9c70f01f2de45fdc7c457",
     "esbuild": "0.27.0"
   }
