@@ -1,12 +1,15 @@
 # Real-GPU timed arm for the pinned godot-benchmarks `culling.gd` family (PRD-449 Phase 4).
 #
 # Run WITHOUT `--headless`, so the Forward+ renderer uses the machine's GPU:
-#   godot --path <pinned checkout> --resolution 1920x1080 --script <this file> -- \
-#     <variant> --frames=600 --warmup=120 --fixture=<out.json> --captures=<dir>
+#   godot --path <staged project: pinned checkout with occlusion culling off> --resolution 1920x1080 \
+#     --script <this file> -- <variant> --frames=600 --warmup=120 --fixture=<out.json> --captures=<dir>
+# `pnpm bench:engines --cull-arm godot-desktop` stages it and passes that path.
 #
 # It never re-implements the workload: `benchmark_<variant>()` from the pinned source builds the
 # scene, and this arm only drives, measures and reports it. Every upstream source file is SHA-256
-# verified before the scene is built, so a number can name the bytes that produced it.
+# verified before the scene is built, so a number can name the bytes that produced it. The one
+# exception is `project.godot`, which the harness stages with occlusion culling off — see
+# `SOURCE_SHA256` — because upstream's own setting renders a different set of objects.
 #
 # Godot 4.7's RenderingServer has no getter for an instance transform and no getter for a light's
 # type or parameters, so nothing here is observed by reading a flag the arm set itself: effective
@@ -21,11 +24,17 @@ const CULLING := [
 	"dynamic_omni_light_cull", "dynamic_omni_light_cull_with_shadows",
 	"static_spot_light_cull_with_shadows", "dynamic_spot_light_cull_with_shadows",
 ]
+# `project.godot` is the one entry that is not upstream's own bytes: upstream ships
+# `use_occlusion_culling=true`, and this fixture's object set measures 2005 visible objects with that
+# on against 3549 with it off, so the harness stages a copy with the setting off and runs the arm
+# against it. `stageGodotCullProject` in `scripts/engine-load-test/cli.ts` verifies the pinned
+# project's hash (e942995c…) before it copies, and the staged project's hash below before every use,
+# so the pinned checkout is never the one being patched.
 const SOURCE_SHA256 := {
 	"benchmarks/rendering/culling.gd": "b19d7f10b094f337be1b91864b835c22d975ce83d616d90cb9b1f5dc723e5a9b",
 	"manager.gd": "c4bae1efea609a3f9f8ccf04dbeb69efe193e0faff09e2b301b8c966099dd535",
 	"benchmark.gd": "ce20298bb7afd66cb3c42fea0320bac589cfeaf1bbce637a600de2ae1cd486b6",
-	"project.godot": "e942995c87024bfdc22c5fd9b599d4c8e4b653d2ab05f23787f74c16b197afb7",
+	"project.godot": "66e3d418efa369aaceb6d781ba9d7ba1c3f74f588fd39c3d9b0d621188fa425c",
 }
 const SOURCE_COMMIT := "b059e38a81230a87293828bbf65ab247b6b2d2a8"
 const MESH_BUFFER_VERSION := "threenative-cull-mesh-buffer/1"
@@ -213,6 +222,8 @@ func _run() -> void:
 func _rejections() -> Array:
 	var problems := []
 	var dynamic: bool = not _dynamic_rids.is_empty()
+	if _occlusion_culling_enabled():
+		problems.append("TN_BENCH_GODOT_OCCLUSION_CULLING_ENABLED")
 	if _unshaded_expected() != _scene.unshaded:
 		problems.append("TN_BENCH_GODOT_UNSHADED_MISMATCH")
 	if _shadows_requested() and not bool(_effective["shadowPassRendered"]):
@@ -666,6 +677,13 @@ func _f3_array(transforms: Array) -> Array:
 	return out
 
 
+## The staged project's own setting, read back out of it rather than from a flag this arm set: with
+## occlusion culling on, this fixture's visible object set is measurably smaller than the one the
+## counterpart arm renders, and the pair would be comparing two different sets of objects.
+func _occlusion_culling_enabled() -> bool:
+	return bool(ProjectSettings.get_setting("rendering/occlusion_culling/use_occlusion_culling", true))
+
+
 func _adapter() -> Dictionary:
 	return {
 		"name": RenderingServer.get_video_adapter_name(),
@@ -676,7 +694,7 @@ func _adapter() -> Dictionary:
 		"type": "hardware" if RenderingServer.get_rendering_device() != null else "software",
 		"vsync": DisplayServer.window_get_vsync_mode(),
 		"msaa3D": int(ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d", 0)),
-		"occlusionCulling": bool(ProjectSettings.get_setting("rendering/occlusion_culling/use_occlusion_culling", true)),
+		"occlusionCulling": _occlusion_culling_enabled(),
 	}
 
 

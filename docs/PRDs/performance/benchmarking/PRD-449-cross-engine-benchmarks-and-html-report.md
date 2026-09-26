@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU) **and the first `bevy-many-cubes` slice (1k static and 1k all-rotating, both arms on one hardware GPU, execution conformance passed, real hardware comparison retained)**, Phase 4 Godot-culling family (the two arms now render byte-identical primitives and drain at the same boundary, and a fresh 600-frame `basic_cull` pair is refused for exactly one remaining named cause — Godot's occlusion culling drops 1,459 objects the counterpart arm draws; the shadows-on and light variants remain open) **and the first `bevy-many-foxes` slice (50 foxes, synchronized and deterministically staggered, both arms on one hardware GPU, independently evaluated skeletons and pose diversity proved in both directions, two qualified real-hardware comparisons retained)**, and Phase 5 partial report renderer are built or proved as stated below. The many-cubes and many-foxes families have **no** diagnostic cells, no rung above their first slice, no seven-block pair and no A/A calibration, and none of the other four families is claimed; no `godot-culling`, `bevy-many-cubes` or `bevy-many-foxes` cell carries a verdict.
+**Status:** PARTIAL — The v2 contract and offline partial report work; all six families have at least one real-GPU smoke attempt. The culling `basic_cull` pair is now qualified after a hashed Godot occlusion-off project patch, while the lights/meshes pair remains non-comparable. Other required loads, diagnostics, clean build locks, seven-block pairs and A/A calibration remain open. No family carries a publication-grade speed verdict.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -787,8 +787,9 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   draft matrix in a direct consistency check.
   The real-GPU arm closes the transform and scene clauses of that sentence and leaves the
   depth/object-ID clause and the physical-rendering clause open: the two arms' primitives are now the
-  pinned scene's own buffers, but they admit different object sets, so the pairs are non-comparable
-  rather than qualified — see the cell box below.
+  pinned scene's own buffers. The original upstream project admitted different object sets; a
+  separately hashed occlusion-off project now brings the basic cell's screen coverage within the
+  declared tolerance. The remaining variants have not been requalified — see the cell box below.
   [culling_arm.gd](../../../../benchmark/godot-prd449/culling_arm.gd)
   drives the pinned `benchmark_<variant>()` itself and never re-implements the workload; the
   counterpart arm reads the fixture the Godot arm actually rendered
@@ -816,17 +817,26 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   and 0 quaternion components, and the five triangle counts now equal exactly (12 / 4,224 / 3,456 /
   768 / 8). Both arms record the same five digests, `a5973433…`, `f8353740…`, `905cd17c…`,
   `194407ee…`, `6e1d8053…`. `TN_BENCH_CULL_TOPOLOGY_MISMATCH` and `TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH`
-  are both gone. What still blocks the box is the object set, and it is named below. The comparator
+  are both gone. The later occlusion-off diagnostic closes this basic cell's object-set gap, but the
+  other culling variants and depth/object-ID evidence keep the family-wide box open. The comparator
   now requires exact per-mesh digest equality rather than equal counts, and
   [engine-load-test-cull-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cull-compare.spec.ts)
   refuses a pair whose middle vertex component or middle index moved while every count stayed
   identical — a change a count comparison cannot see.
 - [ ] Retain a real hardware comparison for the Godot culling family.
-  **Unchecked: the retained runs are real-hardware raw smoke records, not comparisons.** The four
-  earlier 600-frame real-hardware cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver
-  `615.71.09` remain on disk with their failures retained and are not re-run here; the pair below is
-  a fresh `basic_cull` cell measured after the primitives and the drain boundary changed, and it is
-  refused for one named cause.
+  **One qualified `basic_cull` smoke pair is retained; the family-wide campaign remains open.**
+  The prior upstream-default Godot run below remains a historical refusal. A new Godot 600-frame /
+  120-warmup run on the RTX 2080 used the pinned checkout staged with exactly
+  `occlusion_culling/use_occlusion_culling=false`. The CLI verifies upstream `project.godot` SHA-256
+  `e942995c…` before copying, staged SHA-256 `66e3d418…` before every run, and the adapter reports
+  `occlusionCulling: false`; the pinned checkout is unchanged. The staged run and comparison are
+  `artifacts/engine-load-test/diagnostics/cull-cli-off-{600f,comparison}.json` (local, ignored).
+  Against the retained TN arm, the comparator reports `qualified`, no problems, exact fixture and
+  five mesh-buffer hashes, six sampled transforms with zero delta, and coverage delta `0.000432`
+  at all four captured frames (declared limit `0.002`). Godot's visible count rises from 2,005 to
+  3,549 and completed-work mean is 1.544 ms; the retained TN mean is 18.011 ms. These arms are
+  one smoke block, the TN source record was dirty, and the new Godot arm ran after the TN one;
+  there is no calibrated speed verdict. A clean-source paired rerun and the other variants remain.
 
   | cell | variant | TN authoring | TN mean ms | Godot mean ms | comparator status |
   |---|---|---|---|---|---|
@@ -863,7 +873,7 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   13.9–19.9 ms spread is not. The old rule accused this cell for the wrong reason, and leaving it
   would have put a false claim in a retained artifact.
 
-  **What still refuses the cell is the object set, and it is diagnosed rather than guessed.** The
+  **The original upstream-default run was refused for its object set.** The
   comparator names only `TN_BENCH_CULL_COVERAGE_DIVERGED: 0.023735 of the frame` on all four captured
   frames (declared tolerance 0.002, not lowered): the counterpart covers 0.111543 of the 240×135
   lattice and Godot 0.087809. Everything upstream of the picture is now equal — same fixture bytes,
@@ -879,14 +889,11 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   Godot covers more. The candidate cause is named by the Godot arm's own adapter block,
   `occlusionCulling: true`, which the counterpart arm has no equivalent of.
 
-  That last sentence is the doubtful assumption this round leaves behind, recorded rather than
-  iterated on: occlusion culling is the leading explanation for 2,005 against a 3,464-object frustum,
-  but it is inferred from the pinned project's own setting plus the counters. It is not proved, and
-  proving it needs an occlusion-culling-off probe that changes the pinned project — a different
-  experiment key under §3, not a repair to this one. The alternative, a per-object AABB-versus-
-  bounding-sphere frustum difference, would predict Godot admitting *more* objects, not fewer, which
-  is why it is the weaker reading. Until one of them is settled the cell carries no ratio, and the box
-  stays open.
+  The isolated occlusion-off probe proved that setting caused this gap: the same fixture bytes
+  produced 3,549 visible Godot objects and `0.111975` covered fraction instead of 2,005 and
+  `0.087809`; TN's retained fraction is `0.111543`. The patch is a declared different experiment
+  key under §3 and cannot be represented as Godot's unmodified default. A 600-frame repeat through
+  the normal CLI confirmed the same four-frame coverage and the comparator's qualified status.
 
   A 2-frame `basic_cull` pair on both arms was run first, as the gate for the 600-frame cell, and is
   retained: it already reported `bufferHashesEqual: true`, `withinTolerance: true` and zero transform
@@ -896,7 +903,7 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   that the detector has since fixed. The 600-frame pair captures four frames and both arms' static
   motion checks pass (0 changed samples at frames 1, 60 and 119).
 
-  No retained pair is `qualified`, and none is `matched-task`. The two stated differences that remain
+  The occlusion-off basic pair is `qualified`, while none is `matched-task`. The two stated differences that remain
   — the competitor authors `RenderingServer` RIDs rather than scene nodes, and the shaded
   environments differ (Godot's Forward+ with sky-derived ambient and dual-paraboloid omni shadows
   against three's hemisphere light and cube-map point lights) — would be qualifications on a pair

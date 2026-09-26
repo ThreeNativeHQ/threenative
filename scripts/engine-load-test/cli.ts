@@ -3,7 +3,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants, createReadStream, existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -670,6 +670,107 @@ function godotBenchmarksPath(): string {
   return path.join(artifactRoot, "sources/godot-benchmarks");
 }
 
+/**
+ * Upstream ships `occlusion_culling/use_occlusion_culling=true`, and this fixture's measured object
+ * set is 2005 visible objects with that on and 3549 with it off, from the same fixture SHA-256 — so
+ * the two engines were never rendering the same objects. The culling arm therefore runs against a
+ * staged copy with the setting off. The pinned checkout keeps its own bytes; both project hashes are
+ * the contract, and the staged one is what `culling_arm.gd` verifies before it builds a scene.
+ */
+const GODOT_CULL_PROJECT_SHA256 =
+  "e942995c87024bfdc22c5fd9b599d4c8e4b653d2ab05f23787f74c16b197afb7";
+const GODOT_CULL_PATCHED_SHA256 =
+  "66e3d418efa369aaceb6d781ba9d7ba1c3f74f588fd39c3d9b0d621188fa425c";
+const OCCLUSION_SETTING = "occlusion_culling/use_occlusion_culling";
+
+export interface IGodotCullStaging {
+  readonly patchedSha256: string;
+  readonly upstreamSha256: string;
+}
+
+export interface IGodotCullStaged {
+  /** False when an already-verified staged copy was reused, so a re-run is not a re-copy. */
+  readonly created: boolean;
+  readonly project: string;
+  readonly projectSha256: string;
+  readonly upstreamSha256: string;
+}
+
+function godotCullStagedPath(): string {
+  return path.join(artifactRoot, "sources/godot-benchmarks-cull-off");
+}
+
+/**
+ * Stages the pinned project with occlusion culling off and hands back the tree the culling arm runs
+ * against. Fail-closed at both ends: the pinned project's bytes are verified before anything is
+ * copied, and the staged project's hash before the path is returned, so a run can only name a
+ * project that is byte-for-byte upstream plus the one-line patch.
+ */
+export async function stageGodotCullProject(
+  pinned: string,
+  staged: string,
+  expected: IGodotCullStaging = {
+    upstreamSha256: GODOT_CULL_PROJECT_SHA256,
+    patchedSha256: GODOT_CULL_PATCHED_SHA256,
+  },
+): Promise<IGodotCullStaged> {
+  const source = path.join(pinned, "project.godot");
+  if (!existsSync(source))
+    throw new BenchError(
+      "TN_BENCH_GODOT_CHECKOUT_MISSING",
+      `pinned upstream checkout missing: ${pinned}`,
+    );
+  const bytes = await readFile(source);
+  const upstreamSha256 = createHash("sha256").update(bytes).digest("hex");
+  if (upstreamSha256 !== expected.upstreamSha256)
+    throw new BenchError(
+      "TN_BENCH_GODOT_SOURCE_HASH_MISMATCH",
+      `${source} is ${upstreamSha256}, not the pinned ${expected.upstreamSha256}`,
+    );
+  const occurrences = bytes.toString("utf8").split(`${OCCLUSION_SETTING}=true`).length - 1;
+  if (occurrences !== 1)
+    throw new BenchError(
+      "TN_BENCH_GODOT_OCCLUSION_SETTING_UNPATCHABLE",
+      `${OCCLUSION_SETTING}=true appears ${occurrences} time(s) in ${source}; exactly one is required`,
+    );
+  const target = path.join(staged, "project.godot");
+  const stagedSha256 = async (): Promise<string> => (await fileIdentity(target)).sha256;
+  // An existing stage is never rebuilt: only a verified one is reused, and anything else is rejected
+  // where it lies. A stage holds Godot's ignored `.godot` import cache and whatever a failing run
+  // left behind, so `rm -rf` on a hash mismatch destroyed state no hash could restore.
+  if (existsSync(staged)) {
+    if (!existsSync(target))
+      throw new BenchError(
+        "TN_BENCH_GODOT_STAGE_INCOMPLETE",
+        `staged ${staged} exists but has no project.godot; refusing to overwrite it`,
+      );
+    const reusedSha256 = await stagedSha256();
+    if (reusedSha256 !== expected.patchedSha256)
+      throw new BenchError(
+        "TN_BENCH_GODOT_STAGE_HASH_MISMATCH",
+        `staged ${target} is ${reusedSha256}, not the expected ${expected.patchedSha256}; refusing to overwrite ${staged}`,
+      );
+    return {
+      created: false,
+      project: staged,
+      projectSha256: reusedSha256,
+      upstreamSha256,
+    };
+  }
+  await cp(pinned, staged, { recursive: true });
+  await writeFile(
+    target,
+    bytes.toString("utf8").replace(`${OCCLUSION_SETTING}=true`, `${OCCLUSION_SETTING}=false`),
+  );
+  const projectSha256 = await stagedSha256();
+  if (projectSha256 !== expected.patchedSha256)
+    throw new BenchError(
+      "TN_BENCH_GODOT_STAGE_HASH_MISMATCH",
+      `staged ${target} is ${projectSha256}, not the expected ${expected.patchedSha256}`,
+    );
+  return { created: true, project: staged, projectSha256, upstreamSha256 };
+}
+
 async function runGodotCullArm(
   variant: string,
   frames: number,
@@ -679,18 +780,16 @@ async function runGodotCullArm(
   fixture: string,
 ): Promise<void> {
   const godot = process.env.GODOT_BIN ?? "godot";
-  const checkout = godotBenchmarksPath();
-  if (!existsSync(checkout))
-    throw new BenchError(
-      "TN_BENCH_GODOT_CHECKOUT_MISSING",
-      `pinned upstream checkout missing: ${checkout}`,
-    );
+  const staged = await stageGodotCullProject(godotBenchmarksPath(), godotCullStagedPath());
+  process.stdout.write(
+    `godot cull arm: ${staged.created ? "staged" : "reusing"} ${staged.project} (project ${staged.projectSha256}, occlusion culling off)\n`,
+  );
   const godotBinary = await (async () => godot)();
   const raw = await runCapturing(
     godotBinary,
     [
       "--path",
-      checkout,
+      staged.project,
       "--resolution",
       "1920x1080",
       "--script",
@@ -704,13 +803,24 @@ async function runGodotCullArm(
     ],
     { cwd: repoRoot, env: { ...process.env, DISPLAY: requiredDisplay() } },
   );
+  const adapter = requireObject((raw as Record<string, unknown>).adapter, "adapter");
   await writeArmRecord(file, raw, {
-    adapter: (raw as Record<string, unknown>).adapter,
+    adapter,
     display: requiredDisplay(),
     godot: await fileIdentity(await resolveGodotBinary()),
     source: {
       commit: "b059e38a81230a87293828bbf65ab247b6b2d2a8",
       fixture: path.relative(repoRoot, fixture),
+      // What the staged project is, so a reader can tell an occlusion-off object set from an
+      // occlusion-on one without re-deriving the patch: the line that changed, the bytes it changed
+      // them in, and the value the arm read back out of the project it was actually given.
+      occlusionCulling: {
+        applied: `${OCCLUSION_SETTING}=false`,
+        effective: adapter.occlusionCulling,
+        projectSha256: staged.projectSha256,
+        staged: path.relative(repoRoot, staged.project),
+        upstreamProjectSha256: staged.upstreamSha256,
+      },
     },
   });
 }
