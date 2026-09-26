@@ -13,6 +13,8 @@ import {
   ProductionEvidenceError,
   evaluateFrameBudget,
   evaluateProductionEvidence,
+  meanFps,
+  unmeasurableIntervalCount,
   nearestRank,
   sha256,
   writeProductionEvidence,
@@ -35,6 +37,7 @@ import {
   safeReport,
   setNativeProfileEntry,
   webFrameInstrumentation,
+  webScenarioArguments,
   writeRunScenarios,
 } from '../scripts/profile-production.mjs';
 
@@ -324,6 +327,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
   let sampledBeforeRender = false;
   const samples = [];
   const sampleLines = [];
+  const requests = [];
   const record = (payload) => {
     if (payload?.kind === 'samples' && Array.isArray(payload.samples)) samples.push(...payload.samples);
   };
@@ -345,6 +349,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
       },
     },
     fetch: async (_url, request) => {
+      requests.push(_url);
       record(JSON.parse(request.body));
       return {};
     },
@@ -364,7 +369,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
     now = frame * frameMs;
     scheduledCallback(now);
   }
-  return { sampledBeforeRender, sampleLines, samples };
+  return { requests, sampledBeforeRender, sampleLines, samples };
 }
 
 function completeEvidence(overrides = {}) {
@@ -989,7 +994,7 @@ test('generated production workload runs through the playtest validator and keep
     rendererPerformance,
   );
   const webSamples = injectedFrameSamples(
-    webFrameInstrumentation('http://127.0.0.1:41777', undefined, 0),
+    webFrameInstrumentation(undefined, 0),
     rendererPerformance,
   );
   assert.equal(nativeSamples.sampledBeforeRender, false);
@@ -997,10 +1002,16 @@ test('generated production workload runs through the playtest validator and keep
   assert.equal(nativeSamples.samples.length, 30);
   assert.equal(webSamples.samples.length, 30);
   assert.ok(nativeSamples.sampleLines.every((line) => line.length < 1_000));
+  // The web arm reports over the console like the native one. It used to POST to a marker server,
+  // and the playtest's own noNetworkErrors policy then failed every web run for the profile's own
+  // instrumentation: Chromium reports each in-flight fetch as net::ERR_ABORTED at page teardown.
+  assert.deepEqual(webSamples.requests, []);
+  assert.equal(webSamples.sampleLines.length, 1);
+  assert.ok(webSamples.sampleLines[0].startsWith('TN_PROD_FRAME_SAMPLES:'));
   assert.deepEqual(nativeSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
   assert.deepEqual(webSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
   const missingSamples = injectedFrameSamples(
-    webFrameInstrumentation('http://127.0.0.1:41777', undefined, 0),
+    webFrameInstrumentation(undefined, 0),
     undefined,
   );
   assert.equal(Object.hasOwn(missingSamples.samples[0], 'drawCalls'), false);
@@ -1286,6 +1297,36 @@ test('slow-startup delays the live fixture launch beyond the five-second budget'
   assert.ok(result.codes.includes('TN_PROD_STARTUP_BUDGET'));
   assert.ok(result.metrics.startupP95Ms > 5_000);
   assert.ok(result.markers.includes('clean-end'));
+});
+
+test('one interval the clock cannot resolve does not void every other reading', () => {
+  // Two presented frames can land inside a single `performance.now()` quantum and read as a
+  // zero-length interval. That is the clock's resolution, not a measurement of the workload, and
+  // one such sample used to make the mean undefined — which blocked the desktop comparison outright
+  // instead of reporting the pair it had 12,000 good readings for.
+  const intervals = [...Array.from({ length: 1_000 }, () => 16), 0];
+  assert.equal(Math.round(meanFps(intervals) * 100) / 100, 62.5);
+  assert.equal(meanFps([0, 0]), undefined);
+  assert.equal(meanFps([]), undefined);
+  assert.equal(meanFps([16, Number.NaN, 16]), Math.round(meanFps([16, 16]) * 100) / 100);
+  assert.equal(unmeasurableIntervalCount(intervals), 1);
+  assert.equal(unmeasurableIntervalCount([16, 16]), 0);
+});
+
+test('the web arm runs headed wherever a display exists, because headless WebGPU is SwiftShader', () => {
+  const argv = (env) => webScenarioArguments({
+    artifactPath: 'artifacts/production/web-1',
+    env,
+    playtestCli: '/playtest/cli.js',
+    port: 4173,
+    project: '/project',
+    scenarioPath: 'playtests/production-performance.run.playtest.json',
+  });
+  // Headless Chromium serves WebGPU from its CPU rasteriser even with --enable-features=Vulkan,
+  // so the recipe alone still produced `google / swiftshader` frames on a machine holding a
+  // display. Measured on one RTX 2080: headed reads `nvidia / turing`.
+  assert.ok(argv({ DISPLAY: ':0' }).includes('--headed'));
+  assert.equal(argv({}).includes('--headed'), false);
 });
 
 test('repository collection sentinel is red only when explicitly enabled', () => {

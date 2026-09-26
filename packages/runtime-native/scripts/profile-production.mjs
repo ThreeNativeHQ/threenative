@@ -19,6 +19,7 @@ import {
   REGRESSION_COLLECTION_PROFILE,
   meanFps,
   nearestRank,
+  unmeasurableIntervalCount,
   sha256,
   writeProductionEvidence,
   sanitizeManifest,
@@ -428,9 +429,8 @@ export async function writeRunScenarios(project, options) {
 }
 
 async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
-  const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
-    await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options));
+    await installWebProfileEntry(project, options.control, warmupFramesFor(options));
     // A production build can outlast the default timeout on slow hosted runners.
     const build = await runCommand('pnpm', ['run', 'build:web'], project, undefined, 300_000);
     if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', `The scaffolded platformer web build failed.${failureSuffix(build)}`);
@@ -438,14 +438,13 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
     const runs = [];
     const startups = [];
     for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
-      const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), markerServer, tools.playtestCli);
+      const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), tools.playtestCli);
       startups.push(startup);
       for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
         runs.push(await runWebScenario(
           project,
           scenarios.workloadPath,
           join(artifactsRoot, `web-${coldStart + 1}-${repetition + 1}`),
-          markerServer,
           tools.playtestCli,
         ));
       }
@@ -460,37 +459,50 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
       startups,
     };
   } finally {
-    await markerServer.close();
   }
 }
 
-async function runWebScenario(project, scenarioPath, artifactDirectory, markerServer, playtestCli) {
-  await mkdir(artifactDirectory, { recursive: true });
-  const port = await availablePort();
-  const relativeArtifact = relative(project, artifactDirectory);
-  const args = [
+/**
+ * A display is the difference between the machine's GPU and SwiftShader. Headless Chromium serves
+ * WebGPU from its CPU rasteriser even with the recipe's `--enable-features=Vulkan`, so a machine
+ * that has a display must run the web arm headed: measured on one RTX 2080, headless reported
+ * `google / swiftshader` and headed `nvidia / turing`. The scene-overview probe already makes the
+ * same choice (`packages/playtest/src/runner/sceneOverview.ts`).
+ */
+export function webScenarioArguments({ artifactPath, env = process.env, playtestCli, port, project, scenarioPath }) {
+  return [
     playtestCli,
-    relative(project, scenarioPath),
-    '--artifacts', relativeArtifact,
+    scenarioPath,
+    '--artifacts', artifactPath,
     '--browser-recipe', 'webgpu',
+    ...(env.DISPLAY === undefined ? [] : ['--headed']),
     '--project', project,
     '--server-command', `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     '--timeout', '30000',
     '--url', `http://127.0.0.1:${port}`,
   ];
+}
+
+async function runWebScenario(project, scenarioPath, artifactDirectory, playtestCli) {
+  await mkdir(artifactDirectory, { recursive: true });
+  const port = await availablePort();
+  const args = webScenarioArguments({
+    artifactPath: relative(project, artifactDirectory),
+    playtestCli,
+    port,
+    project,
+    scenarioPath: relative(project, scenarioPath),
+  });
   const command = await browserCommand(args);
-  const markerIndex = markerServer.length;
-  const startedAt = performance.now();
+  const startedAt = Date.now();
   const result = await runCommand(command.command, command.args, commandRoot, undefined, 180_000);
-  const markers = await markerServer.waitFor(markerIndex, 1_000);
   const report = parsePlaytestReport(result.stdout);
   return normalizeRun(
     result,
     artifactDirectory,
     'web',
     report,
-    markers?.firstFrame === undefined ? undefined : markers.firstFrame.receivedAt - startedAt,
-    markers?.samples ?? [],
+    firstFrameMsFromReport(report, startedAt),
   );
 }
 
@@ -967,11 +979,17 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-export function webFrameInstrumentation(markerUrl, control, warmupFrames = 0) {
+/**
+ * The web arm reports over the console, the same transport the native arm already uses, so one
+ * parser and one clock serve both. It used to POST to a marker server, which the playtest's own
+ * `noNetworkErrors` policy then failed the run for: Chromium reports every in-flight `fetch` as
+ * `net::ERR_ABORTED` when the runner tears the page down, so the profile failed its own runs for
+ * its own instrumentation. Nothing the game does is observed any less.
+ */
+export function webFrameInstrumentation(control, warmupFrames = 0) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
-const tnProductionMarkerUrl = ${JSON.stringify(markerUrl)};
 const tnProductionRequestAnimationFrame = globalThis.requestAnimationFrame;
 if (typeof tnProductionRequestAnimationFrame !== "function") {
   throw new Error("TN_PROD_WEB_RAF_UNAVAILABLE: browser host did not provide requestAnimationFrame.");
@@ -984,14 +1002,6 @@ let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
   const deadline = performance.now() + milliseconds;
   while (performance.now() < deadline) {}
-};
-const tnProductionPost = (payload) => {
-  void fetch(tnProductionMarkerUrl, {
-    body: JSON.stringify(payload),
-    keepalive: true,
-    method: "POST",
-    mode: "no-cors",
-  }).catch(() => undefined);
 };
 ${productionPerformanceReader()}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
@@ -1008,7 +1018,7 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
   callback(timestamp);
   if (tnProductionFirstFrame) {
     tnProductionFirstFrame = false;
-    tnProductionPost({ kind: "first-frame" });
+    console.log("TN_PROD_FIRST_NONBLANK_FRAME:" + Date.now());
   }
   if (!inWarmup && frameMs !== undefined) {
     tnProductionSamples.push({
@@ -1019,7 +1029,7 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
       frameMs,
     });
     if (tnProductionSamples.length >= ${FRAME_SAMPLE_BATCH_SIZE}) {
-      tnProductionPost({ kind: "samples", samples: tnProductionSamples });
+      console.log("TN_PROD_FRAME_SAMPLES:" + JSON.stringify(tnProductionSamples));
       tnProductionSamples = [];
     }
   }
@@ -1031,69 +1041,14 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-async function installWebProfileEntry(project, markerUrl, control, warmupFrames = 0) {
+async function installWebProfileEntry(project, control, warmupFrames = 0) {
   const markerPath = join(project, 'src/profile-production-marker.ts');
   const mainPath = join(project, 'src/main.ts');
   const markerImport = 'import "./profile-production-marker.js";';
   const main = await readFile(mainPath, 'utf8');
-  const source = webFrameInstrumentation(markerUrl, control, warmupFrames);
+  const source = webFrameInstrumentation(control, warmupFrames);
   await writeFile(markerPath, source);
   if (!main.includes(markerImport)) await writeFile(mainPath, `${markerImport}\n${main}`);
-}
-
-async function createFrameMarkerServer(port = 0) {
-  const events = [];
-  const waiters = [];
-  const server = createServer((request, response) => {
-    if (request.method !== 'POST') {
-      response.writeHead(405).end();
-      return;
-    }
-    const chunks = [];
-    request.on('data', (chunk) => chunks.push(chunk));
-    request.on('end', () => {
-      let payload = {};
-      try {
-        payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      } catch {
-        // The request is still a first-frame signal even if the optional batch is malformed.
-      }
-      const event = { ...payload, receivedAt: performance.now() };
-      events.push(event);
-      for (const waiter of waiters.splice(0)) waiter();
-      response.setHeader('access-control-allow-origin', '*');
-      response.writeHead(204).end();
-    });
-  });
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, '127.0.0.1', resolve);
-  });
-  const address = server.address();
-  if (address === null || typeof address === 'string') throw new ProductionEvidenceError('TN_PROD_MARKER_SERVER_FAILED', 'The first-frame marker server did not expose a TCP port.');
-  return {
-    close: () => new Promise((resolve) => server.close(() => resolve())),
-    get length() { return events.length; },
-    url: `http://127.0.0.1:${address.port}/first-frame`,
-    waitFor: async (from, timeoutMs) => {
-      if (events.length > from) return markerEvents(events.slice(from));
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, timeoutMs);
-        const waiter = () => {
-          clearTimeout(timer);
-          resolve();
-        };
-        waiters.push(waiter);
-      });
-      return markerEvents(events.slice(from));
-    },
-  };
-}
-
-function markerEvents(events) {
-  const firstFrame = events.find(({ kind }) => kind === 'first-frame');
-  const samples = events.flatMap(({ kind, samples: batch }) => kind === 'samples' && Array.isArray(batch) ? batch : []);
-  return { firstFrame, samples };
 }
 
 async function normalizeRun(
@@ -1537,6 +1492,9 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
       p95FrameMs: nearestRank(frameIntervalsMs, 0.95),
       p99FrameMs: nearestRank(frameIntervalsMs, 0.99),
     }),
+    ...(unmeasurableIntervalCount(frameIntervalsMs) === 0
+      ? {}
+      : { unmeasurableFrameIntervals: unmeasurableIntervalCount(frameIntervalsMs) }),
     ...(intervals.some(({ drawCalls }) => drawCalls !== undefined) ? { drawCalls: Math.max(...intervals.flatMap(({ drawCalls }) => drawCalls === undefined ? [] : [drawCalls])) } : {}),
     ...(intervals.some(({ triangles }) => triangles !== undefined) ? { triangles: Math.max(...intervals.flatMap(({ triangles }) => triangles === undefined ? [] : [triangles])) } : {}),
   };

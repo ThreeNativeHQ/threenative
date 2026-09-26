@@ -31,9 +31,22 @@ export function nearestRank(values, percentile) {
 
 export function meanFps(frameIntervalsMs) {
   if (!Array.isArray(frameIntervalsMs) || frameIntervalsMs.length === 0) return undefined;
-  if (frameIntervalsMs.some((value) => !Number.isFinite(value) || value <= 0)) return undefined;
-  const mean = frameIntervalsMs.reduce((total, value) => total + value, 0) / frameIntervalsMs.length;
+  // Two presented frames can land inside one `performance.now()` quantum, which reads as a
+  // zero-length interval, and a cadence-limited browser produces them routinely. That is the
+  // clock's resolution rather than a measurement of the workload, and refusing the whole series
+  // over one of them discarded every other reading and blocked the comparison that had them.
+  // Excluding them can only understate the frame rate, and a series with nothing measurable left
+  // is still unmeasured.
+  const measurable = frameIntervalsMs.filter((value) => Number.isFinite(value) && value > 0);
+  if (measurable.length === 0) return undefined;
+  const mean = measurable.reduce((total, value) => total + value, 0) / measurable.length;
   return 1_000 / mean;
+}
+
+/** How many of a series the clock could not resolve, so the evidence never hides the loss. */
+export function unmeasurableIntervalCount(frameIntervalsMs) {
+  if (!Array.isArray(frameIntervalsMs)) return 0;
+  return frameIntervalsMs.length - frameIntervalsMs.filter((value) => Number.isFinite(value) && value > 0).length;
 }
 
 export function oneSecondFrameFloors(intervals) {
