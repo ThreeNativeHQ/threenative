@@ -1192,7 +1192,16 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 - [ ] Reproduce at least one comparison per family from the bundle's documented commands in a clean build directory.
 - [ ] Link the delivered report and findings from the existing runtime performance state record.
 - [ ] Publish all six benchmark families and the final offline report on threenative.com/docs/benchmarks, with links to this PRD, pinned upstream sources, and the downloadable provenance bundle.
-  Interim publication is live at [threenative.com/docs/benchmarks](https://threenative.com/docs/benchmarks/): all six families have individual status, three show single-run smoke observations, two Godot pairs are visibly refused as non-comparable, and City is labelled unmeasured. Every family links to this PRD on the published campaign branch and to its pinned upstream source. The site source is on `threenative-site` main at `2075974`; Cloudflare Worker version `f7748983-e58b-49b4-9902-3abeb8656c53` was checked live after the merged docs redesign, with all six names, the retained fox means, and the no-verdict notice present. Site typecheck, 58 unit tests, and 27 browser tests passed before deployment; the completed site worktree was removed. The final offline report and raw-data bundle remain absent, so this box stays open.
+  Interim publication is live at [threenative.com/docs/benchmarks](https://threenative.com/docs/benchmarks/):
+  all six families have individual status, four show single-run smoke observations, and the two
+  Godot pairs are visibly refused as non-comparable. City now shows the clean-source 8×8 moving
+  and static smoke means in §Phase 4, with the no-verdict caveat. Every family links to this PRD on
+  the published campaign branch and to its pinned upstream source. The site source is on
+  `threenative-site` main at `5472823`; Cloudflare Worker version
+  `6dd41aa6-9313-427d-aff3-ffc9d53bcaeb` was checked live after deployment with both City
+  rows, the 14,082-node census, the no-verdict notice and the PRD link present. Site typecheck,
+  55 passing unit tests (3 skipped), and 27 browser tests passed; the completed site worktree
+  was removed. The final offline report and raw-data bundle remain absent, so this box stays open.
 - [ ] Run relevant repository gates and record their actual outcomes beside the implementation evidence.
   The current engine branch passed `pnpm build`, `pnpm typecheck`, `pnpm lint`, and `pnpm test` locally after the native V8/QuickJS test targets and QuickJS host were built; the final test run passed 6,025 tests, skipped 8, with 489 files passed and 2 skipped. This establishes the local code gate for the current slice, not the unrun campaign, platform matrix or final report.
 
