@@ -3,9 +3,15 @@ import { deriveCampaign } from "../engine-load-test/campaign.js";
 import { type IPlannedCell, buildDraftPlan } from "../engine-load-test/plan.js";
 import type { IV2RunRecord } from "../engine-load-test/report-v2.js";
 
-function run(cell: IPlannedCell, armId: string, block: number, status = "valid") {
+function run(
+  cell: IPlannedCell,
+  armId: string,
+  block: number,
+  status = "valid",
+  buildType = "release",
+) {
   return {
-    arm: { id: armId, build: { type: "release" } },
+    arm: { id: armId, build: { type: buildType } },
     block,
     campaignHash: "campaign",
     campaignId: "campaign-1",
@@ -98,6 +104,23 @@ describe("campaign derivation", () => {
     );
     const result = deriveCampaign(plan, software, { seed: 449, epsilonByCellId: {} });
     expect(result.coverage.invalid).toBe(2);
+    expect(result.rows[0]?.comparisons[0]?.statistics).toBeNull();
+  });
+
+  it("keeps an unrecorded build type out of publication coverage rather than reading it as release", () => {
+    // The parser already refuses a `valid` run that cannot name its build, so this reaches coverage
+    // only through a record a reader handed over. Coverage must not be the softer door: an arm whose
+    // build type is unknown is not a release arm, and no ratio may be derived from it.
+    const unknown = first.plannedBlocks.flatMap(({ block }) => [
+      run(first, "tn-desktop", block, "valid", "release"),
+      run(first, "bevy-desktop", block, "valid", "unknown"),
+    ]);
+    const result = deriveCampaign(plan, unknown, { seed: 449, epsilonByCellId: {} });
+    expect(result.coverage).toMatchObject({ invalid: 1, valid: 1 });
+    expect(result.rows[0]?.arms.find((arm) => arm.id === "bevy-desktop")).toMatchObject({
+      reasons: ["publication requires physical hardware and release builds"],
+      status: "invalid",
+    });
     expect(result.rows[0]?.comparisons[0]?.statistics).toBeNull();
   });
 

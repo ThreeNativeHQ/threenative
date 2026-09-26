@@ -548,6 +548,7 @@ describe("the v2 result contract", () => {
     // The review's exact complaint: a `valid` run that never measured anything used to parse. Each
     // case removes one observation a valid run owes, and the path is the field that owes it.
     const timings = record().timing as Record<string, unknown>;
+    const arm = record().arm as Record<string, unknown>;
     const cases: readonly [string, Record<string, unknown>, string][] = [
       [
         "no measured frames",
@@ -597,11 +598,38 @@ describe("the v2 result contract", () => {
         record({ timing: { ...timings, rawSeries: null, rawSeriesReason: "not collected" } }),
         "v2RunRecord.timing.rawSeries",
       ],
+      [
+        "unrecorded build type",
+        record({ arm: { ...arm, build: { hash: HASH, type: "unknown" } } }),
+        "v2RunRecord.arm.build.type",
+      ],
     ];
     for (const [label, value, path] of cases) {
       expect(() => parseV2RunRecord(value), label).toThrow(TN_BENCH_BAD_SHAPE);
       expect(() => parseV2RunRecord(value), label).toThrow(path);
     }
+  });
+
+  it("admits an unrecorded build type on an attempt that failed, and reads it back as unknown", () => {
+    // An archived record that never said release or debug is `unknown`, not a default. Only a valid
+    // run is refused, because only a valid run promises a measurement — and this attempt never made
+    // one, so saying "unknown" is the whole claim.
+    const arm = record().arm as Record<string, unknown>;
+    const parsed = parseV2RunRecord(
+      record({
+        arm: { ...arm, build: { hash: HASH, type: "unknown" } },
+        outcome: {
+          reason: "no thermal preflight stands behind this archived attempt",
+          runStatus: "invalid",
+        },
+      }),
+    );
+    expect(parsed.arm.build.type).toBe("unknown");
+    expect(parseV2RunRecord(record()).arm.build.type).toBe("release");
+    // The gate is the valid-run rule and not merely the enum, so name it.
+    expect(() =>
+      parseV2RunRecord(record({ arm: { ...arm, build: { hash: HASH, type: "unknown" } } })),
+    ).toThrow(/a valid run owes a recorded build type/u);
   });
 
   it("lets an attempt that never ran say so instead of inventing a file, a sample or a checksum", () => {

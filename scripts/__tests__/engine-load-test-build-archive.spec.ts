@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirSyncAt } from "../../test-support/temp-dir.js";
 import { archiveBuild } from "../engine-load-test/cli.js";
 
 // PRD-449: a City raw run's build lock names a mutable `dist/` or `target/` path, so the next arm
@@ -19,7 +20,7 @@ describe("archiveBuild", () => {
 
   beforeEach(async () => {
     await mkdir(path.join(repoRoot, "artifacts/engine-load-test"), { recursive: true });
-    root = await mkdtemp(path.join(repoRoot, "artifacts/engine-load-test/archive-spec-"));
+    root = makeTempDirSyncAt(path.join(repoRoot, "artifacts/engine-load-test/archive-spec-"));
     dist = path.join(root, "dist");
     builds = path.join(root, "builds");
     await mkdir(dist, { recursive: true });

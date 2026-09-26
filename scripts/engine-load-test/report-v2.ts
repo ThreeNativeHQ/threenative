@@ -43,6 +43,14 @@ export type OptimizationClass = (typeof OPTIMIZATION_CLASSES)[number];
 export const EXECUTION_PROTOCOLS = ["deterministic-throughput", "realtime-presentation"] as const;
 export type ExecutionProtocol = (typeof EXECUTION_PROTOCOLS)[number];
 
+/**
+ * `unknown` is for an attempt whose own record never said release or debug. It is not a third
+ * kind of build, and §11 does not admit it: only a non-`valid` attempt may carry one, because a
+ * valid run owes a build it can name.
+ */
+export const BUILD_TYPES = ["release", "debug", "unknown"] as const;
+export type BuildType = (typeof BUILD_TYPES)[number];
+
 export const LANE_PROVISIONING = [
   "physical-hardware",
   "simulator",
@@ -64,7 +72,7 @@ export interface IExperimentKey {
 
 export interface IV2Arm {
   backend: string;
-  build: { hash: string; type: "release" | "debug" };
+  build: { hash: string; type: BuildType };
   engine: string;
   /** Effective switches, disclosed rather than trusted (§3.1). */
   flags: Record<string, string>;
@@ -326,6 +334,7 @@ function parseMetrics(value: unknown): { metrics: IV2Metric[]; primary: IV2Metri
 
 /** Everything a `valid` run has to have actually done, as opposed to claimed (§10, §11). */
 interface IValidRunFacts {
+  buildType: BuildType;
   conformance: "pass" | "fail" | "not-run";
   evidence: string | null;
   measure: number;
@@ -359,6 +368,12 @@ function requireValidRunFacts(facts: IValidRunFacts): void {
   }
   if (!facts.preflightPassed) {
     fail("v2RunRecord.machine.preflight", "a valid run owes a passing preflight");
+  }
+  if (facts.buildType === "unknown") {
+    fail(
+      "v2RunRecord.arm.build.type",
+      "a valid run owes a recorded build type; unknown means the raw record never said release or debug",
+    );
   }
   if (facts.conformance !== "pass" || facts.evidence === null) {
     fail("v2RunRecord.fixture", "a valid run owes fixture conformance pass with its evidence");
@@ -411,7 +426,7 @@ export function parseV2RunRecord(value: unknown): IV2RunRecord {
     backend: requireIdentifier(armSource, "backend", "v2RunRecord.arm"),
     build: {
       hash: requireHash(buildSource, "hash", "v2RunRecord.arm.build"),
-      type: requireEnum(buildSource, "type", "v2RunRecord.arm.build", ["release", "debug"]),
+      type: requireEnum(buildSource, "type", "v2RunRecord.arm.build", BUILD_TYPES),
     },
     engine: requireIdentifier(armSource, "engine", "v2RunRecord.arm"),
     flags: requireFlags(armSource.flags, "v2RunRecord.arm.flags"),
@@ -522,6 +537,7 @@ export function parseV2RunRecord(value: unknown): IV2RunRecord {
 
   const { metrics, primary } = parseMetrics(source.metrics);
   const { comparability, comparabilityReason, outcome } = parseOutcome(source, {
+    buildType: arm.build.type,
     conformance: fixtureConformance,
     evidence: evidence as string | null,
     measure: durationMs.measure,

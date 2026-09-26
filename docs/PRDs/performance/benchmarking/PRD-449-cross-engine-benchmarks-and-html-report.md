@@ -1130,17 +1130,17 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   conformance gate; both static and moving arms completed a 600-frame/120-warmup smoke pair.
   The comparator accepts both 600-frame pairs with camera, node and car-state tolerances met;
   Bevy's common profile records atmosphere, bloom, TAA, HDR and shadows off. The final four arms
-  were rerun from clean engine commit `5ebb43aac` on the real NVIDIA GeForce RTX 2080, driver
+  were rerun with archived builds from clean engine commit `5f7058d8e` on the real NVIDIA GeForce RTX 2080, driver
   `615.71.09`, at the actual 1920×1050 attachment. The source record names pinned Bevy commit
   `c6f634ca9`, upstream source digest `3275eb9a94b2…`, and City adapter digest
   `4a94975b73d9…`. The raw records and fixture are in the measuring checkout's ignored
-  `artifacts/engine-load-test/city-size8-*-600f-*.json`; this table is the portable retained
-  observation, not a downloadable raw bundle.
+  `artifacts/engine-load-test/city-size8-*-600f-archived.json`; the partial v2 bundle below also
+  retains the raw files and their checksums.
 
   | Small 8×8 cell | Bevy mean ms | TN native mean ms | comparator | verdict |
   |---|---:|---:|---|---|
-  | Moving cars | 5.987 | 28.917 | qualified | insufficient |
-  | Static cars | 5.708 | 24.360 | qualified | insufficient |
+  | Moving cars | 5.819 | 29.610 | qualified | insufficient |
+  | Static cars | 5.707 | 24.851 | qualified | insufficient |
 
   These are one-block smoke observations, with no A/A calibration or cross-arm visual proof;
   the shader and light-unit differences are disclosed by the comparator. The
@@ -1182,6 +1182,28 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   malformed or duplicate GPU frame IDs fail even when `gpu-ms` is null or the attempt measured
   zero frames; a numeric `gpu-ms` with zero frames also fails. The report displays observed/missing GPU timestamp counts. No physical samples are
   claimed.
+  Two real hardware `bevy-city` pairs — the archived 600-frame static and moving City smoke runs on
+  an RTX 2080, Bevy exporting both fixtures the counterpart hashed — now land in a real campaign
+  bundle at `artifacts/engine-load-test/prd449-smoke-v2-current` as four immutable schema-2 run
+  records. That proves the
+  derivation end to end on measured bytes: the same planned cell the plan names for that size and
+  motion, the archived Bevy binary and TN host/bundle re-hashed from content-addressed copies, the
+  fixture and comparison evidence copied in under a SHA-256, and `report.html`/`results.json`/
+  `results.csv`/`checksums.sha256` regenerated from the retained records. Every run is `invalid` and
+  the bundle stays partial, because these pairs recorded no thermal preflight and no frozen
+  `sources.lock.json`; the comparator's own `qualified` comparability is retained beside it, since
+  "these two ran the same task" and "this attempt may be published" are separate questions. The
+  intake refuses to invent the two facts the raw records never wrote: arm order is the operator's
+  declared legacy smoke order, disclosed in `executionOrderBasis` and never read from the plan's arm
+  array, and a build whose record named no profile is `unknown`, which the v2 contract now admits
+  only on a non-`valid` attempt. A run ID is the full raw-file digest, so reassigning the same
+  execution to another block is refused. The current bundle reports 4 attempted arms, 165 not run,
+  no ratio and the missing `sources.lock.json` gap; `sha256sum --check --quiet checksums.sha256`
+  passed, and Chromium opened its `file://` report with zero HTTP requests and 12 raw links. The
+  box stays open — source adaptation patches and matching captures are not linked, and one smoke
+  block per cell is not a seven-block comparison. Local `pnpm typecheck`, `pnpm lint`, `pnpm test`
+  (6,058 passed, 8 skipped), docs links and `pnpm budgets` passed after regenerating the native
+  coverage source digest; the separate City intake spec passed 10/10.
 - [x] Pass offline `file://` testing with network requests blocked. A fresh draft bundle at
   `artifacts/engine-load-test/prd449-offline-probe/` regenerated its HTML with the expected exit 2
   because it has zero measured runs. Headless Chromium opened that `report.html` through `file://`
