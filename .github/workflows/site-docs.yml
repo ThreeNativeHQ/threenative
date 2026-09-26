@@ -1,0 +1,16 @@
+name: site-docs
+
+# threenative.com renders docs/guides/*.md at build time, so a guide change redeploys the site.
+on:
+  push:
+    branches: [develop]
+    paths: ["docs/guides/**"]
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      # SITE_DEPLOY_TOKEN: fine-grained token, threenative-site only, Actions read/write.
+      - run: gh workflow run site.yml --repo ThreeNativeHQ/threenative-site --ref main
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DEPLOY_TOKEN }}
