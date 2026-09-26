@@ -7,7 +7,7 @@ import { blenderImportPass } from "./passes/blender-import.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
 import { createSharedImageStore } from "./passes/shared-images.js";
-import { texturePass } from "./passes/texture.js";
+import { texturePass, textureResizePass } from "./passes/texture.js";
 import type { IWorkerBootstrap, IWorkerJob, IWorkerReply, PassSpec } from "./worker-protocol.js";
 
 /**
@@ -47,6 +47,8 @@ function buildInstances(specs: readonly PassSpec[], root: string): readonly IAss
         });
       case "texture":
         return texturePass(spec.options);
+      case "texture-resize":
+        return textureResizePass(spec.options);
     }
   });
 }

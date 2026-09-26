@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { cp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
+import { workspacePackages } from "../../../scripts/workspace-packages.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
@@ -15,6 +17,77 @@ const run = promisify(execFile);
 // exception is src/playtest.ts itself - the ./playtest subpath is the deliberate bridge to
 // the harness, declared as an optional peer dependency rather than bundled.
 const PLAYTEST_BRIDGE_ENTRY = "playtest.ts";
+const PLAYTEST_PACKAGE = "@threenative/playtest";
+/** This package's own name, read rather than written: the entry's JSDoc examples name it. */
+const SELF_PACKAGE = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    name: string;
+  }
+).name;
+
+/**
+ * Build-time machinery a browser-tier or native-bundle module may not import.
+ *
+ * These are the encoders and compilers the asset cook owns: a page that reaches one of them
+ * downloads a transcoder, an image resizer and a glTF rewriter it has no use for, and a native
+ * bundle cannot carry them at all. A type-only import is allowed, because it is elided before
+ * the graph is built.
+ */
+const BUILD_TIME_PACKAGES: readonly string[] = [
+  "@gltf-transform",
+  "pngjs",
+  "sharp",
+  "wasm-media-encoders",
+];
+/** The vendored encoders a relative specifier can name without naming a package. */
+const BUILD_TIME_PATH_MARKERS: readonly string[] = [
+  "basis_encoder",
+  "basis_transcoder",
+  "ktx2-encoder",
+];
+/**
+ * Sibling workspace packages, derived rather than listed: the runtime reaches none of them, and
+ * `packages/assets` is the one that legitimately carries the encoders, so the dependency
+ * direction is the rule rather than a case. Two names are exempt: the playtest package, whose
+ * subpaths the `./playtest` bridge above imports on purpose, and this package's own name, which
+ * appears in the JSDoc examples its entry documents.
+ */
+const WORKSPACE_PACKAGE_BANNED: ReadonlySet<string> = new Set(
+  workspacePackages()
+    .map(({ name }) => name)
+    .filter((name) => name !== PLAYTEST_PACKAGE && name !== SELF_PACKAGE),
+);
+
+/** Every specifier a module imports, in `from "…"` and bare `import "…"` shape alike. */
+function importedSpecifiers(text: string): readonly string[] {
+  const specifiers: string[] = [];
+  for (const match of text.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)) {
+    if (match[1] !== undefined) specifiers.push(match[1]);
+  }
+  return specifiers;
+}
+
+function isBuildTime(specifier: string): boolean {
+  if (BUILD_TIME_PATH_MARKERS.some((marker) => specifier.includes(marker))) return true;
+  if (specifier.startsWith(".") || specifier.startsWith("/")) return false;
+  const name = specifier.startsWith("@")
+    ? (specifier.split("/").slice(0, 2).join("/") ?? specifier)
+    : (specifier.split("/")[0] ?? specifier);
+  if (WORKSPACE_PACKAGE_BANNED.has(name)) return true;
+  // The package name itself, or any of its subpaths (`@gltf-transform/functions`).
+  return BUILD_TIME_PACKAGES.some(
+    (banned) => name === banned || specifier.startsWith(`${banned}/`),
+  );
+}
+
+/** The build-time specifiers one module imports, named with the file that reaches them. */
+function buildTimeImportOffenders(file: string, text: string): readonly string[] {
+  const offenders: string[] = [];
+  for (const specifier of importedSpecifiers(text)) {
+    if (isBuildTime(specifier)) offenders.push(`${file}: build-time import of ${specifier}`);
+  }
+  return offenders;
+}
 
 async function collectSourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -80,6 +153,7 @@ test("should keep the playtest bridge tier browser-safe", async () => {
     if (/["']@threenative\/playtest["']/.test(withoutTypeImports)) {
       offenders.push(`${file}: value import of @threenative/playtest root`);
     }
+    offenders.push(...buildTimeImportOffenders(file, withoutTypeImports));
     for (const match of withoutTypeImports.matchAll(/from ["'](\.[./][^"']+)["']/g)) {
       const specifier = match[1];
       if (specifier === undefined) continue;
@@ -90,6 +164,11 @@ test("should keep the playtest bridge tier browser-safe", async () => {
   for (const entry of entryFiles) await walk(entry);
 
   expect(seen.size).toBeGreaterThan(3);
+  // The asset loader and the playtest bridge both ride on this graph, so the walk has to be
+  // reading them: an `assets.ts` that stopped being reachable, or a bridge the entry no longer
+  // imports, would leave this test green over a graph it no longer covers.
+  expect(seen).toContain("assets.ts");
+  expect(seen).toContain(PLAYTEST_BRIDGE_ENTRY);
   expect(offenders).toEqual([]);
 });
 

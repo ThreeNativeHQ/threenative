@@ -193,6 +193,8 @@ export function evaluatePerformanceAssertion(
     const noun = unit === "draws" ? "draw calls" : "triangles";
     // Fails closed twice over, like the phase bounds: a series carrying no pass split cannot
     // satisfy a per-pass ceiling, and neither can a frame that omitted the declared kind.
+    // The producer aggregates a frame's render calls per kind, so `find` is that kind's total
+    // rather than its first call: a shadow lane of 30 calls used to read as one call's draws.
     const measured = observed.flatMap((sample) => {
       const pass = sample.passes?.find((candidate) => candidate.kind === kind);
       return pass === undefined ? [] : [pass[unit]];

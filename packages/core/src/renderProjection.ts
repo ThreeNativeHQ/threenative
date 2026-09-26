@@ -69,6 +69,7 @@ export type ProjectionExactReason =
   | "batchOverflow"
   | "batchVelocityPatchMissing"
   | "negativeScale"
+  | "nonUniformScale"
   | "unsupportedGeometry";
 
 export interface IRenderProjectionReport {
@@ -91,6 +92,8 @@ export interface IRenderProjectionReport {
   /** The batch split by lane, so a report reader can tell which grouping did the folding. */
   readonly instancedBatches: number;
   readonly materialBatches: number;
+  /** Palette draws on the skinned lane: rigs sharing geometry and material, one draw per pass. */
+  readonly skinnedBatches: number;
   /** Sources that kept a draw of their own, with the reason each one did. */
   readonly exactObjects: number;
   readonly exact: Partial<Record<ProjectionExactReason, number>>;
@@ -280,6 +283,9 @@ export class SceneRenderProjection {
       if (scan.plan.action === "decline") {
         mirror.releaseAll();
         this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
+        // A scene with nothing in it yet is still loading, and walking it costs nothing: look
+        // again next frame rather than drawing the first second of the level unprojected.
+        if (scan.renderables === 0) this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
       } else {
         // The renderer is handed the mirror, so the authored scene's world matrices are refreshed
         // here. With the engine's walk installed that is the visible-only pass, which mirrors three
@@ -352,6 +358,7 @@ export class SceneRenderProjection {
           batches: r.batches,
           instancedBatches: r.instancedBatches,
           materialBatches: r.materialBatches,
+          skinnedBatches: r.skinnedBatches,
           projectedObjects: r.projectedObjects,
           exactObjects: r.exactObjects,
           exact: r.exact,
@@ -387,6 +394,7 @@ export class SceneRenderProjection {
       batches,
       instancedBatches: this.#deoptimized ? 0 : (this.#mirror?.instancedBatchCount ?? 0),
       materialBatches: this.#deoptimized ? 0 : (this.#mirror?.materialBatchCount ?? 0),
+      skinnedBatches: this.#deoptimized ? 0 : (this.#mirror?.skinnedBatchCount ?? 0),
       exactObjects,
       // A declined frame renders the authored scene, so its plan is one draw per authored
       // renderable — the number the projection is trying to beat, not zero.

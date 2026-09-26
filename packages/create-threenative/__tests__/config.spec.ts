@@ -693,6 +693,31 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.sharedImages/u);
   });
 
+  it("hands assets.models.compact to the pipeline that receives it", async () => {
+    // The same seam: the engine grew lossless compaction, and this validator's key list is
+    // where a documented opt-out dies before an asset compiles.
+    const root = await project();
+    await config(
+      root,
+      'export default { assets: { models: { compact: { protectedNames: ["Head"], instance: { min: 3 } } } } };',
+    );
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({
+      models: { compact: { instance: { min: 3 }, protectedNames: ["Head"] } },
+    });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      skippedCompression: [],
+      written: 0,
+    });
+
+    const off = await project();
+    await config(off, "export default { assets: { models: { compact: false } } };");
+    expect((await loadConfig(off)).assets).toMatchObject({ models: { compact: false } });
+  });
+
   it("hands assets.concurrency to the pipeline that receives it", async () => {
     // The bounded-concurrency seam (PRD-319): the config validates the value and the driver
     // reads it — a key the driver ignored would pass this producer half and ship nothing.
