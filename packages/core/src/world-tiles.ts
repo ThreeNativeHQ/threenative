@@ -100,6 +100,8 @@ interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly levels: readonly ILevelGeometry[];
   lodTransition?: ILodTransition;
   lodLevel: number;
+  /** Coarsest level whose height error against every finer level stays inside the pop bound. */
+  readonly maxLodLevel: number;
   readonly origin: IHeightfieldOrigin;
   readonly skirts: number;
 }
@@ -1047,6 +1049,34 @@ function surfaceDeltaFromSamples(
   return maximum;
 }
 
+/**
+ * The coarsest level a tile may ever show. A level is selectable only when its height error
+ * against *every* finer level fits the pop bound, which is what keeps the per-frame displacement
+ * inside it: a transition walks one LOD_TRANSITION_FRAMES-th of the way between two levels, and
+ * an interrupted transition snaps back to a level endpoint, which is never further from the
+ * surface it replaced than the bound between any two selectable levels. A cliff therefore keeps
+ * its tile at a finer level instead of throwing out of the frame.
+ */
+function coarsestSelectableLevel(levels: readonly ILevelGeometry[]): number {
+  let coarsest = 0;
+  for (let index = 1; index < levels.length; index += 1) {
+    const level = levels[index];
+    if (level === undefined) break;
+    let error = 0;
+    for (let finerIndex = 0; finerIndex < index; finerIndex += 1) {
+      const finer = levels[finerIndex];
+      if (finer === undefined) break;
+      error = Math.max(
+        error,
+        surfaceDeltaFromSamples(surfaceHeights(finer), finer.resolution, level),
+      );
+    }
+    if (error > LOD_POP_THRESHOLD) break;
+    coarsest = index;
+  }
+  return coarsest;
+}
+
 function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
   const aLevel = a.levels[a.lodLevel];
   const bLevel = b.levels[b.lodLevel];
@@ -1681,6 +1711,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         lod,
         lodLevel: 0,
         levels,
+        maxLodLevel: coarsestSelectableLevel(levels),
         object: lod,
         origin,
         skirtVertexCount: levels.reduce((total, level) => total + level.skirtVertexCount, 0),
@@ -1704,8 +1735,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #setLodLevel(tile: IResidentTile, level: number, countTransition = true): void {
-    if (level === tile.lodLevel) {
-      setManualLodLevel(tile.lod, level);
+    const selectable = Math.min(level, tile.maxLodLevel);
+    if (selectable === tile.lodLevel) {
+      setManualLodLevel(tile.lod, selectable);
       return;
     }
     const interruptedFrame =
@@ -1713,12 +1745,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (tile.lodTransition !== undefined) this.#finishLodTransition(tile);
     const previousLevel = tile.lodLevel;
     const previous = tile.levels[previousLevel];
-    const next = tile.levels[level];
+    const next = tile.levels[selectable];
     if (previous === undefined || next === undefined)
       throw new Error("TerrainTiles LOD transition references a missing level.");
-    tile.lodLevel = level;
+    tile.lodLevel = selectable;
     if (!countTransition) {
-      setManualLodLevel(tile.lod, level);
+      setManualLodLevel(tile.lod, selectable);
       this.#setLodVisibility(tile);
       this.#recordLodPopAfterRetarget(interruptedFrame);
       return;
@@ -1728,9 +1760,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       elapsedFrames: 0,
       from: previousLevel,
       remainingFrames: LOD_TRANSITION_FRAMES,
-      to: level,
+      to: selectable,
     };
-    const finerLevel = previous.resolution >= next.resolution ? previousLevel : level;
+    const finerLevel = previous.resolution >= next.resolution ? previousLevel : selectable;
     const finer = previous.resolution >= next.resolution ? previous : next;
     setManualLodLevel(tile.lod, finerLevel);
     updateLodTransitionGeometry(tile, tile.lodTransition, 0);
@@ -1814,7 +1846,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       for (const pair of pairs) {
         const correction = neighborLodCorrection(pair);
         if (correction === undefined) continue;
+        const before = correction.coarser.lodLevel;
         this.#setLodLevel(correction.coarser, correction.level, countTransitions);
+        if (correction.coarser.lodLevel === before) continue;
         changed = true;
       }
     }
