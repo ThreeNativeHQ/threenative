@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -1204,9 +1204,26 @@ describe("CI pipeline structure", () => {
 
     const templateRoot = path.join(repo, "packages/create-threenative/templates");
     for (const [template, count] of new Map(entries.map((e) => [e.template, e.count]))) {
+      // The lane copies `template-playtests/<template>/` into the scaffold before it classifies
+      // (PRD-449), so the count is the union of the template's own scenarios and the engine
+      // guards a new game no longer ships. Classifying the template alone would understate a
+      // starter as 1 non-visual and condemn a matrix that is still correct.
+      const root = await makeTempDir("threenative-template-scenarios-");
+      const playtests = path.join(root, "playtests");
+      await mkdir(playtests, { recursive: true });
+      for (const source of [
+        path.join(templateRoot, template, "playtests"),
+        path.join(repo, "packages/create-threenative/template-playtests", template),
+      ]) {
+        await cp(source, playtests, { recursive: true }).catch((error: unknown) => {
+          // Most templates ship no guards, so the directory simply is not there.
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          throw error;
+        });
+      }
       const result = spawnSync(
         process.execPath,
-        [path.join(repo, "scripts/non-visual-scenarios.mjs"), path.join(templateRoot, template)],
+        [path.join(repo, "scripts/non-visual-scenarios.mjs"), root],
         { encoding: "utf8" },
       );
       expect(result.status, `${template}: ${result.stderr}`).toBe(0);
@@ -1215,6 +1232,7 @@ describe("CI pipeline structure", () => {
         count,
         `${template} declares ${count} shards for ${scenarios.length} scenarios`,
       ).toBeLessThanOrEqual(scenarios.length);
+      await rm(root, { force: true, recursive: true });
     }
   });
 
