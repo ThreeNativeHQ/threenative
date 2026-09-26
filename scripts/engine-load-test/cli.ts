@@ -16,6 +16,7 @@ import {
   waitForUrl,
 } from "./browser.js";
 import { writeCampaignReport } from "./bundle.js";
+import { type ICullComparison, compareCullRuns, parseCullRun } from "./cull-compare.js";
 import { compareMeshRuns, readMeshRun } from "./mesh-compare.js";
 import { buildDraftPlan } from "./plan.js";
 import {
@@ -566,9 +567,248 @@ async function runProductComparison(): Promise<void> {
   process.stdout.write(`${markdown}\n`);
 }
 
+const CULL_VARIANT_NAMES = [
+  "basic_cull",
+  "dynamic_cull",
+  "dynamic_rotate_cull",
+  "directional_light_cull",
+  "static_omni_light_cull",
+  "static_omni_light_cull_with_shadows",
+  "dynamic_omni_light_cull",
+  "dynamic_omni_light_cull_with_shadows",
+  "static_spot_light_cull_with_shadows",
+  "dynamic_spot_light_cull_with_shadows",
+];
+
+function positiveFlag(name: string, fallback: number, minimum: number): number {
+  const value = Number(flag(name) ?? fallback);
+  if (!Number.isInteger(value) || value < minimum)
+    throw new BenchError("TN_BENCH_BAD_PARAM", `${name} must be an integer >= ${minimum}`);
+  return value;
+}
+
+/**
+ * The pinned upstream checkout under `artifacts/`, which Phase 1 verified and hashed. The Godot arm
+ * runs against it directly rather than a copy, so the SHA-256 it checks is the lock's own.
+ */
+function godotBenchmarksPath(): string {
+  return path.join(artifactRoot, "sources/godot-benchmarks");
+}
+
+async function runGodotCullArm(
+  variant: string,
+  frames: number,
+  warmup: number,
+  file: string,
+  captures: string,
+  fixture: string,
+): Promise<void> {
+  const godot = process.env.GODOT_BIN ?? "godot";
+  const checkout = godotBenchmarksPath();
+  if (!existsSync(checkout))
+    throw new BenchError(
+      "TN_BENCH_GODOT_CHECKOUT_MISSING",
+      `pinned upstream checkout missing: ${checkout}`,
+    );
+  const godotBinary = await (async () => godot)();
+  const raw = await runCapturing(
+    godotBinary,
+    [
+      "--path",
+      checkout,
+      "--resolution",
+      "1920x1080",
+      "--script",
+      path.join(repoRoot, "benchmark/godot-prd449/culling_arm.gd"),
+      "--",
+      variant,
+      `--frames=${frames}`,
+      `--warmup=${warmup}`,
+      `--captures=${captures}`,
+      `--fixture=${fixture}`,
+    ],
+    { cwd: repoRoot, env: { ...process.env, DISPLAY: requiredDisplay() } },
+  );
+  await writeArmRecord(file, raw, {
+    adapter: (raw as Record<string, unknown>).adapter,
+    display: requiredDisplay(),
+    godot: await fileIdentity(await resolveGodotBinary()),
+    source: {
+      commit: "b059e38a81230a87293828bbf65ab247b6b2d2a8",
+      fixture: path.relative(repoRoot, fixture),
+    },
+  });
+}
+
+async function resolveGodotBinary(): Promise<string> {
+  const godot = process.env.GODOT_BIN ?? "godot";
+  const resolved = await new Promise<string>((resolveResolved) => {
+    const child = execFile("sh", ["-c", `command -v ${godot}`], (error, stdout) =>
+      resolveResolved(error === null ? stdout.trim() : godot),
+    );
+    child.on("error", () => resolveResolved(godot));
+  });
+  return resolved;
+}
+
+function requiredDisplay(): string {
+  const display = process.env.TN_BENCH_DISPLAY ?? process.env.DISPLAY ?? "";
+  if (display.length === 0)
+    throw new BenchError(
+      "TN_BENCH_DISPLAY_MISSING",
+      "set TN_BENCH_DISPLAY (or DISPLAY) to the physical X display; a private Xvfb display cannot establish native throughput",
+    );
+  return display;
+}
+
+async function writeArmRecord(
+  file: string,
+  raw: unknown,
+  identity: Record<string, unknown>,
+): Promise<void> {
+  // The parser gates the record and the raw payload is what gets retained: its frame series, work
+  // counters, capture paths and render/GPU samples are the evidence, and a normalized copy of it
+  // would silently drop exactly the fields a later reader needs.
+  const run = parseCullRun(raw);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    `${JSON.stringify({ ...(raw as Record<string, unknown>), identity, profile: "smoke" }, null, 2)}\n`,
+  );
+  process.stdout.write(
+    `wrote ${run.arm} ${run.variant} run: ${file} (${run.meanMs.toFixed(3)} ms mean, ${run.captures.length} captures)\n`,
+  );
+}
+
+async function runTnCullArm(
+  variant: string,
+  authoring: string,
+  frames: number,
+  warmup: number,
+  file: string,
+  fixture: string,
+): Promise<void> {
+  if (!existsSync(fixture))
+    throw new BenchError(
+      "TN_BENCH_CULL_FIXTURE_MISSING",
+      `run the Godot arm with --fixture first: ${fixture}`,
+    );
+  const display = requiredDisplay();
+  const nativeBinary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
+  if (!existsSync(nativeBinary))
+    throw new BenchError("TN_BENCH_NATIVE_HOST_MISSING", `native host missing: ${nativeBinary}`);
+  const { WAYLAND_DISPLAY: _dropped, ...inherited } = process.env;
+  const env = {
+    ...inherited,
+    DISPLAY: display,
+    TN_BENCH_PLATFORM: "desktop",
+    TN_BENCH_TARGET: "native-cull",
+    TN_CULL_AUTHORING: authoring,
+    TN_CULL_FRAMES: String(frames),
+    TN_CULL_FIXTURE: fixture,
+    TN_CULL_VARIANT: variant,
+    TN_CULL_WARMUP: String(warmup),
+  };
+  await execFileAsync("pnpm", ["--filter", "threenative-engine-load-test", "build"], {
+    cwd: repoRoot,
+    env,
+  });
+  const bundle = path.join(
+    repoRoot,
+    "examples/engine-load-test/dist/engine-load-test-cull-desktop.js",
+  );
+  const raw = await runCapturing(
+    nativeBinary,
+    ["run", bundle, "--width", "1920", "--height", "1080", "--no-vsync"],
+    { cwd: repoRoot, env: { ...env, SDL_VIDEODRIVER: "x11" } },
+  );
+  await writeArmRecord(file, raw, {
+    adapter: (raw as Record<string, unknown>).adapter,
+    authoring,
+    browserArgs: null,
+    display,
+    nativeHost: {
+      path: path.relative(repoRoot, nativeBinary),
+      ...(await fileIdentity(nativeBinary)),
+    },
+    source: {
+      commit: "b059e38a81230a87293828bbf65ab247b6b2d2a8",
+      fixture: path.relative(repoRoot, fixture),
+      tn: { commit: (await sourceIdentity()).commit, dirty: (await sourceIdentity()).dirty },
+    },
+  });
+}
+
+async function runCullArm(arm: string): Promise<void> {
+  if (arm !== "godot-desktop" && arm !== "tn-desktop")
+    throw new BenchError("TN_BENCH_BAD_ARM", `unknown culling arm ${arm}`);
+  const variant = flag("cull-variant") ?? "basic_cull";
+  if (!CULL_VARIANT_NAMES.includes(variant))
+    throw new BenchError("TN_BENCH_BAD_GODOT_VARIANT", `unknown pinned culling variant ${variant}`);
+  const authoring = flag("cull-authoring") ?? "scene-node-independent";
+  if (authoring !== "scene-node-independent" && authoring !== "clustered-default")
+    throw new BenchError("TN_BENCH_BAD_AUTHORING", `unknown authoring mode ${authoring}`);
+  const frames = positiveFlag("frames", 600, 1);
+  const warmup = positiveFlag("warmup", 120, 0);
+  const slug = `${arm}-${variant}${authoring === "clustered-default" ? "-clustered" : ""}`;
+  const file = path.resolve(
+    repoRoot,
+    flag("out") ?? `artifacts/engine-load-test/cull-${slug}.json`,
+  );
+  const captures = path.resolve(repoRoot, `artifacts/engine-load-test/cull-captures/${slug}`);
+  const fixture = path.resolve(
+    repoRoot,
+    flag("cull-fixture") ?? "artifacts/engine-load-test/cull-fixture-10k.json",
+  );
+  if (arm === "godot-desktop")
+    await runGodotCullArm(variant, frames, warmup, file, captures, fixture);
+  else await runTnCullArm(variant, authoring, frames, warmup, file, fixture);
+}
+
+async function compareCullArms(): Promise<void> {
+  const tnPath = flag("cull-compare");
+  const godotPath = flag("cull-against");
+  if (tnPath === undefined || godotPath === undefined)
+    throw new BenchError(
+      "TN_BENCH_CULL_COMPARE_ARGS",
+      "--cull-compare <tn.json> also needs --cull-against <godot.json>",
+    );
+  const tn = parseCullRun(
+    JSON.parse(await readFile(path.resolve(repoRoot, tnPath), "utf8")) as unknown,
+  );
+  const godot = parseCullRun(
+    JSON.parse(await readFile(path.resolve(repoRoot, godotPath), "utf8")) as unknown,
+  );
+  const comparison: ICullComparison = compareCullRuns(tn, godot);
+  const file = path.resolve(
+    repoRoot,
+    flag("out") ?? "artifacts/engine-load-test/cull-comparison.json",
+  );
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    `${JSON.stringify(
+      {
+        ...comparison,
+        arms: {
+          godot: { arm: godot.arm, meanMs: godot.meanMs, authoring: godot.authoring },
+          tn: { arm: tn.arm, meanMs: tn.meanMs, authoring: tn.authoring },
+        },
+        variant: godot.variant,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  process.stdout.write(
+    `wrote ${file}\n  tn-desktop      ${tn.meanMs.toFixed(3)} ms\n  godot-desktop   ${godot.meanMs.toFixed(3)} ms  ratio ${comparison.ratio.ratio.toFixed(3)}\n  comparability ${comparison.outcome.comparability}${comparison.outcome.problems.length > 0 ? ` (${comparison.outcome.problems.join(", ")})` : ""}\n`,
+  );
+  if (!comparison.outcome.valid) process.exitCode = 2;
+}
+
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --mesh-arm <plain-three-web|tn-web|tn-desktop> [--count N --variant name --frames N --warmup N --out file.json]  # production-build smoke on the named GPU; needs TN_BENCH_DISPLAY or `sh scripts/xvfb.sh`\n       pnpm bench:engines --mesh-compare <baseline.json> --mesh-against <candidate.json> [--out mesh-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --plan --suite cross-engine --out <bundle-dir>  # writes a draft plan only\n       pnpm bench:engines --report-html <bundle-dir>  # partial bundles render with exit 2\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --mesh-arm <plain-three-web|tn-web|tn-desktop> [--count N --variant name --frames N --warmup N --out file.json]  # production-build smoke on the named GPU; needs TN_BENCH_DISPLAY or `sh scripts/xvfb.sh`\n       pnpm bench:engines --cull-arm <godot-desktop|tn-desktop> [--cull-variant name --cull-authoring scene-node-independent|clustered-default --frames N --warmup N --cull-fixture path --out file.json]  # real-GPU culling arm; needs DISPLAY and the pinned godot-benchmarks checkout\n       pnpm bench:engines --cull-compare <tn.json> --cull-against <godot.json> [--out cull-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --mesh-compare <baseline.json> --mesh-against <candidate.json> [--out mesh-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --plan --suite cross-engine --out <bundle-dir>  # writes a draft plan only\n       pnpm bench:engines --report-html <bundle-dir>  # partial bundles render with exit 2\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 
@@ -600,6 +840,9 @@ async function main(): Promise<void> {
   }
   const meshArm = flag("mesh-arm");
   if (meshArm !== undefined) return runMeshArm(meshArm);
+  const cullArm = flag("cull-arm");
+  if (cullArm !== undefined) return runCullArm(cullArm);
+  if (flag("cull-compare") !== undefined) return compareCullArms();
   if (flag("mesh-compare") !== undefined) return compareMeshArms();
   if (process.argv.includes("--regression-collection")) return runRegressionCollectionCommand();
   if (process.argv.includes("--regression")) return runRegressionCommand();

@@ -7,6 +7,20 @@ const LCG_SEED := 1337
 const CUBE_SPACING := 2.5
 const VIEWPORT_WIDTH := 1280
 const VIEWPORT_HEIGHT := 720
+const FIXTURE_HEADER := (
+	"threenative-cube-fixture-v1\n"
+	+ "cubeSpacing=2.5\nlcgSeed=1337\n"
+	+ "antialias=false\nbobAmplitude=0.5\nbobFrameFrequency=0.05\nbobIndexPhase=0.3\n"
+	+ "cameraFar=4000\ncameraFov=60\ncameraNear=0.1\ncameraOrbitAngle=0.0045\n"
+	+ "cameraOrbitFraction=0.34\ncameraTargetFraction=0.12\ncameraTargetY=1.5\n"
+	+ "cameraYFraction=0.09\ncameraYOffset=4\ncubeSize=1\n"
+	+ "groundRotationX=-1.5707963267948966\ngroundSize=200\n"
+	+ "lightColor=16777215\nlightIntensity=2.4\nlightX=40\nlightY=80\nlightZ=25\n"
+	+ "materialColor=12109004\nmaterialMetalness=0\nmaterialRoughness=0.75\n"
+	+ "pixelRatio=1\nplacementBaseY=0.5\nplacementHeight=3\nplacementJitter=0.6\n"
+	+ "rotationXFrame=0.013\nrotationXIndex=0.011\nrotationYFrame=0.02\n"
+	+ "rotationYIndex=0.017\nviewportHeight=720\nviewportWidth=1280\n"
+)
 
 var _lcg_state: int = LCG_SEED
 
@@ -22,6 +36,7 @@ var _cube_mesh: BoxMesh
 var _cubes: Array[MeshInstance3D] = []
 var _multimesh_instance: MultiMeshInstance3D = null
 var _placements: PackedVector3Array = PackedVector3Array()
+var _fixture_hash: String = ""
 var _camera: Camera3D
 
 var _plan: Array = []
@@ -63,6 +78,10 @@ func _lattice_extent(object_count: int) -> float:
 
 func _create_placements(object_count: int) -> PackedVector3Array:
 	_lcg_reset()
+	var fixture_bytes := StreamPeerBuffer.new()
+	fixture_bytes.big_endian = false
+	fixture_bytes.put_data(FIXTURE_HEADER.to_utf8_buffer())
+	fixture_bytes.put_u32(object_count)
 	var side := _lattice_side(object_count)
 	var half := float(side - 1) / 2.0
 	var out := PackedVector3Array()
@@ -73,11 +92,17 @@ func _create_placements(object_count: int) -> PackedVector3Array:
 		var jitter_x := _lcg_next()
 		var jitter_z := _lcg_next()
 		var jitter_y := _lcg_next()
-		out[index] = Vector3(
-			(float(grid_x) - half) * CUBE_SPACING + (jitter_x - 0.5) * CUBE_SPACING * 0.6,
-			0.5 + jitter_y * 3.0,
-			(float(grid_z) - half) * CUBE_SPACING + (jitter_z - 0.5) * CUBE_SPACING * 0.6
-		)
+		var x: float = (float(grid_x) - half) * CUBE_SPACING + (jitter_x - 0.5) * CUBE_SPACING * 0.6
+		var y: float = 0.5 + jitter_y * 3.0
+		var z: float = (float(grid_z) - half) * CUBE_SPACING + (jitter_z - 0.5) * CUBE_SPACING * 0.6
+		fixture_bytes.put_double(x)
+		fixture_bytes.put_double(y)
+		fixture_bytes.put_double(z)
+		out[index] = Vector3(x, y, z)
+	var hashing := HashingContext.new()
+	hashing.start(HashingContext.HASH_SHA256)
+	hashing.update(fixture_bytes.data_array)
+	_fixture_hash = hashing.finish().hex_encode()
 	return out
 
 
@@ -167,7 +192,7 @@ func _ready() -> void:
 
 	# One shared lit material for ground and cubes, one directional light, no shadows (§3.1).
 	_material = StandardMaterial3D.new()
-	_material.albedo_color = Color(0.722, 0.769, 0.800)
+	_material.albedo_color = Color8(0xb8, 0xc4, 0xcc)
 	_material.roughness = 0.75
 	_material.metallic = 0.0
 	_cube_mesh = BoxMesh.new()
@@ -330,6 +355,7 @@ func _finish_rung() -> void:
 			"cpuMs": Array(_cpu_samples),
 			"mode": _mode,
 			"objectCount": _object_count,
+			"fixtureHash": _fixture_hash,
 			"positionHash": _position_hash(_placements),
 			"repeat": _repeat,
 			"triangles": _triangles,

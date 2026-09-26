@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
@@ -32,22 +33,36 @@ function modes(): string[] {
   });
 }
 
+// The Godot culling fixture is exported by the Godot arm and read here as bytes, so the counterpart
+// arm hashes the same file the competitor rendered instead of a second implementation of Godot's RNG.
+function fixtureJson(): string {
+  const path = process.env.TN_CULL_FIXTURE;
+  if (path === undefined || path.trim() === "")
+    throw new Error("TN_CULL_FIXTURE must name the Godot-exported culling fixture.");
+  return readFileSync(path, "utf8");
+}
+
 const native = process.env.TN_BENCH_TARGET === "native";
 const nativeMesh = process.env.TN_BENCH_TARGET === "native-mesh";
+const nativeCull = process.env.TN_BENCH_TARGET === "native-cull";
 
 export default defineConfig({
   build:
-    native || nativeMesh
+    native || nativeMesh || nativeCull
       ? {
           lib: {
             entry: resolve(
               import.meta.dirname,
-              nativeMesh ? "src/mesh-native.ts" : "src/native.ts",
+              nativeCull
+                ? "src/cull-native.ts"
+                : nativeMesh
+                  ? "src/mesh-native.ts"
+                  : "src/native.ts",
             ),
             // Per-target filename: the desktop and Android arms build from the same source, and a
             // shared name means one arm's rebuild silently replaces the bundle the other is running.
             fileName: () =>
-              `engine-load-test-${nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
+              `engine-load-test-${nativeCull ? "cull-" : nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
             formats: ["es"],
           },
           minify: false,
@@ -79,6 +94,17 @@ export default defineConfig({
       repeats: integer("TN_BENCH_REPEATS", 3),
       warmup: integer("TN_BENCH_WARMUP", 120),
     }),
+    ...(nativeCull
+      ? {
+          __TN_CULL_CONFIG__: JSON.stringify({
+            authoring: process.env.TN_CULL_AUTHORING ?? "scene-node-independent",
+            fixtureJson: fixtureJson(),
+            frames: integer("TN_CULL_FRAMES", 600),
+            variant: process.env.TN_CULL_VARIANT ?? "basic_cull",
+            warmup: integer("TN_CULL_WARMUP", 120),
+          }),
+        }
+      : {}),
     __TN_MESH_CONFIG__: JSON.stringify({
       count: integer("TN_MESH_COUNT", 1000),
       frames: integer("TN_MESH_FRAMES", 600),
