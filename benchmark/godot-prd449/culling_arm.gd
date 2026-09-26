@@ -28,6 +28,10 @@ const SOURCE_SHA256 := {
 	"project.godot": "e942995c87024bfdc22c5fd9b599d4c8e4b653d2ab05f23787f74c16b197afb7",
 }
 const SOURCE_COMMIT := "b059e38a81230a87293828bbf65ab247b6b2d2a8"
+const MESH_BUFFER_VERSION := "threenative-cull-mesh-buffer/1"
+# 2 carries the rendered buffers themselves; 1 carried counts only, which is what let the two arms
+# tessellate their own primitives and compare different geometry.
+const FIXTURE_SCHEMA := 2
 const VIEWPORT := Vector2i(1920, 1080)
 const FRAME_DELTA := 1.0 / 60.0
 const STATE_FRAMES := [0, 1, 60, 120, 300, 599]
@@ -42,6 +46,8 @@ var _dynamic_rids: Array[RID] = []
 var _dynamic_is_lights := false
 var _directional: DirectionalLight3D = null
 var _boundary_us: Array[int] = []
+var _drain_boundary_us := 0
+var _final_completion_us := 0
 var _warmup_us := 0
 var _wall_ms: Array[float] = []
 var _render_cpu_ms: Array[float] = []
@@ -141,12 +147,12 @@ func _run() -> void:
 		"fixture": {
 			"hash": fixture_hash,
 			"path": fixture_path,
-			"schemaVersion": 1,
+			"schemaVersion": FIXTURE_SCHEMA,
 			"objects": _scene.objects.size(),
 			"rngSeed": 0x60d07,
 			"viewport": {"width": VIEWPORT.x, "height": VIEWPORT.y},
 		},
-		"topology": topology,
+		"topology": _identity_only(topology),
 		"lights": lights,
 		"effective": effective,
 		"dynamic": {
@@ -164,17 +170,19 @@ func _run() -> void:
 		"frameP50Ms": _summary(_wall_ms)["p50"],
 		"frameP95Ms": _summary(_wall_ms)["p95"],
 		"frameP99Ms": _summary(_wall_ms)["p99"],
-		"meanMs": _mean(_wall_ms),
+		"meanMs": _completed_work_mean(),
 		"renderCpuMeanMs": _mean(_render_cpu_ms),
 		"renderGpuMeanMs": _mean(_render_gpu_ms),
 		"work": _work_at_mid,
 		"visibleObjectsInFrame": _visible_objects,
 		"frames": frames,
-		# Godot exposes no `onSubmittedWorkDone`, so the loop's wall mean paces on submission and the
-		# engine's own asynchronous per-frame GPU timestamps are reported beside it. The counterpart
-		# arm drains before its boundary, so the two means do not share a definition and the
-		# comparison is qualified for it.
-		"drain": "none-available",
+		# The mean above spans the first scored boundary to the end of the one final `force_sync()`,
+		# which is the same completed-work definition §7.4 requires and the counterpart arm reports.
+		# `drainFinalWaitMs` is that wait on its own, and `drainBoundaryFrame` names where it was
+		# taken, so a reader can see that the GPU tail is inside the mean and not averaged away.
+		"drain": "measurement-boundary-completion",
+		"drainBoundaryFrame": frames,
+		"drainFinalWaitMs": float(_final_completion_us - _drain_boundary_us) / 1000.0,
 		"warmupFrames": warmup,
 		"warmupMs": float(_warmup_us) / 1000.0,
 		"captures": _captures,
@@ -295,6 +303,15 @@ func _measure(frames: int, warmup: int, captures_dir: String) -> void:
 			}
 		if state_frames.has(frame):
 			_states.append(_sample_state(frame))
+	# One synchronisation, at the one boundary the primary metric is defined at: after the scored
+	# workload, not per frame. `force_sync()` is Godot's documented "synchronize the CPU and the GPU,
+	# blocking the CPU until the GPU is done", so the wait it costs is the asynchronous tail of the
+	# last frames, and it belongs in the completed-work mean exactly as the counterpart's
+	# `onSubmittedWorkDone` before `finalCompletionMs` belongs in that arm's mean. Per-frame fences
+	# would serialize submission and completion and measure neither engine's pipeline.
+	_drain_boundary_us = Time.get_ticks_usec()
+	RenderingServer.force_sync()
+	_final_completion_us = Time.get_ticks_usec()
 
 
 ## The transform the pinned workload has put on each sampled object at this frame's clock value, so
@@ -345,8 +362,20 @@ func _describe_topology() -> Array:
 		# `get_mesh_arrays()` is one surface's channels indexed by `Mesh.ARRAY_*`, not a list of
 		# surfaces; the surface count comes from the renderer's mesh RID.
 		var arrays: Array = primitive.get_mesh_arrays()
+		var kind: String = primitive.get_class()
 		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
 		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		# The counterpart arm builds its geometry from these bytes, so a primitive it cannot decode is
+		# a fixture it cannot render rather than a silently regenerated sphere.
+		if vertices.is_empty() or normals.size() != vertices.size() or uvs.size() != vertices.size():
+			fail("TN_BENCH_GODOT_MESH_CHANNELS_INCOMPLETE", kind)
+			return []
+		if indices.is_empty() or indices.size() % 3 != 0:
+			fail("TN_BENCH_GODOT_MESH_INDICES_MALFORMED", kind)
+			return []
+		var bytes := _mesh_buffer_bytes(kind, vertices, normals, uvs, indices)
 		var mins := Vector3(INF, INF, INF)
 		var maxs := Vector3(-INF, -INF, -INF)
 		for point in vertices:
@@ -354,17 +383,68 @@ func _describe_topology() -> Array:
 			maxs = maxs.max(point)
 		var aabb: AABB = primitive.get_aabb()
 		out.append({
-			"kind": primitive.get_class(),
+			"kind": kind,
 			"surfaces": RenderingServer.mesh_get_surface_count(primitive.get_rid()),
 			"vertices": vertices.size(),
 			"indices": indices.size(),
-			"triangles": indices.size() / 3 if indices.size() > 0 else 0,
-			"indexed": indices.size() > 0,
+			"triangles": indices.size() / 3,
+			"indexed": true,
 			"aabb": {"min": _f3(aabb.position), "size": _f3(aabb.size)},
-			"vertexBounds": {"min": _f3(mins), "max": _f3(maxs)} if vertices.size() > 0 else null,
+			"vertexBounds": {"min": _f3(mins), "max": _f3(maxs)},
 			"albedo": _albedo(primitive),
+			# Raw little-endian buffers, so the fixture carries the bytes the scene rendered rather
+			# than a decimal approximation of them, plus the SHA-256 of the canonical stream both
+			# arms hash. `PackedVector3Array` is three binary32 and `PackedInt32Array` two's-complement
+			# 32-bit, so a channel is exactly `count * stride` bytes on the wire.
+			"bufferSha256": _sha256(bytes),
+			"buffers": {
+				"positions": Marshalls.raw_to_base64(vertices.to_byte_array()),
+				"normals": Marshalls.raw_to_base64(normals.to_byte_array()),
+				"uvs": Marshalls.raw_to_base64(uvs.to_byte_array()),
+				"indices": Marshalls.raw_to_base64(indices.to_byte_array()),
+			},
 		})
 	return out
+
+
+## The one byte stream a primitive's identity is a SHA-256 over, byte-for-byte the layout
+## `cullMeshBufferBytes` writes on the counterpart side: version line, class name, the vertex and
+## index counts as two little-endian u32, then positions, normals, UVs and indices in that order.
+func _mesh_buffer_bytes(
+	kind: String,
+	vertices: PackedVector3Array,
+	normals: PackedVector3Array,
+	uvs: PackedVector2Array,
+	indices: PackedInt32Array
+) -> PackedByteArray:
+	var bytes := PackedByteArray()
+	bytes.append_array((MESH_BUFFER_VERSION + "\n").to_utf8_buffer())
+	bytes.append_array((kind + "\n").to_utf8_buffer())
+	bytes.append_array(PackedInt32Array([vertices.size(), indices.size()]).to_byte_array())
+	bytes.append_array(vertices.to_byte_array())
+	bytes.append_array(normals.to_byte_array())
+	bytes.append_array(uvs.to_byte_array())
+	bytes.append_array(indices.to_byte_array())
+	return bytes
+
+
+## The record keeps each primitive's identity; the bytes themselves live once, in the fixture file the
+## record already names by path and hash. Duplicating a third of a megabyte of base64 into every run
+## record would make the retained evidence bigger without making it more true.
+func _identity_only(topology: Array) -> Array:
+	var out := []
+	for entry in topology:
+		var copy: Dictionary = (entry as Dictionary).duplicate(true)
+		copy.erase("buffers")
+		out.append(copy)
+	return out
+
+
+func _sha256(bytes: PackedByteArray) -> String:
+	var context := HashingContext.new()
+	context.start(HashingContext.HASH_SHA256)
+	context.update(bytes)
+	return context.finish().hex_encode()
 
 
 func _albedo(primitive: PrimitiveMesh) -> Array:
@@ -526,7 +606,7 @@ func _luma(colour: Color) -> float:
 
 func _export_fixture(path: String, topology: Array, lights: Dictionary) -> String:
 	var fixture := {
-		"schemaVersion": 1,
+		"schemaVersion": FIXTURE_SCHEMA,
 		"generatedBy": "godot-desktop",
 		"sourceCommit": SOURCE_COMMIT,
 		"cullingSha256": SOURCE_SHA256["benchmarks/rendering/culling.gd"],
@@ -605,6 +685,15 @@ func _intervals() -> Array:
 	for i in range(1, _boundary_us.size()):
 		out.append(float(_boundary_us[i] - _boundary_us[i - 1]) / 1000.0)
 	return out
+
+
+## The primary metric of §7.4: the whole measured span, every scored frame plus the single final
+## drain, divided by the frame count. Not the mean of the per-frame intervals, which would leave the
+## GPU tail of the last frame outside the number and quietly measure a different thing.
+func _completed_work_mean() -> float:
+	if _boundary_us.is_empty() or _final_completion_us == 0:
+		return 0.0
+	return float(_final_completion_us - _boundary_us[0]) / 1000.0 / float(_wall_ms.size())
 
 
 func _mean(samples: Array) -> float:

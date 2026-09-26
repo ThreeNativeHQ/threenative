@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (four real-GPU raw smoke cells retained, every one of them `non-comparable` with no ratio once the comparator stopped qualifying mismatched primitives; the shadows-on and rotating variants blocked on named evidence), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks and the Godot-culling family's four single-block raw smoke cells; no Bevy, fox, City or publication-grade cross-engine result is claimed.
+**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (the two arms now render byte-identical primitives and drain at the same boundary, and a fresh 600-frame `basic_cull` pair is refused for exactly one remaining named cause — Godot's occlusion culling drops 1,459 objects the counterpart arm draws; the shadows-on and light variants remain open), and Phase 5 partial report renderer are built or proved as stated below. No Bevy, fox, City or publication-grade cross-engine result is claimed, and no `godot-culling` cell yet carries a ratio.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -494,111 +494,161 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   diagnostic, not a published timing result. All 23 recorded requested/actual counts matched the
   draft matrix in a direct consistency check.
   The real-GPU arm closes the transform and scene clauses of that sentence and leaves the
-  depth/object-ID clause and the physical-rendering clause open: §6.1 requires exact mesh and index
-  buffers, and the two arms do not render the same primitives, so the pairs are non-comparable
+  depth/object-ID clause and the physical-rendering clause open: the two arms' primitives are now the
+  pinned scene's own buffers, but they admit different object sets, so the pairs are non-comparable
   rather than qualified — see the cell box below.
   [culling_arm.gd](../../../../benchmark/godot-prd449/culling_arm.gd)
   drives the pinned `benchmark_<variant>()` itself and never re-implements the workload; the
   counterpart arm reads the fixture the Godot arm actually rendered
   ([cull-fixture.ts](../../../../examples/engine-load-test/src/cull-fixture.ts)) instead of
-  reimplementing Godot's PCG stream, so the two arms hash the same file. In the retained
-  `basic_cull` pair the fixture hash, the 10,000-object census and the 0/0/0 light census are equal,
-  the six sampled frames agree to `0 m` and `0` quaternion components, and both arms' independent
-  motion checks pass on the real GPU. What still blocks the box is exactness, not depth: four of the
-  five primitive kinds differ in triangle, index and vertex count, so no number survives.
+  reimplementing Godot's PCG stream, so the two arms hash the same file. The fixture is now
+  **schema 2** and carries the five rendered primitives themselves, so §6.1's "exact mesh and index
+  buffers" is satisfied by bytes rather than by counts. From
+  `PrimitiveMesh.get_mesh_arrays()` the pinned scene's `ARRAY_VERTEX`, `ARRAY_NORMAL`, `ARRAY_TEX_UV`
+  and `ARRAY_INDEX` channels are exported as base64 of their raw little-endian buffers
+  (three binary32, three binary32, two binary32, one two's-complement int32) alongside a per-mesh
+  SHA-256 over the canonical stream `threenative-cull-mesh-buffer/1` + the class name + the two
+  little-endian `u32` counts + those four channels. The Godot arm hashes it with `HashingContext` over
+  the packed arrays' own `to_byte_array()`; the counterpart builds a `BufferGeometry` from the
+  decoded channels, re-derives the digest from the arrays it actually uploaded, and fails closed on a
+  length, an out-of-range index or a digest that disagrees. It no longer constructs
+  `SphereGeometry(0.5, 64, 32)` and friends from a matching name, which is what produced 3,968
+  triangles against Godot's 4,224.
+
+  The retained `basic_cull` pair on the real GPU (600 measured frames after 120 warmup, RTX 2080
+  (TU104), driver `615.71.09`, `DISPLAY=:0`, Godot `4.7.1.stable.official.a13da4feb` SHA-256
+  `32f8d759…`, native host `packages/runtime-native/build/tn-linux/mystral` SHA-256 `f9386044…`,
+  fixture 886,407 bytes SHA-256 `3370588bb02695fb…` — the Godot arm wrote it and the counterpart
+  hashed the same bytes) reads `conformance.bufferHashesEqual: true`, `fixtureHashEqual: true`,
+  `lightCountsEqual: true`, `objectsEqual: true`, `withinTolerance: true`, six sampled frames at 0 m
+  and 0 quaternion components, and the five triangle counts now equal exactly (12 / 4,224 / 3,456 /
+  768 / 8). Both arms record the same five digests, `a5973433…`, `f8353740…`, `905cd17c…`,
+  `194407ee…`, `6e1d8053…`. `TN_BENCH_CULL_TOPOLOGY_MISMATCH` and `TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH`
+  are both gone. What still blocks the box is the object set, and it is named below. The comparator
+  now requires exact per-mesh digest equality rather than equal counts, and
+  [engine-load-test-cull-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cull-compare.spec.ts)
+  refuses a pair whose middle vertex component or middle index moved while every count stayed
+  identical — a change a count comparison cannot see.
 - [ ] Retain a real hardware comparison for the Godot culling family.
-  **Unchecked: the retained runs are real-hardware raw smoke records, not comparisons.** Four
-  real-hardware smoke cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver `615.71.09`
-  — 600 measured frames after 120 warmup, both arms on the identical fixture `1283daf331d1`,
-  retained under `artifacts/engine-load-test/`. Godot reported its Forward+/Vulkan device with its own
-  per-frame CPU and GPU samples (its `drain` is `none-available`, and its wall mean therefore paces
-  on submission); the counterpart arm reported `NVIDIA GeForce RTX 2080` through the host's
-  wgpu-native backend and drained once at the measurement boundary. The means below are kept as the
-  historical attempts they are; the comparator now reports every one of these cells
-  `non-comparable` with no ratio, so the box needs a pair that agrees on geometry before it can be
-  ticked.
+  **Unchecked: the retained runs are real-hardware raw smoke records, not comparisons.** The four
+  earlier 600-frame real-hardware cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver
+  `615.71.09` remain on disk with their failures retained and are not re-run here; the pair below is
+  a fresh `basic_cull` cell measured after the primitives and the drain boundary changed, and it is
+  refused for one named cause.
 
-  | cell | variant | TN authoring | TN mean ms | Godot mean ms | Godot GPU/CPU ms | comparator status |
-  |---|---|---|---|---|---|---|
-  | static, unshaded | `basic_cull` | `scene-node-independent` | 19.45 | 1.07 | 0.89 / 0.66 | `non-comparable`, ratio withheld |
-  | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | — | `non-comparable`, ratio withheld |
-  | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | 1.26 / 3.41 | `non-comparable`, ratio withheld |
-  | 100 static omni lights | `static_omni_light_cull` | `scene-node-independent` | 20.54 | 1.18 | 1.06 / 0.68 | `non-comparable`, ratio withheld |
+  | cell | variant | TN authoring | TN mean ms | Godot mean ms | comparator status |
+  |---|---|---|---|---|---|
+  | static, unshaded | `basic_cull` | `scene-node-independent` | 18.011 | 0.996 | `non-comparable`, ratio withheld |
+  | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | superseded; not re-run |
+  | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | not re-run this round |
+  | 100 static omni lights | `static_omni_light_cull` | `scene-node-independent` | 20.54 | 1.18 | not re-run this round |
 
-  Three named problems hold all four cells, and the comparator now fails closed on each instead of
-  reporting it as a qualification. Re-running `--cull-compare` on the retained `basic_cull`,
-  `dynamic_cull` and `static_omni_light_cull` records gives `non-comparable`, `ratio withheld` and
-  exit 2 on every one, naming: `TN_BENCH_CULL_TOPOLOGY_MISMATCH` for four kinds (SphereMesh
-  4224/3968 triangles, 12672/11904 indices, 2210/2145 vertices; CapsuleMesh 3456/2176, 10368/6528,
-  1950/1170; CylinderMesh 768/256, 2304/768, 522/388; PrismMesh 8/12, 24/36, 20/22 — only BoxMesh
-  matches), `TN_BENCH_CULL_COVERAGE_DIVERGED` at 0.0146–0.0224 of the frame against the declared
-  0.002 tolerance, and `TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH` because Godot's mean paces on
-  submission (`drain: none-available`) while the counterpart's drains once at the boundary
-  (`drain: measurement-boundary-completion`). Two further classes are refused now that did not fire
-  on these records: a missing mesh count is malformed at parse rather than compared as a zero, and a
-  kind, scored frame or probe only one arm observed is a named problem rather than a silent skip.
-  The fix is in the shared comparator
-  ([cull-compare.ts](../../../../scripts/engine-load-test/cull-compare.ts)), with the declared
-  coverage tolerance in `CULL_TOLERANCE`; no criterion was relaxed and no prior value is
-  hard-coded. What the box now needs is named: the counterpart arm must tessellate the five
-  primitives the way the pinned Godot scene does — an export of the pinned mesh buffers — or the
-  pinned scene must be re-authored to the counterpart's tessellation. Until one of those lands, the
-  family has honest raw smoke numbers and no comparison.
+  **Both arms now drain at the same boundary.** Godot's `drain` was `none-available` and its mean
+  paced on submission, so the two means did not measure the same thing. The arm now calls
+  `RenderingServer.force_sync()` — which Godot's own `RenderingServer` reference defines as forcing
+  CPU/GPU synchronization — exactly **once**, after the scored workload, never per frame, and records
+  where: `drain: measurement-boundary-completion`, `drainBoundaryFrame: 600`,
+  `drainFinalWaitMs: 0.001`. The completed-work mean is now the whole span from the first scored
+  boundary to the end of that one wait, divided by the frame count, so the asynchronous tail of the
+  last frames is inside the number exactly as the counterpart's `onSubmittedWorkDone` before its
+  `finalCompletionMs` is inside that arm's mean. `TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH` no longer
+  fires. The wait itself is 1 µs on this cell, which is recorded rather than assumed: 600 frames of
+  `await process_frame` leave the GPU essentially caught up when the loop ends. TN's own record states
+  the same boundary in its raw series instead of a `drain` field, and the reader accepts both
+  spellings. The asymmetry that remains is stated, not hidden: TN pre-drains before its first scored
+  boundary and the Godot arm does not, so the Godot interval absorbs whatever the warmup left queued.
 
-  The refusal is the result worth having. TN's ordinary authoring at 10,000 objects puts 588 of 600
-  frames on the host's 16.667 ms frame loop, so its mean is the present, not the work; the
-  comparator fails closed on that (`TN_BENCH_CULL_TN_CADENCE_CAPPED`, `non-comparable`, CLI exit 2)
-  and the file is retained as the proof rather than deleted. TN's ordinary authoring at 10,000
-  objects is at or below one host tick on this lane, and that cap is baked into the host's embedded
-  config rather than a flag, so the cell needs a lane that is not cadence-bound before it can carry
-  any number at all. The diagnostic arm sits above that floor (202/600 frames on a tick,
-  p50 19.6 ms) — and three runs of that same cell read 19.45, 20.42 and 35.34 ms, a spread far
-  outside the 3% epsilon, so even a pair that agreed on geometry would carry `blocks: 1`, no
-  interval and no verdict of faster or slower.
+  **The TN native arm is not 60 Hz cadence-capped on the rebuilt host from `cd424cc42`.** That commit
+  clears the embedded 60 fps cap when vsync is off; the host in this run is the one it built,
+  `mystral` SHA-256 `f9386044…`, and its own mesh-arm run on the same binary measured a 1.78 ms mean
+  at 1,000 meshes, which a cap could not produce. The cull arm's 600 measured frame intervals agree:
+  p01 14.637, p50 17.399, p95 21.632, p99 28.145, min 13.862, max 47.368 ms at an 18.011 ms mean — a
+  continuous distribution, not 590 frames parked on 16.667. That check found a defect in the
+  comparator rather than in the measurement: its rule accused any arm with half its frames within
+  2 ms of a cadence multiple, which real work costing about one tick satisfies. The rule now also
+  requires those frames to cluster within 1 ms of interquartile spread, and the focused test proves
+  both directions — the 600/600-exactly-on-the-tick series is still refused, and the real
+  13.9–19.9 ms spread is not. The old rule accused this cell for the wrong reason, and leaving it
+  would have put a false claim in a retained artifact.
 
-  The moving cell is what proved the conformance oracle is worth having: it rejected the first pair
-  with `TN_BENCH_CULL_STATE_OUT_OF_TOLERANCE` and 0.13 m of disagreement, and the cause was real on
-  both sides. The pinned scene's `time_accum` is a plain member nothing zeroes, so it reached the
-  arm already advanced by however long the window took to appear, and the pinned loop advances the
-  clock *before* it renders — so the two arms' frame 0 were one advance apart. The Godot arm now
-  zeroes the clock before the warmup and again at the scored boundary, and the counterpart renders
-  frame `k` at `(k+1)·δ`; the pair then agrees to 2.4e-6 m across six sampled frames, which is
-  float32 against float64, and both arms' own motion checks pass on the GPU (TN 1,075/6,128/6,183
-  and Godot 1,028/5,340/5,362 changed samples at the three later captures). A static workload would
-  have hidden both halves of that, because nothing moves.
+  **What still refuses the cell is the object set, and it is diagnosed rather than guessed.** The
+  comparator names only `TN_BENCH_CULL_COVERAGE_DIVERGED: 0.023735 of the frame` on all four captured
+  frames (declared tolerance 0.002, not lowered): the counterpart covers 0.111543 of the 240×135
+  lattice and Godot 0.087809. Everything upstream of the picture is now equal — same fixture bytes,
+  same camera (position `[0, 0, 0.873609]`, 75° vertical FOV, near 0.05, far 200, identity rotation),
+  byte-identical primitives, 0 m of transform disagreement on six sampled frames. The cause is
+  visible in each arm's own work counters: Godot reports `objectsInFrame: 2005` from 71 draw calls
+  and 3,441,080 submitted primitives, while the counterpart submits 3,566 draws and 6,056,937
+  triangles. Computing the camera's frustum from the exported placements puts **3,464** object centres
+  and **3,530** bounding spheres inside it. TN is therefore the conservative arm and Godot is
+  dropping 1,459 objects that are inside the frustum, and the pixel difference is the extra coverage
+  rather than a different picture: the per-cell counts are a thin frame-wide bias, with a signed sum
+  of 769 covered samples out of 773 total absolute difference, and only two cells of 360 in which
+  Godot covers more. The candidate cause is named by the Godot arm's own adapter block,
+  `occlusionCulling: true`, which the counterpart arm has no equivalent of.
+
+  That last sentence is the doubtful assumption this round leaves behind, recorded rather than
+  iterated on: occlusion culling is the leading explanation for 2,005 against a 3,464-object frustum,
+  but it is inferred from the pinned project's own setting plus the counters. It is not proved, and
+  proving it needs an occlusion-culling-off probe that changes the pinned project — a different
+  experiment key under §3, not a repair to this one. The alternative, a per-object AABB-versus-
+  bounding-sphere frustum difference, would predict Godot admitting *more* objects, not fewer, which
+  is why it is the weaker reading. Until one of them is settled the cell carries no ratio, and the box
+  stays open.
+
+  A 2-frame `basic_cull` pair on both arms was run first, as the gate for the 600-frame cell, and is
+  retained: it already reported `bufferHashesEqual: true`, `withinTolerance: true` and zero transform
+  delta, and its two extra refusals were its own shape rather than the workload's —
+  `TN_BENCH_CAPTURE_MOTION_UNOBSERVED`, because with one warmup frame only frame 0 is captured and a
+  first capture has no earlier frame to difference, and a cadence accusation on a 2-sample series
+  that the detector has since fixed. The 600-frame pair captures four frames and both arms' static
+  motion checks pass (0 changed samples at frames 1, 60 and 119).
 
   No retained pair is `qualified`, and none is `matched-task`. The two stated differences that remain
   — the competitor authors `RenderingServer` RIDs rather than scene nodes, and the shaded
   environments differ (Godot's Forward+ with sky-derived ambient and dual-paraboloid omni shadows
   against three's hemisphere light and cube-map point lights) — would be qualifications on a pair
-  that agreed on everything else. These pairs do not: each engine tessellates its own primitives
-  (Godot/TN triangles per kind 12/12, 4224/3968, 3456/2176, 768/256, 8/12), which §6.1 does not allow
-  as a stated difference, so the comparator refuses the ratio. The light cell still matches its
-  light census exactly (100 omni, 0 spot, 0 directional) and names the shadow technique it does not
-  have (`omniShadowMode: dual-paraboloid` in the record). The native host has no PNG encoder, so the
-  retained visual evidence is the read-back coverage grid both arms compute on the same 240x135
-  lattice rather than a pair of image files.
+  that agreed on everything else. The `basic_cull` pair now does agree on geometry, so it is refused
+  only for its object set; the light cells still match their light census exactly (100 omni, 0 spot,
+  0 directional) and name the shadow technique they do not have (`omniShadowMode: dual-paraboloid` in
+  the record). The native host has no PNG encoder, so the retained visual evidence is the read-back
+  coverage grid both arms compute on the same 240x135 lattice rather than a pair of image files.
+
+  The moving cell is what proved the conformance oracle is worth having, and its fix stands even
+  though it was not re-run this round: the oracle rejected the first `dynamic_cull` pair with
+  `TN_BENCH_CULL_STATE_OUT_OF_TOLERANCE` and 0.13 m of disagreement, and the cause was real on both
+  sides. The pinned scene's `time_accum` is a plain member nothing zeroes, so it reached the arm
+  already advanced by however long the window took to appear, and the pinned loop advances the clock
+  *before* it renders — so the two arms' frame 0 were one advance apart. The Godot arm now zeroes the
+  clock before the warmup and again at the scored boundary, and the counterpart renders frame `k` at
+  `(k+1)·δ`; the pair then agreed to 2.4e-6 m across six sampled frames, which is float32 against
+  float64, and both arms' own motion checks passed on the GPU (TN 1,075/6,128/6,183 and Godot
+  1,028/5,340/5,362 changed samples at the three later captures). A static workload would have hidden
+  both halves of that, because nothing moves. The `basic_cull` pair measured here is static, so it
+  confirms the clock contract from the other side: zero displacement on every sampled frame.
 
   Two harness defects surfaced while trying to add the light cells, both fixed at their root and
-  both confirmed by the red-green check named below. The Godot arm recognised the dynamic light set
-  by indexing `dynamic_instances[0]`, which a static light variant leaves empty: the index raised
-  an unhandled error inside `_run`, and because the arm extends `SceneTree` that left it running
-  with nothing left to quit it, so the run hung instead of reporting anything. And
-  [`runCapturing`](../../../../scripts/engine-load-test/run-desktop.ts) waited on a child that
-  never reports and never exits with no bound of its own, which is how that hang became an 1,800 s
-  session timeout; it is now bounded and fails with `TN_BENCH_TIMEOUT` and the child's own last
-  output. The arm also now refuses a sampled state that carries no probe
+  both confirmed by the red-green check named below, and both still in force. The Godot arm
+  recognised the dynamic light set by indexing `dynamic_instances[0]`, which a static light variant
+  leaves empty: the index raised an unhandled error inside `_run`, and because the arm extends
+  `SceneTree` that left it running with nothing left to quit it, so the run hung instead of reporting
+  anything. And [`runCapturing`](../../../../scripts/engine-load-test/run-desktop.ts) waited on a
+  child that never reports and never exits with no bound of its own, which is how that hang became an
+  1,800 s session timeout; it is now bounded and fails with `TN_BENCH_TIMEOUT` and the child's own
+  last output. The arm also now refuses a sampled state that carries no probe
   (`TN_BENCH_GODOT_STATE_UNOBSERVED`) instead of emitting a record the collector cannot read.
 
-  What is still open in this family, named: `dynamic_rotate_cull` (the earlier prototype timed out
-  and remains invalid), every shadows-on variant, and the four remaining light variants. The
-  shadows-on cells are blocked on evidence, not on code: the arm's own effective-shadow probe reads
-  a luma delta of 0.0001 or less for `directional_light_cull`, so that variant exits 2 with
-  `TN_BENCH_GODOT_SHADOW_PASS_NOT_OBSERVED` and `TN_BENCH_GODOT_DIRECTIONAL_NOT_EFFECTIVE` before a
-  single frame is compared. A mean-luma delta is too weak a detector for self-shadowing on 10,000
-  small objects spread over the upstream camera's whole frustum; the next step is a changed-pixel
-  count between the shadows-on and shadows-off probe captures, not a looser threshold. No number
-  from any of those variants is claimed.
+  The earlier 600-frame cells and their failures remain retained, including the
+  `TN_BENCH_CULL_TN_CADENCE_CAPPED` refusal that read TN's ordinary authoring's present as its work;
+  that accusation is now corrected, and the file that carried it has not been deleted. Still open in
+  this family, named: `dynamic_rotate_cull` (the earlier prototype timed out and remains invalid),
+  every shadows-on variant, and the four remaining light variants. The shadows-on cells are blocked on
+  evidence, not on code: the arm's own effective-shadow probe reads a luma delta of 0.0001 or less for
+  `directional_light_cull`, so that variant exits 2 with `TN_BENCH_GODOT_SHADOW_PASS_NOT_OBSERVED`
+  and `TN_BENCH_GODOT_DIRECTIONAL_NOT_EFFECTIVE` before a single frame is compared. A mean-luma delta
+  is too weak a detector for self-shadowing on 10,000 small objects spread over the upstream camera's
+  whole frustum; the next step is a changed-pixel count between the shadows-on and shadows-off probe
+  captures, not a looser threshold. No number from any of those variants is claimed.
 
   [cull-compare.ts](../../../../scripts/engine-load-test/cull-compare.ts) is pure and unit-proved
   by [engine-load-test-cull-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cull-compare.spec.ts):
@@ -610,6 +660,17 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   capture is proved in `engine-load-test.spec.ts` (100/100). The eleven focused suites passed
   161/161 and root `pnpm exec tsc --noEmit -p tsconfig.json` and
   `pnpm exec biome check --diagnostic-level=error` exited 0.
+
+  This slice adds two checks to the same file and suite, now **15/15**, each confirmed red against
+  the pre-change comparator and green after it: exact per-mesh buffer-hash equality in place of
+  count equality, with a record that measured no whole buffer now malformed at parse; and the
+  cadence rule's cluster requirement, which stops a real ~16.7 ms workload being called a blocked
+  present while still refusing a 600/600-on-the-tick series. `pnpm exec vitest run` over the nine
+  focused benchmark suites (`cull-compare`, `plan`, `stats`, `v2`, `engine-load-test`,
+  `mesh-compare`, `campaign`, `html`, `bundle`) passed 151/151; root
+  `pnpm exec tsc --noEmit -p tsconfig.json`, `pnpm exec biome check --diagnostic-level=error .` and
+  `git diff --check` all exited 0. `pnpm exec biome check .` reports the repository's pre-existing
+  complexity warnings and no errors.
 
 
 

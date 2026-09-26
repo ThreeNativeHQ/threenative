@@ -13,6 +13,8 @@ import {
 
 export interface ICullTopologyEntry {
   readonly albedo: readonly number[];
+  /** SHA-256 over the arm's own canonical mesh-buffer bytes; the only whole-buffer identity. */
+  readonly bufferSha256: string;
   readonly indices: number;
   readonly kind: string;
   readonly triangles: number;
@@ -75,6 +77,14 @@ function fail(code: string, detail: string): never {
 
 /** The native hosts' 60 Hz frame-loop pacing, the value a cadence-bound mean lands on. */
 const FRAME_CADENCE_MS = 1000 / 60;
+/**
+ * How tightly a capped arm's frames cluster on the tick. A present that blocks lands on it within
+ * microseconds, so a quarter-millimetre of spread is already generous; real work that happens to
+ * cost about one tick spreads over several milliseconds, and a 2 ms proximity band alone cannot tell
+ * the two apart — 10,000 independent meshes at 6.06 M submitted triangles measured a p01 of 14.6 ms
+ * and a p99 of 28.1 ms around an 18.0 ms mean, and every one of those frames is "near" 16.667 ms.
+ */
+const CAP_CLUSTER_MS = 1;
 
 function object(value: unknown, code: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value))
@@ -94,6 +104,11 @@ function triple(value: unknown, code: string): readonly number[] {
     if (typeof entry !== "number" || !Number.isFinite(entry)) fail(code, "expected finite numbers");
     return entry;
   });
+}
+
+function sha256Digest(value: unknown, code: string): string {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) fail(code, "buffer SHA-256");
+  return value;
 }
 
 /**
@@ -235,6 +250,10 @@ export function parseCullRun(value: unknown, code = "TN_BENCH_CULL_RUN_MALFORMED
       // record that measured none of the three is malformed here rather than read later as a zero.
       return {
         albedo: triple(mesh.albedo, code),
+        // Each arm's own buffer identity, under one name because it is one claim: the SHA-256 of the
+        // canonical stream its geometry was built from. A record that measured no buffers is
+        // malformed here rather than compared as agreeing on nothing.
+        bufferSha256: sha256Digest(mesh.bufferSha256, code),
         indices: count(mesh.indices ?? mesh.tnIndices, code),
         kind: String(mesh.kind),
         triangles: count(mesh.triangles ?? mesh.tnTriangles, code),
@@ -251,6 +270,7 @@ export function parseCullRun(value: unknown, code = "TN_BENCH_CULL_RUN_MALFORMED
 export interface ICullComparison {
   readonly blocks: 1;
   readonly conformance: {
+    readonly bufferHashesEqual: boolean;
     readonly fixtureHashEqual: boolean;
     readonly lightCountsEqual: boolean;
     readonly maxOriginDeltaMetres: number;
@@ -258,6 +278,7 @@ export interface ICullComparison {
     readonly objectsEqual: boolean;
     readonly sampledFrames: number;
     readonly topology: readonly {
+      bufferHashEqual: boolean;
       counterpartTriangles: number;
       kind: string;
       tnTriangles: number;
@@ -347,10 +368,12 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
 
   // §6.1: exact mesh and index buffers, not a matching total. Two engines that tessellate a sphere
   // into 4,224 and 3,968 triangles are rendering different geometry, so a mean over the two is a
-  // mean over different work and carries no ratio however close their wall times land.
+  // mean over different work and carries no ratio however close their wall times land. The digests
+  // are the gate; the counts stay because they name what differs when a digest does not.
   const topology = tn.topology.map((entry) => {
     const other = godot.topology.find((candidate) => candidate.kind === entry.kind);
     return {
+      bufferHashEqual: other?.bufferSha256 === entry.bufferSha256,
       counterpartTriangles: other?.triangles ?? 0,
       kind: entry.kind,
       tnTriangles: entry.triangles,
@@ -362,6 +385,10 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
       problems.push(`TN_BENCH_CULL_TOPOLOGY_KIND_MISSING:${entry.kind}`);
       continue;
     }
+    if (other.bufferSha256 !== entry.bufferSha256)
+      problems.push(
+        `TN_BENCH_CULL_BUFFER_HASH_MISMATCH:${entry.kind} ${other.bufferSha256}/${entry.bufferSha256}`,
+      );
     if (
       other.triangles !== entry.triangles ||
       other.indices !== entry.indices ||
@@ -405,14 +432,15 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
     ["tn", tn],
     ["godot", godot],
   ] as const) {
-    const quantized = run.frameIntervals.filter((interval) => {
+    const onTick = run.frameIntervals.filter((interval) => {
       const ticks = interval / FRAME_CADENCE_MS;
       return ticks >= 0.5 && Math.abs(ticks - Math.round(ticks)) * FRAME_CADENCE_MS < 2;
-    }).length;
-    const share = quantized / run.frameIntervals.length;
-    if (share >= 0.5)
+    });
+    const share = onTick.length / run.frameIntervals.length;
+    const spread = quartileSpread(onTick);
+    if (share >= 0.5 && spread <= CAP_CLUSTER_MS)
       problems.push(
-        `TN_BENCH_CULL_${label.toUpperCase()}_CADENCE_CAPPED:${quantized}/${run.frameIntervals.length} frames on the ${FRAME_CADENCE_MS.toFixed(3)} ms host frame loop, mean ${run.meanMs.toFixed(3)} ms`,
+        `TN_BENCH_CULL_${label.toUpperCase()}_CADENCE_CAPPED:${onTick.length}/${run.frameIntervals.length} frames on the ${FRAME_CADENCE_MS.toFixed(3)} ms host frame loop, mean ${run.meanMs.toFixed(3)} ms`,
       );
     if (run.wallSemantics === null)
       problems.push(
@@ -434,6 +462,7 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
   return {
     blocks: 1,
     conformance: {
+      bufferHashesEqual: topology.every((entry) => entry.bufferHashEqual),
       fixtureHashEqual,
       lightCountsEqual,
       maxOriginDeltaMetres: maxOriginDelta,
@@ -478,4 +507,15 @@ function lastScored(run: ICullRun): number | null {
   const scored = run.captures.filter((entry) => entry.scored);
   const last = scored[scored.length - 1];
   return last === undefined ? null : last.changedPixels;
+}
+
+/** The interquartile spread of a sample, the width that separates a blocked present from real work. */
+function quartileSpread(samples: readonly number[]): number {
+  if (samples.length === 0) return Number.POSITIVE_INFINITY;
+  const sorted = [...samples].sort((left, right) => left - right);
+  const at = (fraction: number): number =>
+    sorted[
+      Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1))
+    ] as number;
+  return at(0.75) - at(0.25);
 }

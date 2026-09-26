@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   type ICullFixture,
+  type ICullMeshChannels,
+  type ICullTopology,
+  cullMeshBufferBytes,
+  cullMeshChannels,
   cullProbe,
   cullRenderedTimeAccum,
   cullTransform,
   cullVariant,
 } from "../../examples/engine-load-test/src/cull-fixture.js";
 import { cullCapture } from "../../examples/engine-load-test/src/cull-harness.js";
+import { sha256 } from "../../examples/engine-load-test/src/identity.js";
 import { type ICullRun, compareCullRuns, parseCullRun } from "../engine-load-test/cull-compare.js";
 
 const ADAPTER = { name: "NVIDIA GeForce RTX 2080", type: "hardware" };
@@ -62,6 +67,23 @@ const RETAINED_TN = [
   [12, 36, 22],
 ];
 
+/**
+ * The retained records carried no buffer identity at all, so the test synthesises one digest per
+ * kind from the counts that arm really reported: the box agrees, because the two arms reported the
+ * same 12/36/24, and the other four disagree, because they reported different geometry. The
+ * comparator's refusal of those four is therefore the same refusal it makes on the real bytes.
+ */
+function retainedDigest(kind: string, counts: readonly number[]): string {
+  const seed = `${kind}:${counts.join("/")}`;
+  let digest = "";
+  for (let index = 0; digest.length < 64; index += 1)
+    digest += seed
+      .charCodeAt(index % seed.length)
+      .toString(16)
+      .padStart(2, "0");
+  return digest.slice(0, 64);
+}
+
 /** The retained `basic_cull` pair: Godot's buffers, coverage and wall metric against the TN arm's. */
 function retained(): { godot: ICullRun; tn: ICullRun } {
   return {
@@ -71,6 +93,7 @@ function retained(): { godot: ICullRun; tn: ICullRun } {
       meanMs: 1.06874166666667,
       topology: KINDS.map((kind, index) => ({
         albedo: [0, 0, 0],
+        bufferSha256: retainedDigest(kind, RETAINED_GODOT[index] as readonly number[]),
         indices: RETAINED_GODOT[index]?.[1],
         kind,
         triangles: RETAINED_GODOT[index]?.[0],
@@ -88,6 +111,7 @@ function retained(): { godot: ICullRun; tn: ICullRun } {
       rawSeries: uncapped(2, 19.448460955),
       topology: KINDS.map((kind, index) => ({
         albedo: [0, 0, 0],
+        bufferSha256: retainedDigest(kind, RETAINED_TN[index] as readonly number[]),
         counterpartIndices: RETAINED_GODOT[index]?.[1],
         counterpartTriangles: RETAINED_GODOT[index]?.[0],
         counterpartVertices: RETAINED_GODOT[index]?.[2],
@@ -133,16 +157,20 @@ function run(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     meanMs: 1.066,
     profile: "smoke",
     states: [state(0)],
-    topology: KINDS.map((kind, index) => ({
-      albedo: [0, 0, 0],
-      counterpartIndices: 36,
-      counterpartTriangles: 12,
-      counterpartVertices: 24 + index,
-      kind,
-      tnIndices: 36,
-      tnTriangles: 12,
-      tnVertices: 24 + index,
-    })),
+    topology: KINDS.map((kind, index) => {
+      const counts = [12, 36, 24 + index];
+      return {
+        albedo: [0, 0, 0],
+        bufferSha256: retainedDigest(kind, counts),
+        counterpartIndices: 36,
+        counterpartTriangles: 12,
+        counterpartVertices: 24 + index,
+        kind,
+        tnIndices: 36,
+        tnTriangles: 12,
+        tnVertices: 24 + index,
+      };
+    }),
     unshaded: true,
     variant: "basic_cull",
     ...overrides,
@@ -151,6 +179,73 @@ function run(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 
 function parse(overrides: Record<string, unknown> = {}): ICullRun {
   return parseCullRun(run(overrides));
+}
+
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function toBase64(bytes: Uint8Array): string {
+  let out = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const chunk =
+      ((bytes[index] as number) << 16) |
+      (((bytes[index + 1] as number) ?? 0) << 8) |
+      ((bytes[index + 2] as number) ?? 0);
+    out += BASE64_ALPHABET[(chunk >> 18) & 63];
+    out += BASE64_ALPHABET[(chunk >> 12) & 63];
+    out += index + 1 < bytes.length ? BASE64_ALPHABET[(chunk >> 6) & 63] : "=";
+    out += index + 2 < bytes.length ? BASE64_ALPHABET[chunk & 63] : "=";
+  }
+  return out;
+}
+
+/**
+ * A real primitive's four channels — `vertices` vertices, a triangle list, the same shape the pinned
+ * scene's `get_mesh_arrays()` produced — plus the SHA-256 of the canonical stream
+ * `cullMeshBufferBytes` lays down, which is the identity both arms record. `moved` shifts one
+ * interior vertex component or retargets one interior index, so the counts cannot see it.
+ */
+async function primitive(
+  kind: string,
+  vertices: number,
+  moved: { vertexComponent?: number; index?: number } = {},
+): Promise<{ digest: string; topology: ICullTopology }> {
+  const positions = new Float32Array(vertices * 3);
+  for (let index = 0; index < vertices; index += 1) {
+    positions[index * 3] = index / 3;
+    positions[index * 3 + 1] = index / 7;
+    positions[index * 3 + 2] = -(index / 5);
+  }
+  if (moved.vertexComponent !== undefined)
+    positions[moved.vertexComponent] = (positions[moved.vertexComponent] as number) + 1;
+  const normals = new Float32Array(vertices * 3).fill(1 / Math.sqrt(3));
+  const uvs = new Float32Array(vertices * 2);
+  for (let index = 0; index < vertices; index += 1) uvs[index * 2] = index / vertices;
+  const indices = new Uint32Array((vertices / 3) * 3);
+  for (let index = 0; index < indices.length; index += 1) indices[index] = index % vertices;
+  if (moved.index !== undefined) indices[moved.index] = (indices[moved.index] as number) + 1;
+  const channels: ICullMeshChannels = { indices, normals, positions, uvs };
+  const counts = { indices: indices.length, kind, vertices };
+  const raw = (view: Float32Array | Uint32Array): Uint8Array =>
+    new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  const topology = {
+    aabb: { min: [0, 0, 0], size: [1, 1, 1] },
+    albedo: [0, 0, 0],
+    bufferSha256: await sha256(cullMeshBufferBytes(counts, channels)),
+    buffers: {
+      indices: toBase64(raw(indices)),
+      normals: toBase64(raw(normals)),
+      positions: toBase64(raw(positions)),
+      uvs: toBase64(raw(uvs)),
+    },
+    indices: indices.length,
+    kind,
+    triangles: indices.length / 3,
+    vertices,
+  } as ICullTopology;
+  // The fixture's own reader accepts both shapes, so the rejection below cannot be the length or
+  // range check standing in for the identity check.
+  expect(cullMeshChannels(topology).positions).toHaveLength(vertices * 3);
+  return { digest: topology.bufferSha256, topology };
 }
 
 describe("PRD-449 godot-culling smoke comparison", () => {
@@ -163,14 +258,34 @@ describe("PRD-449 godot-culling smoke comparison", () => {
     expect(comparison.outcome.valid).toBe(false);
     expect(comparison.outcome.comparability).toBe("non-comparable");
     expect(comparison.ratio).toBeNull();
-    expect(comparison.outcome.problems).toEqual([
+    expect(comparison.outcome.problems.map((problem) => problem.split(":")[0])).toEqual([
+      // The same four kinds, refused twice: once because their whole buffer digests differ and once
+      // because the counts that differ are named.
+      "TN_BENCH_CULL_BUFFER_HASH_MISMATCH",
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH",
+      "TN_BENCH_CULL_BUFFER_HASH_MISMATCH",
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH",
+      "TN_BENCH_CULL_BUFFER_HASH_MISMATCH",
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH",
+      "TN_BENCH_CULL_BUFFER_HASH_MISMATCH",
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH",
+      "TN_BENCH_CULL_COVERAGE_DIVERGED",
+      "TN_BENCH_CULL_COVERAGE_DIVERGED",
+      "TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH",
+    ]);
+    // The buffer gate accuses exactly the four kinds whose counts differ, and never the box.
+    expect(
+      comparison.outcome.problems
+        .filter((problem) => problem.startsWith("TN_BENCH_CULL_BUFFER_HASH_MISMATCH"))
+        .map((problem) => problem.replace("TN_BENCH_CULL_BUFFER_HASH_MISMATCH:", "").split(" ")[0]),
+    ).toEqual(["SphereMesh", "CapsuleMesh", "CylinderMesh", "PrismMesh"]);
+    expect(
+      comparison.outcome.problems.filter((problem) => problem.includes("TOPOLOGY_MISMATCH")),
+    ).toEqual([
       "TN_BENCH_CULL_TOPOLOGY_MISMATCH:SphereMesh triangles 4224/3968 indices 12672/11904 vertices 2210/2145",
       "TN_BENCH_CULL_TOPOLOGY_MISMATCH:CapsuleMesh triangles 3456/2176 indices 10368/6528 vertices 1950/1170",
       "TN_BENCH_CULL_TOPOLOGY_MISMATCH:CylinderMesh triangles 768/256 indices 2304/768 vertices 522/388",
       "TN_BENCH_CULL_TOPOLOGY_MISMATCH:PrismMesh triangles 8/12 indices 24/36 vertices 20/22",
-      "TN_BENCH_CULL_COVERAGE_DIVERGED:0 0.022377 of the frame",
-      "TN_BENCH_CULL_COVERAGE_DIVERGED:1 0.022377 of the frame",
-      "TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH:drain:measurement-boundary-completion/drain:none-available",
     ]);
   });
 
@@ -334,6 +449,43 @@ describe("PRD-449 godot-culling smoke comparison", () => {
     ).toMatch(/^TN_BENCH_CULL_GODOT_CADENCE_CAPPED/);
   });
 
+  it("does not call an uncapped arm cadence-bound because its work costs about one tick", () => {
+    // The 10,000-mesh `basic_cull` run on the rebuilt host: 600 measured frames at an 18.011 ms
+    // completed-work mean, p01 14.637 and p99 28.145, with the frames under 20 ms spread from 13.862
+    // to 19.946 rather than sitting on 16.667. Two thirds of them are still within 2 ms of the tick,
+    // so the old proximity rule read this real work as a blocked present.
+    const intervals = Array.from({ length: 600 }, (_, index) => 13.9 + (index % 61) * 0.1);
+    const near = intervals.filter((value) => Math.abs(value - CADENCE_MS) < 2).length;
+    expect(near / intervals.length).toBeGreaterThan(0.5);
+    const boundaries = [{ frameId: 0, monotonicMs: 0 }];
+    let elapsed = 0;
+    for (const interval of intervals) {
+      elapsed += interval;
+      boundaries.push({ frameId: boundaries.length, monotonicMs: elapsed });
+    }
+    const comparison = compareCullRuns(
+      parse({
+        arm: "tn-desktop",
+        frameIntervalMs: undefined,
+        meanMs: 18.011,
+        rawSeries: { boundaries, finalCompletionMs: elapsed, schemaVersion: 1, unit: "ms" },
+      }),
+      parse(),
+    );
+    expect(comparison.outcome.problems.join(" ")).not.toMatch(/CADENCE_CAPPED/);
+    // A genuinely blocked present still is refused, so the relaxation is not the gate's removal.
+    expect(
+      compareCullRuns(
+        parse({
+          arm: "tn-desktop",
+          frameIntervalMs: undefined,
+          rawSeries: uncapped(600, CADENCE_MS),
+        }),
+        parse(),
+      ).outcome.problems[0],
+    ).toMatch(/^TN_BENCH_CULL_TN_CADENCE_CAPPED/);
+  });
+
   it("refuses a record with no frame-level series to read a mean from", () => {
     expect(() =>
       parseCullRun({ ...run(), frameIntervalMs: undefined, rawSeries: undefined }),
@@ -347,6 +499,88 @@ describe("PRD-449 godot-culling smoke comparison", () => {
   it("refuses a record that measured no mesh buffers, rather than comparing absent counts as zero", () => {
     const topology = KINDS.map((kind) => ({ albedo: [0, 0, 0], kind }));
     expect(() => parseCullRun({ ...run(), topology })).toThrow(/TN_BENCH_CULL_RUN_MALFORMED/);
+    // Counts without a buffer identity are still a record that measured no whole buffer.
+    const counted = KINDS.map((kind, index) => ({
+      albedo: [0, 0, 0],
+      indices: 36,
+      kind,
+      triangles: 12,
+      vertices: 24 + index,
+    }));
+    expect(() => parseCullRun({ ...run(), topology: counted })).toThrow(
+      /TN_BENCH_CULL_RUN_MALFORMED/,
+    );
+    expect(() =>
+      parseCullRun({
+        ...run(),
+        topology: counted.map((entry) => ({ ...entry, bufferSha256: "not-a-digest" })),
+      }),
+    ).toThrow(/TN_BENCH_CULL_RUN_MALFORMED/);
+  });
+
+  it("refuses a pair whose middle vertex or middle index moved, with every count identical", async () => {
+    // The defect this closes: the previous comparator compared triangle, index and vertex counts, so
+    // a sphere re-tessellated into the same number of triangles passed as the same sphere. Both
+    // shapes here are 24 vertices, 36 indices and 12 triangles for all five kinds; one middle
+    // vertex's y component and one middle index do not, and only the per-mesh digest sees them.
+    const untouched = await Promise.all(KINDS.map((kind) => primitive(kind, 24)));
+    const altered = await Promise.all(
+      KINDS.map((kind, index) =>
+        primitive(
+          kind,
+          24,
+          index === 1 ? { vertexComponent: 24 * 3 - 2 } : index === 2 ? { index: 17 } : {},
+        ),
+      ),
+    );
+    // The counts really are identical, so nothing but the identity can be what refuses this.
+    expect(altered.map((entry, index) => entry.topology.triangles)).toEqual(
+      untouched.map((entry) => entry.topology.triangles),
+    );
+    expect(altered.map((entry, index) => entry.topology.indices)).toEqual(
+      untouched.map((entry) => entry.topology.indices),
+    );
+    expect(altered.map((entry, index) => entry.topology.vertices)).toEqual(
+      untouched.map((entry) => entry.topology.vertices),
+    );
+    expect(altered[1]?.digest).not.toBe(untouched[1]?.digest);
+    expect(altered[2]?.digest).not.toBe(untouched[2]?.digest);
+    expect(altered[0]?.digest).toBe(untouched[0]?.digest);
+
+    const topologyOf = (entries: { topology: ICullTopology }[]): unknown[] =>
+      entries.map((entry) => ({
+        albedo: [0, 0, 0],
+        bufferSha256: entry.topology.bufferSha256,
+        indices: entry.topology.indices,
+        kind: entry.topology.kind,
+        triangles: entry.topology.triangles,
+        vertices: entry.topology.vertices,
+      }));
+    const comparison = compareCullRuns(
+      parse({ arm: "tn-desktop", topology: topologyOf(altered) }),
+      parse({ topology: topologyOf(untouched) }),
+    );
+    expect(comparison.outcome.valid).toBe(false);
+    expect(comparison.outcome.comparability).toBe("non-comparable");
+    expect(comparison.ratio).toBeNull();
+    expect(comparison.conformance.bufferHashesEqual).toBe(false);
+    expect(
+      comparison.outcome.problems
+        .filter((problem) => problem.startsWith("TN_BENCH_CULL_BUFFER_HASH_MISMATCH"))
+        .map((problem) => problem.replace("TN_BENCH_CULL_BUFFER_HASH_MISMATCH:", "").split(" ")[0]),
+    ).toEqual(["SphereMesh", "CapsuleMesh"]);
+    // The three untouched kinds are not accused, and no count-based problem is invented.
+    expect(comparison.outcome.problems).not.toContain(
+      expect.stringContaining("TN_BENCH_CULL_TOPOLOGY_MISMATCH"),
+    );
+    // Identical bytes on both sides are the only shape that passes this gate.
+    const agreeing = compareCullRuns(
+      parse({ arm: "tn-desktop", topology: topologyOf(untouched) }),
+      parse({ topology: topologyOf(untouched) }),
+    );
+    expect(agreeing.conformance.bufferHashesEqual).toBe(true);
+    expect(agreeing.outcome.valid).toBe(true);
+    expect(agreeing.outcome.comparability).toBe("qualified");
   });
 
   it("refuses a record that is not this family's, or whose first capture is not a null difference", () => {

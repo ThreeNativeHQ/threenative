@@ -14,6 +14,10 @@ export const CULL_RNG_SEED = 0x60d07;
 export const CULL_VIEWPORT = { height: 1080, width: 1920 } as const;
 export const CULL_FRAME_DELTA = 1 / 60;
 export const CULL_UPSTREAM_COMMIT = "b059e38a81230a87293828bbf65ab247b6b2d2a8";
+/** Bumped when the fixture stops carrying the rendered buffers: a v1 file has counts, not geometry. */
+export const CULL_FIXTURE_SCHEMA = 2;
+/** The canonical mesh-buffer byte layout both arms hash; see `cullMeshBufferBytes`. */
+export const CULL_MESH_BUFFER_VERSION = "threenative-cull-mesh-buffer/1";
 
 /**
  * Declared before any comparison was run, from precision and not from a speedup: Godot computes the
@@ -150,9 +154,26 @@ export function cullVariant(name: string): ICullVariant {
   return found;
 }
 
+/**
+ * One rendered primitive's channels, exactly as the pinned scene's `PrimitiveMesh.get_mesh_arrays()`
+ * produced them: base64 of the raw little-endian buffers, so the fixture carries the bytes themselves
+ * rather than a decimal approximation of them. `PackedVector3Array`/`PackedVector2Array` are three and
+ * two IEEE-754 binary32 components and `PackedInt32Array` is two's-complement 32-bit, so a decoded
+ * channel is exactly `count * stride` bytes and the reader checks that rather than assuming it.
+ */
+export interface ICullMeshBuffers {
+  readonly indices: string;
+  readonly normals: string;
+  readonly positions: string;
+  readonly uvs: string;
+}
+
 export interface ICullTopology {
   readonly albedo: readonly number[];
   readonly aabb: { min: readonly number[]; size: readonly number[] };
+  /** SHA-256 over `cullMeshBufferBytes`, which is the whole per-mesh buffer identity §6.1 asks for. */
+  readonly bufferSha256: string;
+  readonly buffers: ICullMeshBuffers;
   readonly indices: number;
   readonly kind: string;
   readonly triangles: number;
@@ -219,10 +240,119 @@ function triple(value: unknown, code: string): readonly number[] {
   return value.map((entry) => number(entry, code));
 }
 
+function digest(value: unknown, code: string): string {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) fail(code, "SHA-256 digest");
+  return value;
+}
+
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** The native JS host has no `atob`, and one decoder beats a browser check the host never takes. */
+function base64ToBytes(text: string, code: string): Uint8Array {
+  const padded = text.replace(/=+$/, "");
+  if (padded.length % 4 === 1) fail(code, "not base64");
+  const out = new Uint8Array(Math.floor((padded.length * 3) / 4));
+  let written = 0;
+  let accumulator = 0;
+  let bits = 0;
+  for (const character of padded) {
+    const value = BASE64_ALPHABET.indexOf(character);
+    if (value < 0) fail(code, "not base64");
+    accumulator = (accumulator << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out[written] = (accumulator >> bits) & 0xff;
+      written += 1;
+    }
+  }
+  return out.subarray(0, written);
+}
+
+/**
+ * The canonical byte stream a mesh's identity is a SHA-256 over: the version line, the primitive's
+ * class name, the vertex and index counts as two little-endian `u32`, then positions, normals, UVs
+ * and indices in that order. `benchmark/godot-prd449/culling_arm.gd` lays down the same bytes from
+ * the pinned scene's own packed arrays, and the counterpart arm re-derives them from the arrays it
+ * actually uploaded — so the digest covers what was rendered rather than what a name implies.
+ */
+export function cullMeshBufferBytes(
+  mesh: Pick<ICullTopology, "indices" | "kind" | "vertices">,
+  channels: ICullMeshChannels,
+): Uint8Array {
+  const header = new TextEncoder().encode(`${CULL_MESH_BUFFER_VERSION}\n${mesh.kind}\n`);
+  // Derived from the arrays actually written below, so the allocation cannot drift from the loop.
+  const total =
+    header.length +
+    8 +
+    channels.positions.byteLength +
+    channels.normals.byteLength +
+    channels.uvs.byteLength +
+    channels.indices.byteLength;
+  const out = new Uint8Array(total);
+  const view = new DataView(out.buffer);
+  out.set(header, 0);
+  let offset = header.length;
+  view.setUint32(offset, mesh.vertices, true);
+  offset += 4;
+  view.setUint32(offset, mesh.indices, true);
+  offset += 4;
+  for (const floats of [channels.positions, channels.normals, channels.uvs]) {
+    for (const value of floats) {
+      view.setFloat32(offset, value, true);
+      offset += 4;
+    }
+  }
+  for (const index of channels.indices) {
+    view.setUint32(offset, index, true);
+    offset += 4;
+  }
+  return out;
+}
+
+/** One primitive's four channels as typed arrays, decoded once and checked against its own counts. */
+export interface ICullMeshChannels {
+  readonly indices: Uint32Array;
+  readonly normals: Float32Array;
+  readonly positions: Float32Array;
+  readonly uvs: Float32Array;
+}
+
+/**
+ * Decode and check. The declared counts and the decoded channel lengths are two independent
+ * statements about the same buffers, and an index outside the vertex array is a buffer that would
+ * read memory the mesh does not own — so both fail here, at the reader, rather than at the draw.
+ */
+export function cullMeshChannels(mesh: ICullTopology): ICullMeshChannels {
+  const code = "TN_BENCH_CULL_FIXTURE_BUFFERS";
+  // Bytes per element: three binary32, three binary32, two binary32, one two's-complement int32.
+  const channel = (name: keyof ICullMeshBuffers, elements: number, stride: number): Uint8Array => {
+    const bytes = base64ToBytes(mesh.buffers[name], code);
+    if (bytes.length !== elements * stride)
+      fail(code, `${mesh.kind} ${name} ${bytes.length} bytes, expected ${elements * stride}`);
+    return bytes;
+  };
+  const positions = channel("positions", mesh.vertices, 12);
+  const normals = channel("normals", mesh.vertices, 12);
+  const uvs = channel("uvs", mesh.vertices, 8);
+  const indices = channel("indices", mesh.indices, 4);
+  const decoded: ICullMeshChannels = {
+    indices: new Uint32Array(indices.buffer, indices.byteOffset, mesh.indices),
+    normals: new Float32Array(normals.buffer, normals.byteOffset, mesh.vertices * 3),
+    positions: new Float32Array(positions.buffer, positions.byteOffset, mesh.vertices * 3),
+    uvs: new Float32Array(uvs.buffer, uvs.byteOffset, mesh.vertices * 2),
+  };
+  for (const index of decoded.indices)
+    if (index >= mesh.vertices)
+      fail(code, `${mesh.kind} index ${index} is past ${mesh.vertices} vertices`);
+  return decoded;
+}
+
 /** Fail closed: a fixture the reader does not fully understand is never rendered. */
 export function parseCullFixture(text: string): ICullFixture {
   const raw = object(JSON.parse(text) as unknown, "TN_BENCH_CULL_FIXTURE_MALFORMED");
-  if (raw.schemaVersion !== 1) fail("TN_BENCH_CULL_FIXTURE_SCHEMA", String(raw.schemaVersion));
+  if (raw.schemaVersion !== CULL_FIXTURE_SCHEMA)
+    fail("TN_BENCH_CULL_FIXTURE_SCHEMA", String(raw.schemaVersion));
   if (raw.sourceCommit !== CULL_UPSTREAM_COMMIT)
     fail("TN_BENCH_CULL_FIXTURE_SOURCE", String(raw.sourceCommit));
   if (raw.objects !== 10000) fail("TN_BENCH_CULL_FIXTURE_OBJECTS", String(raw.objects));
@@ -240,17 +370,32 @@ export function parseCullFixture(text: string): ICullFixture {
   const meshes: ICullTopology[] = raw.meshes.map((entry) => {
     const mesh = object(entry, "TN_BENCH_CULL_FIXTURE_MESHES");
     const aabb = object(mesh.aabb, "TN_BENCH_CULL_FIXTURE_MESHES");
-    return {
+    const buffers = object(mesh.buffers, "TN_BENCH_CULL_FIXTURE_BUFFERS") as unknown as Record<
+      keyof ICullMeshBuffers,
+      unknown
+    >;
+    const topology: ICullTopology = {
       aabb: {
         min: triple(aabb.min, "TN_BENCH_CULL_FIXTURE_MESHES"),
         size: triple(aabb.size, "TN_BENCH_CULL_FIXTURE_MESHES"),
       },
       albedo: triple(mesh.albedo, "TN_BENCH_CULL_FIXTURE_MESHES"),
+      bufferSha256: digest(mesh.bufferSha256, "TN_BENCH_CULL_FIXTURE_BUFFERS"),
+      buffers: {
+        indices: String(buffers.indices),
+        normals: String(buffers.normals),
+        positions: String(buffers.positions),
+        uvs: String(buffers.uvs),
+      },
       indices: number(mesh.indices, "TN_BENCH_CULL_FIXTURE_MESHES"),
       kind: String(mesh.kind),
       triangles: number(mesh.triangles, "TN_BENCH_CULL_FIXTURE_MESHES"),
       vertices: number(mesh.vertices, "TN_BENCH_CULL_FIXTURE_MESHES"),
     };
+    // Decoding here is the fixture's own self-check: an undecodable, wrongly sized or out-of-range
+    // buffer never reaches the scene builder, which is the only other reader of these bytes.
+    cullMeshChannels(topology);
+    return topology;
   });
   const camera = object(raw.camera, "TN_BENCH_CULL_FIXTURE_CAMERA");
   const lights = object(raw.lights, "TN_BENCH_CULL_FIXTURE_LIGHTS");

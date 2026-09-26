@@ -1,9 +1,7 @@
 import {
-  BoxGeometry,
-  type BufferAttribute,
-  CapsuleGeometry,
+  BufferAttribute,
+  BufferGeometry,
   Color,
-  CylinderGeometry,
   DirectionalLight,
   HemisphereLight,
   type Light,
@@ -17,7 +15,6 @@ import {
   REVISION,
   RenderTarget,
   Scene,
-  SphereGeometry,
   SpotLight,
   Vector3,
   WebGPURenderer,
@@ -27,11 +24,16 @@ import {
   CULL_VIEWPORT,
   type CullingAuthoring,
   type ICullFixture,
+  type ICullMeshChannels,
+  type ICullTopology,
   type ICullTransform,
   type ICullVariant,
+  cullMeshBufferBytes,
+  cullMeshChannels,
   cullRenderedTimeAccum,
   cullTransform,
 } from "./cull-fixture.js";
+import { sha256 } from "./identity.js";
 
 /**
  * The counterpart arm's scene. Two authoring modes, and every record names which one ran:
@@ -46,6 +48,8 @@ import {
 
 export interface ICullTopologyReport {
   readonly albedo: readonly number[];
+  /** The digest this arm re-derived from the arrays it uploaded, not the one the fixture claims. */
+  readonly bufferSha256: string;
   /** What the pinned Godot source's primitive produced, so a difference is visible not implied. */
   readonly counterpartTriangles: number;
   readonly kind: string;
@@ -77,28 +81,46 @@ const GRID_COLUMNS = 24;
 const GRID_ROWS = 15;
 const X_AXIS = new Vector3(1, 0, 0);
 
-/** Segment counts follow the pinned source's primitive defaults; each engine's real counts are
- * reported rather than assumed equal, because independent tessellations are a disclosed difference. */
-function geometryFor(index: number): { geometry: Mesh["geometry"]; kind: string } {
-  switch (index) {
-    case 0:
-      return { geometry: new BoxGeometry(1, 1, 1), kind: "BoxMesh" };
-    case 1:
-      return { geometry: new SphereGeometry(0.5, 64, 32), kind: "SphereMesh" };
-    case 2:
-      return { geometry: new CapsuleGeometry(0.5, 1, 8, 64), kind: "CapsuleMesh" };
-    case 3:
-      return { geometry: new CylinderGeometry(0.5, 0.5, 2, 64, 1, false), kind: "CylinderMesh" };
-    default:
-      return { geometry: new CylinderGeometry(0.5, 0.5, 1, 3, 1, false), kind: "PrismMesh" };
-  }
+/**
+ * The geometry is the pinned scene's own buffer bytes, not a regeneration from a matching name.
+ * A name only matches by accident: three's `SphereGeometry(0.5, 64, 32)` is 3,968 triangles against
+ * Godot's `SphereMesh` 4,224, so a name-matched pair compares two different meshes. Building from
+ * the exported channels makes the two arms render identical geometry, and re-hashing the arrays that
+ * reached the GPU makes the arm's own claim checkable rather than inherited from the file it read.
+ */
+async function geometryFor(mesh: ICullTopology): Promise<{
+  geometry: BufferGeometry;
+  sha256: string;
+}> {
+  const channels = cullMeshChannels(mesh);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(channels.positions, 3));
+  geometry.setAttribute("normal", new BufferAttribute(channels.normals, 3));
+  geometry.setAttribute("uv", new BufferAttribute(channels.uvs, 2));
+  geometry.setIndex(new BufferAttribute(channels.indices, 1));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  // Read back what the attributes actually hold rather than what the fixture said they hold, so a
+  // channel-order or decode mistake cannot pass as agreement.
+  const uploaded: ICullMeshChannels = {
+    indices: (geometry.getIndex()?.array as Uint32Array) ?? new Uint32Array(0),
+    normals: geometry.getAttribute("normal").array as Float32Array,
+    positions: geometry.getAttribute("position").array as Float32Array,
+    uvs: geometry.getAttribute("uv").array as Float32Array,
+  };
+  const observed = await sha256(cullMeshBufferBytes(mesh, uploaded));
+  if (observed !== mesh.bufferSha256)
+    throw new Error(
+      `TN_BENCH_CULL_BUFFER_HASH_MISMATCH:${mesh.kind} uploaded ${observed} fixture ${mesh.bufferSha256}`,
+    );
+  return { geometry, sha256: observed };
 }
 
-export function buildCullScene(
+export async function buildCullScene(
   fixture: ICullFixture,
   variant: ICullVariant,
   authoring: CullingAuthoring,
-): ICullScene {
+): Promise<ICullScene> {
   // A real `Scene`, not an `Object3D` cast to one: the projection reads the scene's own background
   // and environment rotations, and a cast object simply has none of them.
   const scene = new Scene();
@@ -113,7 +135,8 @@ export function buildCullScene(
   );
   camera.position.set(...(fixture.camera.position as unknown as [number, number, number]));
   camera.lookAt(...(fixture.camera.lookAt as unknown as [number, number, number]));
-  const geometries = fixture.meshes.map((_, index) => geometryFor(index).geometry);
+  const built = await Promise.all(fixture.meshes.map((mesh) => geometryFor(mesh)));
+  const geometries = built.map((entry) => entry.geometry);
   const materials: Material[] = fixture.meshes.map((mesh) => {
     const color = new Color(...(mesh.albedo as unknown as [number, number, number]));
     return variant.unshaded
@@ -218,11 +241,12 @@ export function buildCullScene(
   };
   step(0);
   const topology: ICullTopologyReport[] = fixture.meshes.map((mesh, index) => {
-    const geometry = geometries[index] as Mesh["geometry"];
+    const geometry = geometries[index] as BufferGeometry;
     const position = geometry.getAttribute("position") as BufferAttribute;
     const indices = geometry.getIndex();
     return {
       albedo: mesh.albedo,
+      bufferSha256: (built[index] as { sha256: string }).sha256,
       counterpartTriangles: mesh.triangles,
       kind: mesh.kind,
       tnIndices: indices?.count ?? 0,
@@ -397,7 +421,7 @@ export async function createCullHarness(
   await renderer.init();
   renderer.info.autoReset = false;
   renderer.shadowMap.enabled = true;
-  const built = buildCullScene(fixture, variant, authoring);
+  const built = await buildCullScene(fixture, variant, authoring);
   const backend = renderer.backend as unknown as {
     device?: { queue?: { onSubmittedWorkDone?: () => Promise<void> } };
   };
