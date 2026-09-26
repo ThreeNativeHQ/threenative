@@ -1,4 +1,4 @@
-import { BufferAttribute, Mesh, MeshBasicMaterial } from "three";
+import { BufferAttribute, BufferGeometry, Mesh, MeshBasicMaterial } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
@@ -765,6 +765,38 @@ describe("TerrainTiles", () => {
     expect(tiles.peakResidentBytes).toBeLessThanOrEqual(200_000);
     expect(disposed.length).toBeGreaterThan(0);
     expect(release).toHaveBeenCalled();
+    tiles.dispose();
+  });
+
+  it("leaves settled mixed-LOD seams alone instead of rewriting them every frame", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+    tiles.follow({ x: 12, z: 0 });
+    for (let frame = 0; frame < 4; frame += 1) {
+      tiles.follow({ x: 12, z: 0 });
+      tiles.process();
+    }
+    expect(tiles.lodLevelCount).toBeGreaterThanOrEqual(2);
+    // A float64 height compared against its float32 copy never matched, so every call rewrote the
+    // edges and recomputed whole-tile bounds: ~39 ms a frame on a 25-tile ring.
+    const transitions = tiles.lodTransitions;
+    const bounds = vi.spyOn(BufferGeometry.prototype, "computeBoundingSphere");
+    for (let frame = 0; frame < 3; frame += 1) {
+      tiles.follow({ x: 12, z: 0 });
+      tiles.process();
+    }
+    // A still camera must not morph terrain: the neighbour rule used to flip coarse tiles each frame.
+    expect(tiles.lodTransitions).toBe(transitions);
+    expect(bounds).not.toHaveBeenCalled();
+    bounds.mockRestore();
     tiles.dispose();
   });
 

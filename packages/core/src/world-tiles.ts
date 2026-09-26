@@ -424,6 +424,23 @@ function renderedLevel(tile: IResidentTile): ILevelGeometry | undefined {
   return tile.levels.find(({ mesh }) => mesh.visible) ?? tile.levels[tile.lodLevel];
 }
 
+/**
+ * What a pair's seam was reconciled against: each side's rendered level and the versions of its
+ * position and normal buffers. Every writer to a level sets `needsUpdate`, which bumps the version,
+ * so an unchanged signature means neither facing edge can have moved since.
+ */
+function pairSignature(pair: NeighborPair): string | undefined {
+  const [a, b] = pair;
+  const aLevel = renderedLevel(a);
+  const bLevel = renderedLevel(b);
+  if (aLevel === undefined || bLevel === undefined) return undefined;
+  const version = (level: ILevelGeometry, name: string): number =>
+    (level.geometry.getAttribute(name) as BufferAttribute).version;
+  const side = (level: ILevelGeometry): string =>
+    `${String(level.geometry.id)}:${String(version(level, "position"))}:${String(version(level, "normal"))}`;
+  return `${side(aLevel)}|${side(bLevel)}`;
+}
+
 function edgeVertexHeight(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
   const value = level.geometry.getAttribute("position").getY(edgeVertexIndex(level, side, index));
   if (!Number.isFinite(value))
@@ -615,16 +632,19 @@ function restoreLevelEdge(
     const normalized = index / (level.resolution - 1);
     const [x, , z] = edgeWorldPoint(field, side, normalized, 0);
     const vertex = edgeVertexIndex(level, side, index);
-    const height = field.heightAt(x, z);
+    // Compared at float32, the precision the attributes store: a float64 sample never equals its
+    // stored copy, so an exact compare reported every edge changed on every call and recomputed
+    // the whole tile's bounds per seam per frame (~39 ms/frame on a 25-tile ring).
+    const height = Math.fround(field.heightAt(x, z));
     field.normalAt(x, z, normal);
     if (position.getY(vertex) !== height) {
       position.setY(vertex, height);
       changed = true;
     }
     if (
-      normalAttribute.getX(vertex) !== normal.x ||
-      normalAttribute.getY(vertex) !== normal.y ||
-      normalAttribute.getZ(vertex) !== normal.z
+      normalAttribute.getX(vertex) !== Math.fround(normal.x) ||
+      normalAttribute.getY(vertex) !== Math.fround(normal.y) ||
+      normalAttribute.getZ(vertex) !== Math.fround(normal.z)
     ) {
       normalAttribute.setXYZ(vertex, normal.x, normal.y, normal.z);
       changed = true;
@@ -1336,6 +1356,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #stitchedEdges = 0;
   #stitchBytes = 0;
   readonly #stitches = new Map<string, IStitchBridge>();
+  /** Each pair's `pairSignature` as the last reconcile left it, so a settled seam is not redone. */
+  readonly #pairSignatures = new Map<string, string>();
   #released = false;
   #renderer: IRendererLike | undefined;
 
@@ -1504,10 +1526,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const tile of [...this.#resident.values()]) {
       if (!selectedKeys.has(tile.key)) this.#evict(tile);
     }
+    const targets = new Map<IResidentTile, number>();
     for (const candidate of selected) {
       const key = keyFor(candidate.tileX, candidate.tileZ);
-      if (this.#resident.has(key)) {
-        this.#selectLod(this.#resident.get(key) as IResidentTile, candidate.distance);
+      const resident = this.#resident.get(key);
+      if (resident !== undefined) {
+        targets.set(resident, lodLevelForDistance(candidate.distance, this.#lodDistances));
         continue;
       }
       const estimate = estimatedTileBytes(this.tileResolution, this.#factors, this.#worldPasses);
@@ -1532,6 +1556,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#recordPeaks();
     }
     this.#recordPeaks();
+    this.#applyLodTargets(targets);
     this.#coordinateNeighborLods(hadFocus);
     this.#recordSeamDiagnostics(false);
     this.#reconcileNeighbors();
@@ -1730,6 +1755,35 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
   }
 
+  /**
+   * Move resident tiles to their distance level after the neighbour rule is applied to the targets.
+   *
+   * Setting each tile to its raw distance level and then letting `#coordinateNeighborLods` pull
+   * the coarser side of a two-level jump back flipped those tiles every frame the follow point
+   * stood still: two LOD transitions, a visible morph and whole-tile bounds work, forever. The rule
+   * is the same — a coarser neighbour moves to one level past the finer — but it now shapes the
+   * target, so a settled ring asks for the level it already has.
+   */
+  #applyLodTargets(targets: ReadonlyMap<IResidentTile, number>): void {
+    const levels = new Map<IResidentTile, number>();
+    for (const tile of this.#resident.values())
+      levels.set(tile, Math.min(targets.get(tile) ?? tile.lodLevel, tile.maxLodLevel));
+    const pairs = neighborPairs([...this.#resident.values()]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [a, b] of pairs) {
+        const aLevel = levels.get(a) as number;
+        const bLevel = levels.get(b) as number;
+        if (Math.abs(aLevel - bLevel) <= 1) continue;
+        if (aLevel > bLevel) levels.set(a, bLevel + 1);
+        else levels.set(b, aLevel + 1);
+        changed = true;
+      }
+    }
+    for (const [tile, level] of levels) if (targets.has(tile)) this.#setLodLevel(tile, level);
+  }
+
   #selectLod(tile: IResidentTile, distance: number, countTransition = true): void {
     this.#setLodLevel(tile, lodLevelForDistance(distance, this.#lodDistances), countTransition);
   }
@@ -1854,12 +1908,37 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
   }
 
+  /**
+   * Recorded after every pair is done: reconciling one pair bumps a tile its other pairs share, and
+   * a signature taken mid-pass would mark those pairs stale forever.
+   */
+  #recordPairSignatures(pairs: readonly NeighborPair[]): void {
+    this.#pairSignatures.clear();
+    for (const pair of pairs) {
+      const signature = pairSignature(pair);
+      if (signature !== undefined) this.#pairSignatures.set(neighborPairKey(pair), signature);
+    }
+  }
+
+  /**
+   * Whether a pair's seam is exactly as the last reconcile left it. Reconciling restores both
+   * facing edges and then stitches the finer one, so redoing a settled pair rewrote its edges and
+   * recomputed whole-tile bounds every frame for nothing. A settled stitch still counts as stitched.
+   */
+  #settled(key: string, pair: NeighborPair): boolean {
+    const signature = pairSignature(pair);
+    if (signature === undefined || this.#pairSignatures.get(key) !== signature) return false;
+    if (this.#stitches.has(key)) this.#stitchedEdges += 1;
+    return true;
+  }
+
   #reconcileNeighbors(): void {
     const pairs = neighborPairs([...this.#resident.values()]);
     const active = new Set<string>();
     for (const pair of pairs) {
       const key = neighborPairKey(pair);
       active.add(key);
+      if (this.#settled(key, pair)) continue;
       const previousBytes = this.#stitches.get(key)?.bytes ?? 0;
       const bridge = reconcileNeighborPair(pair, this.#surface, this.#stitches.get(key));
       if (bridge === undefined) {
@@ -1878,6 +1957,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const key of this.#stitches.keys()) {
       if (!active.has(key)) this.#removeStitch(key);
     }
+    this.#recordPairSignatures(pairs);
     if (this.residentBytes > this.residentByteBudget)
       throw new TerrainTileBudgetError(
         "TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.",
