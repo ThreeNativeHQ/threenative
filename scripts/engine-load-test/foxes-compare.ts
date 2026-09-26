@@ -340,7 +340,7 @@ export function compareFoxesRuns(
     push(`TN_BENCH_FOXES_BINDPOSE_DIGEST:tn:${String(tn.bindposeDigest)}`);
   if (tn.meshDigest === null || tn.meshDigest !== fixture.mesh.digest)
     push(`TN_BENCH_FOXES_MESH_DIGEST:tn:${String(tn.meshDigest)}`);
-  if (tn.jointNames === null || tn.jointNames.join(" ") !== fixture.skin.joints.join(" "))
+  if (tn.jointNames === null || tn.jointNames.join("\u0000") !== fixture.skin.joints.join("\u0000"))
     push("TN_BENCH_FOXES_JOINT_ORDER:tn");
 
   for (const [name, run] of [

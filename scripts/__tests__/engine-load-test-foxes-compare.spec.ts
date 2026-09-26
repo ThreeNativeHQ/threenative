@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   FOXES_ACTIVE_CLIP,
@@ -11,15 +10,18 @@ import {
   foxesOracleTime,
   foxesOracleValue,
   foxesRingRotation,
+  foxesTimeDeltas,
   parseFoxesFixture,
 } from "../../examples/engine-load-test/src/foxes-fixture.js";
 import { compareFoxesRuns, parseFoxesRun } from "../engine-load-test/foxes-compare.js";
 
 /**
- * The comparator's rules, proved without a GPU, plus the two retained real pairs as a regression pin:
+ * The comparator's rules, proved without a GPU, and every one of them fed on a full-schedule pair:
  * the 50-fox cells are where this family found that the competitor's own f32 clock drifts over the
- * measured horizon while the counterpart arm's does not, so the oracles' step count and the declared
- * tolerances are pinned by the samples an actual run reported.
+ * measured horizon while the counterpart arm's does not, so the arms here are built with the
+ * arithmetic they actually use, and the band the oracles are checked against is pinned at the same
+ * horizon the real cell ran. Nothing here reads `artifacts/`, so the suite is as green on a clean
+ * checkout as it is beside a measured run.
  */
 
 const DIGEST = "a".repeat(64);
@@ -27,7 +29,8 @@ const SHORT = "0123456789abcdef";
 const WARMUP = 4;
 const MEASURED = 600;
 const DELTAS = 3;
-const STATE_FRAMES = [0, 1, 60];
+/** The six frames §6.2's conformance inspection names, the last of which is the measured horizon. */
+const STATE_FRAMES = [0, 1, 60, 120, 300, 599];
 const JOINTS = 2;
 
 function base64(bytes: Uint8Array): string {
@@ -222,21 +225,108 @@ function makeFixture(overrides: Record<string, unknown> = {}): IFoxesFixture {
   return parseFoxesFixture(JSON.stringify(raw));
 }
 
-/** A pose that moves with the frame and differs per fox, which is what a live staggered arm reports. */
-function pose(fixture: IFoxesFixture, frame: number, fox: number): Record<string, unknown> {
+/**
+ * The counterexample arm's clock, in the arithmetic it actually keeps: `elapsed` accumulated one
+ * `frameDelta` at a time in f32, and each ring's turn one f32 rotation quaternion multiplied per
+ * applied delta. The declared band is derived from exactly this drift, so a pair built only from f64
+ * values cannot tell whether the band is wide enough for the arms it is meant to compare.
+ */
+const f32 = Math.fround;
+const add = (a: number, b: number): number => f32(a + b);
+const sub = (a: number, b: number): number => f32(a - b);
+const mul = (a: number, b: number): number => f32(a * b);
+
+function f32Elapsed(fixture: IFoxesFixture, frame: number): number {
+  const step = f32(fixture.frameSchedule.frameDelta);
+  let elapsed = 0;
+  for (let delta = 0; delta < foxesTimeDeltas(fixture, frame); delta += 1)
+    elapsed = add(elapsed, step);
+  return elapsed;
+}
+
+/** The Hamilton product with every operation rounded, which is the f32 the arms actually multiply. */
+function f32QuatProduct(a: readonly number[], b: readonly number[]): number[] {
+  const [ax, ay, az, aw] = [a[0] as number, a[1] as number, a[2] as number, a[3] as number];
+  const [bx, by, bz, bw] = [b[0] as number, b[1] as number, b[2] as number, b[3] as number];
+  return [
+    sub(add(add(mul(aw, bx), mul(ax, bw)), mul(ay, bz)), mul(az, by)),
+    add(add(sub(mul(aw, by), mul(ax, bz)), mul(ay, bw)), mul(az, bx)),
+    add(add(add(mul(aw, bz), mul(ax, by)), mul(-ay, bx)), mul(az, bw)),
+    sub(sub(sub(mul(aw, bw), mul(ax, bx)), mul(ay, by)), mul(az, bz)),
+  ];
+}
+
+/** The oracle channel's value at the f32 clip time: the fixture's own linear lerp, entered at it. */
+function f32OracleValue(fixture: IFoxesFixture, fox: number, frame: number): number {
+  const channel = fixture.oracleChannel;
+  const first = channel.times[0] as number;
+  const last = channel.times.length - 1;
+  const from = channel.values[0] as number;
+  const to = channel.values[last] as number;
+  const time =
+    (f32(fixture.foxes[fox]?.phase ?? 0) + f32Elapsed(fixture, frame)) %
+    f32(fixture.clips[FOXES_ACTIVE_CLIP]?.duration ?? 0);
+  const span = (channel.times[last] as number) - first;
+  const weight = span > 0 ? (time - first) / span : 0;
+  return f32(from + weight * (to - from));
+}
+
+/** The angle a ring has turned by, in the arithmetic that arm used to turn it. */
+function ringAngle(
+  fixture: IFoxesFixture,
+  frame: number,
+  arm: "bevy-desktop" | "tn-desktop",
+): number {
+  const ring = fixture.rings[0];
+  if (ring === undefined) return 0;
+  const schedule = fixture.frameSchedule;
+  const step = (ring.sign * schedule.foxSpeed * schedule.frameDelta) / ring.radius;
+  if (arm !== "bevy-desktop") return step * foxesTimeDeltas(fixture, frame);
+  const half = f32(step / 2);
+  const increment = [0, f32(Math.sin(half)), 0, f32(Math.cos(half))];
+  let turned = [0, 0, 0, 1];
+  for (let delta = 0; delta < foxesTimeDeltas(fixture, frame); delta += 1)
+    turned = f32QuatProduct(turned, increment);
+  return 2 * Math.atan2(turned[1] as number, turned[3] as number);
+}
+
+/** The ring rotation the f32 chain reached, reported back in the four components the arms carry. */
+function f32RingRotation(fixture: IFoxesFixture, frame: number): number[] {
+  const half = f32(ringAngle(fixture, frame, "bevy-desktop") / 2);
+  return [0, f32(Math.sin(half)), 0, f32(Math.cos(half))];
+}
+
+/**
+ * A pose that moves with the frame and differs per fox, which is what a live staggered arm reports.
+ * `bevy-desktop` reads the fixture through f32 the way the counterexample arm does; `tn-desktop`
+ * reads the same f64 oracles the comparator composes, which is the whole disagreement between them.
+ */
+function pose(
+  fixture: IFoxesFixture,
+  frame: number,
+  fox: number,
+  arm: "bevy-desktop" | "tn-desktop",
+): Record<string, unknown> {
+  const row = fixture.foxes[fox];
   const t = (DELTAS + frame) / 60;
+  const arm32 = arm === "bevy-desktop";
+  const value = arm32 ? f32OracleValue(fixture, fox, frame) : foxesOracleValue(fixture, fox, frame);
+  // A skin-matrix entry is a world position: the ring's turn applied to a bone one rig unit out and
+  // scaled by the fixture's own instance scale, so it inherits the same f32 drift on a short lever.
+  const scale = row?.scale[0] ?? 1;
+  const entry = f32(scale * Math.cos(ringAngle(fixture, frame, arm)));
   return {
     bonePoses: [
       [0, 0, 0, 0, 0, 0, 1],
-      [0, foxesOracleValue(fixture, fox, frame), 0, 0, 0, 0, 1],
+      [0, value, 0, 0, 0, 0, 1],
     ],
     index: fox,
     joints: JOINTS,
     oracleRotation: [0, 0, 0, 1],
-    oracleTranslation: [0, foxesOracleValue(fixture, fox, frame), 0],
-    poseScalar: fox / 10 + t,
+    oracleTranslation: [0, value, 0],
+    poseScalar: arm32 ? f32((row?.phase ?? 0) + t) : (row?.phase ?? 0) + t,
     ring: 0,
-    skinMatrices: [[fox / 100, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]],
+    skinMatrices: [[entry, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]],
   };
 }
 
@@ -273,11 +363,14 @@ function makeRun(
     states: STATE_FRAMES.map((frame) => ({
       frameId: frame,
       state: {
-        foxes: fixture.probeFoxIndices.map((fox) => pose(fixture, frame, fox)),
-        poseScalars: fixture.foxes.map((_fox, index) => index / 10 + (DELTAS + frame) / 60),
+        foxes: fixture.probeFoxIndices.map((fox) => pose(fixture, frame, fox, arm)),
+        poseScalars: fixture.foxes.map((fox) => fox.phase + (DELTAS + frame) / 60),
         rings: fixture.rings.map((ring) => ({
           index: ring.index,
-          rotation: foxesRingRotation(fixture, ring.index, frame),
+          rotation:
+            arm === "bevy-desktop"
+              ? f32RingRotation(fixture, frame)
+              : foxesRingRotation(fixture, ring.index, frame),
         })),
         ringSystemRuns: DELTAS + frame,
       },
@@ -313,6 +406,24 @@ function compare(fixture: IFoxesFixture, bevy?: unknown, tn?: unknown) {
     parseFoxesRun(bevy ?? makeRun(fixture, "bevy-desktop")),
     parseFoxesRun(tn ?? makeRun(fixture, "tn-desktop")),
   );
+}
+
+/** The synchronized cell: upstream seeks no phase there, so every fox's phase is zero. */
+function syncFixture(): IFoxesFixture {
+  return makeFixture({
+    variant: "sync",
+    foxes: [0, 1, 2, 3].map((index) => ({
+      entityIndex: 10 + index,
+      index,
+      joints: JOINTS,
+      phase: 0,
+      ring: 0,
+      ringRadius: 2,
+      rotation: [0, 0, 0, 1],
+      scale: [0.01, 0.01, 0.01],
+      translation: [2, 0, 0],
+    })),
+  });
 }
 
 describe("PRD-449 many-foxes comparator", () => {
@@ -523,44 +634,51 @@ describe("PRD-449 many-foxes comparator", () => {
     expect(foxesBindposeDigest([matrix, matrix])).not.toBe(foxesBindposeDigest([matrix]));
   });
 
-  it("agrees with the retained real 50-fox pairs on both variants", () => {
-    // The retained real pairs, read rather than restated: this is what the oracles have to keep
-    // matching, and what pins the declared step count and the f32-horizon tolerances.
-    for (const variant of ["staggered", "sync"] as const) {
-      const fixture = parseFoxesFixture(
-        readFileSync(
-          `artifacts/engine-load-test/foxes-50-${variant}-600f-bevy-fixture.json`,
-          "utf8",
-        ),
-      );
-      const bevy = parseFoxesRun(
-        JSON.parse(
-          readFileSync(`artifacts/engine-load-test/foxes-50-${variant}-bevy.json`, "utf8"),
-        ) as unknown,
-      );
-      const tn = parseFoxesRun(
-        JSON.parse(
-          readFileSync(`artifacts/engine-load-test/foxes-50-${variant}-tn.json`, "utf8"),
-        ) as unknown,
-      );
-      const comparison = compareFoxesRuns(fixture, bevy, tn);
+  it("keeps both variants inside the frozen band over the whole sampled schedule", () => {
+    // This replaces the retained-pair regression that read `artifacts/engine-load-test/foxes-50-*`,
+    // which is gitignored and therefore absent on a clean checkout: the suite has to prove the band
+    // from the fixture's own schedule or it proves nothing for anyone but the machine that ran the
+    // cell. The arithmetic is reproduced instead — the counterexample arm's f32 clock and f32 ring
+    // quaternions against the counterpart arm's f64 oracles, over the six frames §6.2 names, on both
+    // variants including the synchronized one that shares a single pose.
+    //
+    // The band was widened from 1e-4/1e-5 to 1e-3/4e-3 after the first real 600-frame pair failed it
+    // at 1.76e-4 on a bone and 4.96e-4 on a skin matrix, so this pins the frozen band as it stands
+    // and is not preregistration. The f32 clock's drift is reproduced — 1.9e-4 here against 1.76e-4
+    // measured — and the skin-matrix arm is a single f32 lever, not the real rig's 24-joint chain,
+    // so that half only proves the band is not exceeded, never that it is needed.
+    for (const fixture of [makeFixture(), syncFixture()]) {
+      const variant = fixture.variant;
+      const comparison = compare(fixture);
       expect(`${variant}:${comparison.outcome.problems.join(",")}`).toBe(`${variant}:`);
       expect(comparison.outcome.comparability).toBe("qualified");
+      expect(comparison.conformance.frames).toEqual(STATE_FRAMES);
       expect(comparison.conformance.withinTolerance).toBe(true);
+      // The f32 clock's own drift at the measured horizon: above the 1e-4 it failed, inside the
+      // frozen 1e-3, and far above the counterpart arm's double-accumulated oracle.
+      expect(comparison.conformance.perArm.bevy.oracleMaxDelta).toBeGreaterThan(1e-4);
+      expect(comparison.conformance.perArm.bevy.oracleMaxDelta).toBeLessThanOrEqual(
+        FOXES_TOLERANCE.oracleAbs,
+      );
+      expect(comparison.conformance.perArm.tn.oracleMaxDelta).toBeLessThan(1e-9);
+      expect(comparison.conformance.perArm.bevy.oracleMaxDelta).toBeGreaterThan(
+        comparison.conformance.perArm.tn.oracleMaxDelta,
+      );
+      expect(comparison.conformance.crossArm.boneMaxDelta).toBeGreaterThan(1e-4);
       expect(comparison.conformance.crossArm.boneMaxDelta).toBeLessThanOrEqual(
         FOXES_TOLERANCE.boneAbs,
       );
       expect(comparison.conformance.crossArm.skinMatrixMaxDelta).toBeLessThanOrEqual(
         FOXES_TOLERANCE.matrixAbs,
       );
-      // The counterexample arm's f32 clock is what these bounds are derived from; its own deviation
-      // must stay far above the counterpart arm's, or the bounds are no longer justified.
-      expect(comparison.conformance.perArm.bevy.oracleMaxDelta).toBeGreaterThan(
-        comparison.conformance.perArm.tn.oracleMaxDelta,
+      expect(comparison.conformance.crossArm.poseScalarMaxDelta).toBeLessThanOrEqual(
+        FOXES_TOLERANCE.poseScalarAbs,
       );
-      expect(comparison.conformance.distinctPoses.bevy).toBe(
-        variant === "sync" ? 1 : fixture.counts.foxes,
-      );
+      // One pose per fox staggered, one shared pose synchronized, on both sides.
+      expect(comparison.conformance.distinctPoses).toEqual({
+        bevy: variant === "sync" ? 1 : fixture.counts.foxes,
+        tn: variant === "sync" ? 1 : fixture.counts.foxes,
+      });
       expect(comparison.ratio?.verdict).toBe("insufficient");
     }
   });

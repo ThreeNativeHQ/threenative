@@ -23,9 +23,21 @@ export const FOXES_ASSET_BYTES = 162_852;
 export const FOXES_ACTIVE_CLIP = 2;
 
 /**
- * Preregistered tolerances, derived from the pinned engine's own f32 arithmetic rather than from any
- * result. The 600-frame cell applies 720 clock steps, and the disagreement this family measures is
- * almost entirely *bevy's*: it accumulates its elapsed time and each ring's rotation in f32, while the
+ * Tolerances derived from the pinned engine's own f32 arithmetic and **frozen after an exploratory
+ * 600-frame pair was observed, not preregistered**.
+ *
+ * The history, because it decides what these numbers are evidence for. The band was first written at
+ * `boneAbs = 1e-4` and `matrixAbs = 1e-5`; the first 600-frame pair on the real hardware failed both,
+ * at a bone deviation of 1.76e-4 and a skin-matrix deviation of 4.96e-4, and the bounds were then
+ * widened to 1e-3 and 4e-3 *after seeing that result*. The derivation below is retained because it is
+ * why the widened band is that wide and because it is checkable against any future block — it is not
+ * why the narrow band was chosen, and no claim here rests on it. Concretely: those two exploratory
+ * runs are evidence about the band's width and cannot be counted as preregistered publication
+ * evidence, no publication verdict may be read out of the post hoc adjustment, and these constants are
+ * frozen for every future block. The first run's timings stay labelled smoke and carry no verdict.
+ *
+ * The 600-frame cell applies 720 clock steps, and the disagreement this family measures is almost
+ * entirely *bevy's*: it accumulates its elapsed time and each ring's rotation in f32, while the
  * counterpart arm accumulates its clip time in doubles and composes each ring's rotation in f64 once
  * (its worst oracle disagreement is 4.9e-13, eleven orders of magnitude inside `oracleAbs`).
  *

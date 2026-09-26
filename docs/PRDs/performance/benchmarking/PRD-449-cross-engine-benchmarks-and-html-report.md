@@ -645,18 +645,30 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   | pose scalars, cross-arm | 1e-4 | 3.49e-6 | 3.62e-6 |
   | distinct poses, bevy / tn of 50 | 50 / 1 by variant | 50 / 50 | 1 / 1 |
 
-  **The tolerances are derived from the competitor's own f32 arithmetic, and the derivation is the
-  substance of this box.** With `n = 720` clock steps, `u = 2^-24` and the ring's 12 rad accumulated
-  angle: a quaternion *product* accumulated `n` times bounds a component at `n·u·theta = 2.6e-4`, and
-  the same angle error times the largest ring radius bounds a skin-matrix entry at 2.1e-3; an f32
-  *sum* bounds the accumulated playhead at `u·(n/60)·sqrt(n) = 1.9e-5 s`, which against the clip's
-  fastest channel (the fixture's oracle channel is chosen as the largest max-min in the clip, 12.23
-  units over 1.158 s, so 10.6 units/s) bounds a bone value at 2.0e-4. The declared constants are
-  4x, 2x, 5x and 5x those. The disagreement is overwhelmingly *bevy's*: its worst oracle deviation
-  is 1.76e-4 where the counterpart arm's is 4.87e-13, because the counterpart arm accumulates its
-  clip time in doubles and composes each ring's rotation once in f64. These are horizon bounds, so
-  at the 2-frame gate they are far looser than the arithmetic needs — deliberately, since one
-  declared constant is checked at whatever horizon the cell runs.
+  **The band was widened after the first pair was observed, and this box records that instead of
+  claiming otherwise.** It was first written at `boneAbs = 1e-4` and `matrixAbs = 1e-5`; the first
+  600-frame pair on the real hardware failed both, at a bone deviation of 1.76e-4 and a skin-matrix
+  deviation of 4.96e-4, and the bounds were then widened to 1e-3 and 4e-3 *after seeing that result*.
+  So those two runs are exploratory evidence about how wide the band must be and **cannot be counted
+  as preregistered publication evidence**; §6.1's "preregistered" holds for every block from here on,
+  not retroactively, and no publication verdict is read out of the post hoc adjustment. The widened
+  constants are frozen for future blocks. Both runs stay labelled `profile: "smoke"`, one block each
+  with no A/A calibration, so their timings carry no verdict either way — they are observations, and
+  the table above is the record of them.
+
+  **The arithmetic that sizes the widened band, which is the substance of this box.** With `n = 720`
+  clock steps, `u = 2^-24` and the ring's 12 rad accumulated angle: a quaternion *product* accumulated
+  `n` times bounds a component at `n·u·theta = 2.6e-4`, and the same angle error times the largest ring
+  radius bounds a skin-matrix entry at 2.1e-3; an f32 *sum* bounds the accumulated playhead at
+  `u·(n/60)·sqrt(n) = 1.9e-5 s`, which against the clip's fastest channel (the fixture's oracle channel
+  is chosen as the largest max-min in the clip, 12.23 units over 1.158 s, so 10.6 units/s) bounds a
+  bone value at 2.0e-4. The declared constants are 4x, 2x, 5x and 5x those. The disagreement is
+  overwhelmingly *bevy's*: its worst oracle deviation is 1.76e-4 where the counterpart arm's is
+  4.87e-13, because the counterpart arm accumulates its clip time in doubles and composes each ring's
+  rotation once in f64. These are horizon bounds, so at the 2-frame gate they are far looser than the
+  arithmetic needs — deliberately, since one declared constant is checked at whatever horizon the cell
+  runs. It is kept because it is checkable against any future block; it is not why the narrow band was
+  chosen, and the f32 bounds are first-order, so the real rig's 24-joint chain can land above them.
 
   **Two loader differences are measured, not assumed, and both are outside one digest.** three's
   `GLTFLoader` renormalises every vertex's four skin weights (`SkinnedMesh.normalizeSkinWeights`,
@@ -670,18 +682,30 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 
   [foxes-compare.ts](../../../../scripts/engine-load-test/foxes-compare.ts) is pure and
   unit-proved by [engine-load-test-foxes-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-foxes-compare.spec.ts),
-  11/11, including both retained real pairs read from disk. Its red state is proved rather than
-  asserted: reverting the reader's step count to one fewer makes the retained-pair test and the
-  oracle test fail, and both pass again with the fix. The nine focused benchmark suites passed
-  186/186, root `pnpm exec tsc --noEmit -p tsconfig.json` and `biome check .` exited 0.
+  11/11, on a full six-frame schedule (§6.2's 0, 1, 60, 120, 300, 599) across both variants, with the
+  counterexample arm fed through the f32 clock and f32 ring quaternions it actually uses rather than
+  through the f64 oracles it is compared against — that arithmetic is reproduced in-process, at
+  1.9e-4 on the bone channel against the 1.76e-4 the real pair measured. The earlier revision of this
+  suite read the retained `foxes-50-*` pairs from disk; they live under gitignored `artifacts/`, so on
+  a clean checkout that test failed on a missing file and the band had no CI proof at all, which is
+  why it is gone rather than skipped. Its red state is proved rather than asserted: restoring the
+  pre-widening band (`boneAbs` 1e-4, `matrixAbs` 1e-5, `oracleAbs` 1e-4) fails the full-schedule test
+  and the matched-pair test, and reverting the reader's step count to one fewer fails the oracle test;
+  all pass again with the fix. The suite is also green run from an empty working directory, which is
+  the clean-checkout proof. Root `pnpm exec tsc --noEmit -p tsconfig.json` and `biome check` on the
+  three touched files exit 0; `pnpm exec vitest run` over the three `engine-load-test-*-compare`
+  suites is 23/23.
 - [x] Retain a real-hardware comparison for the 50-fox synchronized and staggered cells (one smoke
   block each, no verdict).
   One real-hardware smoke block per cell per arm, retained under `artifacts/engine-load-test/` with
   raw frame series, the fixture, counters and identity, labelled `profile: "smoke"`, `blocks: 1` in
-  the artifact itself. Hardware for every arm: NVIDIA GeForce RTX 2080, driver `615.71.09`, through
-  `DISPLAY=:0`; the Bevy arm reaches it over Vulkan (`DiscreteGpu`, `NVIDIA GeForce RTX 2080`), the
-  counterpart arm through the owned host's wgpu-native backend (`vendor nvidia, architecture turing`,
-  `NVIDIA: 615.71.09 615.71.9.0`), host
+  the artifact itself. That directory is gitignored build output, so the files live on the measuring
+  machine and the tracked record of the measurement is the table below plus the provenance lines
+  around it — no gate can re-read those artifacts, which is why the comparator's proof above is
+  synthesised rather than replayed. Hardware for every arm: NVIDIA GeForce RTX 2080, driver `615.71.09`,
+  through `DISPLAY=:0`; the Bevy arm reaches it over Vulkan (`DiscreteGpu`, `NVIDIA GeForce RTX 2080`),
+  the counterpart arm through the owned host's wgpu-native backend (`vendor nvidia, architecture
+  turing`, `NVIDIA: 615.71.09 615.71.9.0`), host
   `packages/runtime-native/build/tn-linux/mystral` 101,551,728 bytes, SHA-256 `f9386044bdbf114d…`,
   Bevy adapter 81,218 bytes.
 
@@ -695,7 +719,10 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   §8 supports no faster/slower statement from one block with no A/A calibration. Both pairs are
   `qualified`, never `matched-task`, because the shaded environments differ (bevy PBR with its own
   window clear colour against three's `MeshStandardMaterial` on a black background) and because each
-  side generates the normals the pinned asset declares no values for.
+  side generates the normals the pinned asset declares no values for. That `qualified` is comparability
+  on the conformance criterion the box above records as widened after these two runs, so it is
+  likewise not publication evidence: a future block is the first one checked against a band chosen
+  before it ran.
 
   The counters say what each engine actually did. The counterpart arm submitted 52 draws and 28,803
   triangles at the midpoint frame — 50 foxes of 576 triangles, 28,800, plus the two-triangle plane —
