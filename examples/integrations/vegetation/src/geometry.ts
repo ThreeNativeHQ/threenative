@@ -16,7 +16,7 @@ export function safeIndices(
   if (indices.length % 3 !== 0) throw new Error("Tree indices must contain complete triangles.");
   let maximum = 0;
   for (let i = 0; i < indices.length; i++) {
-    const index = indices[i];
+    const index = indices[i] ?? Number.NaN;
     if (!Number.isInteger(index) || index < 0 || index >= vertices)
       throw new Error(`Tree index ${i} is outside its vertex buffer.`);
     maximum = Math.max(maximum, index);
