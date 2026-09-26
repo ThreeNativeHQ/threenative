@@ -868,6 +868,13 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   mask is a plausible cause, **not proved**. The pair has no ratio; the next conformance probe must
   read a silhouette/depth signal independent of that shaded-colour threshold.
 
+  A Godot-only, unscored frame-599 diagnostic used the same frozen scene state for shaded and
+  white-unshaded captures. Both masks covered exactly `0.110401234568` of pixels; mean luma changed
+  from `0.050648` to `0.110401`. On Godot, shading did not change this threshold mask at that frame.
+  This does not resolve the cross-engine mismatch: TN still needs a paired unshaded capture at the
+  same frame before the dynamic cell can be qualified. Diagnostic file:
+  `artifacts/engine-load-test/diagnostics/cull-mask-godot.json` (local, ignored).
+
   Build provenance is now retained for fresh culling runs: the 600-frame `basic_cull` pair at
   `artifacts/engine-load-test/diagnostics/cull-archived-{tn,godot,comparison}.json` was recorded
   from clean commit `e3b42479f` on the physical RTX 2080. Godot mean was 1.551 ms; TN mean was

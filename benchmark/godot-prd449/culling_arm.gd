@@ -146,6 +146,7 @@ func _run() -> void:
 		DirAccess.make_dir_recursive_absolute(captures_dir)
 	await _measure(frames, warmup, captures_dir)
 	var effective := await _effective_lighting(captures_dir)
+	await _silhouette_diagnostic(captures_dir)
 
 	var result := {
 		"arm": "godot-desktop",
@@ -560,6 +561,34 @@ var _effective := {}
 func _luma_of(captures_dir: String, capture_name: String) -> float:
 	await _capture(captures_dir, -1, capture_name, false)
 	return _mean_luma_of_latest_capture()
+
+
+## One untimed diagnostic capture after the measured span: the same 10,000 object RIDs, the same
+## camera and the same frozen workload clock for both captures at the final measured frame, with
+## one shared white opaque unshaded material override, so the paired masks isolate shading. The
+## pinned source puts its material on the mesh (`mesh.material`),
+## never on an instance, so the only instance state this changes is the override it adds and then
+## clears. Godot 4.7 has no `instance_geometry_get_material_override` (verified against 4.7.1), so a
+## pre-existing per-instance override could not be read back before being replaced; the pinned bytes
+## this arm hashes set none, and clearing restores exactly the "no override" state the mesh material
+## already described. Recorded `scored: false` so the comparator's scored coverage is untouched.
+func _silhouette_diagnostic(captures_dir: String) -> void:
+	if captures_dir.is_empty():
+		return
+	await _capture(captures_dir, _wall_ms.size() - 1, "silhouette-shaded", false)
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(1.0, 1.0, 1.0, 1.0)
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	var override := material.get_rid()
+	for object_rid in _scene.objects:
+		RenderingServer.instance_geometry_set_material_override(object_rid, override)
+	# One untimed frame before the capture, so the new material's shader is compiled and the
+	# diagnostic is not the frame the renderer had nothing new to draw for.
+	await process_frame
+	await _capture(captures_dir, _wall_ms.size() - 1, "silhouette", false)
+	for object_rid in _scene.objects:
+		RenderingServer.instance_geometry_set_material_override(object_rid, RID())
 
 
 func _capture(captures_dir: String, frame: int, capture_name: String, scored: bool) -> void:
