@@ -23,11 +23,13 @@
 #include "mystral/audio/audio_bindings.h"
 #include "mystral/js/engine.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifndef THREENATIVE_OGG_FIXTURE
@@ -233,13 +235,17 @@ bool runContract(const EngineCase &engineCase, const std::vector<uint8_t> &fixtu
 
     engine->evalWithResult(kScript, "audio_decode_ogg_test.js");
 
-    for (int pass = 0; pass < 16 && report.empty(); pass += 1) {
+    // The deadline is time, not a pump count: the decode lands on a worker thread, so a fixed
+    // number of passes races it and loses on a loaded runner.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (report.empty() && std::chrono::steady_clock::now() < deadline) {
         // The host drains finished decodes from `pollEvents()`, which this loop stands in for: the
         // decode runs on a worker, so a harness that only pumps microtasks would wait for a
         // completion nobody ever delivers. `drainAudioDecodes` is `processAudioEvents`' own call.
         mystral::audio::drainAudioDecodes();
         engine->processMicrotasks();
         engine->evalWithResult("undefined", "audio_decode_ogg_drain.js");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     bool ok = true;
