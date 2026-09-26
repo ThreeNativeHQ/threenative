@@ -144,7 +144,17 @@ export function playtest<
       // the browser's half alone left every device and desktop run with an empty
       // `runtimeDiagnosticsSeries` under an advertised `runtime.performance` — a native host
       // announces itself through `TN_PLAYTEST_ENDPOINT`, not through the expected global.
-      if (runnerAnnounced()) runtime?.enableRuntimeDiagnostics?.();
+      if (runnerAnnounced()) {
+        runtime?.enableRuntimeDiagnostics?.();
+        // Same predicate, same reason, one window later. The hold below covers the boot, and the
+        // hold ends the moment the runner attaches -- but the runner then pumps live frames for
+        // the rAF warmup and for the whole startup wait before it takes its first observation, and
+        // every one of those frames advanced the game on the wall clock. So the simulation time a
+        // tick-counting scenario sees before its own first tick was a function of how fast the
+        // machine booted. The loop is frozen here instead: from the first frame of the run, ticks
+        // are the only clock, which is what the run is already counting.
+        runtime?.freezeClock?.();
+      }
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
