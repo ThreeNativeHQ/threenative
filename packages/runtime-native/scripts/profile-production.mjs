@@ -65,11 +65,6 @@ const REGRESSION_PROFILE = 'regression';
 // first-use compilation instead of capping the run at an arbitrary 30 s.
 const PLAYTEST_TIMEOUT_BASE_MS = 60_000;
 const PLAYTEST_FRAME_BUDGET_MS = 250;
-// The measured arm must be observed for `--duration` seconds of wall clock, but playtest steps
-// count fixed ticks and the runner advances those as fast as the machine allows. Pacing each
-// advance to the loop's own 60 Hz tick spends the scenario's tick budget in real time.
-const PRODUCTION_TICK_INTERVAL_MS = 1_000 / 60;
-
 export function playtestTimeoutMs(scenario) {
   const frameCount = (value) => (Number.isFinite(value) && value > 0 ? value : 0);
   const warmupFrames = frameCount(scenario?.warmupFrames);
