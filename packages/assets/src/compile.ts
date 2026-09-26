@@ -36,6 +36,11 @@ import {
   blenderImportPass,
   needsBlenderImport,
 } from "./passes/blender-import.js";
+import type {
+  IModelCompactInstanceOptions,
+  IModelCompactOptions,
+  IModelCompactSummary,
+} from "./passes/compact.js";
 import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
@@ -174,6 +179,11 @@ export interface IAssetSourceConfig {
 }
 
 export interface IModelsConfig {
+  /**
+   * Lossless scene-graph compaction (flatten → instance → join) against one protected-node set.
+   * Default true ({@link IModelCompactOptions}); `false` ships the scene graph as authored.
+   */
+  readonly compact?: boolean | IModelCompactOptions;
   /** Generate standard TEXCOORD_1 lightmap UVs. Absent means no lightmap pass. */
   readonly lightmap?: ILightmapPassOptions;
   readonly passes?: IModelPassesOptions;
@@ -323,6 +333,8 @@ interface IAssetManifestEntry {
   readonly simplify?: ISimplifyRow;
   /** Automatic discrete LOD generation, when the effective policy ran (model pass). */
   readonly lod?: ILodRow;
+  /** Lossless scene-graph compaction (PRD-443), when it ran (model pass). */
+  readonly compact?: IModelCompactSummary;
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
@@ -458,6 +470,90 @@ function simplifyRow(value: unknown): ISimplifyRow | undefined {
     requestedRatio: value.requestedRatio as number,
     trianglesAfter: value.trianglesAfter as number,
     trianglesBefore: value.trianglesBefore as number,
+  };
+}
+
+function compactRow(value: unknown): IModelCompactSummary | undefined {
+  if (!isRecord(value)) return undefined;
+  const flatten = value.flatten;
+  const instance = value.instance;
+  const join = value.join;
+  if (!isRecord(flatten) || !isRecord(instance) || !isRecord(join)) return undefined;
+
+  if (typeof flatten.enabled !== "boolean" || typeof flatten.reparented !== "number") {
+    return undefined;
+  }
+  if (
+    typeof instance.batches !== "number" ||
+    typeof instance.enabled !== "boolean" ||
+    typeof instance.instances !== "number" ||
+    (instance.reason !== undefined && typeof instance.reason !== "string")
+  ) {
+    return undefined;
+  }
+  if (
+    typeof join.enabled !== "boolean" ||
+    typeof join.primitivesAfter !== "number" ||
+    typeof join.primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  const nodesAfter = value.nodesAfter;
+  const nodesBefore = value.nodesBefore;
+  const primitivesAfter = value.primitivesAfter;
+  const primitivesBefore = value.primitivesBefore;
+  if (
+    typeof nodesAfter !== "number" ||
+    typeof nodesBefore !== "number" ||
+    typeof primitivesAfter !== "number" ||
+    typeof primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value.removed) || !Array.isArray(value.protected)) return undefined;
+  const removed: string[] = [];
+  for (const name of value.removed) {
+    if (typeof name !== "string") return undefined;
+    removed.push(name);
+  }
+
+  const protectedNodes: IModelCompactSummary["protected"][number][] = [];
+  for (const entry of value.protected) {
+    if (!isRecord(entry) || typeof entry.name !== "string") return undefined;
+    const rule = entry.rule;
+    if (
+      rule !== "allow-list" &&
+      rule !== "animation-ancestor" &&
+      rule !== "animation-target" &&
+      rule !== "regex" &&
+      rule !== "skin-joint"
+    ) {
+      return undefined;
+    }
+    protectedNodes.push({ name: entry.name, rule });
+  }
+
+  return {
+    flatten: { enabled: flatten.enabled, reparented: flatten.reparented },
+    instance: {
+      batches: instance.batches,
+      enabled: instance.enabled,
+      instances: instance.instances,
+      ...(instance.reason === undefined ? {} : { reason: instance.reason }),
+    },
+    join: {
+      enabled: join.enabled,
+      primitivesAfter: join.primitivesAfter,
+      primitivesBefore: join.primitivesBefore,
+    },
+    nodesAfter,
+    nodesBefore,
+    primitivesAfter,
+    primitivesBefore,
+    removed,
+    protected: protectedNodes,
   };
 }
 
@@ -809,6 +905,7 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
   const allowed = [
+    "compact",
     "lightmap",
     "passes",
     "quantize",
@@ -826,6 +923,7 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   // vocabulary; a malformed value surfaces as TN_ASSETS_CONFIG_* when the registry is built.
   const passes = raw.passes === undefined ? {} : parseModelPasses(raw.passes);
   const quantize = raw.quantize === undefined ? {} : parseModelQuantize(raw.quantize);
+  const compact = raw.compact === undefined ? undefined : parseModelCompact(raw.compact);
   const lightmap = raw.lightmap === undefined ? undefined : parseLightmap(raw.lightmap);
   const simplify = raw.simplify === undefined ? undefined : parseModelSimplify(raw.simplify);
   const textures = raw.textures === undefined ? undefined : parseModelTextures(raw.textures);
@@ -835,12 +933,108 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   }
   return {
     sharedImages: raw.sharedImages !== false,
+    ...(compact === undefined ? {} : { compact }),
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
     ...(simplify === undefined ? {} : { simplify }),
     ...(textures === undefined ? {} : { textures }),
     ...(virtual === undefined ? {} : { virtual }),
+  };
+}
+
+const MODEL_COMPACT_KEYS: readonly string[] = [
+  "flatten",
+  "instance",
+  "join",
+  "protectedNames",
+  "protectedPattern",
+];
+
+/**
+ * `true`/absent runs every compaction sub-pass with defaults; `false` is the kill switch; an
+ * object configures the sub-passes and the protected-node rules. Every key is validated here,
+ * because a silently-dropped `protectedNames` is a node the author expected to keep addressable
+ * and would not.
+ */
+function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
+  if (typeof raw === "boolean") return raw;
+  if (!isRecord(raw)) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.compact must be a boolean or an object.",
+    );
+  }
+  for (const key of Object.keys(raw)) {
+    if (!MODEL_COMPACT_KEYS.includes(key)) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.compact.${key} is not recognised.`,
+      );
+    }
+  }
+  for (const key of ["flatten", "join"] as const) {
+    if (raw[key] !== undefined && typeof raw[key] !== "boolean") {
+      throw new Error(`TN_ASSETS_CONFIG_INVALID: assets.models.compact.${key} must be a boolean.`);
+    }
+  }
+  let instance: boolean | IModelCompactInstanceOptions | undefined;
+  if (raw.instance !== undefined) {
+    if (typeof raw.instance === "boolean") {
+      instance = raw.instance;
+    } else if (isRecord(raw.instance)) {
+      for (const key of Object.keys(raw.instance)) {
+        if (key !== "min")
+          throw new Error(
+            `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.compact.instance.${key} is not recognised.`,
+          );
+      }
+      if (
+        raw.instance.min !== undefined &&
+        (typeof raw.instance.min !== "number" ||
+          !Number.isSafeInteger(raw.instance.min) ||
+          raw.instance.min < 2)
+      )
+        throw new Error(
+          "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance.min must be an integer of at least 2.",
+        );
+      instance = raw.instance.min === undefined ? {} : { min: raw.instance.min };
+    } else {
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance must be a boolean or an object.",
+      );
+    }
+  }
+  if (raw.protectedNames !== undefined) {
+    if (
+      !Array.isArray(raw.protectedNames) ||
+      raw.protectedNames.some((name) => typeof name !== "string")
+    )
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedNames must be an array of strings.",
+      );
+  }
+  if (raw.protectedPattern !== undefined) {
+    if (typeof raw.protectedPattern !== "string")
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedPattern must be a string.",
+      );
+    try {
+      new RegExp(raw.protectedPattern, "iu");
+    } catch {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedPattern is not a valid regular expression: '${raw.protectedPattern}'.`,
+      );
+    }
+  }
+  return {
+    ...(raw.flatten === undefined ? {} : { flatten: raw.flatten as boolean }),
+    ...(instance === undefined ? {} : { instance }),
+    ...(raw.join === undefined ? {} : { join: raw.join as boolean }),
+    ...(raw.protectedNames === undefined
+      ? {}
+      : { protectedNames: raw.protectedNames as readonly string[] }),
+    ...(raw.protectedPattern === undefined
+      ? {}
+      : { protectedPattern: raw.protectedPattern as string }),
   };
 }
 
@@ -2220,6 +2414,7 @@ export async function compileAssets(
           ? {}
           : { embeddedTextures: entry.embeddedTextures }),
         ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
+        ...(entry.compact === undefined ? {} : { compact: entry.compact }),
         ...(entry.lod === undefined ? {} : { lod: entry.lod }),
         extensions: entry.extensions,
         logicalPath: logical,
@@ -2306,6 +2501,7 @@ export async function compileAssets(
             bytesBefore: input.length,
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
