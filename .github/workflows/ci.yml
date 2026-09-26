@@ -8,6 +8,8 @@ on:
     branches:
       - main
       - develop
+    # Drafts run nothing; marking one ready for review starts the board.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
   schedule:
     - cron: "17 3 * * *"
@@ -26,6 +28,7 @@ jobs:
   # merge-base diff before it is allowed to omit the board. Every other event is full by policy.
   scope:
     name: Change scope
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -1133,7 +1136,7 @@ jobs:
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
     needs: [scope, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
-    if: ${{ always() }}
+    if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
