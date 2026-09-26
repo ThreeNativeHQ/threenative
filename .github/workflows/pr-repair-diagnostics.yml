@@ -5,6 +5,9 @@ on:
     paths: [.github/workflows/pr-repair-diagnostics.yml]
 permissions:
   contents: read
+concurrency:
+  group: temporary-pr-repair-diagnostics
+  cancel-in-progress: true
 jobs:
   reproduce:
     runs-on: ubuntu-latest
@@ -41,10 +44,11 @@ jobs:
       - name: Test unchanged source and collect formatter repair
         shell: bash
         run: |
+          set +e
           set -uo pipefail
           out="$RUNNER_TEMP/repair-${{ matrix.name }}"
-          mkdir -p "$out"
-          git rev-parse HEAD > "$out/head.txt"
+          mkdir -p "$out" || exit 1
+          git rev-parse HEAD > "$out/head.txt" || exit 1
           npm --prefix "examples/integrations/${{ matrix.name }}" test > "$out/test.log" 2>&1
           test_status=$?
           cat "$out/test.log"
@@ -53,10 +57,10 @@ jobs:
           biome_status=$?
           cat "$out/biome.log"
           printf '%s\n' "$biome_status" > "$out/biome-exit.txt"
-          git diff --binary -- "examples/integrations/${{ matrix.name }}" > "$out/repair.patch"
-          tar -czf "$out/repro.tgz" biome.json AGENTS.md docs/PRDs/AGENTS.md docs/PRDs/threejs-integrations "examples/integrations/${{ matrix.name }}"
+          git diff --binary -- "examples/integrations/${{ matrix.name }}" > "$out/repair.patch" || exit 1
+          tar -czf "$out/repro.tgz" biome.json AGENTS.md docs/PRDs/AGENTS.md docs/PRDs/threejs-integrations "examples/integrations/${{ matrix.name }}" || exit 1
           if [ '${{ matrix.name }}' = csg ]; then
-            tar -czf "$out/formatter.tgz" -C "$RUNNER_TEMP/repair-tools" node_modules package-lock.json
+            tar -czf "$out/formatter.tgz" -C "$RUNNER_TEMP/repair-tools" node_modules package-lock.json || exit 1
           fi
           # A repaired worktree is not a passing original candidate.
           test "$test_status" -eq 0 && test "$biome_status" -eq 0 && git diff --exit-code -- "examples/integrations/${{ matrix.name }}"
