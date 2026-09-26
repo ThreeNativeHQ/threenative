@@ -1,7 +1,8 @@
 // PRD-117 desktop arms. Both engines ship a native desktop binary, and both print the §5.1 run
 // report between two markers because a native process has no `window` for the collector to read.
 import { spawn } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, readFile, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 
 const BEGIN = "ENGINE_LOAD_TEST_JSON_BEGIN";
@@ -188,4 +189,127 @@ export async function runGodotDesktop(repoRoot: string, options: IDesktopLadder)
   return runCapturing(binary, ["--rendering-driver", "vulkan", "--", `--query=${query}`], {
     cwd: repoRoot,
   });
+}
+
+export interface ICubesOptions {
+  /** `static` or `rotating`; the variant is also the arm's optimization question, never both. */
+  variant: "static" | "rotating";
+  count: number;
+  frames: number;
+  warmup: number;
+  display: string;
+  artifacts: string;
+  /** `default` is TN's ordinary authoring; `independent` switches its projection off. */
+  authoring?: "default" | "independent";
+}
+
+async function sha256File(target: string): Promise<string> {
+  return createHash("sha256")
+    .update(await readFile(target))
+    .digest("hex");
+}
+
+/**
+ * The pinned Bevy arm. `many_cubes` is an example of the pinned checkout, so the adapter is compiled
+ * *inside* that tree from the tracked source in `benchmark/bevy-prd449/` by symlink: the compiled
+ * source is the repository's file, whose SHA-256 the report carries, and no pinned file is edited.
+ */
+export function bevyCheckout(repoRoot: string): string {
+  return path.join(repoRoot, "artifacts/engine-load-test/sources/bevy");
+}
+
+export async function prepareBevyArm(repoRoot: string): Promise<{
+  binary: string;
+  adapter: string;
+  upstream: string;
+}> {
+  const checkout = bevyCheckout(repoRoot);
+  await access(path.join(checkout, "examples/stress_tests/many_cubes.rs"));
+  const adapter = path.join(repoRoot, "benchmark/bevy-prd449/cubes_arm.rs");
+  // The link is what makes the example target exist at all; the path cargo compiles is the tracked file.
+  const link = path.join(checkout, "examples/prd449_cubes.rs");
+  await rm(link, { force: true });
+  await symlink(adapter, link);
+  const binary = path.join(checkout, "target/release/examples/prd449_cubes");
+  return {
+    adapter: await sha256File(adapter),
+    binary,
+    upstream: await sha256File(path.join(checkout, "examples/stress_tests/many_cubes.rs")),
+  };
+}
+
+export async function runBevyDesktop(
+  repoRoot: string,
+  options: ICubesOptions,
+  identity: { adapter: string; binary: string; upstream: string },
+): Promise<{ fixture: string; report: Record<string, unknown> }> {
+  const fixture = path.join(
+    options.artifacts,
+    `cubes-${options.count}-${options.variant}-bevy-fixture.json`,
+  );
+  await mkdir(options.artifacts, { recursive: true });
+  const args = [
+    "--instance-count",
+    String(options.count),
+    "--warmup-frames",
+    String(options.warmup),
+    "--measured-frames",
+    String(options.frames),
+    "--fixture-out",
+    fixture,
+  ];
+  if (options.variant === "rotating") args.push("--rotate-cubes");
+  const report = (await runCapturing(identity.binary, args, {
+    cwd: bevyCheckout(repoRoot),
+    // Bevy's window has to land on the real display, and winit picks Wayland when it is set, so the
+    // backend is named rather than left to whatever the session happens to export.
+    env: {
+      ...process.env,
+      DISPLAY: options.display,
+      WINIT_UNIX_BACKEND: "x11",
+      TN_BENCH_BEVY_ADAPTER_SHA256: identity.adapter,
+      TN_BENCH_BEVY_BINARY: identity.binary,
+      TN_BENCH_BEVY_FEATURES: "bevy default (pbr, render, winit, x11)",
+      TN_BENCH_BEVY_UPSTREAM_SHA256: identity.upstream,
+    },
+    timeoutMs: 900_000,
+  })) as Record<string, unknown>;
+  return { fixture, report };
+}
+
+export async function runTnCubesDesktop(
+  repoRoot: string,
+  options: ICubesOptions,
+  fixture: string,
+): Promise<Record<string, unknown>> {
+  const example = path.join(repoRoot, "examples/engine-load-test");
+  const authoring = options.authoring ?? "default";
+  await mkdir(path.join(example, "dist"), { recursive: true });
+  const buildEnvironment: NodeJS.ProcessEnv = {
+    ...process.env,
+    TN_BENCH_PLATFORM: "desktop",
+    TN_BENCH_TARGET: "native-cubes",
+    TN_CUBES_AUTHORING: authoring,
+    TN_CUBES_FIXTURE: fixture,
+  };
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("npx", ["vite", "build"], {
+      cwd: example,
+      env: buildEnvironment,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    child.once("error", reject);
+    child.once("close", (code) =>
+      code === 0 ? resolve() : reject(new Error(`TN_BENCH_CUBES_BUILD_FAILED: exit ${code}`)),
+    );
+  });
+  const binary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
+  const bundle = path.join(example, "dist/engine-load-test-cubes-desktop.js");
+  const hostArgs = ["run", bundle];
+  if (process.env.TN_BENCH_VSYNC !== "on") hostArgs.push("--no-vsync");
+  return (await runCapturing(binary, hostArgs, {
+    cwd: repoRoot,
+    env: { ...x11Environment(), DISPLAY: options.display },
+    timeoutMs: 900_000,
+  })) as Record<string, unknown>;
 }

@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (the two arms now render byte-identical primitives and drain at the same boundary, and a fresh 600-frame `basic_cull` pair is refused for exactly one remaining named cause — Godot's occlusion culling drops 1,459 objects the counterpart arm draws; the shadows-on and light variants remain open), and Phase 5 partial report renderer are built or proved as stated below. No Bevy, fox, City or publication-grade cross-engine result is claimed, and no `godot-culling` cell yet carries a ratio.
+**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU) **and the first `bevy-many-cubes` slice (1k static and 1k all-rotating, both arms on one hardware GPU, execution conformance passed, real hardware comparison retained)**, Phase 4 Godot-culling family (the two arms now render byte-identical primitives and drain at the same boundary, and a fresh 600-frame `basic_cull` pair is refused for exactly one remaining named cause — Godot's occlusion culling drops 1,459 objects the counterpart arm draws; the shadows-on and light variants remain open), and Phase 5 partial report renderer are built or proved as stated below. The many-cubes family has **no** Bevy diagnostic cells, no ten-thousand rung, no seven-block pair and no A/A calibration, and none of the other five families is claimed; no `godot-culling` or `bevy-many-cubes` cell carries a verdict.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -387,8 +387,120 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 
 ### Phase 3: Cubes and independent Three.js meshes
 
-- [ ] Implement the locked Bevy many-cubes adapter with deterministic updates for every timed behavior.
-- [ ] Pass many-cubes execution/visual conformance against the TN fixture.
+- [x] Implement the locked Bevy many-cubes adapter with deterministic updates for every timed behavior.
+  [cubes_arm.rs](../../../../benchmark/bevy-prd449/cubes_arm.rs) is the pinned upstream
+  `examples/stress_tests/many_cubes.rs` at `c6f634ca…` (SHA-256 `836bb4ad74dde53cd8eb9965aa6d179a075266238469b449ad4b2a6b26a07016`),
+  compiled *inside* that checkout as the example `prd449_cubes` by symlinking the tracked file into
+  `examples/`, so no pinned file is edited and the compiled source is the repository's file
+  (adapter SHA-256 `477bd233edce6f466013ebc8…`, recorded in every run). The Fibonacci sphere placement,
+  the seeded `ChaCha8Rng(42)` mesh and material selection, `init_meshes`/`init_materials`/`init_textures`,
+  the enclosing inside-out box, the directional light, `move_camera`, `rotate_cubes` and
+  `print_mesh_count` are upstream verbatim; the three adapter patches are declared in the file's own
+  header and in every fixture it writes.
+
+  **The fixture clock is one resource, not a rewrite.** `TimeUpdateStrategy::ManualDuration(1/60)`
+  replaces Bevy's wall-clock `Automatic` strategy, so `Time`, `Time<Real>` and `Time<Virtual>` all
+  advance exactly 1/60 s per frame and every upstream `Res<Time>` consumer reads it — including
+  `rotate_cubes`, which upstream's `--benchmark` switch leaves on the wall clock. That switch is also
+  forced on, so `move_camera` keeps its own fixed step. The remaining patch is the measurement itself:
+  a fixture export, the frame schedule, the conformance probes, the work counters, `Window.decorations
+  = false` (a decorating window manager shrank the request to 1912x1010), and one
+  `Device::poll(PollType::wait_indefinitely())` completion wait per measurement boundary on the render
+  thread, which is the only place in the process that holds a `wgpu::Device`.
+
+  The canonical fixture is exported by this arm and read as bytes by the counterpart arm
+  ([cubes-fixture.ts](../../../../examples/engine-load-test/src/cubes-fixture.ts)), so both hash the same
+  file rather than two implementations agreeing about Bevy's RNG: 1,000 objects with every transform as
+  f64 doubles, dense geometry and material ids with their `AssetId`s beside them, both meshes' actual
+  position/normal/UV/index buffers as base64, the camera, the light, the enclosing geometry counted
+  separately, the frame schedule and the source pins. At 1k that is a 406,975-byte fixture, SHA-256
+  `ecb0d4abf3734d4d…` (static) and `85def01c6030aaf2…` (rotating).
+
+  `cargo build --release --example prd449_cubes` builds the pinned tree and the adapter with zero
+  errors and zero warnings on this machine (the upstream example alone: 2m34s on 24 cores).
+- [x] Pass many-cubes execution conformance against the TN fixture.
+  Both arms ran the exported fixture on the real GPU and were checked against an f64 oracle built from
+  its own schedule, not against each other: 601 boundaries, 600 measured frames, probe rotations and
+  the camera rotation at frames 0, 1, 60, 120, 300 and 599, the census, the viewport, the schedule and
+  the admitted-object set. The 1k static pair's worst disagreement is 3.23e-6 (Bevy's camera, f32
+  against f64) and the rotating pair's is 2.15e-5 at frame 599, against the preregistered 1e-4
+  (`CUBES_TOLERANCE.quaternionAbs`, justified from f32 precision, not from a result).
+
+  **The oracle needed two step counts, and finding out why is the substance of this box.** Bevy's first
+  `Time` update records `first_update` without calling `advance_by`
+  (`bevy_time::real::update_with_instant` returns early when `last_update` is `None`), so frame 0's
+  `delta` is zero and `rotate_y(10 * 0)` changes nothing: a time consumer is one step behind a system
+  using a constant step, which is exactly what `move_camera --benchmark` is. One step is 0.0833 of a
+  quaternion component — the first rotating pair was refused for 8.32e-2 at frame 1 while the camera
+  matched. The exporting arm now declares both counts (`firstScoredFrameTimeDeltas` 121,
+  `firstScoredFrameConstantSteps` 122 for a 120-frame warmup) and the reader composes each system's
+  oracle from the one it actually reads. The arm also counts both systems' own invocations
+  (`systemRuns`: 122 at measured frame 0, 721 at frame 599, agreeing with each other), because the
+  rotation schedule is §5.1's "validate the actual switch effects rather than trusting option names"
+  and a count is the evidence a transform cannot give.
+
+  [cubes-compare.ts](../../../../scripts/engine-load-test/cubes-compare.ts) is pure and unit-proved by
+  [engine-load-test-cubes-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cubes-compare.spec.ts),
+  8/8, including a regression that reads the retained real 1k rotating pair: reverting the oracle to
+  the single step count makes that test fail on `TN_BENCH_CUBES_STATE_OUT_OF_TOLERANCE` and it passes
+  again with the fix. The ten focused benchmark suites passed 159/159 and root
+  `pnpm exec tsc --noEmit -p tsconfig.json` and `biome check --diagnostic-level=error` exited 0.
+- [ ] Pass the many-cubes **visual** half: cross-arm pixel/depth/object-ID coverage.
+  Not started, and the reason is in the arms rather than in the plan. The counterpart arm produces a
+  coverage grid read back from its own pixels at the midpoint frame
+  (`coveredFraction` 9.47e-05 of 31,680 samples at 1k — the upstream layout puts the camera inside a
+  500-unit sphere of at most 0.75-unit cubes, so a 1k frame really is almost empty and that number is
+  the measurement of it), and Bevy 0.19 exposes no read-back path this adapter uses, so the other side
+  of the comparison does not exist yet. Bevy's own `Screenshot` observer or a swapchain
+  `copy_texture_to_buffer` in the `Render` schedule would supply it; neither is written, so the visual
+  half of the box above stays open rather than being claimed on the strength of the execution half.
+- [x] Retain a real hardware comparison for the many-cubes family (first slice, 1k only).
+  One real-hardware smoke block per cell per arm, retained under `artifacts/engine-load-test/` with raw
+  frame series, the fixture, counters and identity — labelled `profile: "smoke"`, `blocks: 1`, in the
+  artifact itself. Hardware for every arm: NVIDIA GeForce RTX 2080, driver `615.71.09`, through
+  `DISPLAY=:0`; the Bevy arms reach it over Vulkan (`DiscreteGpu`, `NVIDIA GeForce RTX 2080`), the
+  counterpart arm through the owned host's wgpu-native backend (`vendor nvidia, architecture turing`),
+  host `packages/runtime-native/build/tn-linux/mystral` SHA-256 `f9386044bdbf114d…`, three revision 185,
+  Bevy adapter 155,149,176 bytes.
+
+  | cell | Bevy mean ms | TN mean ms | ratio (observation) | comparability |
+  |---|---|---|---|---|
+  | 1,000 static | 1.875 | 1.706 | 1.099 | `qualified` |
+  | 1,000 all-rotating | 1.950 | 2.002 | 0.974 | `qualified` |
+
+  Every number is one block of 600 measured frames after a 120-frame warmup, both arms' means derived
+  from `N+1` boundaries plus one GPU completion wait, and the ratio is `verdict: "insufficient"`: §8
+  supports no faster/slower statement from one block with no A/A calibration, and these are the
+  observations to re-measure over seven paired blocks. The pair is `qualified`, never
+  `matched-task`, because the shaded environments differ (Bevy PBR with its own window clear colour
+  against three's `MeshStandardMaterial` on black).
+
+  What the counters say, from `cubes-1000-static-comparison.json`: both arms admit **78** of 1,000
+  cubes into the midpoint frame against a canonical sphere-frustum census of **77**, inside the
+  preregistered band of 10; the counterpart arm submitted 79 draws and 937 triangles, and Bevy reports
+  `authoredObjects` 1,001 with `submittedDrawCalls` and `submittedTriangles` **null** and a stated
+  reason, because Bevy 0.19 exposes neither to the main world — a missing metric as `null`, never the
+  zero that would look like free work. Two honest observations from the same artifacts: at 1k TN's
+  ordinary authoring did **not** batch — the projection's own report reads
+  `reasonCode: "belowMeshFloor", sourceRenderables: 0` — so this cell is independent authoring against
+  Bevy's own unbatched defaults and explicit instancing is nowhere near it; and both arms rendered
+  1920x**1050** rather than §6.3's 1920x1080, because this desktop's window-manager work area is
+  1920x1050 (`_NET_WORKAREA 0,30,3840,1050`, a 30 px panel). The deviation is recorded in the fixture,
+  in both run records and in the comparison, and the comparator requires the two arms' viewports to be
+  exactly equal.
+
+  **The doubtful assumption this slice leaves behind**, recorded rather than iterated on: that Bevy's
+  `ViewVisibility` count and the counterpart arm's `submittedTriangles / trianglesPerCube` are the same
+  question, and that the canonical census of 77 is the right answer to it. The first part is sound by
+  construction (one 12-triangle mesh, 937 triangles ÷ 12 = 78.08, and the enclosing box is culled as
+  upstream intends), but the one-object gap between both engines and the sphere-frustum reference is
+  unexplained: sphere-versus-triangle culling differing at a plane is the obvious candidate and is not
+  proved. The admitted count is therefore reported as a band, not as equality.
+
+  Also retained: Bevy's window teardown aborts *after* the report is emitted (the pinned 0.19 winit
+  shutdown), so the collector reads the marker and stops the process group. Every Bevy run above
+  completed its 600 measured frames and wrote its fixture and report before that abort, and the abort
+  is disclosed here rather than left for the next reader to rediscover.
 - [x] Implement plain Three.js and TN independent-mesh variants using identical Three.js package bytes.
   All three arms now execute the production bundle on the hardware GPU and report the same three
   bytes. [mesh-fixture.ts](../../../../examples/engine-load-test/src/mesh-fixture.ts) defines the
@@ -449,7 +561,6 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   same 117,745 non-background pixels, so no arm bought its draw count by dropping visible work. The
   64-material capture carries 65 distinct colours where the others carry 2, which is the material
   cell visible in the pixels and not only in a counter.
-- [ ] Retain a real hardware comparison for the many-cubes family.
 - [x] Retain a real hardware comparison for the independent-mesh family.
   One real-hardware smoke block per required arm, retained under `artifacts/engine-load-test/` with
   raw frame series, captures and identity — not publication evidence, and labelled so in the artifact

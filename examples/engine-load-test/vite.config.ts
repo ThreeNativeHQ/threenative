@@ -42,43 +42,55 @@ function fixtureJson(): string {
   return readFileSync(path, "utf8");
 }
 
+// The Bevy many-cubes fixture, exported by the pinned Bevy arm for the same reason: its Fibonacci
+// sphere placement and seeded mesh/material choice are not reimplemented here.
+function cubesFixtureJson(): string {
+  const path = process.env.TN_CUBES_FIXTURE;
+  if (path === undefined || path.trim() === "")
+    throw new Error("TN_CUBES_FIXTURE must name the Bevy-exported many-cubes fixture.");
+  return readFileSync(path, "utf8");
+}
+
 const native = process.env.TN_BENCH_TARGET === "native";
 const nativeMesh = process.env.TN_BENCH_TARGET === "native-mesh";
 const nativeCull = process.env.TN_BENCH_TARGET === "native-cull";
+const nativeCubes = process.env.TN_BENCH_TARGET === "native-cubes";
+const nativeTarget = native || nativeMesh || nativeCull || nativeCubes;
 
 export default defineConfig({
-  build:
-    native || nativeMesh || nativeCull
-      ? {
-          lib: {
-            entry: resolve(
-              import.meta.dirname,
-              nativeCull
+  build: nativeTarget
+    ? {
+        lib: {
+          entry: resolve(
+            import.meta.dirname,
+            nativeCubes
+              ? "src/cubes-native.ts"
+              : nativeCull
                 ? "src/cull-native.ts"
                 : nativeMesh
                   ? "src/mesh-native.ts"
                   : "src/native.ts",
-            ),
-            // Per-target filename: the desktop and Android arms build from the same source, and a
-            // shared name means one arm's rebuild silently replaces the bundle the other is running.
-            fileName: () =>
-              `engine-load-test-${nativeCull ? "cull-" : nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
-            formats: ["es"],
-          },
-          minify: false,
-          rollupOptions: { output: { codeSplitting: false } },
-          target: "es2022",
-        }
-      : {
-          rollupOptions: {
-            input: {
-              loadTest: resolve(import.meta.dirname, "index.html"),
-              meshPlain: resolve(import.meta.dirname, "mesh-plain.html"),
-              meshTn: resolve(import.meta.dirname, "mesh-tn.html"),
-              projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
-            },
+          ),
+          // Per-target filename: the desktop and Android arms build from the same source, and a
+          // shared name means one arm's rebuild silently replaces the bundle the other is running.
+          fileName: () =>
+            `engine-load-test-${nativeCubes ? "cubes-" : nativeCull ? "cull-" : nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
+          formats: ["es"],
+        },
+        minify: false,
+        rollupOptions: { output: { codeSplitting: false } },
+        target: "es2022",
+      }
+    : {
+        rollupOptions: {
+          input: {
+            loadTest: resolve(import.meta.dirname, "index.html"),
+            meshPlain: resolve(import.meta.dirname, "mesh-plain.html"),
+            meshTn: resolve(import.meta.dirname, "mesh-tn.html"),
+            projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
           },
         },
+      },
   define: {
     // The native host has no `navigator`, so the target is stamped at build time. `--arm` on the
     // collector never sets it: the arm a report claims comes from the binary that ran.
@@ -94,6 +106,16 @@ export default defineConfig({
       repeats: integer("TN_BENCH_REPEATS", 3),
       warmup: integer("TN_BENCH_WARMUP", 120),
     }),
+    ...(nativeCubes
+      ? {
+          __TN_CUBES_CONFIG__: JSON.stringify({
+            // `default` is the package's ordinary authoring, which §3.1 makes the primary native
+            // comparison; `independent` switches the projection off and is a named diagnostic.
+            authoring: process.env.TN_CUBES_AUTHORING ?? "default",
+            fixtureJson: cubesFixtureJson(),
+          }),
+        }
+      : {}),
     ...(nativeCull
       ? {
           __TN_CULL_CONFIG__: JSON.stringify({
