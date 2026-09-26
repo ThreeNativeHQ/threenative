@@ -1,4 +1,4 @@
-import { BufferAttribute, type BufferGeometry, type Group, type Material, Mesh } from "three";
+import { BufferAttribute, type BufferGeometry, Group, type Material, Mesh } from "three";
 import { safeIndices } from "./geometry.js";
 import { Tree } from "./vendor/ez-tree.mjs";
 export type TreeOptions = InstanceType<typeof Tree>["options"];
@@ -99,9 +99,14 @@ export function generateTree(options: {
     raw.leavesMesh.material = options.leafMaterial;
     for (const material of ownedMaterials) material.dispose();
     ownedMaterials.clear();
+    // A plain Group, not the donor's Tree: Tree's constructor adds two empty meshes, so
+    // cloning it for a forest would draw two stray default-material meshes per copy.
+    const root = new Group();
+    root.name = "Tree";
+    root.add(raw.branchesMesh, raw.leavesMesh);
     let disposed = false;
     return {
-      root: tree,
+      root,
       vertices,
       dispose() {
         if (!disposed) {

@@ -37,6 +37,13 @@ test("actual EZ Tree produces reproducible geometry with game-owned materials", 
     assert.deepEqual(positions(a.root), positions(b.root));
     assert.notDeepEqual(positions(a.root), positions(c.root));
     assert.ok(a.vertices > 0);
+    // Forests place variants by clone(); a clone must hold exactly the two game-material meshes.
+    const meshes = [];
+    a.root.clone().traverse((o) => o instanceof Mesh && meshes.push(o));
+    assert.deepEqual(
+      meshes.map((m) => m.material),
+      [trunk, leaf],
+    );
   } finally {
     a.dispose();
     a.dispose();
