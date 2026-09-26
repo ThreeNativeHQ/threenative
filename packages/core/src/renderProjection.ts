@@ -64,6 +64,7 @@ export type ProjectionExactReason =
   | "sprite"
   | "points"
   | "transparent"
+  | "vertexDisplaced"
   | "renderOrder"
   | "tooFewToBatch"
   | "batchOverflow"

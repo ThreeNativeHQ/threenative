@@ -123,6 +123,19 @@ function hasMorphAttributes(geometry: BufferGeometry): boolean {
   return false;
 }
 
+/**
+ * True when the material already moves its own vertices: `positionNode`, the shadow path's
+ * `castShadowPositionNode`, or a `displacementMap`. Read through `Reflect` because a plain
+ * `MeshStandardMaterial` has none of them.
+ */
+function displacesVertices(material: Material): boolean {
+  return (
+    Reflect.get(material, "positionNode") != null ||
+    Reflect.get(material, "castShadowPositionNode") != null ||
+    Reflect.get(material, "displacementMap") != null
+  );
+}
+
 function geometryLaneReason(geometry: BufferGeometry): ProjectionExactReason | undefined {
   if (geometry.getAttribute("position") === undefined) return "unsupportedGeometry";
   // A GPU-driven field's draw count lives in an indirect buffer a compute pass writes, and a batch
@@ -212,6 +225,10 @@ function laneReasonOf(
   const material = candidate.material as Material | undefined;
   if (material === undefined) return "unsupportedGeometry";
   if (material.transparent === true) return "transparent";
+  // A batch is one object with one model matrix, so a displacement written against the object's own
+  // is wrong there, or lost. The mesh keeps its own draw and its own matrix; the skinned lane
+  // refuses these materials for the same reason (`skinnedMaterialBlocked`).
+  if (displacesVertices(material)) return "vertexDisplaced";
   return undefined;
 }
 
