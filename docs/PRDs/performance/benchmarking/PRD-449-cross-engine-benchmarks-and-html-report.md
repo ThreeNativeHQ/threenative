@@ -285,10 +285,13 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   `dist/engine-load-test-city-desktop.js` (`f7f4db2d…`), so the static pair's TN bundle bytes are
   gone and its recorded digest can no longer be checked against anything. Every City run recorded
   before this archive existed, that static pair included, stays insufficient as a build lock and is
-  not upgraded by inference; the next hardware run must re-check that each record's archive still
-  hashes to the digest that record names. The qualified one-block smoke comparison measured Bevy
-  5.738 ms and TN 29.853 ms with conformance passed; it is not a campaign verdict. The remaining
-  families still need complete build locks.
+  not upgraded by inference. Fresh 600-frame static and moving size-8 pairs now contain four clean
+  source identities and six archived build references. All six archives still matched their SHA-256
+  and byte count **after** the moving TN bundle replaced the static bundle at the mutable output
+  path. Static measured Bevy 5.707 ms and TN 24.851 ms; moving measured Bevy 5.819 ms and TN
+  29.610 ms. Both comparators passed conformance and marked the pairs qualified, but one smoke
+  block per cell is insufficient for a campaign verdict. The remaining families still need
+  complete build locks.
 - [ ] Freeze the expanded six-family matrix with exact actual fixture censuses.
   A deliberately non-publishable [draft matrix](../../../../scripts/engine-load-test/plan.ts)
   now expands 73 stable cell IDs across all six families, each with seven planned paired blocks
