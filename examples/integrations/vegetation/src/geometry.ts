@@ -1,9 +1,11 @@
 export interface IWind {
+  /** Peak sway of the canopy, in world metres. */
   readonly amplitude: number;
   readonly frequency: number;
   readonly phase: number;
-  readonly base: number;
-  readonly extent: number;
+  /** The tree's height in world metres, the denominator that turns weight into height. */
+  readonly height: number;
+  /** World-space XZ heading; a yawed clone sways along the same world direction. */
   readonly direction: readonly [number, number];
 }
 /** Use the donor's raw number[] indices, never its already-truncated Uint16Array. */
@@ -29,35 +31,40 @@ export function validateWind(options: IWind): IWind {
       options.amplitude,
       options.frequency,
       options.phase,
-      options.base,
-      options.extent,
+      options.height,
       ...options.direction,
     ].every(Number.isFinite) ||
     options.amplitude < 0 ||
     options.frequency < 0 ||
-    options.extent <= 0 ||
+    options.height <= 0 ||
     options.direction.length !== 2
   )
     throw new Error(
-      "Wind requires finite values, nonnegative amplitude/frequency, and positive extent.",
+      "Wind requires finite values, nonnegative amplitude/frequency, and a positive tree height.",
     );
   const length = Math.hypot(...options.direction);
   if (length < 1e-8) throw new Error("Wind direction cannot be zero.");
   return { ...options, direction: [options.direction[0] / length, options.direction[1] / length] };
 }
-/** CPU reference for the same smoothstep displacement and Jacobian used by the TSL material. */
+/**
+ * CPU reference for the same displacement and Jacobian the TSL material applies.
+ * `weight` is the baked `_wind` share of tree height in [0,1], not a length: it was measured
+ * before the asset cook moved a dequantization scale onto each mesh, so it still means the same
+ * thing after cooking, when local units are not metres and local y=0 is not the ground.
+ * `offset` is world metres; `slope` is d(offset)/d(world height) for the shading normal.
+ */
 export function windSample(
-  height: number,
+  weight: number,
   time: number,
   options: IWind,
 ): { offset: number; slope: number } {
   const wind = validateWind(options);
-  if (!Number.isFinite(height) || !Number.isFinite(time))
-    throw new Error("Wind sample requires finite height and simulation time.");
-  const t = Math.max(0, Math.min(1, (height - wind.base) / wind.extent));
+  if (!Number.isFinite(time)) throw new Error("Wind sample requires finite simulation time.");
+  if (!Number.isFinite(weight) || weight < 0 || weight > 1)
+    throw new Error("Wind sample needs the baked _wind weight in [0, 1].");
   const oscillation = wind.amplitude * Math.sin(time * wind.frequency + wind.phase);
   return {
-    offset: oscillation * t * t * (3 - 2 * t),
-    slope: (oscillation * 6 * t * (1 - t)) / wind.extent,
+    offset: oscillation * weight * weight * (3 - 2 * weight),
+    slope: (oscillation * 6 * weight * (1 - weight)) / wind.height,
   };
 }

@@ -11,6 +11,9 @@ const ATTRIBUTES = [
   ["POSITION", "position", "VEC3", 3],
   ["NORMAL", "normal", "VEC3", 3],
   ["TEXCOORD_0", "uv", "VEC2", 2],
+  // Custom semantic: glTF requires the underscore, and GLTFLoader hands an unknown semantic
+  // back under its lower-cased name, so a cooked tree arrives with the same `_wind` attribute.
+  ["_WIND", "_wind", "SCALAR", 1],
 ] as const;
 
 function accessor(

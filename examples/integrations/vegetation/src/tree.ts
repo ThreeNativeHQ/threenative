@@ -5,6 +5,8 @@ export type TreeOptions = InstanceType<typeof Tree>["options"];
 export interface IGeneratedTree {
   readonly root: Group;
   readonly vertices: number;
+  /** Tree-space height the baked `_wind` weight is a fraction of, for wind options in world metres. */
+  readonly height: number;
   dispose(): void;
 }
 interface IRawTree {
@@ -59,6 +61,33 @@ function repair(geometry: BufferGeometry, indices: number[], label: string): num
   }
   return position.count;
 }
+/**
+ * Bake the per-vertex wind weight once, in tree space, over both meshes at once: the weight is a
+ * share of the tree's own height, so bark and leaves at one height agree and both survive the
+ * asset cook, which gives each mesh its own dequantized local frame.
+ */
+function bakeWind(geometries: BufferGeometry[]): number {
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const geometry of geometries) {
+    const position = geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) {
+      const y = position.getY(i);
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const height = maxY - minY;
+  if (!(height > 0)) throw new Error("Tree has no vertical extent; its wind weight is undefined.");
+  for (const geometry of geometries) {
+    const position = geometry.getAttribute("position");
+    const weight = new Float32Array(position.count);
+    for (let i = 0; i < position.count; i++)
+      weight[i] = Math.min(1, Math.max(0, (position.getY(i) - minY) / height));
+    geometry.setAttribute("_wind", new BufferAttribute(weight, 1));
+  }
+  return height;
+}
 /** Authoring step: generate a bounded, seeded variant. Do not call this from a game frame loop. */
 export function generateTree(options: {
   seed: number;
@@ -95,6 +124,7 @@ export function generateTree(options: {
       repair(raw.leavesMesh.geometry, raw.leaves?.indices, "leaves");
     if (vertices > options.maxVertices)
       throw new Error("Tree generated vertex count exceeds the authoring budget.");
+    const height = bakeWind([raw.branchesMesh.geometry, raw.leavesMesh.geometry]);
     raw.branchesMesh.material = options.trunkMaterial;
     raw.leavesMesh.material = options.leafMaterial;
     for (const material of ownedMaterials) material.dispose();
@@ -108,6 +138,7 @@ export function generateTree(options: {
     return {
       root,
       vertices,
+      height,
       dispose() {
         if (!disposed) {
           disposed = true;
