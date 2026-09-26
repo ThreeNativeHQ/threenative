@@ -1,4 +1,5 @@
 import type { IBudgetReport } from "./budget.js";
+import type { IModelCompactSummary } from "./passes/compact.js";
 import type { TextureSkipReason } from "./passes/texture.js";
 
 /** Both counters stay visible when either ceiling is disabled. */
@@ -358,6 +359,8 @@ export interface IModelSizeRow {
   readonly simplify?: ISimplifyRow;
   /** Automatic discrete LOD generation (PRD-377), when the effective policy ran. */
   readonly lod?: ILodRow;
+  /** Lossless scene-graph compaction (PRD-443), when it ran. */
+  readonly compact?: IModelCompactSummary;
   /** The cluster-DAG bake, when it was configured for this model. */
   readonly virtual?: IVirtualRow;
   /** Triangle count of the compiled output, recorded in the manifest. */
@@ -403,6 +406,36 @@ function virtualLine(row: IModelSizeRow): readonly string[] {
     `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
   ];
 }
+function compactLine(row: IModelSizeRow): readonly string[] {
+  const compact = row.compact;
+  if (compact === undefined) return [];
+  const parts: string[] = [];
+  if (compact.flatten.enabled) {
+    parts.push(`flatten moved ${compact.flatten.reparented} node(s)`);
+  }
+  if (compact.instance.enabled) {
+    parts.push(
+      compact.instance.batches > 0
+        ? `instance ${compact.instance.batches} batch(es) / ${compact.instance.instances} instance(s)`
+        : `instance none (${compact.instance.reason ?? "no shared mesh"})`,
+    );
+  }
+  if (compact.join.enabled) {
+    parts.push(
+      `join ${compact.join.primitivesBefore} -> ${compact.join.primitivesAfter} primitive(s)`,
+    );
+  }
+  const protectedNote =
+    compact.protected.length === 0
+      ? ""
+      : `; protected ${compact.protected.map((node) => `${node.name} (${node.rule})`).join(", ")}`;
+  const removedNote =
+    (compact.removed?.length ?? 0) === 0
+      ? ""
+      : `; removed named node(s) ${compact.removed.join(", ")} — a getObjectByName on any of these now returns undefined`;
+  return [`compact ${row.logicalPath}: ${parts.join(", ")}${protectedNote}${removedNote}`];
+}
+
 function extensionLabel(row: IModelSizeRow): string {
   const extensions = row.extensions ?? [];
   return extensions.length === 0 ? "" : ` (${extensions.join(", ")})`;
@@ -451,7 +484,12 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
                 `embedded texture ${row.logicalPath}#${name}: compression skipped: ${reason}`,
             ),
           ];
-    const reduced = [...simplifyLine(row), ...virtualLine(row), ...lodLine(row)];
+    const reduced = [
+      ...compactLine(row),
+      ...simplifyLine(row),
+      ...virtualLine(row),
+      ...lodLine(row),
+    ];
     if (row.lightmap === undefined) return [model, ...reduced, ...images];
     const map = row.lightmap;
     return [

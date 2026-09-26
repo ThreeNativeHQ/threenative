@@ -34,7 +34,10 @@ runs:
     # rebuild nobody needed.
     - name: Restore the compiled workspace
       id: dist
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
+      env:
+        # Rebuilding these small bundles is cheaper than the default ten-minute segment wait.
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: "2"
       with:
         # Only compiled bundles are cacheable. Shipped templates and mirrors are repacked below.
         path: |
@@ -130,6 +133,16 @@ runs:
         done
         rm -f "$core_listing"
         echo "workspace dist complete: $bundles bundles, $archives tarballs, core archive carries its MCP server"
+    # Persist the product before caller tests run. A later test failure must not throw away a
+    # successful build, and test-side mutations must not become the cached build for this key.
+    # Keep success() explicit: failed builds or payload validation must never publish a cache.
+    - name: Save validated workspace bundles
+      if: success() && steps.dist.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          packages/*/dist
+        key: ${{ steps.dist.outputs.cache-primary-key }}
     - name: Report workspace product reuse and elapsed time
       if: always()
       shell: bash

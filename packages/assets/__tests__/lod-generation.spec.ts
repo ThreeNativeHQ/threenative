@@ -357,7 +357,8 @@ async function cook(
   options: Parameters<typeof modelPass>[0],
   logicalPath = "hull.glb",
 ): Promise<IModelLodSummary> {
-  const result = await modelPass(options).apply(input, logicalPath);
+  // Isolate the LOD generator from scene-graph compaction, which has its own spec.
+  const result = await modelPass({ compact: false, ...options }).apply(input, logicalPath);
   if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
   if (result.entry?.lod === undefined) throw new Error("the pass produced no lod summary");
   return result.entry.lod as IModelLodSummary;
@@ -864,7 +865,7 @@ describe("assets.lod through the public compiler", () => {
       config: {
         audio: "none",
         lod: { generation: { join: true, maxLevels: 1 } },
-        models: { virtual: "none", textures: "none" },
+        models: { compact: false, virtual: "none", textures: "none" },
         textures: "none",
       },
       cwd: root,
@@ -948,6 +949,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
   it("joins a 300-primitive carrier into one draw per material, leaving LOD0 authored", async () => {
     const input = await joinCarrierGlb(300, 3);
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 1, join: true } },
       virtual: "none",
     }).apply(input, "carrier.glb");
@@ -1041,6 +1043,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
   it("simplifies the joined rung when a discrete chain is configured", async () => {
     const input = await joinCarrierGlb(12, 3);
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 4, join: true, errorTargets: [0.06] } },
       virtual: "none",
     }).apply(input, "hull.glb");
@@ -1064,6 +1067,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
     // no multi-primitive mesh anywhere, so the within-mesh join produced nothing at all.
     const input = await siblingCarrierGlb(146, 3);
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 1, join: true } },
       virtual: "none",
     }).apply(input, "carrier.glb");
@@ -1103,6 +1107,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
     // transform between container and mesh. Its far mesh and draws must not move.
     const input = await joinCarrierGlb(12, 3, { tubular: 8, radial: 6 });
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 1, join: true } },
       virtual: "none",
     }).apply(input, "carrier.glb");
