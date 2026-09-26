@@ -59,6 +59,7 @@ import { globMatch } from "./glob.js";
  */
 export function audioPass(options: IAudioPassOptions = {}): IAssetPass {
   return {
+    appliesTo: ["audio"],
     configuration: {
       normalise: options.normalise ?? "ceiling",
       overrides: options.overrides ?? [],

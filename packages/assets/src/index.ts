@@ -33,8 +33,12 @@ export { compileAssets } from "./compile.js";
 export { resolveBasisTranscoder } from "./compile.js";
 export type {
   IEmbeddedTextureSummary,
+  IModelCompactInstanceOptions,
+  IModelCompactOptions,
+  IModelCompactSummary,
   IModelPassOptions,
   IModelPassesOptions,
+  IModelProtectedNode,
   IModelQuantizeOptions,
   IModelSimplifyOptions,
   IModelSimplifySummary,
@@ -42,6 +46,8 @@ export type {
   IModelTextureBindings,
   IModelTextureOverride,
   IModelTexturesOptions,
+  IResolvedCompactOptions,
+  TModelProtectedRule,
 } from "./passes/model.js";
 /**
  * Optimizes self-contained GLB models through the configured geometry and embedded-texture passes.

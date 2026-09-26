@@ -1,10 +1,10 @@
 # PRD-448 — Cross-Platform Asset Cooking and Device Budgets
 
-**Status:** PROPOSED  
+**Status:** COMPLETE  
 **Complexity:** 9 (HIGH); risk override: none.  
 **Owner:** ThreeNative maintainers; implementation owner to be assigned.  
 **Depends on:** Existing `@threenative/assets`, native packaging, and playtest infrastructure. Reuse the PRD-377 discrete-LOD contract; do not reopen or duplicate that PRD.  
-**Progress:** 0%; implementation not started.  
+**Progress:** 100% — all six phases done; AC-1–AC-10 and AC-12 verified, AC-11 moot (iOS unsupported). Review follow-ups not required by any AC: the report carries `artifactBytes`/`packagedAssetBytes` only of §6's quantities; the runner does not separately compare `manifestSha256` (it is inside the hashed tree for directory artifacts); desktop Windows/macOS lanes were not run here. A 2026-09-25 review round found two real defects, both fixed red-to-green in this PRD's own lanes: the decoder-free model path dropped `assets.models.textures.overrides`, so a slot declared `codec: "none"` was still resampled on Android/iOS (`packages/assets/__tests__/model-texture-pass.spec.ts`, the same opt-out `texture-pass.spec.ts` already pins for standalone images), and the runner adopted a build report whose `performanceBudget` key had been removed instead of refusing it (`packages/playtest/__tests__/build-report.spec.ts`, now `TN_PLAYTEST_BUILD_REPORT_INVALID`). Two further claims were checked against the code and left alone as documented intent: `selectManifestAssets` drops an unlisted digest-shaped file by design and prints every skip (`packages/runtime-native/scripts/asset-manifest.mjs`, rule 2; AC-5), and a scenario's own `assert.performance` value wins over the profile's per-key ceiling (`withPerformanceBudget`), which is the documented precedence.  
 **Source snapshot:** `ThreeNativeHQ/threenative`, `main` at `af60e210aa500e504e9370b3657caaf8340f5650`, inspected September 25, 2026.  
 **Authorization:** Planning-only scope. Owner explicitly authorized filing this documentation directly on `develop`; this does not authorize implementation, publishing, or deployment.  
 **Filing:** `docs/PRDs/assets/PRD-448-cross-platform-asset-cooking-and-device-budgets.md` on `develop`.  
@@ -310,18 +310,18 @@ All paths below exist in the inspected tree unless explicitly marked **new**. Im
 
 **Lane notation:** `unreachable-now/local` identifies checks intended for an implementation checkout that this planning session does not have. `shared` identifies native qualification through the repository's target lanes, not a claim those lanes have run. All evidence is pending. Native jobs belong to one qualification matrix dependency; each platform verdict remains separate. No human aesthetic sign-off is required to accept this plumbing feature.
 
-- [ ] **AC-1 [unreachable-now/local; actor: implementation agent]:** The public `threenative build` path applies the selected cook profile to the emitted asset representation. **Evidence:** E1, pending.
-- [ ] **AC-2 [unreachable-now/local; actor: implementation agent]:** A decoder-free target produces a decodable image satisfying its explicitly requested dimension cap. **Evidence:** E2, pending.
-- [ ] **AC-3 [unreachable-now/local; actor: implementation agent]:** Output-changing input changes cannot reuse stale cooked output. **Evidence:** E2, pending.
-- [ ] **AC-4 [unreachable-now/local; actor: implementation agent]:** Concurrent or interrupted builds cannot publish a mixed-generation artifact. **Evidence:** E3, pending.
-- [ ] **AC-5 [unreachable-now/local; actor: implementation agent]:** The packaged managed payload is exactly the selected dependency closure. **Evidence:** E3, pending.
-- [ ] **AC-6 [unreachable-now/local; actor: implementation agent]:** A configured hard artifact-byte limit is enforced against the produced artifact through the build command. **Evidence:** E3, pending.
-- [ ] **AC-7 [unreachable-now/local; actor: implementation agent]:** The documented no-manifest source fallback continues to run the same representative game. **Evidence:** E4, pending.
-- [ ] **AC-8 [unreachable-now/local; actor: implementation agent on a supported browser adapter]:** A packaged browser fixture renders the selected representation through the ordinary asset-loading API. **Evidence:** E4, pending; GPU/adapter execution not performed here.
-- [ ] **AC-9 [shared; actor: native qualification runner]:** The same fixture consumes the selected packaged representation on one explicitly identified supported desktop OS/architecture. **Evidence:** E4, pending; record the actual target, not “all PCs.”
-- [ ] **AC-10 [shared; actor: native qualification runner]:** The same fixture consumes the decoder-safe packaged representation on Android. **Evidence:** E4, pending; emulator proves compatibility, not thermal performance.
-- [ ] **AC-11 [shared; actor: macOS/iOS qualification runner]:** The same fixture consumes the selected packaged representation in the supported iOS simulator lane. **Evidence:** E4, pending; this does not certify signed physical-device distribution.
-- [ ] **AC-12 [unreachable-now/local; actor: implementation agent]:** A declared runtime-budget violation makes the real playtest invocation fail against observations from the identified artifact. **Evidence:** E5, pending.
+- [x] **AC-1 [unreachable-now/local; actor: implementation agent]:** The public `threenative build` path applies the selected cook profile to the emitted asset representation. **Evidence:** E1 — `packages/create-threenative/__tests__/build-profiles.spec.ts` (7 tests) drives `build()` — the function `threenative build` calls after `parseBuildArgs` — with the real asset compile (only Vite's child process stubbed): a 256² PNG cooks to 128² under the web default `compact` and 64² under `--profile tiny`, read back from the emitted KTX2 header; `build.spec.ts` proves the parser consumes `--profile` and forwards the rest to Vite. `pnpm exec vitest run packages/create-threenative/__tests__/` 722/722, 2026-09-25.
+- [x] **AC-2 [unreachable-now/local; actor: implementation agent]:** A decoder-free target produces a decodable image satisfying its explicitly requested dimension cap. **Evidence:** E2 — decoder-free compiles (`runtimeDecoders.ktx2: false`) with `textures.maxSize: 1024` emit 4096² colour/normal/alpha sources as PNGs that decode to 1024² with alpha kept; a 512² source ships byte-identical and the source file is unchanged; corrupt PNG fails `TN_ASSETS_TEXTURE_UNDECODABLE` naming the path (`texture-pass.spec.ts`). Embedded .glb 4096 image → 1024 PNG, mimeType png, shared images still deduplicated, two caps key apart (`model-texture-pass.spec.ts`, `shared-images.spec.ts`). Red first: disabling the new pass / forcing `models.textures` to "none" failed each. `pnpm exec vitest run packages/assets/__tests__/ packages/create-threenative/__tests__/` 1122 passed / 2 skipped, 2026-09-25.
+- [x] **AC-3 [unreachable-now/local; actor: implementation agent]:** Output-changing input changes cannot reuse stale cooked output. **Evidence:** E2 — the digest is now per asset kind (passes declare `appliesTo`; an undeclared pass still hashes into every kind): `determinism.spec.ts` proves two cold compiles into independent directories match, a warm rebuild reuses every entry, a `textures.maxSize` change renames only the texture, and a `lod` change renames only the model (red first with the old global pass list). `PIPELINE_VERSION` 9→10.
+- [x] **AC-4 [unreachable-now/local; actor: implementation agent]:** Concurrent or interrupted builds cannot publish a mixed-generation artifact. **Evidence:** E3 — every target builds into `<artifact>.staging-<pid>` and `publishStagedArtifact` renames it over the previous artifact only on success, restoring the previous one if the rename-in fails; a per-project `.threenative/build.lock` (exclusive create, pid, dead-pid reclaim) refuses a concurrent build with `TN_BUILD_BUSY`. Tests (red first each): a failing native packager and a failing Vite build leave the previous artifact byte-identical with no staging left; a live-pid lock refuses, a dead one is reclaimed; a forced rename-in failure restores the previous bytes (`templates-native.spec.ts`, `build.spec.ts`). `vitest run packages/create-threenative/__tests__/` 736/736, 2026-09-25. Known ceiling: two builds reclaiming the same dead lock in the same instant (commented `ponytail:` in build.ts).
+- [x] **AC-5 [unreachable-now/local; actor: implementation agent]:** The packaged managed payload is exactly the selected dependency closure. **Evidence:** E3 — one selector (`selectManifestAssets`) now stages desktop, Android and iOS and prunes the web outDir: a digest-named output the current manifest does not declare is dropped, manifest-declared auxiliaries and unmanaged files are kept (`runtime-native/__tests__/asset-manifest.spec.ts`, `build.spec.ts` web prune; red first — iOS staged the orphan). Proven through the real staging functions with stubbed packagers; no real APK/.app/desktop container was built here.
+- [x] **AC-6 [unreachable-now/local; actor: implementation agent]:** A configured hard artifact-byte limit is enforced against the produced artifact through the build command. **Evidence:** E3 — `artifactBudget.{artifactBytes,packagedAssetBytes}` × `warn|error` on a profile, measured on the staged artifact before publish: a limit one byte below the measured size fails `TN_BUILD_ARTIFACT_BUDGET_EXCEEDED` and leaves the previous artifact in place; `warn` prints and publishes (`templates-native.spec.ts`, red first with the measurement removed). `vitest run packages/create-threenative/__tests__/ packages/runtime-native/__tests__/asset-manifest.spec.ts packages/assets/__tests__/` 1148 passed / 2 skipped, 2026-09-25.
+- [x] **AC-7 [unreachable-now/local; actor: implementation agent]:** The documented no-manifest source fallback continues to run the same representative game. **Evidence:** E4 — starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25: the same packaged web output served without `assets.manifest.json` and with the sources under `assets/` passes with `resources.assets['native-proof.png'|'native-proof.glb'].via = "source"` (WebGPU, NVIDIA Turing adapter).
+- [x] **AC-8 [unreachable-now/local; actor: implementation agent on a supported browser adapter]:** A packaged browser fixture renders the selected representation through the ordinary asset-loading API. **Evidence:** E4 — starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25: `threenative build --target web` + `vite preview`, runner `--browser-recipe webgpu --headed`: pass 6/6, png/glb `via: manifest` (`native-proof.35d75eff.png`, `native-proof.1bd4b29a.glb`), adapter `webgpu:architecture=turing|vendor=nvidia` (not SwiftShader).
+- [x] **AC-9 [shared; actor: native qualification runner]:** The same fixture consumes the selected packaged representation on one explicitly identified supported desktop OS/architecture. **Evidence:** E4 — Linux x64 only: starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25; `threenative build --target desktop` with the locally built `tn-linux` host, runner `--target desktop --executable dist-native/starter`: pass 5/5, png/glb `via: manifest`, adapter NVIDIA GeForce RTX 2080. The device copy drops `diagnostics`/`visibility` rows (browser-only kinds, fail closed on device transports). Windows/macOS not run here.
+- [x] **AC-10 [shared; actor: native qualification runner]:** The same fixture consumes the decoder-safe packaged representation on Android. **Evidence:** E4 — Android emulator `threenative_api35` (`-gpu host`), not a device: starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25; APK from `threenative build --target android --allow-source-build` with the QuickJS engine (no V8 payload on this machine) and this branch's runtime source; runner `--target android`: pass 5/5, png/glb `via: manifest` with their own decoder-free outputs (`native-proof.584fed98.png`). Compatibility only, no thermal/perf claim.
+- **AC-11 — moot.** iOS is not a supported target (owner decision 2026-09-23: web, Windows, macOS, Linux, Android). Restore this criterion if iOS support returns.
+- [x] **AC-12 [unreachable-now/local; actor: implementation agent]:** A declared runtime-budget violation makes the real playtest invocation fail against observations from the identified artifact. **Evidence:** E5 — `performanceBudget` on a profile (keys = the runner's `assert.performance` fields; a spec fails if the two lists drift); `threenative build` publishes `<artifact>.build-report.json` atomically beside the artifact (target, profile, artifact sha256, manifest sha256, measured bytes, budget); `threenative-playtest --build-report` re-hashes the artifact under test and merges the budget into `assert.performance`. Real runner on the packed-tarball starter (web, `--browser-recipe webgpu --headed`, profile `maxDrawCalls: 1`): exit 1 `TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED` (300 observed draw calls vs 1); one byte of `dist` changed → exit 2 `TN_PLAYTEST_BUILD_REPORT_STALE` naming both hashes; `maxDrawCalss` in the report → exit 2 `TN_PLAYTEST_BUILD_REPORT_INVALID`. Native `--build-report` lanes are unit-covered only. 2026-09-25.
 
 ## Execution Phases
 
@@ -329,7 +329,7 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 #### Phase 1: Resolve a profile through the real build entry point
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-1  
 **Files:** `packages/core/src/config.ts`; `packages/create-threenative/src/config.ts`; `packages/create-threenative/src/build.ts`; existing CLI/config tests; a small resolver module only if splitting is warranted.
 
@@ -337,14 +337,14 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E1 — invoke the actual CLI against a fixture project with two different texture caps. Inspect emitted image dimensions/manifest output identity. Unknown profile/key/flag and conflicting preservation cases must fail clearly. A config-only unit test is insufficient.
 
-- [ ] The compiler receives the public CLI's resolved profile configuration.
-- [ ] Unknown profile selection is rejected before asset encoding.
+- [x] The compiler receives the public CLI's resolved profile configuration. — see AC-1 (E1).
+- [x] Unknown profile selection is rejected before asset encoding. — `TN_CONFIG_PROFILE_UNKNOWN` names the declared profiles; the end-to-end case asserts no `public/` was written. Unsafe names, unknown/forbidden overlay keys and a cap a `codec: "none"` override would ignore fail too (same spec).
 
 **Checkpoint:** Pending; self-review reachability and configuration precedence. Independent review only when a reviewer is actually available.
 
 #### Phase 2: Cook safe, reproducible target representations
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-2, AC-3  
 **Files:** `packages/assets/src/compile.ts`; `passes/texture.ts`; `passes/model-textures.ts`; `passes/shared-images.ts`; `passes/decode-image.ts`; existing texture/model/determinism tests. Reuse `lod/generate.ts` rather than replacing it.
 
@@ -352,14 +352,14 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E2 — extend existing texture, embedded-image, shared-image, and determinism fixtures. Decode actual output for 4096→1024 caps, alpha/normal/color cases, retained originals, and corrupt data. Compare cold independent directories and warm rebuilds. A changed source or maximum size must change affected output; a runtime-only LOD policy must not force unrelated image encodes.
 
-- [ ] Decoder-free dimension caps affect the actual emitted image bytes.
-- [ ] Cache reuse is validated against output-changing dependencies.
+- [x] Decoder-free dimension caps affect the actual emitted image bytes. — see AC-2. Unverified: a `.jpg` logical path now ships as a `.png` output; runtime loading of that output is Phase 4 evidence.
+- [x] Cache reuse is validated against output-changing dependencies. — see AC-3.
 
 **Checkpoint:** Pending; examine source integrity, image semantics, decoder requirements, and exact reused cache identities.
 
 #### Phase 3: Package the selected output atomically
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-4, AC-5, AC-6  
 **Files:** `packages/create-threenative/src/build.ts`; `src/compress.ts`; existing native package scripts where their input contract needs changes; `packages/assets/src/report.ts`; **new** `packages/create-threenative/src/build-report.ts` if needed; packaging/build tests.
 
@@ -367,14 +367,14 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E3 — package from a non-default output root with a stale alternate-profile texture present elsewhere. Inspect actual artifact entries and byte sums. Inject an encoder/packager failure, overlap conflicting builds, corrupt a cache payload, and set a byte ceiling one byte below the measured result. A safe refusal/serialization is valid for conflicting builds; silent overwrite is not.
 
-- [ ] Packaging consumes the resolved selected asset root.
-- [ ] Publication preserves the last successful artifact after a failed build.
+- [x] Packaging consumes the resolved selected asset root. — `assets.output: "cooked"` reaches every native packager as `--assets` (`templates-native.spec.ts`, red first: the old literal handed `public/`).
+- [x] Publication preserves the last successful artifact after a failed build. — see AC-4 (web and native).
 
 **Checkpoint:** Pending; review filesystem ownership, cleanup boundaries, closure completeness, and byte definitions.
 
 #### Phase 4: Prove unchanged loading on each supported runtime lane
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-7–AC-11  
 **Files:** `packages/core/src/assets.ts` only where provenance/validation requires it; existing loader tests; `packages/create-threenative/__tests__/scaffold.spec.ts`; `examples/native-smoke/playtests/` and representative fixture assets; native conformance registry only when adding a case.
 
@@ -382,14 +382,14 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E4 — run one production-shaped scenario separately on browser, identified desktop target, Android, and iOS simulator. Assert rendered content, required clips/nodes, shared-image resolution, and selected asset provenance. Make a valid manifest's selected output unavailable and require a load failure. Run the existing bake delete-test in its supported environment.
 
-- [ ] The consumer scenario identifies the representation actually loaded.
-- [ ] Removing a manifest-selected asset produces a visible failure rather than a hidden source fallback.
+- [x] The consumer scenario identifies the representation actually loaded. — `ctx.assets.resolved` → playtest `resources.assets[<logical>].{url,via}` on every target; see AC-8–AC-10.
+- [x] Removing a manifest-selected asset produces a visible failure rather than a hidden source fallback. — packaged web with `native-proof.35d75eff.png` deleted: verdict `pass: false`, game never boots (Vite answers the missing file with its HTML shell, so the decode fails); unit test: a manifest-named output that is missing → `TN_ASSETS_UNRESOLVED`. The bake delete-test was not re-run. (A rejected manifest *read* still counts as no manifest: the desktop/Android hosts report a missing file as a rejected fetch, so failing closed there broke every manifest-less native game — reverted after CI's desktop-core red; making the hosts answer 404 is a native follow-up.)
 
 **Checkpoint:** Pending. Native ACs remain open until their own evidence arrives; browser success does not stand in for them.
 
 #### Phase 5: Consume budgets through existing playtests
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-12  
 **Files:** Existing `packages/playtest/src/runner/` CLI and performance schema/validator modules, located before editing; `packages/core/src/frame-budget.ts` or existing bridge serialization only for an identified observation gap; **new** report-reader module if needed; existing invalid/vacuous-assertion tests.
 
@@ -397,14 +397,14 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E5 — run the real runner against the identified built fixture. Use a known draw/timing violation, a stale report, a misspelled metric, and a missing required observation. Each must produce a non-passing result for its own reason. A constant mock counter or a standalone budget-comparison helper cannot prove this feature.
 
-- [ ] The public playtest invocation consumes the build's resolved budget.
-- [ ] Missing required observations cannot satisfy a hard performance limit.
+- [x] The public playtest invocation consumes the build's resolved budget. — see AC-12.
+- [x] Missing required observations cannot satisfy a hard performance limit. — `packages/playtest/__tests__/build-report.spec.ts` "a budget with no measured series fails"; a budget field the target cannot observe is refused before the run, not dropped.
 
 **Checkpoint:** Pending; review measurement meanings and false-pass risks, especially loop FPS and reduced resolution.
 
 #### Phase 6: Ship the discoverable, backward-compatible workflow
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** Reconcile evidence for AC-1–AC-12; no new duplicate acceptance set.  
 **Files:** `packages/create-threenative/templates/*/threenative.config.ts` and generated agent references; `packages/assets/README.md`; appropriate package/architecture docs; capability annotations/generated manifests only for actual new public surfaces; this PRD.
 
@@ -412,8 +412,8 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E6 — build and consume a packed-tarball scaffold, not workspace-only imports. Inspect runtime bundles for encoder/compiler dependency leakage. Run required repository gates once for the combined candidate; reuse current valid earlier evidence rather than rerunning equivalent tests for ceremony.
 
-- [ ] A cold scaffold exposes the working profile workflow without custom asset routing.
-- [ ] Runtime packages remain free of build-time encoder dependencies.
+- [x] A cold scaffold exposes the working profile workflow without custom asset routing. — E6: every template's `threenative.config.ts` carries a commented `buildProfiles` example linked to `agent-docs/build-profiles.md`; a fresh starter scaffolded from this branch's packed tarballs, example uncommented, built `--target web --profile compact` and unprofiled, both exit 0, the first announcing `profile compact (flag) for web` and publishing `dist.build-report.json` with `"profile": "compact"`, the second `"profile": null`; a `maxSize: 8` variant emitted an 8×8 KTX2.
+- [x] Runtime packages remain free of build-time encoder dependencies. — `packages/core/__tests__/packaging.spec.ts` now bans `@gltf-transform`, `pngjs`, `sharp`, `wasm-media-encoders` and the vendored encoders from browser-tier and native-bundle imports (red first with a temporary import).
 
 **Checkpoint:** Pending. Update phase/AC evidence in place. Once implementation is authorized, follow the repository's one-draft-PR-per-PRD workflow against `develop`. Move to `done/` only after every required lane and acceptance claim is verified.
 

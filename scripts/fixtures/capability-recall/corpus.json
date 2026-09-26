@@ -531,6 +531,70 @@
       "source": "template:platformer#AGENTS.md — __PROJECT_NAME__ platformer",
       "expect": ["CharacterBody3D"],
       "reject": []
+    },
+    {
+      "id": "prd451.matrix-world",
+      "query": "only update world matrices of visible objects each frame instead of the whole scene",
+      "scope": "mechanic",
+      "source": "sandbox:midway#render/world.ts",
+      "expect": ["MatrixWorldPass"],
+      "reject": []
+    },
+    {
+      "id": "prd451.mark-static",
+      "query": "freeze static meshes so their matrices are not recomputed every frame",
+      "scope": "mechanic",
+      "source": "sandbox:midway#render/world.ts",
+      "expect": ["markStatic"],
+      "reject": []
+    },
+    {
+      "id": "prd451.create-random",
+      "query": "seeded deterministic random number generator like mulberry32",
+      "scope": "mechanic",
+      "source": "sandbox:midway#sim/math.ts",
+      "expect": ["createRandom"],
+      "reject": []
+    },
+    {
+      "id": "prd451.input-map",
+      "query": "map WASD keys to a movement axis instead of checking keys.has in the update loop",
+      "scope": "mechanic",
+      "source": "sandbox:midway#scenes/Midway.ts",
+      "expect": ["InputMap"],
+      "reject": []
+    },
+    {
+      "id": "prd451.capture-mouse",
+      "query": "lock the mouse pointer for first-person mouse look",
+      "scope": "mechanic",
+      "source": "sandbox:midway#scenes/Midway.ts",
+      "expect": ["captureMouse"],
+      "reject": []
+    },
+    {
+      "id": "prd451.lod-pixel-scale",
+      "query": "pick a level of detail from the object's projected size in pixels on screen",
+      "scope": "mechanic",
+      "source": "sandbox:midway#render/airframe-lod.ts",
+      "expect": ["lodPixelScale"],
+      "reject": []
+    },
+    {
+      "id": "prd451.frame-budget",
+      "query": "on-screen frame time meter with p50 p95 p99 percentiles",
+      "scope": "mechanic",
+      "source": "sandbox:midway#ui/frame-meter.ts",
+      "expect": ["FrameBudget"],
+      "reject": []
+    },
+    {
+      "id": "prd451.merge-parts",
+      "query": "merge many static geometries into one mesh to cut draw calls",
+      "scope": "mechanic",
+      "source": "sandbox:fps#render/facade.ts",
+      "expect": ["mergeParts"],
+      "reject": []
     }
   ]
 }

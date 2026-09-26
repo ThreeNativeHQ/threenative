@@ -14,11 +14,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, posix, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { assertNativeAssetsDecodable, deriveIosWebpSupport } from './asset-preflight.mjs';
+import { listFiles, selectManifestAssets } from './asset-manifest.mjs';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
@@ -208,17 +209,6 @@ function valueAfter(args, flag) {
 
 function checksum(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
-}
-
-function listFiles(directory, relative = '') {
-  const files = [];
-  for (const entry of readdirSync(join(directory, relative), { withFileTypes: true })) {
-    const path = relative ? posix.join(relative, entry.name) : entry.name;
-    if (entry.isDirectory()) files.push(...listFiles(directory, path));
-    else if (entry.isFile()) files.push(path);
-    else throw new Error(`Unsupported iOS asset entry: ${join(directory, path)}`);
-  }
-  return files.sort();
 }
 
 function findApp(directory) {
@@ -455,6 +445,33 @@ export function stageIosUi(ui, renderer, destination) {
   return listFiles(destination);
 }
 
+/**
+ * Stage the game's compiled assets into the `.app`'s `game` directory.
+ *
+ * The same selector the other two packagers use, so one cook output left over from a previous
+ * bake is dropped here too instead of shipping inside the bundle. iOS ran no preflight at all.
+ * Its capability set is not Android's: `CMakeLists.txt` excludes IOS from every libwebp branch,
+ * so a WebP texture that packages for Android must still be refused here, while the audio answer
+ * is the same on every native target.
+ */
+export function stageIosAssets(assets, destination) {
+  if (!assets || !existsSync(assets)) return [];
+  if (!statSync(assets).isDirectory()) {
+    throw new Error(`iOS assets path is not a directory: ${assets}`);
+  }
+  assertNativeAssetsDecodable(assets, {
+    target: 'ios',
+    capabilities: { webp: deriveIosWebpSupport() },
+  });
+  const { selected } = selectManifestAssets(assets);
+  for (const file of selected) {
+    const staged = join(destination, file);
+    mkdirSync(dirname(staged), { recursive: true });
+    cpSync(join(assets, file), staged);
+  }
+  return selected;
+}
+
 export function stageIosSimulatorApp({
   assets,
   bundle,
@@ -520,25 +537,7 @@ export function stageIosSimulatorApp({
     }
     copyFileSync(declared.bootSplash.image, join(output, 'LaunchImage.png'));
   }
-  let assetFiles = [];
-  if (assets && existsSync(assets)) {
-    if (!statSync(assets).isDirectory()) {
-      throw new Error(`iOS assets path is not a directory: ${assets}`);
-    }
-    // iOS ran no preflight at all. Its capability set is not Android's: `CMakeLists.txt` excludes
-    // IOS from every libwebp branch, so a WebP texture that packages for Android must still be
-    // refused here, while the audio answer is the same on every native target.
-    assertNativeAssetsDecodable(assets, {
-      target: 'ios',
-      capabilities: { webp: deriveIosWebpSupport() },
-    });
-    assetFiles = listFiles(assets);
-    for (const file of assetFiles) {
-      const staged = join(game, file);
-      mkdirSync(dirname(staged), { recursive: true });
-      cpSync(join(assets, file), staged);
-    }
-  }
+  const assetFiles = stageIosAssets(assets, game);
   const report = {
     assets: assetFiles.map((path) => ({ path, sha256: checksum(join(game, path)) })),
     bundleSha256: checksum(bundle),

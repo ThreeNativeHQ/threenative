@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const action = readFileSync(path.join(repo, ".github/actions/workspace-dist/action.yml"), "utf8");
@@ -124,30 +124,26 @@ describe("workspace bundle reuse without cached verdicts", () => {
   });
 
   it("executes the real bundle validator against complete and incomplete products", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "workspace-dist-cache-"));
-    try {
-      for (const name of ["core", "assets"]) {
-        mkdirSync(path.join(root, "packages", name), { recursive: true });
-        writeFileSync(path.join(root, "packages", name, "tsup.config.ts"), "export default {};\n");
-      }
-      const validate = () =>
-        spawnSync("bash", ["-c", shell("Check every bundling package has its bundle")], {
-          cwd: root,
-          encoding: "utf8",
-          timeout: 5_000,
-        });
-      mkdirSync(path.join(root, "packages/core/dist"));
-      const incomplete = validate();
-      assert.ifError(incomplete.error);
-      assert.equal(incomplete.status, 1);
-      assert.match(incomplete.stderr, /TN_WORKSPACE_DIST_INCOMPLETE: packages\/assets\/dist/u);
-      mkdirSync(path.join(root, "packages/assets/dist"));
-      const complete = validate();
-      assert.ifError(complete.error);
-      assert.equal(complete.status, 0, complete.stderr);
-      assert.match(complete.stdout, /workspace compiled bundles validated/u);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
+    const root = makeTempDirSync("workspace-dist-cache-");
+    for (const name of ["core", "assets"]) {
+      mkdirSync(path.join(root, "packages", name), { recursive: true });
+      writeFileSync(path.join(root, "packages", name, "tsup.config.ts"), "export default {};\n");
     }
+    const validate = () =>
+      spawnSync("bash", ["-c", shell("Check every bundling package has its bundle")], {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 5_000,
+      });
+    mkdirSync(path.join(root, "packages/core/dist"));
+    const incomplete = validate();
+    assert.ifError(incomplete.error);
+    assert.equal(incomplete.status, 1);
+    assert.match(incomplete.stderr, /TN_WORKSPACE_DIST_INCOMPLETE: packages\/assets\/dist/u);
+    mkdirSync(path.join(root, "packages/assets/dist"));
+    const complete = validate();
+    assert.ifError(complete.error);
+    assert.equal(complete.status, 0, complete.stderr);
+    assert.match(complete.stdout, /workspace compiled bundles validated/u);
   });
 });

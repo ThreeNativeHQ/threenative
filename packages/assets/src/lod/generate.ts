@@ -829,6 +829,12 @@ async function buildJoinedRungs(
   for (const node of nodes) {
     const mesh = node.getMesh();
     if (mesh === null || hasMeshBelow.has(node)) continue;
+    // An `EXT_mesh_gpu_instancing` node draws its mesh once per instance; joining it would
+    // collapse every placed copy onto the batch node's own transform, so it stays authored.
+    if (node.getExtension("EXT_mesh_gpu_instancing") !== null) {
+      reason("boundary-unsafe");
+      continue;
+    }
     if ((meshRefs.get(mesh) ?? 0) > 1) {
       reason("boundary-unsafe");
       continue;
