@@ -397,6 +397,141 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
+  it("rethrows a game's terrain error instead of reporting it as byte pressure", async () => {
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      createCollider: () => {
+        throw new Error("game collider factory failed");
+      },
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    expect(() => world.update()).toThrow(/game collider factory failed/u);
+    expect(world.stats().pressure.bytes).toBe(0);
+    world.dispose();
+  });
+
+  it("rethrows a game error that borrows the terrain budget error's name", async () => {
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      createCollider: () => {
+        const error = new Error("game collider factory failed");
+        error.name = "TerrainTileBudgetError";
+        throw error;
+      },
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    expect(() => world.update()).toThrow(/game collider factory failed/u);
+    expect(world.stats().pressure.bytes).toBe(0);
+    world.dispose();
+  });
+
+  it("counts a real terrain byte-budget throw as byte pressure", async () => {
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 1,
+      // A 20M-vertex tile cannot fit any byte budget, and the estimate is checked before the tile
+      // is built, so the cap fires for real on the tile the camera follows.
+      terrain: { tileResolution: 20_000_001 },
+      surface,
+      url: "/world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    expect(() => world.update()).not.toThrow();
+    expect(world.stats().pressure.bytes).toBe(1);
+    world.dispose();
+  });
+
+  it("keeps refcounts and geometry consistent when one asset load fails", async () => {
+    // Two cells one ring apart, so the second comes into range only after the first load refused.
+    stubManifestFetch({
+      ...manifest,
+      cells: manifest.cells
+        .filter((cell) => (cell.x === 0 || cell.x === 2) && cell.z === 0)
+        .map((cell) => ({
+          ...cell,
+          chunks: [],
+          runs: cell.runs.filter((run) => run.asset === "pine"),
+        })),
+    });
+    const follow = followAt(0, 0);
+    const models: Object3D[] = [];
+    let refused = false;
+    const load = (url: string): Promise<Object3D> => {
+      if (url.includes("pine") && !refused) {
+        refused = true;
+        return Promise.reject(new Error("pine is offline"));
+      }
+      const model = makeModel();
+      models.push(model);
+      return Promise.resolve(model);
+    };
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+
+    const first = cellCenter(0, 0);
+    follow.position.x = first.x;
+    follow.position.z = first.z;
+    world.update();
+    await flush();
+    expect(world.stats().failures).toBe(1);
+
+    // The second cell retries the load, and its geometry is what both cells now draw.
+    const second = cellCenter(1, 0);
+    follow.position.x = second.x;
+    follow.position.z = second.z;
+    world.update();
+    await flush();
+    expect(world.stats().residentKeys).toEqual([cellKey(0, 0), cellKey(2, 0)]);
+    expect(models.length).toBe(1);
+    const source = (models[0] as Group).children[0] as Mesh;
+    const dispose = vi.spyOn(source.geometry, "dispose");
+
+    // Past the hysteresis ring the first cell leaves; the second must keep drawing that geometry.
+    const away = cellCenter(3, 0);
+    follow.position.x = away.x;
+    follow.position.z = away.z;
+    world.update();
+    await flush();
+
+    expect(world.stats().residentKeys).toEqual([cellKey(2, 0)]);
+    expect(world.assetRefCounts()).toEqual({ pine: 1 });
+    expect(dispose).not.toHaveBeenCalled();
+    world.dispose();
+  });
+
   it("rejects a load concurrency that could never start a load", async () => {
     stubFixtureFetch();
     for (const concurrency of [0, -1, 1.5, Number.NaN])

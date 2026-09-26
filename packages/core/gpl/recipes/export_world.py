@@ -21,8 +21,8 @@
 # names a scatter source (the object name is the warned fallback), `tn_max_distance` is an asset's
 # cull distance, `tn_lod_distance` overrides the default 60 m LOD1 range, and a collection marked
 # `tn_world_chunk` exports as per-cell chunk GLBs. Hidden, excluded and `_`-prefixed collections are
-# skipped. Adapt it: the cell size, the LOD ratio and the asset conventions are the parts a game
-# usually wants to change.
+# skipped, and so is anything nested under one. Adapt it: the cell size, the LOD ratio and the asset
+# conventions are the parts a game usually wants to change.
 
 import array
 import json
@@ -89,6 +89,21 @@ def number(payload, key, default=None):
     if not math.isfinite(value) or value <= 0:
         fail("'%s' must be greater than zero, got %r" % (key, raw))
     return value
+
+
+def package_path(out, relative):
+    """A package-relative path, refused when it resolves outside `out`.
+
+    Asset ids and collection names are authored in a .blend and become file names here, so
+    `../../escape` is a name like any other until it is joined. Resolve symlinks as well as `..`,
+    or a planted link under `out` writes through it and absolute containment sees nothing wrong.
+    Refuse it and name the culprit.
+    """
+    root = os.path.realpath(out)
+    resolved = os.path.realpath(os.path.join(out, relative))
+    if os.path.commonpath((root, resolved)) != root:
+        fail("'%s' would write outside the output directory" % relative)
+    return resolved
 
 
 def object_bounds_gltf(obj):
@@ -347,22 +362,27 @@ def write_glb(path, objects):
         fail("export of '%s' wrote no geometry; its source has no exportable mesh" % path)
 
 
-def excluded_collections(layer):
-    excluded = set()
+def skipped_collections(layer, under_hidden=False):
+    """Collection names the recipe must skip, ancestors included.
+
+    A collection nested under a hidden or excluded one is hidden too, so the chain is walked from
+    the view layer down: the rule is about what a player can see, not about one datablock's flags.
+    """
+    skipped = set()
     for child in layer.children:
-        if child.exclude:
-            excluded.add(child.collection.name)
-        excluded |= excluded_collections(child)
-    return excluded
-
-
-def hidden_collection(collection, excluded):
-    return (
-        collection.name.startswith("_")
-        or collection.hide_viewport
-        or collection.hide_render
-        or collection.name in excluded
-    )
+        collection = child.collection
+        hidden = (
+            under_hidden
+            or child.exclude
+            or child.hide_viewport
+            or collection.name.startswith("_")
+            or collection.hide_viewport
+            or collection.hide_render
+        )
+        if hidden:
+            skipped.add(collection.name)
+        skipped |= skipped_collections(child, hidden)
+    return skipped
 
 
 def main():
@@ -407,7 +427,7 @@ def main():
         saved = obj.matrix_world.copy()
         obj.matrix_world = Matrix.Identity(4)
         bpy.context.view_layer.update()
-        write_glb(os.path.join(out, relative), [obj])
+        write_glb(package_path(out, relative), [obj])
         obj.matrix_world = saved
         bpy.context.view_layer.update()
 
@@ -419,7 +439,7 @@ def main():
         bpy.context.scene.collection.objects.link(lod_object)
         collapse_decimate(lod_object, obj.get("tn_lod_ratio", LOD_RATIO_DEFAULT))
         lod_relative = "assets/%s_lod1.glb" % asset_id
-        write_glb(os.path.join(out, lod_relative), [lod_object])
+        write_glb(package_path(out, lod_relative), [lod_object])
         lod_mesh = lod_object.data
         bpy.data.objects.remove(lod_object, do_unlink=True)
         bpy.data.meshes.remove(lod_mesh)
@@ -442,9 +462,14 @@ def main():
     extent = data["extent"]
     cell_size = data["cell"]
     chunk_cells = {}
-    excluded = excluded_collections(bpy.context.view_layer.layer_collection)
+    skipped = skipped_collections(bpy.context.view_layer.layer_collection)
     for collection in bpy.data.collections:
-        if collection.get("tn_world_chunk") is None or hidden_collection(collection, excluded):
+        if collection.get("tn_world_chunk") is None or (
+            collection.name in skipped
+            or collection.name.startswith("_")
+            or collection.hide_viewport
+            or collection.hide_render
+        ):
             continue
         grouped = {}
         for obj in collection.objects:
@@ -466,7 +491,7 @@ def main():
             # across a boundary. Add per-cell clipping when a game's chunk geometry straddles cells
             # at a scale where the overlap costs a visible draw.
             relative = "chunks/%s_%d_%d.glb" % (collection.name, cell_x, cell_z)
-            write_glb(os.path.join(out, relative), objects)
+            write_glb(package_path(out, relative), objects)
             chunk_cells.setdefault((cell_x, cell_z), []).append(relative)
 
     placements = array.array("f")

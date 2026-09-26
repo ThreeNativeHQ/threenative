@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -125,6 +125,56 @@ function glbMeshCount(file: string): number {
   return 0;
 }
 
+/** The fixture is deterministic, so a failure here is the fixture, not a flaky scatter. */
+async function makeFixtureBlend(root: string): Promise<string> {
+  const blend = path.join(root, "world.blend");
+  await blenderRun(root, [
+    "--background",
+    "--factory-startup",
+    "--python",
+    fixtureScript,
+    "--",
+    "--out",
+    blend,
+  ]);
+  expect(existsSync(blend)).toBe(true);
+  return blend;
+}
+
+/**
+ * Reopen the fixture, change one convention and save a second .blend. The recipe's conventions are
+ * the things under test, so the fixture stays the one the package spec proves; this edits a copy.
+ */
+async function mutatedBlend(root: string, blend: string, snippet: string): Promise<string> {
+  const script = path.join(root, "mutate.py");
+  const mutated = path.join(root, "mutated.blend");
+  await writeFile(
+    script,
+    snippet.replace("__BLEND__", JSON.stringify(blend)).replace("__OUT__", JSON.stringify(mutated)),
+  );
+  await blenderRun(root, ["--background", "--factory-startup", "--python", script]);
+  expect(existsSync(mutated)).toBe(true);
+  return mutated;
+}
+
+interface IExportResult {
+  readonly ok: boolean;
+  readonly detail?: string;
+  readonly summary?: {
+    readonly assetsWritten: number;
+    readonly instancesByAsset: Record<string, number>;
+  };
+}
+
+/** The tool handler, not the raw script: this is the surface an agent calls. */
+async function exportWorld(out: string, source: string): Promise<IExportResult> {
+  const response = await handleToolCall({
+    arguments: { cell: 64, out, source },
+    name: "blender_export_world",
+  });
+  return JSON.parse(response.content[0].text) as IExportResult;
+}
+
 withBlender("blender_export_world against a real Blender", () => {
   it("writes a validating package whose count is the render-density count", async () => {
     const root = await makeTempDir("tn-export-world-");
@@ -206,5 +256,125 @@ withBlender("blender_export_world against a real Blender", () => {
     });
     expect(validation.errors, JSON.stringify(validation.errors)).toEqual([]);
     expect(validation.ok).toBe(true);
+  }, 300_000);
+
+  it("refuses an asset id that would write outside the output directory", async () => {
+    const root = await makeTempDir("tn-export-world-traversal-");
+    const out = path.join(root, "package");
+    const source = await mutatedBlend(
+      root,
+      await makeFixtureBlend(root),
+      `import bpy
+bpy.ops.wm.open_mainfile(filepath=__BLEND__)
+bpy.data.objects["pine"]["tn_asset_id"] = "../../escaped"
+bpy.ops.wm.save_as_mainfile(filepath=__OUT__)
+`,
+    );
+
+    const result = await exportWorld(out, source);
+
+    // The name becomes a file path, so it has to be refused rather than normalised: an agent that
+    // typed a slash must be told, not silently handed a package written over its own files.
+    expect(result.ok, result.detail ?? "export refused").toBe(false);
+    expect(result.detail ?? "").toMatch(/escaped.*outside the output directory/iu);
+    expect(existsSync(path.join(root, "escaped.glb"))).toBe(false);
+    expect(existsSync(path.join(root, "escaped_lod1.glb"))).toBe(false);
+  }, 300_000);
+
+  // The ancestor rule is about visibility, and Blender carries it on two objects: the Collection
+  // datablock (Disable in Viewports/Renders) and the per-view-layer LayerCollection (the eye and
+  // the checkbox). A chunk under either kind of hidden parent must skip.
+  it.each([
+    {
+      label: "a hidden Collection datablock parent",
+      mutate: `parent.hide_viewport = True
+parent.hide_render = True`,
+    },
+    {
+      label: "a hidden LayerCollection parent",
+      mutate: `bpy.context.view_layer.layer_collection.children["hidden_parent"].hide_viewport = True`,
+    },
+    {
+      label: "an excluded LayerCollection parent",
+      mutate: `bpy.context.view_layer.layer_collection.children["hidden_parent"].exclude = True`,
+    },
+  ])(
+    "skips a chunk collection nested under $label",
+    async ({ mutate }) => {
+      const root = await makeTempDir("tn-export-world-hidden-");
+      const out = path.join(root, "package");
+      const source = await mutatedBlend(
+        root,
+        await makeFixtureBlend(root),
+        `import bpy
+bpy.ops.wm.open_mainfile(filepath=__BLEND__)
+yard = bpy.data.collections["yard"]
+parent = bpy.data.collections.new("hidden_parent")
+bpy.context.scene.collection.children.link(parent)
+bpy.context.scene.collection.children.unlink(yard)
+parent.children.link(yard)
+bpy.context.view_layer.update()
+${mutate}
+bpy.ops.wm.save_as_mainfile(filepath=__OUT__)
+`,
+      );
+
+      const result = await exportWorld(out, source);
+      expect(result.ok, result.detail ?? "export succeeded").toBe(true);
+      if (!result.ok) return;
+
+      // The skip rule is about what a player can see, and nothing under a hidden or excluded parent is.
+      expect(jsonFiles(path.join(out, "chunks"))).toEqual([]);
+      const manifest = JSON.parse(
+        readFileSync(path.join(out, "world.json"), "utf8"),
+      ) as IWorldPackage;
+      for (const cell of manifest.cells) expect(cell.chunks ?? []).toEqual([]);
+      // The scatter is untouched: only the hidden subtree went away.
+      expect(Object.keys(result.summary?.instancesByAsset ?? {}).sort()).toEqual([
+        "ground_cover",
+        "pine",
+        "rock",
+      ]);
+    },
+    300_000,
+  );
+
+  it("refuses a marked chunk collection whose name escapes the output directory", async () => {
+    const root = await makeTempDir("tn-export-world-chunk-traversal-");
+    const out = path.join(root, "package");
+    const source = await mutatedBlend(
+      root,
+      await makeFixtureBlend(root),
+      `import bpy
+bpy.ops.wm.open_mainfile(filepath=__BLEND__)
+bpy.data.collections["yard"].name = "../../escaped"
+bpy.ops.wm.save_as_mainfile(filepath=__OUT__)
+`,
+    );
+
+    const result = await exportWorld(out, source);
+
+    // A collection name becomes a chunk file name, so `../` in it has to be refused, not silently
+    // made relative to the package root.
+    expect(result.ok, result.detail ?? "export refused").toBe(false);
+    expect(result.detail ?? "").toMatch(/escaped.*outside the output directory/iu);
+    expect(readdirSync(root).filter((entry) => entry.startsWith("escaped"))).toEqual([]);
+  }, 300_000);
+
+  it("refuses an output subdirectory symlinked outside the package", async () => {
+    const root = await makeTempDir("tn-export-world-symlink-");
+    const out = path.join(root, "package");
+    const outside = path.join(root, "outside");
+    mkdirSync(out, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    // Absolute-path containment alone follows this link and writes through it; the output check
+    // has to resolve symlinks to see that the write lands outside the package.
+    symlinkSync(outside, path.join(out, "chunks"), "dir");
+
+    const result = await exportWorld(out, await makeFixtureBlend(root));
+
+    expect(result.ok, result.detail ?? "export refused").toBe(false);
+    expect(result.detail ?? "").toMatch(/outside the output directory/iu);
+    expect(readdirSync(outside)).toEqual([]);
   }, 300_000);
 });

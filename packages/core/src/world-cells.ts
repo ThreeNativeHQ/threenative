@@ -23,7 +23,7 @@ import {
   cellPlacements,
   validateWorldPackage,
 } from "./world-package.js";
-import { type IWorldTilesOptions, TerrainTiles } from "./world-tiles.js";
+import { type IWorldTilesOptions, TerrainTileBudgetError, TerrainTiles } from "./world-tiles.js";
 
 const PLACEMENT_RECORD_BYTES = 32;
 const PLACEMENT_RECORD_FLOATS = 8;
@@ -394,7 +394,8 @@ export class WorldCells extends Group implements IComputeDriven {
    * Per-frame residency step; call it wherever `TerrainTiles.process` is called.
    *
    * Reads the follow target, keeps the in-ring cells, evicts cells beyond the hysteresis ring and
-   * refilters `maxDistance` batches. A terrain budget throw is caught and counted, never escaped.
+   * refilters `maxDistance` batches. A terrain budget throw is caught and counted; every other
+   * error, the game's included, escapes.
    */
   update(renderer?: IRendererLike): void {
     if (this.#released) return;
@@ -403,7 +404,8 @@ export class WorldCells extends Group implements IComputeDriven {
     try {
       this.#terrain.follow({ x, z });
       this.#terrain.process(renderer);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof TerrainTileBudgetError)) throw error;
       this.#pressure.bytes += 1;
     }
     this.#updateResidency(
@@ -554,9 +556,11 @@ export class WorldCells extends Group implements IComputeDriven {
           if (model !== undefined) this.#adoptAsset(asset, model);
         },
         () => {
+          // The state stays, refcount and all: cells still resident are holding it, and the next
+          // acquire retries. Dropping it here would let a later cell refcount from zero and hand
+          // an eviction of an old cell the geometry a still-resident cell draws.
           asset.pending = false;
           this.#failures += 1;
-          if (this.#assets.get(asset.id) === asset) this.#assets.delete(asset.id);
         },
       );
   }
@@ -568,9 +572,9 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     const renderable = firstRenderable(model);
     if (renderable === undefined) {
+      // Same as a refused load: keep the refcounted state so the next acquire retries.
       this.#failures += 1;
       disposeModel(model);
-      this.#assets.delete(asset.id);
       return;
     }
     asset.geometry = renderable.geometry;
