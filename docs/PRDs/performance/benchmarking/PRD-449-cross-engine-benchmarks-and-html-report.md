@@ -791,9 +791,155 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   stress variant yields 10,000/100. It checks every light's visibility/energy after a controlled
   update and checks that the mesh and light grids rotate in opposite directions at the requested
   speed. Godot `4.7.1` exits 0 on all 23 probes; an optional unbuilt C++ extension logs import
+- [ ] Pass lights/meshes conformance including requested-versus-actual counts and changing lights.
+  The same probe passes all 13 upstream `lights_and_meshes.gd` variants headless. Requested 1,000
+  yields 1,024 mesh nodes; requested 10 yields nine spot/omni light nodes, while the 10,000/100
+  stress variant yields 10,000/100. It checks every light's visibility/energy after a controlled
+  update and checks that the mesh and light grids rotate in opposite directions at the requested
+  speed. Godot `4.7.1` exits 0 on all 23 probes; an optional unbuilt C++ extension logs import
   errors and the upstream source project reports exit leaks, so these runs assert only the named
-  scene properties. Matching TN, sample-frame visual/state evidence and a real GPU remain open.
+  scene properties.
+
+  **One cell now runs on the real GPU on both arms, and the box stays open because the pair is
+  refused on the picture.** The cell is `box-100-omni-10-slow`, the composition of the pinned
+  source's own named axes — box mesh, 100 objects, omni lights, 10 requested, `speed=1.0`. It is
+  not one of the thirteen `benchmark_*` functions (`benchmark_box_100` keeps the default spot
+  light), so the arm calls upstream's own `create_scene` with those settings instead of naming a
+  function it is not; the other twelve named variants stay open and this cell is a development
+  rung, not the family.
+
+  [lights_arm.gd](../../../../benchmark/godot-prd449/lights_arm.gd) drives that `create_scene` and
+  never re-implements it: the upstream method authors the nodes, draws the RNG, builds both grid
+  hierarchies and owns the `Rotater`/`Lighter` update behaviour. It SHA-256 verifies
+  `lights_and_meshes.gd` (`2b1b4088…`), `manager.gd`, `benchmark.gd` and `project.godot` before the
+  scene is built. Every upstream file is unmodified; the arm is the only new file.
+
+  The 600-frame/120-warmup pair on the RTX 2080 (TU104), driver `615.71.09`, `DISPLAY=:0`, Godot
+  `4.7.1.stable.official.a13da4feb`, native host `packages/runtime-native/build/tn-linux/mystral`,
+  fixture `7aa2df6e…` written by the Godot arm and hashed by the counterpart off the same bytes:
+
+  | claim | 600-frame result |
+  |---|---|
+  | requested vs actual census | 100/100 meshes, 10 requested → **9** omni lights, 0 spot, both arms |
+  | fixture SHA-256 and RNG seed | equal, `0x60d07` |
+  | mesh buffer digest | equal, `a5973433…`, 24 vertices / 36 indices / 12 triangles |
+  | max world-origin delta, 6 sampled frames | **1.29e-5 m** (declared 1e-4) |
+  | max world-X-axis delta, meshes | **1.68e-6 rad** (declared 1e-3) |
+  | `Lighter.accum` delta | **1.34e-12** |
+  | light energy delta where both arms agree the light is lit | **2.31e-7** (declared 1e-6) |
+  | lights-visible count per sampled frame | equal |
+  | opposite grid rotations, energy and toggle updates observed | both arms, six sampled frames |
+  | omni lights demonstrably affect the frame | Godot 1,074 changed samples of 32,400; TN 217 |
+  | silhouette covered-fraction per captured frame | **0.015494 / 0.015617 / 0.003241 / 0** |
+
+  The workload conformance holds: `withinTolerance: true`, `bufferHashesEqual`, `censusEqual`,
+  `fixtureHashEqual`, `lightsVisibleEqual`, `oppositeRotationsObserved {light, mesh}`,
+  `togglesObserved {godot, tn}`. The picture does not, so the comparator refuses the pair with
+  `TN_BENCH_LIGHTS_COVERAGE_DIVERGED:0 0.015494` and `…:1 0.015617` and the ratio is **withheld**.
+  `runCapturing` exited 2. The 0.01 coverage bound was declared before any comparison from the
+  premise that byte-identical geometry through the exported camera basis can only differ by
+  rasterizer edge effects; **that premise is what the retained data contradicts, and it is the open
+  question this slice leaves behind.**
+
+  The 24×15 coverage grids localise it exactly. 348 of 360 cells agree to the single 8×8 sample,
+  and the entire 502-sample signed difference is one blob at columns 11-14, rows 6-8 — one light
+  pool, not a silhouette. TN covers *more* dark area than Godot, so TN's omni lights the smaller
+  region. Two candidate causes, which the retained pair cannot separate:
+
+  1. **`light_size = 0.1`.** Godot 4 treats an omni light with a non-zero `light_size` as a sphere
+     light and evaluates its attenuation at `max(0, d - light_size)`; three's `PointLight` has no
+     such term. This is the one parameter of the pinned light with no counterpart, it makes Godot's
+     pool wider and brighter, and it is a feature difference rather than a defect. Leading
+     candidate, inferred from the two records plus the parameter's meaning — **not proved**.
+  2. **Rounding of the same falloff curve.** `omni_attenuation` → three's `decay` and `omni_range` →
+     `distance` map onto the identical `pow(clamp(1 - d/range, 0, 1), k)` function, so any
+     difference is implementation rounding rather than a different model.
+
+  The per-frame deltas argue against a plain warm-up transient and for a lit-configuration
+  difference: frames 0 and 1 read 0.0155, frame 60 reads 0.0032, and frame 119 reads **exactly
+  zero**. The first two are also bit-identical between the 2-frame and the 600-frame run, so the
+  difference is deterministic in the frame, not random. Settling either cause needs a probe that
+  varies `light_size` and so changes the pinned source — a different experiment key under §3, the
+  same shape as the culling family's occlusion-culling doubt — not a repair to this cell. The
+  bound is **not** loosened to make a pair pass, and no number here is a claimed win.
+
+  Two harness defects surfaced on the way and are fixed at their root, both confirmed red first:
+
+  - **The engine was stepping the workload as well as the arm.** `set_process(false)` before
+    `add_child` did not hold, and a 2-frame run then measured 5.4 rotations and 1.064 light accums
+    per frame instead of one — the counterpart's oracle would have been checking a state neither arm
+    rendered. `PROCESS_MODE_DISABLED` after the node is in the tree fixes it, and `_quiescent()`
+    now *proves* it by reading the rotations and accums across three presented frames with nothing
+    driving them, so a future regression is a named `TN_BENCH_GODOT_LIGHTS_WORKLOAD_NOT_QUIESCENT`
+    rather than a silently wrong fixture.
+  - **`_restore_initial_state` reset the rotations and the light flags but not the accums.** The
+    accums are the workload clock, so the scored interval started `warmup` advances in. The first
+    counterpart run saw frame 0 three advances in on the lights and one on the grids. One line,
+    and the closure comment says which member it is.
+
+  Three more of the same kind were caught before a single comparison, all by the arm's own oracle
+  check against the scene graph, and all now unit-proved without a GPU: the closed form scaled the
+  grid cell's *position* (it is a translation; the `2/s` scale applies to the offset under it); it
+  then omitted the rotater, which sits *above* the grid and so turns the cell position as well as
+  the offset; and `cullCapture` measured coverage against the *modal* luma, which on a scene that
+  is 91% boxes is a box rather than a background, so the counterpart read 0.077 where the pinned
+  arm read 0.911 of the same silhouette. `cullCapture` now takes the reference luma and reports
+  which one it used; the culling family keeps the modal default and its stated reason, and the
+  lights/meshes arm hands it the corner pixel its pinned counterpart already uses.
+
+  One comparison is excluded by cause and recorded rather than dropped: a light's world X column.
+  Godot's `OmniLight3D` global basis is **identity** under a parent scaled `2/s` — a headless probe
+  reads the cell and the `Lighter` above it both at `0.666667` while the light itself reports
+  `(1,0,0)`, with its origin composing correctly — and three's `matrixWorld` inherits the whole
+  parent chain, so the two arms differ by exactly `2/3`. An omni light has no orientation and this
+  cell's workload and picture do not depend on it, so the field is retained in both records and
+  named in `disclosed.lightAxisXNote` rather than compared. A spot cell, where the direction would
+  matter, is a different cell with a different argument to settle.
+
+  A disclosed authoring difference, not a conformance failure: at the mid-run counter Godot submits
+  **2 draw calls for 1,176 primitives** and TN submits **97 for 1,153**, because the pinned scene's
+  hundred identical-material boxes are merged by Godot's renderer while the counterpart arm authors
+  one `Mesh` per cell. Godot also reports 98 objects in frame of 100, the same
+  less-than-the-frustum doubt the culling family names for its `occlusionCulling: true` project
+  setting; nothing here resolves it.
+
+  `lights-compare.ts` is pure and unit-proved by
+  [engine-load-test-lights-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-lights-compare.spec.ts),
+  **27/27**. Each of the nine gates this slice added was confirmed **red** against the comparator
+  with that one check removed — buffer digest, census, visible-count equality, opposite rotations,
+  toggle observed, light effectiveness, blank capture, coverage, and the light-effectiveness probe
+  — so none of them is a check nothing exercises. The two closed-form tests carry hand-derived
+  values and both name the two mistakes that were actually made, so a third cannot pass unnoticed.
+  The eleven focused benchmark suites passed **185/185**, root
+  `pnpm exec tsc --noEmit -p tsconfig.json` and `pnpm exec biome check --diagnostic-level=error`
+  over `scripts/` and `examples/engine-load-test/` exited 0.
+
+  One shared-runner fix came out of it and is a real improvement beyond this family: `runCapturing`
+  now treats `ENGINE_LOAD_TEST_FAILED` as terminal. An arm that stopped with a named error printed no
+  report and the wait had no end of its own, so the first oracle disagreement cost a 900 s timeout
+  before anyone saw the message that explained it.
 - [ ] Retain a real hardware comparison for the Godot lights/meshes family.
+  **One real-GPU cell is retained, on both arms, and it is a refusal rather than a comparison.**
+  `artifacts/engine-load-test/lights-comparison.json` (local, ignored) holds the 600-frame pair
+  above: TN native **3.679 ms** completed-work mean against Godot native **0.583 ms**, both arms
+  draining once at the measurement boundary (`TN_BENCH_LIGHTS_WALL_SEMANTICS_MISMATCH` absent), and
+  `ratio: null` with `comparability: non-comparable`. The 2-frame validation pair that gated it is
+  retained beside it as `lights2-*-box-100-omni-10-slow.json` and
+  `lights-comparison-2frame-retained.json`, with its own single named failure.
+
+  Two caveats sit on the raw means, so neither is read as a speedup. The pair is refused, so no
+  ratio is computed at all; and the counterpart's own frame-interval distribution has a long tail —
+  p50 1.765 ms, p95 21.527 ms, p99 25.611 ms around a 3.679 ms mean, against Godot's p50 0.580 /
+  p95 0.652 / p99 0.924 around 0.583 — so its completed-work mean is tail-dominated and the honest
+  reading of that number is the p50, not the mean. The cadence rule does not accuse either arm
+  (the counterpart's frames spread over 1.8-25.6 ms rather than clustering on the 16.667 ms host
+  tick), and it was fixed on the way to say so honestly: with only one or two frames on the tick the
+  interquartile spread of that set is zero by construction, so a 2-frame validation was being read
+  as a blocked present. The rule now needs a cluster of at least eight.
+
+  Still open in this family, named: the twelve other upstream named variants, the coverage question
+  above, and any statement about TN's draw-call shape under a different authoring. No
+  `qualified` or `matched-task` pair exists for this family and no family-level claim is made.
 - [ ] Pass City conformance for both frozen fixture sizes and both movement states.
 - [ ] Retain a real hardware comparison for the City family.
 

@@ -7,6 +7,8 @@ import path from "node:path";
 
 const BEGIN = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END = "ENGINE_LOAD_TEST_JSON_END";
+/** What a native arm's top-level catch prints when it stopped, which is terminal by definition. */
+const FAILED = "ENGINE_LOAD_TEST_FAILED";
 
 export interface IDesktopLadder {
   frames: number;
@@ -76,7 +78,17 @@ export async function runCapturing(
     };
     const collect = (chunk: unknown): void => {
       output.push(String(chunk));
-      if (!settled && output.join("").includes(END)) {
+      const text = output.join("");
+      if (!settled && text.includes(FAILED)) {
+        // The arm reported why it stopped and printed no report. Waiting out the full timeout for a
+        // child that is never going to print one is the stall this whole bound exists to prevent.
+        stop();
+        settled = true;
+        clearTimeout(deadline);
+        reject(new Error(text.slice(text.indexOf(FAILED), text.indexOf(FAILED) + 2_000).trim()));
+        return;
+      }
+      if (!settled && text.includes(END)) {
         // Let the host print whatever trails the marker, then take the process down.
         setTimeout(() => {
           stop();

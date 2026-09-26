@@ -290,6 +290,8 @@ export async function buildCullScene(
 
 export interface ICullCapture {
   readonly backgroundLuma: number;
+  /** `modal-luma` or `corner-pixel`: which reference `coveredFraction` was measured against. */
+  readonly backgroundSource: "modal-luma" | "corner-pixel";
   /** `null` when there is no earlier captured frame, which is not the same as an unchanged frame. */
   readonly changedPixels: number | null;
   readonly coveredFraction: number;
@@ -304,17 +306,22 @@ export interface ICullCapture {
 const SAMPLE_STEP = 8;
 
 /**
- * Coverage from a readback of the captured frame itself, with the background taken as the most
- * common luma rather than one corner: the two arms' pixels arrive through different readback paths,
- * so a corner sample would not be a like-for-like reference. The sample lattice is the competitor's
- * own, so `coveredFraction` and `changedPixels` count the same pixels in both arms; the previous
- * frame enters as the luma this one is differenced against, never as its raw bytes.
+ * Coverage from a readback of the captured frame itself. The reference luma is the most common one by
+ * default, because in a sparse culling scene the objects — not the background — are the minority and
+ * a corner sample would not be a like-for-like reference across two readback paths.
+ *
+ * `reference` overrides that, and the lights/meshes family must: its scene is a tiled plane that
+ * covers 91% of the frame, so the *most common* luma there is a box, not the background, and a modal
+ * reference inverts the measure — the counterpart read 0.077 where the pinned arm read 0.911 of the
+ * same silhouette. Its pinned arm takes the corner pixel, so this one is handed the corner pixel too
+ * and the two numbers mean the same thing. The reference actually used is reported, never assumed.
  */
 export function cullCapture(
   pixels: Uint8Array,
   width: number,
   height: number,
   previous: Float32Array | null,
+  reference?: number,
 ): ICullCapture {
   const stride = Math.ceil((width * 4) / 256) * 256;
   const columns = Math.ceil(width / SAMPLE_STEP);
@@ -333,11 +340,18 @@ export function cullCapture(
       histogram[bucket] = (histogram[bucket] as number) + 1;
     }
   }
-  let backgroundBucket = 0;
-  for (let bucket = 1; bucket < 256; bucket++)
-    if ((histogram[bucket] as number) > (histogram[backgroundBucket] as number))
-      backgroundBucket = bucket;
-  const background = backgroundBucket / 255;
+  let background = 0;
+  let backgroundSource: "modal-luma" | "corner-pixel" = "modal-luma";
+  if (reference !== undefined) {
+    background = reference;
+    backgroundSource = "corner-pixel";
+  } else {
+    let backgroundBucket = 0;
+    for (let bucket = 1; bucket < 256; bucket++)
+      if ((histogram[bucket] as number) > (histogram[backgroundBucket] as number))
+        backgroundBucket = bucket;
+    background = backgroundBucket / 255;
+  }
   const cells = new Array<number>(GRID_COLUMNS * GRID_ROWS).fill(0);
   let covered = 0;
   let total = 0;
@@ -362,6 +376,7 @@ export function cullCapture(
   }
   return {
     backgroundLuma: background,
+    backgroundSource,
     changedPixels: changed,
     coveredFraction: covered / luma.length,
     coverageCells: cells,

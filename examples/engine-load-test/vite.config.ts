@@ -42,6 +42,15 @@ function fixtureJson(): string {
   return readFileSync(path, "utf8");
 }
 
+// The Godot lights/meshes fixture, exported by the pinned Godot arm for the same reason: the
+// `create_scattered` placements and each `Lighter`'s opening `accum` are not reimplemented here.
+function lightsFixtureJson(): string {
+  const path = process.env.TN_LIGHTS_FIXTURE;
+  if (path === undefined || path.trim() === "")
+    throw new Error("TN_LIGHTS_FIXTURE must name the Godot-exported lights/meshes fixture.");
+  return readFileSync(path, "utf8");
+}
+
 // The Bevy many-cubes fixture, exported by the pinned Bevy arm for the same reason: its Fibonacci
 // sphere placement and seeded mesh/material choice are not reimplemented here.
 function cubesFixtureJson(): string {
@@ -54,8 +63,9 @@ function cubesFixtureJson(): string {
 const native = process.env.TN_BENCH_TARGET === "native";
 const nativeMesh = process.env.TN_BENCH_TARGET === "native-mesh";
 const nativeCull = process.env.TN_BENCH_TARGET === "native-cull";
+const nativeLights = process.env.TN_BENCH_TARGET === "native-lights";
 const nativeCubes = process.env.TN_BENCH_TARGET === "native-cubes";
-const nativeTarget = native || nativeMesh || nativeCull || nativeCubes;
+const nativeTarget = native || nativeMesh || nativeCull || nativeLights || nativeCubes;
 
 export default defineConfig({
   build: nativeTarget
@@ -67,14 +77,16 @@ export default defineConfig({
               ? "src/cubes-native.ts"
               : nativeCull
                 ? "src/cull-native.ts"
-                : nativeMesh
-                  ? "src/mesh-native.ts"
-                  : "src/native.ts",
+                : nativeLights
+                  ? "src/lights-native.ts"
+                  : nativeMesh
+                    ? "src/mesh-native.ts"
+                    : "src/native.ts",
           ),
           // Per-target filename: the desktop and Android arms build from the same source, and a
           // shared name means one arm's rebuild silently replaces the bundle the other is running.
           fileName: () =>
-            `engine-load-test-${nativeCubes ? "cubes-" : nativeCull ? "cull-" : nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
+            `engine-load-test-${nativeCubes ? "cubes-" : nativeCull ? "cull-" : nativeLights ? "lights-" : nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
           formats: ["es"],
         },
         minify: false,
@@ -124,6 +136,15 @@ export default defineConfig({
             frames: integer("TN_CULL_FRAMES", 600),
             variant: process.env.TN_CULL_VARIANT ?? "basic_cull",
             warmup: integer("TN_CULL_WARMUP", 120),
+          }),
+        }
+      : {}),
+    ...(nativeLights
+      ? {
+          __TN_LIGHTS_CONFIG__: JSON.stringify({
+            fixtureJson: lightsFixtureJson(),
+            frames: integer("TN_LIGHTS_FRAMES", 600),
+            warmup: integer("TN_LIGHTS_WARMUP", 120),
           }),
         }
       : {}),

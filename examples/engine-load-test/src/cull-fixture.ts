@@ -248,7 +248,7 @@ function digest(value: unknown, code: string): string {
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /** The native JS host has no `atob`, and one decoder beats a browser check the host never takes. */
-function base64ToBytes(text: string, code: string): Uint8Array {
+export function base64ToBytes(text: string, code: string): Uint8Array {
   const padded = text.replace(/=+$/, "");
   if (padded.length % 4 === 1) fail(code, "not base64");
   const out = new Uint8Array(Math.floor((padded.length * 3) / 4));
@@ -277,7 +277,7 @@ function base64ToBytes(text: string, code: string): Uint8Array {
  * actually uploaded — so the digest covers what was rendered rather than what a name implies.
  */
 export function cullMeshBufferBytes(
-  mesh: Pick<ICullTopology, "indices" | "kind" | "vertices">,
+  mesh: Pick<ICullMeshSource, "indices" | "kind" | "vertices">,
   channels: ICullMeshChannels,
 ): Uint8Array {
   const header = new TextEncoder().encode(`${CULL_MESH_BUFFER_VERSION}\n${mesh.kind}\n`);
@@ -318,12 +318,16 @@ export interface ICullMeshChannels {
   readonly uvs: Float32Array;
 }
 
+/** The fields a channel decode needs. `godot-lights-meshes` carries the same four channels, so the
+ *  decoder and the digest are shared rather than forked per family. */
+export type ICullMeshSource = Pick<ICullTopology, "buffers" | "indices" | "kind" | "vertices">;
+
 /**
  * Decode and check. The declared counts and the decoded channel lengths are two independent
  * statements about the same buffers, and an index outside the vertex array is a buffer that would
  * read memory the mesh does not own — so both fail here, at the reader, rather than at the draw.
  */
-export function cullMeshChannels(mesh: ICullTopology): ICullMeshChannels {
+export function cullMeshChannels(mesh: ICullMeshSource): ICullMeshChannels {
   const code = "TN_BENCH_CULL_FIXTURE_BUFFERS";
   // Bytes per element: three binary32, three binary32, two binary32, one two's-complement int32.
   const channel = (name: keyof ICullMeshBuffers, elements: number, stride: number): Uint8Array => {
