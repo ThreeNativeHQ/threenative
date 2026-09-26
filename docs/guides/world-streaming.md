@@ -109,6 +109,8 @@ scene.add(world);
   residency has hysteresis and does not thrash on a cell boundary.
 - `budgets` are hard caps. A cap that is reached increments `stats().pressure` and skips the
   farthest cell; it never throws mid-frame.
+- `rebuildsPerUpdate` caps how many cell-asset batches one `update` refilters, nearest cell first;
+  it defaults to 16. A cell that did not get its turn keeps drawing what it has.
 - `createCollider`, `terrain` (tile size, resolution, LOD distances, skirt depth) and `loadModel`
   are optional overrides.
 
@@ -118,6 +120,23 @@ frame. Prop `maxDistance` batches are refiltered only after the follow point has
 the cull distance, and a chunk or asset load that completes after its cell was evicted is disposed
 rather than attached.
 
+A refilter that cannot change anything is skipped, not deferred. Every placement of a cell lies
+inside that cell's `cellSize` square, so the distances from where the batch was built and from where
+the follow point is now bracket every distance its placements can have had; when no `lods` switch or
+cull distance of the asset falls in that span, the same placements draw at the same levels, and the
+batch is measured against the position it was actually built from on the next move. What is genuinely
+stale is refiltered nearest cell first, `rebuildsPerUpdate` of them per frame, so a fast player
+streams a few stale-but-drawn batches rather than rebuilding every resident cell in one frame.
+
+An asset's `lods` are consumed with it: every level is loaded through the same loader, limiter and
+asset pipeline as the asset's own GLB, and each placement is drawn by the level its own distance
+selects — `lods[i]` beyond its `distance`, the asset's own GLB nearer than that. That is one
+`InstancedBatch` per level per cell, refiltered on the same trigger as `maxDistance` (an eighth of
+the nearest distance the batching can be crossed at, whichever boundary that is), so the switch is a
+hard one: nothing crossfades and a placement that crosses pops. A level that will not load falls
+back to the one above it and is counted like any other failed load, and a `lods` entry at or beyond
+`maxDistance` is never loaded at all, because an instance that far out is culled anyway.
+
 Read back what is happening with `stats()`:
 
 | Field | Meaning |
@@ -126,6 +145,7 @@ Read back what is happening with `stats()`:
 | `instances` | Placement instances the resident cells hold, before the `maxDistance` filter. |
 | `loadsInFlight` | Asset and chunk loads that have not settled. |
 | `evictions` | Cells released so far. |
+| `rebuilds` | Cell-asset batches refiltered so far, across every update. |
 | `failures` | Asset or chunk loads that rejected. |
 | `pressure` | Requests rejected by a budget: `cells`, `instances`, `bytes`. |
 

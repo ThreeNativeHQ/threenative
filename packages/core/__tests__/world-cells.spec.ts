@@ -282,6 +282,64 @@ function controlledLoader(): IControlledLoader {
   return api;
 }
 
+interface ILevelLoader {
+  readonly calls: string[];
+  readonly load: (url: string) => Promise<Object3D>;
+  /** The geometry handed out for the url ending in `fragment`, so a level is provable by identity. */
+  readonly geometryFor: (fragment: string) => BufferGeometry;
+}
+
+/**
+ * One model per url, each carrying a geometry the test can name, so which level a batch drew is
+ * proven by the shape it holds rather than by counting meshes. `refuse` is where a broken GLB is
+ * simulated.
+ */
+function levelLoader(refuse: (url: string) => boolean = () => false): ILevelLoader {
+  const calls: string[] = [];
+  const handed: Array<{ geometry: BufferGeometry; url: string }> = [];
+  return {
+    calls,
+    geometryFor: (fragment) => {
+      const entry = handed.find((candidate) => candidate.url.endsWith(fragment));
+      if (entry === undefined) throw new Error(`No model was loaded for '${fragment}'.`);
+      return entry.geometry;
+    },
+    load: (url) => {
+      calls.push(url);
+      if (refuse(url)) return Promise.reject(new Error(`${url} is offline`));
+      const group = new Group();
+      const geometry = new BoxGeometry(1, 1, 1);
+      geometry.name = url;
+      handed.push({ geometry, url });
+      group.add(new Mesh(geometry, new MeshBasicMaterial()));
+      return Promise.resolve(group);
+    },
+  };
+}
+
+/** The cell `1:1` batch of `asset` at `level`, the runtime's own name for it. */
+function levelMesh(world: WorldCells, asset: string, level: number): InstancedMesh | undefined {
+  return world.getObjectByName(`${cellKey(1, 1)}:${asset}:${String(level)}`) as
+    | InstancedMesh
+    | undefined;
+}
+
+/** Every instance the batches for `asset` draw, paired with how far it is from the follow point. */
+function drawnDistances(mesh: InstancedMesh, follow: { x: number; z: number }): number[] {
+  const matrix = new Matrix4();
+  const distances: number[] = [];
+  for (let index = 0; index < mesh.count; index += 1) {
+    mesh.getMatrixAt(index, matrix);
+    distances.push(
+      Math.hypot(
+        (matrix.elements[12] as number) - follow.x,
+        (matrix.elements[14] as number) - follow.z,
+      ),
+    );
+  }
+  return distances;
+}
+
 async function flush(rounds = 12): Promise<void> {
   for (let round = 0; round < rounds; round += 1)
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -679,8 +737,11 @@ describe("WorldCells", () => {
     world.update();
     await flush();
     expect(world.stats().residentKeys).toEqual([cellKey(0, 0), cellKey(2, 0)]);
-    expect(models.length).toBe(1);
-    const source = (models[0] as Group).children[0] as Mesh;
+    // Three models for two cells: the refused round took the asset's own shape and released the
+    // level that loaded beside it, and the retried round took one model per level. No cell loaded
+    // the asset twice.
+    expect(models.length).toBe(3);
+    const source = (models[1] as Group).children[0] as Mesh;
     const dispose = vi.spyOn(source.geometry, "dispose");
 
     // Past the hysteresis ring the first cell leaves; the second must keep drawing that geometry.
@@ -696,20 +757,21 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
-  it("rejects a load concurrency that could never start a load", async () => {
+  it("rejects a concurrency or refilter cap that could never start a load", async () => {
     stubFixtureFetch();
-    for (const concurrency of [0, -1, 1.5, Number.NaN])
-      await expect(
-        WorldCells.load({
-          budgets: { residentCells: 9, instances: 1_000_000, bytes: 1_000_000_000 },
-          concurrency,
-          follow: followAt(0, 0),
-          loadModel: controlledLoader().load,
-          ring: 1,
-          surface,
-          url: "/world/world.json",
-        }),
-      ).rejects.toThrow(/concurrency/u);
+    for (const option of ["concurrency", "rebuildsPerUpdate"] as const)
+      for (const value of [0, -1, 1.5, Number.NaN])
+        await expect(
+          WorldCells.load({
+            budgets: { residentCells: 9, instances: 1_000_000, bytes: 1_000_000_000 },
+            follow: followAt(0, 0),
+            loadModel: controlledLoader().load,
+            ring: 1,
+            surface,
+            url: "/world/world.json",
+            [option]: value,
+          }),
+        ).rejects.toThrow(new RegExp(option, "u"));
   });
 
   it("bounds model loads across every admitted cell, not per cell", async () => {
@@ -889,6 +951,275 @@ describe("WorldCells", () => {
     expect(world.stats().failures).toBe(4);
     expect(world.assetRefCounts()).toEqual({});
     expect(() => world.dispose()).not.toThrow();
+  });
+
+  it("draws a far placement with the package's own lod and a near one with the asset's glb", async () => {
+    // The follow point sits on cell (1,1)'s min corner, so the run reaches 83 m past it: past the
+    // asset's 60 m lod1 switch and inside its own range. Ring 0 keeps that one cell.
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const loader = levelLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    const lodDistance = manifest.assets.pine?.lods?.[0]?.distance as number;
+    const near = levelMesh(world, "pine", 0) as InstancedMesh;
+    const far = levelMesh(world, "pine", 1) as InstancedMesh;
+    expect(near.geometry).toBe(loader.geometryFor("pine.glb"));
+    expect(far.geometry).toBe(loader.geometryFor("pine_lod1.glb"));
+    // The whole run, split by each placement's own distance: no placement dropped, none doubled.
+    expect(near.count + far.count).toBe(85);
+    for (const distance of drawnDistances(near, follow.position))
+      expect(distance).toBeLessThanOrEqual(lodDistance);
+    for (const distance of drawnDistances(far, follow.position))
+      expect(distance).toBeGreaterThan(lodDistance);
+
+    // A lod beyond the asset's cull distance can never be drawn, so it is never even asked for.
+    expect(loader.calls.some((url) => url.includes("ground_cover_lod1"))).toBe(false);
+    world.dispose();
+  });
+
+  it("moves a placement's level once the follow point has crossed the switch", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const loader = levelLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+    expect((levelMesh(world, "pine", 1) as InstancedMesh).count).toBeGreaterThan(0);
+
+    // The cell centre is 45 m away — past the eighth of the 60 m switch the refilter waits for — and
+    // from there every placement in the cell is inside that switch.
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+
+    expect(levelMesh(world, "pine", 1)).toBeUndefined();
+    const near = levelMesh(world, "pine", 0) as InstancedMesh;
+    expect(near.geometry).toBe(loader.geometryFor("pine.glb"));
+    expect(near.count).toBe(85);
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("rebuilds nothing when no gate of a far cell's asset can have been crossed", async () => {
+    // `pine`'s only gate is its 60 m level switch, and every cell kept here sits 135 m or more from
+    // the follow point, so each cell's whole run draws with the lod and no move short of a cell
+    // boundary can move a placement across it.
+    stubManifestFetch({
+      ...manifest,
+      cells: manifest.cells
+        .filter((cell) => cell.x >= 1 && cell.z >= 1 && !(cell.x === 1 && cell.z === 1))
+        .map((cell) => ({
+          ...cell,
+          chunks: [],
+          runs: cell.runs.filter((run) => run.asset === "pine"),
+        })),
+    });
+    const follow = followAt(-96, -96);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 2,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    const before = world.stats().rebuilds;
+    const meshes = world.children.filter((child) => child instanceof InstancedMesh);
+    expect(before).toBe(0);
+    expect(world.getObjectByName("1:2:pine:1")).toBeDefined();
+    // The three cells ring 2 reaches from the extent's corner cell, one lod mesh each.
+    expect(world.stats().residentCells).toBe(3);
+    expect(meshes).toHaveLength(3);
+
+    // Past the eighth of the 60 m gate the old code refiltered every resident cell, for every
+    // asset, on this move alone.
+    follow.position.x = -104;
+    world.update();
+
+    expect(world.stats().rebuilds).toBe(before);
+    expect(world.children.filter((child) => child instanceof InstancedMesh)).toEqual(meshes);
+    world.dispose();
+  });
+
+  it("rebuilds only the cell whose gate the follow point crossed", async () => {
+    // Two cells one ring apart, both carrying the culled asset. Cell (1,1) holds the 26.25 m gate
+    // in its span; cell (2,1)'s nearest placement is 32 m out and the move only takes it further,
+    // so its whole run stays culled either way.
+    stubManifestFetch({
+      ...manifest,
+      cells: manifest.cells
+        .filter((cell) => (cell.x === 1 && cell.z === 1) || (cell.x === 2 && cell.z === 1))
+        .map((cell) => ({
+          ...cell,
+          chunks: [],
+          runs: cell.runs.filter((run) => run.asset === "ground_cover"),
+        })),
+    });
+    const follow = followAt(-32, -32);
+    const loader = levelLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    const near = levelMesh(world, "ground_cover", 0);
+    expect(near).toBeDefined();
+    expect(world.stats().rebuilds).toBe(0);
+
+    follow.position.x = -45;
+    follow.position.z = -45;
+    world.update();
+
+    // One cell-asset, the near one: the far cell's placements cannot have changed side of a gate.
+    expect(world.stats().rebuilds).toBe(1);
+    const rebuilt = levelMesh(world, "ground_cover", 0) as InstancedMesh;
+    expect(rebuilt).not.toBe(near);
+    // And it was refiltered from where the follow point is now, not from where it was.
+    for (const distance of drawnDistances(rebuilt, follow.position))
+      expect(distance).toBeLessThanOrEqual(26.25);
+    world.dispose();
+  });
+
+  it("refilters at most `rebuildsPerUpdate` cell-assets per update, and finishes them all", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-32, -32);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      rebuildsPerUpdate: 1,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+    expect(world.stats().rebuilds).toBe(0);
+
+    // 20 m east puts the 60 m level switch inside every resident cell's span, so all 27 cell-assets
+    // of the ring are stale at once.
+    follow.position.x = -12;
+    const perUpdate: number[] = [];
+    for (let step = 0; step < 60; step += 1) {
+      const before = world.stats().rebuilds;
+      world.update();
+      const done = world.stats().rebuilds - before;
+      perUpdate.push(done);
+      if (done === 0) break;
+    }
+
+    // One per update until the ring is drained, which takes more updates than the cap would allow in
+    // one — and the last update is the one that finds nothing left to do.
+    expect(perUpdate.length).toBeGreaterThan(3);
+    expect(perUpdate.at(-1)).toBe(0);
+    expect(perUpdate.slice(0, -1).every((count) => count === 1)).toBe(true);
+    // Drained: the stale-but-drawn batches were all replaced, and one more update changes nothing.
+    const settled = world.stats().rebuilds;
+    world.update();
+    expect(world.stats().rebuilds).toBe(settled);
+    // And the ring is correct again: nothing culled asset is left drawn past its cull distance.
+    const matrix = new Matrix4();
+    let drawn = 0;
+    world.traverse((object: Object3D) => {
+      if (!(object instanceof InstancedMesh) || !object.name.includes("ground_cover")) return;
+      for (let index = 0; index < object.count; index += 1) {
+        object.getMatrixAt(index, matrix);
+        expect(
+          Math.hypot(
+            (matrix.elements[12] as number) - follow.position.x,
+            (matrix.elements[14] as number) - follow.position.z,
+          ),
+        ).toBeLessThanOrEqual((manifest.assets.ground_cover?.maxDistance as number) + 1e-6);
+        drawn += 1;
+      }
+    });
+    expect(drawn).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("releases every level's geometry and material when its cell leaves", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const loader = levelLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    const lod0 = vi.spyOn(loader.geometryFor("pine.glb"), "dispose");
+    const lod1 = vi.spyOn(loader.geometryFor("pine_lod1.glb"), "dispose");
+    const meshes = vi.spyOn(InstancedMesh.prototype, "dispose");
+
+    follow.position.x = 100_000;
+    follow.position.z = 100_000;
+    world.update();
+    await flush();
+
+    expect(world.stats().residentKeys).toEqual([]);
+    expect(lod0).toHaveBeenCalledTimes(1);
+    expect(lod1).toHaveBeenCalledTimes(1);
+    expect(meshes).toHaveBeenCalled();
+    expect(world.assetRefCounts()).toEqual({});
+    world.dispose();
+  });
+
+  it("falls back to the level above when a lod glb will not load", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const loader = levelLoader((url) => url.includes("pine_lod1"));
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    // Counted as one refused load, and the asset is not refused: both levels draw with the asset's
+    // own shape, near and far together, and every placement in the run is still there.
+    expect(world.stats().failures).toBe(1);
+    const lod0 = levelMesh(world, "pine", 0) as InstancedMesh;
+    const lod1 = levelMesh(world, "pine", 1) as InstancedMesh;
+    expect(lod0.geometry).toBe(loader.geometryFor("pine.glb"));
+    expect(lod1.geometry).toBe(loader.geometryFor("pine.glb"));
+    expect(lod0.count + lod1.count).toBe(85);
+    world.dispose();
   });
 
   it("tears each streamed shape down once, however many cells and batches held it", async () => {
