@@ -1,5 +1,5 @@
 import { RippleField, Scene, SpectralOcean, WaterSurface3D } from "@threenative/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createClearwater } from "../template-assets/clearwater/src/clearwater.js";
 import { ClearwaterDemo } from "../template-assets/clearwater/src/clearwaterDemo.js";
 import { createClearwaterAppearance } from "../template-assets/clearwater/src/render/clearwater.js";
@@ -67,4 +67,59 @@ describe("Clearwater graph construction", () => {
       ocean.detach();
     }
   });
+});
+
+// Keep real fields/material graphs; only the renderer context and asynchronous FFT readback are
+// substituted. This is a CPU sampling contract, not a claim that a renderer or GPU was exercised.
+function sampledWater() {
+  const ctx = {
+    renderer: { kind: "webgpu", raw: { isWebGPURenderer: true } },
+    every: () => ({ cancel: () => {} }),
+    beforeRender: () => () => {},
+    add: () => {},
+  } as unknown as Parameters<typeof createClearwater>[0];
+  const water = createClearwater(ctx, {
+    size: 128,
+    level: 2,
+    resolution: 32,
+    rippleResolution: 16,
+    rippleSize: 8,
+    reflection: false,
+    caustics: false,
+  });
+  vi.spyOn(water.ocean, "sampleHeight").mockReturnValue({ height: 0.25, staleFrames: 2 });
+  water.ripples.height.fill(0.125);
+  return water;
+}
+
+it.each([
+  { name: "interior", x: 0, z: 0, height: 2.375 },
+  { name: "west edge", x: -3.5, z: 0, height: 2.3125 },
+  { name: "east edge", x: 3.5, z: 0, height: 2.3125 },
+  { name: "north edge", x: 0, z: 3.5, height: 2.3125 },
+  { name: "south edge", x: 0, z: -3.5, height: 2.3125 },
+  { name: "outside patch", x: 5, z: 0, height: 2.25 },
+])("matches the rendered ripple fade at $name", ({ x, z, height }) => {
+  const water = sampledWater();
+  try {
+    // Halfway through the shader's two-texel band, smoothstep is 0.5, not full amplitude.
+    expect(water.sampleHeight(x, z)?.height).toBeCloseTo(height, 12);
+    expect(water.sampleHeight(x, z)?.staleFrames).toBe(2);
+  } finally {
+    water.dispose();
+  }
+});
+
+it("keeps the sampled edge fade aligned after following a character", () => {
+  const water = sampledWater();
+  try {
+    water.follow(16, -16);
+    water.ripples.height.fill(0.125);
+    const { centerX, centerZ } = water.ripples;
+    expect(water.sampleHeight(centerX + 3.5, centerZ)?.height).toBeCloseTo(2.3125, 12);
+    expect(water.sampleHeight(centerX, centerZ)?.height).toBeCloseTo(2.375, 12);
+    expect(water.sampleHeight(0, 0)?.height).toBeCloseTo(2.25, 12);
+  } finally {
+    water.dispose();
+  }
 });
