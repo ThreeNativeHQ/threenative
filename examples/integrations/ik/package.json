@@ -1,6 +1,10 @@
 {
-  "name": "threenative-integration-ik", "version": "0.0.0", "private": true,
-  "type": "module", "license": "MIT", "engines": {"node": ">=22.16.0"},
+  "name": "threenative-integration-ik",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22.16.0" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test:contracts": "node --experimental-strip-types --test tests/contracts.test.mjs",
@@ -11,5 +15,5 @@
     "three": "0.185.1",
     "closed-chain-ik": "git+https://github.com/gkjohnson/closed-chain-ik-js.git#38a7e273082311e69c84c35a7c8f64e510e188a5"
   },
-  "devDependencies": {"typescript": "5.9.3", "@types/three": "0.185.3", "@types/node": "24.3.0"}
+  "devDependencies": { "typescript": "5.9.3", "@types/three": "0.185.3", "@types/node": "24.3.0" }
 }

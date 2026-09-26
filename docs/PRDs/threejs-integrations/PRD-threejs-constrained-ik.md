@@ -26,8 +26,8 @@ Executable donor tests cover translated/scaled parents, reachable/unreachable ta
 
 ### Phase 2 — constrained pose adapter
 - [ ] Add failing contact, length, orientation and coordinate-space regression tests.
-- [ ] Implement bounded pose solving and explicit residual/status reporting.
-  Source is present; real donor execution is required before this behavior claim is checked.
+- [x] Implement bounded pose solving and explicit residual/status reporting.
+  Five pinned donor/Three integration tests now pass, including reachable/unreachable residuals, invalid input, disposal, zero blend and the CCD baseline. Coupled-linkage admission remains open.
 - [ ] Pass invalid-input, cloning, blending and idempotent-disposal tests.
 - [x] Strict-check `src/pose.ts` with locally available TypeScript 5.8.3: exit 0.
 
@@ -56,6 +56,12 @@ Executable donor tests cover translated/scaled parents, reachable/unreachable ta
 ## Verification
 
 Executed: dependency-free Node tests 9/9 and strict checking of pose.ts with TypeScript 5.8.3. The complete integration package pins TypeScript 5.9.3 and exposes `npm test` (strict build, contracts, real donor tests). Dependency downloads are unavailable locally, so donor execution and full build are not reported green. A focused PR workflow runs that exact command; its observed result is separate evidence. Formal capability tools, lockfile, license audit, Biome, full repository suite, independent review and every GPU/native lane remain unrun. Keep this PR draft.
+
+## CI repair verification — 2026-09-26
+
+`npm test` passes with the pinned dependencies: strict TypeScript 5.9.3 build, 9 numerical contracts and 5 real closed-chain-ik/Three integration tests (14 passed, 0 failed). The formatted source was retested on Node 22.16.0. Biome 1.9.4 checked all 6 package source/config/test files with the unchanged repository rules and exited 0 after its mechanical formatting repair.
+
+No solver behavior, assertion, tolerance or lint policy was weakened. This supersedes the earlier local dependency limitation; it does not establish coupled-linkage value over CCD, full animated traces, performance, browser/native/Android rendering or the complete repository suite. Those gates remain open and the PRD remains partial.
 
 ## References
 
