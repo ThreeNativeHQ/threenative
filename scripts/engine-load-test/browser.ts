@@ -32,10 +32,31 @@ const MIME: Record<string, string> = {
 };
 
 export interface IDriveOptions {
+  args?: readonly string[];
+  capturePath?: string;
+  captureSelector?: string;
+  env?: NodeJS.ProcessEnv;
+  errorGlobal?: string;
   onConsole?: (text: string) => void;
+  reportGlobal?: string;
   timeoutMs: number;
   url: string;
 }
+
+/**
+ * The independent-mesh family measures what the GPU actually did, so its launch carries the two
+ * arguments the PRD-117 arms deliberately leave out. Measured on this repository's RTX 2080 under
+ * Xvfb, `navigator.gpu.requestAdapter()` reports `vendor: nvidia, architecture: turing` with
+ * `--enable-features=Vulkan` and only the stock set without it, and `adapter.limits.maxBufferSize`
+ * reads 4294967292 rather than 1073741824. `--ozone-platform=x11` is what makes Chromium use that
+ * X display's Vulkan path at all. A run that reaches SwiftShader errors out in the collector rather
+ * than publishing a software rasteriser's numbers.
+ */
+export const MESH_BROWSER_ARGS = [
+  ...BENCH_BROWSER_ARGS,
+  "--ozone-platform=x11",
+  "--enable-features=Vulkan",
+] as const;
 
 // Playwright's bundled Chromium has no hardware WebGPU here; a system Chromium does. Both arms
 // run in whichever binary this resolves to, so neither can be handed a better one than the other.
@@ -55,7 +76,8 @@ export function benchBrowserPath(): string | undefined {
 
 export async function driveBenchmarkPage(options: IDriveOptions): Promise<unknown> {
   const browser = await chromium.launch({
-    args: [...BENCH_BROWSER_ARGS],
+    args: [...BENCH_BROWSER_ARGS, ...(options.args ?? [])],
+    env: options.env,
     executablePath: benchBrowserPath(),
     headless: false,
   });
@@ -66,15 +88,28 @@ export async function driveBenchmarkPage(options: IDriveOptions): Promise<unknow
     await page.goto(options.url, { timeout: 120_000, waitUntil: "load" });
     const deadline = Date.now() + options.timeoutMs;
     while (Date.now() < deadline) {
-      const state = (await page.evaluate(() => {
-        const scope = globalThis as unknown as Record<string, unknown>;
-        return {
-          error: scope.__ENGINE_LOAD_TEST_ERROR__ ?? null,
-          report: scope.__ENGINE_LOAD_TEST__ ?? null,
-        };
-      })) as { error: unknown; report: unknown };
+      const state = (await page.evaluate(
+        ({ errorGlobal, reportGlobal }) => {
+          const scope = globalThis as unknown as Record<string, unknown>;
+          return {
+            error: scope[errorGlobal] ?? null,
+            report: scope[reportGlobal] ?? null,
+          };
+        },
+        {
+          errorGlobal: options.errorGlobal ?? "__ENGINE_LOAD_TEST_ERROR__",
+          reportGlobal: options.reportGlobal ?? "__ENGINE_LOAD_TEST__",
+        },
+      )) as { error: unknown; report: unknown };
       if (state.error !== null) throw new Error(`TN_BENCH_ARM_FAILED: ${String(state.error)}`);
-      if (state.report !== null) return state.report;
+      if (state.report !== null) {
+        // Outside the scored interval: the frame is evidence, never a thing the arm measured.
+        if (options.capturePath !== undefined)
+          await page
+            .locator(options.captureSelector ?? "canvas")
+            .screenshot({ path: options.capturePath });
+        return state.report;
+      }
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
     throw new Error(`TN_BENCH_TIMEOUT: no report after ${options.timeoutMs} ms at ${options.url}`);

@@ -37,6 +37,7 @@ async function main(): Promise<void> {
       for (let repeat = 0; repeat < config.repeats; repeat += 1) {
         console.log(`begin ${mode}@${objectCount}`);
         harness.setRung({ mode, objectCount });
+        const fixtureHash = await harness.fixtureHash();
         if (mode === "L3") {
           harness.beginCollapse();
           for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle++) {
@@ -98,12 +99,7 @@ async function main(): Promise<void> {
           drawCalls,
           frameMs,
           stepMs,
-          // No `fixtureHash` here: the host's JS runtime exposes no `crypto` global at all (it
-          // polyfills `fetch`, `TextEncoder` and streams, and nothing else — `packages/runtime-native/src`
-          // has no `crypto` binding), so `crypto.subtle` is undefined and the one digest this
-          // repository owns throws. Omitting the field keeps the rung report valid; a v2 comparison
-          // that requires it fails on the missing value, which is the honest verdict until the host
-          // carries WebCrypto.
+          fixtureHash,
           mode,
           objectCount,
           positionHash: harness.positionHash,

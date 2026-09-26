@@ -33,29 +33,37 @@ function modes(): string[] {
 }
 
 const native = process.env.TN_BENCH_TARGET === "native";
+const nativeMesh = process.env.TN_BENCH_TARGET === "native-mesh";
 
 export default defineConfig({
-  build: native
-    ? {
-        lib: {
-          entry: resolve(import.meta.dirname, "src/native.ts"),
-          // Per-target filename: the desktop and Android arms build from the same source, and a
-          // shared name means one arm's rebuild silently replaces the bundle the other is running.
-          fileName: () => `engine-load-test-${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
-          formats: ["es"],
-        },
-        minify: false,
-        rollupOptions: { output: { codeSplitting: false } },
-        target: "es2022",
-      }
-    : {
-        rollupOptions: {
-          input: {
-            loadTest: resolve(import.meta.dirname, "index.html"),
-            projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
+  build:
+    native || nativeMesh
+      ? {
+          lib: {
+            entry: resolve(
+              import.meta.dirname,
+              nativeMesh ? "src/mesh-native.ts" : "src/native.ts",
+            ),
+            // Per-target filename: the desktop and Android arms build from the same source, and a
+            // shared name means one arm's rebuild silently replaces the bundle the other is running.
+            fileName: () =>
+              `engine-load-test-${nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
+            formats: ["es"],
+          },
+          minify: false,
+          rollupOptions: { output: { codeSplitting: false } },
+          target: "es2022",
+        }
+      : {
+          rollupOptions: {
+            input: {
+              loadTest: resolve(import.meta.dirname, "index.html"),
+              meshPlain: resolve(import.meta.dirname, "mesh-plain.html"),
+              meshTn: resolve(import.meta.dirname, "mesh-tn.html"),
+              projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
+            },
           },
         },
-      },
   define: {
     // The native host has no `navigator`, so the target is stamped at build time. `--arm` on the
     // collector never sets it: the arm a report claims comes from the binary that ran.
@@ -70,6 +78,12 @@ export default defineConfig({
       modes: modes(),
       repeats: integer("TN_BENCH_REPEATS", 3),
       warmup: integer("TN_BENCH_WARMUP", 120),
+    }),
+    __TN_MESH_CONFIG__: JSON.stringify({
+      count: integer("TN_MESH_COUNT", 1000),
+      frames: integer("TN_MESH_FRAMES", 600),
+      variant: process.env.TN_MESH_VARIANT ?? "rotating",
+      warmup: integer("TN_MESH_WARMUP", 120),
     }),
   },
 });

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import {
   hashServedModuleGraph,
   hashWorkloadModuleGraph,
   isBenchmarkWorkloadModule,
+  sha256,
 } from "../../examples/engine-load-test/src/identity.js";
 import {
   canonicalCubeFixtureBytes,
@@ -311,6 +313,36 @@ describe("engine load test workload", () => {
     expect(createLcg()()).toBe(first);
   });
 
+  it("hashes fixture bytes in a native host without WebCrypto", async () => {
+    const fixture = createPlacements(1024);
+    const browserHash = await cubeFixtureHash(fixture);
+    const crypto = globalThis.crypto;
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: undefined });
+    try {
+      for (const length of [0, 1, 3, 55, 56, 63, 64, 65, 127, 128, 129, 4096]) {
+        const bytes = Uint8Array.from({ length }, (_, index) => (index * 37 + 11) & 255);
+        expect(await sha256(bytes)).toBe(createHash("sha256").update(bytes).digest("hex"));
+      }
+      expect(await cubeFixtureHash(fixture)).toBe(browserHash);
+    } finally {
+      Object.defineProperty(globalThis, "crypto", { configurable: true, value: crypto });
+    }
+  });
+
+  it("keeps the Godot fixture header byte-identical to the shared cube contract", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "benchmark/godot-load-test/load_test.gd"),
+      "utf8",
+    );
+    const declaration = source.match(/const FIXTURE_HEADER := \(([\s\S]*?)^\)/mu)?.[1];
+    if (declaration === undefined) throw new Error("Godot fixture header missing");
+    const godotHeader = [...declaration.matchAll(/"(?:\\.|[^"\\])*"/gu)]
+      .map(([literal]) => JSON.parse(literal) as string)
+      .join("");
+    const bytes = canonicalCubeFixtureBytes([]);
+    expect(godotHeader).toBe(new TextDecoder().decode(bytes.subarray(0, bytes.length - 4)));
+  });
+
   it("should place cubes identically on every call so both arms hash the same scene", () => {
     expect(positionHash(createPlacements(1024))).toBe(positionHash(createPlacements(1024)));
     expect(positionHash(createPlacements(1024))).not.toBe(positionHash(createPlacements(256)));
@@ -354,8 +386,8 @@ describe("engine load test workload", () => {
       ).toContain("fixtureHash (repeats disagree within an arm)");
     }
 
-    // The Godot arm emits no full-fixture identity and the native arm cannot produce one, so the v2
-    // gate refuses a rung that is missing it — on either arm, or on one repeat of a pair.
+    // Legacy records may omit the full identity even though current Godot/native sources emit it;
+    // the v2 gate refuses a missing value on either arm or one repeat of a pair.
     const legacy = report({ arm: "godot-web", engine: { name: "godot", version: "4.7.1" } });
     expect(checkEquivalence(left, legacy, strict).map((row) => row.field)).toContain(
       "fixtureHash (absent on a required arm)",

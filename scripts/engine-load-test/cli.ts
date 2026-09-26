@@ -1,12 +1,23 @@
 // `pnpm bench:engines` — PRD-117's entry point. Opt-in by construction: nothing here is wired
 // into `pnpm test`, and the Godot arms are the only thing that needs Godot installed.
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
-import { driveBenchmarkPage, serveDirectory, startProcess, waitForUrl } from "./browser.js";
+import {
+  MESH_BROWSER_ARGS,
+  driveBenchmarkPage,
+  serveDirectory,
+  startProcess,
+  waitForUrl,
+} from "./browser.js";
+import { writeCampaignReport } from "./bundle.js";
+import { compareMeshRuns, readMeshRun } from "./mesh-compare.js";
+import { buildDraftPlan } from "./plan.js";
 import {
   BenchError,
   type IPerformanceBaseline,
@@ -22,15 +33,17 @@ import {
   renderArmMarkdown,
   renderComparisonMarkdown,
   renderPerformanceCheck,
+  requireObject,
 } from "./report.js";
 import { runAndroidArm } from "./run-android.js";
-import { runGodotDesktop, runTnDesktop } from "./run-desktop.js";
+import { runCapturing, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
 const TN_PORT = 5199;
 const GODOT_PORT = 5198;
+const MESH_PORT = 5197;
 const DEFAULT_LANE_MANIFEST = path.join(repoRoot, "scripts/performance-regression/lanes.json");
 const execFileAsync = promisify(execFile);
 
@@ -120,6 +133,217 @@ async function runGodotWeb(options: ILadderOptions): Promise<IRunReport> {
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+}
+
+/** Chromium's own `GPUAdapterInfo` field names, which a software adapter is recognisable by. */
+const SOFTWARE_ADAPTER =
+  /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
+
+function adapterText(adapter: unknown): string {
+  if (typeof adapter !== "object" || adapter === null) return "";
+  return Object.values(adapter)
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+}
+
+/**
+ * A smoke run that cannot name its GPU is not a slow run, it is an unmeasured one: Chromium will
+ * answer from SwiftShader without erroring, and the retained mean would be a CPU rasteriser's.
+ */
+function requireHardwareAdapter(adapter: unknown): Record<string, string | null> {
+  if (typeof adapter !== "object" || adapter === null)
+    throw new BenchError("TN_BENCH_ADAPTER_UNREPORTED", "the run reported no adapter identity");
+  const fields = adapter as Record<string, unknown>;
+  const software = adapterText(adapter);
+  if (software.length === 0 || fields.vendor === null || fields.architecture === null)
+    throw new BenchError(
+      "TN_BENCH_ADAPTER_UNREPORTED",
+      "the run reported no vendor/architecture; refusing to record a run with no GPU identity",
+    );
+  const match = software.match(SOFTWARE_ADAPTER);
+  if (match !== null)
+    throw new BenchError(
+      "TN_BENCH_SOFTWARE_ADAPTER",
+      `the run reached ${match[0]}, not hardware; its mean is a CPU rasteriser's`,
+    );
+  return fields as Record<string, string | null>;
+}
+
+async function sourceIdentity(): Promise<{ commit: string; dirty: boolean }> {
+  const { stdout: commit } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
+  const { stdout: changes } = await execFileAsync(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=no"],
+    { cwd: repoRoot },
+  );
+  return { commit: commit.trim(), dirty: changes.trim().length > 0 };
+}
+
+/** The host binary is the native arm's build lock: its bytes decide which engine produced a number. */
+async function fileIdentity(file: string): Promise<{ bytes: number; sha256: string }> {
+  const bytes = await readFile(file);
+  return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
+
+async function runMeshArm(arm: string): Promise<void> {
+  if (arm !== "plain-three-web" && arm !== "tn-web" && arm !== "tn-desktop")
+    throw new BenchError("TN_BENCH_BAD_ARM", `unknown mesh arm ${arm}`);
+  const variant = flag("variant") ?? "rotating";
+  if (
+    ![
+      "static",
+      "rotating",
+      "rotating-projection-off",
+      "rotating-instanced",
+      "rotating-64-materials",
+    ].includes(variant)
+  )
+    throw new BenchError("TN_BENCH_BAD_VARIANT", `unknown mesh variant ${variant}`);
+  const positive = (name: string, fallback: number, minimum: number): number => {
+    const value = Number(flag(name) ?? fallback);
+    if (!Number.isInteger(value) || value < minimum)
+      throw new BenchError("TN_BENCH_BAD_PARAM", `${name} must be an integer >= ${minimum}`);
+    return value;
+  };
+  const count = positive("count", 1000, 1);
+  const frames = positive("frames", 600, 1);
+  const warmup = positive("warmup", 120, 0);
+  // Both mesh arms paint into a window. On a headless Linux box that window is the private Xvfb
+  // `sh scripts/xvfb.sh` starts, and Chromium reaches the same NVIDIA Vulkan adapter under it.
+  const display = process.env.TN_BENCH_DISPLAY ?? process.env.DISPLAY ?? "";
+  if (display.length === 0)
+    throw new BenchError(
+      "TN_BENCH_DISPLAY_MISSING",
+      "set TN_BENCH_DISPLAY (or run under `sh scripts/xvfb.sh`) to name a real X display",
+    );
+  const { WAYLAND_DISPLAY: _dropped, ...inherited } = process.env;
+  const env = { ...inherited, DISPLAY: display };
+  const nativeBinary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
+  const file = path.resolve(repoRoot, flag("out") ?? `artifacts/engine-load-test/mesh-${arm}.json`);
+  let result: unknown;
+  if (arm === "tn-desktop") {
+    if (!existsSync(nativeBinary))
+      throw new BenchError("TN_BENCH_NATIVE_HOST_MISSING", `native host missing: ${nativeBinary}`);
+    await execFileAsync("pnpm", ["--filter", "threenative-engine-load-test", "build"], {
+      cwd: repoRoot,
+      env: {
+        ...env,
+        TN_BENCH_TARGET: "native-mesh",
+        TN_BENCH_PLATFORM: "desktop",
+        TN_MESH_COUNT: String(count),
+        TN_MESH_FRAMES: String(frames),
+        TN_MESH_VARIANT: variant,
+        TN_MESH_WARMUP: String(warmup),
+      },
+    });
+    result = await runCapturing(
+      nativeBinary,
+      [
+        "run",
+        path.join(repoRoot, "examples/engine-load-test/dist/engine-load-test-mesh-desktop.js"),
+        "--width",
+        String(1920),
+        "--height",
+        String(1080),
+        "--no-vsync",
+      ],
+      { cwd: repoRoot, env: { ...env, SDL_VIDEODRIVER: "x11" } },
+    );
+  } else {
+    await execFileAsync("pnpm", ["--filter", "threenative-engine-load-test", "build"], {
+      cwd: repoRoot,
+    });
+    const dist = path.join(repoRoot, "examples/engine-load-test/dist");
+    const server = await serveDirectory(dist, MESH_PORT);
+    try {
+      const page = arm === "plain-three-web" ? "mesh-plain.html" : "mesh-tn.html";
+      const params = new URLSearchParams({
+        count: String(count),
+        frames: String(frames),
+        variant,
+        warmup: String(warmup),
+      });
+      const url = `http://127.0.0.1:${MESH_PORT}/${page}?${params}`;
+      await waitForUrl(url, 60_000);
+      result = await driveBenchmarkPage({
+        args: MESH_BROWSER_ARGS,
+        capturePath: file.replace(/\.json$/, ".png"),
+        captureSelector: "#stage",
+        env,
+        errorGlobal: "__ENGINE_MESH_BENCH_ERROR__",
+        onConsole: (message) => process.stderr.write(`[${arm}] ${message}\n`),
+        reportGlobal: "__ENGINE_MESH_BENCH__",
+        timeoutMs: Math.max(600_000, (frames + warmup) * 500),
+        url,
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+  const output = requireObject(result, "meshResult");
+  if (output.arm !== arm || output.count !== count || output.variant !== variant)
+    throw new BenchError("TN_BENCH_ARM_MISMATCH", "mesh result did not match the request");
+  const adapter = requireHardwareAdapter(output.adapter);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    `${JSON.stringify(
+      {
+        ...output,
+        capture:
+          arm === "tn-desktop" ? null : path.relative(repoRoot, file.replace(/\.json$/, ".png")),
+        identity: {
+          adapter,
+          // The native host is not a browser: it never saw the Chromium arguments, and a record
+          // that listed them would claim a launch this arm did not have.
+          browserArgs: arm === "tn-desktop" ? null : [...MESH_BROWSER_ARGS],
+          display,
+          ...(arm === "tn-desktop"
+            ? {
+                nativeHost: {
+                  path: path.relative(repoRoot, nativeBinary),
+                  ...(await fileIdentity(nativeBinary)),
+                },
+              }
+            : {}),
+          ...(await sourceIdentity()),
+        },
+        profile: "smoke",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  process.stdout.write(`wrote smoke result: ${file}\n`);
+}
+
+async function compareMeshArms(): Promise<void> {
+  const baselinePath = flag("mesh-compare");
+  const candidatePath = flag("mesh-against");
+  if (baselinePath === undefined || candidatePath === undefined)
+    throw new BenchError(
+      "TN_BENCH_MESH_COMPARE_ARGS",
+      "--mesh-compare <baseline.json> also needs --mesh-against <candidate.json>",
+    );
+  const summary = compareMeshRuns(
+    await readMeshRun(path.resolve(repoRoot, baselinePath)),
+    await readMeshRun(path.resolve(repoRoot, candidatePath)),
+    { baseline: baselinePath, candidate: candidatePath },
+  );
+  const file = path.resolve(
+    repoRoot,
+    flag("out") ?? "artifacts/engine-load-test/mesh-comparison.json",
+  );
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(summary, null, 2)}\n`);
+  const { arms } = summary;
+  process.stdout.write(
+    `independent meshes ${summary.variant}@${summary.count} on ${summary.adapter.vendor}/${summary.adapter.architecture}, three r${summary.threeRevision}, fixture ${summary.fixtureHash.slice(0, 12)}\n` +
+      `  ${arms.baseline.arm.padEnd(16)} ${arms.baseline.meanMs.toFixed(3)} ms  p50 ${arms.baseline.frameP50Ms?.toFixed(3) ?? "-"}  draws ${arms.baseline.drawCalls ?? "-"}  tris ${arms.baseline.triangles ?? "-"}\n` +
+      `  ${arms.candidate.arm.padEnd(16)} ${arms.candidate.meanMs.toFixed(3)} ms  p50 ${arms.candidate.frameP50Ms?.toFixed(3) ?? "-"}  draws ${arms.candidate.drawCalls ?? "-"}  tris ${arms.candidate.triangles ?? "-"}\n` +
+      `  baseline/candidate mean ratio ${summary.meanRatioBaselineOverCandidate.toFixed(3)}x over ${summary.blocks} smoke block: no supported verdict\n` +
+      `wrote ${path.relative(repoRoot, file)}\n`,
+  );
 }
 
 async function loadArm(arm: string): Promise<IRunReport> {
@@ -344,12 +568,39 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --mesh-arm <plain-three-web|tn-web|tn-desktop> [--count N --variant name --frames N --warmup N --out file.json]  # production-build smoke on the named GPU; needs TN_BENCH_DISPLAY or `sh scripts/xvfb.sh`\n       pnpm bench:engines --mesh-compare <baseline.json> --mesh-against <candidate.json> [--out mesh-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --plan --suite cross-engine --out <bundle-dir>  # writes a draft plan only\n       pnpm bench:engines --report-html <bundle-dir>  # partial bundles render with exit 2\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 
 async function main(): Promise<void> {
   await mkdir(artifactRoot, { recursive: true });
+  if (process.argv.includes("--plan")) {
+    if (flag("suite") !== "cross-engine" || flag("out") === undefined)
+      throw new BenchError(
+        "TN_BENCH_BAD_PLAN",
+        "--plan requires --suite cross-engine --out <bundle-dir>",
+      );
+    const dir = path.resolve(repoRoot, flag("out") as string);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "plan.json"), `${JSON.stringify(buildDraftPlan(), null, 2)}\n`, {
+      flag: "wx",
+    });
+    process.stdout.write(`wrote draft plan: ${dir}/plan.json\n`);
+    return;
+  }
+  const reportDir = flag("report-html");
+  if (reportDir !== undefined) {
+    const dir = path.resolve(repoRoot, reportDir);
+    const result = await writeCampaignReport(dir);
+    process.stdout.write(
+      `wrote ${dir}/report.html, results.json, results.csv, checksums.sha256 (${result.runs} runs)\n`,
+    );
+    if (result.partial) process.exitCode = 2;
+    return;
+  }
+  const meshArm = flag("mesh-arm");
+  if (meshArm !== undefined) return runMeshArm(meshArm);
+  if (flag("mesh-compare") !== undefined) return compareMeshArms();
   if (process.argv.includes("--regression-collection")) return runRegressionCollectionCommand();
   if (process.argv.includes("--regression")) return runRegressionCommand();
   const checkReport = flag("check-report");

@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 box 1 verified (Godot binary pin); remaining phases are specification only and no new benchmark results are claimed.
+**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks; no Bevy, Godot, fox, City or publication-grade cross-engine result is claimed.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -253,14 +253,99 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 
 - [x] Resolve the Godot engine binary pin and verify its compatibility with the locked benchmark sources. Godot `4.7.1.stable.official.a13da4feb`, Linux x86_64; installed binary SHA-256 `32f8d7596c4b41185512b1c49d69f2da3be018fd784a53e349fa92a98a97bcde`, identical to the extracted [official release zip](https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip), whose SHA-512 matches the release manifest. Source tag commit `a13da4feb8d8aefc283c3763d33a2f170a18d541`. At locked benchmark commit `b059e38a`, `godot --headless --path artifacts/engine-load-test/sources/godot-benchmarks --import` and one culling and one lights/meshes benchmark each exit 0. The required families parse without errors; an optional unbuilt C++ extension reports import errors. Headless uses a dummy rasterizer, so GPU throughput remains unverified.
 - [ ] Record the full source/build/asset lock, including required asset attribution.
+  The GitHub repository API now resolves the pinned Bevy `v0.19.0` commit to concrete blobs:
+  `many_cubes.rs` Git blob `04a8f87b60fb2acc830fc650571ca97da3a7d9d7`, `many_foxes.rs`
+  `cdce2603d1dc957983ed3f603bd165da1b3e2a2d`, and `Fox.glb`
+  `1ef5c0d05658caea339680fe581aa2c8302b3365` (162,852 bytes). These Git blob SHA-1
+  identifiers are source pins, **not** the required SHA-256 asset digest. The pinned
+  [Bevy CREDITS](https://github.com/bevyengine/bevy/blob/c6f634ca9f406d68ba5109d921247b654cb42c10/CREDITS.md)
+  attributes the fox model to PixelMannen (CC0) and rigging/animation to @tomkranis
+  (CC-BY 4.0); retain that attribution separately from Bevy's code license. The exact pinned
+  source confirms the cube sphere/Fibonacci placement, 42-seeded material/mesh selection,
+  camera-only fixed-step `--benchmark` switch, and separately real-time `rotate_cubes` system;
+  a deterministic-update adapter must patch the latter. The pinned City source defaults to
+  seed 42/size 30 and uses a nested size-by-size block loop; imported scene expansion remains
+  uncensused. The bundle reader now requires `sources.lock.json` to name both pinned upstream
+  commits, the TN commit, Three/Godot/Fox digests and license attribution, plus source/build,
+  dependency, compiler and patch fields for every planned **cell and arm**; run identities must match
+  those locks. This allows the same arm to use distinct builds for different workload cells. It
+  also requires `machine.json` with physical lane, date, CPU/GPU/driver and matching
+  run identity. Missing files keep the HTML visibly partial and present files enter the checksum
+  manifest; malformed files fail closed. This is a schema and unit-tested guard, **not** the actual
+  source/build/asset lock. Bevy build flags, source checkout, asset bytes/SHA-256 and other lock
+  fields remain open.
 - [ ] Freeze the expanded six-family matrix with exact actual fixture censuses.
+  A deliberately non-publishable [draft matrix](../../../../scripts/engine-load-test/plan.ts)
+  now expands 73 stable cell IDs across all six families, each with seven planned paired blocks
+  over two sessions. The focused test verifies family coverage, unique IDs and source-derived
+  Godot counts (requested 1,000 → 1,024 objects; requested 10 → 9 lights). Its City grid counts
+  derive from the pinned generator's size 8/30 loops; rendered-object censuses stay `null`. The
+  built mesh fixture now records 20k independent meshes/one material in the ordinary arm, one
+  `InstancedMesh`/20k instances in the explicit arm, and 20k meshes/64 materials in the material
+  diagnostic; its census test failed on the old `null` counts and now passes. This box remains open until the canonical City assets,
+  fixture census, exact source/build locks and qualified diagnostic choices are frozen. `pnpm exec
+  vitest run scripts/__tests__/engine-load-test-plan.spec.ts scripts/__tests__/engine-load-test-stats.spec.ts
+  scripts/__tests__/engine-load-test-v2.spec.ts scripts/__tests__/engine-load-test.spec.ts` passed
+  114/114; root `pnpm exec tsc --noEmit -p tsconfig.json` passed.
 - [ ] Freeze conformance tolerances and visual qualification rules.
 - [ ] Freeze publication plan fields, ordering policy and resource-limit policy after unscored qualification.
 
 ### Phase 2: Extend and prove the shared measurement path
 
-- [ ] Add the v2 result contract without changing the meaning of legacy reports/baselines.
+- [x] Add the v2 result contract without changing the meaning of legacy reports/baselines.
+  New [report-v2.ts](../../../../scripts/engine-load-test/report-v2.ts) holds `IV2RunRecord` plus
+  `parseV2RunRecord` and the `readResultRecord` dispatch (no `schemaVersion` or `1` → the unchanged
+  `parseRunReport`, `2` → v2, anything else refused), covering §10's groups: schema/derivation
+  versions, campaign/plan/source hashes, experiment key, arm backend/build/flags, block/session/
+  order, fixture hash and conformance evidence, timing definition and raw-series ref, metric
+  availability, machine and preflight, outcome/reason, durations and checksums. Absent rejects,
+  `null` requires a reason, `0` is a real sample, and a reason on a real value is refused (the
+  missing-GPU-sample trap in a zero's clothes); ids, SHA-256 shape, runStatus/comparability/
+  optimization-class/protocol/lane enums, finite non-negative timings, unique metric names, integer
+  counts ≥ 1 for block/session and safe relative artifact refs are all validated. `report.ts`
+  changed only by exporting its four existing `require*` shape helpers, so v1 parse/compare/knee/
+  baselines are the same code. No dependency, CLI, adapter or HTML change.
+
+  After review, the two states the first version blurred are now separated honestly. A `valid` run
+  owes evidence: >0 measured frames, >0 measure duration, a primary completed-work mean >0 (0 there
+  means no frame completed, not a fast engine), a passing preflight, and fixture conformance `pass`
+  **with** its evidence — a run with none of these used to parse as valid. Conversely a
+  `not-run`/`unsupported` attempt no longer has to invent anything: `timing.rawSeries` may be `null`
+  with a required `rawSeriesReason`, frames and measure duration may be 0, the primary metric may be
+  `null` with its reason, and `checksums` is a ref→SHA-256 map that may be empty — where a named
+  series and fixture evidence must be covered by it; a `valid` run also owes a downloadable raw
+  timing series. `crashed`/`timed-out`/`invalid`/`resource-limited` keep partial raw
+  evidence when there is any, and a real `0` (an observed `upload-bytes`) still passes. The
+  self-referential `checksums.record` is gone — a file cannot state the checksum of the bytes
+  containing it; the record's own digest belongs to the bundle's `checksums.sha256`. A
+  `matched-task` comparison carrying a `comparabilityReason` is refused as contradictory. Verified:
+  `pnpm exec vitest run scripts/__tests__/engine-load-test-v2.spec.ts
+  scripts/__tests__/engine-load-test.spec.ts` exits 0 (11 + 97 tests), root
+  `pnpm exec tsc --noEmit -p tsconfig.json` exits 0, and `pnpm exec biome check .` exits 0. The new
+  valid-run, not-run, checksum and uniqueness cases were confirmed red against the pre-fix parser
+  before the fix. The parser is not yet written by any producer, so a v2 record remains unit-proved
+  rather than collected.
+
+  The bundle reader now verifies the referenced raw timing series, not only its checksum. Its v1
+  raw format is `{schemaVersion:1,unit:"ms",boundaries:[{frameId,monotonicMs}],finalCompletionMs,
+  gpuSamples?}`. It requires `N+1` increasing render-producing frame boundaries for `N` measured
+  frames, then derives the primary mean from `(finalCompletionMs - firstBoundary) / N`, including
+  the single final asynchronous GPU drain. Frame p50/p95/p99 use differences between boundaries,
+  a separate metric; the reader refuses a run that reports the interval mean as completed work.
+  A numeric GPU mean requires one attributed `passId:"frame"` sample per frame and rejects changed
+  IDs; this validates retained data, not the honesty of the timestamp producer. The v2 parser and
+  paired scorer both require the
+  primary metric in milliseconds. A test first proved that a checksum-valid raw file with a changed
+  reported mean was accepted; it now fails. Unit, count, frame-ID and missing-GPU mutations also
+  fail. The eight focused benchmark test files passed 128/128; root TypeScript and `git diff --check`
+  passed. These are parser/bundle checks, not proof of an actual GPU timestamp producer.
 - [ ] Collect browser publication evidence from a production build with recorded identity.
+  Smoke-profile production-build evidence with full identity is retained for the independent-mesh
+  family (Phase 3); the publication profile is not. Each retained arm names its adapter, three
+  revision, browser arguments, display and source commit, and the collector refuses a run whose
+  adapter reports nothing or names a software renderer. Still missing here: the frozen 600-warmup /
+  6,000-measured frame counts, seven randomized paired blocks over two sessions, and the A/A
+  calibration band without which no faster/slower verdict is supported.
 - [ ] Prove the native completed-work boundary with a render-suppression negative control.
 - [ ] Prove asynchronous GPU sample attribution and missing-data behavior.
 - [ ] Add full-fixture identity and reject a mutation beyond the first eight objects.
@@ -269,53 +354,200 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   ECMAScript `Number::toString`, `u32` count, then IEEE-754 binary64 little-endian `x,y,z` per
   placement, unquantised — over all placements plus the fixed geometry/material/camera/update
   constants that `game.ts` and `workload.ts` read from the hashed `CUBE_FIXTURE` descriptor) exists,
-  and `pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts` (exit 0, 96 pass) shows that
+  and `pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts` (exit 0, 99 pass) shows that
   moving object 9 keeps `positionHash` byte-identical, changes the full identity, and is refused by
   `checkEquivalence`/`compare` under the opt-in `requireFullFixture` v2 gate, alongside repeats that
   disagree and a rung whose identity is missing from one repeat or one arm. The box stays open
-  because the gate needs a *comparable pair* and no such pair exists yet: the Godot arm emits no
-  `fixtureHash` (Phase 3's GDScript port must carry the same encoding), and the native arm cannot
-  produce one — the host's JS runtime has no `crypto` global at all, so `crypto.subtle` is
-  undefined and `native.ts` omits the field rather than crash every run. No native or competitor
-  report supplies a full identity, so the negative control has not run on the real path. What
-  remains: WebCrypto in the host (or a second digest, deliberately not added), the GDScript port, then
-  one real cross-arm comparison under `requireFullFixture`. Legacy default semantics are unchanged
+  because the gate needs a *comparable measured pair* and no such pair exists yet. Godot now emits
+  `fixtureHash` from its generated float64 inputs before Vector3 storage; pinned Godot 4.7.1 headless
+  and the JS fixture agree byte-for-byte at 1, 256 and 1,024 cubes. A unit check also ties Godot's
+  static header to the shared TS contract. The native host has no
+  WebCrypto; a SHA-256 fallback now hashes the same canonical bytes, checked against Node SHA-256
+  at padding/block boundaries and against the browser cube fixture digest. `native.ts` emits the
+  hash before timing, but the host has not executed here. The headless Godot report parsed its new
+  hashes with a dummy renderer; it is not GPU evidence. What remains: one real cross-arm comparison
+  under `requireFullFixture`. Legacy default semantics are unchanged
   and tested: a current TN report with a hash still compares against a hashless Godot report.
   `positionHash` re-checked after the descriptor refactor: `94e73aef/78812d31/e9a32f01` for
   256/1024/4096 cubes, and the hashed constants are value-identical to the literals they replaced.
 - [ ] Complete A/A calibration and retain the minimal-meter overhead measurements.
-- [ ] Prove the paired-block statistics with known-ratio and high-variance fixtures.
+- [x] Prove the paired-block statistics with known-ratio and high-variance fixtures.
+  [stats.ts](../../../../scripts/engine-load-test/stats.ts) pairs v2 runs by planned session/block,
+  requires the frozen planned block IDs and rejects a wholly missing block, a missing arm,
+  duplicate/reused or identity-mismatched runs, computes the geometric
+  competitor/TN completed-work ratio and 10,000 fixed-seed whole-block bootstrap resamples,
+  and reports session estimates, a calibrated A/A epsilon and pointwise verdicts. Seven blocks
+  across two sessions are required for an interval; absent A/A calibration or material session
+  drift blocks a supported verdict. The [focused test](../../../../scripts/__tests__/engine-load-test-stats.spec.ts)
+  proves identical, 2× faster, 2× slower, high-variance/inconclusive, short, drifted and malformed
+  cases. `pnpm exec vitest run scripts/__tests__/engine-load-test-stats.spec.ts
+  scripts/__tests__/engine-load-test-v2.spec.ts scripts/__tests__/engine-load-test.spec.ts` passed
+  112/112; `pnpm exec tsc --noEmit -p tsconfig.json` passed; targeted Biome check passed with two
+  nonfatal complexity warnings. Hardware A/A collection and meter-overhead proof remain open above.
 
 ### Phase 3: Cubes and independent Three.js meshes
 
 - [ ] Implement the locked Bevy many-cubes adapter with deterministic updates for every timed behavior.
 - [ ] Pass many-cubes execution/visual conformance against the TN fixture.
-- [ ] Implement plain Three.js and TN independent-mesh variants using identical Three.js package bytes.
-- [ ] Verify the actual projection/batching/instancing behavior of each labelled mesh arm.
+- [x] Implement plain Three.js and TN independent-mesh variants using identical Three.js package bytes.
+  All three arms now execute the production bundle on the hardware GPU and report the same three
+  bytes. [mesh-fixture.ts](../../../../examples/engine-load-test/src/mesh-fixture.ts) defines the
+  shared 1920×1080 geometry, placements, 64-material and rotation inputs; the pure scene builder
+  authors independent `Mesh` objects or one explicit `InstancedMesh` plus an optional TN projection.
+  The plain page imports no TN projection, while the TN page passes the package's default
+  `SceneRenderProjection` for ordinary variants and explicitly omits it for the named
+  projection-off/instanced diagnostics. The same builder, drain and fixture digest run under the
+  owned native host. Identical bytes are now measured rather than argued: every retained arm reports
+  `threeRevision` `185` and hashed chunk `three.webgpu-DEK9E5ts.js`, and only the TN pages preload
+  `renderProjection-CYAqE-l3.js`.
+
+  Three gaps closed since the groundwork commit, each with the run that proves it:
+  `three`'s WebGPU backend keeps its adapter in a function-local, so `backend.adapter.info` was
+  always `undefined` and every earlier mesh result carried `backend: "{}"` — the harness now reads
+  the adapter the browser actually handed out, field by field, the way `main.ts` already did, and
+  the collector refuses a run that reports no vendor/architecture or names a software renderer
+  (`TN_BENCH_ADAPTER_UNREPORTED`, `TN_BENCH_SOFTWARE_ADAPTER`). The mesh launch also carries
+  `--ozone-platform=x11 --enable-features=Vulkan`: measured on this machine's RTX 2080, the stock
+  argument set reports `maxBufferSize` 1073741824 and a 1,000-mesh arm costs 51.59 ms/frame, while
+  the Vulkan set reports `vendor: nvidia, architecture: turing` and the same arm costs 6.86 ms — the
+  first mesh run in this PRD was a SwiftShader number and nothing in the record said so. Both arms
+  now also demand a display, through `TN_BENCH_DISPLAY` or the repository's `sh scripts/xvfb.sh`.
+  Finally the native host was built here (`pnpm native:build`, 409/409, `mystral` 101,551,728 bytes,
+  SHA-256 `923ec604a4a6fcc292667726a931d833325cbb3258d45a9debbc915bfca41f45`, recorded per run) and
+  `--mesh-arm tn-desktop` executes on it, reporting the adapter only the host can see:
+  `NVIDIA GeForce RTX 2080`, `NVIDIA: 615.71.09 615.71.9.0`.
+
+  `pnpm --filter threenative-engine-load-test build`, root `pnpm exec tsc --noEmit -p tsconfig.json`,
+  `pnpm exec biome check .` (exit 0; only the pre-existing nonfatal complexity warnings),
+  `git diff --check` and the ten focused benchmark suites all passed — 147/147, including the new
+  `engine-load-test-mesh-compare.spec.ts`. A v2 publication record is still not produced by any
+  producer; the retained mesh records are the smoke shape, which is what the box above asked for.
+- [x] Verify the actual projection/batching/instancing behavior of each labelled mesh arm.
+  Every labelled arm was run at the 20k diagnostic rung on the RTX 2080 and its submitted work was
+  read back from `renderer.info` at the measurement midpoint, so the name is checked against what
+  the engine did rather than trusted (`artifacts/engine-load-test/mesh20k-*.json`, 120 measured
+  frames after 30 warmup, all exit 0):
+
+  | arm | variant | mean ms | p50 ms | draw calls | triangles | projection |
+  |---|---|---|---|---|---|---|
+  | `plain-three-web` | `rotating` | 104.01 | 98.29 | 20001 | 240001 | none |
+  | `tn-web` | `rotating` | 12.20 | 11.41 | 2 | 240001 | `projected` |
+  | `tn-web` | `rotating-projection-off` | 98.31 | 93.19 | 20001 | 240001 | none |
+  | `tn-web` | `rotating-instanced` | 5.48 | 3.55 | 2 | 240001 | none |
+  | `plain-three-web` | `rotating-instanced` | 5.36 | 3.42 | 2 | 240001 | none |
+  | `tn-web` | `rotating-64-materials` | 18.27 | 17.25 | 65 | 240001 | `projected` |
+
+  The checks this box asks for all follow from that table. Independent authoring really submits one
+  draw per mesh, and TN's ordinary default really collapses 20,000 renderables into one instanced
+  batch — the projection's own report reads `sourceRenderables: 20000, resultDrawCandidates: 1`.
+  Switching the projection off returns the identical arm to 20,001 draws and 98.31 ms, within 6% of
+  the plain page, which is what identifies the projection as the cause rather than a page or build
+  difference. Explicit instancing is the same work in both engines (5.48 against 5.36 ms), so the
+  diagnostic is the counterpart §5 requires and not TN's number standing in for it. The 64-material
+  cell produced 64 material batches, 65 draws and 64 distinct material assignments. Every arm
+  submitted the same 240,001 triangles, and the six retained captures are each 1920×1080 with the
+  same 117,745 non-background pixels, so no arm bought its draw count by dropping visible work. The
+  64-material capture carries 65 distinct colours where the others carry 2, which is the material
+  cell visible in the pixels and not only in a counter.
 - [ ] Retain a real hardware comparison for the many-cubes family.
-- [ ] Retain a real hardware comparison for the independent-mesh family.
+- [x] Retain a real hardware comparison for the independent-mesh family.
+  One real-hardware smoke block per required arm, retained under `artifacts/engine-load-test/` with
+  raw frame series, captures and identity — not publication evidence, and labelled so in the artifact
+  itself. Hardware: NVIDIA GeForce RTX 2080 (TU104), driver `615.71.09`, on this machine's own
+  display path; the browser arms reach it through Chromium 151's Vulkan backend and the native arm
+  through the host's wgpu-native backend, and every arm's adapter, three revision, launch arguments,
+  display, fixture hash and source commit are in its own record.
+
+  The framework-configuration comparison, `plain-three-web` against `tn-web` at 20,000 rotating
+  meshes: **104.01 ms against 12.20 ms per frame, an 8.53× ratio**, 20,001 draw calls against 2, on
+  the identical fixture digest `80018d4c8364` and identical `nvidia`/`turing` adapter
+  (`mesh20k-comparison-web.json`). The runtime comparison, `tn-web` against `tn-desktop` on the same
+  fixture, reads 12.20 ms against 89.19 ms, and that 0.137× **is not a throughput result**: the
+  native arm presents through a private Xvfb, so its completed-work mean contains a display-bound
+  present instead of the workload. The evidence for that is in the same artifacts — the native arm
+  costs 74.09 ms at 1,000 meshes and 89.19 ms at 20,000, so a twentyfold workload change moves it
+  by 20%, which is a present ceiling, not a rendering cost. Both comparisons therefore carry
+  `blocks: 1` and a retained `qualifications` array, and the seven-block publication requirements
+  stay open in Phase 6.
 
 ### Phase 4: Animation, Godot rendering workloads and City
 
 - [ ] Pass foxes conformance with independently animated staggered skeletons.
 - [ ] Retain a real hardware comparison for the foxes family.
 - [ ] Pass Godot culling conformance with the RID authoring distinction documented.
+  [The headless census probe](../../../../benchmark/godot-prd449/probe.gd) loads the pinned
+  upstream `culling.gd` from its source checkout, seeds exactly as its `Manager` does, and
+  passes all ten named variants: 10,000 `RenderingServer` object RIDs and five primitive mesh
+  sources each; the directional variant has one light node, and each omni/spot variant has 100
+  light RIDs. It also checks the static/dynamic RID assignment, unshaded/rotation/shadow switches,
+  the directional light's shadow flag and a controlled dynamic process step. Unknown variants
+  exit 2; two identical seeded `box-100` probes emitted byte-identical census JSON. The probe
+  rejects changed SHA-256 bytes for the two upstream scenes, `Manager`, `Benchmark` or project
+  configuration before loading a scene, and emits the scene source digest with its census. A
+  `project.godot` mutation exited 2 with the named hash error and no census output; the original
+  file was restored and its SHA-256 rechecked. It does not
+  yet compare sampled transforms, visibility, depth/object-ID captures,
+  the matching TN scene or physical rendering, so this box remains open.
+  A local ignored `artifacts/engine-load-test/godot-census.json` now retains all 23 records in
+  draft-plan order, source and probe digests, and the Godot binary version/hash. Its metadata
+  explicitly says `headless-dummy-renderer` and `measuredPerformance: false`; it is a fixture
+  diagnostic, not a published timing result. All 23 recorded requested/actual counts matched the
+  draft matrix in a direct consistency check.
 - [ ] Retain a real hardware comparison for the Godot culling family.
 - [ ] Pass lights/meshes conformance including requested-versus-actual counts and changing lights.
+  The same probe passes all 13 upstream `lights_and_meshes.gd` variants headless. Requested 1,000
+  yields 1,024 mesh nodes; requested 10 yields nine spot/omni light nodes, while the 10,000/100
+  stress variant yields 10,000/100. It checks every light's visibility/energy after a controlled
+  update and checks that the mesh and light grids rotate in opposite directions at the requested
+  speed. Godot `4.7.1` exits 0 on all 23 probes; an optional unbuilt C++ extension logs import
+  errors and the upstream source project reports exit leaks, so these runs assert only the named
+  scene properties. Matching TN, sample-frame visual/state evidence and a real GPU remain open.
 - [ ] Retain a real hardware comparison for the Godot lights/meshes family.
 - [ ] Pass City conformance for both frozen fixture sizes and both movement states.
 - [ ] Retain a real hardware comparison for the City family.
 
 ### Phase 5: Deliver the offline report generator
 
-- [ ] Render every expanded plan cell with its actual coverage/outcome state.
-- [ ] Prove table/chart/CSV consistency with the canonical derived dataset.
-- [ ] Expose uncertainty, optimization class and comparability beside each displayed ratio.
+- [x] Render every expanded plan cell with its actual coverage/outcome state. The draft plan's 73 cells and 169 arms all appear with explicit `not-run` status when empty; failed attempts and incomplete pairs remain visible. `pnpm exec vitest run scripts/__tests__/engine-load-test-campaign.spec.ts scripts/__tests__/engine-load-test-html.spec.ts` passed 5/5. This proves rendering, not a measured campaign.
+  A later fail-closed check rejects a frozen plan that omits a required cell or comparison arm,
+  changes a required experiment dimension, or leaves an actual census unresolved; replacing the
+  draft fixture revision during freezing remains permitted. The focused campaign test first
+  exposed the false-`COMPLETE` path, then passed with the check. A further red-green bundle test
+  proved that absent publication metadata was not disclosed; the report now lists missing
+  `sources.lock.json` and `machine.json` on the first screen, keeps `partial` true, and displays
+  locked machine details when present. Present locks are checked against planned arms/runs and
+  checksummed. The three focused report/bundle tests passed 12/12, root TypeScript passed, and
+  Biome error-level checks passed with pre-existing nonfatal complexity warnings.
+- [x] Prove table/chart/CSV consistency with the canonical derived dataset. A seven-block 10 ms/20 ms fixture produces the same run median in the table, load chart and CSV, with a 2.00× ratio; deterministic regeneration and empty-data cases pass in the focused tests. The bundle writer retains `plan.json`, `results.json`, `results.csv`, `report.html` and `checksums.sha256`; a CLI smoke run generated those files from the draft plan and exited 2 because it contained zero measured runs.
+- [x] Expose uncertainty, optimization class and comparability beside each displayed ratio. The report shows a 95% paired-block interval or `interval unavailable`, verdict, comparability, block count, class, profile and protocol; incomplete pairs have no ratio. The draft fixture is marked `insufficient`, not faster/slower.
 - [ ] Link each experiment to raw runs, effective settings, source patches and matching captures.
-- [ ] Pass offline `file://` testing with network requests blocked.
+  Each table row now shows attempts per planned arm and a stable keyboard-linkable evidence section
+  that lists run records, their checksummed artifacts, effective flags and upstream source. A
+  focused red-green HTML test proved the new row link and target. A fresh CLI smoke report in
+  `/tmp/tn-prd449-report-smoke` exited 2 as expected for zero runs and contains 73 cells, 169 arms,
+  73 evidence links, both missing-lock gaps and no external asset tags. Source adaptation patches and
+  matching captures are not yet produced or linked, so this box stays open.
+  The bundle now derives a bounded per-run frame-interval histogram, p50/p95/p99/max, a count of
+  intervals exceeding twice that run's median, and the separate final completion wait from validated raw
+  timestamps. HTML drill-down shows these with a raw-series link and definitions; JSON retains the
+  same summaries, not all frame samples. The raw-series and bundle tests first failed for the
+  absent summary, then passed 11/11 after implementation. The main table and CSV now use run-level
+  percentiles derived from validated raw boundaries when a run omits percentile metric fields;
+  a separate red-green bundle assertion proved the table no longer shows dashes for retained
+  frames. Sparse GPU samples are counted without turning missing frames into zero GPU time;
+  malformed or duplicate GPU frame IDs fail even when `gpu-ms` is null or the attempt measured
+  zero frames; a numeric `gpu-ms` with zero frames also fails. The report displays observed/missing GPU timestamp counts. No physical samples are
+  claimed.
+- [ ] Pass offline `file://` testing with network requests blocked. HTML has inline CSS/script and no external asset tags, but Chromium could not launch in this sandbox (`sandbox_host_linux.cc:41`, `Operation not permitted`) before `file://` navigation. No browser-open claim is made.
 - [ ] Pass keyboard/table/print usability checks.
-- [ ] Pass escaping/path-safety tests using malicious fixture text.
-- [ ] Prove deterministic substantive regeneration from the retained bundle.
+- [x] Pass escaping/path-safety tests using malicious fixture text. The focused HTML test injects `</script>`, an image handler, `javascript:` source URL and traversal artifact ref; output escapes the text and does not create unsafe links. Bundle tests reject a symlinked plan outside the bundle root and reject a changed raw timing file whose SHA-256 no longer matches the run record. The seven focused benchmark test files passed 123/123; root TypeScript check passed. Browser `file://` remains open above.
+- [x] Prove deterministic substantive regeneration from the retained bundle. A bundle test retains
+  14 valid synthetic records across seven paired blocks, their raw timing files, conformance
+  artifact and plan. It regenerates the 2.00× comparison, HTML, JSON, CSV and checksum manifest;
+  after replacing the generated HTML with stale text, a second generation restores byte-identical
+  outputs from the retained inputs. `pnpm exec vitest run
+  scripts/__tests__/engine-load-test-bundle.spec.ts` passed 4/4. This proves derivation, not a
+  physical measurement or complete publication bundle.
 
 ### Phase 6: Qualify the campaign and hand over actual results
 
