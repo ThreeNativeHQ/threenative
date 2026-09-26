@@ -1,6 +1,6 @@
 # Clearwater shallow-water integration
 
-Status: PARTIAL — implementation submitted; GPU and full-workspace qualification outstanding.
+Status: PARTIAL — review fixes verified locally; latest-head CI and native/mobile qualification outstanding.
 
 ## Goal and ownership
 
@@ -33,12 +33,26 @@ MIT notice (Copyright 2026 Lumaris).
 - [x] Write the composed factory, FFT/ripple sampling, refractive material and RGB ray-grid caustics.
   Evidence is source/syntax inspection only here; real node-graph and GPU gates are below.
 - [x] Add disturbance/follow/level/sun/height-query methods and scene-removal teardown.
+  Review correction: CPU height queries now apply the renderer's two-texel ripple edge fade,
+  using the current patch centre after follow(). Local Node CPU regression harness against the
+  production factory: 5 failed/2 passed before; 7/7 passed after. Rendering and asynchronous FFT
+  readback were substituted in this local harness; this is not GPU or full-workspace evidence.
+  Permanent real-field regression cases are in `clearwater-graph.spec.ts`.
 - [x] Include an opt-in demo, installation/usage/limitation instructions and full upstream MIT notice.
 - [x] Verify installation and refusal to overwrite edited game files.
   Evidence: Node child-process installation check passed, including source/license presence and
   preservation of an edited sentinel on a rejected second invocation.
+  Review correction: preflight directory parents as well as filenames, rejecting symlinked or
+  non-directory destinations before copying. Real-filesystem Node regression harness: 3 failed/
+  3 passed before; 6/6 passed after, including external-directory and dangling-link cases.
+  Permanent regression cases are in `clearwater-install.spec.ts`.
 
 ## Phase 3 — integration qualification (not complete)
+
+The completed CI records below qualify earlier revisions, not the review-fix commits. The review
+sandbox could not run `pnpm test` (pnpm absent, exit 127), and outbound DNS prevented installing
+workspace dependencies. Latest-head workspace, browser, typecheck and formatting results must
+come from a new qualification run; no new native/mobile claim is made.
 
 - [x] Run real-Three graph/factory tests and full workspace typecheck, formatting and tests.
   Evidence: exact-head CI run 36141527525 completed green on 2026-09-25, including typecheck,
