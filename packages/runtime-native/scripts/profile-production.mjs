@@ -258,7 +258,14 @@ export async function collectProduction(options, context, runId) {
     );
   }
 
-  const stagingParent = inRepositoryCheckout ? join(commandRoot, '.runtime', 'profile-production') : tmpdir();
+  // Keep staging on the checkout's volume (Windows packaging cannot cross volumes), but outside
+  // the repository workspace. A project under repo/.runtime is discovered by pnpm as part of the
+  // parent workspace, so its install populates the workspace root and leaves the staged project's
+  // node_modules missing. The checkout sibling keeps the same-volume guarantee without inheriting
+  // pnpm-workspace.yaml.
+  const stagingParent = inRepositoryCheckout
+    ? join(dirname(commandRoot), '.threenative-profile-production')
+    : tmpdir();
   await mkdir(stagingParent, { recursive: true });
   const temporaryRoot = await mkdtemp(join(stagingParent, 'threenative-production-'));
   const project = join(temporaryRoot, 'platformer');
@@ -1137,6 +1144,7 @@ if (typeof tnProductionRequestAnimationFrame !== "function") {
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
+let tnProductionPresentation;
 let tnProductionSamples = [];
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
