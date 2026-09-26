@@ -3,8 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   Group,
   InstancedMesh,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -200,6 +204,81 @@ async function flush(rounds = 12): Promise<void> {
 
 function followAt(x: number, z: number): { position: { x: number; z: number } } {
   return { position: { x, z } };
+}
+
+/**
+ * A shape in the shape a compiled world ships: two attributes over one shared `InterleavedBuffer`,
+ * which is what the quantized GLBs the engine streams hand the loader, and one index.
+ */
+function interleavedGeometry(): BufferGeometry {
+  const shared = new InterleavedBuffer(new Float32Array(6 * 5), 5);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new InterleavedBufferAttribute(shared, 3, 0));
+  geometry.setAttribute("uv", new InterleavedBufferAttribute(shared, 2, 3));
+  geometry.setIndex(new BufferAttribute(new Uint16Array([0, 1, 2, 3, 4, 5]), 1));
+  return geometry;
+}
+
+function interleavedModel(geometry: BufferGeometry): Object3D {
+  const group = new Group();
+  group.add(new Mesh(geometry, new MeshBasicMaterial()));
+  return group;
+}
+
+/** The buffer attribute a GPU buffer is keyed by: the shared one, for an interleaved attribute. */
+function bufferKey(attribute: BufferAttribute | InterleavedBufferAttribute): object {
+  // three patches these in, so `instanceof` is not the test it uses either.
+  const interleaved = attribute as Partial<InterleavedBufferAttribute>;
+  return interleaved.isInterleavedBufferAttribute === true
+    ? (interleaved.data as InterleavedBuffer)
+    : attribute;
+}
+
+/**
+ * Three's WebGPU attribute registry, reduced to what disposing a geometry does to it: every
+ * attribute the geometry carries is deleted, and each delete destroys the GPU buffer behind it.
+ *
+ * `uploaded: false` is what a lost device leaves behind. `Attributes.update` registers the
+ * attribute before `createAttribute` runs, so when the upload fails the key is there and the buffer
+ * never was — and `destroyAttribute` reads `data.buffer` with no guard, which is the page crash.
+ */
+function attributeRegistry(
+  geometry: BufferGeometry,
+  uploaded: boolean,
+): { destroys: () => number } {
+  const buffers = new Map<object, { buffer?: { destroy: () => void } } | undefined>();
+  // What three deletes on a geometry `dispose`: the index, then every attribute the render object
+  // used — here the whole interleaved pair.
+  const carried: Array<BufferAttribute | InterleavedBufferAttribute> = [
+    ...(geometry.index === null ? [] : [geometry.index]),
+    ...Object.values(geometry.attributes),
+  ];
+  let destroys = 0;
+  for (const attribute of carried) {
+    const key = bufferKey(attribute);
+    if (buffers.has(key)) continue;
+    buffers.set(
+      key,
+      uploaded
+        ? {
+            buffer: {
+              destroy: () => {
+                destroys += 1;
+              },
+            },
+          }
+        : undefined,
+    );
+  }
+  geometry.addEventListener("dispose", () => {
+    for (const attribute of carried) {
+      const record: { buffer?: { destroy: () => void } } = buffers.get(bufferKey(attribute)) ?? {};
+      if (record.buffer === undefined)
+        throw new TypeError("Cannot read properties of undefined (reading 'destroy')");
+      record.buffer.destroy();
+    }
+  });
+  return { destroys: () => destroys };
 }
 
 const surface = new MeshBasicMaterial();
@@ -623,5 +702,88 @@ describe("WorldCells", () => {
     expect(world.stats().loadsInFlight).toBe(0);
     expect(world.stats().loadsQueued).toBe(0);
     world.dispose();
+  });
+
+  it("survives a teardown that throws, and reports it instead of killing the frame", async () => {
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      // Every model hands back a shape the renderer never finished uploading, so releasing an asset
+      // is the page's crash: `TypeError: Cannot read properties of undefined (reading 'destroy')`
+      // thrown from inside `update`, on the residency step that has to keep the world streaming.
+      loadModel: (): Promise<Object3D> => {
+        const geometry = interleavedGeometry();
+        attributeRegistry(geometry, false);
+        return Promise.resolve(interleavedModel(geometry));
+      },
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+    await flush();
+    expect(world.stats().residentKeys).toEqual([cellKey(1, 1)]);
+    expect(world.stats().failures).toBe(0);
+
+    follow.position.x = 100_000;
+    follow.position.z = 100_000;
+    expect(() => world.update()).not.toThrow();
+    expect(world.stats().residentKeys).toEqual([]);
+    // Counted, not swallowed: the cell's three asset shapes and its one chunk shape each reported
+    // the teardown that threw on the way out.
+    expect(world.stats().failures).toBe(4);
+    expect(world.assetRefCounts()).toEqual({});
+    expect(() => world.dispose()).not.toThrow();
+  });
+
+  it("tears each streamed shape down once, however many cells and batches held it", async () => {
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const adopted: Array<{ destroys: () => number; disposals: () => number }> = [];
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: (): Promise<Object3D> => {
+        const geometry = interleavedGeometry();
+        let disposals = 0;
+        geometry.addEventListener("dispose", () => {
+          disposals += 1;
+        });
+        const registry = attributeRegistry(geometry, true);
+        adopted.push({ destroys: registry.destroys, disposals: () => disposals });
+        return Promise.resolve(interleavedModel(geometry));
+      },
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+
+    for (const cell of [cellCenter(0, 0), cellCenter(1, 1), cellCenter(2, 2), cellCenter(3, 3)]) {
+      follow.position.x = cell.x;
+      follow.position.z = cell.z;
+      world.update();
+      await flush();
+    }
+    follow.position.x = 100_000;
+    follow.position.z = 100_000;
+    world.update();
+    await flush();
+    world.dispose();
+
+    // One shape per asset load, several cell batches over each of them, and every load released at
+    // the refcount's last decrement — so the count of shapes is the count of loads, and each is torn
+    // down once. The registry then sees one pass over it: two destroys on the shared interleaved
+    // buffer, which is three's own keying, and one on the index.
+    expect(adopted.length).toBeGreaterThan(1);
+    for (const shape of adopted) {
+      expect(shape.disposals()).toBe(1);
+      expect(shape.destroys()).toBe(3);
+    }
   });
 });
