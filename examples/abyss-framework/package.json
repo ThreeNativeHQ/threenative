@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "threenative build",
-    "build:android": "threenative build --target android",
+    "build": "node ../../packages/create-threenative/dist/threenative.js build",
+    "build:android": "node ../../packages/create-threenative/dist/threenative.js build --target android",
     "playtest:loading-leak": "node ../../packages/playtest/dist/runner/cli.js playtests/loading-leak.playtest.json --url 'http://127.0.0.1:5180/?loading-leak' --server-command 'pnpm dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
     "playtest:world": "pnpm build && node ../../packages/playtest/dist/runner/cli.js playtests/world-flythrough.playtest.json --url 'http://127.0.0.1:5181/?world' --server-command 'pnpm preview --host 127.0.0.1 --port 5181 --strictPort' --browser-recipe webgpu --headed",
     "typecheck": "tsc --noEmit -p tsconfig.json",
