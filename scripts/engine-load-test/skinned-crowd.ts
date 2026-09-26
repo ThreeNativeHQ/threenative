@@ -25,7 +25,7 @@ try {
       if (/error|warn/i.test(line)) console.error(line);
     },
   });
-  console.log(JSON.stringify(report, null, 2));
+  console.log(`TN_SKINNED_CROWD_REPORT ${JSON.stringify(report)}`);
 } finally {
   server.kill();
 }

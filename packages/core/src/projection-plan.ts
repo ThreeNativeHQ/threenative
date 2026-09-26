@@ -57,9 +57,10 @@ const WORTHWHILE_DRAW_RATIO = 0.75;
  * How many rigid meshes one skinned rig counts as against the mesh floor, which is priced in rigid
  * draws. Measured 2026-09-25 on tn-web, NVIDIA Turing, shadows on, 300 frames per arm
  * (`scripts/engine-load-test/skinned-crowd.ts`): 512 shadow-casting boxes cost 0.8 ms of CPU a
- * frame and 512 rigs of 32 bones cost 20.8 ms, so a rig submits about 26 rigid draws' worth. The
- * skinned lane itself was never slower than stock from 4 rigs up, so the weight only decides when
- * the rest of the scene's mirror is worth building beside it.
+ * frame and 512 rigs of 32 bones 20.8 ms, so a rig submits about 26 rigid draws' worth. The scenes
+ * this admits below the rigid floor were measured faster, not merely equal: 4 rigs beside 100 props
+ * went 6.2 -> 3.85 ms a frame and 8 rigs beside 150 props 9.7 -> 6.85 ms (medians of 4 pairs). A
+ * scene whose props cannot batch is still declined by the draw-ratio rule above.
  */
 const SKINNED_FLOOR_WEIGHT = 26;
 

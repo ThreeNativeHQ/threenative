@@ -12,6 +12,7 @@ import {
   MeshStandardNodeMaterial,
   PerspectiveCamera,
   PlaneGeometry,
+  RenderTarget,
   Scene,
   Skeleton,
   SkinnedMesh,
@@ -33,6 +34,14 @@ const FRAMES = Number(params.get("frames") ?? 300);
 const WARMUP = Number(params.get("warmup") ?? 60);
 /** Static shadow-casting boxes added beside the rigs, to price a rigid draw on the same frame. */
 const PROPS = Number(params.get("props") ?? 0);
+/** Reads back the last frame of each arm at a fixed animation time and compares it to stock. */
+const CAPTURE = params.get("capture") === "1";
+const CAPTURE_WIDTH = 640;
+const CAPTURE_HEIGHT = 360;
+
+function nextTick(): Promise<number> {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
 
 function rigGeometry(): CylinderGeometry {
   const geometry = new CylinderGeometry(0.25, 0.3, HEIGHT, 32, 128);
@@ -72,8 +81,11 @@ interface ICrowdRun {
   count: number;
   cpuMs: number[];
   frameMs: number[];
+  /** Animation writes, projection reconcile and `renderer.render`, each per frame. */
+  splitMs: [number[], number[], number[]];
   drawCalls: number;
   projection?: unknown;
+  pixels?: Uint8Array;
 }
 
 async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Promise<ICrowdRun> {
@@ -128,8 +140,13 @@ async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Prom
   ).device;
   const cpuMs: number[] = [];
   const frameMs: number[] = [];
+  const splitMs: [number[], number[], number[]] = [[], [], []];
   let drawCalls = 0;
   for (let frame = 0; frame < WARMUP + FRAMES; frame++) {
+    // One render per animation-frame tick, as a game's loop does. Three refreshes a stock
+    // skeleton once per tick, so rendering several frames inside one tick would draw stale poses
+    // and skip the stock arm's bone work.
+    await nextTick();
     const t0 = performance.now();
     const time = frame / 60;
     for (let i = 0; i < count; i++) {
@@ -137,9 +154,12 @@ async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Prom
       for (let b = 1; b < BONES; b++)
         (bones[b] as Bone).rotation.z = Math.sin(time * 2 + i * 0.7 + b * 0.3) * 0.12;
     }
+    const tAnimated = performance.now();
     // What `defineGame` does every frame: reconcile after the game's update, render its root.
     projection?.reconcile();
+    const tReconciled = performance.now();
     renderer.render(projection?.root ?? scene, camera);
+    const tRendered = performance.now();
     projection?.commit();
     drawCalls = renderer.info.render.drawCalls;
     const t1 = performance.now();
@@ -147,14 +167,72 @@ async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Prom
     const t2 = performance.now();
     if (frame >= WARMUP) {
       cpuMs.push(t1 - t0);
+      splitMs[0].push(tAnimated - t0);
+      splitMs[1].push(tReconciled - tAnimated);
+      splitMs[2].push(tRendered - tReconciled);
       frameMs.push(t2 - t0);
     }
+  }
+  let pixels: Uint8Array | undefined;
+  if (CAPTURE) {
+    // The pose of the last timed frame, drawn once more into a readable target.
+    const target = new RenderTarget(CAPTURE_WIDTH, CAPTURE_HEIGHT);
+    await nextTick();
+    renderer.setRenderTarget(target);
+    projection?.reconcile();
+    renderer.render(projection?.root ?? scene, camera);
+    projection?.commit();
+    renderer.setRenderTarget(null);
+    pixels = (await renderer.readRenderTargetPixelsAsync(
+      target,
+      0,
+      0,
+      CAPTURE_WIDTH,
+      CAPTURE_HEIGHT,
+    )) as Uint8Array;
+    target.dispose();
   }
   const report = projection?.report;
   projection?.dispose();
   geometry.dispose();
   material.dispose();
-  return { arm, count, cpuMs, frameMs, drawCalls, projection: report };
+  return { arm, count, cpuMs, frameMs, splitMs, drawCalls, projection: report, ...(pixels ? { pixels } : {}) };
+}
+
+/** Per-channel difference against the stock arm, plus the frame as a PNG for a human look. */
+function compare(pixels: Uint8Array, stock: Uint8Array): Record<string, unknown> {
+  let sum = 0;
+  let max = 0;
+  let over = 0;
+  let lit = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    let pixelMax = 0;
+    for (let c = 0; c < 3; c++) {
+      const d = Math.abs((pixels[i + c] as number) - (stock[i + c] as number));
+      sum += d;
+      pixelMax = Math.max(pixelMax, d);
+    }
+    max = Math.max(max, pixelMax);
+    if (pixelMax > 8) over += 1;
+    if ((pixels[i] as number) + (pixels[i + 1] as number) + (pixels[i + 2] as number) > 30) lit += 1;
+  }
+  const count = pixels.length / 4;
+  const canvas = document.createElement("canvas");
+  canvas.width = CAPTURE_WIDTH;
+  canvas.height = CAPTURE_HEIGHT;
+  const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+  context.putImageData(
+    new ImageData(new Uint8ClampedArray(pixels), CAPTURE_WIDTH, CAPTURE_HEIGHT),
+    0,
+    0,
+  );
+  return {
+    meanAbs: sum / (count * 3),
+    maxAbs: max,
+    pixelsOver8: over / count,
+    litFraction: lit / count,
+    png: canvas.toDataURL("image/png"),
+  };
 }
 
 async function main(): Promise<void> {
@@ -169,11 +247,15 @@ async function main(): Promise<void> {
   ).gpu.requestAdapter();
   const runs: ICrowdRun[] = [];
   for (const count of LADDER) for (const arm of ORDER) runs.push(await run(renderer, arm, count));
+  const baselines = new Map<number, Uint8Array>();
+  for (const r of runs) if (r.arm === "stock" && r.pixels) baselines.set(r.count, r.pixels);
   const summary = runs.map((r) => ({
+    ...(r.pixels ? { image: compare(r.pixels, baselines.get(r.count) as Uint8Array) } : {}),
     arm: r.arm,
     count: r.count,
     drawCalls: r.drawCalls,
     cpuP50: percentile(r.cpuMs, 0.5),
+    splitP50: r.splitMs.map((series) => percentile(series, 0.5)),
     frameP50: percentile(r.frameMs, 0.5),
     frameP95: percentile(r.frameMs, 0.95),
     projection: r.projection,

@@ -322,6 +322,16 @@ export class SkinnedBatch {
     this.free.push(slot);
   }
 
+  /** This frame's world-space bone matrices, `capacity × bones` of them in slot order. */
+  get palette(): Float32Array {
+    return this.#current;
+  }
+
+  /** Last frame's palette, present only while a temporal stage asks for per-object history. */
+  get history(): Float32Array | undefined {
+    return this.#previous;
+  }
+
   /** Marks a slot whose history must restart from its next pose. */
   restart(slot: number): void {
     this.#fresh.push(slot);
@@ -355,12 +365,18 @@ export class SkinnedBatch {
       multiply(rig.matrixWorld.elements, 0, rig.bindMatrixInverse.elements, 0, prefix, 0);
     const out = this.#current;
     const offset = slot * this.bones * 16;
-    for (let bone = 0; bone < this.bones; bone += 1) {
-      const at = offset + bone * 16;
-      if (bindIsIdentity) out.set(bones.subarray(bone * 16, bone * 16 + 16), at);
-      else multiply(bones, bone * 16, bind, 0, out, at);
-      if (detached) {
-        // In place is safe: `multiply` reads the whole right-hand column before writing it.
+    // The common case is one contiguous copy: `skeleton.update` has already written this rig's
+    // bone matrices in palette order, and an identity bind matrix leaves them unchanged.
+    if (bindIsIdentity) out.set(bones, offset);
+    else {
+      for (let bone = 0; bone < this.bones; bone += 1) {
+        multiply(bones, bone * 16, bind, 0, out, offset + bone * 16);
+      }
+    }
+    if (detached) {
+      for (let bone = 0; bone < this.bones; bone += 1) {
+        const at = offset + bone * 16;
+        // In place is safe: `multiply` reads each right-hand column before writing it.
         multiply(prefix, 0, out, at, out, at);
       }
     }
