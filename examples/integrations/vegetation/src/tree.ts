@@ -1,4 +1,4 @@
-import { Tree } from '@dgreenheck/ez-tree';
+import { Tree } from './vendor/ez-tree.mjs';
 import { BufferAttribute, type BufferGeometry, type Group, type Material, Mesh } from 'three';
 import { safeIndices } from './geometry.js';
 export type TreeOptions = InstanceType<typeof Tree>['options'];
