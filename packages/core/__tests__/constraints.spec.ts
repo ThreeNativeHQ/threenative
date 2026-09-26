@@ -90,6 +90,11 @@ describe("core constraints", () => {
           // colour, map, roughness or opacity, and the silhouette itself — the alpha test and the
           // texture behind it — stays entirely the game's. The assertions below keep that true.
           file !== "render/alpha-antialiasing.ts" &&
+          // Material identity compares a material's parameters and texture images to decide that
+          // two package materials draw the same, so a streamed world shares one surface between
+          // them. It reads appearance fields only to compare them; it constructs, sets and chooses
+          // nothing, and the surface kept is the package's own.
+          file !== "render/material-key.ts" &&
           // The mip-aware cutout compensates the SAMPLING of a texture the game owns: it reads a
           // map's texel size and moves the cutoff the alpha is compared against, so a needle card
           // survives the mip chain instead of being discarded at mip one. The cutoff itself, the

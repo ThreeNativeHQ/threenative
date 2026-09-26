@@ -14,6 +14,7 @@ import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
+import { materialKey } from "./render/material-key.js";
 import type { IRendererLike } from "./renderer.js";
 import { DEFAULT_CONCURRENCY, addInSlices, loadAll } from "./streaming.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
@@ -230,11 +231,22 @@ interface IAssetPart {
   readonly geometry: BufferGeometry;
   /** The mesh's transform relative to the model root, composed into every instance matrix. */
   readonly local: Matrix4;
-  /** The surface the batch draws with: the part's own material, or its cutout. */
+  /** The surface the batch draws with: the shared surface for this part's material content. */
   readonly material: Material;
-  /** Every surface this part owns and releases with the asset: its own, and any cutout made. */
-  readonly owned: readonly Material[];
+  /** The `materialKey` of that surface, released through the shared-surface registry. */
+  readonly surface: string;
 }
+
+/** A surface every part with the same material content draws with, and who still uses it. */
+interface ISharedSurface {
+  readonly material: Material;
+  /** The canonical source and any cutout made from it, torn down with the last user. */
+  readonly owned: readonly Material[];
+  users: number;
+}
+
+/** Parts already handed back, so a level that fell back to the one above releases it once. */
+const releasedParts = new WeakSet<IAssetPart>();
 
 interface IAssetState {
   readonly id: string;
@@ -401,7 +413,7 @@ function scatterMaterial(
  */
 function renderableParts(
   model: Object3D,
-  transparentScatter: "cutout" | "blend",
+  surfaceFor: (material: Material) => { readonly key: string; readonly material: Material },
 ): readonly IAssetPart[] {
   model.updateMatrixWorld(true);
   const rootInverse = new Matrix4().copy(model.matrixWorld).invert();
@@ -411,12 +423,12 @@ function renderableParts(
     if (object instanceof SkinnedMesh || !(object instanceof Mesh)) return;
     const material = Array.isArray(object.material) ? object.material[0] : object.material;
     if (object.geometry === undefined || material === undefined) return;
-    const drawn = scatterMaterial(material, transparentScatter);
+    const surface = surfaceFor(material);
     parts.push({
       geometry: object.geometry,
       local: local.multiplyMatrices(rootInverse, object.matrixWorld).clone(),
-      material: drawn.material,
-      owned: drawn.owned,
+      material: surface.material,
+      surface: surface.key,
     });
   });
   return parts;
@@ -698,6 +710,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #logicalBase: string;
   readonly #assets = new Map<string, IAssetState>();
   readonly #resident = new Map<string, IResidentCell>();
+  /** Surfaces shared by material content across every asset part; see `materialKey`. */
+  readonly #surfaces = new Map<string, ISharedSurface>();
   /** Cell-asset builds waiting for budget, in admission order: nearest cell first. */
   #jobs: IBuildJob[] = [];
   /** The (cell, asset) pairs already queued, so a refilter cannot queue itself twice. */
@@ -1253,7 +1267,7 @@ export class WorldCells extends Group implements IComputeDriven {
   /** One loaded model's drawable parts, or `undefined` when it carries nothing to draw. */
   #partsOf(model: Object3D | undefined): readonly IAssetPart[] | undefined {
     if (model === undefined) return undefined;
-    const parts = renderableParts(model, this.#transparentScatter);
+    const parts = renderableParts(model, (material) => this.#surfaceFor(material));
     if (parts.length === 0) {
       // Same as a refused load: counted, released, and the next acquire retries.
       this.#failures += 1;
@@ -1482,9 +1496,41 @@ export class WorldCells extends Group implements IComputeDriven {
   #releaseParts(parts: readonly IAssetPart[]): number {
     let failed = 0;
     for (const part of parts) {
+      if (releasedParts.has(part)) continue;
+      releasedParts.add(part);
       if (release(part.geometry)) failed += 1;
-      for (const material of part.owned) if (release(material)) failed += 1;
+      failed += this.#releaseSurface(part.surface);
     }
+    return failed;
+  }
+
+  /**
+   * The shared surface for a material's content: the first material seen for a key becomes the
+   * canonical one (converted to a cutout when it is transparent scatter), and every later material
+   * with the same content is released on arrival and draws with it instead.
+   */
+  #surfaceFor(source: Material): { readonly key: string; readonly material: Material } {
+    const key = materialKey(source);
+    const shared = this.#surfaces.get(key);
+    if (shared !== undefined) {
+      shared.users += 1;
+      if (!shared.owned.includes(source) && release(source)) this.#failures += 1;
+      return { key, material: shared.material };
+    }
+    const drawn = scatterMaterial(source, this.#transparentScatter);
+    this.#surfaces.set(key, { material: drawn.material, owned: drawn.owned, users: 1 });
+    return { key, material: drawn.material };
+  }
+
+  /** One user gone; the last one tears the shared surface down. Returns teardowns that threw. */
+  #releaseSurface(key: string): number {
+    const shared = this.#surfaces.get(key);
+    if (shared === undefined) return 0;
+    shared.users -= 1;
+    if (shared.users > 0) return 0;
+    this.#surfaces.delete(key);
+    let failed = 0;
+    for (const material of shared.owned) if (release(material)) failed += 1;
     return failed;
   }
 

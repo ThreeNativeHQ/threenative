@@ -1416,12 +1416,16 @@ describe("WorldCells", () => {
     expect(needles).toBeDefined();
     expect(farBark).toBeDefined();
     expect(farNeedles).toBeDefined();
-    // Each part keeps its own geometry and its own material; neither level borrows the other's.
+    // Each part keeps its own geometry; neither level borrows the other's.
     expect(bark.geometry).toBe(loader.geometryFor("pine.glb", 0));
     expect(needles.geometry).toBe(loader.geometryFor("pine.glb", 1));
     expect(farBark.geometry).toBe(loader.geometryFor("pine_lod1.glb", 0));
     expect(farNeedles.geometry).toBe(loader.geometryFor("pine_lod1.glb", 1));
-    expect(bark.material).toBe(loader.materialFor("pine.glb", 0));
+    // Materials are shared by content: both levels' bark (and both levels' needles) carry the same
+    // authored material, so they draw with one surface and three builds one shader for it.
+    expect(farBark.material).toBe(bark.material);
+    expect(farNeedles.material).toBe(needles.material);
+    expect(needles.material).not.toBe(bark.material);
     expect(needles.material).not.toBe(loader.materialFor("pine.glb", 1));
     // Every placement is in both parts, and the whole run is still drawn exactly once per part.
     expect(needles.count).toBe(bark.count);
@@ -1470,8 +1474,11 @@ describe("WorldCells", () => {
     expect(needles.alphaTest).toBe(0.5);
     expect(authored.transparent).toBe(true);
     expect(authored.alphaTest).toBe(0);
-    // An opaque part is used as authored, with no clone made for it.
-    expect(batchMaterial(levelMesh(world, "pine", 0, 0))).toBe(loader.materialFor("pine.glb", 0));
+    // An opaque part draws with an authored material (the first one seen with its content), with
+    // no clone made for it.
+    const bark = batchMaterial(levelMesh(world, "pine", 0, 0));
+    expect(bark.transparent).toBe(false);
+    expect(bark.alphaTest).toBe(0);
     world.dispose();
 
     // A material that already names a cutout point keeps it.
@@ -1505,6 +1512,15 @@ describe("WorldCells", () => {
     const near = partsOf(wide, "pine", 0, 1);
     expect(near.length).toBeGreaterThan(1);
     expect(new Set(near.map((mesh) => mesh.material)).size).toBe(1);
+    // Every asset in this package carries the same two materials, so however many GLBs loaded the
+    // world draws with two surfaces: one opaque, one cutout. One shader each, not one per asset.
+    const drawn = new Set<Material>();
+    wide.traverse((object) => {
+      if ((object as InstancedMesh).isInstancedMesh)
+        drawn.add((object as InstancedMesh).material as Material);
+    });
+    expect(shared.calls.length).toBeGreaterThan(2);
+    expect(drawn.size).toBe(2);
     wide.dispose();
 
     // `"blend"` keeps the old behaviour: the material as the package authored it, no clone.
@@ -1521,7 +1537,8 @@ describe("WorldCells", () => {
     old.update();
     await flushed(old);
     const part = batchMaterial(levelMesh(old, "pine", 0, 1));
-    expect(part).toBe(blended.materialFor("pine.glb", 1));
+    // An authored material (shared by content across every asset carrying it), never a cutout twin.
+    expect((part as { isNodeMaterial?: boolean }).isNodeMaterial).not.toBe(true);
     expect(part.transparent).toBe(true);
     expect(part.alphaTest).toBe(0);
     old.dispose();
@@ -1611,14 +1628,18 @@ describe("WorldCells", () => {
       vi.spyOn(loader.geometryFor("pine.glb", 1), "dispose"),
       vi.spyOn(loader.geometryFor("pine_lod1.glb", 0), "dispose"),
       vi.spyOn(loader.geometryFor("pine_lod1.glb", 1), "dispose"),
-      vi.spyOn(loader.materialFor("pine.glb", 0), "dispose"),
-      vi.spyOn(loader.materialFor("pine.glb", 1), "dispose"),
-      vi.spyOn(loader.materialFor("pine_lod1.glb", 0), "dispose"),
-      vi.spyOn(loader.materialFor("pine_lod1.glb", 1), "dispose"),
-      // The two cutout clones this class owns are released with the parts that hold them.
-      vi.spyOn(batchMaterial(levelMesh(world, "pine", 0, 1)), "dispose"),
-      vi.spyOn(batchMaterial(levelMesh(world, "pine", 1, 1)), "dispose"),
-    ];
+      // Every surface the batches draw with — shared by content across the two levels, so one
+      // bark and one needle cutout — is released once, with the last part that holds it.
+      ...new Set(
+        [0, 1].flatMap((level) =>
+          [0, 1].map((part) => batchMaterial(levelMesh(world, "pine", level, part))),
+        ),
+      ).values(),
+    ].map((target) =>
+      target instanceof Object && "dispose" in target
+        ? vi.spyOn(target as { dispose: () => void }, "dispose")
+        : target,
+    );
 
     follow.position.x = 100_000;
     follow.position.z = 100_000;
