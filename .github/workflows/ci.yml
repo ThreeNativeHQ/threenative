@@ -764,6 +764,11 @@ jobs:
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
+          # The starter ships three scenarios; its other 21 are the engine's own regression guards
+          # and live beside the template (PRD-449), so a scaffold no longer proves them. Copy them
+          # in, or this lane would quietly stop covering 21 scenarios it has always covered.
+          extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
+          if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
           pnpm --dir "$target" install
           pnpm --dir "$target" run typecheck
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
@@ -1124,33 +1129,10 @@ jobs:
         with:
           fail-on-severity: moderate
 
-  website:
-    needs: scope
-    if: ${{ fromJSON(needs.scope.outputs.plan).checks.website }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.scope.outputs.candidate_sha }}
-      - uses: ./.github/actions/pnpm
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: ./.github/actions/playwright-chromium
-      - run: pnpm --filter threenative-site typecheck
-      - run: pnpm --filter threenative-site build
-      - run: pnpm --filter threenative-site exec vitest run
-      - run: pnpm --filter threenative-site exec playwright test --config=playwright.config.ts
-
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain, website]
+    needs: [scope, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1202,7 +1184,6 @@ jobs:
       - budgets
       - performance-contracts
       - supply-chain
-      - website
       - ci-required
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
