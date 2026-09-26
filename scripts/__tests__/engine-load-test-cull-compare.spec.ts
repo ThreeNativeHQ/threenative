@@ -32,16 +32,84 @@ function intervals(count: number, intervalMs: number): Record<string, unknown> {
 }
 
 /** One captured frame: `null` changed pixels is the first frame, `0` is an unchanged later one. */
-function captures(changed: (number | null)[]): unknown[] {
+function captures(changed: (number | null)[], coveredFraction = 0.0878): unknown[] {
   return changed.map((value, frameId) => ({
     backgroundLuma: 0,
     changedPixels: value,
-    coveredFraction: 0.0878,
+    coveredFraction,
     frameId,
     meanLuma: 0.0689,
     name: "frame",
     scored: true,
   }));
+}
+
+const KINDS = ["BoxMesh", "SphereMesh", "CapsuleMesh", "CylinderMesh", "PrismMesh"] as const;
+
+/** Triangles, indices and vertices per kind, as each arm's own record counted them. */
+const RETAINED_GODOT = [
+  [12, 36, 24],
+  [4224, 12672, 2210],
+  [3456, 10368, 1950],
+  [768, 2304, 522],
+  [8, 24, 20],
+];
+const RETAINED_TN = [
+  [12, 36, 24],
+  [3968, 11904, 2145],
+  [2176, 6528, 1170],
+  [256, 768, 388],
+  [12, 36, 22],
+];
+
+/** The retained `basic_cull` pair: Godot's buffers, coverage and wall metric against the TN arm's. */
+function retained(): { godot: ICullRun; tn: ICullRun } {
+  return {
+    godot: parse({
+      captures: captures([null, 0], 0.0878086419753086),
+      drain: "none-available",
+      meanMs: 1.06874166666667,
+      topology: KINDS.map((kind, index) => ({
+        albedo: [0, 0, 0],
+        indices: RETAINED_GODOT[index]?.[1],
+        kind,
+        triangles: RETAINED_GODOT[index]?.[0],
+        vertices: RETAINED_GODOT[index]?.[2],
+      })),
+    }),
+    tn: parse({
+      arm: "tn-desktop",
+      authoring: "scene-node-independent",
+      captures: captures([null, 0], 0.11018518518518519),
+      // The counterpart arm states its boundary completion in the series, not in a `drain` field.
+      drain: undefined,
+      frameIntervalMs: undefined,
+      meanMs: 19.448460955,
+      rawSeries: uncapped(2, 19.448460955),
+      topology: KINDS.map((kind, index) => ({
+        albedo: [0, 0, 0],
+        counterpartIndices: RETAINED_GODOT[index]?.[1],
+        counterpartTriangles: RETAINED_GODOT[index]?.[0],
+        counterpartVertices: RETAINED_GODOT[index]?.[2],
+        kind,
+        tnIndices: RETAINED_TN[index]?.[1],
+        tnTriangles: RETAINED_TN[index]?.[0],
+        tnVertices: RETAINED_TN[index]?.[2],
+      })),
+    }),
+  };
+}
+
+function state(frameId: number): unknown {
+  return {
+    frameId,
+    probes: [
+      { axisX: [1, 0, 0], index: 0, origin: [266.238, 32.311, -35.796] },
+      { axisX: [1, 0, 0], index: 4999, origin: [34.757, -77.748, -150.044] },
+      { axisX: [1, 0, 0], index: 9999, origin: [-19.053, -47.31, -88.02] },
+    ],
+    timeAccum: 0,
+  };
 }
 
 function run(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -50,6 +118,9 @@ function run(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     arm: "godot-desktop",
     authoring: "rendering-server-rid",
     captures: captures([null, 0]),
+    // The wall metric's semantics, declared the way a record without a completion timestamp must.
+    // One arm pacing on submission and the other draining at the boundary are different metrics.
+    drain: "measurement-boundary-completion",
     dynamic: { enabled: false, rotate: false, rids: 0, target: "none" },
     family: "godot-culling",
     frameIntervalMs: [0, 1.066],
@@ -61,27 +132,17 @@ function run(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     lights: { directional: 0, omni: 0, requested: 0, spot: 0 },
     meanMs: 1.066,
     profile: "smoke",
-    states: [
-      {
-        frameId: 0,
-        probes: [
-          { axisX: [1, 0, 0], index: 0, origin: [266.238, 32.311, -35.796] },
-          { axisX: [1, 0, 0], index: 4999, origin: [34.757, -77.748, -150.044] },
-          { axisX: [1, 0, 0], index: 9999, origin: [-19.053, -47.31, -88.02] },
-        ],
-        timeAccum: 0,
-      },
-    ],
-    topology: ["BoxMesh", "SphereMesh", "CapsuleMesh", "CylinderMesh", "PrismMesh"].map(
-      (kind, index) => ({
-        albedo: [0, 0, 0],
-        counterpartTriangles: 12,
-        kind,
-        tnIndices: 36,
-        tnTriangles: 12,
-        tnVertices: 24 + index,
-      }),
-    ),
+    states: [state(0)],
+    topology: KINDS.map((kind, index) => ({
+      albedo: [0, 0, 0],
+      counterpartIndices: 36,
+      counterpartTriangles: 12,
+      counterpartVertices: 24 + index,
+      kind,
+      tnIndices: 36,
+      tnTriangles: 12,
+      tnVertices: 24 + index,
+    })),
     unshaded: true,
     variant: "basic_cull",
     ...overrides,
@@ -93,6 +154,91 @@ function parse(overrides: Record<string, unknown> = {}): ICullRun {
 }
 
 describe("PRD-449 godot-culling smoke comparison", () => {
+  it("refuses the retained pair's mismatched primitives instead of qualifying it", () => {
+    // The retained `basic_cull` pair, at the detail that made the previous report green: Godot and
+    // TN did not render the same sphere, capsule, cylinder or prism, so a mean over 3.44 M and
+    // 4.59 M source triangles is not a comparison of the same work. PRD-449 §6.1 wants exact mesh
+    // and index buffers, so the count differences are the failure, not a stated difference.
+    const comparison = compareCullRuns(retained().tn, retained().godot);
+    expect(comparison.outcome.valid).toBe(false);
+    expect(comparison.outcome.comparability).toBe("non-comparable");
+    expect(comparison.ratio).toBeNull();
+    expect(comparison.outcome.problems).toEqual([
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH:SphereMesh triangles 4224/3968 indices 12672/11904 vertices 2210/2145",
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH:CapsuleMesh triangles 3456/2176 indices 10368/6528 vertices 1950/1170",
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH:CylinderMesh triangles 768/256 indices 2304/768 vertices 522/388",
+      "TN_BENCH_CULL_TOPOLOGY_MISMATCH:PrismMesh triangles 8/12 indices 24/36 vertices 20/22",
+      "TN_BENCH_CULL_COVERAGE_DIVERGED:0 0.022377 of the frame",
+      "TN_BENCH_CULL_COVERAGE_DIVERGED:1 0.022377 of the frame",
+      "TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH:drain:measurement-boundary-completion/drain:none-available",
+    ]);
+  });
+
+  it("refuses a kind, a scored frame or a probe that only one arm observed", () => {
+    const missingKind = compareCullRuns(
+      parse({ arm: "tn-desktop" }),
+      parse({
+        topology: (run().topology as { kind: string }[]).map((entry, index) =>
+          index === 4 ? { ...entry, kind: "Prism" } : entry,
+        ),
+      }),
+    );
+    expect(missingKind.outcome.problems).toContain("TN_BENCH_CULL_TOPOLOGY_KIND_MISSING:PrismMesh");
+    expect(missingKind.ratio).toBeNull();
+    const missingCoverage = compareCullRuns(
+      parse({ arm: "tn-desktop", captures: captures([null, 0, 0]) }),
+      parse(),
+    );
+    expect(missingCoverage.outcome.problems).toContain("TN_BENCH_CULL_COVERAGE_FRAME_MISSING:2");
+    const missingProbe = compareCullRuns(
+      parse({
+        arm: "tn-desktop",
+        states: [
+          {
+            frameId: 0,
+            probes: [{ axisX: [1, 0, 0], index: 0, origin: [266.238, 32.311, -35.796] }],
+            timeAccum: 0,
+          },
+        ],
+      }),
+      parse(),
+    );
+    expect(missingProbe.outcome.problems).toEqual([
+      "TN_BENCH_CULL_STATE_PROBE_MISSING:4999",
+      "TN_BENCH_CULL_STATE_PROBE_MISSING:9999",
+    ]);
+    // A frame only one arm sampled is not a frame both rendered.
+    expect(
+      compareCullRuns(parse({ arm: "tn-desktop" }), parse({ states: [state(0), state(1)] })).outcome
+        .problems,
+    ).toContain("TN_BENCH_CULL_STATE_FRAME_MISSING:1");
+  });
+
+  it("refuses a ratio between two wall metrics that do not measure the same thing", () => {
+    // Godot's own record says `drain: none-available`, so its mean paces on submission while the
+    // counterpart's drains once at the boundary. The two means are both real; their ratio is not.
+    const paced = compareCullRuns(
+      parse({ arm: "tn-desktop", drain: "none-available", meanMs: 19.448 }),
+      parse(),
+    );
+    expect(paced.outcome.valid).toBe(false);
+    expect(paced.ratio).toBeNull();
+    expect(paced.outcome.problems).toContain(
+      "TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH:drain:none-available/drain:measurement-boundary-completion",
+    );
+    // A record that declares neither a drain nor a completion timestamp has no stated metric.
+    expect(
+      compareCullRuns(parse({ drain: undefined }), parse()).outcome.problems.join(" "),
+    ).toMatch(/_TN_WALL_SEMANTICS_UNDECLARED/);
+    // The derived shape still works: a boundary completion timestamp is the same statement.
+    expect(
+      compareCullRuns(
+        parse({ arm: "tn-desktop", drain: undefined, rawSeries: uncapped(2, 20) }),
+        parse(),
+      ).outcome.problems,
+    ).toEqual([]);
+  });
+
   it("pairs two runs of the same fixture and reports the godot-over-tn mean ratio", () => {
     const comparison = compareCullRuns(
       parse({ arm: "tn-desktop", authoring: "scene-node-independent", meanMs: 35.336 }),
@@ -100,7 +246,7 @@ describe("PRD-449 godot-culling smoke comparison", () => {
     );
     expect(comparison.outcome.valid).toBe(true);
     expect(comparison.outcome.comparability).toBe("qualified");
-    expect(comparison.ratio.ratio).toBeCloseTo(1.066 / 35.336, 5);
+    expect(comparison.ratio?.ratio).toBeCloseTo(1.066 / 35.336, 5);
     expect(comparison.conformance.fixtureHashEqual).toBe(true);
     expect(comparison.conformance.sampledFrames).toBe(1);
     expect(comparison.coverage).toHaveLength(2);
@@ -196,6 +342,11 @@ describe("PRD-449 godot-culling smoke comparison", () => {
     expect(
       parse({ frameIntervalMs: undefined, rawSeries: uncapped(4, 20) }).frameIntervals,
     ).toEqual([20, 20, 20, 20]);
+  });
+
+  it("refuses a record that measured no mesh buffers, rather than comparing absent counts as zero", () => {
+    const topology = KINDS.map((kind) => ({ albedo: [0, 0, 0], kind }));
+    expect(() => parseCullRun({ ...run(), topology })).toThrow(/TN_BENCH_CULL_RUN_MALFORMED/);
   });
 
   it("refuses a record that is not this family's, or whose first capture is not a null difference", () => {

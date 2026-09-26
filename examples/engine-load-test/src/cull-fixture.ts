@@ -20,10 +20,14 @@ export const CULL_UPSTREAM_COMMIT = "b059e38a81230a87293828bbf65ab247b6b2d2a8";
  * workload transforms in float32 and three.js in float64 before uploading float32, so the two
  * pipelines differ by float32 rounding at placement magnitudes up to 200 m (float32 eps there is
  * ~1.5e-5) plus the accumulated sin/cos error of the same closed form. The origin tolerance is ~65x
- * that epsilon; the quaternion component tolerance covers a rotation built from the same angle in the
- * two precisions.
+ * that epsilon; the quaternion component tolerance covers a rotation built from the same angle in
+ * the two precisions. Coverage is a count of lit samples on the 240x135 lattice the two arms share,
+ * so one sample is 1/32400 of a frame; the tolerance admits the handful of samples a luma threshold
+ * can flip on a shared silhouette edge and refuses a different picture. Mesh and index buffers are
+ * not in this table: §6.1 requires them exactly equal, so no tolerance covers a count difference.
  */
 export const CULL_TOLERANCE = {
+  coveredFractionAbsolute: 0.002,
   originAbsoluteMetres: 1e-3,
   quaternionComponentAbsolute: 1e-4,
 } as const;

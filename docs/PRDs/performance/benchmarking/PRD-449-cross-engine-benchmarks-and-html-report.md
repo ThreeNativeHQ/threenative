@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (four real-GPU hardware cells retained, one of them refused as cadence-capped; the shadows-on and rotating variants blocked on named evidence), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks and the Godot-culling family's four single-block cells; no Bevy, fox, City or publication-grade cross-engine result is claimed.
+**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (four real-GPU raw smoke cells retained, every one of them `non-comparable` with no ratio once the comparator stopped qualifying mismatched primitives; the shadows-on and rotating variants blocked on named evidence), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks and the Godot-culling family's four single-block raw smoke cells; no Bevy, fox, City or publication-grade cross-engine result is claimed.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -493,30 +493,57 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   explicitly says `headless-dummy-renderer` and `measuredPerformance: false`; it is a fixture
   diagnostic, not a published timing result. All 23 recorded requested/actual counts matched the
   draft matrix in a direct consistency check.
-  The real-GPU arm closes the transform, scene and physical-rendering clauses of that sentence and
-  leaves the depth/object-ID clause open. [culling_arm.gd](../../../../benchmark/godot-prd449/culling_arm.gd)
+  The real-GPU arm closes the transform and scene clauses of that sentence and leaves the
+  depth/object-ID clause and the physical-rendering clause open: §6.1 requires exact mesh and index
+  buffers, and the two arms do not render the same primitives, so the pairs are non-comparable
+  rather than qualified — see the cell box below.
+  [culling_arm.gd](../../../../benchmark/godot-prd449/culling_arm.gd)
   drives the pinned `benchmark_<variant>()` itself and never re-implements the workload; the
   counterpart arm reads the fixture the Godot arm actually rendered
   ([cull-fixture.ts](../../../../examples/engine-load-test/src/cull-fixture.ts)) instead of
   reimplementing Godot's PCG stream, so the two arms hash the same file. In the retained
   `basic_cull` pair the fixture hash, the 10,000-object census and the 0/0/0 light census are equal,
   the six sampled frames agree to `0 m` and `0` quaternion components, and both arms' independent
-  motion checks pass on the real GPU. The remaining gap is depth/object-ID capture, and the
-  comparison is qualified rather than matched-task for the three stated reasons it records.
-- [x] Retain a real hardware comparison for the Godot culling family.
-  Four real-hardware smoke cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver `615.71.09`
+  motion checks pass on the real GPU. What still blocks the box is exactness, not depth: four of the
+  five primitive kinds differ in triangle, index and vertex count, so no number survives.
+- [ ] Retain a real hardware comparison for the Godot culling family.
+  **Unchecked: the retained runs are real-hardware raw smoke records, not comparisons.** Four
+  real-hardware smoke cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver `615.71.09`
   — 600 measured frames after 120 warmup, both arms on the identical fixture `1283daf331d1`,
   retained under `artifacts/engine-load-test/`. Godot reported its Forward+/Vulkan device with its own
   per-frame CPU and GPU samples (its `drain` is `none-available`, and its wall mean therefore paces
   on submission); the counterpart arm reported `NVIDIA GeForce RTX 2080` through the host's
-  wgpu-native backend and drained once at the measurement boundary.
+  wgpu-native backend and drained once at the measurement boundary. The means below are kept as the
+  historical attempts they are; the comparator now reports every one of these cells
+  `non-comparable` with no ratio, so the box needs a pair that agrees on geometry before it can be
+  ticked.
 
-  | cell | variant | TN authoring | TN mean ms | Godot mean ms | Godot GPU/CPU ms | verdict |
+  | cell | variant | TN authoring | TN mean ms | Godot mean ms | Godot GPU/CPU ms | comparator status |
   |---|---|---|---|---|---|---|
-  | static, unshaded | `basic_cull` | `scene-node-independent` | 19.45 | 1.07 | 0.89 / 0.66 | `qualified`, ratio 0.055 |
-  | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | — | **refused** |
-  | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | 1.26 / 3.41 | `qualified`, ratio 0.152 |
-  | 100 static omni lights | `static_omni_light_cull` | `scene-node-independent` | 20.54 | 1.18 | 1.06 / 0.68 | `qualified`, ratio 0.058 |
+  | static, unshaded | `basic_cull` | `scene-node-independent` | 19.45 | 1.07 | 0.89 / 0.66 | `non-comparable`, ratio withheld |
+  | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | — | `non-comparable`, ratio withheld |
+  | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | 1.26 / 3.41 | `non-comparable`, ratio withheld |
+  | 100 static omni lights | `static_omni_light_cull` | `scene-node-independent` | 20.54 | 1.18 | 1.06 / 0.68 | `non-comparable`, ratio withheld |
+
+  Three named problems hold all four cells, and the comparator now fails closed on each instead of
+  reporting it as a qualification. Re-running `--cull-compare` on the retained `basic_cull`,
+  `dynamic_cull` and `static_omni_light_cull` records gives `non-comparable`, `ratio withheld` and
+  exit 2 on every one, naming: `TN_BENCH_CULL_TOPOLOGY_MISMATCH` for four kinds (SphereMesh
+  4224/3968 triangles, 12672/11904 indices, 2210/2145 vertices; CapsuleMesh 3456/2176, 10368/6528,
+  1950/1170; CylinderMesh 768/256, 2304/768, 522/388; PrismMesh 8/12, 24/36, 20/22 — only BoxMesh
+  matches), `TN_BENCH_CULL_COVERAGE_DIVERGED` at 0.0146–0.0224 of the frame against the declared
+  0.002 tolerance, and `TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH` because Godot's mean paces on
+  submission (`drain: none-available`) while the counterpart's drains once at the boundary
+  (`drain: measurement-boundary-completion`). Two further classes are refused now that did not fire
+  on these records: a missing mesh count is malformed at parse rather than compared as a zero, and a
+  kind, scored frame or probe only one arm observed is a named problem rather than a silent skip.
+  The fix is in the shared comparator
+  ([cull-compare.ts](../../../../scripts/engine-load-test/cull-compare.ts)), with the declared
+  coverage tolerance in `CULL_TOLERANCE`; no criterion was relaxed and no prior value is
+  hard-coded. What the box now needs is named: the counterpart arm must tessellate the five
+  primitives the way the pinned Godot scene does — an export of the pinned mesh buffers — or the
+  pinned scene must be re-authored to the counterpart's tessellation. Until one of those lands, the
+  family has honest raw smoke numbers and no comparison.
 
   The refusal is the result worth having. TN's ordinary authoring at 10,000 objects puts 588 of 600
   frames on the host's 16.667 ms frame loop, so its mean is the present, not the work; the
@@ -526,8 +553,8 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   config rather than a flag, so the cell needs a lane that is not cadence-bound before it can carry
   any number at all. The diagnostic arm sits above that floor (202/600 frames on a tick,
   p50 19.6 ms) — and three runs of that same cell read 19.45, 20.42 and 35.34 ms, a spread far
-  outside the 3% epsilon, so every retained ratio carries `blocks: 1`, no interval and no verdict
-  of faster or slower.
+  outside the 3% epsilon, so even a pair that agreed on geometry would carry `blocks: 1`, no
+  interval and no verdict of faster or slower.
 
   The moving cell is what proved the conformance oracle is worth having: it rejected the first pair
   with `TN_BENCH_CULL_STATE_OUT_OF_TOLERANCE` and 0.13 m of disagreement, and the cause was real on
@@ -540,15 +567,17 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   and Godot 1,028/5,340/5,362 changed samples at the three later captures). A static workload would
   have hidden both halves of that, because nothing moves.
 
-  Every retained comparison is `qualified`, never `matched-task`: the competitor authors
-  `RenderingServer` RIDs, each engine tessellates its own primitives (Godot/TN triangles per kind
-  12/12, 4224/3968, 3456/2176, 768/256, 8/12), and the shaded environments differ. The light cell
-  matches its light census exactly (100 omni, 0 spot, 0 directional) and names the shadow
-  technique it does not have: Godot's dual-paraboloid omni shadows against three's cube-map point
-  lights, which is why it is `omniShadowMode: dual-paraboloid` in the record rather than a
-  like-for-like claim. Coverage deltas are 0.0146–0.0224 of the frame. The native host has no PNG
-  encoder, so the retained visual evidence is the read-back coverage grid both arms compute on the
-  same 240x135 lattice rather than a pair of image files.
+  No retained pair is `qualified`, and none is `matched-task`. The two stated differences that remain
+  — the competitor authors `RenderingServer` RIDs rather than scene nodes, and the shaded
+  environments differ (Godot's Forward+ with sky-derived ambient and dual-paraboloid omni shadows
+  against three's hemisphere light and cube-map point lights) — would be qualifications on a pair
+  that agreed on everything else. These pairs do not: each engine tessellates its own primitives
+  (Godot/TN triangles per kind 12/12, 4224/3968, 3456/2176, 768/256, 8/12), which §6.1 does not allow
+  as a stated difference, so the comparator refuses the ratio. The light cell still matches its
+  light census exactly (100 omni, 0 spot, 0 directional) and names the shadow technique it does not
+  have (`omniShadowMode: dual-paraboloid` in the record). The native host has no PNG encoder, so the
+  retained visual evidence is the read-back coverage grid both arms compute on the same 240x135
+  lattice rather than a pair of image files.
 
   Two harness defects surfaced while trying to add the light cells, both fixed at their root and
   both confirmed by the red-green check named below. The Godot arm recognised the dynamic light set
@@ -573,10 +602,13 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 
   [cull-compare.ts](../../../../scripts/engine-load-test/cull-compare.ts) is pure and unit-proved
   by [engine-load-test-cull-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cull-compare.spec.ts):
-  9/9 pass, and each of the three checks this slice added — the capture's frame-to-frame difference,
-  the cadence refusal, and the clock ordering — was confirmed red against the pre-fix code.
-  The bounded capture is proved in `engine-load-test.spec.ts` (100/100). The eleven focused suites
-  passed 162/162 and root `pnpm exec tsc --noEmit -p tsconfig.json` and
+  13/13 pass, and each of the four checks the last two slices added — the capture's frame-to-frame
+  difference, the cadence refusal, the clock ordering, and the fail-closed refusal of mismatched
+  primitives, unpaired observations and differing wall-metric semantics — was confirmed red against
+  the pre-fix code. The retained-pair test encodes the actual `basic_cull` numbers, and it read
+  `valid: true` with a ratio of 0.055 before the fix, which is the defect it now pins. The bounded
+  capture is proved in `engine-load-test.spec.ts` (100/100). The eleven focused suites passed
+  161/161 and root `pnpm exec tsc --noEmit -p tsconfig.json` and
   `pnpm exec biome check --diagnostic-level=error` exited 0.
 
 

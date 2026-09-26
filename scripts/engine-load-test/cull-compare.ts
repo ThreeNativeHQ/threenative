@@ -13,11 +13,10 @@ import {
 
 export interface ICullTopologyEntry {
   readonly albedo: readonly number[];
-  readonly counterpartTriangles: number;
+  readonly indices: number;
   readonly kind: string;
-  readonly tnIndices: number;
-  readonly tnTriangles: number;
-  readonly tnVertices: number;
+  readonly triangles: number;
+  readonly vertices: number;
 }
 
 export interface ICullProbe {
@@ -66,6 +65,7 @@ export interface ICullRun {
   readonly topology: readonly ICullTopologyEntry[];
   readonly unshaded: boolean;
   readonly variant: string;
+  readonly wallSemantics: string | null;
   readonly work?: Record<string, unknown>;
 }
 
@@ -124,6 +124,23 @@ function frameIntervals(raw: Record<string, unknown>, code: string): readonly nu
     out.push(delta);
   }
   return out;
+}
+
+/**
+ * §7.4's primary metric is a completed-work mean, which needs a final-completion observation on
+ * both arms. The two records do not carry that under one name, so each arm's semantics are read
+ * from the metadata it actually has — a declared `drain`, else a boundary completion timestamp in
+ * its own frame series — and the two statements are compared. A record with neither says nothing
+ * about what its mean measured, so it is `null` and refused rather than assumed.
+ */
+function wallSemantics(raw: Record<string, unknown>, code: string): string | null {
+  if (typeof raw.drain === "string" && raw.drain.length > 0) return `drain:${raw.drain}`;
+  if (raw.rawSeries !== undefined) {
+    const completion = object(raw.rawSeries, code).finalCompletionMs;
+    if (typeof completion === "number" && Number.isFinite(completion))
+      return "drain:measurement-boundary-completion";
+  }
+  return null;
 }
 
 export function parseCullRun(value: unknown, code = "TN_BENCH_CULL_RUN_MALFORMED"): ICullRun {
@@ -213,17 +230,20 @@ export function parseCullRun(value: unknown, code = "TN_BENCH_CULL_RUN_MALFORMED
     }),
     topology: raw.topology.map((entry) => {
       const mesh = object(entry, code);
+      // Each arm's own buffers, under whichever name that arm wrote them: the pinned Godot scene
+      // counts its own mesh, the counterpart arm its own. §6.1 wants the two exactly equal, so a
+      // record that measured none of the three is malformed here rather than read later as a zero.
       return {
         albedo: triple(mesh.albedo, code),
-        counterpartTriangles: count(mesh.counterpartTriangles ?? mesh.triangles, code),
+        indices: count(mesh.indices ?? mesh.tnIndices, code),
         kind: String(mesh.kind),
-        tnIndices: count(mesh.tnIndices ?? mesh.indices, code),
-        tnTriangles: count(mesh.tnTriangles ?? mesh.triangles, code),
-        tnVertices: count(mesh.tnVertices ?? mesh.vertices, code),
+        triangles: count(mesh.triangles ?? mesh.tnTriangles, code),
+        vertices: count(mesh.vertices ?? mesh.tnVertices, code),
       };
     }),
     unshaded: raw.unshaded === true,
     variant: raw.variant,
+    wallSemantics: wallSemantics(raw, code),
     ...(raw.work === undefined ? {} : { work: object(raw.work, code) }),
   };
 }
@@ -258,7 +278,7 @@ export interface ICullComparison {
     ratio: number;
     timeReductionPercent: number;
     tnMeanMs: number;
-  };
+  } | null;
 }
 
 /**
@@ -286,6 +306,11 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
   let maxOriginDelta = 0;
   let maxQuaternionDelta = 0;
   let sampledFrames = 0;
+  // A frame only one arm sampled is a frame the two did not both render, whichever arm lacks it.
+  const tnFrames = new Set(tn.states.map((entry) => entry.frameId));
+  for (const godotState of godot.states)
+    if (!tnFrames.has(godotState.frameId))
+      problems.push(`TN_BENCH_CULL_STATE_FRAME_MISSING:${godotState.frameId}`);
   for (const tnState of tn.states) {
     const godotState = godot.states.find((entry) => entry.frameId === tnState.frameId);
     if (godotState === undefined) {
@@ -295,7 +320,11 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
     sampledFrames += 1;
     for (const tnProbe of tnState.probes) {
       const godotProbe = godotState.probes.find((entry) => entry.index === tnProbe.index);
-      if (godotProbe === undefined) continue;
+      if (godotProbe === undefined) {
+        // Skipping it silently left the pair comparing fewer objects than it claimed to.
+        problems.push(`TN_BENCH_CULL_STATE_PROBE_MISSING:${tnProbe.index}`);
+        continue;
+      }
       for (let axis = 0; axis < 3; axis++) {
         maxOriginDelta = Math.max(
           maxOriginDelta,
@@ -307,41 +336,58 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
         );
       }
     }
+    for (const godotProbe of godotState.probes)
+      if (!tnState.probes.some((candidate) => candidate.index === godotProbe.index))
+        problems.push(`TN_BENCH_CULL_STATE_PROBE_MISSING:${godotProbe.index}`);
   }
   const withinTolerance =
     maxOriginDelta <= CULL_TOLERANCE.originAbsoluteMetres &&
     maxQuaternionDelta <= CULL_TOLERANCE.quaternionComponentAbsolute;
   if (!withinTolerance) problems.push("TN_BENCH_CULL_STATE_OUT_OF_TOLERANCE");
 
-  const topology = tn.topology.map((entry, index) => ({
-    counterpartTriangles:
-      (godot.topology[index] as ICullTopologyEntry | undefined)?.counterpartTriangles ?? 0,
-    kind: entry.kind,
-    tnTriangles: entry.tnTriangles,
-  }));
-  if (
-    tn.topology.some(
-      (entry, index) =>
-        (godot.topology[index] as ICullTopologyEntry | undefined)?.kind !== entry.kind,
+  // §6.1: exact mesh and index buffers, not a matching total. Two engines that tessellate a sphere
+  // into 4,224 and 3,968 triangles are rendering different geometry, so a mean over the two is a
+  // mean over different work and carries no ratio however close their wall times land.
+  const topology = tn.topology.map((entry) => {
+    const other = godot.topology.find((candidate) => candidate.kind === entry.kind);
+    return {
+      counterpartTriangles: other?.triangles ?? 0,
+      kind: entry.kind,
+      tnTriangles: entry.triangles,
+    };
+  });
+  for (const entry of tn.topology) {
+    const other = godot.topology.find((candidate) => candidate.kind === entry.kind);
+    if (other === undefined) {
+      problems.push(`TN_BENCH_CULL_TOPOLOGY_KIND_MISSING:${entry.kind}`);
+      continue;
+    }
+    if (
+      other.triangles !== entry.triangles ||
+      other.indices !== entry.indices ||
+      other.vertices !== entry.vertices
     )
-  )
-    problems.push("TN_BENCH_CULL_TOPOLOGY_KIND_MISMATCH");
-
-  const coverage = tn.captures
-    .filter((entry) => entry.scored)
-    .flatMap((entry) => {
-      const other = godot.captures.find(
-        (candidate) => candidate.scored && candidate.frameId === entry.frameId,
+      problems.push(
+        `TN_BENCH_CULL_TOPOLOGY_MISMATCH:${entry.kind} triangles ${other.triangles}/${entry.triangles} indices ${other.indices}/${entry.indices} vertices ${other.vertices}/${entry.vertices}`,
       );
-      return other === undefined
-        ? []
-        : [
-            {
-              coveredFractionDelta: Math.abs(entry.coveredFraction - other.coveredFraction),
-              frameId: entry.frameId,
-            },
-          ];
-    });
+  }
+
+  const coverage: { coveredFractionDelta: number; frameId: number }[] = [];
+  for (const entry of tn.captures.filter((candidate) => candidate.scored)) {
+    const other = godot.captures.find(
+      (candidate) => candidate.scored && candidate.frameId === entry.frameId,
+    );
+    if (other === undefined) {
+      problems.push(`TN_BENCH_CULL_COVERAGE_FRAME_MISSING:${entry.frameId}`);
+      continue;
+    }
+    const coveredFractionDelta = Math.abs(entry.coveredFraction - other.coveredFraction);
+    coverage.push({ coveredFractionDelta, frameId: entry.frameId });
+    if (coveredFractionDelta > CULL_TOLERANCE.coveredFractionAbsolute)
+      problems.push(
+        `TN_BENCH_CULL_COVERAGE_DIVERGED:${entry.frameId} ${coveredFractionDelta.toFixed(6)} of the frame`,
+      );
+  }
   const tnMotion = lastScored(tn);
   const godotMotion = lastScored(godot);
   if (tnMotion !== null && godotMotion !== null) {
@@ -368,7 +414,21 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
       problems.push(
         `TN_BENCH_CULL_${label.toUpperCase()}_CADENCE_CAPPED:${quantized}/${run.frameIntervals.length} frames on the ${FRAME_CADENCE_MS.toFixed(3)} ms host frame loop, mean ${run.meanMs.toFixed(3)} ms`,
       );
+    if (run.wallSemantics === null)
+      problems.push(
+        `TN_BENCH_CULL_${label.toUpperCase()}_WALL_SEMANTICS_UNDECLARED: neither a drain nor a boundary completion timestamp, so the record does not say what its ${run.meanMs.toFixed(3)} ms mean measured`,
+      );
   }
+  if (
+    tn.wallSemantics !== null &&
+    godot.wallSemantics !== null &&
+    tn.wallSemantics !== godot.wallSemantics
+  )
+    // Both means are real measurements; one paces on submission and the other drains once at the
+    // boundary, and the ratio of those two is a ratio of two different metrics.
+    problems.push(
+      `TN_BENCH_CULL_WALL_SEMANTICS_MISMATCH:${tn.wallSemantics}/${godot.wallSemantics}`,
+    );
 
   const valid = problems.length === 0;
   return {
@@ -389,7 +449,6 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
       comparabilityReasons: valid
         ? [
             "the pinned Godot arm authors 10,000 RenderingServer instance RIDs, not one scene node per object, so this pair compares a renderer-server workload with the counterpart arm's scene-node authoring rather than each engine's ordinary node API",
-            "each engine tessellates its primitives independently, so per-kind triangle counts differ and are reported per arm",
             "the shaded environments differ: Godot's Forward+ world environment with sky-derived ambient and dual-paraboloid omni shadows against three.js' forward renderer with a hemisphere light and cube-map point shadows",
           ]
         : [],
@@ -399,15 +458,19 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
     profile: "smoke",
     qualifications: [
       "one smoke block of one variant: no paired-block interval, no A/A calibration, and no verdict of faster or slower is supported",
-      "the two means do not share a timing definition: the Godot arm has no GPU drain available and its wall mean paces on submission with the engine's asynchronous per-frame GPU timestamps reported beside it, while the counterpart arm drains once at the measurement boundary",
       "a private Xvfb display would make any native arm's completed-work mean a present ceiling rather than a rendering cost; the retained runs name their display so a reader can tell which was used",
     ],
-    ratio: {
-      godotMeanMs: godot.meanMs,
-      ratio: godot.meanMs / tn.meanMs,
-      timeReductionPercent: 100 * (1 - tn.meanMs / godot.meanMs),
-      tnMeanMs: tn.meanMs,
-    },
+    // Withheld rather than reported small: a ratio over a pair that disagrees on the geometry, the
+    // picture, the sampled state or the wall metric's semantics is a number with no meaning, and
+    // the named problems above are why it is absent.
+    ratio: valid
+      ? {
+          godotMeanMs: godot.meanMs,
+          ratio: godot.meanMs / tn.meanMs,
+          timeReductionPercent: 100 * (1 - tn.meanMs / godot.meanMs),
+          tnMeanMs: tn.meanMs,
+        }
+      : null,
   };
 }
 

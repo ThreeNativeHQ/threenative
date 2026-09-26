@@ -800,8 +800,12 @@ async function compareCullArms(): Promise<void> {
       2,
     )}\n`,
   );
+  // The raw means are always the record; the ratio is printed only when the pair earned one, and
+  // the exit code is 2 either way a problem was named.
+  const ratio =
+    comparison.ratio === null ? "ratio withheld" : `ratio ${comparison.ratio.ratio.toFixed(3)}`;
   process.stdout.write(
-    `wrote ${file}\n  tn-desktop      ${tn.meanMs.toFixed(3)} ms\n  godot-desktop   ${godot.meanMs.toFixed(3)} ms  ratio ${comparison.ratio.ratio.toFixed(3)}\n  comparability ${comparison.outcome.comparability}${comparison.outcome.problems.length > 0 ? ` (${comparison.outcome.problems.join(", ")})` : ""}\n`,
+    `wrote ${file}\n  tn-desktop      ${tn.meanMs.toFixed(3)} ms\n  godot-desktop   ${godot.meanMs.toFixed(3)} ms  ${ratio}\n  comparability ${comparison.outcome.comparability}${comparison.outcome.problems.length > 0 ? ` (${comparison.outcome.problems.join(", ")})` : ""}\n`,
   );
   if (!comparison.outcome.valid) process.exitCode = 2;
 }
