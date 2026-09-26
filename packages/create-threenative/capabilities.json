@@ -989,6 +989,26 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the browser grants capture only from a user gesture and a refusal is reported, never swallowed",
+        "a relative binding requests capture on canvas click unless `captureOnClick: false` opts out"
+      ],
+      "example": "canvas.addEventListener(\"click\", () => captureMouse(canvas));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function captureMouse(target: EventTarget): Promise<void> | undefined { … }",
+      "situations": [
+        "lock the mouse pointer so first-person mouse look keeps the cursor out of the way",
+        "stop the cursor leaving the window in the middle of a turn"
+      ],
+      "summary": "Lock the pointer to the game's surface: the capture every first-person mouse look needs. A browser grants capture only from a user gesture, so call it from a click or a pointerdown handler. A relative binding such as `look: { pointerRelative: true }` already requests capture on the first canvas click; this is the same request for a game that starts capture from another named gesture, and `ctx.input.captureMouse()` is the map's own way to ask.",
+      "supersedes": [],
+      "symbol": "captureMouse"
+    },
+    {
+      "aliases": [],
       "constraints": ["a track that binds nothing counts as driving nothing"],
       "example": "import { clipBoneCoverage } from \"@threenative/core\";\nconst coverage = clipBoneCoverage(character, clip);",
       "importPath": "@threenative/core",
@@ -1184,6 +1204,7 @@
       "package": "@threenative/core",
       "signature": "export function createRandom(seed?: number): IRandom { … }",
       "situations": [
+        "get a seeded deterministic random number generator — the same mulberry32 a game would hand-roll",
         "seed enemy patrol choices",
         "reproduce the same procedural level in a playtest"
       ],
@@ -1209,6 +1230,23 @@
       "summary": "Record or replay deterministic game input and state.",
       "supersedes": [],
       "symbol": "createReplayDriver"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "a name in camelCase becomes UPPER_SNAKE: `debugFlag(\"freeCam\")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`",
+        "`0` and `false` are off, so a saved URL cannot turn a switch back on"
+      ],
+      "example": "import { debugFlag } from \"@threenative/core\";\nif (debugFlag(\"freeCam\")) camera.flyMode = true;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function debugFlag(name: string): boolean { … }",
+      "situations": ["read a debug toggle from the URL or an environment variable"],
+      "summary": "Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.",
+      "supersedes": [],
+      "symbol": "debugFlag"
     },
     {
       "aliases": [
@@ -1375,6 +1413,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["development builds only; a production build publishes nothing"],
+      "example": "import { exposeDebug } from \"@threenative/core\";\nexposeDebug(\"player\", player);\n// then from the console: __THREENATIVE__.debug.player",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function exposeDebug(name: string, value: unknown): void { … }",
+      "situations": ["expose a game object to a capture script or the console in dev builds"],
+      "summary": "Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.",
+      "supersedes": [],
+      "symbol": "exposeDebug"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "every mass, area, power and inertia value comes from the game's airframe",
         "damage, stores and configuration arrive as the game's own modifier sample"
@@ -1498,6 +1550,7 @@
       "package": "@threenative/core",
       "signature": "export class FrameBudget { … }",
       "situations": [
+        "show an on-screen frame time meter with p50, p95 and p99 percentiles",
         "find out why a game runs slowly on a phone",
         "attribute a frame to present wait, simulation, three.js render, or overlay",
         "tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp",
@@ -1658,6 +1711,27 @@
     {
       "aliases": [],
       "constraints": [
+        "`buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it",
+        "scroll, pinch and pointer-relative sources are declared on the binding and read through `axis(name)`; a game adds no window listener of its own"
+      ],
+      "example": "const game = defineGame({ input: { move: { up: [\"KeyW\"], down: [\"KeyS\"], left: [\"KeyA\"], right: [\"KeyD\"] } }, scenes: { Play } });\n// inside the scene, per frame: ctx.input.axis(\"move\") is 0 at rest and 1 at full tilt",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class InputMap { … }",
+      "situations": [
+        "map WASD keys to a movement axis instead of reading the held key set in the update loop",
+        "read a jump, a fire or a reload as one named action bound to key, gamepad button and mouse button together",
+        "read mouse look, wheel zoom or a two-finger pinch as an axis the frame loop already ticks"
+      ],
+      "summary": "The map a game reads input through: named actions, 2D vectors and scalar axes resolved from keyboard, gamepad, mouse, wheel, pinch and touch. `defineGame({ input })` builds one and hands it to the running game as `ctx.input`, so the usual route is a binding in the config and `ctx.input.axis(\"move\")` in the update. Construct one directly to drive a menu, a replay or a test outside a running game.",
+      "supersedes": [],
+      "symbol": "InputMap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns an uninstall that restores every wrapper, asserted by test",
         "a renderer whose internals have moved loses that span rather than throwing, and it is absent from the report rather than zero",
         "only the outermost `_projectObject` opens a span, because three's recurses per child"
@@ -1708,7 +1782,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -1771,7 +1845,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -1852,8 +1926,27 @@
     {
       "aliases": [],
       "constraints": [
+        "a non-positive viewport height, a non-positive frustum height or an unprojectable camera throws",
+        "a non-positive depth has no projected scale and returns Infinity"
+      ],
+      "example": "const pixels = lodPixelScale(camera, canvas.clientHeight, mesh.position.distanceTo(camera.position));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lodPixelScale(camera: Camera, viewportHeight: number, depth: number): number { … }",
+      "situations": [
+        "pick a level of detail from an object's projected size in pixels on screen",
+        "know how many screen pixels a world-space error covers at a given distance"
+      ],
+      "summary": "The screen pixels one world unit covers at `depth` for this camera and viewport. Perspective divides the projected scale by the depth; orthographic has no depth term and uses the frustum height instead. This is the number a level of detail is chosen against: multiply a level's world-space error by it and you have the on-screen error a player can see, which is the comparison `updateModelLods` makes from the baked chain.",
+      "supersedes": [],
+      "symbol": "lodPixelScale"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
-        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
       "example": "markStatic(island); invalidateStatic(drawbridge);",
@@ -1863,10 +1956,10 @@
       "package": "@threenative/core",
       "signature": "export function markStatic(root: Object3D): number { … }",
       "situations": [
-        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
-        "keep a frozen subtree correct when the game does move it after all"
+        "freeze a static mesh or subtree so its matrices are not recomputed every frame",
+        "stop the engine recomposing the transforms of props, terrain and buildings each frame"
       ],
-      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "summary": "Freeze a subtree nobody moves: `markStatic(root)` composes its transforms once and stops the per-frame recompose. It is the call a game makes on scenery, terrain, buildings and props. The engine re-arms a root whose own transform the game changes; a write deeper inside a frozen subtree is announced with `invalidateStatic(object)`.",
       "supersedes": [],
       "symbol": "markStatic"
     },
@@ -1885,6 +1978,7 @@
       "package": "@threenative/core",
       "signature": "export class MatrixWorldPass { … }",
       "situations": [
+        "update the world matrices of the visible objects each frame instead of the whole scene",
         "the per-frame world matrix walk is hot in a profile",
         "stop multiplying matrices for hidden models, LOD levels and merged stand-ins",
         "a game needs every node walked, exactly as three's own updateMatrixWorld does"
@@ -1906,6 +2000,28 @@
       "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
       "supersedes": [],
       "symbol": "measureThreePose"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the material is the game's own instance and the split follows the materials the game",
+        "the meshes come back in root's local space and unparented, with the originals still in the",
+        "a skinned or instanced mesh, and a mesh with several materials, is left out — its",
+        "a group where only some meshes carry uv throws naming the label rather than losing the"
+      ],
+      "example": "const [hull, deck] = mergeByMaterial(ship, { label: \"ship\" });\n// a piece that must keep moving at run time:\nconst [steady] = mergeByMaterial(ship, { label: \"ship\", skip: (mesh) => mesh.name === \"radar\" });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["skip leaves one mesh out of its group and out of the result"],
+      "package": "@threenative/core",
+      "signature": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
+      "situations": [
+        "collapse a building or ship of dozens of boxes into one draw call per material",
+        "consolidate the static parts of a group before adding it to the scene"
+      ],
+      "summary": "Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in. already made; nothing here decides appearance tree: add them to root and remove the sources yourself, or both draw vertices are not its own to bake texture mapping; a missing normal is recomputed",
+      "supersedes": [],
+      "symbol": "mergeByMaterial"
     },
     {
       "aliases": [],
@@ -2267,7 +2383,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -2386,7 +2502,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -2842,7 +2958,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -2883,7 +2999,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],

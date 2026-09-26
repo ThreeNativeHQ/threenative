@@ -91,6 +91,15 @@ describe("capability recall gate", () => {
     ).rejects.toThrow("template:starter#Heading removed by a later edit");
   });
 
+  it("should accept a sandbox game pointer and reject an unknown source kind", async () => {
+    await expect(
+      resolveCorpusSources([row({ source: "sandbox:midway#render/world.ts" })]),
+    ).resolves.toBeUndefined();
+    await expect(resolveCorpusSources([row({ source: "notes:midway#world.ts" })])).rejects.toThrow(
+      "notes:midway#world.ts",
+    );
+  });
+
   it("should count a row as a miss when no expected symbol is returned", () => {
     const measurement = measureRecall([row()], manifestFile, (() => []) as CapabilitySearcher);
     expect(measurement.metrics.recallAtK).toBe(0);

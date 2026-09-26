@@ -57,6 +57,11 @@ describe("core constraints", () => {
           file !== "softbody.ts" &&
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
+          // `mergeByMaterial` groups static meshes by their material's *identity* and hands each
+          // group the game's own material instance on the merged mesh. It constructs no material,
+          // configures no property of one, and reads only `name` for the error label; which
+          // materials exist, and how each looks, is entirely the game's.
+          file !== "merge-parts.ts" &&
           // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
           // constructs no material, light, colour or shader; the word "light" it trips on is
           // inside "flight".
@@ -103,6 +108,13 @@ describe("core constraints", () => {
     expect(assets).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    // The same terms as `warmup.ts` for the same reason: `mergeByMaterial` reads a material's
+    // identity to decide which meshes share a draw call, and the material itself is the game's —
+    // so no property of one is ever written here, only its `name` in an error label.
+    const mergeParts = readFileSync(path.join(sourceDirectory, "merge-parts.ts"), "utf8");
+    expect(mergeParts).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
+    expect(mergeParts).not.toMatch(/\.material\s*[.=[]/u);
 
     const geometryCapture = readFileSync(path.join(sourceDirectory, "geometry-capture.ts"), "utf8");
     expect(geometryCapture).not.toMatch(
