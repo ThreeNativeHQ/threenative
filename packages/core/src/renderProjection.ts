@@ -283,6 +283,9 @@ export class SceneRenderProjection {
       if (scan.plan.action === "decline") {
         mirror.releaseAll();
         this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
+        // A scene with nothing in it yet is still loading, and walking it costs nothing: look
+        // again next frame rather than drawing the first second of the level unprojected.
+        if (scan.renderables === 0) this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
       } else {
         // The renderer is handed the mirror, so the authored scene's world matrices are refreshed
         // here. With the engine's walk installed that is the visible-only pass, which mirrors three

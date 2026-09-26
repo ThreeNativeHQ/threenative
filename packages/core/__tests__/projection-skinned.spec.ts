@@ -125,6 +125,16 @@ describe("skinned lane of the render projection", () => {
     for (const mesh of rigs) expect(mesh.parent).toBe(scene);
   });
 
+  it("engages on the frame after a level fills an empty scene", () => {
+    const scene = new Scene();
+    const projection = new SceneRenderProjection(scene);
+    projection.reconcile();
+    expect(projection.report.reasonCode).toBe("belowMeshFloor");
+    for (const mesh of crowd(8).rigs) scene.add(mesh);
+    projection.reconcile();
+    expect(projection.report.skinnedBatches).toBe(1);
+  });
+
   it("retires a rig that leaves the scene and recycles its slot", () => {
     // Twelve rigs, so eleven still clear the mesh floor after one leaves.
     const { scene, rigs } = crowd(12);

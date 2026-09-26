@@ -1,0 +1,50 @@
+{
+  "name": "skinned-crowd-one-palette-draw-desktop",
+  "schemaVersion": 1,
+  "subject": "64 animated rigs the game wrote as plain SkinnedMesh objects draw as one palette draw per pass, and keep moving",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "swayed",
+      "waitTicks": 45,
+      "release": true
+    }
+  ],
+  "assert": {
+    "performance": {
+      "maxDrawCalls": 8
+    },
+    "sceneNodes": [
+      {
+        "select": {
+          "type": "SkinnedMesh"
+        },
+        "minCount": 64,
+        "visible": true,
+        "inFrustum": true
+      },
+      {
+        "select": {
+          "name": "ground"
+        },
+        "visible": true,
+        "minTriangles": 2
+      }
+    ]
+  }
+}
