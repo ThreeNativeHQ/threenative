@@ -610,6 +610,31 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
+  it("creates at most freshMeshesPerUpdate new meshes a frame, and still builds them all", async () => {
+    stubFixtureFetch();
+    const center = cellCenter(1, 1);
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(center.x, center.z),
+      freshMeshesPerUpdate: 1,
+      loadModel: controlledLoader().load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    const meshes = (): number =>
+      world.children.filter((child) => (child as InstancedMesh).isInstancedMesh).length;
+    world.update();
+    await flush();
+    const before = meshes();
+    world.update();
+    // Each new InstancedMesh costs a shader build on WebGPU: one frame may add only one.
+    expect(meshes() - before).toBeLessThanOrEqual(1);
+    await flushed(world);
+    expect(meshes()).toBeGreaterThan(1);
+    world.dispose();
+  });
+
   it("recycles batch meshes across cells instead of creating new ones", async () => {
     // three's WebGPU renderer rebuilds a node program for every new InstancedMesh, so a streamed
     // walk that creates fresh meshes per cell stalls on shader builds; recycled, it builds once.

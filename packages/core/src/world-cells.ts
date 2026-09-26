@@ -147,6 +147,12 @@ export interface IWorldCellsLoadOptions {
    */
   readonly prefetchSeconds?: number;
   /**
+   * New batch meshes created per update, default 2. On WebGPU each new InstancedMesh builds its
+   * own shader the first frame it draws (~10-20 ms of main thread), so a burst of first-seen assets
+   * is spread over frames instead of stacked into one; recycled meshes are not counted.
+   */
+  readonly freshMeshesPerUpdate?: number;
+  /**
    * Milliseconds one `update` may spend admitting streamed content — cell batches, terrain tiles,
    * colliders and `maxDistance`/`lods` refilters together. Defaults to 2, and `Infinity` opts out
    * of the ceiling entirely.
@@ -733,6 +739,10 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #placements: ArrayBuffer;
   readonly #rebuildsPerUpdate: number;
   readonly #prefetchSeconds: number;
+  readonly #freshMeshesPerUpdate: number;
+  /** Fresh meshes created this update, and whether a build waited for next frame's allowance. */
+  #freshThisUpdate = 0;
+  #meshStalled = false;
   /** Smoothed follow velocity (m/s) and the sample it was last updated from. */
   #velocityX = 0;
   #velocityZ = 0;
@@ -801,6 +811,10 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#placements = init.placements;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
     this.#prefetchSeconds = init.prefetchSeconds ?? 1.5;
+    this.#freshMeshesPerUpdate = positiveInteger(
+      init.freshMeshesPerUpdate ?? 2,
+      "freshMeshesPerUpdate",
+    );
     if (!(this.#prefetchSeconds >= 0) || !Number.isFinite(this.#prefetchSeconds))
       throw new Error("WorldCells prefetchSeconds must be a finite number >= 0.");
     this.#baseUrl = init.baseUrl;
@@ -932,6 +946,8 @@ export class WorldCells extends Group implements IComputeDriven {
     const x = this.#follow.position.x;
     const z = this.#follow.position.z;
     const budget = new AdmissionBudget(this.#budgetMs, this.#now);
+    this.#freshThisUpdate = 0;
+    this.#meshStalled = false;
     try {
       this.#terrain.follow({ x, z }, budget);
       this.#terrain.process(renderer);
@@ -1181,6 +1197,8 @@ export class WorldCells extends Group implements IComputeDriven {
         })
       )
         break;
+      // Out of fresh meshes this frame: later jobs would only stall the same way.
+      if (this.#meshStalled) break;
       // A finished build leaves the queue at this index, so the next one is served without a skip.
       if (finished) this.#forget(index, job);
     }
@@ -1303,6 +1321,13 @@ export class WorldCells extends Group implements IComputeDriven {
       }
       const batch = levelBatches[part] as InstancedBatch;
       const into = this.#meshPool.get(poolKey(batch.geometry, batch.material))?.pop();
+      if (into === undefined && batch.count > 0) {
+        if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) {
+          this.#meshStalled = true;
+          return;
+        }
+        this.#freshThisUpdate += 1;
+      }
       const mesh = batch.build({
         capacity: this.#runMax.get(asset.id),
         castShadow: this.#castShadowLevels > level,

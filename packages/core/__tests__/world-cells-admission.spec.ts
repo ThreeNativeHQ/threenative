@@ -140,6 +140,11 @@ async function makeWorld(options: {
   let elapsed = 0;
   const world = await WorldCells.load({
     admissionBudgetMs: options.admissionBudgetMs,
+    // The fresh-mesh allowance is its own ceiling; these tests measure the time budget, so an
+    // unbounded world is unbounded in both.
+    ...(options.admissionBudgetMs === Number.POSITIVE_INFINITY
+      ? { freshMeshesPerUpdate: Number.MAX_SAFE_INTEGER }
+      : {}),
     budgets,
     follow,
     loadModel: async () => model(),
