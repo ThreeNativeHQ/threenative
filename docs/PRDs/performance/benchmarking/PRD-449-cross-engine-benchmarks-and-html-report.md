@@ -890,7 +890,13 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   the full repository test run passed 6,072 tests with 8 skipped. The Godot adapter now emits
   `warmupDurationMs` from elapsed warmup time; the collector marks older records' warmup duration
   unavailable because their `warmupMs` held a start clock. A clean GPU run and actual bundle import
-  with this revision remain open, and the imported smoke runs will remain invalid without the
+  now exist from clean commit `1f543961f`: Godot 1.547 ms and TN 16.795 ms, comparator `qualified`,
+  both with 601 frame boundaries and build archives rehashed. Godot's new elapsed warmup was
+  486.153 ms. `--collect-cull-pair` imported them into
+  `artifacts/engine-load-test/prd449-smoke-v2-current/` as immutable v2 records (CLI exit 2 by
+  design). Its `results.json` now shows 169 planned arms, 6 attempted, 6 invalid, 163 not run and
+  no publication verdict. `sha256sum -c checksums.sha256` passed, and the actual `report.html`
+  opened through `file://` with zero network requests. The bundle remains partial without the
   required preflight and frozen source lock.
 
   **Both arms now drain at the same boundary.** Godot's `drain` was `none-available` and its mean
