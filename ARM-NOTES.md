@@ -112,3 +112,47 @@
   never run in this worktree. No native test imports FixedStepLoop or freezeClock. Reported as
   environmental, not as a green.
 - Next: push branch fix/prd-112-racing-sequence, open ONE PR to develop with auto-merge.
+- [17:07] Merged origin/develop into the branch (it was 3 commits behind; the commits are
+  docs/PRD-449, a packages/assets test fix, and a pnpm fix — none touch packages/core). Re-verified
+  after the merge: install exit 0, build exit 0, typecheck exit 0, lint exit 0, `vitest run packages`
+  358 files / 4288 tests pass. (The `pnpm install` in that batch recreated `.tmp/opencode-data`, which
+  is what made lint red the first time — delete it and lint is green.)
+- [17:07] PR #339 → develop, squash, auto-merge enabled (mergeState BLOCKED = waiting on
+  ci-required, which is the intended flow). Title:
+  "fix(prd-112): a playtest run's simulation was driven by boot wall clock, not by its own ticks".
+
+FINAL REPORT:
+Root cause: a tick-counting playtest run was also simulated by wall clock. The boot hold ends when
+the runner attaches, then the runner pumps live rAF frames through the whole startup compile wait
+(30-60s on a software adapter, a function of machine load) and every frame ran onUpdate off real
+seconds. racing's Race.ts accumulates `elapsed += dt` and DNFs at 90s while the 3-lap scenario needs
+47.0s, so boot time ate the 42.7s of headroom; measured 164 ticks (2.73s) before the first key press
+on a quiet machine, 40s+ in the loaded packed sequence. Racing alone passed only because its boot
+was short.
+Layer: engine `packages/core` (fixed-step loop + playtest bridge) — not the template, gate or runner.
+Two second-order defects found by running the gate, not by reasoning: (a) a frozen clock also
+starved the game's first `update`, leaving action-rpg's camera-parented touch overlay on the camera
+origin -> `point.project` divides by zero w -> NaN bounds; (b) the boot being removed was what
+settled the world, so platformer's character read `visualAttached: false` at tick 0 vs `true` at
+tick 59. Both fixed by settling the world in a FIXED 60 steps (`FROZEN_SETTLE_STEPS`) instead of in
+boot time. A zero-dt prime is impossible: `IPhysicsSimulation.step requires a positive finite
+deltaTime`.
+Files: packages/core/src/{loop,playtest,game}.ts + packages/core/__tests__/{loop,playtest}.spec.ts
++ ARM-NOTES.md. 3 commits on fix/prd-112-racing-sequence (+1 merge).
+Gate results, packed `pnpm verify:golden-path`, TN_PLAYTEST_ALLOW_SOFTWARE=1, full non-visual sweep:
+  RUN 3  exit 0  16:41:50->16:48:32  51/51 scenarios  10 templates
+  RUN 4  exit 0  16:48:42->16:55:01  51/51 scenarios  10 templates
+  racing-finish-behind-rival-is-dnf: firstTick 60 / frames 2648 / lastTick 2736 in BOTH runs —
+  bit-identical under different load, which is the determinism the fix buys.
+  Before the fix: racing alone exit 0, packed exit 1 (racing layer `test`).
+A/B on the same machine, one variable changed: action-rpg touch-controls NaN with the freeze, passes
+at HEAD~1; platformer 15/15 at HEAD~2, 14/15 with a one-step prime, 15/15 with the 60-step settle.
+Other gates: typecheck exit 0, lint exit 0, `vitest run packages` 358 files / 4288 tests pass.
+Not green, reported honestly: `pnpm test` aborts at packages/runtime-native with 18 failures, all
+"<cmake executable> is not built" — `packages/runtime-native/build` does not exist because
+`pnpm native:build` is opt-in and was never run here; no native test imports the changed symbols.
+PR: #339 -> develop, squash, auto-merge enabled (BLOCKED on ci-required).
+Scratch traps: /tmp is a 32GB tmpfs here so TMPDIR=/home/joao/.tn-tmp; a TMPDIR inside the repo
+makes scaffold installs walk up into the workspace and layer `mcp` dies MODULE_NOT_FOUND; and
+`.tmp/opencode-data` (721MB pnpm store the tooling rewrites into the worktree) is git-ignored but
+not biome-ignored, producing hundreds of phantom lint errors.
