@@ -150,7 +150,7 @@ async function readReport(reportPath: string): Promise<IBuildReport> {
   } catch (error) {
     throw invalid(reportPath, `is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const report = requireKeys(parsed, "report", REPORT_KEYS, reportPath) as unknown as IBuildReport;
+  const report = requireKeys(parsed, "report", REPORT_KEYS, reportPath) as Partial<IBuildReport> as IBuildReport;
   if (report.schemaVersion !== 1) {
     throw invalid(reportPath, `schemaVersion must be 1, received ${JSON.stringify(report.schemaVersion)}.`);
   }

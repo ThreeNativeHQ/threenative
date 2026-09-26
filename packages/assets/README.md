@@ -7,6 +7,28 @@ managed file.
 
 Node-only. Carries the encoder dependencies the runtime must never inherit.
 
+## Cook profiles
+
+One compiler, one asset tree, a different representation per artifact: `buildProfiles` in
+`threenative.config.ts` names a set of processing options per profile, and a build picks one with
+`threenative build --profile <name>` or from `buildProfiles.defaults.<target>`. With neither, the
+`assets` block is used exactly as declared, which is what every project without the feature gets.
+
+An overlay may change `audio`, `budget`, `lod`, `models`, `targets` and `textures` — the passes
+themselves. It may not restate `source`, `output` or `exclude`: one project compiles one tree, and
+those are refused rather than quietly producing two answers.
+
+A `maxSize` cap is applied here, per asset kind, and never upscales. On a target whose runtime has
+no WebAssembly — Android and iOS, which have no Basis transcoder and no Meshopt decoder — the cap
+is applied by resizing during the compile and shipping a PNG, because a KTX2 nobody can decode is
+not a smaller texture, it is an unreadable one. The dimension requested is the dimension the file
+decodes to, alpha kept, and the source on disk is untouched.
+
+Everything about appearance stays the game's: a profile decides which bytes reach the disk, never
+what they look like. The generated project's `agent-docs/build-profiles.md` carries the full
+contract, the `artifactBudget` / `performanceBudget` blocks and the `<artifact>.build-report.json`
+a build publishes.
+
 ## The delete-test, and the receipt that makes it possible
 
 Every baking pass in here obeys one rule: **delete the entire baked output and the game runs

@@ -44,6 +44,16 @@ const config: IThreeNativeConfig = {
   // Switch to "native" for a UI drawn as part of the rendered frame, with no web view and no
   // extra process — and own the appearance difference that comes with it.
   ui: { renderer: "web" },
+  // One asset tree, one compiler, one representation per artifact. Uncomment, then cook:
+  //   threenative build --target android   # cooks defaults.android; --profile <name> beats it
+  // buildProfiles: {
+  //   defaults: { android: "compact" },
+  //   profiles: {
+  //     compact: {
+  //       assets: { textures: { maxSize: 1024 }, models: { textures: { maxSize: 1024 } } },
+  //     } },
+  // },
+  // Contract, byte definitions, the build report: `agent-docs/build-profiles.md`.
 };
 
 export default config;

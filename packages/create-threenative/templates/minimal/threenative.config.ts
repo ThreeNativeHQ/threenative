@@ -27,6 +27,16 @@ const config: IThreeNativeConfig = {
   },
   nativeEntry: "src/game.ts",
   ui: { renderer: "native" }, // This template draws its HUD in the scene and has no src/ui/.
+  // One asset tree, one compiler, one representation per artifact. Uncomment, then cook:
+  //   threenative build --target android   # cooks defaults.android; --profile <name> beats it
+  // buildProfiles: {
+  //   defaults: { android: "compact" },
+  //   profiles: {
+  //     compact: {
+  //       assets: { textures: { maxSize: 1024 }, models: { textures: { maxSize: 1024 } } },
+  //     } },
+  // },
+  // Contract, byte definitions, the build report: `agent-docs/build-profiles.md`.
   renderer: {
     preferWebGPU: true, // Use WebGPU when the host exposes it.
     // The engine holds the `display.maxFps` budget by scaling the 3D drawing buffer, and reports
