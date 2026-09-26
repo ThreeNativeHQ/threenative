@@ -93,6 +93,17 @@ export class InstancedBatch {
     return this.#matrices.length;
   }
 
+  /**
+   * Writes every placed matrix into `target` (a mesh's `instanceMatrix.array`), starting at instance
+   * `offset`, and returns how many were written. For a caller that packs several batches into one
+   * shared instance buffer instead of building a mesh per batch.
+   */
+  writeMatrices(target: Float32Array, offset: number): number {
+    for (let index = 0; index < this.#matrices.length; index += 1)
+      (this.#matrices[index] as Matrix4).toArray(target, (offset + index) * 16);
+    return this.#matrices.length;
+  }
+
   /** The built mesh, or `undefined` before {@link build} — never a guess. */
   get mesh(): InstancedMesh | undefined {
     return this.#mesh;

@@ -1,7 +1,7 @@
 import {
   type BufferGeometry,
   Group,
-  type InstancedMesh,
+  InstancedMesh,
   type Material,
   Matrix4,
   Mesh,
@@ -203,11 +203,116 @@ export interface IWorldCellsStats {
 interface ICellBatch {
   readonly asset: string;
   readonly batch: InstancedBatch;
+  readonly level: number;
+  readonly part: number;
   /** How far the follow point has to move before this batch is refiltered, `undefined` never. */
   readonly threshold: number | undefined;
-  mesh: InstancedMesh | undefined;
+  /** The shared mesh this cell's instances are written into, and its segment there (-1: none). */
+  shared: SharedBatch | undefined;
+  segment: number;
   lastFilterX: number;
   lastFilterZ: number;
+}
+
+/**
+ * One asset part at one distance level, drawn for every resident cell by a single InstancedMesh.
+ *
+ * Each cell owns a fixed-size segment of the instance buffer (the asset's largest run in any cell),
+ * so admitting a cell writes its segment and evicting it zeroes the segment — a zero matrix
+ * collapses every vertex, so a free segment draws nothing. The draw object count is then per
+ * asset part and level, not per cell: a 25-cell ring of a 218-asset world was ~5,000 meshes and
+ * 20+ ms of CPU a frame in three's per-object render path; shared, it is the asset count, and a
+ * new mesh (on WebGPU, a shader build) appears only for a first-seen asset or when a buffer grows.
+ * ponytail: frustum culling is off — the union of a ring's cells is always in view — so the GPU
+ * draws the ring's instances; split into regions if a map's instance count makes that the cost.
+ */
+class SharedBatch {
+  mesh: InstancedMesh;
+  readonly #segmentSize: number;
+  readonly #used: boolean[] = [];
+
+  constructor(
+    geometry: BufferGeometry,
+    material: Material,
+    segmentSize: number,
+    segments: number,
+    name: string,
+  ) {
+    this.#segmentSize = Math.max(1, segmentSize);
+    this.mesh = SharedBatch.#meshFor(geometry, material, this.#segmentSize * segments, name);
+  }
+
+  static #meshFor(
+    geometry: BufferGeometry,
+    material: Material,
+    capacity: number,
+    name: string,
+  ): InstancedMesh {
+    const mesh = new InstancedMesh(geometry, material, capacity);
+    mesh.name = name;
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    (mesh.instanceMatrix.array as Float32Array).fill(0);
+    mesh.instanceMatrix.needsUpdate = true;
+    return mesh;
+  }
+
+  /** A free segment, or `undefined` when the buffer has none left and must grow first. */
+  allocate(): number | undefined {
+    const segments = this.mesh.instanceMatrix.count / this.#segmentSize;
+    for (let index = 0; index < segments; index += 1) {
+      if (this.#used[index] === true) continue;
+      this.#used[index] = true;
+      return index;
+    }
+    return undefined;
+  }
+
+  /** Doubles the buffer in a new mesh (same data), returning the one it replaces. */
+  grow(): InstancedMesh {
+    const old = this.mesh;
+    const mesh = SharedBatch.#meshFor(
+      old.geometry,
+      old.material as Material,
+      old.instanceMatrix.count * 2,
+      old.name,
+    );
+    (mesh.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array as Float32Array);
+    mesh.castShadow = old.castShadow;
+    mesh.receiveShadow = old.receiveShadow;
+    mesh.count = old.count;
+    this.mesh = mesh;
+    return old;
+  }
+
+  write(segment: number, batch: InstancedBatch): void {
+    const array = this.mesh.instanceMatrix.array as Float32Array;
+    const start = segment * this.#segmentSize;
+    const written = batch.writeMatrices(array, start);
+    array.fill(0, (start + written) * 16, (start + this.#segmentSize) * 16);
+    this.#touched(start);
+  }
+
+  clear(segment: number): void {
+    const start = segment * this.#segmentSize;
+    (this.mesh.instanceMatrix.array as Float32Array).fill(
+      0,
+      start * 16,
+      (start + this.#segmentSize) * 16,
+    );
+    this.#used[segment] = false;
+    this.#touched(start);
+  }
+
+  #touched(start: number): void {
+    const matrix = this.mesh.instanceMatrix;
+    matrix.addUpdateRange(start * 16, this.#segmentSize * 16);
+    matrix.needsUpdate = true;
+    let last = this.#used.length - 1;
+    while (last >= 0 && this.#used[last] !== true) last -= 1;
+    this.mesh.count = (last + 1) * this.#segmentSize;
+    this.mesh.visible = this.mesh.count > 0;
+  }
 }
 
 interface IResidentCell {
@@ -560,10 +665,6 @@ function levelAt(distances: readonly number[], distance: number): number {
  */
 const WORLD_LOAD_CONCURRENCY = 12;
 
-function poolKey(geometry: BufferGeometry, material: Material): string {
-  return `${geometry.uuid}:${material.uuid}`;
-}
-
 function positiveInteger(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 1)
     throw new Error(`WorldCells ${name} must be a positive integer.`);
@@ -756,14 +857,9 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #resident = new Map<string, IResidentCell>();
   /** Surfaces shared by material content across every asset part; see `materialKey`. */
   readonly #surfaces = new Map<string, ISharedSurface>();
-  /**
-   * Batch meshes out of the scene, keyed by geometry and material, for the next cell to refill.
-   * three's WebGPU renderer keys an instanced mesh's compiled node program by the mesh itself, so
-   * every new InstancedMesh rebuilds its shader: creating a cell's few hundred batches fresh was
-   * 60 % of every streaming spike. Recycled, a mesh is built once and reused for the whole walk.
-   */
-  readonly #meshPool = new Map<string, InstancedMesh[]>();
-  /** The largest run of each asset in any cell: a pooled mesh sized to it fits every cell. */
+  /** One shared mesh per `asset:level:part`, holding every resident cell's segment; see SharedBatch. */
+  readonly #shared = new Map<string, SharedBatch>();
+  /** The largest run of each asset in any cell: the segment size every cell of it fits. */
   readonly #runMax = new Map<string, number>();
   /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
   readonly #castShadowLevels: number;
@@ -1050,7 +1146,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#released) return;
     this.#released = true;
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
-    if (this.#drainPool() > 0) this.#failures += 1;
+    if (this.#drainShared() > 0) this.#failures += 1;
     this.#terrain.dispose();
     this.removeFromParent();
   }
@@ -1240,8 +1336,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#buildOne(job, batches);
       return false;
     }
-    this.#swap(job);
-    return true;
+    return this.#swap(job);
   }
 
   /**
@@ -1251,17 +1346,36 @@ export class WorldCells extends Group implements IComputeDriven {
    * ever shows the replacement beside the batch it replaces, and a refilter that waits three frames
    * for budget shows the level the cell already had for those three frames rather than nothing.
    */
-  #swap(job: IBuildJob): void {
+  #swap(job: IBuildJob): boolean {
     const { cell } = job;
+    // Every segment first, so a frame out of fresh meshes leaves the old batches drawing whole.
     for (const entry of job.fresh) {
-      cell.batches.push(entry);
-      if (entry.mesh !== undefined) this.add(entry.mesh);
+      if (entry.batch.count === 0 || entry.segment >= 0) continue;
+      const shared = this.#sharedFor(job.asset.id, entry);
+      const segment = shared === undefined ? undefined : this.#segmentIn(shared);
+      if (shared === undefined || segment === undefined) {
+        this.#meshStalled = true;
+        return false;
+      }
+      entry.shared = shared;
+      entry.segment = segment;
     }
     for (const entry of job.replaced) {
       const at = cell.batches.indexOf(entry);
       if (at >= 0) cell.batches.splice(at, 1);
-      this.#retire(entry.mesh);
+      this.#clearSegment(entry);
     }
+    for (const entry of job.fresh) {
+      cell.batches.push(entry);
+      if (entry.shared !== undefined) entry.shared.write(entry.segment, entry.batch);
+    }
+    return true;
+  }
+
+  #clearSegment(entry: ICellBatch): void {
+    if (entry.shared !== undefined && entry.segment >= 0) entry.shared.clear(entry.segment);
+    entry.shared = undefined;
+    entry.segment = -1;
   }
 
   /**
@@ -1312,41 +1426,65 @@ export class WorldCells extends Group implements IComputeDriven {
    * InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
    */
   #buildOne(job: IBuildJob, batches: readonly InstancedBatch[][]): void {
-    const { asset, cell } = job;
+    const { asset } = job;
     let part = job.published;
     for (const [level, levelBatches] of batches.entries()) {
       if (part >= levelBatches.length) {
         part -= levelBatches.length;
         continue;
       }
-      const batch = levelBatches[part] as InstancedBatch;
-      const into = this.#meshPool.get(poolKey(batch.geometry, batch.material))?.pop();
-      if (into === undefined && batch.count > 0) {
-        if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) {
-          this.#meshStalled = true;
-          return;
-        }
-        this.#freshThisUpdate += 1;
-      }
-      const mesh = batch.build({
-        capacity: this.#runMax.get(asset.id),
-        castShadow: this.#castShadowLevels > level,
-        ...(into === undefined ? {} : { into }),
-        name: `${cell.key}:${asset.id}:${String(level)}:${String(part)}`,
-        receiveShadow: this.#receiveShadow,
-      });
-      if (into !== undefined && mesh !== into) this.#retire(into);
       job.fresh.push({
         asset: asset.id,
-        batch,
+        batch: levelBatches[part] as InstancedBatch,
         lastFilterX: job.filterX,
         lastFilterZ: job.filterZ,
-        mesh,
+        level,
+        part,
+        segment: -1,
+        shared: undefined,
         threshold: asset.threshold,
       });
       job.published += 1;
       return;
     }
+  }
+
+  /**
+   * The shared batch for one asset part at one level, created (a new mesh: counted against the
+   * frame's fresh allowance) the first time any cell draws it. `undefined` means the allowance is
+   * spent and the caller waits a frame.
+   */
+  #sharedFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
+    const key = `${assetId}:${String(entry.level)}:${String(entry.part)}`;
+    const existing = this.#shared.get(key);
+    if (existing !== undefined) return existing;
+    if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return undefined;
+    this.#freshThisUpdate += 1;
+    const shared = new SharedBatch(
+      entry.batch.geometry,
+      entry.batch.material,
+      this.#runMax.get(assetId) ?? entry.batch.count,
+      8,
+      key,
+    );
+    shared.mesh.castShadow = this.#castShadowLevels > entry.level;
+    shared.mesh.receiveShadow = this.#receiveShadow;
+    this.#shared.set(key, shared);
+    this.add(shared.mesh);
+    return shared;
+  }
+
+  /** A segment in `shared` for one cell's batch, growing the buffer when it is full. */
+  #segmentIn(shared: SharedBatch): number | undefined {
+    const segment = shared.allocate();
+    if (segment !== undefined) return segment;
+    if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return undefined;
+    this.#freshThisUpdate += 1;
+    const old = shared.grow();
+    this.add(shared.mesh);
+    old.removeFromParent();
+    if (release(old)) this.#failures += 1;
+    return shared.allocate();
   }
 
   /**
@@ -1601,9 +1739,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#queued.delete(`${cell.key}|${job.asset.id}`);
       return false;
     });
-    for (const entry of cell.batches) {
-      this.#retire(entry.mesh);
-    }
+    for (const entry of cell.batches) this.#clearSegment(entry);
     cell.batches.length = 0;
     for (const chunk of cell.chunks) {
       chunk.removeFromParent();
@@ -1684,32 +1820,19 @@ export class WorldCells extends Group implements IComputeDriven {
     const levels = asset.levels;
     asset.levels = [];
     let failed = 0;
-    const geometries = new Set<BufferGeometry>();
-    for (const parts of levels) for (const part of parts) geometries.add(part.geometry);
-    failed += this.#drainPool(geometries);
+    failed += this.#drainShared(id);
     for (const parts of levels) failed += this.#releaseParts(parts);
     if (failed > 0) this.#failures += 1;
   }
 
-  /** Out of the scene and into the pool, for the next batch of the same geometry and material. */
-  #retire(mesh: InstancedMesh | undefined): void {
-    if (mesh === undefined) return;
-    mesh.removeFromParent();
-    const key = poolKey(mesh.geometry, mesh.material as Material);
-    const pool = this.#meshPool.get(key);
-    if (pool === undefined) this.#meshPool.set(key, [mesh]);
-    else pool.push(mesh);
-  }
-
-  /** Disposes the pooled meshes drawing any of `geometries` (or all of them); returns failures. */
-  #drainPool(geometries?: ReadonlySet<BufferGeometry>): number {
+  /** Disposes the shared meshes of one asset (or of every asset); returns teardown failures. */
+  #drainShared(assetId?: string): number {
     let failed = 0;
-    for (const [key, pool] of this.#meshPool) {
-      const first = pool[0];
-      if (geometries !== undefined && (first === undefined || !geometries.has(first.geometry)))
-        continue;
-      for (const mesh of pool) if (release(mesh)) failed += 1;
-      this.#meshPool.delete(key);
+    for (const [key, shared] of this.#shared) {
+      if (assetId !== undefined && !key.startsWith(`${assetId}:`)) continue;
+      shared.mesh.removeFromParent();
+      if (release(shared.mesh)) failed += 1;
+      this.#shared.delete(key);
     }
     return failed;
   }

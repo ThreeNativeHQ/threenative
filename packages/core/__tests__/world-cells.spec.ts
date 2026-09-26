@@ -326,9 +326,23 @@ function levelMesh(
   level: number,
   part = 0,
 ): InstancedMesh | undefined {
-  return world.getObjectByName(`${cellKey(1, 1)}:${asset}:${String(level)}:${String(part)}`) as
+  return world.getObjectByName(`${asset}:${String(level)}:${String(part)}`) as
     | InstancedMesh
     | undefined;
+}
+
+/** Instances a shared batch actually draws: a free segment's slots are zero matrices. */
+function liveIndices(mesh: InstancedMesh | undefined): number[] {
+  if (mesh === undefined) return [];
+  const array = mesh.instanceMatrix.array as Float32Array;
+  const live: number[] = [];
+  for (let index = 0; index < mesh.count; index += 1)
+    if (array[index * 16 + 15] !== 0) live.push(index);
+  return live;
+}
+
+function liveCount(mesh: InstancedMesh | undefined): number {
+  return liveIndices(mesh).length;
 }
 
 interface IPartLoader {
@@ -393,7 +407,7 @@ function treeLoader(
 function drawnDistances(mesh: InstancedMesh, follow: { x: number; z: number }): number[] {
   const matrix = new Matrix4();
   const distances: number[] = [];
-  for (let index = 0; index < mesh.count; index += 1) {
+  for (const index of liveIndices(mesh)) {
     mesh.getMatrixAt(index, matrix);
     distances.push(
       Math.hypot(
@@ -447,10 +461,10 @@ function partsOf(
   level: number,
   part: number,
 ): readonly InstancedMesh[] {
-  const suffix = `:${asset}:${String(level)}:${String(part)}`;
+  const name = `${asset}:${String(level)}:${String(part)}`;
   const meshes: InstancedMesh[] = [];
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh && object.name.endsWith(suffix)) meshes.push(object);
+    if (object instanceof InstancedMesh && object.name === name) meshes.push(object);
   });
   return meshes;
 }
@@ -635,9 +649,9 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
-  it("recycles batch meshes across cells instead of creating new ones", async () => {
-    // three's WebGPU renderer rebuilds a node program for every new InstancedMesh, so a streamed
-    // walk that creates fresh meshes per cell stalls on shader builds; recycled, it builds once.
+  it("draws every cell of an asset part and level through one mesh, whatever the ring", async () => {
+    // three builds a shader per InstancedMesh and pays a per-object cost every frame; a mesh per
+    // cell made a 25-cell ring thousands of objects. Shared, a walk adds cells, not meshes.
     stubFixtureFetch();
     const follow = followAt(0, 0);
     const world = await loadWorld({
@@ -648,39 +662,30 @@ describe("WorldCells", () => {
       surface,
       url: "/world/world.json",
     });
-    const drawn = (): Set<InstancedMesh> => {
-      const meshes = new Set<InstancedMesh>();
+    const meshes = (): Set<InstancedMesh> => {
+      const found = new Set<InstancedMesh>();
       world.traverse((object) => {
-        if ((object as InstancedMesh).isInstancedMesh) meshes.add(object as InstancedMesh);
+        if ((object as InstancedMesh).isInstancedMesh) found.add(object as InstancedMesh);
       });
-      return meshes;
+      return found;
     };
-    // Batch names start with their cell key; a mesh that reappears under another cell's key was
-    // recycled from an evicted cell into an admitted one.
-    const cellOf = new Map<InstancedMesh, string>();
-    // One cell at a time, as a player walks: the ring keeps the assets resident while cells
-    // behind are evicted and cells ahead admitted.
     const walk = [
       { x: 1, z: 1 },
       { x: 2, z: 1 },
       { x: 3, z: 1 },
       { x: 3, z: 2 },
     ];
-    let reused = 0;
     for (const cell of walk) {
       const center = cellCenter(cell.x, cell.z);
       follow.position.x = center.x;
       follow.position.z = center.z;
       await flushed(world);
-      for (const mesh of drawn()) {
-        const cell = mesh.name.split(":")[0] ?? "";
-        const before = cellOf.get(mesh);
-        if (before !== undefined && before !== cell) reused += 1;
-        cellOf.set(mesh, cell);
-      }
+      const now = meshes();
+      // Names are asset:level:part — no cell in them — and never repeat.
+      const names = [...now].map((mesh) => mesh.name);
+      expect(new Set(names).size).toBe(names.length);
+      for (const name of names) expect(name.split(":")).toHaveLength(3);
     }
-    // A mesh drawn again after its cell left was recycled into a newly admitted cell's batch.
-    expect(reused).toBeGreaterThan(0);
     world.dispose();
   });
 
@@ -792,7 +797,7 @@ describe("WorldCells", () => {
 
       world.traverse((object: Object3D) => {
         if (!(object instanceof InstancedMesh) || !object.name.includes("ground_cover")) return;
-        for (let index = 0; index < object.count; index += 1) {
+        for (const index of liveIndices(object)) {
           object.getMatrixAt(index, matrix);
           const elements = matrix.elements;
           const x = elements[12] as number;
@@ -1223,7 +1228,7 @@ describe("WorldCells", () => {
     expect(near.geometry).toBe(loader.geometryFor("pine.glb"));
     expect(far.geometry).toBe(loader.geometryFor("pine_lod1.glb"));
     // The whole run, split by each placement's own distance: no placement dropped, none doubled.
-    expect(near.count + far.count).toBe(85);
+    expect(liveCount(near) + liveCount(far)).toBe(85);
     for (const distance of drawnDistances(near, follow.position))
       expect(distance).toBeLessThanOrEqual(lodDistance);
     for (const distance of drawnDistances(far, follow.position))
@@ -1248,7 +1253,7 @@ describe("WorldCells", () => {
     });
     world.update();
     await flushed(world);
-    expect((levelMesh(world, "pine", 1) as InstancedMesh).count).toBeGreaterThan(0);
+    expect(liveCount(levelMesh(world, "pine", 1))).toBeGreaterThan(0);
 
     // The cell centre is 45 m away — past the eighth of the 60 m switch the refilter waits for — and
     // from there every placement in the cell is inside that switch.
@@ -1257,10 +1262,11 @@ describe("WorldCells", () => {
     follow.position.z = center.z;
     world.update();
 
-    expect(levelMesh(world, "pine", 1)).toBeUndefined();
+    // The shared lod1 mesh stays for the next cell that needs it; this cell's segment is empty.
+    expect(liveCount(levelMesh(world, "pine", 1))).toBe(0);
     const near = levelMesh(world, "pine", 0) as InstancedMesh;
     expect(near.geometry).toBe(loader.geometryFor("pine.glb"));
-    expect(near.count).toBe(85);
+    expect(liveCount(near)).toBe(85);
     expect(world.stats().failures).toBe(0);
     world.dispose();
   });
@@ -1294,10 +1300,10 @@ describe("WorldCells", () => {
     const before = world.stats().rebuilds;
     const meshes = world.children.filter((child) => child instanceof InstancedMesh);
     expect(before).toBe(0);
-    expect(world.getObjectByName("1:2:pine:1:0")).toBeDefined();
-    // The three cells ring 2 reaches from the extent's corner cell, one lod mesh each.
+    expect(liveCount(levelMesh(world, "pine", 1))).toBeGreaterThan(0);
+    // The three cells ring 2 reaches from the extent's corner cell share one lod mesh.
     expect(world.stats().residentCells).toBe(3);
-    expect(meshes).toHaveLength(3);
+    expect(meshes).toHaveLength(1);
 
     // Past the eighth of the 60 m gate the old code refiltered every resident cell, for every
     // asset, on this move alone.
@@ -1346,8 +1352,9 @@ describe("WorldCells", () => {
 
     // One cell-asset, the near one: the far cell's placements cannot have changed side of a gate.
     expect(world.stats().rebuilds).toBe(1);
+    // The shared mesh is the same object; the near cell's segment was rewritten.
     const rebuilt = levelMesh(world, "ground_cover", 0) as InstancedMesh;
-    expect(rebuilt).not.toBe(near);
+    expect(rebuilt).toBe(near);
     // And it was refiltered from where the follow point is now, not from where it was.
     for (const distance of drawnDistances(rebuilt, follow.position))
       expect(distance).toBeLessThanOrEqual(26.25);
@@ -1396,7 +1403,7 @@ describe("WorldCells", () => {
     let drawn = 0;
     world.traverse((object: Object3D) => {
       if (!(object instanceof InstancedMesh) || !object.name.includes("ground_cover")) return;
-      for (let index = 0; index < object.count; index += 1) {
+      for (const index of liveIndices(object)) {
         object.getMatrixAt(index, matrix);
         expect(
           Math.hypot(
@@ -1465,7 +1472,7 @@ describe("WorldCells", () => {
     const lod1 = levelMesh(world, "pine", 1) as InstancedMesh;
     expect(lod0.geometry).toBe(loader.geometryFor("pine.glb"));
     expect(lod1.geometry).toBe(loader.geometryFor("pine.glb"));
-    expect(lod0.count + lod1.count).toBe(85);
+    expect(liveCount(lod0) + liveCount(lod1)).toBe(85);
     world.dispose();
   });
 
@@ -1609,9 +1616,9 @@ describe("WorldCells", () => {
     expect(needles.material).not.toBe(bark.material);
     expect(needles.material).not.toBe(loader.materialFor("pine.glb", 1));
     // Every placement is in both parts, and the whole run is still drawn exactly once per part.
-    expect(needles.count).toBe(bark.count);
-    expect(farNeedles.count).toBe(farBark.count);
-    expect(bark.count + farBark.count).toBe(85);
+    expect(liveCount(needles)).toBe(liveCount(bark));
+    expect(liveCount(farNeedles)).toBe(liveCount(farBark));
+    expect(liveCount(bark) + liveCount(farBark)).toBe(85);
 
     // The needles instance is the placement transformed by the part's own offset in the model, so
     // `placementMatrix * partLocalMatrix` is recoverable from the pair whatever the placement's
@@ -1620,7 +1627,7 @@ describe("WorldCells", () => {
     const raised = new Matrix4();
     const local = new Matrix4();
     const expected = new Matrix4().makeTranslation(0, 1.5, 0);
-    for (let index = 0; index < bark.count; index += 1) {
+    for (const index of liveIndices(bark)) {
       bark.getMatrixAt(index, placed);
       needles.getMatrixAt(index, raised);
       local.copy(placed).invert().multiply(raised);
@@ -1690,9 +1697,10 @@ describe("WorldCells", () => {
     });
     wide.update();
     await flushed(wide);
+    // Every cell of the ring draws its needles through the one shared mesh and its one cutout.
     const near = partsOf(wide, "pine", 0, 1);
-    expect(near.length).toBeGreaterThan(1);
-    expect(new Set(near.map((mesh) => mesh.material)).size).toBe(1);
+    expect(near).toHaveLength(1);
+    expect(liveCount(near[0])).toBeGreaterThan(0);
     // Every asset in this package carries the same two materials, so however many GLBs loaded the
     // world draws with two surfaces: one opaque, one cutout. One shader each, not one per asset.
     const drawn = new Set<Material>();

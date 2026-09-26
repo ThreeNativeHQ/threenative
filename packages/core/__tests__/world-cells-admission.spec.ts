@@ -95,8 +95,9 @@ function terrainOf(world: WorldCells): TerrainTiles {
 }
 
 /** One batch mesh, by the name `#buildOne` gives it. */
-function batchOf(world: WorldCells, cell: string, asset: string, level: number): InstancedMesh {
-  const name = `${cell}:${asset}:${String(level)}:0`;
+/** The shared mesh an asset's level draws through; every resident cell has a segment in it. */
+function batchOf(world: WorldCells, _cell: string, asset: string, level: number): InstancedMesh {
+  const name = `${asset}:${String(level)}:0`;
   const mesh = world.getObjectByName(name);
   if (!(mesh instanceof InstancedMesh)) throw new Error(`No batch mesh named '${name}'.`);
   return mesh;
@@ -176,10 +177,18 @@ function drain(world: WorldCells, limit = 4000): number[] {
 }
 
 /** Every batch mesh the world drew, as `name` to instance count. */
+/** Instances a shared mesh draws: free segment slots are zero matrices and draw nothing. */
+function live(mesh: InstancedMesh): number {
+  const array = mesh.instanceMatrix.array as Float32Array;
+  let count = 0;
+  for (let index = 0; index < mesh.count; index += 1) if (array[index * 16 + 15] !== 0) count += 1;
+  return count;
+}
+
 function drawn(world: WorldCells): Map<string, number> {
   const meshes = new Map<string, number>();
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh) meshes.set(object.name, object.count);
+    if (object instanceof InstancedMesh) meshes.set(object.name, live(object));
   });
   return meshes;
 }
@@ -275,7 +284,8 @@ describe("WorldCells admission budget", () => {
     await step(cells);
     drain(cells);
     const far = batchOf(cells, cellKey(1, 1), "pine", 1);
-    expect(far.count).toBeGreaterThan(0);
+    const farDrawn = live(far);
+    expect(farDrawn).toBeGreaterThan(0);
     expect(far.parent).toBe(cells);
 
     // The cell centre is 45 m from where the batch was built — past the eighth of the 60 m switch a
@@ -291,12 +301,12 @@ describe("WorldCells admission budget", () => {
     // Mid-refilter the outgoing lod is still the one attached, and it is the only one: the
     // replacement is never half-swapped in beside it.
     expect(batchOf(cells, cellKey(1, 1), "pine", 1)).toBe(far);
-    expect(drawn(cells).get(`${cellKey(1, 1)}:pine:1:0`)).toBe(far.count);
+    expect(drawn(cells).get("pine:1:0")).toBe(farDrawn);
 
     drain(cells);
-    expect(cells.getObjectByName(`${cellKey(1, 1)}:pine:1:0`)).toBeUndefined();
+    expect(drawn(cells).get("pine:1:0") ?? 0).toBe(0);
     const near = batchOf(cells, cellKey(1, 1), "pine", 0);
-    expect(near.count).toBe(85);
+    expect(live(near)).toBe(85);
     expect(cells.stats().failures).toBe(0);
     cells.dispose();
   });

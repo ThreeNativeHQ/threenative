@@ -48,7 +48,9 @@ function served(files: Record<string, unknown>): { assets: never; requested: str
     vi.fn(async (url: string) => {
       const body = files[url];
       if (body === undefined) return new Response(null, { status: 404 });
-      return body instanceof Uint8Array ? new Response(body) : new Response(JSON.stringify(body));
+      return body instanceof Uint8Array
+        ? new Response(new Blob([body as BlobPart]))
+        : new Response(JSON.stringify(body));
     }),
   );
   const assets = {
