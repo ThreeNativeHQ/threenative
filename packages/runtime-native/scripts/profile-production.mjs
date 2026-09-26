@@ -933,6 +933,10 @@ function privateDisplayCommand(executable, args) {
   return { args: [wrapper, executable, ...args], command: '/bin/sh' };
 }
 
+export function nativeLaunchesExternalBundle(artifactPath, options) {
+  return options.prebuiltArtifact !== undefined && artifactPath === options.prebuiltArtifact;
+}
+
 function spawnNative(artifactPath, project, options, mailboxRoot) {
   const bundle = join(project, '.threenative/build/game.js');
   // A packaged desktop artifact embeds the instrumented game entry under its own module root, and
@@ -940,7 +944,7 @@ function spawnNative(artifactPath, project, options, mailboxRoot) {
   // the external bundle never loads and the run reports TN_PLAYTEST_BRIDGE_MISSING at zero frames.
   // Launch the embedded entry. A bare runtime supplied through `--prebuilt-artifact` carries no
   // embedded entry and still needs the external bundle named on the command line.
-  const launchesExternalBundle = options.prebuiltArtifact !== undefined;
+  const launchesExternalBundle = nativeLaunchesExternalBundle(artifactPath, options);
   const nativeArgs = [
     ...(launchesExternalBundle ? ['run', bundle] : []),
     '--width', String(options.renderSize.width),
