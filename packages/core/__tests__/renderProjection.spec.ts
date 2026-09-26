@@ -19,6 +19,7 @@ import {
   MeshStandardMaterial,
   type Object3D,
   PerspectiveCamera,
+  PointLight,
   Points,
   PointsMaterial,
   Scene,
@@ -33,6 +34,7 @@ import {
 import { positionLocal, vec3 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { ProjectionMirror } from "../src/projection-apply.js";
 import {
   createProjectionScanWorkspace,
   releaseProjectionScanWorkspace,
@@ -2122,5 +2124,286 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
     expect(offAgain.root).toBe(scene);
     expect(offAgain.report.batches).toBe(0);
     expect(offAgain.report.projecting).toBe(false);
+  });
+});
+
+describe("ProjectionMirror CPU guards", () => {
+  function makePlan(
+    batchGroups: unknown[] = [],
+    materialGroups: unknown[] = [],
+    lights: unknown[] = [],
+    seen: Set<Object3D> = new Set(),
+  ): Parameters<ProjectionMirror["apply"]>[0] {
+    return {
+      lights,
+      lightCount: lights.length,
+      belowFloor: [],
+      belowFloorCount: 0,
+      batchGroups,
+      batchGroupCount: batchGroups.length,
+      materialGroups,
+      materialGroupCount: materialGroups.length,
+      seen: { has: (object: Object3D) => seen.has(object) },
+    } as unknown as Parameters<ProjectionMirror["apply"]>[0];
+  }
+
+  function instancedGroup(
+    members: Mesh[],
+    geometry: BufferGeometry,
+    material: MeshStandardMaterial,
+  ) {
+    return { members, memberCount: members.length, geometry, material };
+  }
+
+  function materialGroup(members: Mesh[], material: MeshStandardMaterial, revision = 1) {
+    return {
+      members,
+      memberCount: members.length,
+      geometries: new Map(members.map((mesh) => [mesh.geometry, 0])),
+      material,
+      revision,
+      frustumCulled: true,
+    };
+  }
+
+  function uniqueMeshes(count: number, material: MeshStandardMaterial): Mesh[] {
+    return Array.from(
+      { length: count },
+      (_, index) => new Mesh(new BoxGeometry(1, 1 + index * 0.01, 1), material),
+    );
+  }
+
+  it("describes exact, instanced, and material ownership", () => {
+    const sharedGeometry = new BoxGeometry();
+    const instancedMaterial = new MeshStandardMaterial();
+    const material = new MeshStandardMaterial();
+    const exact = new Sprite(new SpriteMaterial());
+    const instanced = Array.from({ length: 8 }, () => new Mesh(sharedGeometry, instancedMaterial));
+    const materialMembers = uniqueMeshes(8, material);
+    const mirror = new ProjectionMirror();
+    mirror.prepare([{ object: exact, reason: "tooFewToBatch" }] as never, 1);
+    mirror.apply(
+      makePlan(
+        [instancedGroup(instanced, sharedGeometry, instancedMaterial)],
+        [materialGroup(materialMembers, material)],
+        [],
+        new Set([exact, ...instanced, ...materialMembers]),
+      ),
+    );
+
+    const ownership = mirror.describeOwnership();
+    const ownershipEntries = [...ownership.values()];
+    const exactOwnership = ownershipEntries.find((entry) => entry.kind === "exact");
+    const instancedOwnership = ownershipEntries.find((entry) => entry.kind === "instancedBatch");
+    const materialOwnership = ownershipEntries.find((entry) => entry.kind === "materialBatch");
+    expect(ownership.size).toBe(3);
+    expect(exactOwnership?.sources).toStrictEqual([exact]);
+    expect(instancedOwnership?.sources).toHaveLength(instanced.length);
+    expect(materialOwnership?.sources).toHaveLength(materialMembers.length);
+    expect(mirror.drawsWith(instancedMaterial)).toBe(true);
+    expect(mirror.drawsWith(material)).toBe(true);
+    expect(mirror.drawsWith(exact.material as SpriteMaterial)).toBe(true);
+    expect(mirror.drawsWith(new MeshStandardMaterial())).toBe(false);
+  });
+
+  it("fails closed when an exact entry was cleared", () => {
+    const mirror = new ProjectionMirror();
+    mirror.prepare([{ object: undefined, reason: "tooFewToBatch" }] as never, 1);
+    expect(() => mirror.apply(makePlan())).toThrow("cleared before apply");
+  });
+
+  it("releases a mirror when a light cannot be mirrored", () => {
+    const material = new MeshStandardMaterial();
+    const geometry = new BoxGeometry();
+    const members = Array.from({ length: 8 }, () => new Mesh(geometry, material));
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([instancedGroup(members, geometry, material)], [], [], new Set(members)));
+    const light = new DirectionalLight(0xffffff, 1);
+    vi.spyOn(light, "clone").mockReturnValue(new Group() as never);
+
+    expect(mirror.apply(makePlan([], [], [light]))).toMatch(/could not be mirrored/u);
+    expect(mirror.batchCount).toBe(0);
+    expect(mirror.proxyCount).toBe(0);
+    expect(mirror.describeOwnership()).toEqual(new Map());
+  });
+
+  it("mirrors point-light runtime settings and retires a no-shadow-change light", () => {
+    const light = new DirectionalLight(0xffffff, 1);
+    light.shadow.autoUpdate = false;
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [], [light]));
+    mirror.apply(makePlan());
+    expect(light.shadow.autoUpdate).toBe(false);
+    expect(mirror.scene.children).toHaveLength(0);
+
+    const point = new PointLight(0xffffff, 2, 30, 1.5);
+    point.power = 17;
+    const pointMirror = new ProjectionMirror();
+    pointMirror.apply(makePlan([], [], [point]));
+    const mirrored = pointMirror.scene.children.find(
+      (object) => (object as PointLight).isPointLight === true,
+    ) as PointLight | undefined;
+    expect(mirrored?.distance).toBe(30);
+    expect(mirrored?.decay).toBe(1.5);
+    expect(mirrored?.power).toBe(17);
+  });
+
+  it("labels material members that cannot use a batch", () => {
+    const material = new MeshStandardMaterial();
+    const mirrored = uniqueMeshes(8, material);
+    mirrored[0]?.scale.set(-1, 1, 1);
+    mirrored[0]?.updateMatrixWorld(true);
+    const small = new Mesh(new BoxGeometry(), material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(
+      makePlan(
+        [],
+        [materialGroup(mirrored, material), materialGroup([small], material)],
+        [],
+        new Set([...mirrored, small]),
+      ),
+    );
+    expect(mirror.exactCounts.get("negativeScale")).toBe(1);
+    expect(mirror.exactCounts.get("tooFewToBatch")).toBe(1);
+  });
+
+  it("refuses a material group whose packed batch cannot be constructed", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const invalidGeometry = new BufferGeometry();
+    const group = {
+      ...materialGroup(members, material),
+      geometries: new Map([[invalidGeometry, 0]]),
+    };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+    expect(mirror.exactCounts.get("unsupportedGeometry")).toBe(8);
+  });
+
+  it("disposes a batch when a later geometry cannot be added", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const invalidGeometry = new BufferGeometry();
+    const group = {
+      ...materialGroup(members, material),
+      geometries: new Map([
+        [members[0]?.geometry as BufferGeometry, 0],
+        [invalidGeometry, 0],
+      ]),
+    };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+    expect(mirror.exactCounts.get("unsupportedGeometry")).toBe(8);
+  });
+
+  it("falls back when an instanced batch cannot be constructed", () => {
+    const material = new MeshStandardMaterial();
+    const geometry = new BoxGeometry();
+    const members = Array.from({ length: 8 }, () => new Mesh(geometry, material));
+    const group = { ...instancedGroup(members, geometry, material), memberCount: Number.NaN };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([group], [], [], new Set(members)));
+    expect(mirror.instancedBatchCount).toBe(0);
+  });
+
+  it("retires material batches and exact proxies when sources disappear", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [materialGroup(members, material)], [], new Set(members)));
+    expect(mirror.materialBatchCount).toBe(1);
+    mirror.apply(makePlan());
+    expect(mirror.materialBatchCount).toBe(0);
+    expect(
+      mirror.scene.children.some((object) => (object as BatchedMesh).isBatchedMesh === true),
+    ).toBe(false);
+
+    const exact = new Sprite(new SpriteMaterial());
+    mirror.prepare([{ object: exact, reason: "tooFewToBatch" }] as never, 1);
+    mirror.apply(makePlan([], [], [], new Set([exact])));
+    expect(mirror.proxyCount).toBe(1);
+    mirror.apply(makePlan());
+    expect(mirror.proxyCount).toBe(0);
+    expect(mirror.scene.children.some((object) => (object as Sprite).isSprite === true)).toBe(
+      false,
+    );
+  });
+
+  it("releases a material slot before moving its source to the exact lane", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [materialGroup(members, material)], [], new Set(members)));
+    const exact = members[0] as Mesh;
+    mirror.prepare([{ object: exact, reason: "tooFewToBatch" }] as never, 1);
+    mirror.apply(makePlan([], [], [], new Set([exact])));
+
+    expect(mirror.inspect(exact)?.lane).toBe("exact");
+    const materialOwnership = [...mirror.describeOwnership().values()].find(
+      (entry) => entry.kind === "materialBatch",
+    );
+    expect(materialOwnership).toBeUndefined();
+    expect(mirror.materialBatchCount).toBe(0);
+  });
+
+  it("keeps a material member exact when its geometry or instance cannot be packed", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const group = materialGroup(members, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+
+    const replacement = new Mesh(new BoxGeometry(), material);
+    group.members = [members[0] as Mesh, replacement, ...members.slice(2)];
+    group.memberCount = 8;
+    mirror.apply(makePlan([], [group], [], new Set([members[0] as Mesh, replacement])));
+    expect(mirror.exactCounts.get("batchOverflow")).toBe(1);
+
+    const second = new Mesh(members[0]?.geometry as BufferGeometry, material);
+    const batch = mirror.scene.children.find(
+      (object) => (object as BatchedMesh).isBatchedMesh === true,
+    ) as BatchedMesh;
+    const addInstance = vi.spyOn(batch, "addInstance").mockImplementation(() => {
+      throw new Error("instance packing failed");
+    });
+    group.members = [members[0] as Mesh, ...members.slice(1, 7), second];
+    group.memberCount = 8;
+    mirror.apply(makePlan([], [group], [], new Set([members[0] as Mesh, second])));
+    addInstance.mockRestore();
+    expect(mirror.exactCounts.get("batchOverflow")).toBe(8);
+  });
+
+  it("keeps a material group exact when its packed capacity is exhausted", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(10, material);
+    const geometry = members[0]?.geometry as BufferGeometry;
+    const group = materialGroup(members, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+
+    const additions = Array.from({ length: 6 }, () => new Mesh(geometry, material));
+    group.members = [...members, ...additions];
+    group.memberCount = 16;
+    mirror.apply(makePlan([], [group], [], new Set(group.members)));
+
+    const overflow = new Mesh(geometry, material);
+    group.members = [...group.members.slice(0, 15), overflow];
+    mirror.apply(makePlan([], [group], [], new Set(group.members)));
+    expect(mirror.exactCounts.get("batchOverflow")).toBe(1);
+  });
+
+  it("releases the old material batch when a source changes groups", () => {
+    const firstMaterial = new MeshStandardMaterial();
+    const secondMaterial = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, firstMaterial);
+    const first = materialGroup(members, firstMaterial);
+    const second = {
+      ...materialGroup(members, secondMaterial),
+      geometries: new Map(members.map((mesh) => [mesh.geometry, 0])),
+    };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [first, second], [], new Set(members)));
+    expect(mirror.materialBatchCount).toBe(1);
+    expect(mirror.projectedObjects).toBe(16);
   });
 });
