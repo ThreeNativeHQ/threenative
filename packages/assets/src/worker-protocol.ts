@@ -1,7 +1,7 @@
 import type { IAudioPassOptions } from "./passes/audio-config.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import type { IModelPassOptions } from "./passes/model.js";
-import type { ITexturePassOptions } from "./passes/texture.js";
+import type { ITexturePassOptions, ITextureResizeOptions } from "./passes/texture.js";
 
 /**
  * The serialisable description of the built-in pass registry, rebuilt inside each worker.
@@ -36,6 +36,12 @@ export type PassSpec =
       readonly kind: "texture";
       readonly needsRuntimeDecoder: boolean;
       readonly options?: ITexturePassOptions;
+    }
+  /** Decoder-free resize of a standalone texture, used where the KTX2 pass cannot ship. */
+  | {
+      readonly kind: "texture-resize";
+      readonly needsRuntimeDecoder: false;
+      readonly options: ITextureResizeOptions;
     };
 
 /** One input's job, posted from the driver to a worker. */

@@ -80,6 +80,30 @@ describe("threenative-engine-mcp stdio contract", () => {
     expect(JSON.parse(response.result.content[0].text).symbol).toBe("GroundSnap");
   });
 
+  it("answers a detail lookup for a shared symbol with every match in one call", () => {
+    const detail = (argumentsValue: Record<string, string>): Record<string, unknown> => {
+      const response = JSON.parse(
+        handleLine(
+          frame(1, "tools/call", { arguments: argumentsValue, name: "engine_capability_detail" }),
+          manifestFile,
+        ) ?? "",
+      );
+      expect(response.result.isError).not.toBe(true);
+      return JSON.parse(response.result.content[0].text);
+    };
+
+    const shared = detail({ symbol: "createThreeObject" }) as {
+      matches: { importPath: string }[];
+    };
+    expect(shared.matches.map((match) => match.importPath)).toEqual([
+      "@threenative/raw-unreal",
+      "@threenative/ueformat",
+    ]);
+    expect(
+      detail({ importPath: "@threenative/ueformat", symbol: "createThreeObject" }).importPath,
+    ).toBe("@threenative/ueformat");
+  });
+
   it("answers a malformed JSON line with a -32700 parse error addressed to id null", () => {
     const response = JSON.parse(handleLine("not json", manifestFile) ?? "");
     expect(response.id).toBeNull();
