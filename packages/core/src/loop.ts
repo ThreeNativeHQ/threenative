@@ -1,6 +1,6 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
 import type { SpanRecorder } from "./profiling/Spans.js";
-import type { IRenderPassSample } from "./render-pass-budget.js";
+import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 
 export type AfterPhysicsCallback = (dt: number) => void;
 
@@ -105,6 +105,29 @@ export interface IRenderPerformanceSample extends IRenderPerformanceMetrics {
 }
 
 const MAX_RENDER_PERFORMANCE_SAMPLES = 1_024;
+
+/**
+ * One entry per pass kind, summed, for a retained sample.
+ *
+ * `RenderPassBudget` records one entry per `render()` call, which is what the frame budget and the
+ * geometry capture need to attribute a submission to the innermost call. A retained sample does
+ * not: it is a 1,024-frame window shipped to the playtest bridge under a 1 MB payload ceiling, and
+ * a frame with 30 nested calls made that window ~1.4 MB, so `assert.performance` failed with
+ * TN_PLAYTEST_PAYLOAD_TOO_LARGE before frame 0. Consumers read per-kind values, and taking the
+ * first of N silently undercounted every lane past its first call.
+ */
+function aggregatePassesByKind(passes: readonly IRenderPassSample[]): IRenderPassSample[] {
+  const totals = new Map<FramePassKind, IRenderPassSample>();
+  for (const pass of passes) {
+    const total = totals.get(pass.kind);
+    totals.set(pass.kind, {
+      draws: (total?.draws ?? 0) + pass.draws,
+      kind: pass.kind,
+      triangles: (total?.triangles ?? 0) + pass.triangles,
+    });
+  }
+  return [...totals.values()];
+}
 
 /**
  * How many fixed steps a frozen clock runs once, before the run's first observation.
@@ -392,7 +415,7 @@ export class FixedStepLoop {
           : { drawCalls: metrics.drawCalls }),
         ...(metrics?.passes === undefined || metrics.passes.length === 0
           ? {}
-          : { passes: metrics.passes.map((pass) => ({ ...pass })) }),
+          : { passes: aggregatePassesByKind(metrics.passes) }),
         ...(phases === undefined ? {} : { phases }),
         ...(metrics === undefined || metrics.triangles === undefined
           ? {}
