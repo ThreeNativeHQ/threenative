@@ -1,5 +1,7 @@
 import {
-  DataTexture,
+  CompressedArrayTexture,
+  type CompressedTexture,
+  DataArrayTexture,
   LinearFilter,
   LinearMipmapLinearFilter,
   type Material,
@@ -14,12 +16,12 @@ import {
   clamp,
   dot,
   float,
+  int,
   mix,
   mx_noise_float,
   normalWorld,
   positionWorld,
   texture,
-  triplanarTexture,
   vec2,
   vec3,
   vec4,
@@ -119,23 +121,76 @@ async function fetchResolved(assets: IAssetLoader, path: string): Promise<Respon
   throw new Error(`loadTerrainSplat: '${path}' is not served.`);
 }
 
-function splatPlane(bytes: Uint8Array, size: number, plane: number): Texture {
-  const texels = size * size * 4;
-  if (bytes.byteLength < (plane + 1) * texels)
-    throw new Error(`loadTerrainSplat: splat data is shorter than plane ${String(plane)}.`);
-  const map = new DataTexture(
-    bytes.subarray(plane * texels, (plane + 1) * texels),
-    size,
-    size,
-    RGBAFormat,
-    UnsignedByteType,
-  );
+/** Every splat plane in one array texture: one sampler, whatever the plane count. */
+function splatArray(bytes: Uint8Array, size: number, planes: number): Texture {
+  if (bytes.byteLength < planes * size * size * 4)
+    throw new Error(`loadTerrainSplat: splat data is shorter than plane ${String(planes - 1)}.`);
+  const map = new DataArrayTexture(bytes.subarray(0, planes * size * size * 4), size, size, planes);
+  map.format = RGBAFormat;
+  map.type = UnsignedByteType;
   map.colorSpace = NoColorSpace;
   map.magFilter = LinearFilter;
   map.minFilter = LinearMipmapLinearFilter;
   map.generateMipmaps = true;
   map.needsUpdate = true;
   return map;
+}
+
+/**
+ * Same-format, same-size compressed layers as one `CompressedArrayTexture`, or `undefined` when
+ * they cannot stack (a mixed codec, a size the cap did not equalise, an uncompressed fallback).
+ *
+ * WebGPU guarantees 16 samplers a stage and three binds one per texture; a splat terrain's albedos
+ * and normals as separate textures plus an open-world shadow's maps pass 16 and the pipeline is
+ * invalid. Stacked, a surface costs one sampler per array however many layers it blends.
+ */
+export function stackLayers(maps: readonly Texture[]): Texture | undefined {
+  const first = maps[0] as CompressedTexture | undefined;
+  if (first === undefined || first.isCompressedTexture !== true) return undefined;
+  const width = (first.image as { width: number }).width;
+  const height = (first.image as { height: number }).height;
+  const stackable = maps.every((map) => {
+    const layer = map as CompressedTexture;
+    const image = layer.image as { width: number; height: number };
+    return (
+      layer.isCompressedTexture === true &&
+      layer.format === first.format &&
+      image.width === width &&
+      image.height === height &&
+      layer.mipmaps.length === first.mipmaps.length
+    );
+  });
+  if (!stackable) return undefined;
+  const mipmaps = first.mipmaps.map((mip, level) => {
+    const parts = maps.map((map) => {
+      const data = (map as CompressedTexture).mipmaps[level]?.data as ArrayBufferView;
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    });
+    const data = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
+    let offset = 0;
+    for (const part of parts) {
+      data.set(part, offset);
+      offset += part.byteLength;
+    }
+    return { data, height: mip.height, width: mip.width };
+  });
+  const array = new CompressedArrayTexture(
+    mipmaps as never,
+    width,
+    height,
+    maps.length,
+    first.format,
+    first.type,
+  );
+  array.colorSpace = first.colorSpace;
+  array.minFilter = first.minFilter;
+  array.magFilter = first.magFilter;
+  array.wrapS = RepeatWrapping;
+  array.wrapT = RepeatWrapping;
+  array.anisotropy = 8;
+  array.needsUpdate = true;
+  for (const map of maps) map.dispose();
+  return array;
 }
 
 /**
@@ -181,9 +236,10 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       .sub(positionWorld.z)
       .div(sizeZ),
   );
+  const splat = splatArray(bytes, table.splat.size, table.splat.planes);
   const planes: Node<"vec4">[] = [];
   for (let plane = 0; plane < table.splat.planes; plane += 1)
-    planes.push(texture(splatPlane(bytes, table.splat.size, plane), maskUv));
+    planes.push(texture(splat, maskUv).depth(int(plane)));
 
   const load = async (layer: ITerrainSplatLayer, kind: "diff" | "nrm"): Promise<Texture> => {
     const map = await assets.texture(`${dir}${table.textures}/${layer.id}_${kind}.jpg`, {
@@ -196,10 +252,26 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     return map;
   };
   const all: ITerrainSplatLayer[] = [table.base, ...table.layers];
-  const diffuse = await Promise.all(all.map((layer) => load(layer, "diff")));
-  const normals = await Promise.all(
-    all.map((layer) => (layer.normal === true ? load(layer, "nrm") : Promise.resolve(undefined))),
-  );
+  const withNormals = all.filter((layer) => layer.normal === true);
+  const diffuseMaps = await Promise.all(all.map((layer) => load(layer, "diff")));
+  const normalMaps = await Promise.all(withNormals.map((layer) => load(layer, "nrm")));
+
+  // One sampler per set when the layers stack; separate textures (and a warning) when they do not.
+  const sampler = (
+    maps: readonly Texture[],
+    what: string,
+  ): ((layer: number, uv: Node<"vec2">) => Node<"vec3">) => {
+    const stacked = stackLayers(maps);
+    if (stacked !== undefined) return (layer, uv) => texture(stacked, uv).depth(int(layer)).rgb;
+    if (maps.length > 1)
+      console.warn(
+        `TN_TERRAIN_SPLAT: ${what} layers could not stack into one array (mixed format or size); ` +
+          `they bind ${String(maps.length)} samplers, and WebGPU guarantees 16 a stage.`,
+      );
+    return (layer, uv) => texture(maps[layer] as Texture, uv).rgb;
+  };
+  const diffuseAt = sampler(diffuseMaps, "albedo");
+  const normalAt = withNormals.length === 0 ? undefined : sampler(normalMaps, "normal");
 
   const ground = vec2(positionWorld.x, positionWorld.z.negate());
   const maskOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> => {
@@ -215,34 +287,35 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     .add(0.5);
   const push = breakup.mul(2 * table.breakup.push).sub(table.breakup.push);
 
+  // Box projection for cliffs: three axis-aligned samples blended by the surface normal.
+  const triplanar = (at: (uv: Node<"vec2">) => Node<"vec3">, tile: number): Node<"vec3"> => {
+    const weights = normalWorld.abs();
+    const w = weights.div(weights.x.add(weights.y).add(weights.z));
+    const p = positionWorld.div(tile);
+    return at(p.zy).mul(w.x).add(at(p.xz).mul(w.y)).add(at(p.xy).mul(w.z));
+  };
+
   const albedo = (layer: ITerrainSplatLayer, index: number): Node<"vec3"> => {
-    const map = diffuse[index] as Texture;
     let sample: Node<"vec3"> =
       layer.triplanar === true
-        ? triplanarTexture(
-            texture(map),
-            null,
-            null,
-            float(1 / layer.tile),
-            positionWorld,
-            normalWorld,
-          ).rgb
-        : texture(map, ground.div(layer.tile)).rgb;
+        ? triplanar((uv) => diffuseAt(index, uv), layer.tile)
+        : diffuseAt(index, ground.div(layer.tile));
     if (layer.saturation !== undefined) {
       const luma = dot(sample, vec3(0.2126, 0.7152, 0.0722));
       sample = mix(vec3(luma), sample, layer.saturation);
     }
     return sample.mul(vec3(...layer.tint));
   };
+  const normalOf = (layer: ITerrainSplatLayer): Node<"vec3"> | undefined => {
+    const slot = withNormals.indexOf(layer);
+    return slot === -1 || normalAt === undefined
+      ? undefined
+      : normalAt(slot, ground.div(layer.tile));
+  };
 
   let color = albedo(table.base, 0);
-  const baseNormal = normals[0];
-  let normalSample: Node<"vec3"> =
-    baseNormal === undefined
-      ? vec3(0.5, 0.5, 1)
-      : texture(baseNormal, ground.div(table.base.tile)).rgb;
+  let normalSample: Node<"vec3"> = normalOf(table.base) ?? vec3(0.5, 0.5, 1);
   table.layers.forEach((layer, offset) => {
-    const index = offset + 1;
     const weight = clamp(
       maskOf(layer)
         .add(push)
@@ -251,10 +324,9 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       0,
       1,
     );
-    color = mix(color, albedo(layer, index), weight);
-    const nrm = normals[index];
-    if (nrm !== undefined)
-      normalSample = mix(normalSample, texture(nrm, ground.div(layer.tile)).rgb, weight);
+    color = mix(color, albedo(layer, offset + 1), weight);
+    const nrm = normalOf(layer);
+    if (nrm !== undefined) normalSample = mix(normalSample, nrm, weight);
   });
   const macro = mx_noise_float(vec3(ground.mul(table.macro.scale), 0))
     .mul(0.5)

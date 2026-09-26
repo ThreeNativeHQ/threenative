@@ -1,7 +1,7 @@
-import { Texture } from "three";
+import { CompressedArrayTexture, CompressedTexture, Texture } from "three";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadTerrainSplat } from "../src/world-terrain-splat.js";
+import { loadTerrainSplat, stackLayers } from "../src/world-terrain-splat.js";
 
 const table = {
   base: { id: "moss", normal: true, tile: 3, tint: [0.36, 0.47, 0.27] },
@@ -101,5 +101,35 @@ describe("loadTerrainSplat", () => {
       "world/terrain/splat.rgba8": new Uint8Array(4 * 4 * 4),
     });
     await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(/plane 1/u);
+  });
+});
+
+describe("stackLayers", () => {
+  const layer = (fill: number, format = 1023): CompressedTexture => {
+    const texture = new CompressedTexture(
+      [
+        { data: new Uint8Array(16).fill(fill), height: 4, width: 4 },
+        { data: new Uint8Array(8).fill(fill), height: 2, width: 2 },
+      ] as never,
+      4,
+      4,
+      format as never,
+    );
+    return texture;
+  };
+
+  it("stacks same-format layers into one array texture, every mip concatenated in layer order", () => {
+    const stacked = stackLayers([layer(1), layer(2), layer(3)]) as CompressedArrayTexture;
+    expect(stacked).toBeInstanceOf(CompressedArrayTexture);
+    expect((stacked.image as { depth: number }).depth).toBe(3);
+    const mip0 = stacked.mipmaps[0]?.data as Uint8Array;
+    expect(mip0.byteLength).toBe(48);
+    expect([mip0[0], mip0[16], mip0[32]]).toEqual([1, 2, 3]);
+    expect((stacked.mipmaps[1]?.data as Uint8Array).byteLength).toBe(24);
+  });
+
+  it("refuses to stack a mixed codec or an uncompressed layer", () => {
+    expect(stackLayers([layer(1), layer(2, 1024)])).toBeUndefined();
+    expect(stackLayers([new Texture(), new Texture()])).toBeUndefined();
   });
 });
