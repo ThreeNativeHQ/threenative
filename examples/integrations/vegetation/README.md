@@ -34,3 +34,9 @@ Executed locally: 19 index/wind/cook CPU tests passed after a failing baseline, 
 The glTF path was also executed on CPU only, not on a browser or device: seed 42 exports a 22 860-byte glTF that reads back element-for-element on POSITION, NORMAL, TEXCOORD_0, `_WIND` and indices, two exports of one seed are byte-identical, and a 250 281-vertex variant promotes both index buffers to Uint32 and round-trips exactly in 335 ms. The wind's TSL graph is built but not shader-compiled here: `npm test` is CPU-only, so the `_wind` and instanced/skinned guards fire on a device, not in this run.
 
 EZ Tree, Three.js and glTF Transform retain their MIT notices. No demo textures or assets are copied. The game controls the look.
+
+## Donor audit — 2026-09-26
+
+- **Pin:** `github:dgreenheck/ez-tree#dcf309bd86bd521083d9c70f01f2de45fdc7c457`, MIT © 2024 Daniel Greenheck; its `package.json` names no runtime dependency besides Three. The npm `@dgreenheck/ez-tree@1.1.0` package supplies declarations only. `package-lock.json` pins the tree; `npm audit` reports 0 vulnerabilities.
+- **Noise:** the donor's only third-party code is the Ashima Arts / Stefan Gustavson simplex-noise GLSL (MIT, github.com/ashima/webgl-noise) inside its `onBeforeCompile` wind shader. This integration discards donor materials and never runs that shader; the TSL wind here is original. The string still sits in the offline generator bundle, which a game built from cooked GLBs does not ship (see the grove's `check:no-generator`).
+- **Textures:** `src/lib` references no image file; presets are JSON parameters and maps are caller-supplied. This integration copies no texture; the grove's leaves are a procedural cut-out.
