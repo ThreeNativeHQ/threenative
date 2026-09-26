@@ -837,6 +837,15 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   3,549 and completed-work mean is 1.544 ms; the retained TN mean is 18.011 ms. These arms are
   one smoke block, the TN source record was dirty, and the new Godot arm ran after the TN one;
   there is no calibrated speed verdict. A clean-source paired rerun and the other variants remain.
+  A subsequent clean-commit TN run (`e8cdae142`, before the present-mode field was committed) exposed
+  a false cadence refusal: 540/600 frames were within 2 ms of 16.667 ms while the host logged
+  `Presentation cap: 0 fps` and `Present mode: immediate (vsync=false)`. The culling raw record now
+  reads that effective host mode; the comparator retains its cadence check for FIFO and legacy
+  records, and rejects unknown mode names. A real GPU rerun with the new field reported
+  `presentMode: immediate`, TN mean 16.889 ms and a qualified pair with Godot 1.549 ms, identical
+  fixture hash and `0.000432` coverage delta (`cull-mode-{tn-basic_cull,comparison}.json` in the
+  local diagnostic directory). That TN run had uncommitted instrumentation, so it is a smoke
+  validation of the gate rather than the clean-source publication pair.
 
   | cell | variant | TN authoring | TN mean ms | Godot mean ms | comparator status |
   |---|---|---|---|---|---|
@@ -860,18 +869,15 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   spellings. The asymmetry that remains is stated, not hidden: TN pre-drains before its first scored
   boundary and the Godot arm does not, so the Godot interval absorbs whatever the warmup left queued.
 
-  **The TN native arm is not 60 Hz cadence-capped on the rebuilt host from `cd424cc42`.** That commit
-  clears the embedded 60 fps cap when vsync is off; the host in this run is the one it built,
-  `mystral` SHA-256 `f9386044…`, and its own mesh-arm run on the same binary measured a 1.78 ms mean
-  at 1,000 meshes, which a cap could not produce. The cull arm's 600 measured frame intervals agree:
-  p01 14.637, p50 17.399, p95 21.632, p99 28.145, min 13.862, max 47.368 ms at an 18.011 ms mean — a
-  continuous distribution, not 590 frames parked on 16.667. That check found a defect in the
-  comparator rather than in the measurement: its rule accused any arm with half its frames within
-  2 ms of a cadence multiple, which real work costing about one tick satisfies. The rule now also
-  requires those frames to cluster within 1 ms of interquartile spread, and the focused test proves
-  both directions — the 600/600-exactly-on-the-tick series is still refused, and the real
-  13.9–19.9 ms spread is not. The old rule accused this cell for the wrong reason, and leaving it
-  would have put a false claim in a retained artifact.
+  **The host reports effective presentation instead of asking timing alone.** Commit `cd424cc42`
+  clears the embedded 60 fps cap for `--no-vsync`; the same host binary SHA-256 `f9386044…`
+  logged cap 0 and immediate mode on this display. The first interval-only fix required a
+  ≤1 ms interquartile spread before refusing near-tick runs, but a later genuine 600-frame
+  17.003 ms run still met that shape by chance and was falsely refused. The new raw field reads
+  `__THREENATIVE_NATIVE__.presentMode` from the configured surface. `immediate` and `mailbox`
+  prevent a timing-only cap accusation; `fifo` and legacy records still use the timing gate.
+  The focused tests reproduced the 540/600 false refusal red and passed after the change,
+  including FIFO, missing-mode and malformed-mode controls.
 
   **The original upstream-default run was refused for its object set.** The
   comparator names only `TN_BENCH_CULL_COVERAGE_DIVERGED: 0.023735 of the frame` on all four captured
@@ -906,9 +912,9 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   The occlusion-off basic pair is `qualified`, while none is `matched-task`. The two stated differences that remain
   — the competitor authors `RenderingServer` RIDs rather than scene nodes, and the shaded
   environments differ (Godot's Forward+ with sky-derived ambient and dual-paraboloid omni shadows
-  against three's hemisphere light and cube-map point lights) — would be qualifications on a pair
-  that agreed on everything else. The `basic_cull` pair now does agree on geometry, so it is refused
-  only for its object set; the light cells still match their light census exactly (100 omni, 0 spot,
+  against three's hemisphere light and cube-map point lights) are disclosed on that pair.
+  The original upstream-default `basic_cull` pair remains refused for its object set; the
+  occlusion-off pair passes. The light cells still match their light census exactly (100 omni, 0 spot,
   0 directional) and name the shadow technique they do not have (`omniShadowMode: dual-paraboloid` in
   the record). The native host has no PNG encoder, so the retained visual evidence is the read-back
   coverage grid both arms compute on the same 240x135 lattice rather than a pair of image files.

@@ -31,6 +31,35 @@ function uncapped(count: number, intervalMs: number): Record<string, unknown> {
   };
 }
 
+/**
+ * The clean `basic_cull` run's real frame shape, reproduced because the raw record is a 20 MB
+ * artifact no test carries: 540 of 600 frames within 2 ms of the 16.667 ms tick with a 0.76 ms
+ * interquartile spread around a 16.5 ms p50, over a 17.003 ms completed-work mean. The 60 frames that
+ * spilled past a tick are 19–24.6 ms and carry the rest of the mean. The host reported that run as
+ * `immediate` on the physical display, so the series is real work, not a blocked present.
+ */
+function cleanRunSeries(): Record<string, unknown> {
+  const boundaries = [{ frameId: 0, monotonicMs: 3200.853732 }];
+  let elapsed = 3200.853732;
+  for (let frame = 0; frame < 600; frame += 1) {
+    elapsed += frame % 10 < 9 ? 16.02 + (frame % 8) * 0.11 : 19 + (frame % 7) * 0.8;
+    boundaries.push({ frameId: frame + 1, monotonicMs: elapsed });
+  }
+  return { boundaries, finalCompletionMs: elapsed, schemaVersion: 1, unit: "ms" };
+}
+
+/** That run's own record, with the present mode the host read back, or none for a legacy record. */
+function cleanTn(presentMode?: string): ICullRun {
+  return parse({
+    arm: "tn-desktop",
+    authoring: "scene-node-independent",
+    frameIntervalMs: undefined,
+    meanMs: 17.00270353666667,
+    ...(presentMode === undefined ? {} : { presentMode }),
+    rawSeries: cleanRunSeries(),
+  });
+}
+
 /** The competitor's own shape: the frame intervals as it recorded them. */
 function intervals(count: number, intervalMs: number): Record<string, unknown> {
   return { frameIntervalMs: Array.from({ length: count + 1 }, (_, index) => index * intervalMs) };
@@ -484,6 +513,39 @@ describe("PRD-449 godot-culling smoke comparison", () => {
         parse(),
       ).outcome.problems[0],
     ).toMatch(/^TN_BENCH_CULL_TN_CADENCE_CAPPED/);
+  });
+
+  it("qualifies the clean pair once the host reports an uncapped surface", () => {
+    // The whole clean `basic_cull` pair, and the only thing the timing heuristic could not settle:
+    // 540 of 600 frames land within 2 ms of the tick under a 17.003 ms mean, so proximity alone calls
+    // that a blocked present. The host read its own surface back as `immediate` — `Presentation cap: 0
+    // fps`, `Present mode: immediate (vsync=false)` — which is the same claim stated by the one thing
+    // that cannot mistake real work about a tick for pacing.
+    const comparison = compareCullRuns(cleanTn("immediate"), parse({ meanMs: 1.54906666666667 }));
+    expect(comparison.outcome.problems).toEqual([]);
+    expect(comparison.outcome.valid).toBe(true);
+    expect(comparison.outcome.comparability).toBe("qualified");
+    expect(comparison.ratio?.ratio).toBeCloseTo(1.54906666666667 / 17.00270353666667, 5);
+    // `mailbox` is the other uncapped surface, and it is read the same way.
+    expect(compareCullRuns(cleanTn("mailbox"), parse()).outcome.problems).toEqual([]);
+  });
+
+  it("still refuses that timing on a capped surface, on a legacy record, and on a mode never named", () => {
+    // FIFO pins every frame to the display's tick, so the same series is the blocked present the
+    // gate exists for.
+    for (const presentMode of ["fifo", undefined])
+      expect(compareCullRuns(cleanTn(presentMode), parse()).outcome.problems[0]).toMatch(
+        /^TN_BENCH_CULL_TN_CADENCE_CAPPED:540\/600/,
+      );
+    // A record from before the host published its mode keeps the heuristic rather than being assumed
+    // uncapped, so an old artifact cannot buy a ratio by silence.
+    expect(
+      parseCullRun(run({ frameIntervalMs: undefined, rawSeries: cleanRunSeries() })).presentMode,
+    ).toBeNull();
+    // A mode the host does not name is a malformed claim, refused at the parse rather than read as
+    // uncapped: the browser arm's own `vsync` spelling is not a native surface mode.
+    for (const presentMode of ["vsync", "auto", 1])
+      expect(() => parseCullRun(run({ presentMode }))).toThrow(/TN_BENCH_CULL_RUN_MALFORMED/);
   });
 
   it("refuses a record with no frame-level series to read a mean from", () => {

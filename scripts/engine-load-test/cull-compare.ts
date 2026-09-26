@@ -62,6 +62,8 @@ export interface ICullRun {
   readonly frameP95Ms?: number;
   readonly meanMs: number;
   readonly lights: { directional: number; omni: number; requested: number; spot: number };
+  /** The host's own effective present mode, or `null` when the record states none. */
+  readonly presentMode: "fifo" | "immediate" | "mailbox" | null;
   readonly profile: string;
   readonly states: readonly ICullState[];
   readonly topology: readonly ICullTopologyEntry[];
@@ -158,6 +160,23 @@ function wallSemantics(raw: Record<string, unknown>, code: string): string | nul
   return null;
 }
 
+/**
+ * The host publishes the surface's effective present mode, which answers "were these frames pinned
+ * to the display's tick?" directly instead of inferring it from a frame series: `fifo` pins them,
+ * `immediate` and `mailbox` do not. A record that states none is a legacy record from before the
+ * host published it and stays `null` rather than assumed. A mode the host never names is a malformed
+ * claim, refused here rather than read later as uncapped.
+ */
+const PRESENT_MODES = ["fifo", "immediate", "mailbox"] as const;
+
+function presentMode(raw: Record<string, unknown>, code: string): ICullRun["presentMode"] {
+  const mode = raw.presentMode;
+  if (mode === undefined || mode === null) return null;
+  if (typeof mode !== "string" || !PRESENT_MODES.includes(mode as (typeof PRESENT_MODES)[number]))
+    fail(code, `presentMode ${String(mode)}`);
+  return mode as (typeof PRESENT_MODES)[number];
+}
+
 export function parseCullRun(value: unknown, code = "TN_BENCH_CULL_RUN_MALFORMED"): ICullRun {
   const raw = object(value, code);
   if (raw.family !== "godot-culling") fail(code, `family ${String(raw.family)}`);
@@ -226,6 +245,7 @@ export function parseCullRun(value: unknown, code = "TN_BENCH_CULL_RUN_MALFORMED
       };
     })(),
     meanMs: raw.meanMs,
+    presentMode: presentMode(raw, code),
     profile: typeof raw.profile === "string" ? raw.profile : "unknown",
     states: raw.states.map((entry) => {
       const state = object(entry, code);
@@ -428,20 +448,29 @@ export function compareCullRuns(tn: ICullRun, godot: ICullRun): ICullComparison 
   // it was asked to measure — the same present ceiling the mesh family hit. Its mean is then a
   // count of how many frames spilled past one tick, which is why two runs of one cell can differ by
   // 70% and both be pacing. Such a mean cannot carry a ratio.
+  //
+  // The host publishes the mode its surface actually got, which is that same question answered by
+  // the surface rather than inferred from the timings: 10,000 independent meshes cost about one tick
+  // each, so 90% of the clean run's frames sit within 2 ms of 16.667 ms and the clustering below
+  // cannot tell that work from a blocked present. An explicit `immediate` or `mailbox` says the
+  // surface was never pinned to the tick, so the timing is not the accusation; `fifo` says it was,
+  // and a record that states no mode is judged on timing alone as before.
   for (const [label, run] of [
     ["tn", tn],
     ["godot", godot],
   ] as const) {
-    const onTick = run.frameIntervals.filter((interval) => {
-      const ticks = interval / FRAME_CADENCE_MS;
-      return ticks >= 0.5 && Math.abs(ticks - Math.round(ticks)) * FRAME_CADENCE_MS < 2;
-    });
-    const share = onTick.length / run.frameIntervals.length;
-    const spread = quartileSpread(onTick);
-    if (share >= 0.5 && spread <= CAP_CLUSTER_MS)
-      problems.push(
-        `TN_BENCH_CULL_${label.toUpperCase()}_CADENCE_CAPPED:${onTick.length}/${run.frameIntervals.length} frames on the ${FRAME_CADENCE_MS.toFixed(3)} ms host frame loop, mean ${run.meanMs.toFixed(3)} ms`,
-      );
+    if (run.presentMode !== "immediate" && run.presentMode !== "mailbox") {
+      const onTick = run.frameIntervals.filter((interval) => {
+        const ticks = interval / FRAME_CADENCE_MS;
+        return ticks >= 0.5 && Math.abs(ticks - Math.round(ticks)) * FRAME_CADENCE_MS < 2;
+      });
+      const share = onTick.length / run.frameIntervals.length;
+      const spread = quartileSpread(onTick);
+      if (share >= 0.5 && spread <= CAP_CLUSTER_MS)
+        problems.push(
+          `TN_BENCH_CULL_${label.toUpperCase()}_CADENCE_CAPPED:${onTick.length}/${run.frameIntervals.length} frames on the ${FRAME_CADENCE_MS.toFixed(3)} ms host frame loop, mean ${run.meanMs.toFixed(3)} ms`,
+        );
+    }
     if (run.wallSemantics === null)
       problems.push(
         `TN_BENCH_CULL_${label.toUpperCase()}_WALL_SEMANTICS_UNDECLARED: neither a drain nor a boundary completion timestamp, so the record does not say what its ${run.meanMs.toFixed(3)} ms mean measured`,

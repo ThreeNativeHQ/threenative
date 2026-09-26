@@ -145,6 +145,13 @@ async function main(): Promise<void> {
         spot: harness.lightCount.spot,
       },
       meanMs: (finalCompletionMs - start) / config.frames,
+      // The host's own answer to whether these frames were pinned to the display's tick, read back
+      // from the surface it configured rather than inferred from the frame series: `fifo` pins them,
+      // `immediate` and `mailbox` do not. Recorded raw so the comparator refuses a spelling the host
+      // never publishes, and `null` where it publishes nothing, which is the same as saying nothing.
+      presentMode:
+        (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: unknown } })
+          .__THREENATIVE_NATIVE__?.presentMode ?? null,
       profile: "smoke",
       projection: harness.projection,
       rawSeries: { boundaries, finalCompletionMs, schemaVersion: 1, unit: "ms" },
