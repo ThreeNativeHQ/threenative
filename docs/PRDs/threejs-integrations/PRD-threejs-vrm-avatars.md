@@ -26,9 +26,11 @@ Pure tests cover binary subarray offsets, truncated/false lengths, wrong/duplica
 ### Phase 2 — optional format integration
 - [ ] Add failing loader, extension-preservation and isolated-avatar-state tests.
 - [ ] Implement plugin composition and game-owned WebGPU material selection.
-  Actual source is present; dependency-backed execution/GPU compilation remain unverified.
+  Actual loader execution now passes the pinned CPU suite; GPU material compilation remains unverified.
 - [ ] Pass fixed-step animation, cancellation and shared-resource-disposal tests.
 - [ ] Prove that cooking preserves behavior or explicitly uses the existing pass-through path.
+- [x] Verify immutable byte ownership for ordinary glTF and VRM descriptors, including Node Buffer subarrays.
+  Two new real-loader regressions fail before the owned-copy fix and pass afterwards.
 - [x] Strict-check the dependency-free document parser with TypeScript 5.8.3: exit 0.
 
 ### Phase 3 — real platform proof
@@ -60,6 +62,12 @@ Executed locally: pure format tests 10/10 and strict TypeScript 5.8.3 checking o
 **Dependency-backed CI, 2026-09-25:** Integration vrm run 36202262331 installed the actual dependencies and failed TS2305 importing VRMUtils. The upstream entry re-exports a directory (`./VRMUtils`); its class exists but NodeNext does not resolve that declaration export. A minimal local declaration-package reproduction produced the same TS2305 in NodeNext and exited 0 with Bundler resolution. This commit sets this example's compiler to ESNext/Bundler, retains strict/noEmitOnError and all tests, and emits ordinary ESM with the existing .js relative imports. The actual dependency-backed rerun remains unverified until observed; no runtime disposal helper was replaced or suppressed.
 
 The dedicated PR workflow runs the complete command because examples are excluded from root Vitest. Formal capability tools, installed audit/lockfile, Biome, repository suite, independent review and all GPU/native lanes remain open. No iOS claim. Keep draft and do not advertise material/native support until executed inside the actual patched framework runtime.
+
+## CI repair verification — 2026-09-26
+
+`npm test` passes with the pinned dependencies: strict TypeScript 5.9.3 build, 10 format contracts and 5 real three-vrm/Three loader tests (15 passed, 0 failed). Two added tests failed on the old reader: Node Buffer.slice() aliases its backing allocation, so an offset Buffer fed unrelated bytes to GLTFLoader and did not provide the promised immutable descriptor. Uint8Array.from now takes an owned exact-size copy before inspection and parsing; later mutation of the caller's Buffer cannot corrupt avatar instantiation.
+
+Applied Biome 1.9.4's captured formatting and declaration repairs. Fixture extension keys preserve the exact external VRM names through constants; the missing-humanoid test still actually deletes the field through Reflect.deleteProperty. No lint policy or test assertion was removed. Fresh repository CI must validate the pushed tree. This supersedes the earlier dependency limitation and NodeNext-resolution uncertainty, not GPU, cook/load, secondary-motion, platform or complete-repository admission.
 
 ## References
 
