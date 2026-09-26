@@ -1,6 +1,6 @@
 # Clearwater shallow-water integration
 
-Status: PARTIAL — implementation and review fixes complete; latest-head standard CI outstanding.
+Status: DONE — implementation and review fixes complete; latest-head standard CI green.
 
 ## Goal and ownership
 
@@ -40,11 +40,12 @@ MIT notice (Copyright 2026 Lumaris).
 
 ## Phase 3 — repository qualification
 
-- [ ] Run the repository's standard full CI on the latest head. proof: PR `ci-required`.
-  Earlier head run 36141527525 was green. The bespoke Clearwater workflow and browser harness were
-  removed during review: they duplicated normal typecheck/lint/unit setup and maintained a second
-  CI path for one opt-in source bundle. The earlier one-time WebGPU smoke had already compiled and
-  rendered the effect; it is not retained as a recurring feature-specific gate.
+- [x] Run the repository's standard full CI on the latest head. proof: PR CI run 36231273808 on
+  head `6682bd6add3eb23b9ddb3320779e5a236235f100` completed successfully.
+  The bespoke Clearwater workflow and browser harness were removed during review: they duplicated
+  normal typecheck/lint/unit setup and maintained a second CI path for one opt-in source bundle.
+  The earlier one-time WebGPU smoke had already compiled and rendered the effect; it is not retained
+  as a recurring feature-specific gate.
 
 ## Review focus and boundaries
 
