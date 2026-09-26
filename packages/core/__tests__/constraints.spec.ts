@@ -59,6 +59,11 @@ describe("core constraints", () => {
           // inside "flight".
           file !== "flight.ts" &&
           file !== "instanced-batch.ts" &&
+          // WorldCells streams a package: it reads the geometry and surface out of the package's
+          // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
+          // light, colour or shader, and reads no appearance property. The word "light" the
+          // generic filter trips on is inside `loadsInFlight`.
+          file !== "world-cells.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
@@ -242,6 +247,17 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `world-cells.ts` is exempted on the same terms as `instanced-batch.ts`: streaming a package
+    // means naming the geometry and surface its GLBs carry and handing both to `InstancedBatch` by
+    // reference. It constructs no material, light or colour and reads no property that describes
+    // how anything looks. The assertions below are what keep that true.
+    const worldCells = readFileSync(path.join(sourceDirectory, "world-cells.ts"), "utf8");
+    expect(worldCells).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(worldCells).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(worldCells.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `gpu-scene-bvh.ts` is exempted on the same terms as `warmup.ts`: it reads a material's
     // *identity* — an integer index into the game's own surfaces — to pack triangles for the BVH's
