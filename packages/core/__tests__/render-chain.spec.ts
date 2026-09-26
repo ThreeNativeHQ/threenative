@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { type IRenderChainStage, RenderChain } from "../src/render/chain.js";
+import {
+  type IRenderChainStage,
+  RenderChain,
+  readRenderChainObservation,
+} from "../src/render/chain.js";
 import type { IRendererLike } from "../src/renderer.js";
 
 function renderer(
@@ -504,5 +508,302 @@ describe("RenderChain", () => {
     expect(chain.applied.stages).toEqual([]);
     expect(current.installed).toEqual([]);
     expect(marker).not.toHaveBeenCalled();
+  });
+
+  it("reads no report from a non-object renderer", () => {
+    expect(readRenderChainObservation(null)).toBeUndefined();
+    expect(readRenderChainObservation(42)).toBeUndefined();
+    expect(readRenderChainObservation("webgpu")).toBeUndefined();
+  });
+
+  it("rejects apply and observation calls after dispose", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [stage("bloom", [])],
+      request: { stages: ["bloom"], tier: "high" },
+    });
+    chain.dispose();
+
+    expect(chain.disposed).toBe(true);
+    expect(() => chain.apply()).toThrow(/after dispose/u);
+    expect(() => chain.observeFrame()).toThrow(/after dispose/u);
+    expect(() => chain.observeFrameBudget({ phases: { render: { p95: 1 } } })).toThrow(
+      /after dispose/u,
+    );
+  });
+
+  it("drops stages below their minimum tier, unavailable stages, and named reasons", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [
+        { ...stage("ssgi", []), minimumTier: "high" },
+        { ...stage("denoise", []), available: () => false },
+        { ...stage("bloom", []), available: () => "gpu:missing" },
+      ],
+      request: { stages: ["ssgi", "denoise", "bloom"], tier: "low" },
+    });
+
+    expect(chain.applied.stages).toEqual([]);
+    expect(chain.applied.dropped).toEqual([
+      { name: "ssgi", reason: "tier:low" },
+      { name: "denoise", reason: "unavailable:webgpu" },
+      { name: "bloom", reason: "gpu:missing" },
+    ]);
+  });
+
+  it("reports a stage that returns no node as a build drop and disposes it", () => {
+    const dispose = vi.fn();
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [{ ...stage("bloom", []), build: () => null, dispose }],
+      request: { stages: ["bloom"], tier: "high" },
+    });
+
+    expect(chain.applied.stages).toEqual([]);
+    expect(chain.applied.dropped).toEqual([
+      { name: "bloom", reason: "build:stage returned no node" },
+    ]);
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("stringifies a non-Error build failure into the drop reason", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [
+        {
+          ...stage("bloom", []),
+          build: () => {
+            throw "boom-string";
+          },
+        },
+      ],
+      request: { stages: ["bloom"], tier: "high" },
+    });
+
+    expect(chain.applied.dropped).toEqual([{ name: "bloom", reason: "build:boom-string" }]);
+  });
+
+  it("reports an install failure and releases the built stages", () => {
+    const dispose = vi.fn();
+    const clearOutputNode = vi.fn();
+    const current = renderer("webgpu");
+    current.setOutputNode = () => {
+      throw new Error("install-nope");
+    };
+    current.clearOutputNode = clearOutputNode;
+    const chain = new RenderChain(current, {
+      stages: [{ ...stage("bloom", []), dispose }],
+      request: { stages: ["bloom"], tier: "high" },
+    });
+
+    expect(chain.applied.stages).toEqual([]);
+    expect(chain.applied.dropped).toEqual([{ name: "bloom", reason: "install:install-nope" }]);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(clearOutputNode).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the applied report without measuring when no velocity stage is active", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [stage("bloom", [])],
+      request: { stages: ["bloom"], tier: "high" },
+    });
+
+    expect(chain.observeFrame()).toBe(chain.applied);
+    expect(chain.applied.velocity.measurementFrame).toBeUndefined();
+  });
+
+  it("leaves the velocity report unmeasured without a reader or callback", () => {
+    const current = renderer("webgpu");
+    Object.assign(current, { raw: { mrt: new Set(["velocity"]) } });
+    const chain = new RenderChain(current, {
+      stages: [stage("traa", [])],
+      request: { stages: ["traa"], tier: "high", velocity: { source: "mrt" } },
+    });
+
+    chain.observeFrame();
+
+    expect(chain.applied.velocity.provisioned).toBe(true);
+    expect(chain.applied.velocity.measurementFrame).toBeUndefined();
+    expect(chain.applied.velocity.rejectionFraction).toBeUndefined();
+  });
+
+  it("keeps a pinned tier across budget windows and resets the auto counter on clean ones", () => {
+    const pinned = new RenderChain(renderer("webgpu"), {
+      stages: [stage("ssgi", [])],
+      request: { stages: ["ssgi"], tier: "high" },
+    });
+    expect(pinned.observeFrameBudget({ phases: { render: { p95: 30 } } })).toBe("high");
+
+    const automatic = new RenderChain(renderer("webgpu"), {
+      stages: [stage("ssgi", [])],
+      request: { stages: ["ssgi"], tier: "auto" },
+      targetFps: 60,
+    });
+    expect(automatic.observeFrameBudget({ phases: { render: { p95: 1 } } })).toBe("high");
+    expect(automatic.applied.tier).toBe("high");
+  });
+
+  it("rejects a malformed render p95 for an automatic tier", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [stage("ssgi", [])],
+      request: { stages: ["ssgi"], tier: "auto" },
+    });
+
+    expect(() => chain.observeFrameBudget({ phases: { render: { p95: Number.NaN } } })).toThrow(
+      /finite non-negative/u,
+    );
+    expect(() => chain.observeFrameBudget({ phases: { render: { p95: -1 } } })).toThrow(
+      /finite non-negative/u,
+    );
+  });
+
+  // NOTE: owned-velocity-pass restore (#restoreOwnedVelocityOutput setMRT, velocityTexture /
+  // withVelocityContext) needs a real TSL scene pass and is renderer-only; skipped on CPU.
+
+  it("rejects a stage without a build function", () => {
+    expect(
+      () =>
+        new RenderChain(renderer("webgpu"), {
+          stages: [{ name: "bloom" } as unknown as IRenderChainStage],
+          request: { stages: ["bloom"], tier: "high" },
+        }),
+    ).toThrow(/needs a build function/u);
+  });
+
+  it("rejects an anchor constraint on a built-in stage", () => {
+    expect(
+      () =>
+        new RenderChain(renderer("webgpu"), {
+          stages: [{ ...stage("ssgi", []), before: "bloom" }],
+          request: { stages: ["ssgi"], tier: "high" },
+        }),
+    ).toThrow(/cannot declare before or after/u);
+  });
+
+  it("rejects a blank before anchor on an authored stage", () => {
+    expect(
+      () =>
+        new RenderChain(renderer("webgpu"), {
+          stages: [{ ...stage("ink", []), before: "  " }],
+          request: { stages: ["ink"], tier: "high" },
+        }),
+    ).toThrow(/non-blank/u);
+  });
+
+  it("rejects a duplicated requested stage", () => {
+    expect(
+      () =>
+        new RenderChain(renderer("webgpu"), {
+          stages: [stage("bloom", [])],
+          request: { stages: ["bloom", "bloom"], tier: "high" },
+        }),
+    ).toThrow(/duplicate requested/u);
+  });
+
+  it("provisions mrt velocity from a getMRT renderer and reports a throwing one as absent", () => {
+    const withMrt = renderer("webgpu");
+    Object.assign(withMrt, { raw: { getMRT: () => new Set(["velocity"]) } });
+    const provisioned = new RenderChain(withMrt, {
+      stages: [stage("traa", [])],
+      request: { stages: ["traa"], tier: "high" },
+    });
+    expect(provisioned.applied.velocity).toMatchObject({ provisioned: true, source: "mrt" });
+
+    const throwing = renderer("webgpu");
+    Object.assign(throwing, {
+      raw: {
+        getMRT: () => {
+          throw new Error("mrt-nope");
+        },
+      },
+    });
+    const absent = new RenderChain(throwing, {
+      stages: [stage("traa", [])],
+      request: { stages: ["traa"], tier: "high" },
+    });
+    expect(absent.applied.stages).toEqual([]);
+    expect(absent.applied.dropped).toEqual([{ name: "traa", reason: "velocity:missing" }]);
+  });
+
+  it("reads velocity from an array mrt output and per-object scene flags", () => {
+    const arrayMrt = renderer("webgpu");
+    Object.assign(arrayMrt, { raw: { mrt: ["velocity"] } });
+    const fromArray = new RenderChain(arrayMrt, {
+      stages: [stage("traa", [])],
+      request: { stages: ["traa"], tier: "high" },
+    });
+    expect(fromArray.applied.velocity).toMatchObject({ provisioned: true, source: "mrt" });
+
+    const fromFlags = new RenderChain(renderer("webgpu"), {
+      stages: [stage("traa", [])],
+      request: { stages: ["traa"], tier: "high" },
+      scene: {
+        traverse: (callback) => callback({ userData: { useVelocity: true } }),
+      },
+    });
+    expect(fromFlags.applied.velocity).toMatchObject({ provisioned: true, source: "per-object" });
+  });
+
+  it("rejects malformed velocity results and compatibility measurements", () => {
+    const temporal = (result: unknown, rejectionMeasurement?: () => unknown) => {
+      const current = renderer("webgpu");
+      Object.assign(current, { raw: { mrt: new Set(["velocity"]) } });
+      return new RenderChain(current, {
+        stages: [{ ...stage("traa", []), readVelocityResult: () => result as never }],
+        request: {
+          stages: ["traa"],
+          tier: "high",
+          velocity: { source: "mrt", rejectionMeasurement: rejectionMeasurement as never },
+        },
+      });
+    };
+
+    expect(() =>
+      temporal({ frame: -1, rejectionMask: new Uint8Array([0]) }).observeFrame(),
+    ).toThrow(/non-negative integer/u);
+    expect(() => temporal({ frame: 1, rejectionMask: new Uint8Array(0) }).observeFrame()).toThrow(
+      /at least one pixel/u,
+    );
+    expect(() =>
+      temporal({ frame: 1, rejectionMask: new Uint8Array([0, 2]) }).observeFrame(),
+    ).toThrow(/must be 0 or 1/u);
+    expect(() => temporal(undefined, () => 42).observeFrame()).toThrow(/must return an object/u);
+    expect(() =>
+      temporal(undefined, () => ({ frame: -1, rejectionFraction: 0.5 })).observeFrame(),
+    ).toThrow(/non-negative integer/u);
+    expect(() =>
+      temporal(undefined, () => ({ frame: 1, rejectionFraction: 2 })).observeFrame(),
+    ).toThrow(/between 0 and 1/u);
+  });
+
+  it("steps an automatic tier to off across sustained over-budget windows", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [stage("ssgi", [])],
+      request: { stages: ["ssgi"], tier: "auto" },
+      targetFps: 60,
+      dwellWindows: 1,
+    });
+    const over = { phases: { render: { p95: 30 } } };
+
+    expect(chain.observeFrameBudget(over)).toBe("medium");
+    expect(chain.observeFrameBudget(over)).toBe("low");
+    expect(chain.observeFrameBudget(over)).toBe("off");
+    expect(chain.observeFrameBudget(over)).toBe("off");
+    expect(chain.applied.stages).toEqual([]);
+  });
+
+  it("rejects non-positive dwellWindows and targetFps", () => {
+    expect(
+      () =>
+        new RenderChain(renderer("webgpu"), {
+          dwellWindows: 0,
+          stages: [stage("bloom", [])],
+          request: { stages: ["bloom"], tier: "high" },
+        }),
+    ).toThrow(/dwellWindows must be a positive integer/u);
+    expect(
+      () =>
+        new RenderChain(renderer("webgpu"), {
+          targetFps: -1,
+          stages: [stage("bloom", [])],
+          request: { stages: ["bloom"], tier: "high" },
+        }),
+    ).toThrow(/targetFps must be a finite positive number/u);
   });
 });
