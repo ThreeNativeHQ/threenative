@@ -5,11 +5,12 @@ prd_contract: v1
 # PRD-400 — The frame gets cheaper one measured, removable cost at a time
 
 **Status:** IN PROGRESS
-**Progress:** 0/5 phases (Phase 1: skill landed; judge not started)
+**Progress:** 0/5 phases (Phase 1: skill and judge plumbing landed; live baseline pending)
 **Complexity:** 7 → HIGH; 11+ implementation files across core, the three.js patch, the native
 recorder and the C++ replay (+3), retained projection and command-plan state (+2), crosses the native
 host build (+2); risk override: none.
 **Owner:** Engine performance agent, executing through the `perf-loop` skill Phase 1 creates.
+**Rescue note (2026-09-25):** PR #289 was reconciled onto current `develop` after 51 commits of integration drift. The previous Windows native qualification failed in the PRD-400 production collector while rebuilding its staged platformer: Vite/Rolldown rejected the generated `.threenative-ui-*.html` path from the Windows OS temp volume. Normal Windows desktop packaging in the same job was green. The collector now stages repository qualification under the checkout's `.runtime/` volume, preserving the authored web UI and the newer prebuilt-runtime/window-size fixes from `develop`. The failing Windows job is the RED; latest-head Windows qualification is the GREEN gate and remains pending until CI runs.
 **Depends on:** nothing to start. Absorbs, never repeats: [PRD-388](critical/PRD-388-an-automatic-optimizer-must-price-its-own-cost.md)
 (projection prices its own cost), [PRD-389](critical/PRD-389-the-frame-budgets-instruments-do-not-lie.md)
 (instrument honesty), PRD-395/396 (render-phase attribution, branch-only), and
@@ -182,7 +183,10 @@ is never reported as a steady-state win.
 ## Acceptance criteria
 
 - [ ] AC-1 [local; actor: agent]: A fresh subagent given only the `perf-loop` skill and this PRD runs
-  one full iteration unassisted and writes a valid ledger row — Evidence: pending.
+  one full iteration unassisted and writes a valid ledger row — Evidence: 2026-09-23 fresh-agent
+  attempt stopped before a candidate: the pinned baseline, A/A band and complete five-term attribution are
+  still absent, the shared GPU/CPU was in use, and every RTX 2080 DRM connector was disconnected.
+  No candidate ledger row was written.
 - [ ] AC-2 [local; actor: agent]: Midway native desktop at 1280×720, `sampleCount 4`, identical
   content: frame p50 at least 20% below the pinned Phase 1 baseline, outside the A/A noise band, p95
   no worse — Evidence: pending.
@@ -212,7 +216,7 @@ is never reported as a steady-state win.
 
 ## Execution Phases
 
-Work runs in `.claude/worktrees/prd-400-perf-loop/`, branched from `develop`, with one draft PR to
+Work runs in `.worktrees/prd-400-perf-loop/`, branched from `develop`, with one draft PR to
 `develop` opened before Phase 1. Run `pnpm prd:progress` on this file before starting and after each
 phase.
 
@@ -227,7 +231,10 @@ phase.
 **Verification:** `pnpm check:docs` plus the instruction-budget and `sync-agent-docs` specs for the
 skill; the engine-load-test equivalence spec for `positionHash`; the judge's own sensitivity controls.
 
-- [ ] Judge accepts matrix cells and Midway; `positionHash` unchanged at the default axes.
+- [x] Judge accepts matrix cells and Midway; `positionHash` unchanged at the default axes —
+  desktop matrix mutation 0 and 1% both reported `992067d3` (`L0-07`); web Midway preflight
+  returned `PASS` on NVIDIA/Turing with 900 samples; clean native launch preflight returned `PASS`
+  with all six assertions, `airborne: true`, altitude 22 → 55 and IAS 19 → 55 (`L0-08`).
 - [ ] Five-term attribution closes to at least 95% of the native desktop frame on one matrix cell and
   on Midway.
 - [ ] A/A noise band and pinned baseline recorded as ledger rows `L0-*`: matrix cells, Midway native
@@ -238,7 +245,132 @@ skill; the engine-load-test equivalence spec for `positionHash`; the judge's own
   `.claude/skills/perf-loop/SKILL.md`, `.agents/skills/perf-loop` symlink; `pnpm check:docs` (2,199 links),
   `check-doc-links`, `sync-agent-docs`, `evidence-budget` specs 29/29, `instruction-budget` 9/9, 2026-09-22.
 
-**Checkpoint:** pending
+**Checkpoint:** Project/scenario staging, workload axes and projection timing markers are on
+`perf/prd-400-ac1`; the staged judge preserves the game's automatic resolution and authored UI
+renderer. Focused checks passed. The [L0 contract](../../verification/runtime-perf-state.md)
+names the frozen judge paths and holdouts. Midway's tracked `c277aee` game source is snapshotted at
+`sandbox/.afk/prd400-midway-source` so its separate package changes cannot enter the baseline.
+That game needs core's launch-failure and pending-asset API from `acef62180`; the existing engine
+implementation is included here so the unchanged snapshot builds against this branch.
+Desktop preflight reached the packaged game after fixing its embedded-entry launch, then exposed a
+judge-generated browser-only diagnostic assertion; native scenarios now assert supported startup
+readiness. The later native 4x failure traced to Three.js reusing a pipeline and bind group when
+the active sample count changed. The Three patch now keys the render object and pipeline on that
+count and rebinds a refreshed GPU group; its three distributed copies apply in a clean consumer.
+The web preflight initially selected SwiftShader and lost its GPU instance because the judge
+launched Chromium headless. Headed WebGPU under the existing private display reached the flight
+workload; the playtest runner now excludes only failed POSTs to the judge's exact loopback marker
+URL from its network assertion. A one-run preflight then returned `PASS` with 900 frame samples,
+startup and all three markers; Chromium `adapter.info` reported `nvidia / turing`. This is a
+preflight on a dirty checkout, not a pinned baseline or A/A noise result.
+The native generated flight scenario now converts an authored viewport-pixel click into the desktop
+pointer transport at the same normalized location. The first full native run then passed the flight
+but failed the judge's two-second desktop shutdown. With a ten-second shutdown bound, a cold startup
+timed out on a one-frame mailbox `advance` (20,250 ms). The playtest startup wait now treats that
+specific operation timeout as a busy frame within its existing readiness deadline. On the dirty
+checkout, the next native preflight returned `PASS` with 875 frame samples, a 1,619 ms startup
+sample and no GPU validation errors. Its p50 was 6.13 ms, p95 56.35 ms, and worst frame 25.54 s.
+Inspection of all six resource snapshots showed `status: briefing`, `airborne: false`, and unchanged
+altitude and airspeed: the web flight scenario's viewport click did not enter native gameplay, and
+its diagnostics-only assertion could not catch that. These frame numbers describe the briefing
+scene, and the playtest's accelerated tick advance is not a normal paced presentation window; they
+cannot be used as a Midway FPS baseline. The native gameplay check will run the already authored
+`native-playtests/launch.playtest.json`, which requires flight status, airborne state, and altitude
+and airspeed changes. The steady-state baseline then uses the `measure-steady-state-fps` skill on a
+normal paced, hardware backed window after loading and compilation settle. The 57 production judge
+tests, 19 startup tests, 8 packaging tests, typecheck, lint, and full `pnpm test` pass (454 test
+files, 5,520 tests; 8 skipped). The distributed patch intentionally moves all ten no-install
+scaffold hashes, and the renderer cache probe now supplies the renderer's active-target method.
+The native result is a preflight, not a pinned baseline or A/A noise result.
+The ignored snapshot then installed core tarball SHA-256 `934e6b39a94b18fe7d38fd5e380a64e0274477e4364e57dd1419a979673a102f`
+and Three patch SHA-256 `6bb97e8e730a8cf10433456a382a2701996c86bf4cc3a07e8f3e80e7c9b0c799`;
+its `src`/`public` workload hash stayed `a764771af3a8b96b2b5780cd4badb67050ae10656b7ba8df99cb0cb2dadf3ae8`.
+The authored native launch then returned `PASS` on a clean engine checkout with all six assertions,
+including actual airborne and changing altitude/IAS state. Its screenshot shows the plane above
+the water. It proves gameplay and the packaged patch, not a real-time frame baseline.
+The comparison now includes the authored resolution-scale setting from the packaged native config.
+Its no-GPU control blocks `auto` → `0.5` even when frame time improves, while `auto` → `auto`
+and matching numeric escape-hatch settings pass (`L0-09`). The packaged Midway config remains
+`auto`. The live `slow-native` control is still required before ticking sensitivity.
+The matrix report now emits and preserves per-frame `stepMs` and projection `collapseMs`, with
+sample-count and finite-value checks. Its 102 scorer tests and typecheck pass; these two terms
+alone do not close the five-term attribution box.
+The two unpaired 10,000-object desktop matrix arms completed and are recorded as discovery in
+the L0 ledger; their run-order difference cannot establish a noise band. `pnpm typecheck`,
+`pnpm lint`, and `pnpm test` passed locally (454 files, 5,520 tests; 8 skipped).
+After the resolution guard, typecheck and lint passed; focused production-profile tests passed
+58/58 and comparator tests 18/18. The full suite passed 5,520 tests but one browser runner test
+observed a closed page during the concurrent desktop capture; that exact test passed in isolation.
+Full matrix/Midway baselines, A/A noise, sensitivity controls and AC-1's full iteration remain unverified.
+Three identical native matrix runs at 1% mutation now preserve the step and projection series and
+bound their virtual-display run-median variation (`L0-11`). A direct host log exposed replay and
+present timing but no frame-budget or projection markers (`L0-12`), leaving three.js CPU and
+recorder JS unnamed. The Wayland session currently has zero active outputs, so the paced Midway
+presentation baseline remains unavailable; the virtual-display intervals are not FPS evidence.
+The first live scaffolded `slow-native` control returned `BLOCKED`, not a sensitivity verdict:
+the native budget triggers, but the web arm lacks mean FPS and its 120 frames cover only 3.1955
+seconds despite `--duration 45` (`L0-13`). The sampling contract must be fixed before retrying.
+The scaffolded production collector now paces its generated fixed-step workload against wall time
+and counts one web sample per RAF presentation. Focused sampling tests pass 4/4, and typecheck,
+lint, and the full test gate pass (457 files, 5,526 tests; 8 skipped).
+The full-SHA live retry did produce complete web metrics over 48.548 seconds, but the desktop
+playtest hit the 1 MB device-bridge payload limit before native metrics were complete (`L0-14`).
+That retry remained `BLOCKED`; it did not establish slow-native sensitivity.
+The bridge snapshot now includes `runtimeDiagnosticsSeries` only when the sample request asks for
+it; the 1 MB payload limit is unchanged. The full test run exposed three core tests that relied
+on the old implicit series. Those callers now request it explicitly, and the focused core/playtest
+rerun passes 56/56. The full suite then passed (457 files, 5,526 tests; 8 skipped).
+A clean live retry now returns `FAIL` with only `TN_PROD_PERFORMANCE_BUDGET`; web and native
+comparison metrics and all required markers are complete (`L0-15`). The slow-native control is
+verified, while the Phase 1 sensitivity box remains open for the live resolution-cut candidate.
+The host-gap meter now has an opt-in detailed sample (`TN_HOST_GAP_DETAIL=1`) with its existing
+per-frame segment times and rAF period. The default marker shape stays small. Focused source test
+and C++ object compile pass. A linked-host L3 probe parsed 300 detailed samples; joining the
+period ending at frame N to the post-rAF segments of N−1 and pre-rAF segments of N accounts for
+81.2% of the mean period with zero negative residuals (`L0-16`). The remaining 18.8% still needs
+Three.js CPU and recorder JS attribution; this Xvfb probe is not presented FPS or Midway proof.
+Frozen Midway and an isolated `0.5` resolution copy each passed a native desktop profile with
+the same local host and authored scenario (`L0-17`). The records capture `auto` versus `0.5`,
+but these virtual-display runs lack the observed hardware identity required by the A/B comparator;
+neither the resolution-cut sensitivity verdict nor a paced baseline is verified.
+The opt-in rAF callback clock and native matrix timestamp join now close 99.97% of a diagnostic
+host period, with 180 scored matrix frames matching host timestamps (`L0-18`). Callback dispatch
+still combines Three.js, recorder and game work, so five-term attribution remains unverified.
+This changed frozen judge paths and requires a new baseline before any candidate verdict.
+A separate V8 profile sampled projection functions heavily and recorder functions lightly on the
+same native matrix cell (`L0-19`), but its sampled shares are not per-frame time. Recorder encode,
+reuse and upload bypass its drain timer, and there is no single existing wrapper around all of them.
+The five-term box remains open; recorder instrumentation and candidate selection wait for an
+uncontended, paced desktop baseline so the diagnostic cost can be justified against a real frame.
+The RTX 2080's HDMI and secondary outputs are now active at 60 Hz. A headed empty-page control
+paced at 16.7 ms p50 on NVIDIA/Turing; the branch rebased cleanly onto the new `develop` culling
+change, rebuilt core, and passed its 17 focused tests. The 10,000-object L3 cell hit the 16.7 ms
+display floor, so three identical real-display A/A runs used 40,000 objects: frame p50 run medians
+26.975/26.650/28.258 ms, noise band 1.608 ms; projection p50 band 1.490 ms (`L0-20`). This is
+an uncapped matrix throughput baseline only. The Phase 1 baseline checkbox remains open until
+Midway native/browser and both holdouts have matching pinned A/A evidence.
+The live Midway scene initially showed no HUD despite `TN_UI_OVERLAY` reporting attachment.
+Disabling WebKit's DMA-buffer renderer made the authored briefing screen visible, so the Linux
+overlay now applies that fallback by default. A requested web UI now fails startup if attachment
+fails or if the page does not send `tn:ready` within 15 seconds; `--bypass-ui-loading` explicitly
+runs the scene for diagnostics. The rebuilt host passed the focused packaging and native queue
+checks; an Xvfb compositor run with a page that never reports ready exited 1, while the real
+Midway UI remained running beyond the deadline. Both physical display connectors disconnected
+during the flight-input probe, so no Midway paced FPS or gameplay baseline is claimed (`L0-21`).
+After rebasing onto `develop` with PRD-399's UI worker and native lock update, the three shipped
+Three patches apply together and the generated scaffold hashes match all ten templates. The
+rebuilt desktop host passes the authored loading playtest (913,920 startup loading pixels, zero
+settled loading pixels), the full local suite (457 files, 5,552 tests; 8 skipped), typecheck,
+lint and budgets. A rebased hosted-software collector smoke run returned `PASS` with 1,146 ms
+startup; its performance-budget advisory is expected for the short software-rendered probe.
+These checks verify integration only; the paced Midway and holdout baselines remain open.
+The first rebased CI `test-native` collector blocked when headless GTK reported a missing AT-SPI
+session bus as a console error. The bounded collector step now sets `NO_AT_BRIDGE=1`, preserving
+the judge's strict diagnostic check; a local run with that exact environment returned `PASS`.
+The `test-native` check passed on the first fixed CI head. After #292's Windows mailbox retry
+merged into `develop`, this branch rebased without conflict. Its mailbox regression passed 3/3,
+the authored desktop loading playtest again settled to zero loading pixels, and typecheck, lint and
+the full suite passed (457 files, 5,553 tests; 8 skipped). The rebased CI verdict remains pending.
 
 ### Phase 2 — Lane 1: scene projection
 

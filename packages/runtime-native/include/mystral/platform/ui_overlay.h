@@ -34,6 +34,9 @@ bool takeUiMessage(std::string& frame);
 /** How many inbound frames have been dropped for queue pressure across this run. */
 uint64_t droppedUiMessages();
 
+/** Whether the UI layer has sent its first-render `tn:ready` intent. */
+bool uiReadyIntentReceived();
+
 /**
  * Send one frame to the UI layer. Returns false when no overlay is attached, which is the
  * normal state for a game whose UI renderer is `native` and on any platform with no overlay

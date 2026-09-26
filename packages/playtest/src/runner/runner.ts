@@ -1,7 +1,7 @@
 import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
-import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
+import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
 import { sampleHud } from "./sampling.js";
@@ -385,7 +385,12 @@ async function runStandalonePlaytestInternal(
       if (pageLifecycle.tail.length > 8) pageLifecycle.tail.shift();
     });
     page.on("pageerror", (error) => consoleEntries.push({ source: "page-error", text: error.stack || error.message, type: "pageerror" }));
-    page.on("requestfailed", (request) => networkEntries.push({ method: request.method(), url: request.url() }));
+    page.on("requestfailed", (request) => {
+      const method = request.method();
+      const url = request.url();
+      if (isJudgeMarkerRequestFailure(method, url, activeConfig.judgeMarkerUrl)) return;
+      networkEntries.push({ method, url });
+    });
     // A renderer crash and a page navigation both surface as "Execution context was destroyed"
     // on the next evaluate, and the two need opposite fixes. Record which actually happened so
     // the report names it instead of emitting the unexplained-error catch-all.

@@ -5,10 +5,12 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <charconv>
 #include <deque>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <string_view>
 
 #include <cstdio>
 
@@ -78,6 +80,7 @@ std::mutex g_mutex;
 std::deque<std::string> g_inbound;
 std::atomic<uint64_t> g_dropped{0};
 std::atomic<bool> g_attached{false};
+std::atomic<bool> g_uiReadyIntentReceived{false};
 
 /** How many interactive rectangles the page last published, for the OS press verdict line. */
 std::atomic<size_t> g_hitRegionCount{0};
@@ -112,6 +115,22 @@ uint64_t g_androidFrameCounter = 0;
 std::atomic<uint64_t> g_androidFramesPublished{0};
 std::atomic<bool> g_androidFrameRgba{false};
 #endif
+
+bool isUiReadyIntent(const std::string& frame) {
+    // UI_READY_INTENT is sent through sendUiIntent, whose JSON.stringify wire shape is canonical.
+    // The UI layer includes its published hit-region count as the payload. Match that complete
+    // shape so nested or user-supplied fields cannot impersonate readiness.
+    constexpr std::string_view prefix = R"({"type":"tn:intent","intent":"tn:ready","payload":)";
+    if (frame == R"({"type":"tn:intent","intent":"tn:ready"})") return true;
+    if (frame.size() <= prefix.size() + 1 || frame.back() != '}' ||
+        frame.compare(0, prefix.size(), prefix) != 0) return false;
+    const char* first = frame.data() + prefix.size();
+    const char* last = frame.data() + frame.size() - 1;
+    uint32_t regions = 0;
+    const auto parsed = std::from_chars(first, last, regions);
+    return first != last && parsed.ec == std::errc{} && parsed.ptr == last &&
+           std::to_string(regions) == std::string(first, last);
+}
 
 }  // namespace
 
@@ -161,6 +180,7 @@ bool takeAndroidUiOverlayFrame(UiOverlayFrame& frame) {
 #endif
 
 void queueUiMessage(std::string frame) {
+    if (isUiReadyIntent(frame)) g_uiReadyIntentReceived.store(true, std::memory_order_release);
     std::lock_guard<std::mutex> lock(g_mutex);
     while (g_inbound.size() >= kMaxQueuedUiMessages) {
         g_inbound.pop_front();
@@ -178,6 +198,8 @@ bool takeUiMessage(std::string& frame) {
 }
 
 uint64_t droppedUiMessages() { return g_dropped.load(std::memory_order_relaxed); }
+
+bool uiReadyIntentReceived() { return g_uiReadyIntentReceived.load(std::memory_order_acquire); }
 
 bool uiOverlayAttached() { return g_attached.load(std::memory_order_relaxed); }
 

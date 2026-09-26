@@ -162,6 +162,20 @@ export interface IPerfViolation {
   readonly window: number;
 }
 
+/**
+ * What the projection spent reconciling in one window, as the runtime reported it.
+ *
+ * `lastReconcileMs` is the per-frame attribution term the perf loop reads; `reconcileMs` is the
+ * run's running total and `maxReconcileMs` its worst frame. Absent on a `TN_PROJECTION` line from
+ * a runtime older than the field, which is named as unreported, never read as a measured zero.
+ */
+export interface IProjectionTimingsJson {
+  readonly compileMs: number;
+  readonly reconcileMs: number;
+  readonly lastReconcileMs: number;
+  readonly maxReconcileMs: number;
+}
+
 export interface IProjectionWindowJson {
   readonly drawsActual?: number;
   readonly drawsPlanned: number;
@@ -171,6 +185,7 @@ export interface IProjectionWindowJson {
   readonly reason?: string;
   readonly reasonCode: string;
   readonly sourceRenderables: number;
+  readonly timings?: IProjectionTimingsJson;
   readonly window: number;
 }
 
@@ -340,6 +355,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     if (hostGap !== undefined) hostGaps.push(hostGap);
     const projection = parseMarkerLine<IProjectionWindowJson>(line, PROJECTION_MARKER);
     if (projection !== undefined) {
+      assertProjectionTimings(projection);
       // Same reason the budget lines are de-duplicated: Android mirrors console output twice.
       const payload = JSON.stringify(projection);
       if (!projectionPayloads.has(payload)) {
@@ -362,6 +378,33 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     projections,
     slowPhases,
   };
+}
+
+const PROJECTION_TIMING_KEYS = ["compileMs", "reconcileMs", "lastReconcileMs", "maxReconcileMs"] as const;
+
+/**
+ * A projection line that carries timings must carry finite numbers for all of them.
+ *
+ * A string, a missing key or a non-object is a malformed meter, not an absent one: it would let
+ * `NaN` reach a reader and read as a measurement. Rejected exactly as unparsable JSON is. A line
+ * with no `timings` at all is an older runtime and stays absent, which the report names.
+ */
+function assertProjectionTimings(projection: IProjectionWindowJson): void {
+  const timings: unknown = projection.timings;
+  if (timings === undefined) return;
+  if (typeof timings !== "object" || timings === null) {
+    throw new Error(
+      `TN_PERF_MARKER_MALFORMED: a TN_PROJECTION line carried a non-object timings (${JSON.stringify(timings)}).`,
+    );
+  }
+  for (const key of PROJECTION_TIMING_KEYS) {
+    const value = (timings as Record<string, unknown>)[key];
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new Error(
+        `TN_PERF_MARKER_MALFORMED: a TN_PROJECTION line carried timings.${key} = ${JSON.stringify(value)} — a timing must be a finite number.`,
+      );
+    }
+  }
 }
 
 function parseMarkerLine<T>(line: string, marker: string): T | undefined {
@@ -802,6 +845,15 @@ function formatProjection(windows: readonly IProjectionWindowJson[]): string[] {
       : `scene projection: DECLINED (${last.reasonCode})${last.reason === undefined ? "" : ` — ${last.reason}`}; ` +
         `${last.sourceRenderables} authored renderables drawn one at a time`,
   ];
+  // The per-frame attribution term this section exists for. A line from a runtime older than the
+  // field is named as unreported rather than omitted: a reader who sees no reconcile number must
+  // not conclude the projection reconciled for free.
+  lines.push(
+    last.timings === undefined
+      ? "  reconcile: unreported — this TN_PROJECTION line predates the timing field"
+      : `  reconcile: ${last.timings.lastReconcileMs.toFixed(3)} ms last frame, ` +
+        `${last.timings.reconcileMs.toFixed(3)} ms cumulative, ${last.timings.maxReconcileMs.toFixed(3)} ms worst`,
+  );
   const ranked = rankExactReasons(last.exact);
   if (last.exactObjects > 0 && ranked.length === 0) {
     lines.push(

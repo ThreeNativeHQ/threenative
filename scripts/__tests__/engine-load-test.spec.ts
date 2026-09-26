@@ -2,6 +2,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  initInstanceMatrices,
+  writeInstanceMatrices,
+} from "../../examples/engine-load-test/src/game.js";
+import {
   type IModuleGraphEntry,
   extractModuleSpecifiers,
   hashServedModuleGraph,
@@ -9,9 +13,18 @@ import {
   isBenchmarkWorkloadModule,
 } from "../../examples/engine-load-test/src/identity.js";
 import {
+  CULLED_OFFSET_X,
+  DEFAULT_AXES,
+  type IWorkloadAxes,
+  assertRungAxesSupported,
   createLcg,
   createPlacements,
+  culledOffsetX,
+  isMutated,
+  isVisible,
+  parseAxesRecord,
   positionHash,
+  resolveAxes,
 } from "../../examples/engine-load-test/src/workload.js";
 import {
   type IRunReport,
@@ -23,6 +36,7 @@ import {
   knee,
   looksVsyncPinned,
   parseRunReport,
+  renderArmMarkdown,
   summarize,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
@@ -313,6 +327,203 @@ describe("engine load test workload", () => {
     expect(positionHash(createPlacements(1024))).toBe(positionHash(createPlacements(1024)));
     expect(positionHash(createPlacements(1024))).not.toBe(positionHash(createPlacements(256)));
     expect(positionHash(createPlacements(1024))).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("should reproduce the PRD-117 scene and identity at the default axes", () => {
+    // The literal hashes are the identity key the Godot port is compared on (PRD-400 Phase 1). A
+    // scene change that moved a cube would fail here, not silently on the next benchmark run.
+    expect(positionHash(createPlacements(1024))).toBe("78812d31");
+    expect(positionHash(createPlacements(16384))).toBe("3acfd9c3");
+    expect(resolveAxes()).toEqual(DEFAULT_AXES);
+    expect(parseAxesRecord({})).toEqual(DEFAULT_AXES);
+    expect(DEFAULT_AXES).toEqual({
+      geometry: "shared",
+      hierarchyDepth: 0,
+      material: "shared",
+      mutationRate: 1,
+      passCount: 1,
+      shadowCasterShare: 0,
+      visibleFraction: 1,
+    });
+    // The old scene exactly: every object dirty and every object on the lattice.
+    for (let index = 0; index < 256; index += 1) {
+      expect(isMutated(index, DEFAULT_AXES.mutationRate)).toBe(true);
+      expect(culledOffsetX(index, DEFAULT_AXES.visibleFraction)).toBe(0);
+    }
+  });
+
+  it("should move exactly its axes on a nondefault combo, deterministically", () => {
+    const axes = resolveAxes({
+      geometry: "unique",
+      hierarchyDepth: 2,
+      material: "unique",
+      mutationRate: 0.1,
+      passCount: 2,
+      shadowCasterShare: 0.5,
+      visibleFraction: 0.5,
+    });
+    expect(axes).toEqual({
+      geometry: "unique",
+      hierarchyDepth: 2,
+      material: "unique",
+      mutationRate: 0.1,
+      passCount: 2,
+      shadowCasterShare: 0.5,
+      visibleFraction: 0.5,
+    });
+    const indices = Array.from({ length: 4096 }, (_, index) => index);
+    // Deterministic: two reads over the same axis pick the same subset.
+    expect(indices.map((index) => isMutated(index, 0.1))).toEqual(
+      indices.map((index) => isMutated(index, 0.1)),
+    );
+    expect(indices.some((index) => isMutated(index, 0))).toBe(false);
+    expect(indices.filter((index) => isMutated(index, 1)).length).toBe(4096);
+    for (const rate of [0.01, 0.1]) {
+      const count = indices.filter((index) => isMutated(index, rate)).length;
+      expect(count).toBeGreaterThan(0);
+      expect(count).toBeLessThan(4096);
+    }
+    const visible = indices.filter((index) => isVisible(index, 0.5));
+    expect(visible.length).toBeGreaterThan(1024);
+    expect(visible.length).toBeLessThan(3072);
+    // Culled objects clear the far plane; visible ones stay on the lattice.
+    expect(culledOffsetX(visible[0] as number, 0.5)).toBe(0);
+    const culled = indices.find((index) => !isVisible(index, 0.5)) as number;
+    expect(culledOffsetX(culled, 0.5)).toBe(CULLED_OFFSET_X);
+    for (const bad of [
+      { geometry: "many" },
+      { hierarchyDepth: 1.5 },
+      { mutationRate: -1 },
+      { passCount: 0 },
+      { shadowCasterShare: 2 },
+      { visibleFraction: 2 },
+    ]) {
+      expect(() => resolveAxes(bad)).toThrow(/TN_BENCH_BAD_AXIS/u);
+    }
+    expect(() => parseAxesRecord({ passCount: "two" })).toThrow(/TN_BENCH_BAD_AXIS:passCount/u);
+  });
+
+  it("should bake instance matrices once and only rewrite mutated instances per frame", () => {
+    const placements = createPlacements(64);
+    const axesAt = (mutationRate: number): IWorkloadAxes => ({ ...DEFAULT_AXES, mutationRate });
+    const dummy = {
+      matrix: {},
+      position: { set: () => undefined },
+      rotation: { set: () => undefined },
+      updateMatrix: () => undefined,
+    } as unknown as Parameters<typeof writeInstanceMatrices>[4];
+    const makeBatch = (): {
+      instanceMatrix: Parameters<typeof writeInstanceMatrices>[5];
+      instanced: Parameters<typeof writeInstanceMatrices>[0];
+      written: number[];
+    } => {
+      const written: number[] = [];
+      return {
+        written,
+        instanced: {
+          instanceMatrix: { needsUpdate: false },
+          setMatrixAt: (index: number) => written.push(index),
+        } as unknown as Parameters<typeof writeInstanceMatrices>[0],
+        instanceMatrix: { copy: () => undefined } as unknown as Parameters<
+          typeof writeInstanceMatrices
+        >[5],
+      };
+    };
+
+    // The base pose lands on every instance exactly once, and the upload is requested once here.
+    const baked = makeBatch();
+    initInstanceMatrices(baked.instanced, placements, axesAt(0), dummy, baked.instanceMatrix);
+    expect(baked.written).toEqual(placements.map((_, index) => index));
+    expect(baked.instanced.instanceMatrix.needsUpdate).toBe(true);
+
+    // The old default: every instance is dirty, so every one is rewritten and an upload is asked.
+    const allDirty = makeBatch();
+    expect(
+      writeInstanceMatrices(
+        allDirty.instanced,
+        placements,
+        3,
+        axesAt(1),
+        dummy,
+        allDirty.instanceMatrix,
+      ),
+    ).toBe(true);
+    expect(allDirty.written.length).toBe(placements.length);
+
+    // A mutation rate of 0 rewrites nothing, so the caller never marks the buffer dirty.
+    const staticBatch = makeBatch();
+    expect(
+      writeInstanceMatrices(
+        staticBatch.instanced,
+        placements,
+        3,
+        axesAt(0),
+        dummy,
+        staticBatch.instanceMatrix,
+      ),
+    ).toBe(false);
+    expect(staticBatch.written).toEqual([]);
+
+    // A partial rate touches exactly the mutated subset.
+    const partial = makeBatch();
+    expect(
+      writeInstanceMatrices(
+        partial.instanced,
+        placements,
+        3,
+        axesAt(0.5),
+        dummy,
+        partial.instanceMatrix,
+      ),
+    ).toBe(true);
+    expect(partial.written).toEqual(
+      placements.map((_, index) => index).filter((index) => isMutated(index, 0.5)),
+    );
+  });
+
+  it("fails closed on L2 cells its single InstancedMesh cannot express", () => {
+    // The default L2 cell is unchanged and must keep working.
+    expect(() => assertRungAxesSupported("L2", DEFAULT_AXES)).not.toThrow();
+    expect(() =>
+      assertRungAxesSupported("L1", { ...DEFAULT_AXES, geometry: "unique" }),
+    ).not.toThrow();
+    // A whole-batch shadow share is expressible; visibility is not because L2 disables culling.
+    expect(() =>
+      assertRungAxesSupported("L2", { ...DEFAULT_AXES, shadowCasterShare: 1 }),
+    ).not.toThrow();
+    for (const unsupported of [
+      { geometry: "unique" as const },
+      { material: "unique" as const },
+      { visibleFraction: 0 },
+      { visibleFraction: 0.5 },
+      { shadowCasterShare: 0.5 },
+    ]) {
+      expect(() => assertRungAxesSupported("L2", { ...DEFAULT_AXES, ...unsupported })).toThrow(
+        /TN_BENCH_UNSUPPORTED_L2_AXES/u,
+      );
+    }
+  });
+
+  it("wires every axis through the CLI and both runtime entry points", async () => {
+    const load = (relative: string): Promise<string> =>
+      readFile(path.join(process.cwd(), relative), "utf8");
+    const [cli, web, native, vite, game] = await Promise.all([
+      load("scripts/engine-load-test/cli.ts"),
+      load("examples/engine-load-test/src/main.ts"),
+      load("examples/engine-load-test/src/native.ts"),
+      load("examples/engine-load-test/vite.config.ts"),
+      load("examples/engine-load-test/src/game.ts"),
+    ]);
+    expect(cli).toMatch(/parseAxesRecord\(\{/u);
+    expect(cli).toMatch(/shadowCasterShare: flag\("shadow-caster-share"\)/u);
+    expect(web).toMatch(/parseAxesRecord\(Object\.fromEntries\(parameters\.entries\(\)\)\)/u);
+    expect(web).toMatch(/createLoadTestHarness\(canvas, await describeAdapter\(\), true, axes\)/u);
+    expect(native).toMatch(/parseAxesRecord\(config\.axes\)/u);
+    expect(native).toMatch(/createLoadTestHarness\([\s\S]*axes\);/u);
+    expect(vite).toMatch(/TN_BENCH_SHADOW_CASTER_SHARE/u);
+    expect(vite).toMatch(/axes: axesEnvironment\(\)/u);
+    // L2's unsupported cells fail closed at the one place a rung is built.
+    expect(game).toMatch(/assertRungAxesSupported\(rung\.mode, axes\)/u);
   });
 
   it("should keep artifact identity independent of source labels and workload identity byte-sensitive", async () => {
@@ -1752,6 +1963,17 @@ describe("engine load test scorer", () => {
     );
   });
 
+  it("preserves native step and projection timing series with matching frames", () => {
+    const measured = rung({ collapseMs: series(2), stepMs: series(3) });
+    expect(parseRunReport(report({ rungs: [measured] })).rungs[0]).toMatchObject({
+      collapseMs: series(2),
+      stepMs: series(3),
+    });
+    expect(() => parseRunReport(report({ rungs: [rung({ stepMs: series(3, 7) })] }))).toThrow(
+      /TN_BENCH_BAD_SHAPE/,
+    );
+  });
+
   it("should reject a report missing its driver line", () => {
     const missing = report() as unknown as Record<string, unknown>;
     // biome-ignore lint/performance/noDelete: the point of the test is an absent key.
@@ -1764,6 +1986,28 @@ describe("engine load test scorer", () => {
 
   it("should reject a report with no rungs at all", () => {
     expect(() => parseRunReport(report({ rungs: [] }))).toThrow(/TN_BENCH_NO_RUNGS/);
+  });
+
+  it("should preserve the reported axes and reject a malformed one", () => {
+    // Godot reports and older reports carry no axes, so the field stays optional; a tn arm's axes
+    // are the matrix cell the row belongs to and must survive parsing.
+    expect(parseRunReport(report()).axes).toBeUndefined();
+    expect(parseRunReport(report({ axes: DEFAULT_AXES })).axes).toEqual(DEFAULT_AXES);
+    // The arm markdown names the cell; a Godot report (no axes) prints no axes line.
+    expect(renderArmMarkdown(parseRunReport(report({ axes: DEFAULT_AXES })))).toMatch(
+      /- axes: geometry shared, material shared, hierarchy 0, visible 1, mutation 1, shadow-casters 0, passes 1/u,
+    );
+    expect(renderArmMarkdown(parseRunReport(report()))).not.toMatch(/- axes:/u);
+    for (const broken of [
+      { ...DEFAULT_AXES, geometry: "many" },
+      { ...DEFAULT_AXES, hierarchyDepth: 1.5 },
+      { ...DEFAULT_AXES, passCount: 0 },
+      { ...DEFAULT_AXES, visibleFraction: 2 },
+    ]) {
+      expect(() => parseRunReport(report({ axes: broken as IRunReport["axes"] }))).toThrow(
+        /TN_BENCH_BAD_SHAPE/u,
+      );
+    }
   });
 
   it("should require a condition block on Android reports", () => {
@@ -1855,6 +2099,28 @@ describe("engine load test equivalence gate", () => {
     right.rungs[1] = rung({ ...right.rungs[1], positionHash: "deadbeef" });
     expect(checkEquivalence(left, right).map((failure) => failure.field)).toContain("positionHash");
     expect(() => compare(left, right)).toThrow(/TN_BENCH_NOT_EQUIVALENT.*positionHash/s);
+  });
+
+  it("should refuse a nondefault matrix cell against an arm with no axes", () => {
+    // `positionHash` covers only the initial placements, so these two hash alike and would publish
+    // as equivalent without comparing the axis records.
+    const cell = ladderReport(24);
+    cell.axes = { ...DEFAULT_AXES, mutationRate: 0 };
+    const godot = ladderReport(24, "godot-web");
+    expect(checkEquivalence(cell, godot).map((failure) => failure.field)).toContain("axes");
+    expect(() => compare(cell, godot)).toThrow(/TN_BENCH_NOT_EQUIVALENT.*axes/s);
+
+    // A missing record is the default scene: it matches another missing record and an explicit
+    // default, but never a nondefault cell.
+    expect(checkEquivalence(ladderReport(24), godot)).toEqual([]);
+    const explicitDefault = ladderReport(24);
+    explicitDefault.axes = DEFAULT_AXES;
+    expect(checkEquivalence(explicitDefault, godot).map((failure) => failure.field)).not.toContain(
+      "axes",
+    );
+    expect(checkEquivalence(cell, explicitDefault).map((failure) => failure.field)).toContain(
+      "axes",
+    );
   });
 
   it("should refuse a hash that diverges on only one repeat of a rung", () => {

@@ -34,6 +34,20 @@ function modes(): string[] {
 
 const native = process.env.TN_BENCH_TARGET === "native";
 
+// Shipped as raw strings: the runtime resolves them through `parseAxesRecord`, the same parser the
+// web entry uses, so an unset axis and a defaulted one cannot diverge between the runtimes.
+function axesEnvironment(): Record<string, string | undefined> {
+  return {
+    geometry: process.env.TN_BENCH_GEOMETRY,
+    hierarchyDepth: process.env.TN_BENCH_HIERARCHY_DEPTH,
+    material: process.env.TN_BENCH_MATERIAL,
+    mutationRate: process.env.TN_BENCH_MUTATION_RATE,
+    passCount: process.env.TN_BENCH_PASSES,
+    shadowCasterShare: process.env.TN_BENCH_SHADOW_CASTER_SHARE,
+    visibleFraction: process.env.TN_BENCH_VISIBLE_FRACTION,
+  };
+}
+
 export default defineConfig({
   build: native
     ? {
@@ -62,6 +76,7 @@ export default defineConfig({
     __TN_PLATFORM__: JSON.stringify(process.env.TN_BENCH_PLATFORM ?? "desktop"),
     __TN_BENCH_CONFIG__: JSON.stringify({
       animate: process.env.TN_BENCH_ANIMATE !== "off",
+      axes: axesEnvironment(),
       // Stated by the operator, because the host does not expose it. The Pixel 8 used for PRD-117
       // runs at 120 Hz; a desktop under xvfb is 60.
       refreshHz: integer("TN_BENCH_REFRESH_HZ", 60),

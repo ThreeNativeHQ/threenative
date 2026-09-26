@@ -112,6 +112,19 @@ describe("projection window marker", () => {
     expect("matrixWorld" in line).toBe(false);
   });
 
+  it("should carry the reconcile timing so the frame attribution can read it", () => {
+    const projection = new SceneRenderProjection(scenery(300), { minMeshes: 8 });
+    projection.reconcile();
+    const line = payload(formatProjectionWindow(projection.report, 2, 41));
+
+    // The perf loop reads this per window; absent from the line, the reconcile term of the frame
+    // split cannot be read back from a captured log at all.
+    const timings = line.timings as Record<string, unknown>;
+    expect(timings.reconcileMs).toBe(projection.report.timings.reconcileMs);
+    expect(timings.lastReconcileMs).toBe(projection.report.timings.lastReconcileMs);
+    expect(Number.isFinite(timings.reconcileMs)).toBe(true);
+  });
+
   it("should rank the exact lane by the draws each reason costs", () => {
     expect(rankExactReasons({ instanced: 2, multiMaterial: 9, skinned: 40 })).toEqual([
       { count: 40, reason: "skinned" },

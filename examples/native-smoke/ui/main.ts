@@ -1,4 +1,5 @@
 import {
+  UI_READY_INTENT,
   connectUiBridge,
   publishHitRegions,
   sendUiIntent,
@@ -104,7 +105,7 @@ if (window.__tnPageAnimation === true) {
 // layer never came up" rather than with four input assertions that all look like game bugs. The
 // page is ready only once its rects are published, because an empty registry and a missing page
 // behave identically — every touch falls through.
-sendUiIntent(bridge, "ready", registry.regions().length);
+sendUiIntent(bridge, UI_READY_INTENT, registry.regions().length);
 console.info(
   `TN_UI_LAYER_READY:${JSON.stringify({ regions: registry.regions().length, transport: bridge.transport })}`,
 );

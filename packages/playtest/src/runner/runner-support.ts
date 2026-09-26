@@ -149,6 +149,10 @@ export function writeCaptureState(payload: Record<string, unknown>): void {
   process.stderr.write(`${JSON.stringify(payload)}\n`);
 }
 
+export function isJudgeMarkerRequestFailure(method: string, url: string, judgeMarkerUrl: string | undefined): boolean {
+  return method === "POST" && judgeMarkerUrl !== undefined && url === judgeMarkerUrl;
+}
+
 export function addPreflightDiagnostic(
   report: IStandalonePlaytestReport,
   diagnostic: IPlaytestDiagnostic | undefined,

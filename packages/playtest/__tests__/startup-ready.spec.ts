@@ -149,6 +149,22 @@ test("a bridge too busy to answer is still starting, not broken", async () => {
   expect(pumped).toBe(2);
 });
 
+test("a startup frame that times out while compiling is retried within the readiness deadline", async () => {
+  const timeout = new PlaytestBridgeError(
+    playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "Device mailbox operation '110' exceeded 20250ms.", "x"),
+  );
+  const bridge = source(["runtime.startup"], [collapsing, ready]);
+  let pumps = 0;
+  await expect(waitForStartupReady({
+    bridge,
+    pump: async () => {
+      pumps += 1;
+      if (pumps === 1) throw timeout;
+    },
+  })).resolves.toEqual({ rule: "sustained-frames", startup: ready });
+  expect(pumps).toBe(2);
+});
+
 test("a bridge that only ever times out still fails, by name", async () => {
   let clock = 0;
   const timeout = new PlaytestBridgeError(

@@ -1,9 +1,11 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { afterEach, test } from 'vitest';
 import { PNG } from 'pngjs';
@@ -24,12 +26,15 @@ import {
   failureSuffix,
   isSuccessfulStartupSample,
   installNativeProfileEntry,
+  nativeArtifactPath,
   nativeFrameInstrumentation,
   parseProductionArgs,
+  playtestTimeoutMs,
   prepareNativeWorkload,
   collectionLaunchPlan,
   profileConfigPath,
   postWarmupFrameSamples,
+  rendererResolutionScaleSetting,
   runProductionProfile,
   runCommand,
   safeReport,
@@ -37,6 +42,8 @@ import {
   webFrameInstrumentation,
   writeRunScenarios,
 } from '../scripts/profile-production.mjs';
+import { parseStandalonePlaytestArgs } from '../../playtest/src/runner/config.js';
+import { isJudgeMarkerRequestFailure } from '../../playtest/src/runner/runner-support.js';
 
 const temporary = [];
 const sourceSha = 'a'.repeat(64);
@@ -208,11 +215,13 @@ test('desktop child receives the transport mailbox root and writes a raw post-pr
   const mailboxRoot = join(project, '.runtime-mailbox');
   const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
   let childOptions;
+  let childArgs;
   const writes = [];
   const context = {
     join,
     process: { platform: 'linux', env: { DISPLAY: ':fixture', TN_PLAYTEST_MAILBOX_ROOT: '/wrong/inherited/root' } },
-    spawn: (_command, _args, options) => {
+    spawn: (_command, args, options) => {
+      childArgs = args;
       childOptions = options;
       const child = new EventEmitter();
       queueMicrotask(() => child.emit('spawn'));
@@ -228,6 +237,7 @@ test('desktop child receives the transport mailbox root and writes a raw post-pr
   await driver.launch();
   assert.equal(childOptions.env.TN_PLAYTEST_MAILBOX_ROOT, mailboxRoot);
   assert.equal(childOptions.cwd, project);
+  assert.deepEqual(Array.from(childArgs), ['--width', '1920', '--height', '1080', '--headless']);
   await driver.screenshot('/fixture/capture.png');
   assert.deepEqual(writes, [
     { contents: '/fixture/capture.png', path: `${screenshotRequestPath}.tmp` },
@@ -292,7 +302,7 @@ test('desktop profiling writes the requested render size into the packaged windo
   const rendered = readFileSync(join(project, 'threenative.config.ts'), 'utf8');
   assert.match(rendered, /window: \{ title: "platformer", width: 1920, height: 1080, resizable: true \}/u);
   assert.match(rendered, /nativeEntry: "src\/profile-native-entry.ts"/u);
-  assert.match(rendered, /ui: \{ renderer: "native" \}/u);
+  assert.match(rendered, /ui: \{ renderer: "web" \}/u);
 });
 
 test('failed production commands name the timeout or carry their stderr tail', async () => {
@@ -626,7 +636,7 @@ test('generated native profile exposes hosted software only to the profile entry
   assert.equal(normalContext.__THREENATIVE_PROFILE__.hostedSoftware, false);
 });
 
-test('desktop profiling switches web UI to native while mobile profiling preserves web UI', async () => {
+test('profiling preserves the authored web UI on desktop and mobile', async () => {
   const desktopProject = makeTempDirSync('tn-profile-desktop-ui-');
   const mobileProject = makeTempDirSync('tn-profile-mobile-ui-');
   temporary.push(desktopProject, mobileProject);
@@ -642,7 +652,7 @@ test('desktop profiling switches web UI to native while mobile profiling preserv
   await installNativeProfileEntry(desktopProject, 'desktop', { warmup: 1 });
   await installNativeProfileEntry(mobileProject, 'android', { warmup: 1 });
 
-  assert.match(readFileSync(join(desktopProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "native" \}/u);
+  assert.match(readFileSync(join(desktopProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "web" \}/u);
   assert.match(readFileSync(join(mobileProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "web" \}/u);
 });
 
@@ -792,6 +802,217 @@ test('accepted profile controls are parsed and execution receives every value', 
   );
 });
 
+test('an existing project and scenario parse and stage without mutating the source', async () => {
+  const source = makeTempDirSync('tn-profile-project-');
+  const stageRoot = makeTempDirSync('tn-profile-stage-');
+  temporary.push(source, stageRoot);
+  mkdirSync(join(source, 'src'));
+  mkdirSync(join(source, 'playtests'));
+  mkdirSync(join(source, 'node_modules'));
+  writeFileSync(join(source, 'src/main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(source, 'threenative.config.ts'), 'renderer: { resolutionScale: "auto" }\n');
+  writeFileSync(join(source, 'playtests/performance.playtest.json'), JSON.stringify({
+    assert: { performance: { maxFrameMsP95: 15 } },
+    name: 'production-performance',
+    schemaVersion: 1,
+    steps: [{ kind: 'wait', waitFrames: 1 }],
+  }));
+  writeFileSync(join(source, 'node_modules/installed.txt'), 'installed\n');
+
+  const parsed = parseProductionArgs([
+    '--target', 'web',
+    '--project', source,
+    '--scenario', 'playtests/performance.playtest.json',
+  ]);
+  assert.equal(parsed.project, source);
+  assert.equal(parsed.scenario, join(source, 'playtests/performance.playtest.json'));
+  assert.throws(
+    () => parseProductionArgs(['--target', 'web', '--scenario', 'playtests/performance.playtest.json']),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_CLI_USAGE',
+  );
+  assert.throws(
+    () => parseProductionArgs(['--target', 'fixture', '--project', source]),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_CLI_USAGE',
+  );
+
+  const staged = join(stageRoot, 'platformer');
+  const { stageProductionProject } = await import('../scripts/profile-production.mjs');
+  await stageProductionProject(parsed, staged, {});
+
+  assert.equal(readFileSync(join(staged, 'src/main.ts'), 'utf8'), 'export const value = 1;\n');
+  assert.equal(readFileSync(join(staged, 'playtests/performance.playtest.json'), 'utf8').length > 0, true);
+  assert.equal(readFileSync(join(staged, 'node_modules/installed.txt'), 'utf8'), 'installed\n');
+  assert.equal(readFileSync(join(staged, 'threenative.config.ts'), 'utf8'), 'renderer: { resolutionScale: "auto" }\n');
+  assert.equal(readFileSync(join(source, 'threenative.config.ts'), 'utf8'), 'renderer: { resolutionScale: "auto" }\n');
+  writeFileSync(join(staged, 'src/main.ts'), 'export const value = 2;\n');
+  assert.equal(readFileSync(join(source, 'src/main.ts'), 'utf8'), 'export const value = 1;\n');
+});
+
+test('staging dereferences symlinked sources and reads the scenario from the staged snapshot', async () => {
+  const external = makeTempDirSync('tn-profile-symlink-external-');
+  const source = makeTempDirSync('tn-profile-symlink-source-');
+  const stageRoot = makeTempDirSync('tn-profile-symlink-stage-');
+  temporary.push(external, source, stageRoot);
+  mkdirSync(join(source, 'src'));
+  mkdirSync(join(source, 'playtests'));
+  writeFileSync(join(external, 'main.ts'), 'export const value = 1;\n');
+  symlinkSync(join(external, 'main.ts'), join(source, 'src/main.ts'));
+  const scenario = (snapshot) => JSON.stringify({
+    assert: { performance: { maxFrameMsP95: 15 } },
+    name: 'production-performance',
+    schemaVersion: 1,
+    snapshot,
+    steps: [{ kind: 'wait', waitFrames: 1 }],
+  });
+  writeFileSync(join(source, 'playtests/performance.playtest.json'), scenario('source'));
+
+  const parsed = parseProductionArgs([
+    '--target', 'web',
+    '--project', source,
+    '--scenario', 'playtests/performance.playtest.json',
+  ]);
+  const staged = join(stageRoot, 'platformer');
+  const { stageProductionProject, writeRunScenarios } = await import('../scripts/profile-production.mjs');
+  await stageProductionProject(parsed, staged, {});
+
+  // The symlinked source file becomes a real staged file; writing it must not reach its target.
+  const stagedMain = join(staged, 'src/main.ts');
+  assert.equal(lstatSync(stagedMain).isSymbolicLink(), false);
+  writeFileSync(stagedMain, 'export const value = 2;\n');
+  assert.equal(readFileSync(join(external, 'main.ts'), 'utf8'), 'export const value = 1;\n');
+
+  // The run scenario is generated from the staged snapshot, not the source it was named from.
+  assert.equal(parsed.scenario, join(staged, 'playtests/performance.playtest.json'));
+  writeFileSync(parsed.scenario, scenario('staged'));
+  const paths = await writeRunScenarios(staged, parsed);
+  assert.equal(JSON.parse(readFileSync(paths.workloadPath, 'utf8')).snapshot, 'staged');
+});
+
+test('a project scenario keeps its own workload steps and a timeout that scales past the old 30s cap', async () => {
+  const project = makeTempDirSync('tn-profile-scenario-steps-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  const steps = [
+    { at: { x: 640, y: 360 }, kind: 'click', release: true },
+    { kind: 'wait', release: true, waitFrames: 240 },
+  ];
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance',
+    schemaVersion: 1,
+    steps,
+  }));
+
+  const paths = await writeRunScenarios(project, {
+    duration: 1,
+    project,
+    renderSize: { height: 1080, width: 1920 },
+    scenario: join(project, 'playtests/performance.playtest.json'),
+    target: 'desktop',
+    warmup: 1,
+  });
+  const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
+  const nativeWorkload = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
+  assert.deepEqual(workload.steps, steps);
+  assert.deepEqual(nativeWorkload.steps, [
+    { pointerPosition: { buttons: 1, x: 640 / 1920, y: 360 / 1080 }, release: true },
+    steps[1],
+  ]);
+  assert.equal(paths.timeoutMs, playtestTimeoutMs(workload));
+  assert.ok(paths.timeoutMs > 30_000);
+  assert.ok(paths.timeoutMs >= 60_000 + (60 + 240) * 100);
+});
+
+test('the default scaffolded workload still drives ArrowRight whatever the template scenario says', async () => {
+  const project = makeTempDirSync('tn-profile-default-steps-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance',
+    schemaVersion: 1,
+    steps: [{ kind: 'wait', waitFrames: 1 }],
+  }));
+
+  const paths = await writeRunScenarios(project, {
+    duration: 2,
+    renderSize: { height: 1080, width: 1920 },
+    target: 'desktop',
+    warmup: 1,
+  });
+  const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
+  assert.deepEqual(workload.steps, [
+    { holdFrames: 60, kind: 'input', press: 'ArrowRight', release: true },
+    { kind: 'wait', release: true, waitFrames: 120 },
+  ]);
+  assert.ok(paths.timeoutMs > 30_000);
+});
+
+test('hosted software waits for compile settlement without requiring a ready-frame milestone', async () => {
+  const project = makeTempDirSync('tn-profile-hosted-startup-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance', schemaVersion: 1, steps: [{ kind: 'wait', waitFrames: 1 }],
+  }));
+  const options = { duration: 1, hostedSoftware: true, renderSize: { height: 720, width: 1280 }, target: 'desktop', warmup: 1 };
+  const hosted = await writeRunScenarios(project, options);
+  assert.ok(JSON.parse(readFileSync(hosted.nativeStartupPath, 'utf8')).assert.startup.maxCompileSettledMs > 0);
+  assert.equal(JSON.parse(readFileSync(hosted.nativeStartupPath, 'utf8')).assert.startup.maxReadyMs, undefined);
+  const hardware = await writeRunScenarios(project, { ...options, hostedSoftware: false });
+  assert.ok(JSON.parse(readFileSync(hardware.nativeStartupPath, 'utf8')).assert.startup.maxReadyMs > 0);
+});
+
+test('desktop artifact selection takes the executable regular file and fails closed without one', async () => {
+  const project = makeTempDirSync('tn-profile-native-artifact-');
+  temporary.push(project);
+  const directory = join(project, 'dist-native');
+  mkdirSync(join(directory, 'ui'), { recursive: true });
+  writeFileSync(join(directory, 'game.bundle'), 'not an executable');
+  await assert.rejects(
+    nativeArtifactPath(project, 'desktop'),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_NATIVE_ARTIFACT_MISSING',
+  );
+  mkdirSync(join(directory, 'Game.app'));
+  writeFileSync(join(directory, 'game.apk'), 'apk');
+  const executable = join(directory, 'platformer');
+  writeFileSync(executable, '#!/bin/sh\n');
+  chmodSync(executable, 0o755);
+  assert.equal(await nativeArtifactPath(project, 'desktop'), executable);
+  assert.equal(await nativeArtifactPath(project, 'ios'), join(directory, 'Game.app'));
+  assert.equal(await nativeArtifactPath(project, 'android'), join(directory, 'game.apk'));
+});
+
+test('a scenario outside --project is rejected instead of re-anchored out of staging', () => {
+  const source = makeTempDirSync('tn-profile-scenario-guard-');
+  temporary.push(source);
+
+  for (const scenario of ['../outside.playtest.json', join(source, '..', 'outside.playtest.json')]) {
+    assert.throws(
+      () => parseProductionArgs(['--target', 'web', '--project', source, '--scenario', scenario]),
+      (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_SCENARIO_OUTSIDE_PROJECT',
+      `expected '${scenario}' to be rejected`,
+    );
+  }
+
+  const inside = parseProductionArgs(['--target', 'web', '--project', source, '--scenario', 'playtests/performance.playtest.json']);
+  assert.equal(inside.scenario, join(source, 'playtests/performance.playtest.json'));
+});
+
+test('the default judge still scaffolds when no existing project is supplied', async () => {
+  const stageRoot = makeTempDirSync('tn-profile-stage-default-');
+  temporary.push(stageRoot);
+  const staged = join(stageRoot, 'platformer');
+  const calls = [];
+  const { stageProductionProject } = await import('../scripts/profile-production.mjs');
+  const result = await stageProductionProject(
+    { project: undefined },
+    staged,
+    { scaffoldCli: '/fixture/scaffold' },
+    { scaffoldPlatformer: async (project, tools) => { calls.push([project, tools]); } },
+  );
+  assert.equal(result, staged);
+  assert.deepEqual(calls, [[staged, { scaffoldCli: '/fixture/scaffold' }]]);
+});
+
 test('native profile entry replaces a config entry without creating a package conflict', async () => {
   const project = makeTempDirSync('tn-profile-entry-');
   temporary.push(project);
@@ -820,6 +1041,13 @@ test('native profile reads the generated app identity when no config override is
     profileConfigPath('/tmp/platformer', '/tmp/custom-config.json'),
     '/tmp/custom-config.json',
   );
+});
+
+test('profile identity retains auto or the configured numeric resolution scale per platform', () => {
+  const config = { renderer: { android: { resolutionScale: 0.75 }, resolutionScale: 'auto' } };
+  assert.equal(rendererResolutionScaleSetting(config, 'desktop'), 'auto');
+  assert.equal(rendererResolutionScaleSetting(config, 'android'), '0.75');
+  assert.equal(rendererResolutionScaleSetting({ renderer: { resolutionScale: 0.5 } }, 'desktop'), '0.5');
 });
 
 test('regression collects one steady launch and five startup launches per paired arm', () => {
@@ -870,7 +1098,7 @@ test('startup aggregation rejects failed reports and blank first frames', () => 
   assert.equal(metrics.startupP95Ms, undefined);
 });
 
-test('native scenarios explicitly waive browser network observation while browser startup retains it', async () => {
+test('native scenarios use supported startup assertions while browser startup retains diagnostics', async () => {
   const project = makeTempDirSync('tn-native-diagnostics-');
   temporary.push(project);
   mkdirSync(join(project, 'playtests'));
@@ -889,15 +1117,49 @@ test('native scenarios explicitly waive browser network observation while browse
     }
     for (const path of [paths.nativeStartupPath, paths.nativeWorkloadPath]) {
       const scenario = await playtest.loadPlaytestScenario(project, path);
-      const policy = scenario.assert.diagnostics;
-      assert.equal(policy.noNetworkErrors, false);
+      assert.equal(scenario.assert.diagnostics, undefined);
       assert.equal(playtest.requiredPlaytestCapabilities(scenario).includes('browser.network'), false);
-      assert.match(policy.networkErrorsOptOutReason, /native.*network/i);
-      assert.equal(policy.noConsoleErrors, true);
-      assert.equal(policy.noRuntimeDiagnostics, true);
-      assert.equal(policy.runtimeReady, true);
+      assert.equal(scenario.assert.startup.maxReadyMs > 0, true);
     }
   }
+});
+
+test('web production runs headed on WebGPU and identifies its own marker endpoint', () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const webScenario = source.slice(source.indexOf('async function runWebScenario('), source.indexOf('async function collectNative('));
+  assert.match(webScenario, /'--browser-recipe', 'webgpu'/u);
+  assert.match(webScenario, /'--headed'/u);
+  assert.match(webScenario, /'--judge-marker-url', markerServer\.url/u);
+
+  const markerUrl = 'http://127.0.0.1:41777/first-frame';
+  const config = parseStandalonePlaytestArgs([
+    'playtests/workload.playtest.json',
+    '--judge-marker-url', markerUrl,
+  ], '/project');
+  assert.equal(config.judgeMarkerUrl, markerUrl);
+  assert.equal(isJudgeMarkerRequestFailure('POST', markerUrl, markerUrl), true);
+  assert.equal(isJudgeMarkerRequestFailure('POST', `${markerUrl}?game=1`, markerUrl), false);
+  assert.equal(isJudgeMarkerRequestFailure('GET', markerUrl, markerUrl), false);
+});
+
+test('desktop production keeps an authored pixel click through native pointer input', async () => {
+  const project = makeTempDirSync('tn-prod-desktop-click-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/flight.playtest.json'), JSON.stringify({
+    name: 'flight', schemaVersion: 1, target: 'web',
+    viewport: { width: 1280, height: 720 },
+    steps: [{ kind: 'click', label: 'board', at: { x: 320, y: 360 }, release: true }],
+    assert: { diagnostics: { runtimeReady: true } },
+  }));
+  const paths = await writeRunScenarios(project, {
+    project, scenario: join(project, 'playtests/flight.playtest.json'), duration: 1, warmup: 1,
+    target: 'desktop', renderSize: { width: 1920, height: 1080 },
+  });
+  const native = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
+  assert.deepEqual(native.steps[0], {
+    label: 'board', pointerPosition: { buttons: 1, x: 0.25, y: 0.5 }, release: true,
+  });
 });
 
 test('generated production workload runs through the playtest validator and keeps source bounds out of band', async () => {
@@ -922,8 +1184,8 @@ test('generated production workload runs through the playtest validator and keep
   const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
   const nativeWorkload = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
   assert.deepEqual(workload.assert, { diagnostics: { noConsoleErrors: true, runtimeReady: true } });
-  assert.equal(nativeWorkload.assert.diagnostics.noNetworkErrors, false);
-  assert.equal(nativeWorkload.assert.diagnostics.noConsoleErrors, true);
+  assert.equal(nativeWorkload.assert.diagnostics, undefined);
+  assert.equal(nativeWorkload.assert.startup.maxReadyMs > 0, true);
   assert.equal(workload.assert.performance, undefined);
   assert.deepEqual(paths.performanceBounds, assertion.performance);
   assert.equal(nativeWorkload.artifacts.screenshots, 'after');
@@ -1098,6 +1360,53 @@ test('generated production workload runs through the playtest validator and keep
   assert.ok(triangleFailure.codes.includes('TN_PROD_PERFORMANCE_BUDGET'));
 });
 
+test('an existing project baseline without an authored performance bound is not failed by the platformer budget', () => {
+  const frame = new PNG({ height: 2, width: 2 });
+  frame.data.fill(255);
+  frame.data[0] = 0;
+  const screenshot = PNG.sync.write(frame);
+  const series = Array.from({ length: 30 }, (_, index) => ({
+    clockMs: index * 25,
+    frameIndex: index + 1,
+    frameMs: 25,
+    presentationMs: index * 25,
+  }));
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: undefined,
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      profile: 'production',
+      project: '/fixture/existing-project',
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'web',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: '/fixture/existing-project',
+    runId: 'existing-project-baseline',
+    startedAt: new Date().toISOString(),
+    web: {
+      applicationClass: 'fixture',
+      artifactSha,
+      driverClass: 'fixture',
+      kind: 'web',
+      runs: [{ report: { pass: true }, screenshot, series, status: 0 }],
+      startups: [{ firstFrameMs: 100, report: { pass: true }, screenshot, status: 0 }],
+    },
+  });
+  assert.equal(Object.hasOwn(evidence.budget, 'maxP99FrameMs'), false);
+  assert.equal(Object.hasOwn(evidence.budget, 'maxStartupMs'), false);
+  assert.equal(Object.hasOwn(evidence.budget, 'minMeanFps'), false);
+  const result = evaluateProductionEvidence(evidence);
+  assert.equal(result.codes.includes('TN_PROD_PERFORMANCE_BUDGET'), false);
+  assert.equal(result.codes.includes('TN_PROD_STARTUP_BUDGET'), false);
+  assert.notEqual(result.status, 'FAIL');
+});
+
 test('post-warmup frame metrics exclude warmup samples from mean and percentiles', () => {
   const samples = [
     { frameIndex: 1, frameMs: 500 },
@@ -1207,11 +1516,12 @@ test('native screenshot mapping keeps asynchronous callback state alive after a 
   assert.doesNotMatch(context, /userdata1 = &mapData/u);
 });
 
-test('desktop production profiling forwards its 30-second operation timeout to the mailbox transport', () => {
+test('desktop production profiling keeps mailbox operations shorter than the scenario budget', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}, timeoutMs\)/u);
-  assert.match(profile, /const timeoutMs = 30_000;/u);
+  assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}\)/u);
   assert.match(profile, /target: 'android',\n {4}timeoutMs,/u);
+  assert.doesNotMatch(profile, /const timeoutMs = 30_000;/u);
+  assert.match(profile, /scenarios\.timeoutMs/u);
 });
 
 test('playtest assertion failure cannot become a clean production run', () => {
@@ -1286,6 +1596,75 @@ test('slow-startup delays the live fixture launch beyond the five-second budget'
   assert.ok(result.codes.includes('TN_PROD_STARTUP_BUDGET'));
   assert.ok(result.metrics.startupP95Ms > 5_000);
   assert.ok(result.markers.includes('clean-end'));
+});
+
+// Loads the real `privateDisplayCommand` selection out of the judge so a revert to `xvfb-run`
+// (whose cleanup kill replaces the child's status) fails here rather than in a production run.
+function loadPrivateDisplayCommand({ display, platform, wrapperPresent = true }) {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const helper = source.slice(source.indexOf('function privateDisplayCommand('), source.indexOf('function spawnNative('));
+  assert.notEqual(helper.length, 0, 'profile-production.mjs must select its display through privateDisplayCommand');
+  const scripts = fileURLToPath(new URL('../scripts/', import.meta.url));
+  const context = {
+    ProductionEvidenceError,
+    existsSync: () => wrapperPresent,
+    join,
+    process: { env: display === undefined ? {} : { DISPLAY: display }, platform },
+    scriptDirectory: scripts,
+  };
+  runInNewContext(helper, context);
+  return { command: context.privateDisplayCommand, scripts };
+}
+
+// A PATH whose `Xvfb` reports a display on fd 3 and stays alive, so the wrapper's exit-code
+// propagation is exercised with no GPU and no real display.
+function privateDisplaySandbox() {
+  const root = makeTempDirSync('tn-prod-xvfb-');
+  temporary.push(root);
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  for (const tool of ['mktemp', 'tr', 'sleep', 'rm', 'cat', 'sh']) {
+    const resolved = spawnSync('command', ['-v', tool], { encoding: 'utf8', shell: true }).stdout.trim();
+    if (resolved.length > 0) symlinkSync(resolved, join(bin, tool));
+  }
+  writeFileSync(join(bin, 'uname'), '#!/bin/sh\necho Linux\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'Xvfb'), '#!/bin/sh\necho 91 >&3\nexec sleep 30\n', { mode: 0o755 });
+  return bin;
+}
+
+test('headless Linux profiling uses the packaged display wrapper, never xvfb-run', () => {
+  const { command, scripts } = loadPrivateDisplayCommand({ display: undefined, platform: 'linux' });
+  const selected = command('/tmp/mystral', ['run', 'game.js']);
+  assert.equal(selected.command, '/bin/sh');
+  assert.deepEqual([...selected.args], [join(scripts, 'xvfb.sh'), '/tmp/mystral', 'run', 'game.js']);
+  assert.equal(selected.args.some((arg) => /xvfb-run/u.test(arg)), false);
+
+  // A display the operator already owns, and a non-Linux host, run the executable directly.
+  const withDisplay = loadPrivateDisplayCommand({ display: ':0', platform: 'linux' }).command('/tmp/mystral', ['run']);
+  assert.equal(withDisplay.command, '/tmp/mystral');
+  assert.deepEqual([...withDisplay.args], ['run']);
+  const macos = loadPrivateDisplayCommand({ display: undefined, platform: 'darwin' }).command('/tmp/mystral', ['run']);
+  assert.equal(macos.command, '/tmp/mystral');
+  assert.deepEqual([...macos.args], ['run']);
+});
+
+test('headless Linux profiling fails closed when the packaged display wrapper is missing', () => {
+  const { command } = loadPrivateDisplayCommand({ display: undefined, platform: 'linux', wrapperPresent: false });
+  assert.throws(
+    () => command('/tmp/mystral', ['run']),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_XVFB_WRAPPER_UNAVAILABLE',
+  );
+});
+
+test('the selected display wrapper hands back the child exit code without a real GPU', () => {
+  const { command } = loadPrivateDisplayCommand({ display: undefined, platform: 'linux' });
+  const selected = command('/bin/sh', ['-c', 'exit 9']);
+  const result = spawnSync(selected.command, selected.args, {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: privateDisplaySandbox() },
+    timeout: 30_000,
+  });
+  assert.equal(result.status, 9, result.stderr);
 });
 
 test('repository collection sentinel is red only when explicitly enabled', () => {
