@@ -23,8 +23,8 @@ Cover occlusion, authored forward axis, range/FOV, last-seen copies, simulation-
 
 ### Phase 2 — optional perception example
 - [ ] Add failing occlusion, memory-expiry and single-movement-owner tests.
-- [ ] Implement the Yuka candidate without adopting its world or navigation architecture.
-  Actual adapter is written; donor-backed execution is required before checking this behavior claim.
+- [x] Implement the Yuka candidate without adopting its world or navigation architecture.
+  Three real Yuka/Three integration tests now pass, including occlusion, authored-axis transforms and unchanged movement ownership.
 - [ ] Pass replay, pause/resume, target-deletion and cleanup tests.
 - [x] Strict-check search.ts with locally available TypeScript 5.8.3: exit 0.
 
@@ -53,6 +53,12 @@ Cover occlusion, authored forward axis, range/FOV, last-seen copies, simulation-
 ## Verification
 
 Executed: pure Node policy tests 10/10 and TypeScript 5.8.3 strict checking of search.ts. The complete package exposes npm test: strict TypeScript 5.9.3 build, contracts, real Yuka/Three tests. Dependency downloads were unavailable locally; no dependency-backed test/build or runtime result is reported green. The focused PR workflow runs the full command because root Vitest excludes examples. Formal capability tools, installed license/lockfile audit, Biome, repository suite, independent review and all playable GPU/native lanes remain open. Keep draft. No iOS support claim and no unmeasured improvement over direct policy.
+
+## CI repair verification — 2026-09-26
+
+`npm test` now passes with the pinned dependencies: strict TypeScript 5.9.3 build, 12 policy contracts and 3 real Yuka/Three integration tests (15 passed, 0 failed). Two new regression tests failed on the prior validator and pass after validating all three coordinate slots explicitly. Sparse arrays, null and undefined are rejected before the memory clock or last-seen target can change.
+
+Applied Biome 1.9.4's captured formatting changes and its single-variable-declaration repair without changing lint policy. Fresh repository CI must validate the pushed tree; the complete repository suite and playable browser/native/Android requirements remain open. This replaces the earlier local dependency limitation, not those platform gates.
 
 ## References
 
