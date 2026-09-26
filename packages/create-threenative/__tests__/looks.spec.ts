@@ -9,6 +9,9 @@ import { createRockRidge, sampleGraniteField } from "../templates/starter/src/re
 import { createWatercolorStage } from "../templates/starter/src/render/watercolor.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
+// PRD-449: engine-only guards, copied into the scaffold by `pnpm test:templates` rather than
+// shipped inside it.
+const templatePlaytests = path.resolve("packages/create-threenative/template-playtests/starter");
 const minimal = path.resolve("packages/create-threenative/templates/minimal");
 const platformer = path.resolve("packages/create-threenative/templates/platformer");
 const templatesRoot = path.resolve("packages/create-threenative/templates");
@@ -366,7 +369,7 @@ describe("starter visual floor", () => {
 
   it("should drive look movement before the long refinement wait", async () => {
     const scenario = JSON.parse(
-      await readFile(path.join(starter, "playtests/look.playtest.json"), "utf8"),
+      await readFile(path.join(templatePlaytests, "look.playtest.json"), "utf8"),
     ) as {
       assert?: {
         components?: Array<{

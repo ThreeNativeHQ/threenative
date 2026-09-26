@@ -97,7 +97,7 @@ A GPU that is idle with a slow `render` phase is an object-count problem, not a 
 - Many shadow-casting lights, or one 4K shadow map for a whole valley. One directional light plus
   `VirtualShadowNode`.
 - The same large equirect on `scene.background` and `scene.environment`. The environment light is
-  charged again and moves in power-of-two steps — see `agent-docs/mobile-memory-budget.md`.
+  charged again and moves in power-of-two steps — see `node_modules/create-threenative/agent-docs/references/mobile-memory-budget.md`.
 - A unique material or texture per copy. Share materials and images; the batcher merges equal
   material and geometry.
 
@@ -110,5 +110,5 @@ reports whether the scene batched and, when it did not, the reason. Launching wi
 puts the frame rate on screen in a corner chip and turns on the engine's dev surfaces (backtick
 opens the object and geometry inspector), so the number is visible while you play instead of after
 you grep. `npx @threenative/playtest perf` turns a log into a windowed report. When the percentile is
-bad but the cause is not obvious, `agent-docs/trace-a-slow-frame.md` names the function before you
+bad but the cause is not obvious, `node_modules/create-threenative/agent-docs/references/trace-a-slow-frame.md` names the function before you
 change a line.

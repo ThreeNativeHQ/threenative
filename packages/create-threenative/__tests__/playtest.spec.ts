@@ -406,7 +406,7 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const seed = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+      path.resolve("packages/create-threenative/template-playtests/starter/seed.playtest.json"),
       "utf8",
     );
     const pickupAudio = await readFile(
@@ -428,7 +428,7 @@ describe("starter playtest proof", () => {
   it("should assert the seeded level range instead of a generator draw", async () => {
     const seed = JSON.parse(
       await readFile(
-        path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+        path.resolve("packages/create-threenative/template-playtests/starter/seed.playtest.json"),
         "utf8",
       ),
     ) as {
