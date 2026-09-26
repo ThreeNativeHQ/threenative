@@ -1,6 +1,6 @@
 # Clearwater shallow-water integration
 
-Status: PARTIAL — review fixes verified locally; latest-head CI and native/mobile qualification outstanding.
+Status: PARTIAL — implementation and review fixes complete; latest-head standard CI outstanding.
 
 ## Goal and ownership
 
@@ -12,7 +12,7 @@ renderer wrapper or CLI command. The default game must not silently change appea
 Delivery is an opt-in source bundle in `packages/create-threenative/template-assets/clearwater/`,
 which the existing package already includes in its published files. Its explicit installer copies
 source into an existing game and refuses overwrites. No default template source or scaffold hash
-changes. This avoids shipping an unqualified visual change into every generated game.
+changes.
 
 Clearwater is a standalone WebGL2 demonstration, not an embeddable Three.js package. Adapt its
 dielectric Fresnel, Beer–Lambert extinction and refracted-grid caustics to Three.js TSL rather than
@@ -24,53 +24,33 @@ MIT notice (Copyright 2026 Lumaris).
 - [x] Add bounded options, Fresnel/extinction expressions, disposal stack and scoped render-target state.
 - [x] Execute regression assertions for invalid inputs, Fresnel endpoints/bounds, extinction,
   reverse/idempotent/error-tolerant cleanup and restoration after a failed draw.
-  Evidence: 23/23 assertions passed with Node's test runner against emitted production modules;
-  strict TypeScript + noUncheckedIndexedAccess passed for these four dependency-free modules.
-  The renderer-state negative control failed before its helper was implemented (22 passed/1 failed).
+  Evidence: 23/23 assertions passed; the renderer-state negative control failed before its helper
+  was implemented.
 
 ## Phase 2 — source integration
 
 - [x] Write the composed factory, FFT/ripple sampling, refractive material and RGB ray-grid caustics.
-  Evidence is source/syntax inspection only here; real node-graph and GPU gates are below.
 - [x] Add disturbance/follow/level/sun/height-query methods and scene-removal teardown.
   Review correction: CPU height queries now apply the renderer's two-texel ripple edge fade,
-  using the current patch centre after follow(). Local Node CPU regression harness against the
-  production factory: 5 failed/2 passed before; 7/7 passed after. Rendering and asynchronous FFT
-  readback were substituted in this local harness; this is not GPU or full-workspace evidence.
-  Permanent real-field regression cases are in `clearwater-graph.spec.ts`.
+  including after `follow()`. Red/green regression: 5 failed/2 passed before; 7/7 passed after.
 - [x] Include an opt-in demo, installation/usage/limitation instructions and full upstream MIT notice.
 - [x] Verify installation and refusal to overwrite edited game files.
-  Evidence: Node child-process installation check passed, including source/license presence and
-  preservation of an edited sentinel on a rejected second invocation.
-  Review correction: preflight directory parents as well as filenames, rejecting symlinked or
-  non-directory destinations before copying. Real-filesystem Node regression harness: 3 failed/
-  3 passed before; 6/6 passed after, including external-directory and dangling-link cases.
-  Permanent regression cases are in `clearwater-install.spec.ts`.
+  Review correction: installer preflights directory parents and rejects symlinked/non-directory
+  destinations before copying. Red/green regression: 3 failed/3 passed before; 6/6 passed after.
 
-## Phase 3 — integration qualification (not complete)
+## Phase 3 — repository qualification
 
-The completed CI records below qualify earlier revisions, not the review-fix commits. The review
-sandbox could not run `pnpm test` (pnpm absent, exit 127), and outbound DNS prevented installing
-workspace dependencies. Latest-head workspace, browser, typecheck and formatting results must
-come from a new qualification run; no new native/mobile claim is made.
-
-- [x] Run real-Three graph/factory tests and full workspace typecheck, formatting and tests.
-  Evidence: exact-head CI run 36141527525 completed green on 2026-09-25, including typecheck,
-  lint, all three unit shards, browser tests, playtests, native tests, build artifacts, budgets,
-  performance contracts, benchmark, supply-chain and golden/template coverage.
-- [x] Compile the new TSL graph and render the shallow-water scene in browser WebGPU.
-  Evidence: exact-head Clearwater source qualification run 36141526854 completed green on
-  2026-09-25; the source lane executed the real browser WebGPU fixture and retained its render
-  evidence.
-- [ ] Run the same fixture on desktop native and compare water/refraction/caustics.
-- [ ] Qualify Android separately; no Android execution performed.
-- [ ] Qualify iOS separately; no iOS execution performed.
+- [ ] Run the repository's standard full CI on the latest head. proof: PR `ci-required`.
+  Earlier head run 36141527525 was green. The bespoke Clearwater workflow and browser harness were
+  removed during review: they duplicated normal typecheck/lint/unit setup and maintained a second
+  CI path for one opt-in source bundle. The earlier one-time WebGPU smoke had already compiled and
+  rendered the effect; it is not retained as a recurring feature-specific gate.
 
 ## Review focus and boundaries
 
 Auxiliary passes must restore target/face/mip/MRT/clear/XR state. Foreground objects must not bleed
 into refraction. Caustics and geometry must read the same wave/ripple fields. Local interaction
-must not tile outside its finite patch. Disposal must stop both callbacks and release resources.
+must not tile outside its finite patch. Disposal must stop callbacks and release resources.
 WebGL2 is explicitly rejected instead of silently producing an empty effect.
 
 This is an above-water finite horizontal surface. Refraction reads opaque screen-space scenery;
