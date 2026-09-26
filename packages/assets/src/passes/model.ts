@@ -761,6 +761,7 @@ function lodCacheKey(lod: boolean | IModelLodOptions | "none" | undefined): unkn
 
 export function modelPass(options: IModelPassOptions = {}): IAssetPass {
   return {
+    appliesTo: ["model"],
     configuration: {
       passes: {
         dedup: options.passes?.dedup ?? true,
@@ -796,6 +797,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         options.textures === "none"
           ? "none"
           : {
+              decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
               maxSize: options.textures?.maxSize ?? null,
               keepSmallerSource: true,
@@ -806,7 +808,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
     name: "model",
     // A mobile compile replaces these two decoder-backed sub-passes in the effective options;
     // geometry rewrites and shared-image emission remain plain glTF and stay enabled there.
-    needsRuntimeDecoder: (options.passes?.meshopt ?? true) || options.textures !== "none",
+    needsRuntimeDecoder:
+      (options.passes?.meshopt ?? true) ||
+      (options.textures !== "none" && options.textures?.decoderFree !== true),
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "model") return input;
       const passes = options.passes ?? {};
@@ -1048,6 +1052,7 @@ function sharedSettings(
       textureOptions === undefined
         ? "none"
         : {
+            decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
             keepSmallerSource: true,
             maxSize: textureOptions.maxSize ?? null,

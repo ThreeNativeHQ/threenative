@@ -73,6 +73,15 @@ export interface ICompressedTextureSupport {
   readonly ready: Promise<void>;
 }
 
+/** Which pipeline served a logical path: the compile step's manifest, or the project's own files. */
+export type AssetSource = "manifest" | "source";
+
+/** Where one settled load's bytes actually came from. */
+export interface IResolvedAsset {
+  readonly url: string;
+  readonly via: AssetSource;
+}
+
 export interface ITextureOptions {
   /**
    * The pixels are data, not colour: a normal map, a roughness map, a mask. Data textures are
@@ -150,6 +159,17 @@ export interface IAssetLoader {
     readonly settled: number;
     readonly settledBytes: number;
   };
+  /**
+   * Where each settled load was actually served from, keyed by the logical path asked for.
+   *
+   * `progress` counts loads and cannot say which of a path's candidate urls answered, so a game
+   * whose manifest 404s and a game whose manifest named the output look identical from the game's
+   * own side — which is how an unreadable manifest became a silent uncompiled fallback on the
+   * native hosts, where a failed read arrives as a rejected fetch rather than a 404. `via` is
+   * `"manifest"` only for the compiled output the manifest named; `"source"` is the verbatim or
+   * source-directory path, and an external url, which no manifest governs.
+   */
+  readonly resolved: ReadonlyMap<string, IResolvedAsset>;
   clear(): void;
 }
 
@@ -273,6 +293,12 @@ interface IAssetEntry {
   promise: Promise<unknown>;
   released: boolean;
   value?: unknown;
+}
+
+/** The candidate urls for a logical path, and the pipeline that produced them. */
+interface ICandidateUrls {
+  readonly urls: readonly string[];
+  readonly via: AssetSource;
 }
 
 interface IDisposableResource {
@@ -635,6 +661,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           return { loader, ready };
         })();
   const cache = new Map<string, IAssetEntry>();
+  /** Logical path → the url that actually served it, and the pipeline that url came from. */
+  const resolvedAssets = new Map<string, IResolvedAsset>();
   const disposed: IResourceDisposalSets = {
     geometries: new WeakSet(),
     surfaces: new WeakSet(),
@@ -718,8 +746,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
    * identically, just slower* — and it could not pass while only the first was tried: the loader
    * asked for `/rock.png`, which exists nowhere in a compiled project, and the game never booted.
    */
-  const resolveCandidates = async (path: string): Promise<readonly string[]> => {
-    if (isExternalAssetPath(path)) return [path];
+  const resolveCandidates = async (path: string): Promise<ICandidateUrls> => {
+    if (isExternalAssetPath(path)) return { urls: [path], via: "source" };
     const manifest = await manifestOnce();
     if (manifest !== undefined) {
       const listed = manifest.entries[path];
@@ -727,12 +755,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       if (typeof output !== "string") {
         throw new Error(`Asset '${path}' is not listed in the asset manifest '${manifestUrl}'.`);
       }
-      return [resolvePath(basePath, output)];
+      return { urls: [resolvePath(basePath, output)], via: "manifest" };
     }
     const verbatim = resolvePath(basePath, path);
-    if (sourcePath === "") return [verbatim];
+    if (sourcePath === "") return { urls: [verbatim], via: "source" };
     const fromSource = resolvePath(basePath, `${sourcePath}/${path}`);
-    return fromSource === verbatim ? [verbatim] : [verbatim, fromSource];
+    return fromSource === verbatim
+      ? { urls: [verbatim], via: "source" }
+      : { urls: [verbatim, fromSource], via: "source" };
   };
 
   /**
@@ -744,13 +774,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
    */
   const loadFirst = async <T>(
     path: string,
-    urls: readonly string[],
+    { urls, via }: ICandidateUrls,
     load: (url: string) => Promise<T>,
   ): Promise<T> => {
     const failures: string[] = [];
     for (const url of urls) {
       try {
-        return await load(url);
+        const value = await load(url);
+        // Recorded here, where the winner is known and nowhere else: a caller that asks which
+        // url served its bytes gets the one that did, not the first one that was tried.
+        resolvedAssets.set(path, { url, via });
+        return value;
       } catch (error) {
         failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
       }
@@ -953,7 +987,12 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     get progress() {
       return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
     },
-    resolve: (path) => resolveCandidates(path),
+    resolve: async (path) => (await resolveCandidates(path)).urls,
+    // A copy per read, like `progress`: a caller inspecting the record must not be able to
+    // rewrite what the loader reports for the next asset that settles.
+    get resolved(): ReadonlyMap<string, IResolvedAsset> {
+      return new Map(resolvedAssets);
+    },
     release: (kind, path) => {
       const key = `${kind}:${path}`;
       const entry = cache.get(key);

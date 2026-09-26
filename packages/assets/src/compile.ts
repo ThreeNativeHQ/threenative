@@ -55,7 +55,7 @@ import type {
   IModelVirtualOptions,
 } from "./passes/model.js";
 import { createSharedImageStore, unpackGlb } from "./passes/shared-images.js";
-import { texturePass } from "./passes/texture.js";
+import { texturePass, textureResizePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions, TextureSkipReason } from "./passes/texture.js";
 import {
   formatAudioSizes,
@@ -128,6 +128,13 @@ export interface IAssetPass {
   /** True when this pass's emitted output requires a runtime decoder unavailable on mobile. */
   readonly needsRuntimeDecoder?: boolean;
   readonly name: string;
+  /**
+   * Input kinds whose bytes this pass can change. The compile hashes only the passes that can
+   * change an asset into that asset's digest, so a model-only option edit does not rename every
+   * texture. `undefined` (the default for a caller-supplied pass) means any kind, which stays
+   * conservative: an unknown pass can change every asset.
+   */
+  readonly appliesTo?: readonly AssetKind[];
   /**
    * JSON-serializable snapshot of every option that changes this pass's output. Part of the
    * compile cache key: without it, editing a config value (texture quality, quantize bits, an
@@ -421,8 +428,10 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
  * output and a cached `public/` from v7 has no receipt to delete.
  * v9: audio is conditioned and encoded to Ogg Vorbis instead of passing through byte-identical,
  * so every audio output from v8 has the wrong extension and the wrong bytes.
+ * v10: a decoder-free target honours a declared `textures.maxSize`/`models.textures.maxSize` by
+ * resampling to PNG, and the cache digest is per-asset kind instead of one global pass list.
  */
-const PIPELINE_VERSION = 9;
+const PIPELINE_VERSION = 10;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
   // Converted to GLB by `blenderImportPass` before `modelPass` sees them. Until PRD-346 these four
@@ -1436,6 +1445,33 @@ function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
   return raw as IModelQuantizeOptions;
 }
 
+/**
+ * The effective `models.textures` for a target after capability filtering.
+ *
+ * A target with the KTX2 decoder keeps the configured compression. Without one, an explicitly
+ * declared `maxSize` still has to reach the artifact, so the pass resizes embedded images to
+ * PNG instead of encoding them; `"none"`, absent, and a config with no cap keep shipping the
+ * authored bytes exactly as before. The per-slot overrides ride along for the same reason they do
+ * on the standalone path: a `codec: "none"` slot is a project asking for its authored bytes, and a
+ * cap is a decision about the project's *other* textures.
+ */
+function embeddedTexturesFor(
+  configured: IModelTexturesOptions | "none" | undefined,
+  ktx2: boolean,
+): { readonly textures?: IModelTexturesOptions | "none" } {
+  if (ktx2) return {};
+  if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
+    return {
+      textures: {
+        decoderFree: true,
+        maxSize: configured.maxSize,
+        ...(configured.overrides === undefined ? {} : { overrides: configured.overrides }),
+      },
+    };
+  }
+  return { textures: "none" as const };
+}
+
 function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayout {
   const config: unknown = options.config ?? {};
   if (!isRecord(config)) {
@@ -1511,7 +1547,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : {
                 passes: { ...(configuredModels.passes ?? {}), meshopt: false },
               }),
-          ...(runtimeDecoderCapabilities.ktx2 ? {} : { textures: "none" as const }),
+          ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
         };
   const textures = configuredTextures;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
@@ -1540,6 +1576,21 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         kind: "texture",
         needsRuntimeDecoder: true,
         options: textures,
+      });
+    }
+    if (
+      textures !== undefined &&
+      !runtimeDecoderCapabilities.ktx2 &&
+      textures.maxSize !== undefined
+    ) {
+      // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
+      // decoder-free resize pass needs no runtime decoder and runs in its place. The overrides
+      // ride along so a `codec: "none"` glob keeps the authored bytes on this path too.
+      const resize = { maxSize: textures.maxSize, overrides: textures.overrides };
+      registerBuiltin(textureResizePass(resize), {
+        kind: "texture-resize",
+        needsRuntimeDecoder: false,
+        options: resize,
       });
     }
     if (lightmap !== undefined) {
@@ -2300,13 +2351,27 @@ export async function compileAssets(
     : layout.passSpecs.filter((spec) => spec.kind !== "blender-import");
 
   const passNames = activePasses.map((pass) => pass.name);
-  const passCacheKeys = activePasses.map((pass) => pass.cacheKey ?? null);
-  const passConfiguration = JSON.stringify({
-    ...(passCacheKeys.some((key) => key !== null) ? { passCacheKeys } : {}),
-    pipelineVersion: PIPELINE_VERSION,
-    passes: passNames,
-    options: activePasses.map((pass) => pass.configuration ?? null),
-  });
+  // Per-kind, so an asset hashes only the passes that can change it. A model-only option edit
+  // (an LOD preset, an audio knob, a quantize bit depth) must not rename every texture; a pass
+  // that does not declare `appliesTo` is assumed able to change any input and stays everywhere.
+  const passConfigurationFor = (kind: AssetKind): string => {
+    const included = activePasses.filter(
+      (pass) => pass.appliesTo === undefined || pass.appliesTo.includes(kind),
+    );
+    const cacheKeys = included.map((pass) => pass.cacheKey ?? null);
+    return JSON.stringify({
+      ...(cacheKeys.some((key) => key !== null) ? { passCacheKeys: cacheKeys } : {}),
+      pipelineVersion: PIPELINE_VERSION,
+      passes: included.map((pass) => pass.name),
+      options: included.map((pass) => pass.configuration ?? null),
+    });
+  };
+  const passConfigurations: Readonly<Record<AssetKind, string>> = {
+    audio: passConfigurationFor("audio"),
+    model: passConfigurationFor("model"),
+    other: passConfigurationFor("other"),
+    texture: passConfigurationFor("texture"),
+  };
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
   const costInputs = new Map<string, IPassCostRecord>();
@@ -2452,7 +2517,7 @@ export async function compileAssets(
     const input = await readInput(layout.sourceRoot, logical);
     const digest = createHash("sha256")
       .update(input)
-      .update(passConfiguration, "utf8")
+      .update(passConfigurations[classify(logical)], "utf8")
       .digest("hex");
     // The output name carries the digest of the input bytes and the whole pass configuration,
     // so a previous entry under that exact name, with every file it declares still on disk, is
