@@ -156,6 +156,18 @@ class EmptyCollider implements IWorldTileCollider {
   }
 }
 
+/**
+ * The one throw a hard cap produces, so a caller composing `TerrainTiles` can tell "a tile no longer
+ * fits" from a defect in game-owned input by `instanceof` rather than by a name any error can borrow.
+ * Not re-exported from `world.ts`: the cap's condition is the caller's to absorb, not to handle.
+ */
+export class TerrainTileBudgetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TerrainTileBudgetError";
+  }
+}
+
 function finite(value: number, name: string): number {
   if (!Number.isFinite(value)) throw new Error(`TerrainTiles ${name} must be finite.`);
   return value;
@@ -1341,7 +1353,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           });
     this.#topologyBytes = this.#topologyField?.memoryBytes ?? 0;
     if (this.#topologyBytes > this.residentByteBudget)
-      throw new Error("TerrainTiles residentByteBudget cannot fit the topology observation.");
+      throw new TerrainTileBudgetError(
+        "TerrainTiles residentByteBudget cannot fit the topology observation.",
+      );
     this.#recordPeaks();
     this.#recordSeamDiagnostics();
     this.frustumCulled = true;
@@ -1469,14 +1483,18 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       const estimate = estimatedTileBytes(this.tileResolution, this.#factors, this.#worldPasses);
       if (this.residentBytes + estimate > this.residentByteBudget) {
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
-          throw new Error("TerrainTiles residentByteBudget cannot fit the followed tile.");
+          throw new TerrainTileBudgetError(
+            "TerrainTiles residentByteBudget cannot fit the followed tile.",
+          );
         continue;
       }
       const tile = this.#createTile(candidate.tileX, candidate.tileZ, candidate.distance);
       if (this.residentBytes + tile.bytes > this.residentByteBudget) {
         this.#disposeTile(tile);
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
-          throw new Error("TerrainTiles residentByteBudget cannot fit the followed tile.");
+          throw new TerrainTileBudgetError(
+            "TerrainTiles residentByteBudget cannot fit the followed tile.",
+          );
         continue;
       }
       this.#resident.set(tile.key, tile);
@@ -1827,7 +1845,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (!active.has(key)) this.#removeStitch(key);
     }
     if (this.residentBytes > this.residentByteBudget)
-      throw new Error("TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.");
+      throw new TerrainTileBudgetError(
+        "TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.",
+      );
   }
 
   #finishLodTransition(tile: IResidentTile): void {

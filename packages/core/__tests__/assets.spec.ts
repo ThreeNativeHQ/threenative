@@ -10,6 +10,10 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  MirroredRepeatWrapping,
+  NoColorSpace,
+  RepeatWrapping,
+  SRGBColorSpace,
   Texture,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -290,6 +294,67 @@ describe("IAssetLoader", () => {
 
     expect(events).toEqual(["load", "enter"]);
     game.stop();
+  });
+});
+
+describe("IAssetLoader.texture options", () => {
+  it("should apply the options to a copy and leave the cached instance untouched", async () => {
+    const cached = new Texture();
+    // What an image file arrives as: sRGB. A normal map is not, and asking for one must not say so
+    // to every other material sharing the same bytes.
+    cached.colorSpace = SRGBColorSpace;
+    cached.anisotropy = 16;
+    const assets = createAssetLoader({ texture: async () => cached });
+
+    const configured = await assets.texture("normal.png", {
+      anisotropy: 8,
+      data: true,
+      repeat: [2, 3],
+      wrap: RepeatWrapping,
+    });
+
+    expect(configured).not.toBe(cached);
+    expect(configured.image).toBe(cached.image);
+    expect(configured.colorSpace).toBe(NoColorSpace);
+    expect(configured.wrapS).toBe(RepeatWrapping);
+    expect(configured.wrapT).toBe(RepeatWrapping);
+    expect(configured.repeat.toArray()).toEqual([2, 3]);
+    expect(configured.anisotropy).toBe(8);
+    // The shared instance other callers of the same path hold.
+    expect(cached.colorSpace).toBe(SRGBColorSpace);
+    expect(cached.wrapS).not.toBe(RepeatWrapping);
+    expect(cached.repeat.toArray()).toEqual([1, 1]);
+    expect(cached.anisotropy).toBe(16);
+    // And a configured load is not cached, so the next one is configured again from the same bytes.
+    expect(await assets.texture("normal.png", { data: true })).not.toBe(configured);
+    expect((await assets.texture("normal.png", { data: true })).colorSpace).toBe(NoColorSpace);
+  });
+
+  it("should treat one repeat number as both axes and sRGB as the explicit non-data space", async () => {
+    const assets = createAssetLoader({ texture: async () => new Texture() });
+
+    const tiled = await assets.texture("tile.png", { data: false, repeat: 5 });
+    const wrapped = await assets.texture("tile.png", { wrap: MirroredRepeatWrapping });
+
+    expect(tiled.colorSpace).toBe(SRGBColorSpace);
+    expect(tiled.repeat.toArray()).toEqual([5, 5]);
+    expect(tiled.wrapS).not.toBe(MirroredRepeatWrapping);
+    expect(wrapped.wrapS).toBe(MirroredRepeatWrapping);
+    expect(wrapped.wrapT).toBe(MirroredRepeatWrapping);
+    // Options without `data` are colour: a loader's linear default must not wash out an albedo.
+    expect(wrapped.colorSpace).toBe(SRGBColorSpace);
+  });
+
+  it("should hand back the same cached instance when no options are given", async () => {
+    const cached = new Texture();
+    const assets = createAssetLoader({ texture: async () => cached });
+
+    const first = await assets.texture("albedo.png");
+    const second = await assets.texture("albedo.png");
+
+    expect(first).toBe(cached);
+    expect(second).toBe(cached);
+    expect(assets.progress.requested).toBe(1);
   });
 });
 

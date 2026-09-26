@@ -5,9 +5,12 @@ import {
   BufferAttribute,
   type BufferGeometry,
   Mesh,
+  NoColorSpace,
   Object3D,
+  SRGBColorSpace,
   Texture,
   type TextureLoader,
+  type Wrapping,
 } from "three";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
@@ -79,10 +82,50 @@ export interface IResolvedAsset {
   readonly via: AssetSource;
 }
 
+export interface ITextureOptions {
+  /**
+   * The pixels are data, not colour: a normal map, a roughness map, a mask. Data textures are
+   * sampled without a colour-space conversion, which is wrong for an albedo and right for these.
+   * Left out, the copy is sRGB — the space an image file is authored in. A loader leaves a plain
+   * image linear, which washes out every albedo, so an options call never inherits that.
+   */
+  readonly data?: boolean;
+  // A normal or roughness map asking only for `wrap` still passes `data: true`: options always pick
+  // the space. The configured copy is outside the cache, so `release` cannot reclaim it — dispose it
+  // with the material that uses it.
+  /** Both axes at once. Absent leaves the loaded texture's own wrapping. */
+  readonly wrap?: Wrapping;
+  /** Tiling counts, one for both axes or one per axis. Absent leaves the loaded texture's own. */
+  readonly repeat?: number | readonly [number, number];
+  /** Samples to take at grazing angles. Absent leaves the loaded texture's own. */
+  readonly anisotropy?: number;
+}
+
+/** What `texture(path, options)` hands back: the cached instance untouched, or a configured copy. */
+function configuredTexture(texture: Texture, options: ITextureOptions): Texture {
+  const copy = texture.clone();
+  copy.colorSpace = options.data === true ? NoColorSpace : SRGBColorSpace;
+  if (options.wrap !== undefined) copy.wrapS = copy.wrapT = options.wrap;
+  const { repeat } = options;
+  if (typeof repeat === "number") copy.repeat.setScalar(repeat);
+  else if (repeat !== undefined) copy.repeat.set(repeat[0], repeat[1]);
+  if (options.anisotropy !== undefined) copy.anisotropy = options.anisotropy;
+  return copy;
+}
+
 export interface IAssetLoader {
   readonly compressedTextures?: ICompressedTextureSupport;
   model<T = unknown>(path: string): Promise<T>;
-  texture(path: string): Promise<Texture>;
+  /**
+   * Load a texture, optionally configured in one call.
+   *
+   * @situation set color space, wrap, repeat or anisotropy on a loaded texture
+   *
+   * With no options this is the shared cached instance, exactly as before. With options it is a
+   * copy of it: the cached texture is shared by every other caller of that path, and a wrap or a
+   * colour-space write on it would silently change how another material draws.
+   */
+  texture(path: string, options?: ITextureOptions): Promise<Texture>;
   audio(path: string): Promise<AudioBuffer>;
   release(kind: "audio" | "model" | "texture", path: string): boolean;
   /**
@@ -958,8 +1001,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       releaseEntry(entry);
       return true;
     },
-    texture: (path) =>
-      cached("texture", path, async (url) => {
+    texture: async (path, textureOptions) => {
+      const texture = await cached("texture", path, async (url) => {
         if (options.texture !== undefined) return options.texture(url);
         // Compiled output carries the content-addressed extension: anything ending in .ktx2
         // goes through the shared KTX2 loader, everything else stays on TextureLoader.
@@ -971,7 +1014,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         }
         const { TextureLoader: Loader } = await import("three");
         return loadWith(new Loader() as TextureLoader, url);
-      }),
+      });
+      return textureOptions === undefined ? texture : configuredTexture(texture, textureOptions);
+    },
   };
 }
 

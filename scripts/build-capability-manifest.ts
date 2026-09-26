@@ -4,7 +4,7 @@ import path from "node:path";
 import ts from "typescript";
 
 import { RELEVANCE_FLOOR, capabilitySituationTokens } from "../packages/engine-mcp/src/index.js";
-import { CAPABILITY_PACKAGE_ALLOWLIST } from "./check-capability-docs.js";
+import { CAPABILITY_PACKAGE_ALLOWLIST, isPublicClassOrFunction } from "./check-capability-docs.js";
 import { type INotOwnedCapability, NOT_OWNED_CAPABILITIES } from "./not-owned-capabilities.js";
 import {
   REALISM_EFFECTS_COVERAGE,
@@ -436,34 +436,68 @@ function capabilityPackageDirectories(root: string): readonly string[] {
     .map(({ directory }) => directory);
 }
 
-function packageExportCandidatesForDirectory(packageDirectory: string): ICapabilityCandidate[] {
+interface IPackageEntrySource {
+  readonly packageName: string;
+  readonly subpath: string;
+  readonly source: string;
+}
+
+function packageEntrySources(packageDirectory: string): IPackageEntrySource[] {
   const packageFile = path.join(packageDirectory, "package.json");
   if (!existsSync(packageFile)) return [];
   const manifest = JSON.parse(readFileSync(packageFile)) as { exports?: unknown };
   if (manifest.exports === undefined) return [];
   const name = packageName(packageDirectory);
-  const candidates: ICapabilityCandidate[] = [];
-  for (const [subpath, target] of exportMapEntries(manifest.exports)) {
-    if (subpath === "./package.json") continue;
-    const source = sourceFileForTarget(packageDirectory, target);
-    const exports = collectModuleExports(source);
-    for (const entry of exports) {
-      const kind = classifyDeclaration(entry.declaration);
-      if (kind === undefined) continue;
-      candidates.push({
-        ...entry,
-        importPath: importPath(name, subpath),
-        kind,
-        packageName: name,
-      });
+  return exportMapEntries(manifest.exports)
+    .filter(([subpath]) => subpath !== "./package.json")
+    .map(([subpath, target]) => ({
+      packageName: name,
+      source: sourceFileForTarget(packageDirectory, target),
+      subpath,
+    }));
+}
+
+/**
+ * The export names the type checker sees as callable or constructible, per entry source. The
+ * syntactic classifier alone let `export const alias = other` and `export const f = upstream.f`
+ * ship without a manifest entry; this is the same predicate the docs gate uses, so the two agree.
+ */
+function callableExportNames(sources: readonly string[]): ReadonlyMap<string, ReadonlySet<string>> {
+  const program = ts.createProgram({
+    options: {
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      skipLibCheck: true,
+      target: ts.ScriptTarget.ES2022,
+    },
+    rootNames: [...sources],
+  });
+  const checker = program.getTypeChecker();
+  const result = new Map<string, ReadonlySet<string>>();
+  for (const source of sources) {
+    const file = program.getSourceFile(source);
+    const module = file === undefined ? undefined : checker.getSymbolAtLocation(file);
+    const names = new Set<string>();
+    for (const symbol of module === undefined ? [] : checker.getExportsOfModule(module)) {
+      if (isPublicClassOrFunction(checker, symbol)) names.add(symbol.getName());
     }
+    result.set(source, names);
   }
-  return candidates;
+  return result;
 }
 
 function packageExportCandidates(root: string): ICapabilityCandidate[] {
-  return capabilityPackageDirectories(root).flatMap((packageDirectory) =>
-    packageExportCandidatesForDirectory(packageDirectory),
+  const entries = capabilityPackageDirectories(root).flatMap(packageEntrySources);
+  const callable = callableExportNames(entries.map(({ source }) => source));
+  return entries.flatMap(({ packageName: name, source, subpath }) =>
+    collectModuleExports(source).flatMap((entry): ICapabilityCandidate[] => {
+      const kind =
+        classifyDeclaration(entry.declaration) ??
+        (callable.get(source)?.has(entry.symbol) === true ? "function" : undefined);
+      if (kind === undefined) return [];
+      return [{ ...entry, importPath: importPath(name, subpath), kind, packageName: name }];
+    }),
   );
 }
 
