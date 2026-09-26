@@ -1554,6 +1554,20 @@ describe("create-threenative", () => {
     expect(pins.every(({ asset, engine, sculpt }) => !asset && !engine && !sculpt)).toBe(true);
   });
 
+  it("forces the broken sharp 0.34 line off every template's dependency tree", async () => {
+    // `@gltf-transform/cli@4.4.2` drags `sharp ~0.34.5`, whose prebuilt does not load on modern
+    // glibc: a plain `npm install` of a scaffold then dies trying to build it from source. The
+    // same line is covered by GHSA-rgj7-g3m4-5g8c (`sharp <0.35.4`). PRD-445's root override
+    // does not reach a consumer's own project, so every template carries the pin for npm and pnpm.
+    for (const template of ALL_TEMPLATES) {
+      const manifest = JSON.parse(
+        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+      ) as { overrides?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } };
+      expect(manifest.overrides?.sharp, `${template} npm override`).toBe(">=0.35.4");
+      expect(manifest.pnpm?.overrides?.sharp, `${template} pnpm override`).toBe(">=0.35.4");
+    }
+  });
+
   it("should document only tools the pinned asset MCP actually serves", async () => {
     const surface = JSON.parse(
       await readFile(path.resolve("packages/create-threenative/asset-mcp-tools.json"), "utf8"),
