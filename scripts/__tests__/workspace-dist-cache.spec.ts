@@ -37,10 +37,7 @@ describe("workspace bundle reuse without cached verdicts", () => {
   });
 
   it("abandons a stalled cache segment instead of spending ten minutes on an optimization", () => {
-    assert.match(
-      step("Restore the compiled workspace"),
-      /SEGMENT_DOWNLOAD_TIMEOUT_MINS: "2"/u,
-    );
+    assert.match(step("Restore the compiled workspace"), /SEGMENT_DOWNLOAD_TIMEOUT_MINS: "2"/u);
   });
 
   it("publishes only after both product validators, before returning to caller tests", () => {
