@@ -196,7 +196,16 @@ async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Prom
   projection?.dispose();
   geometry.dispose();
   material.dispose();
-  return { arm, count, cpuMs, frameMs, splitMs, drawCalls, projection: report, ...(pixels ? { pixels } : {}) };
+  return {
+    arm,
+    count,
+    cpuMs,
+    frameMs,
+    splitMs,
+    drawCalls,
+    projection: report,
+    ...(pixels ? { pixels } : {}),
+  };
 }
 
 /** Per-channel difference against the stock arm, plus the frame as a PNG for a human look. */
@@ -214,7 +223,8 @@ function compare(pixels: Uint8Array, stock: Uint8Array): Record<string, unknown>
     }
     max = Math.max(max, pixelMax);
     if (pixelMax > 8) over += 1;
-    if ((pixels[i] as number) + (pixels[i + 1] as number) + (pixels[i + 2] as number) > 30) lit += 1;
+    if ((pixels[i] as number) + (pixels[i + 1] as number) + (pixels[i + 2] as number) > 30)
+      lit += 1;
   }
   const count = pixels.length / 4;
   const canvas = document.createElement("canvas");
