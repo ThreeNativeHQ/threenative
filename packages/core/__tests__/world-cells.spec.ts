@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,39 +61,47 @@ function makeModel(): Object3D {
 interface IResponseLike {
   readonly ok: boolean;
   readonly status: number;
+  readonly headers: Headers;
   arrayBuffer: () => Promise<ArrayBuffer>;
   json: () => Promise<unknown>;
 }
+
+const notFound: IResponseLike = {
+  ok: false,
+  status: 404,
+  headers: new Headers(),
+  arrayBuffer: async () => new ArrayBuffer(0),
+  json: async () => ({}),
+};
 
 function fileResponse(buffer: Buffer): IResponseLike {
   return {
     ok: true,
     status: 200,
+    headers: new Headers(),
     arrayBuffer: async () =>
       buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
     json: async () => JSON.parse(buffer.toString("utf8")),
   };
 }
 
-function stubFixtureFetch(): void {
+function stubFixtureFetch(): { requested: string[] } {
+  const requested: string[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: unknown): Promise<IResponseLike> => {
       const url = String(input);
+      requested.push(url);
       if (url.endsWith("world.json"))
         return fileResponse(readFileSync(path.join(fixture, "world.json")));
       if (url.endsWith("placements.bin"))
         return fileResponse(readFileSync(path.join(fixture, "placements.bin")));
       if (url.endsWith("heightmap.u16"))
         return fileResponse(readFileSync(path.join(fixture, "terrain", "heightmap.u16")));
-      return {
-        ok: false,
-        status: 404,
-        arrayBuffer: async () => new ArrayBuffer(0),
-        json: async () => ({}),
-      };
+      return notFound;
     }),
   );
+  return { requested };
 }
 
 function stubManifestFetch(override: IWorldPackage): void {
@@ -100,11 +109,12 @@ function stubManifestFetch(override: IWorldPackage): void {
     "fetch",
     vi.fn(async (input: unknown): Promise<IResponseLike> => {
       const url = String(input);
+      const body = JSON.stringify(override);
       if (url.endsWith("world.json")) {
-        const body = JSON.stringify(override);
         return {
           ok: true,
           status: 200,
+          headers: new Headers(),
           arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
           json: async () => override,
         };
@@ -113,14 +123,89 @@ function stubManifestFetch(override: IWorldPackage): void {
         return fileResponse(readFileSync(path.join(fixture, "placements.bin")));
       if (url.endsWith("heightmap.u16"))
         return fileResponse(readFileSync(path.join(fixture, "terrain", "heightmap.u16")));
-      return {
-        ok: false,
-        status: 404,
-        arrayBuffer: async () => new ArrayBuffer(0),
-        json: async () => ({}),
-      };
+      return notFound;
     }),
   );
+}
+
+/** Every logical path the committed package names, as `world/<relative>`. */
+function packageLogicalPaths(pkg: IWorldPackage): string[] {
+  const paths = new Set<string>([
+    "world/world.json",
+    "world/placements.bin",
+    `world/${pkg.terrain.heightmap}`,
+  ]);
+  for (const asset of Object.values(pkg.assets)) {
+    paths.add(`world/${asset.glb}`);
+    for (const lod of asset.lods ?? []) paths.add(`world/${lod.glb}`);
+  }
+  for (const cell of pkg.cells) for (const chunk of cell.chunks ?? []) paths.add(`world/${chunk}`);
+  return [...paths];
+}
+
+/** The name the compile step writes a file under: its content hash in the stem, its kind kept. */
+function compiledName(logicalPath: string, bytes: Buffer): string {
+  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
+  const dot = logicalPath.lastIndexOf(".");
+  return `${logicalPath.slice(0, dot)}.${hash}${logicalPath.slice(dot)}`;
+}
+
+/**
+ * Serve the package the way the asset pipeline writes it: every file under a content-addressed
+ * name, reachable only through `assets.manifest.json`, with the authored names 404ing. A real
+ * `Response` carries `headers`, and the loader reads the manifest's content type off it.
+ */
+function stubCompiledFetch(): { requested: string[] } {
+  const served = new Map<string, Buffer>();
+  const entries: Record<string, { bytes: number; output: string }> = {};
+  for (const logicalPath of packageLogicalPaths(manifest)) {
+    const buffer = readFileSync(
+      path.join(fixture, ...(logicalPath.slice("world/".length).split("/") as string[])),
+    );
+    const output = compiledName(logicalPath, buffer);
+    entries[logicalPath] = { bytes: buffer.byteLength, output };
+    served.set(output, buffer);
+  }
+  const body = JSON.stringify({ entries, version: 1 });
+  const requested: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown): Promise<IResponseLike> => {
+      const url = String(input);
+      requested.push(url);
+      if (url.endsWith("assets.manifest.json")) return fileResponse(Buffer.from(body));
+      const buffer = served.get(url);
+      return buffer === undefined ? notFound : fileResponse(buffer);
+    }),
+  );
+  return { requested };
+}
+
+/**
+ * A compiled project with its compile step's output deleted: no manifest is served, and the only
+ * names that answer are the sources the author left under `assets/`. The authored path 404s, which
+ * is exactly the case the loader's second candidate exists for.
+ */
+function stubSourceDirFetch(): { requested: string[] } {
+  const served = new Map<string, Buffer>([
+    ["assets/world/world.json", readFileSync(path.join(fixture, "world.json"))],
+    ["assets/world/placements.bin", readFileSync(path.join(fixture, "placements.bin"))],
+    [
+      "assets/world/terrain/heightmap.u16",
+      readFileSync(path.join(fixture, "terrain", "heightmap.u16")),
+    ],
+  ]);
+  const requested: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown): Promise<IResponseLike> => {
+      const url = String(input);
+      requested.push(url);
+      const buffer = served.get(url);
+      return buffer === undefined ? notFound : fileResponse(buffer);
+    }),
+  );
+  return { requested };
 }
 
 /** A loader that never settles until `release`, so concurrency can be measured mid-flight. */
@@ -701,6 +786,70 @@ describe("WorldCells", () => {
     expect(world.stats().failures).toBe(0);
     expect(world.stats().loadsInFlight).toBe(0);
     expect(world.stats().loadsQueued).toBe(0);
+    world.dispose();
+  });
+
+  it("streams a compiled package, every file reached through the asset manifest", async () => {
+    const { requested } = stubCompiledFetch();
+    const follow = followAt(0, 0);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      ring: 1,
+      surface,
+      url: "world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+    await flush();
+
+    // The models came through the loader too: batches exist, and the one cell carrying a chunk
+    // attached it. A model served by an authored name would have 404ed instead.
+    expect(world.stats().failures).toBe(0);
+    expect(world.stats().residentCells).toBe(9);
+    expect(world.getObjectByName("world-chunk")).toBeDefined();
+    expect(world.children.filter((child) => child instanceof InstancedMesh).length).toBeGreaterThan(
+      0,
+    );
+    for (const url of requested) expect(url).toMatch(/assets\.manifest\.json$|\.[0-9a-f]{8}\./u);
+    world.dispose();
+  });
+
+  it("still loads the package from assets/ when the compiled output is gone", async () => {
+    // The delete-test: every compiled output is gone, so only the author's `assets/` sources are
+    // left to serve the package, and nothing names them.
+    const { requested } = stubSourceDirFetch();
+    const follow = followAt(0, 0);
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 1,
+      surface,
+      url: "world/world.json",
+    });
+
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+    await flush();
+
+    expect(world.stats().failures).toBe(0);
+    expect(world.stats().residentCells).toBe(9);
+    // Each file was asked for by its authored name first, 404ed, and then found under `assets/`.
+    expect(requested).toEqual([
+      "assets.manifest.json",
+      "world/world.json",
+      "assets/world/world.json",
+      "world/placements.bin",
+      "assets/world/placements.bin",
+      "world/terrain/heightmap.u16",
+      "assets/world/terrain/heightmap.u16",
+    ]);
     world.dispose();
   });
 
