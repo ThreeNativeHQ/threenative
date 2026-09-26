@@ -1,4 +1,5 @@
 import {
+  Box3,
   type BufferGeometry,
   Group,
   InstancedMesh,
@@ -8,6 +9,7 @@ import {
   Object3D,
   Quaternion,
   SkinnedMesh,
+  Sphere,
   Vector3,
 } from "three";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
@@ -237,19 +239,35 @@ class SharedBatch {
     segmentSize: number,
     segments: number,
     name: string,
+    bounds: Box3,
   ) {
     this.#segmentSize = Math.max(1, segmentSize);
-    this.mesh = SharedBatch.#meshFor(geometry, material, this.#segmentSize * segments, name);
+    this.#bounds = bounds;
+    this.mesh = SharedBatch.#meshFor(
+      geometry,
+      material,
+      this.#segmentSize * segments,
+      name,
+      bounds,
+    );
   }
+
+  /** The package extent: finite bounds for a mesh whose instances span every resident cell. */
+  readonly #bounds: Box3;
 
   static #meshFor(
     geometry: BufferGeometry,
     material: Material,
     capacity: number,
     name: string,
+    bounds: Box3,
   ): InstancedMesh {
     const mesh = new InstancedMesh(geometry, material, capacity);
     mesh.name = name;
+    // Fixed, finite bounds: computing them over zeroed free segments or an empty buffer gives an
+    // empty or non-finite box, and anything measuring the scene (a capture, a bridge) reads it.
+    mesh.boundingBox = bounds.clone();
+    mesh.boundingSphere = bounds.getBoundingSphere(mesh.boundingSphere ?? new Sphere());
     mesh.count = 0;
     mesh.frustumCulled = false;
     (mesh.instanceMatrix.array as Float32Array).fill(0);
@@ -276,6 +294,7 @@ class SharedBatch {
       old.material as Material,
       old.instanceMatrix.count * 2,
       old.name,
+      this.#bounds,
     );
     (mesh.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array as Float32Array);
     mesh.castShadow = old.castShadow;
@@ -859,6 +878,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #surfaces = new Map<string, ISharedSurface>();
   /** One shared mesh per `asset:level:part`, holding every resident cell's segment; see SharedBatch. */
   readonly #shared = new Map<string, SharedBatch>();
+  readonly #extentBounds: Box3;
   /** The largest run of each asset in any cell: the segment size every cell of it fits. */
   readonly #runMax = new Map<string, number>();
   /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
@@ -903,6 +923,12 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#runMax.set(run.asset, Math.max(this.#runMax.get(run.asset) ?? 0, run.count));
     this.#cellSize = init.manifest.cellSize;
     this.#minX = init.manifest.extent.minX;
+    const { extent, terrain } = init.manifest;
+    // Scatter stands on the terrain: its height range, with headroom for tall trees and props.
+    this.#extentBounds = new Box3(
+      new Vector3(extent.minX, terrain.heightMin - 16, extent.minZ),
+      new Vector3(extent.minX + extent.sizeX, terrain.heightMax + 64, extent.minZ + extent.sizeZ),
+    );
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
@@ -1466,6 +1492,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#runMax.get(assetId) ?? entry.batch.count,
       8,
       key,
+      this.#extentBounds,
     );
     shared.mesh.castShadow = this.#castShadowLevels > entry.level;
     shared.mesh.receiveShadow = this.#receiveShadow;
