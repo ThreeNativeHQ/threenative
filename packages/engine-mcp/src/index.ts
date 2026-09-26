@@ -672,33 +672,44 @@ export function searchCapabilities(
   };
 }
 
+/**
+ * Every manifest entry named `symbol` (optionally in one `importPath`); throws when there is none.
+ * Two packages can export one name (`createThreeObject` from raw-unreal and ueformat), so a lookup
+ * by name alone must return both — answering with the first hides the second from detail.
+ */
+export function capabilityDetails(
+  symbol: string,
+  manifestFile = defaultManifestPath(),
+  importPath?: string,
+): readonly ICapabilityDetail[] {
+  if (typeof symbol !== "string" || symbol.trim().length === 0)
+    throw new Error("engine_capability_detail requires a non-empty symbol string.");
+  const matches = loadCapabilityManifest(manifestFile).entries.filter(
+    (candidate) =>
+      candidate.symbol === symbol &&
+      (importPath === undefined || candidate.importPath === importPath),
+  );
+  if (matches.length === 0)
+    throw new Error(
+      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.`,
+    );
+  return matches;
+}
+
+/** One capability's detail; code callers must name `importPath` when the symbol is shared. */
 export function capabilityDetail(
   symbol: string,
   manifestFile = defaultManifestPath(),
   importPath?: string,
 ): ICapabilityDetail {
-  if (typeof symbol !== "string" || symbol.trim().length === 0)
-    throw new Error("engine_capability_detail requires a non-empty symbol string.");
-  const manifest = loadCapabilityManifest(manifestFile);
-  const matches = manifest.entries.filter(
-    (candidate) =>
-      candidate.symbol === symbol &&
-      (importPath === undefined || candidate.importPath === importPath),
-  );
-  const entry = matches[0];
-  if (entry === undefined)
-    throw new Error(
-      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.`,
-    );
-  // Two packages can export one name (`createThreeObject` from raw-unreal and ueformat); answering
-  // with the first would make the second undiscoverable by detail, so the caller must choose.
+  const matches = capabilityDetails(symbol, manifestFile, importPath);
   if (matches.length > 1)
     throw new Error(
       `Ambiguous engine capability '${symbol}': pass importPath, one of ${matches
         .map((match) => `'${match.importPath}'`)
         .join(", ")}.`,
     );
-  return entry;
+  return matches[0] as ICapabilityDetail;
 }
 
 const TOOL_DEFINITIONS: readonly IEngineTool[] = [
@@ -726,7 +737,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_capability_detail",
     description:
-      "Inspect one engine capability's import, signature, example, constraints, and overrides.",
+      "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -816,7 +827,20 @@ function handleToolCall(
       throw new Error("engine_capability_detail requires a string 'symbol' argument.");
     if (argumentsValue.importPath !== undefined && typeof argumentsValue.importPath !== "string")
       throw new Error("engine_capability_detail 'importPath' must be a string when given.");
-    const detail = capabilityDetail(argumentsValue.symbol, manifestFile, argumentsValue.importPath);
+    const matches = capabilityDetails(
+      argumentsValue.symbol,
+      manifestFile,
+      argumentsValue.importPath,
+    );
+    // A shared name answers in one call with every match rather than an error: the agent reads
+    // both summaries and imports the right one without a second round trip.
+    const detail =
+      matches.length === 1
+        ? matches[0]
+        : {
+            guidance: `${matches.length} packages export '${argumentsValue.symbol}'. Import the match whose summary fits; pass importPath to get one.`,
+            matches,
+          };
     logToolCall({
       importPath: argumentsValue.importPath,
       symbol: argumentsValue.symbol,
