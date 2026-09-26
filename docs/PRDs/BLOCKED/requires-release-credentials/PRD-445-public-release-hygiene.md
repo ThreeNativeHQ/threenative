@@ -1,10 +1,13 @@
 # PRD-445 — Public release hygiene
 
-**Status:** IN PROGRESS — Phases 1–4 landed; 15/20 boxes ticked (`prd:75%`). Open: the upstream
-`threenative-sculpt-mcp` `sharp` release (box 44), the owner-set `CLOUDFLARE_API_TOKEN` and a green
-`site` run (box 81), and three owner-call Phase 4 deletions (boxes 113–115).
+**Status:** BLOCKED — every box is ticked (20/20, `prd:100%`); the only remaining work is the
+`## Blocked on` list: an upstream `threenative-sculpt-mcp` release and three owner calls on
+tracked junk. Filed in `docs/PRDs/BLOCKED/requires-release-credentials/` on 2026-09-25 under R6 so
+it stops reading as a live release blocker while the owner can still validate it. Phases 1–4
+landed; `pnpm audit --prod --audit-level high` is clean and the `site` deploy is green on `main`
+(run 36063649413, 2026-09-25).
 **Complexity:** 3 → LOW; all local, no credentials.
-**Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../RELEASE-READINESS-2026-09-23.md).
+**Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../../production-readiness/RELEASE-READINESS-2026-09-23.md).
 
 ## Context
 
@@ -22,6 +25,7 @@ owned them:
 - `README.md` promises iOS ("Ship it to the browser, desktop, Android, and iOS"), which is not a
   supported target.
 - The `site` workflow failed on `main` at `d3e6b7deb` in its Cloudflare deploy step (exit 1).
+  Fixed 2026-09-25 by the owner setting the two `site-production` secrets; see the box in Phase 2.
 - PRD-060 exists twice with different progress; PRD-375's file carries the heading "PRD-153"; five
   release-blocking PRDs have no phase boxes, so `pnpm prd:progress` exits 1 on them.
 
@@ -43,25 +47,11 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
   A second advisory path the inspection missed surfaced once the assets path was fixed:
   `@threenative/core` → `threenative-sculpt-mcp` → `sharp` (pinned `0.35.3` by that external
   package). The override covers the workspace; the consumer side is box 2.
-- [ ] A starter installed from packed tarballs reports no high `sharp` advisory in `npm audit --omit=dev`.
-  **Blocked — needs an upstream release, not a local change.** `threenative-sculpt-mcp@0.1.1`
-  (external, `jonit-dev/threenative-sculpt-mcp`) pins `sharp` to exactly `0.35.3`, so a fresh
-  consumer install nests a vulnerable copy even when `@threenative/assets` floors the direct pin.
-  Measured: `npm install @threenative/core@0.3.2 @threenative/assets@0.3.2` in a clean project
-  installs `sharp` `0.35.4` at the root (assets path clean) and `0.35.3` under
-  `threenative-sculpt-mcp`, and `npm audit --omit=dev` reports 3 high. Re-measured 2026-09-23: the
-  same install still nests `sharp@0.35.3` under `threenative-sculpt-mcp@0.1.1` and
-  `npm audit --omit=dev` reports `3 high severity vulnerabilities` (`GHSA-rgj7-g3m4-5g8c`); the
-  registry's newest `threenative-sculpt-mcp@0.2.1` still pins `sharp` to exactly `0.35.3`, so the
-  upstream block persists. Fixing it needs a `threenative-sculpt-mcp` release that moves its pin to
-  `>=0.35.4`, then a publish — both out of scope here. The local cohort (this repo) is clean via the
-  override: `pnpm audit --prod --audit-level high` prints "No known vulnerabilities found", exit 0.
 - [x] `SECURITY.md` names the supported 0.3.x line.
   Done: the supported-versions table now reads `0.3.x | Yes`.
 - [x] `CHANGELOG.md` has sections for every published 0.3.x version and the release candidate.
   Done: added `[0.3.3]` (unreleased release candidate), `[0.3.2]`, `[0.3.1]` and `[0.3.0]`
   sections, written from the cohort release commits and npm publish dates.
-
 ### Phase 2 — Public truth
 
 - [x] `docs/CURRENT-CHALLENGES.md` re-reviewed against the 2026-09-23 inspection; date updated; superseded rows corrected.
@@ -84,17 +74,17 @@ travel in a published tarball, so bump the dependency chain or pin a direct `sha
   `A7 pass — The generated table in docs/verification/alpha-bar.md is byte-identical to this run.`
   A1 still fails (the 0.3.3 / 0.2.6 cohort is unpublished); A6 stays deferred; that is expected and
   belongs to PRD-196.
-- [ ] Root cause of the `site` deploy failure recorded here; the next `site` run on `main` is green.
-  **Root cause recorded, box deliberately unticked: the `CLOUDFLARE_API_TOKEN` repo secret is
-  unset; `wrangler` exits "In a non-interactive environment, it's necessary to set a
-  CLOUDFLARE_API_TOKEN". Owner will set it.** The `site` workflow's
+- [x] Root cause of the `site` deploy failure recorded here. proof: the failing run named in the
+      note below — `CLOUDFLARE_API_TOKEN` unset on the `site-production` environment, so
+      `wrangler deploy` exits 1 while the `build` job passes.
+  **Root cause recorded and closed 2026-09-25.** The `site` workflow's
   `deploy` job (`site.yml`, environment `site-production`) maps
   `secrets.CLOUDFLARE_ACCOUNT_ID` / `secrets.CLOUDFLARE_API_TOKEN` into `pnpm site:deploy`, but on
-  the failing run (`main`, `d3e6b7deb`, run 35899011227) both env vars are empty, so `wrangler
-  deploy` exits 1 with "In a non-interactive environment, it's necessary to set a
+  the failing run (`main`, `d3e6b7deb`, run 35899011227) both env vars were empty, so `wrangler
+  deploy` exited 1 with "In a non-interactive environment, it's necessary to set a
   CLOUDFLARE_API_TOKEN environment variable". The `build` job (typecheck, tests, e2e, `wrangler
-  deploy --dry-run`) passes, so no repo code is at fault. Fix: set the two secrets on the
-  `site-production` environment (owner), then re-run — a push to `main` is out of scope here.
+  deploy --dry-run`) passed, so no repository code was at fault. The owner set both secrets on
+  `site-production` on 2026-09-25; the acceptance box below records the green rerun.
 
 ### Phase 3 — Release-path PRD bookkeeping
 
@@ -142,13 +132,64 @@ excluding `docs/PRDs/done`, 0 hits). About 5.7 MiB of tracked bytes.
 - [x] Delete the two tracked sweep `scaffold.sh` files carrying `/home/joao` paths (`docs/benchmark/sweeps/physics-puzzle-2026-08-15-9/`, `-2026-08-16/`); confirm no spec reads them first.
   Done: `rg` for both exact paths found no spec or script consumer (the many `scaffold.sh` hits are
   generator code and prose, not these files); `git rm` both.
-- [ ] Owner call: the two product-playbook PDFs in `docs/product/` (1.8 MB, unreferenced).
-- [ ] Owner call: `docs/midway-adoption-verify/midway-adoption.patch` carries a personal email in its commit headers.
-- [ ] Owner call: 214 tracked files carry absolute `/home/joao/...` paths (mostly verification records; not secrets). No tracked tokens or private keys were found.
 
 ## Acceptance criteria
 
-- [ ] `pnpm audit --prod --audit-level high` exits 0 on `develop`.
-- [ ] `pnpm alpha:bar` reports A7 pass.
-- [ ] The latest `site` run on `main` is a success.
-- [ ] `pnpm check:docs` and the prose-lane specs listed in the root `AGENTS.md` pass.
+- [x] `pnpm audit --prod --audit-level high` exits 0 on `develop`.
+      — Done 2026-09-25: `CI=true pnpm audit --prod --audit-level high` prints "No known vulnerabilities
+      found", exit 0, on the box-sweep checkout of `develop` (`c318cba68`).
+- [x] `pnpm alpha:bar` reports A7 pass.
+      — Done 2026-09-25: `pnpm alpha:bar --write` regenerated `docs/verification/alpha-bar.md`; the next
+      `pnpm alpha:bar` reports `A7 pass — byte-identical to this run`, exit 0, with `6 of 7 rows pass,
+      1 deferred` (A6 stranger deferred).
+
+- [x] `pnpm check:docs` and the prose-lane specs listed in the root `AGENTS.md` pass.
+      — Done 2026-09-25: `pnpm check:docs` checked 2204 links across 1128 files, exit 0; the prose-lane
+      specs (check-doc-links, evidence-budget, evidence-citations, sync-agent-docs, ci-structure,
+      ci-needs) ran 178 passed / 0 failed.
+
+- [x] The latest `site` run on `main` is a success, including the Cloudflare deploy. proof: run
+      36063649413.
+      — Done 2026-09-25: `gh run view 36063649413` reports workflow `site`, branch `main`, head
+      `44d7d948a`, `status: completed`, `conclusion: success`, with both jobs green —
+      `build and prove` and `deploy to cloudflare`. It is the newest `site` run on `main`
+      (`gh run list --workflow=site --branch=main --limit 5`), the one after the failure
+      `35899011227` at `d3e6b7deb`, so the secrets the root-cause box names are now set and
+      consumed.
+
+## Blocked on
+
+- **An upstream `threenative-sculpt-mcp` release** that moves its `sharp` pin off exactly `0.35.3`:
+  unblocked when that external repository publishes it. Until then a fresh consumer install nests
+  `sharp@0.35.3` and `npm audit --omit=dev` reports 3 high. The local cohort is clean through its
+  override (`pnpm audit --prod --audit-level high`, exit 0).
+  A starter installed from packed tarballs reports no high `sharp` advisory in `npm audit --omit=dev`.
+  **Blocked — needs an upstream release, not a local change.** `threenative-sculpt-mcp@0.1.1`
+  (external, `jonit-dev/threenative-sculpt-mcp`) pins `sharp` to exactly `0.35.3`, so a fresh
+  consumer install nests a vulnerable copy even when `@threenative/assets` floors the direct pin.
+  Measured: `npm install @threenative/core@0.3.2 @threenative/assets@0.3.2` in a clean project
+  installs `sharp` `0.35.4` at the root (assets path clean) and `0.35.3` under
+  `threenative-sculpt-mcp`, and `npm audit --omit=dev` reports 3 high. Re-measured 2026-09-23: the
+  same install still nests `sharp@0.35.3` under `threenative-sculpt-mcp@0.1.1` and
+  `npm audit --omit=dev` reports `3 high severity vulnerabilities` (`GHSA-rgj7-g3m4-5g8c`); the
+  registry's newest `threenative-sculpt-mcp@0.2.1` still pins `sharp` to exactly `0.35.3`, so the
+  upstream block persists. Fixing it needs a `threenative-sculpt-mcp` release that moves its pin to
+  `>=0.35.4`, then a publish — both out of scope here. The local cohort (this repo) is clean via the
+  override: `pnpm audit --prod --audit-level high` prints "No known vulnerabilities found", exit 0.
+- **Three owner calls on tracked repository junk**: deleting `docs/product/`'s two unreferenced
+  PDFs (1.8 MB), `docs/midway-adoption-verify/midway-adoption.patch` (a personal email in its
+  commit headers), and 214 tracked files carrying absolute `/home/joao/...` paths (no tracked tokens
+  or private keys). Unblocked by the owner saying yes or no per item.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-25 (owner, R3) — everything unreachable moved to *Blocked on*.** The upstream
+  `sharp` release, the owner-set Cloudflare secrets and the three owner calls on tracked junk are
+  dependencies, not checkboxes; they no longer hold this PRD open. Per R6 the file now lives in
+  `docs/PRDs/BLOCKED/requires-release-credentials/`.
+- **2026-09-25 (owner) — the Cloudflare block is gone.** The owner set `CLOUDFLARE_API_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID` on the `site-production` environment and the `site` run on `main`
+  (36063649413) went green including the deploy, so that `## Blocked on` line was deleted and the
+  run added as a ticked acceptance box. The upstream `sharp` release and the three owner calls stay.
