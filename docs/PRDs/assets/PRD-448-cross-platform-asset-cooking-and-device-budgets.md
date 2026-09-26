@@ -1,10 +1,10 @@
 # PRD-448 — Cross-Platform Asset Cooking and Device Budgets
 
-**Status:** IN PROGRESS (Phases 1–3 done)  
+**Status:** IN PROGRESS (Phases 1–4 done)  
 **Complexity:** 9 (HIGH); risk override: none.  
 **Owner:** ThreeNative maintainers; implementation owner to be assigned.  
 **Depends on:** Existing `@threenative/assets`, native packaging, and playtest infrastructure. Reuse the PRD-377 discrete-LOD contract; do not reopen or duplicate that PRD.  
-**Progress:** Phases 1–3 of 6 done (AC-1–AC-6).  
+**Progress:** Phases 1–4 of 6 done (AC-1–AC-10; AC-11 moot).  
 **Source snapshot:** `ThreeNativeHQ/threenative`, `main` at `af60e210aa500e504e9370b3657caaf8340f5650`, inspected September 25, 2026.  
 **Authorization:** Planning-only scope. Owner explicitly authorized filing this documentation directly on `develop`; this does not authorize implementation, publishing, or deployment.  
 **Filing:** `docs/PRDs/assets/PRD-448-cross-platform-asset-cooking-and-device-budgets.md` on `develop`.  
@@ -316,11 +316,11 @@ All paths below exist in the inspected tree unless explicitly marked **new**. Im
 - [x] **AC-4 [unreachable-now/local; actor: implementation agent]:** Concurrent or interrupted builds cannot publish a mixed-generation artifact. **Evidence:** E3 — every target builds into `<artifact>.staging-<pid>` and `publishStagedArtifact` renames it over the previous artifact only on success, restoring the previous one if the rename-in fails; a per-project `.threenative/build.lock` (exclusive create, pid, dead-pid reclaim) refuses a concurrent build with `TN_BUILD_BUSY`. Tests (red first each): a failing native packager and a failing Vite build leave the previous artifact byte-identical with no staging left; a live-pid lock refuses, a dead one is reclaimed; a forced rename-in failure restores the previous bytes (`templates-native.spec.ts`, `build.spec.ts`). `vitest run packages/create-threenative/__tests__/` 736/736, 2026-09-25. Known ceiling: two builds reclaiming the same dead lock in the same instant (commented `ponytail:` in build.ts).
 - [x] **AC-5 [unreachable-now/local; actor: implementation agent]:** The packaged managed payload is exactly the selected dependency closure. **Evidence:** E3 — one selector (`selectManifestAssets`) now stages desktop, Android and iOS and prunes the web outDir: a digest-named output the current manifest does not declare is dropped, manifest-declared auxiliaries and unmanaged files are kept (`runtime-native/__tests__/asset-manifest.spec.ts`, `build.spec.ts` web prune; red first — iOS staged the orphan). Proven through the real staging functions with stubbed packagers; no real APK/.app/desktop container was built here.
 - [x] **AC-6 [unreachable-now/local; actor: implementation agent]:** A configured hard artifact-byte limit is enforced against the produced artifact through the build command. **Evidence:** E3 — `artifactBudget.{artifactBytes,packagedAssetBytes}` × `warn|error` on a profile, measured on the staged artifact before publish: a limit one byte below the measured size fails `TN_BUILD_ARTIFACT_BUDGET_EXCEEDED` and leaves the previous artifact in place; `warn` prints and publishes (`templates-native.spec.ts`, red first with the measurement removed). `vitest run packages/create-threenative/__tests__/ packages/runtime-native/__tests__/asset-manifest.spec.ts packages/assets/__tests__/` 1148 passed / 2 skipped, 2026-09-25.
-- [ ] **AC-7 [unreachable-now/local; actor: implementation agent]:** The documented no-manifest source fallback continues to run the same representative game. **Evidence:** E4, pending.
-- [ ] **AC-8 [unreachable-now/local; actor: implementation agent on a supported browser adapter]:** A packaged browser fixture renders the selected representation through the ordinary asset-loading API. **Evidence:** E4, pending; GPU/adapter execution not performed here.
-- [ ] **AC-9 [shared; actor: native qualification runner]:** The same fixture consumes the selected packaged representation on one explicitly identified supported desktop OS/architecture. **Evidence:** E4, pending; record the actual target, not “all PCs.”
-- [ ] **AC-10 [shared; actor: native qualification runner]:** The same fixture consumes the decoder-safe packaged representation on Android. **Evidence:** E4, pending; emulator proves compatibility, not thermal performance.
-- [ ] **AC-11 [shared; actor: macOS/iOS qualification runner]:** The same fixture consumes the selected packaged representation in the supported iOS simulator lane. **Evidence:** E4, pending; this does not certify signed physical-device distribution.
+- [x] **AC-7 [unreachable-now/local; actor: implementation agent]:** The documented no-manifest source fallback continues to run the same representative game. **Evidence:** E4 — starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25: the same packaged web output served without `assets.manifest.json` and with the sources under `assets/` passes with `resources.assets['native-proof.png'|'native-proof.glb'].via = "source"` (WebGPU, NVIDIA Turing adapter).
+- [x] **AC-8 [unreachable-now/local; actor: implementation agent on a supported browser adapter]:** A packaged browser fixture renders the selected representation through the ordinary asset-loading API. **Evidence:** E4 — starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25: `threenative build --target web` + `vite preview`, runner `--browser-recipe webgpu --headed`: pass 6/6, png/glb `via: manifest` (`native-proof.35d75eff.png`, `native-proof.1bd4b29a.glb`), adapter `webgpu:architecture=turing|vendor=nvidia` (not SwiftShader).
+- [x] **AC-9 [shared; actor: native qualification runner]:** The same fixture consumes the selected packaged representation on one explicitly identified supported desktop OS/architecture. **Evidence:** E4 — Linux x64 only: starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25; `threenative build --target desktop` with the locally built `tn-linux` host, runner `--target desktop --executable dist-native/starter`: pass 5/5, png/glb `via: manifest`, adapter NVIDIA GeForce RTX 2080. The device copy drops `diagnostics`/`visibility` rows (browser-only kinds, fail closed on device transports). Windows/macOS not run here.
+- [x] **AC-10 [shared; actor: native qualification runner]:** The same fixture consumes the decoder-safe packaged representation on Android. **Evidence:** E4 — Android emulator `threenative_api35` (`-gpu host`), not a device: starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25; APK from `threenative build --target android --allow-source-build` with the QuickJS engine (no V8 payload on this machine) and this branch's runtime source; runner `--target android`: pass 5/5, png/glb `via: manifest` with their own decoder-free outputs (`native-proof.584fed98.png`). Compatibility only, no thermal/perf claim.
+- **AC-11 — moot.** iOS is not a supported target (owner decision 2026-09-23: web, Windows, macOS, Linux, Android). Restore this criterion if iOS support returns.
 - [ ] **AC-12 [unreachable-now/local; actor: implementation agent]:** A declared runtime-budget violation makes the real playtest invocation fail against observations from the identified artifact. **Evidence:** E5, pending.
 
 ## Execution Phases
@@ -374,7 +374,7 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 #### Phase 4: Prove unchanged loading on each supported runtime lane
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-7–AC-11  
 **Files:** `packages/core/src/assets.ts` only where provenance/validation requires it; existing loader tests; `packages/create-threenative/__tests__/scaffold.spec.ts`; `examples/native-smoke/playtests/` and representative fixture assets; native conformance registry only when adding a case.
 
@@ -382,8 +382,8 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E4 — run one production-shaped scenario separately on browser, identified desktop target, Android, and iOS simulator. Assert rendered content, required clips/nodes, shared-image resolution, and selected asset provenance. Make a valid manifest's selected output unavailable and require a load failure. Run the existing bake delete-test in its supported environment.
 
-- [ ] The consumer scenario identifies the representation actually loaded.
-- [ ] Removing a manifest-selected asset produces a visible failure rather than a hidden source fallback.
+- [x] The consumer scenario identifies the representation actually loaded. — `ctx.assets.resolved` → playtest `resources.assets[<logical>].{url,via}` on every target; see AC-8–AC-10.
+- [x] Removing a manifest-selected asset produces a visible failure rather than a hidden source fallback. — packaged web with `native-proof.35d75eff.png` deleted: verdict `pass: false`, game never boots (Vite answers the missing file with its HTML shell, so the decode fails); unit tests: missing output → `TN_ASSETS_UNRESOLVED`, rejected manifest read → `TN_ASSETS_MANIFEST_UNREADABLE` (red first). The bake delete-test was not re-run.
 
 **Checkpoint:** Pending. Native ACs remain open until their own evidence arrives; browser success does not stand in for them.
 
