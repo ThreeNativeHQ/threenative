@@ -6,9 +6,10 @@ prd_contract: v1
 
 **Status:** IN PROGRESS — 2026-09-26: the 0.3.3 cohort is published (`latest` and `next`) with its
 matching `runtime-native-v0.3.3` release, and the next-targeted clean room passed every step. The
-clean room now has a real `android` leg, and a registry-only clean room's APK was proved to carry
-the published `arm64-v8a` cohort byte-for-byte. Remaining: the `pnpm sandbox` run, and provisioning
-the `clean-room` CI runner with an Android SDK and a JDK so the new step can pass there.
+clean room now has a real `android` leg, a registry-only clean room's APK was proved to carry
+the published `arm64-v8a` cohort byte-for-byte, `pnpm sandbox` builds a desktop game from published
+packages, and the `clean-room` runner carries the JDK 17 and Android SDK the `android` step needs.
+Remaining: one hosted run — a `v*` tag push whose `clean-room` job reports `pass npm:android`.
 
 Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
 tree, and the candidate cohort is prepared and committed: eleven packages at
@@ -398,10 +399,14 @@ census test fails, and `pnpm publish:check` refuses the tree.
       — `scripts/verify-registry-install.ts:646` (`androidApkPrebuiltProofs`), `:668`
       (`assertPublishedApkPrebuilts`), `:737` (`androidStep`), `:1128` (the step).
 - [ ] The `clean-room` job provisions what the `android` step needs on the runner. proof: a
-      `push` release run whose `clean-room` job reports `pass  npm:android`. — OPEN: the
-      `ubuntu-latest` job sets neither `ANDROID_HOME` nor a JDK 17, so the step would fail there
-      until `actions/setup-android` and a JDK are added. The step is proven locally; the runner is
-      not provisioned.
+      `push` release run whose `clean-room` job reports `pass  npm:android`. — OPEN: the runner is
+      provisioned (`npm-release.yml:181` `actions/setup-java@v5` temurin 17, `:188`
+      `android-actions/setup-android@v4`, `:191` `sdkmanager "platforms;android-35"
+      "build-tools;35.0.0"`, and `:169` `timeout-minutes` 20 → 30 for the Gradle build it adds), and
+      `scripts/__tests__/ci-structure.spec.ts` asserts the provisioning precedes the verifier —
+      observed red on 2026-09-26 with the `sdkmanager` line deleted. Not yet executed: no `v*` tag
+      push has run this job since the provisioning landed, so the step is proven locally and the
+      hosted run is still the missing proof.
 
 **Wiring:**
 
@@ -533,9 +538,15 @@ above it.
       tree whose runtime version has no prebuilt release.
       — observed 2026-09-23: 70 findings — 69 `template:<name>` pin findings for the unpublished 0.3.3
       pins, plus `@threenative/runtime-native: No prebuilt release exists at .../runtime-native-v0.3.3/prebuilt-lock.json`; exit 1.
-- [ ] `pnpm sandbox` produces a sandbox in which `threenative build --target desktop` succeeds with
+- [x] `pnpm sandbox` produces a sandbox in which `threenative build --target desktop` succeeds with
       no engine source reachable. proof: `pnpm sandbox`, then `threenative build --target desktop`
-      inside the unpacked sandbox. — OPEN: not run this session.
+      inside the unpacked sandbox. — Done 2026-09-26: `pnpm sandbox --genre platformer --out
+      /tmp/opencode/prd196/sandbox` exit 0 (`platformer-game`, packed tarballs, no workspace
+      above it), then `pnpm build:desktop` in the game exit 0 writing an executable
+      `dist-native/platformer-game`. It took the published path, not a checkout:
+      `prebuilt/install-status.json` records `linux-x64` `ok:true` from
+      `.../releases/download/runtime-native-v0.3.3/prebuilt-lock.json`, the installed runtime has
+      no `CMakeLists.txt`, and `THREENATIVE_RUNTIME_SOURCE` was unset.
 
 **Integration gates:**
 
