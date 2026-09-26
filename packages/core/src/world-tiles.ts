@@ -435,18 +435,58 @@ function renderedLevel(tile: IResidentTile): ILevelGeometry | undefined {
 /**
  * What a pair's seam was reconciled against: each side's rendered level and the versions of its
  * position and normal buffers. Every writer to a level sets `needsUpdate`, which bumps the version,
- * so an unchanged signature means neither facing edge can have moved since.
+ * so an unchanged state means neither facing edge can have moved since. Numbers, not a string:
+ * this runs for every resident pair every frame (544 pairs on a 289-tile ring).
  */
-function pairSignature(pair: NeighborPair): string | undefined {
-  const [a, b] = pair;
-  const aLevel = renderedLevel(a);
-  const bLevel = renderedLevel(b);
+function pairState(pair: NeighborPair): number[] | undefined {
+  const aLevel = renderedLevel(pair[0]);
+  const bLevel = renderedLevel(pair[1]);
   if (aLevel === undefined || bLevel === undefined) return undefined;
-  const version = (level: ILevelGeometry, name: string): number =>
-    (level.geometry.getAttribute(name) as BufferAttribute).version;
-  const side = (level: ILevelGeometry): string =>
-    `${String(level.geometry.id)}:${String(version(level, "position"))}:${String(version(level, "normal"))}`;
-  return `${side(aLevel)}|${side(bLevel)}`;
+  return [...levelState(aLevel), ...levelState(bLevel)];
+}
+
+function levelState(level: ILevelGeometry): [number, number, number] {
+  const geometry = level.geometry;
+  return [
+    geometry.id,
+    (geometry.getAttribute("position") as BufferAttribute).version,
+    (geometry.getAttribute("normal") as BufferAttribute).version,
+  ];
+}
+
+/**
+ * Everything a seam observation reads: the pair's state plus the bridge's placement, parent, draw
+ * range and buffers. A diagnostic exists to catch a bridge moved, detached, emptied or rewritten,
+ * so each of those has to change this state and force a fresh observation.
+ */
+function seamState(pair: NeighborPair, bridge: IStitchBridge | undefined): number[] | undefined {
+  const state = pairState(pair);
+  if (state === undefined || bridge === undefined) return state;
+  return [...state, ...bridgeState(bridge)];
+}
+
+function bridgeState(bridge: IStitchBridge): number[] {
+  const { geometry, mesh } = bridge;
+  const index = geometry.getIndex();
+  mesh.updateMatrixWorld();
+  return [
+    mesh.id,
+    mesh.parent?.id ?? -1,
+    mesh.visible ? 1 : 0,
+    ...mesh.matrixWorld.elements,
+    geometry.id,
+    (geometry.getAttribute("position") as BufferAttribute).version,
+    index?.id ?? -1,
+    index?.version ?? -1,
+    geometry.drawRange.start,
+    geometry.drawRange.count,
+  ];
+}
+
+function sameState(a: readonly number[] | undefined, b: readonly number[] | undefined): boolean {
+  if (a === undefined || b === undefined || a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return false;
+  return true;
 }
 
 function edgeVertexHeight(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
@@ -454,16 +494,6 @@ function edgeVertexHeight(level: ILevelGeometry, side: keyof IEdgeSamples, index
   if (!Number.isFinite(value))
     throw new Error("TerrainTiles seam diagnostic edge height must be finite.");
   return value;
-}
-
-function edgeHeight(level: ILevelGeometry, side: keyof IEdgeSamples, normalized: number): number {
-  const position = Math.max(0, Math.min(1, normalized)) * (level.resolution - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(level.resolution - 1, lower + 1);
-  const mix = position - lower;
-  return (
-    edgeVertexHeight(level, side, lower) * (1 - mix) + edgeVertexHeight(level, side, upper) * mix
-  );
 }
 
 function edgeWorldVertexHeight(
@@ -1112,14 +1142,69 @@ function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
   return Math.min(aLevel.skirtDepth, bLevel.skirtDepth);
 }
 
-function bridgeCoverageAt(
+/**
+ * One edge of one level, addressed in the position buffer directly.
+ *
+ * The seam diagnostic reads two edges once per sample of every pair, four times a frame, so the
+ * per-read cost is the per-frame cost: resolving the attribute and calling `getY` per vertex was
+ * ~40% of a settled 289-tile frame. The Y of edge vertex `index` sits at `first + index * span`
+ * in the interleaved array, and stepping an edge by one vertex steps the array by `span`.
+ */
+interface IEdgeWalk {
+  readonly first: number;
+  readonly heights: Float32Array;
+  readonly resolution: number;
+  readonly span: number;
+}
+
+function edgeWalk(level: ILevelGeometry, side: keyof IEdgeSamples): IEdgeWalk {
+  const position = level.geometry.getAttribute("position");
+  const array = position.array as Float32Array;
+  const last = level.resolution - 1;
+  const first =
+    side === "north" ? 0 : side === "south" ? last * level.resolution : side === "west" ? 0 : last;
+  return {
+    first: first * 3 + 1,
+    heights: array,
+    resolution: level.resolution,
+    span: (side === "north" || side === "south" ? 1 : level.resolution) * 3,
+  };
+}
+
+function edgeWalkHeight(walk: IEdgeWalk, index: number): number {
+  const lower = walk.heights[walk.first + index * walk.span] as number;
+  if (!Number.isFinite(lower))
+    throw new Error("TerrainTiles seam diagnostic edge height must be finite.");
+  return lower;
+}
+
+/** The walk's height at `normalized`, interpolating exactly as `edgeHeight` does. */
+function edgeWalkAt(walk: IEdgeWalk, normalized: number): number {
+  const position = normalized * (walk.resolution - 1);
+  const lower = Math.floor(position);
+  const mix = position - lower;
+  const lowerValue = edgeWalkHeight(walk, lower);
+  if (mix === 0) return lowerValue;
+  return (
+    lowerValue * (1 - mix) + edgeWalkHeight(walk, Math.min(walk.resolution - 1, lower + 1)) * mix
+  );
+}
+
+/** A pair's bridge, validated and placed once so the per-sample loop only measures. */
+interface IBridgeCoverage {
+  readonly bridge: IStitchBridge;
+  readonly coarser: IBridgeEndpoint;
+  readonly finer: IBridgeEndpoint;
+  readonly position: PositionAttribute;
+}
+
+function bridgeCoverageContext(
   bridge: IStitchBridge,
   a: IResidentTile,
   aSide: keyof IEdgeSamples,
   b: IResidentTile,
   bSide: keyof IEdgeSamples,
-  normalized: number,
-): number {
+): IBridgeCoverage {
   if (bridge.mesh.geometry !== bridge.geometry)
     throw new Error("TerrainTiles seam diagnostic bridge geometry is not attached to its mesh.");
   if (!Number.isInteger(bridge.resolution) || bridge.resolution < 2)
@@ -1129,17 +1214,28 @@ function bridgeCoverageAt(
     bridge.keys[1] !== (a.key < b.key ? b.key : a.key)
   )
     throw new Error("TerrainTiles seam diagnostic bridge topology does not match its tile pair.");
-  if (!Number.isFinite(normalized))
-    throw new Error("TerrainTiles seam diagnostic bridge sample coordinate must be finite.");
   const position = validateBridgeTriangleTopology(bridge.mesh.geometry, bridge.resolution * 2);
   if (position.count !== bridge.resolution * 2)
     throw new Error("TerrainTiles seam diagnostic bridge topology has invalid coverage.");
   const [finer, coarser] = bridgeEndpointPair(a, aSide, b, bSide);
+  // Nothing inside the sample loop moves these, so deriving them per sample only repeated work:
+  // three world-matrix updates and a full revalidation of the bridge's own topology for every
+  // edge vertex of every pair, four times a frame.
   bridge.mesh.updateWorldMatrix(true, false);
   finer.level.mesh.updateWorldMatrix(true, false);
   coarser.level.mesh.updateWorldMatrix(true, false);
-  const worldPosition = new Vector3();
-  const expectedWorldPosition = new Vector3();
+  return { bridge, coarser, finer, position };
+}
+
+function bridgeCoverageAt(
+  coverage: IBridgeCoverage,
+  normalized: number,
+  worldPosition: Vector3,
+  expectedWorldPosition: Vector3,
+): number {
+  if (!Number.isFinite(normalized))
+    throw new Error("TerrainTiles seam diagnostic bridge sample coordinate must be finite.");
+  const { bridge, coarser, finer, position } = coverage;
   const samplePosition = Math.max(0, Math.min(1, normalized)) * (bridge.resolution - 1);
   const lower = Math.floor(samplePosition);
   const upper = Math.min(bridge.resolution - 1, lower + 1);
@@ -1194,10 +1290,10 @@ function bridgeCoverageAt(
       expectedWorldPosition,
     ) *
       mix;
-  const coverage = Math.abs(fine - coarse);
-  if (!Number.isFinite(coverage))
+  const covered = Math.abs(fine - coarse);
+  if (!Number.isFinite(covered))
     throw new Error("TerrainTiles seam diagnostic bridge coverage must be finite.");
-  return coverage;
+  return covered;
 }
 
 function seamObservation(
@@ -1213,34 +1309,35 @@ function seamObservation(
   if (aLevel === undefined || bLevel === undefined)
     throw new Error("TerrainTiles seam diagnostic observation has no rendered level.");
   const samples = Math.max(aLevel.resolution, bLevel.resolution);
-  const bridgeAttached =
+  const aWalk = edgeWalk(aLevel, aSide);
+  const bWalk = edgeWalk(bLevel, bSide);
+  const coverage =
     includeBridgeCoverage &&
     bridge !== undefined &&
     bridge.mesh.parent === owner &&
-    bridge.mesh.visible === true;
+    bridge.mesh.visible
+      ? bridgeCoverageContext(bridge, a, aSide, b, bSide)
+      : undefined;
+  const skirt = seamCoverageDepth(a, b);
+  const worldPosition = new Vector3();
+  const expectedWorldPosition = new Vector3();
   let gap = 0;
   let visualGap = 0;
   for (let index = 0; index < samples; index += 1) {
     const normalized = samples === 1 ? 0 : index / (samples - 1);
-    const currentGap = Math.abs(
-      edgeHeight(aLevel, aSide, normalized) - edgeHeight(bLevel, bSide, normalized),
-    );
+    const currentGap = Math.abs(edgeWalkAt(aWalk, normalized) - edgeWalkAt(bWalk, normalized));
     if (!Number.isFinite(currentGap))
       throw new Error("TerrainTiles seam diagnostic observation must be finite.");
     gap = Math.max(gap, currentGap);
-    const bridgeCoverage = bridgeAttached
-      ? bridgeCoverageAt(bridge as IStitchBridge, a, aSide, b, bSide, normalized)
-      : 0;
-    const coverage = Math.max(seamCoverageDepth(a, b), bridgeCoverage);
-    visualGap = Math.max(visualGap, Math.max(0, currentGap - coverage));
+    const covered =
+      coverage === undefined
+        ? 0
+        : bridgeCoverageAt(coverage, normalized, worldPosition, expectedWorldPosition);
+    visualGap = Math.max(visualGap, Math.max(0, currentGap - Math.max(skirt, covered)));
   }
   if (!Number.isFinite(visualGap))
     throw new Error("TerrainTiles visual seam diagnostic observation must be finite.");
   return { gap, visualGap };
-}
-
-function areNeighbors(a: IResidentTile, b: IResidentTile): boolean {
-  return Math.abs(a.tileX - b.tileX) + Math.abs(a.tileZ - b.tileZ) === 1;
 }
 
 type NeighborPair = readonly [IResidentTile, IResidentTile];
@@ -1250,16 +1347,54 @@ function neighborPairKey(pair: NeighborPair): string {
   return a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`;
 }
 
-function neighborPairs(tiles: readonly IResidentTile[]): NeighborPair[] {
+/**
+ * Every facing pair of the resident set, from the residency key map rather than from a scan of
+ * every tile against every other tile.
+ *
+ * `follow` and `process` each want this list, four times a frame, and the scan was quadratic in
+ * the resident count: 41k comparisons for the 289-tile ring a `streamRadius: 8` game streams,
+ * which is the whole per-frame regression. A tile's east and south neighbors are its only
+ * unfaced-inward partners, so two map lookups per tile enumerate each pair exactly once.
+ */
+function neighborPairs(tiles: ReadonlyMap<string, IResidentTile>): NeighborPair[] {
   const pairs: NeighborPair[] = [];
-  for (let index = 0; index < tiles.length; index += 1) {
-    const tile = tiles[index] as IResidentTile;
-    for (let neighborIndex = index + 1; neighborIndex < tiles.length; neighborIndex += 1) {
-      const neighbor = tiles[neighborIndex] as IResidentTile;
-      if (areNeighbors(tile, neighbor)) pairs.push([tile, neighbor]);
-    }
+  for (const tile of tiles.values()) {
+    const east = tiles.get(keyFor(tile.tileX + 1, tile.tileZ));
+    if (east !== undefined) pairs.push([tile, east]);
+    const south = tiles.get(keyFor(tile.tileX, tile.tileZ + 1));
+    if (south !== undefined) pairs.push([tile, south]);
   }
   return pairs;
+}
+
+function hasPendingTarget(targets: ReadonlyMap<IResidentTile, number>): boolean {
+  for (const [tile, target] of targets)
+    if (Math.min(target, tile.maxLodLevel) !== tile.lodLevel) return true;
+  return false;
+}
+
+/** Each resident tile's target level after the neighbour rule: no two neighbours two levels apart. */
+function coordinatedLevels(
+  resident: ReadonlyMap<string, IResidentTile>,
+  targets: ReadonlyMap<IResidentTile, number>,
+): Map<IResidentTile, number> {
+  const levels = new Map<IResidentTile, number>();
+  for (const tile of resident.values())
+    levels.set(tile, Math.min(targets.get(tile) ?? tile.lodLevel, tile.maxLodLevel));
+  const pairs = neighborPairs(resident);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [a, b] of pairs) {
+      const aLevel = levels.get(a) as number;
+      const bLevel = levels.get(b) as number;
+      if (Math.abs(aLevel - bLevel) <= 1) continue;
+      if (aLevel > bLevel) levels.set(a, bLevel + 1);
+      else levels.set(b, aLevel + 1);
+      changed = true;
+    }
+  }
+  return levels;
 }
 
 function neighborLodCorrection(
@@ -1366,7 +1501,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #stitchBytes = 0;
   readonly #stitches = new Map<string, IStitchBridge>();
   /** Each pair's `pairSignature` as the last reconcile left it, so a settled seam is not redone. */
-  readonly #pairSignatures = new Map<string, string>();
+  readonly #pairSignatures = new Map<string, number[]>();
+  /** The state each pair was last observed in, per coverage mode, so a settled seam is not re-measured. */
+  readonly #observedSeams = new Map<string, number[]>();
+  /** The ring state the last full seam pass left behind; `undefined` until one has run. */
+  #settledRing: number[] | undefined;
   #released = false;
   #renderer: IRendererLike | undefined;
 
@@ -1436,11 +1575,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   get residentBytes(): number {
-    return (
-      this.#topologyBytes +
-      this.#stitchBytes +
-      [...this.#resident.values()].reduce((total, tile) => total + tile.bytes, 0)
-    );
+    // Read four times a frame by the residency admission and the peak record, so it accumulates
+    // instead of materialising the resident set.
+    let total = this.#topologyBytes + this.#stitchBytes;
+    for (const tile of this.#resident.values()) total += tile.bytes;
+    return total;
   }
 
   get peakResidentTileCount(): number {
@@ -1578,9 +1717,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#updateColliders(centerX, centerZ);
     this.#applyLodTargets(targets);
     this.#coordinateNeighborLods(hadFocus);
-    this.#recordSeamDiagnostics(false);
-    this.#reconcileNeighbors();
-    this.#recordSeamDiagnostics();
+    this.#seamPass();
     this.#recordPeaks();
   }
 
@@ -1615,9 +1752,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tile.field.process(renderer);
       }
     }
-    this.#recordSeamDiagnostics(false);
-    this.#reconcileNeighbors();
-    this.#recordSeamDiagnostics();
+    this.#seamPass();
     this.#recordLodPopAfterReconciliation(lodFrame);
     this.#recordPeaks();
   }
@@ -1825,22 +1960,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * target, so a settled ring asks for the level it already has.
    */
   #applyLodTargets(targets: ReadonlyMap<IResidentTile, number>): void {
-    const levels = new Map<IResidentTile, number>();
-    for (const tile of this.#resident.values())
-      levels.set(tile, Math.min(targets.get(tile) ?? tile.lodLevel, tile.maxLodLevel));
-    const pairs = neighborPairs([...this.#resident.values()]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const [a, b] of pairs) {
-        const aLevel = levels.get(a) as number;
-        const bLevel = levels.get(b) as number;
-        if (Math.abs(aLevel - bLevel) <= 1) continue;
-        if (aLevel > bLevel) levels.set(a, bLevel + 1);
-        else levels.set(b, aLevel + 1);
-        changed = true;
-      }
-    }
+    // A ring that already holds every level it is asking for has no target to reshape: the
+    // neighbour fixpoint would return the same levels it starts from. Skipping it is what keeps a
+    // still follow point off the per-frame pair walk entirely.
+    if (!hasPendingTarget(targets)) return;
+    const levels = coordinatedLevels(this.#resident, targets);
     for (const [tile, level] of levels) if (targets.has(tile)) this.#setLodLevel(tile, level);
   }
 
@@ -1953,7 +2077,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #coordinateNeighborLods(countTransitions: boolean): void {
-    const pairs = neighborPairs([...this.#resident.values()]);
+    const pairs = neighborPairs(this.#resident);
     let changed = true;
     while (changed) {
       changed = false;
@@ -1969,14 +2093,25 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
-   * Recorded after every pair is done: reconciling one pair bumps a tile its other pairs share, and
-   * a signature taken mid-pass would mark those pairs stale forever.
+   * Recorded for the pairs this pass reconciled, after every pair is done: reconciling one pair
+   * bumps a tile its other pairs share, and a signature taken mid-pass would mark those pairs
+   * stale. A pair the pass left alone keeps the signature the settled check just compared against
+   * — taking it again would be a second signature per pair per pass for the same answer.
    */
-  #recordPairSignatures(pairs: readonly NeighborPair[]): void {
-    this.#pairSignatures.clear();
+  #recordPairSignatures(
+    pairs: readonly NeighborPair[],
+    reconciled: ReadonlySet<string>,
+    active: ReadonlySet<string>,
+  ): void {
+    for (const key of this.#pairSignatures.keys()) {
+      if (!active.has(key)) this.#pairSignatures.delete(key);
+    }
     for (const pair of pairs) {
-      const signature = pairSignature(pair);
-      if (signature !== undefined) this.#pairSignatures.set(neighborPairKey(pair), signature);
+      const key = neighborPairKey(pair);
+      if (!reconciled.has(key)) continue;
+      const state = pairState(pair);
+      if (state === undefined) this.#pairSignatures.delete(key);
+      else this.#pairSignatures.set(key, state);
     }
   }
 
@@ -1986,19 +2121,20 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * recomputed whole-tile bounds every frame for nothing. A settled stitch still counts as stitched.
    */
   #settled(key: string, pair: NeighborPair): boolean {
-    const signature = pairSignature(pair);
-    if (signature === undefined || this.#pairSignatures.get(key) !== signature) return false;
+    if (!sameState(pairState(pair), this.#pairSignatures.get(key))) return false;
     if (this.#stitches.has(key)) this.#stitchedEdges += 1;
     return true;
   }
 
   #reconcileNeighbors(): void {
-    const pairs = neighborPairs([...this.#resident.values()]);
+    const pairs = neighborPairs(this.#resident);
     const active = new Set<string>();
+    const reconciled = new Set<string>();
     for (const pair of pairs) {
       const key = neighborPairKey(pair);
       active.add(key);
       if (this.#settled(key, pair)) continue;
+      reconciled.add(key);
       const previousBytes = this.#stitches.get(key)?.bytes ?? 0;
       const bridge = reconcileNeighborPair(pair, this.#surface, this.#stitches.get(key));
       if (bridge === undefined) {
@@ -2017,7 +2153,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const key of this.#stitches.keys()) {
       if (!active.has(key)) this.#removeStitch(key);
     }
-    this.#recordPairSignatures(pairs);
+    this.#recordPairSignatures(pairs, reconciled, active);
     if (this.residentBytes > this.residentByteBudget)
       throw new TerrainTileBudgetError(
         "TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.",
@@ -2065,21 +2201,63 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
   }
 
+  /**
+   * Reconcile and observe every seam, unless nothing a seam reads changed since the last pass: the
+   * same tiles on the same rendered levels with the same buffer versions, and every bridge where it
+   * was. A settled 289-tile ring then costs one flat state compare a frame instead of walking 544
+   * pairs three times. A settled stitch still counts as stitched, as `#settled` does per pair.
+   */
+  #seamPass(): void {
+    if (sameState(this.#ringState(), this.#settledRing)) {
+      this.#stitchedEdges += this.#stitches.size;
+      return;
+    }
+    this.#recordSeamDiagnostics(false);
+    this.#reconcileNeighbors();
+    this.#recordSeamDiagnostics();
+    this.#settledRing = this.#ringState();
+  }
+
+  #ringState(): number[] {
+    const state: number[] = [];
+    for (const tile of this.#resident.values()) {
+      const level = renderedLevel(tile);
+      if (level === undefined) state.push(-1);
+      else state.push(...levelState(level));
+    }
+    for (const bridge of this.#stitches.values()) state.push(...bridgeState(bridge));
+    return state;
+  }
+
+  /**
+   * Seam gaps are running maxima, so a pair observed in exactly this state already contributed its
+   * gap: re-measuring every resident pair three times an update cost ~3 ms a frame on a 289-tile
+   * ring for the same numbers. Only pairs whose levels or bridge changed are observed again.
+   */
   #recordSeamDiagnostics(includeBridgeCoverage = true): void {
-    const tiles = [...this.#resident.values()];
-    for (const tile of tiles) {
-      for (const neighbor of tiles) {
-        if (tile.key >= neighbor.key || !areNeighbors(tile, neighbor)) continue;
-        const { gap, visualGap } = seamObservation(
-          tile,
-          neighbor,
-          this.#stitches.get(neighborPairKey([tile, neighbor])),
-          this,
-          includeBridgeCoverage,
-        );
-        this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
-        this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
-      }
+    const live = new Set<string>();
+    for (const pair of neighborPairs(this.#resident)) {
+      const key = neighborPairKey(pair);
+      const bridge = this.#stitches.get(key);
+      const observedKey = includeBridgeCoverage ? `${key}|coverage` : key;
+      live.add(observedKey);
+      const state = seamState(pair, bridge);
+      if (sameState(state, this.#observedSeams.get(observedKey))) continue;
+      if (state === undefined) this.#observedSeams.delete(observedKey);
+      else this.#observedSeams.set(observedKey, state);
+      const { gap, visualGap } = seamObservation(
+        pair[0],
+        pair[1],
+        bridge,
+        this,
+        includeBridgeCoverage,
+      );
+      this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
+      this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
+    }
+    for (const key of this.#observedSeams.keys()) {
+      const coverage = key.endsWith("|coverage");
+      if (coverage === includeBridgeCoverage && !live.has(key)) this.#observedSeams.delete(key);
     }
   }
 

@@ -536,6 +536,9 @@ describe("TerrainTiles", () => {
     const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
     for (let row = 0; row < resolution; row += 1)
       position.setY(row * resolution + resolution - 1, Number.NaN);
+    // Written the way any writer that reaches the screen writes: a buffer change the renderer is
+    // told about. A settled ring skips its seam pass until some rendered buffer's version moves.
+    position.needsUpdate = true;
 
     try {
       expect(() => tiles.process()).toThrow(/seam diagnostic.*finite|invalid.*seam/u);
