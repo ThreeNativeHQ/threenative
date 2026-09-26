@@ -106,6 +106,21 @@ export interface IRenderPerformanceSample extends IRenderPerformanceMetrics {
 
 const MAX_RENDER_PERFORMANCE_SAMPLES = 1_024;
 
+/**
+ * How many fixed steps a frozen clock runs once, before the run's first observation.
+ *
+ * This is the settling the boot used to do by accident, counted instead of measured. Live frames
+ * during the startup compile wait advanced the simulation at whatever rate the machine managed —
+ * 59 ticks before the first sample on a quiet one, thousands on a loaded one — and games leaned on
+ * that: the platformer character captures its visual-attachment baseline on its first grounded
+ * contact, so a run that started at tick 0 read `visualAttached: false` where a run that started at
+ * tick 59 read `true`, from the same build. A fixed count is the same settling with the machine out
+ * of it, and one second is what the quiet machine actually delivered. A run's own steps are
+ * unaffected: this happens once, before the runner takes its first tick, and `#tick` counts it, so
+ * the report says how old the simulation is.
+ */
+const FROZEN_SETTLE_STEPS = 60;
+
 export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
@@ -120,6 +135,9 @@ export class FixedStepLoop {
   #frameHandle: number | undefined;
   #running = false;
   #held = false;
+  #clockFrozen = false;
+  #primePending = false;
+  #settleSteps = FROZEN_SETTLE_STEPS;
   #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
@@ -206,11 +224,54 @@ export class FixedStepLoop {
   setHeld(held: boolean): void {
     this.#held = held;
   }
+  /**
+   * Stop the live clock: from here a rendered frame draws and simulates nothing, and banks no
+   * time. `advance()` is then the only thing that moves the simulation.
+   *
+   * This is the whole-run form of the hold above, and it exists because the hold is undone by the
+   * first tick while the clock is not. A tick-counting playtest run banks real wall-clock seconds
+   * into the same simulation its ticks measure: the runner pumps live frames for the rAF warmup
+   * and then for the whole startup wait -- compile settlement is 30s+ on a software adapter and
+   * is itself a function of how loaded the machine is -- and every one of those frames advanced
+   * the game. Measured on the racing template's `racing-finish-behind-rival-is-dnf`: 164 ticks
+   * (2.73s of race time) elapsed before the scenario pressed a key on a fast machine with a real
+   * GPU, and that scenario's third lap lands at 47.0s against a 90s in-game race limit, so the
+   * 42.7s of headroom is spent by boot time rather than by the scenario. The same scenario then
+   * fails its `completedLaps` assertion on a loaded runner and passes on a quiet one, from the
+   * same build. Idempotent, and implied by `advance()`.
+   *
+   * Frozen stops *time*, not the frame function: the loop still settles the world with a fixed
+   * number of steps — see `#primeFrame`. A game lays out per-frame state in `update` (action-rpg's
+   * touch overlay places itself against the viewport there and is parented to the camera), and a
+   * run reads its first observation before it takes its first tick, so a freeze that skipped
+   * updates outright left that state at its constructed pose: the overlay sat on the camera's own
+   * origin and `point.project` divided by a zero w, which is `NaN` bounds in the entity observation
+   * and took the scenario down before it asserted anything.
+   *
+   * @param settleSteps Fixed steps to run once the loop is live. Defaults to one second; zero
+   *   leaves the world exactly as the game built it.
+   */
+  freezeClock(settleSteps = FROZEN_SETTLE_STEPS): void {
+    // Armed by the *transition* into frozen, so `advance()` — which implies the freeze — does not
+    // re-arm it and spend a settling pass after every tick-counted step the runner takes.
+    if (!Number.isInteger(settleSteps) || settleSteps < 0)
+      throw new Error("settleSteps must be a non-negative integer.");
+    if (!this.#clockFrozen) this.#primePending = true;
+    this.#clockFrozen = true;
+    this.#settleSteps = settleSteps;
+    this.#lastTime = Number.POSITIVE_INFINITY;
+  }
+  /** True once the live clock no longer drives the simulation. */
+  get clockFrozen(): boolean {
+    return this.#clockFrozen;
+  }
   readonly tick = (): number => this.#tick;
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
     this.#running = true;
-    this.#lastTime = now;
+    // A freeze asked for before the loop ran outranks the start timestamp, or a playtest bridge
+    // that installs first would be undone by the boot it is supposed to cover.
+    this.#lastTime = this.#clockFrozen ? Number.POSITIVE_INFINITY : now;
     this.#lastRenderTime = undefined;
     this.#tick = 0;
     this.#fps = 0;
@@ -226,12 +287,13 @@ export class FixedStepLoop {
   }
 
   #advanceSimulation(now: number): number {
-    if (this.#held) {
+    if (this.#held || this.#clockFrozen) {
       // The whole accumulate-and-update block is skipped rather than just the callback: `#tick`
       // advances inside that loop, and a held frame that moved the tick would break the
       // determinism contract every playtest hold depends on. The clock still moves forward so
       // the hold banks no time.
       this.#lastTime = Math.max(this.#lastTime ?? now, now);
+      this.#primeFrame();
       return 0;
     }
     const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
@@ -247,6 +309,32 @@ export class FixedStepLoop {
     }
     if (updates === this.maxSteps && this.#accumulator >= this.step) this.#accumulator = 0;
     return updates;
+  }
+
+  /**
+   * Settle the world once, on the first live frame after the clock froze.
+   *
+   * `freezeClock` means the wall clock stops moving the simulation, not that the game stops being
+   * called: a scene computes per-frame state in `update` — action-rpg's touch overlay measures the
+   * viewport and parents itself to the camera there — and a playtest run reads its first
+   * observation before it takes its first tick. Without this pass that state is still whatever its
+   * constructor left it, which for a camera-parented overlay is a 72-unit ring sitting on the
+   * camera's own origin: `point.project` divides by a zero `w`, and the observation the run reads
+   * carries `NaN` bounds, which takes the scenario down before it asserts anything.
+   *
+   * It is `advance()` over a fixed count, so it is a tick-counted settle rather than a timed one:
+   * what it costs is a constant no machine speed can change, and `#tick` moves with it, because the
+   * simulation really is that many steps old and the run's report should say so. `FROZEN_SETTLE_STEPS`
+   * is where the count comes from.
+   *
+   * A held boot frame cannot spend it: the scene has not entered yet, so there is nothing of the
+   * game's to settle, and the arm survives the hold to fire when the loop is genuinely live. Once,
+   * because a second pass would repeat input edge detection and per-frame bookkeeping for nothing.
+   */
+  #primeFrame(): void {
+    if (!this.#primePending || this.#held) return;
+    this.#primePending = false;
+    if (this.#settleSteps > 0) this.advance(this.#settleSteps);
   }
 
   #recordFrameTiming(now: number): number | undefined {
@@ -321,6 +409,12 @@ export class FixedStepLoop {
     if (!this.#running) throw new Error("Cannot advance a stopped loop.");
     if (!Number.isInteger(ticks) || ticks <= 0)
       throw new Error("advance ticks must be a positive integer.");
+    // Driving one tick is a statement that the run counts ticks, so it also stops the live clock
+    // racing it. `freezeClock()` exists for the frames *before* that statement, which is where a
+    // boot's wall clock used to reach the simulation. The prime is not armed from here: this line
+    // has just delivered a real update, so the game has had its pass, and arming it would spend
+    // one more zero-dt update after every step a run counts.
+    this.#clockFrozen = true;
     this.#lastTime = Number.POSITIVE_INFINITY;
     for (let index = 0; index < ticks; index += 1) {
       this.#onUpdate(this.step);

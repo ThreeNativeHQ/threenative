@@ -850,6 +850,87 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("freezes the live clock for an announced runner, so live frames cannot advance the run", async () => {
+    // The runner holds the boot and then pumps live frames through the startup compile wait.
+    // Every one of those frames used to run `onUpdate` off wall clock, so a tick-counting
+    // scenario began with game time it never asked for: racing's 3-lap outcome needs 47s of a
+    // 90s limit and DNFs early when the loaded startup wait spends the rest. The announcement is
+    // the switch, and the manual clock stays the only thing that moves the simulation.
+    const host = globalThis as Record<string, unknown>;
+    const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
+    host.TN_PLAYTEST_ENDPOINT = "native://test-mailbox";
+    let updates = 0;
+    const dts: number[] = [];
+    const canvas = testCanvas();
+    const callbacks: Array<(time: number) => void> = [];
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: () => undefined,
+    });
+    class CountingScene extends Scene {
+      override update(_ctx: unknown, dt: number): void {
+        updates += 1;
+        dts.push(dt);
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: false })],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          info: { render: { calls: 0, drawCalls: 0, triangles: 0 } },
+          render: () => undefined,
+          setSize: () => undefined,
+          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+        }),
+      },
+      scenes: { test: CountingScene },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      // Two seconds of live frames: 120 updates if the wall clock still drove the loop. What is
+      // left is the frozen clock's fixed settling pass, so the scene still lays out its per-frame
+      // state — a game whose camera-parented overlay is placed in `update` reads `NaN` bounds
+      // without it — and no real second reaches the simulation.
+      for (let i = 0; i < 120; i++) callbacks.shift()?.(i * 16.6667);
+      expect(updates).toBe(60);
+      expect(new Set(dts)).toEqual(new Set([1 / 60]));
+
+      // The runner's own advance is what moves the simulation from here.
+      await bridge().advance?.(3);
+      expect(updates).toBe(63);
+      for (let i = 120; i < 240; i++) callbacks.shift()?.(i * 16.6667);
+      expect(updates).toBe(63);
+    } finally {
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
+      else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
   it("fails the held start immediately when setup application fails", async () => {
     let entered = false;
     class FailingSetupScene extends Scene {

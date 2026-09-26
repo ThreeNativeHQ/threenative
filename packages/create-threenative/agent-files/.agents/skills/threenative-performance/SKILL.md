@@ -21,11 +21,11 @@ not writing a transform saved 7.35 ms on 1,561 objects where `markStatic(root)` 
 ## Use the shipped defaults
 
 The engine prepares transforms, batches, culls, scales resolution and cooks assets;
-read `agent-docs/performance-basics.md` before hand-rolling any.
+read `node_modules/create-threenative/agent-docs/references/performance-basics.md` before hand-rolling any.
 Unexecuted platforms stay unverified; never invent numbers.
 Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. Bounded proof:
 `{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`,
-defined in `agent-docs/assertion-reference.md#performance`; pass bounds fail closed without a
+defined in `node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance`; pass bounds fail closed without a
 per-pass split.
 
 |Tier|Measure|Floor|Target|
@@ -52,7 +52,7 @@ per-pass split.
 |4|Whole-device-current|—|report;not-gated|
 
 Android: budget a ~500 MiB driver floor before textures; a dual-use equirectangular
-environment adds ~48 MiB: `agent-docs/mobile-memory-budget.md`.
+environment adds ~48 MiB: `node_modules/create-threenative/agent-docs/references/mobile-memory-budget.md`.
 
 Name the hot function: `--cpu-prof <file>` (native, or a browser/desktop playtest) writes a
 DevTools `.cpuprofile`.
