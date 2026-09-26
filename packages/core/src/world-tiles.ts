@@ -27,7 +27,8 @@ export interface IWorldTileColliderInput {
 
 export interface IWorldTile {
   readonly bytes: number;
-  readonly collider: IWorldTileCollider;
+  /** `undefined` for a resident tile outside `colliderRadius`, or when no factory was given. */
+  readonly collider: IWorldTileCollider | undefined;
   readonly field: Heightfield;
   readonly key: string;
   readonly lod: LOD;
@@ -56,6 +57,12 @@ export interface IWorldTilesOptions {
   readonly assets?: Pick<IAssetLoader, "release">;
   /** A game-owned, already-loaded logical model key, or a key resolver per tile. */
   readonly assetKey?: string | ((tileX: number, tileZ: number) => string);
+  /**
+   * Chebyshev radius, in tiles from the followed one, that gets a `createCollider` body. Defaults
+   * to `streamRadius`, so every resident tile collides. A smaller radius keeps a wide render ring
+   * cheap to simulate: a tile crossing the radius has its collider created or disposed as it goes.
+   */
+  readonly colliderRadius?: number;
   /** Creates the physics body from the field's explicit collider-order copy. */
   readonly createCollider?: (input: IWorldTileColliderInput) => IWorldTileCollider;
   /** TSL pass options are game supplied and are forwarded to each resident field. */
@@ -97,6 +104,7 @@ interface IEdgeSamples {
 
 interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly assetKey?: string;
+  collider: IWorldTileCollider | undefined;
   readonly levels: readonly ILevelGeometry[];
   lodTransition?: ILodTransition;
   lodLevel: number;
@@ -1319,7 +1327,7 @@ function setManualLodLevel(lod: LOD, level: number): void {
  * @alias stream terrain across chunks
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
- * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets
+ * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, and budgets
  * @example const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
  */
 export class TerrainTiles extends Object3D implements IComputeDriven {
@@ -1331,6 +1339,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly processCadence = "render" as const;
   readonly #assets: Pick<IAssetLoader, "release"> | undefined;
   readonly #assetKey: IWorldTilesOptions["assetKey"];
+  readonly #colliderRadius: number;
   readonly #createCollider: IWorldTilesOptions["createCollider"];
   readonly #factors: readonly number[];
   readonly #lodDistances: readonly number[];
@@ -1369,6 +1378,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.residentByteBudget = integerAtLeast(options.residentByteBudget, 1, "residentByteBudget");
     this.skirtDepth = positive(options.skirtDepth ?? this.tileSize, "skirtDepth");
     this.#streamRadius = integerAtLeast(options.streamRadius ?? 1, 0, "streamRadius");
+    this.#colliderRadius = integerAtLeast(
+      options.colliderRadius ?? this.#streamRadius,
+      0,
+      "colliderRadius",
+    );
     this.#surface = options.surface;
     if (options.surface === undefined || options.surface === null)
       throw new Error("TerrainTiles surface is required and must be game-owned.");
@@ -1542,7 +1556,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           );
         continue;
       }
-      const tile = this.#createTile(candidate.tileX, candidate.tileZ, candidate.distance);
+      const tile = this.#createTile(
+        candidate.tileX,
+        candidate.tileZ,
+        candidate.distance,
+        this.#wantsCollider(candidate.tileX, candidate.tileZ, centerX, centerZ),
+      );
       if (this.residentBytes + tile.bytes > this.residentByteBudget) {
         this.#disposeTile(tile);
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
@@ -1556,6 +1575,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#recordPeaks();
     }
     this.#recordPeaks();
+    this.#updateColliders(centerX, centerZ);
     this.#applyLodTargets(targets);
     this.#coordinateNeighborLods(hadFocus);
     this.#recordSeamDiagnostics(false);
@@ -1689,7 +1709,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return Heightfield.fromSampler(sampler);
   }
 
-  #createTile(tileX: number, tileZ: number, distance: number): IResidentTile {
+  #createTile(
+    tileX: number,
+    tileZ: number,
+    distance: number,
+    withCollider: boolean,
+  ): IResidentTile {
     const origin = { x: tileX * this.tileSize, z: tileZ * this.tileSize };
     const assetKey =
       this.#assetKey === undefined
@@ -1722,8 +1747,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         mesh.frustumCulled = true;
       });
       collider =
-        this.#createCollider?.({ field, key: keyFor(tileX, tileZ), object: lod, tileX, tileZ }) ??
-        new EmptyCollider();
+        this.#createCollider === undefined
+          ? new EmptyCollider()
+          : withCollider
+            ? this.#createCollider({ field, key: keyFor(tileX, tileZ), object: lod, tileX, tileZ })
+            : undefined;
       const bytes =
         levels.reduce((total, level) => total + estimatedLevelBytes(level.resolution), 0) +
         field.memoryBytes;
@@ -1752,6 +1780,38 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       for (const level of levels) level.geometry.dispose();
       field.detach();
       throw error;
+    }
+  }
+
+  /** Whether a tile this far from the followed one is inside `colliderRadius`. */
+  #wantsCollider(tileX: number, tileZ: number, centerX: number, centerZ: number): boolean {
+    return Math.max(Math.abs(tileX - centerX), Math.abs(tileZ - centerZ)) <= this.#colliderRadius;
+  }
+
+  /**
+   * Bring every resident tile's collider in line with `colliderRadius`: a tile that entered it gets
+   * a body, one that left disposes the body it had. That is the whole cost control — a wide
+   * `streamRadius` renders the ground out to the horizon while physics only ever covers the tiles a
+   * player can reach — and it needs no per-tile bookkeeping because residency already walks the
+   * resident set on every `follow`.
+   */
+  #updateColliders(centerX: number, centerZ: number): void {
+    if (this.#createCollider === undefined) return;
+    for (const tile of this.#resident.values()) {
+      const wanted = this.#wantsCollider(tile.tileX, tile.tileZ, centerX, centerZ);
+      if (wanted === (tile.collider !== undefined)) continue;
+      if (!wanted) {
+        tile.collider?.dispose();
+        tile.collider = undefined;
+        continue;
+      }
+      tile.collider = this.#createCollider({
+        field: tile.field,
+        key: tile.key,
+        object: tile.lod,
+        tileX: tile.tileX,
+        tileZ: tile.tileZ,
+      });
     }
   }
 
@@ -2038,14 +2098,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (this.#resident.get(tile.key) === tile) this.#resident.delete(tile.key);
     this.#removeStitchesForTile(tile.key);
     this.remove(tile.lod);
-    tile.collider.dispose();
+    tile.collider?.dispose();
     tile.field.detach();
     for (const level of tile.levels) level.geometry.dispose();
     this.#releaseAsset(tile);
   }
 
   #disposeTile(tile: IResidentTile): void {
-    tile.collider.dispose();
+    tile.collider?.dispose();
     tile.field.detach();
     for (const level of tile.levels) level.geometry.dispose();
     tile.lod.removeFromParent();

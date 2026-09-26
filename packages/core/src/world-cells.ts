@@ -7,6 +7,7 @@ import {
   Mesh,
   Object3D,
   Quaternion,
+  SkinnedMesh,
   Vector3,
 } from "three";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
@@ -50,6 +51,18 @@ export interface IWorldCellsTerrainOptions {
   readonly lodFactors?: readonly number[];
   readonly lodDistances?: readonly number[];
   readonly skirtDepth?: number;
+  /**
+   * Tiles kept resident around the follow tile, independent of the cell `ring`: terrain can reach
+   * to the horizon while props stay near. Defaults to `ring`, so raising only this widens the
+   * ground without widening the props, and the far tiles take the coarser `lodDistances` levels.
+   */
+  readonly streamRadius?: number;
+  /**
+   * Tiles that get a `createCollider` body, by Chebyshev radius from the follow tile. Defaults to
+   * `ring`. A tile entering or leaving it creates or disposes its collider, so a wide terrain
+   * radius does not have to mean a physics body for every tile in it.
+   */
+  readonly colliderRadius?: number;
 }
 
 export interface IWorldCellsLoadOptions {
@@ -75,6 +88,13 @@ export interface IWorldCellsLoadOptions {
   readonly ring: number;
   readonly budgets: IWorldCellsBudget;
   readonly terrain?: IWorldCellsTerrainOptions;
+  /**
+   * How a scattered part whose own material is `transparent` is drawn. `"cutout"` (the default)
+   * gives the part a clone of that material with `transparent: false` and an `alphaTest`, so the
+   * instanced draw needs no per-instance sorting and the depth buffer rejects what is behind it;
+   * `"blend"` draws the material as authored. One clone per asset part, never per cell.
+   */
+  readonly transparentScatter?: "cutout" | "blend";
   /**
    * `(url) => Promise<Object3D>`, overriding `assets.model`; a raw `GLTFLoader` or a game's own
    * loader works. The url is the authored one, so a compiled package wants `assets` instead.
@@ -130,10 +150,15 @@ interface IResidentCell {
   readonly chunks: Object3D[];
 }
 
-/** One level's drawable shape, read out of the level's own GLB. */
-interface IAssetLevel {
+/** One drawable part of one level, read out of the level's own GLB. */
+interface IAssetPart {
   readonly geometry: BufferGeometry;
+  /** The mesh's transform relative to the model root, composed into every instance matrix. */
+  readonly local: Matrix4;
+  /** The surface the batch draws with: the part's own material, or its cutout clone. */
   readonly material: Material;
+  /** Every surface this part owns and releases with the asset: its own, and any clone made. */
+  readonly owned: readonly Material[];
 }
 
 interface IAssetState {
@@ -151,10 +176,10 @@ interface IAssetState {
   pending: boolean;
   disposed: boolean;
   /**
-   * One level per entry in `glbs`, so a level that failed to load reuses the level below it and the
-   * batch builder never has to know a level is missing.
+   * One part list per entry in `glbs`, so a level that failed to load reuses the level below it and
+   * the batch builder never has to know a level is missing.
    */
-  levels: readonly IAssetLevel[];
+  levels: readonly (readonly IAssetPart[])[];
 }
 
 interface IWorldCellsInit extends IWorldCellsLoadOptions {
@@ -242,17 +267,74 @@ async function fetchOk(url: string): Promise<Response> {
   return response;
 }
 
-function firstRenderable(
+/**
+ * The alpha threshold a cutout gets when the part's own material names none. ponytail: a fixed
+ * 0.5, because the cutout point is authored data a GLB carries per texture and nothing reads it
+ * here. A tree whose needles visibly dither at 0.5 wants a lower one — give
+ * `transparentScatter` a third mode carrying a threshold when that is worth a knob.
+ */
+const DEFAULT_CUTOUT_ALPHA = 0.5;
+
+/**
+ * The surface a scattered part draws with, and the clone this class owns when it made one.
+ *
+ * An `InstancedMesh` cannot sort its instances, so a `transparent` material on scattered foliage
+ * draws in submission order — wrong against itself, and overdraw on top of it. A cutout keeps the
+ * part's own alpha shape, keeps the depth buffer, and lets the draw reject what is behind it. The
+ * GLB's material is never mutated: the clone is per asset part, so every cell batch of the asset
+ * shares one and a game that still wants blending asks for it.
+ */
+function scatterMaterial(
+  material: Material,
+  transparentScatter: "cutout" | "blend",
+): { readonly material: Material; readonly owned: readonly Material[] } {
+  if (transparentScatter === "blend" || !material.transparent)
+    return { material, owned: [material] };
+  const cutout = material.clone();
+  cutout.transparent = false;
+  cutout.depthWrite = true;
+  cutout.alphaTest = material.alphaTest > 0 ? material.alphaTest : DEFAULT_CUTOUT_ALPHA;
+  // `transparent` is a program key in three, so the clone needs its own compile.
+  cutout.needsUpdate = true;
+  // The authored material is owned too: the batch draws the clone, and the GLB's own surface is
+  // still this asset's to hand back.
+  return { material: cutout, owned: [material, cutout] };
+}
+
+/**
+ * Every drawable part of a loaded model: one per `Mesh`, each with its shape, its surface, and
+ * where it sits relative to the model root.
+ *
+ * A GLB authored as a tree — bark `OPAQUE`, needles `BLEND` — is one node carrying one mesh with
+ * two primitives, which three loads as a `Group` of one child `Mesh` per primitive. Taking only the
+ * first of those drew 62k bare trunks, so every one of them is a part and each keeps its own
+ * material.
+ *
+ * `SkinnedMesh` is skipped deliberately: its vertices are posed per frame from a skeleton, and one
+ * `InstancedMesh` of the geometry would draw the rest pose once per placement. `Points` and
+ * `LineSegments` are not `Mesh`es and are skipped with them.
+ */
+function renderableParts(
   model: Object3D,
-): { geometry: BufferGeometry; material: Material } | undefined {
-  let found: { geometry: BufferGeometry; material: Material } | undefined;
+  transparentScatter: "cutout" | "blend",
+): readonly IAssetPart[] {
+  model.updateMatrixWorld(true);
+  const rootInverse = new Matrix4().copy(model.matrixWorld).invert();
+  const local = new Matrix4();
+  const parts: IAssetPart[] = [];
   model.traverse((object: Object3D) => {
-    if (found !== undefined || !(object instanceof Mesh)) return;
+    if (object instanceof SkinnedMesh || !(object instanceof Mesh)) return;
     const material = Array.isArray(object.material) ? object.material[0] : object.material;
-    if (object.geometry !== undefined && material !== undefined)
-      found = { geometry: object.geometry, material };
+    if (object.geometry === undefined || material === undefined) return;
+    const drawn = scatterMaterial(material, transparentScatter);
+    parts.push({
+      geometry: object.geometry,
+      local: local.multiplyMatrices(rootInverse, object.matrixWorld).clone(),
+      material: drawn.material,
+      owned: drawn.owned,
+    });
   });
-  return found;
+  return parts;
 }
 
 function disposeModel(model: Object3D): number {
@@ -416,10 +498,14 @@ class ModelLoadLimiter {
  * Stream a Blender-authored world package by cell and keep it resident around a followed point.
  *
  * The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per
- * resident cell asset run and distance level, and loads hand-placed chunk GLBs through `loadAll` +
- * `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels,
- * hard budgets and generation-tokened cancellation all live here; every geometry, material and
- * surface still comes from the package's GLBs and the game.
+ * resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through
+ * `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods`
+ * levels, hard budgets and generation-tokened cancellation all live here; every geometry, material
+ * and surface still comes from the package's GLBs and the game.
+ *
+ * An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch`
+ * each, and a scattered part whose own material is transparent draws as an alpha cutout unless the
+ * game asks for blending, because an `InstancedMesh` cannot sort its instances.
  *
  * @situation stream a large Blender-authored world by cell instead of one huge GLB
  * @situation keep scattered props and hand-placed chunks resident around a moving player
@@ -428,7 +514,8 @@ class ModelLoadLimiter {
  * @constraint budgets are hard caps that report pressure instead of over-committing
  * @constraint model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
- * @override ring, budgets, terrain tile size/resolution, load `concurrency`, `rebuildsPerUpdate` and the package's per-asset maxDistance
+ * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
+ * @override ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate` and the package's per-asset maxDistance
  * @example
  * const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
  * scene.add(world);
@@ -450,6 +537,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #rebuildsPerUpdate: number;
   readonly #ring: number;
   readonly #terrain: TerrainTiles;
+  readonly #transparentScatter: "cutout" | "blend";
   readonly #baseUrl: string;
   readonly #logicalBase: string;
   readonly #assets = new Map<string, IAssetState>();
@@ -458,6 +546,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #rotation = new Quaternion();
   readonly #scale = new Vector3();
   readonly #matrix = new Matrix4();
+  readonly #instance = new Matrix4();
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
   #instances = 0;
   #bytes = 0;
@@ -490,18 +579,33 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#limiter = new ModelLoadLimiter(
       positiveInteger(init.concurrency ?? DEFAULT_CONCURRENCY, "concurrency"),
     );
-    const tileCount = (2 * this.#ring + 1) ** 2;
+    this.#transparentScatter = init.transparentScatter ?? "cutout";
+    if (this.#transparentScatter !== "cutout" && this.#transparentScatter !== "blend")
+      throw new Error("WorldCells transparentScatter must be 'cutout' or 'blend'.");
+    // Terrain can reach further than the props do, so its radius is its own option; the collider
+    // radius stays on the ring, which is how far a player can actually walk into this world.
+    const streamRadius = nonNegativeInteger(
+      init.terrain?.streamRadius ?? this.#ring,
+      "terrain.streamRadius",
+    );
+    const colliderRadius = nonNegativeInteger(
+      init.terrain?.colliderRadius ?? this.#ring,
+      "terrain.colliderRadius",
+    );
+    const tileCount = (2 * streamRadius + 1) ** 2;
     this.#terrain = new TerrainTiles({
-      ...(init.createCollider === undefined ? {} : { createCollider: init.createCollider }),
+      ...(init.createCollider === undefined
+        ? {}
+        : { colliderRadius, createCollider: init.createCollider }),
       ...(init.terrain?.lodDistances === undefined
         ? {}
         : { lodDistances: init.terrain.lodDistances }),
       ...(init.terrain?.lodFactors === undefined ? {} : { lodFactors: init.terrain.lodFactors }),
       ...(init.terrain?.skirtDepth === undefined ? {} : { skirtDepth: init.terrain.skirtDepth }),
-      // Sized from the ring: the wanted square fits the tile budget. ponytail: no terrain byte
-      // cap (a tile's bytes are deterministic from the ring, and the cells own the memory
-      // budget); give `TerrainTiles` its own byte budget when terrain is not ring-bounded. A
-      // tile that still cannot fit is caught in `update` and reported as pressure.
+      // Sized from the terrain stream radius: the wanted square fits the tile budget. ponytail: no
+      // terrain byte cap (a tile's bytes are deterministic from the radius, and the cells own the
+      // memory budget); give `TerrainTiles` its own byte budget when terrain is not radius-bounded.
+      // A tile that still cannot fit is caught in `update` and reported as pressure.
       residentByteBudget: Number.MAX_SAFE_INTEGER,
       residentTileBudget: tileCount,
       sampleHeight: heightSamplerFromHeightmap(
@@ -509,7 +613,7 @@ export class WorldCells extends Group implements IComputeDriven {
         init.manifest.extent,
         init.heightmap,
       ),
-      streamRadius: this.#ring,
+      streamRadius,
       surface: init.surface,
       tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
       tileSize: init.terrain?.tileSize ?? this.#cellSize,
@@ -775,31 +879,35 @@ export class WorldCells extends Group implements IComputeDriven {
     });
   }
 
-  /** The level one loaded model draws with, or `undefined` when it carries nothing to draw. */
-  #levelOf(model: Object3D | undefined): IAssetLevel | undefined {
+  /** One loaded model's drawable parts, or `undefined` when it carries nothing to draw. */
+  #partsOf(model: Object3D | undefined): readonly IAssetPart[] | undefined {
     if (model === undefined) return undefined;
-    const renderable = firstRenderable(model);
-    if (renderable === undefined) {
+    const parts = renderableParts(model, this.#transparentScatter);
+    if (parts.length === 0) {
       // Same as a refused load: counted, released, and the next acquire retries.
       this.#failures += 1;
       this.#failures += disposeModel(model);
       return undefined;
     }
-    return { geometry: renderable.geometry, material: renderable.material };
+    return parts;
   }
 
   /**
-   * One level per loaded model: level 0 is the asset's own shape, and every level below it falls
-   * back to the one above when it did not load. `undefined` is the asset refusing to exist — no
-   * `lod0` to fall back to — and the levels that did load are released rather than held by an asset
-   * that draws nothing. The refcounted state stays either way, so the next acquire retries.
+   * One part list per loaded model: level 0 is the asset's own shape, and every level below it
+   * falls back to the one above when it did not load. `undefined` is the asset refusing to exist —
+   * no `lod0` to fall back to — and the levels that did load are released rather than held by an
+   * asset that draws nothing, cutout clones included. The refcounted state stays either way, so the
+   * next acquire retries.
    */
-  #adoptLevels(models: readonly (Object3D | undefined)[]): readonly IAssetLevel[] | undefined {
-    const levels: IAssetLevel[] = [];
+  #adoptLevels(
+    models: readonly (Object3D | undefined)[],
+  ): readonly (readonly IAssetPart[])[] | undefined {
+    const levels: (readonly IAssetPart[])[] = [];
     for (const [index, model] of models.entries()) {
-      const level = this.#levelOf(model) ?? levels[index - 1];
+      const level = this.#partsOf(model) ?? levels[index - 1];
       if (level === undefined) {
         this.#failures += disposeModels(models.slice(index));
+        for (const parts of levels) this.#failures += this.#releaseParts(parts);
         return undefined;
       }
       levels.push(level);
@@ -829,11 +937,15 @@ export class WorldCells extends Group implements IComputeDriven {
     const filterX = this.#follow.position.x;
     const filterZ = this.#follow.position.z;
     const inner = cullDistance(asset.definition.maxDistance);
-    // One batch per level, so a placement is filtered and drawn together and an emptied level
-    // costs one missing mesh rather than the whole cell's run.
-    const batches: InstancedBatch[] = [];
-    for (const level of asset.levels)
-      batches.push(new InstancedBatch({ geometry: level.geometry, material: level.material }));
+    // One batch per (level, part), so a placement is filtered and drawn together and an emptied
+    // level or a part nobody placed costs one missing mesh rather than the whole cell's run.
+    const batches: InstancedBatch[][] = [];
+    for (const parts of asset.levels) {
+      const levelBatches: InstancedBatch[] = [];
+      for (const part of parts)
+        levelBatches.push(new InstancedBatch({ geometry: part.geometry, material: part.material }));
+      batches.push(levelBatches);
+    }
     for (let index = 0; index < run.count; index += 1) {
       const base = index * PLACEMENT_RECORD_FLOATS;
       const x = records[base] as number;
@@ -850,23 +962,48 @@ export class WorldCells extends Group implements IComputeDriven {
       );
       this.#scale.setScalar(records[base + 7] as number);
       this.#matrix.compose(this.#position, this.#rotation, this.#scale);
-      (batches[levelAt(asset.distances, distance)] as InstancedBatch).add(this.#matrix);
+      // The placement transform, then the part's own offset inside the model: a bark primitive at
+      // the trunk and a needles primitive higher up both land in the one instance matrix.
+      const level = levelAt(asset.distances, distance);
+      const parts = asset.levels[level] as readonly IAssetPart[];
+      const levelBatches = batches[level] as InstancedBatch[];
+      for (const [part, entry] of parts.entries()) {
+        this.#instance.multiplyMatrices(this.#matrix, entry.local);
+        (levelBatches[part] as InstancedBatch).add(this.#instance);
+      }
     }
-    // ponytail: a hard switch, no crossfade — a placement crosses a level boundary by being
-    // rebuilt into the other level's batch, so the swap pops. A blend needs a per-instance mix the
-    // InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
-    for (const [level, batch] of batches.entries()) {
-      const mesh = batch.build({ name: `${cell.key}:${asset.id}:${String(level)}` });
-      cell.batches.push({
-        asset: asset.id,
-        batch,
-        lastFilterX: filterX,
-        lastFilterZ: filterZ,
-        mesh,
-        threshold: asset.threshold,
-      });
-      if (mesh !== undefined) this.add(mesh);
-    }
+    this.#publishBatches(cell, asset, batches, filterX, filterZ);
+  }
+
+  /**
+   * Name and attach one mesh per (level, part) batch, and record on each what a refilter needs.
+   *
+   * ponytail: a hard switch, no crossfade — a placement crosses a level boundary by being rebuilt
+   * into the other level's batch, so the swap pops. A blend needs a per-instance mix the
+   * InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
+   */
+  #publishBatches(
+    cell: IResidentCell,
+    asset: IAssetState,
+    batches: readonly InstancedBatch[][],
+    filterX: number,
+    filterZ: number,
+  ): void {
+    for (const [level, levelBatches] of batches.entries())
+      for (const [part, batch] of levelBatches.entries()) {
+        const mesh = batch.build({
+          name: `${cell.key}:${asset.id}:${String(level)}:${String(part)}`,
+        });
+        cell.batches.push({
+          asset: asset.id,
+          batch,
+          lastFilterX: filterX,
+          lastFilterZ: filterZ,
+          mesh,
+          threshold: asset.threshold,
+        });
+        if (mesh !== undefined) this.add(mesh);
+      }
   }
 
   /**
@@ -1033,6 +1170,26 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const run of cell.cell.runs) this.#release(run.asset);
   }
 
+  /**
+   * Release every part's shape and every surface it owns — its own material and, for a scattered
+   * transparent part, the cutout clone made for it.
+   *
+   * At most once per resource, the same contract `release` gives the single-shape case: two parts
+   * of one GLB routinely share a material, a level that fell back shares the level below's whole
+   * part list, and every cell batch of the asset drew the same one. A clone is a resource this
+   * class made, so it is released here and nowhere else.
+   *
+   * @returns how many teardowns threw, for the caller to count.
+   */
+  #releaseParts(parts: readonly IAssetPart[]): number {
+    let failed = 0;
+    for (const part of parts) {
+      if (release(part.geometry)) failed += 1;
+      for (const material of part.owned) if (release(material)) failed += 1;
+    }
+    return failed;
+  }
+
   #release(id: string): void {
     const asset = this.#assets.get(id);
     if (asset === undefined) return;
@@ -1041,17 +1198,14 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#assets.delete(id);
     asset.disposed = true;
     // The last cell drawing this asset is gone, so this is the one teardown its levels get. It is
-    // also the one a lost device makes expensive, which is why every level goes through `release`:
-    // at most once per resource, and a level that fell back shares the level below's geometry, so
-    // one shape is torn down once however many levels point at it. One refusal is counted per
-    // asset, the way one refused `lod0` load was.
+    // also the one a lost device makes expensive, which is why every part goes through `release`:
+    // at most once per resource, and a level that fell back shares the level below's parts, so one
+    // shape is torn down once however many levels point at it. One refusal is counted per asset,
+    // the way one refused `lod0` load was.
     const levels = asset.levels;
     asset.levels = [];
     let failed = 0;
-    for (const level of levels) {
-      if (release(level.geometry)) failed += 1;
-      if (release(level.material)) failed += 1;
-    }
+    for (const parts of levels) failed += this.#releaseParts(parts);
     if (failed > 0) this.#failures += 1;
   }
 }

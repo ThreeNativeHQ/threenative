@@ -10,13 +10,14 @@ import {
   InstancedMesh,
   InterleavedBuffer,
   InterleavedBufferAttribute,
+  Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type IWorldPackage, WorldCells } from "../src/world.js";
+import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
 /**
  * The runtime fixture is the committed Phase 2 package. Serving it from disk through a stubbed
@@ -318,10 +319,70 @@ function levelLoader(refuse: (url: string) => boolean = () => false): ILevelLoad
 }
 
 /** The cell `1:1` batch of `asset` at `level`, the runtime's own name for it. */
-function levelMesh(world: WorldCells, asset: string, level: number): InstancedMesh | undefined {
-  return world.getObjectByName(`${cellKey(1, 1)}:${asset}:${String(level)}`) as
+function levelMesh(
+  world: WorldCells,
+  asset: string,
+  level: number,
+  part = 0,
+): InstancedMesh | undefined {
+  return world.getObjectByName(`${cellKey(1, 1)}:${asset}:${String(level)}:${String(part)}`) as
     | InstancedMesh
     | undefined;
+}
+
+interface IPartLoader {
+  readonly calls: string[];
+  readonly load: (url: string) => Promise<Object3D>;
+  /** The geometry a level's `part` primitive was loaded as, so a part is provable by identity. */
+  readonly geometryFor: (fragment: string, part: number) => BufferGeometry;
+  readonly materialFor: (fragment: string, part: number) => Material;
+}
+
+/**
+ * Every model is a tree: one node, one mesh, two primitives — a bark part at the model origin and a
+ * needles part 1.5 m up it, which is what three hands back as a `Group` of two child `Mesh`es. The
+ * needles part is `transparent`, the way a Blender `BLEND` material arrives.
+ */
+function treeLoader(needles: { alphaTest?: number; transparent?: boolean } = {}): IPartLoader {
+  const calls: string[] = [];
+  const handed = new Map<string, Array<{ geometry: BufferGeometry; material: Material }>>();
+  const part = (url: string, index: number): { geometry: BufferGeometry; material: Material } => {
+    const parts = handed.get(url);
+    const found = parts?.[index];
+    if (found === undefined) throw new Error(`No part ${String(index)} was loaded for '${url}'.`);
+    return found;
+  };
+  return {
+    calls,
+    geometryFor: (fragment, index) => {
+      const entry = [...handed.entries()].find(([url]) => url.endsWith(fragment));
+      if (entry === undefined) throw new Error(`No model was loaded for '${fragment}'.`);
+      return part(entry[0], index).geometry;
+    },
+    load: (url) => {
+      calls.push(url);
+      const group = new Group();
+      const parts = [0, 1].map((index) => {
+        const geometry = new BoxGeometry(1, 1, 1);
+        const material = new MeshBasicMaterial();
+        if (index === 1) {
+          material.transparent = needles.transparent ?? true;
+          if (needles.alphaTest !== undefined) material.alphaTest = needles.alphaTest;
+        }
+        const mesh = new Mesh(geometry, material);
+        mesh.position.y = index === 1 ? 1.5 : 0;
+        group.add(mesh);
+        return { geometry, material };
+      });
+      handed.set(url, parts);
+      return Promise.resolve(group);
+    },
+    materialFor: (fragment, index) => {
+      const entry = [...handed.entries()].find(([url]) => url.endsWith(fragment));
+      if (entry === undefined) throw new Error(`No model was loaded for '${fragment}'.`);
+      return part(entry[0], index).material;
+    },
+  };
 }
 
 /** Every instance the batches for `asset` draw, paired with how far it is from the follow point. */
@@ -338,6 +399,36 @@ function drawnDistances(mesh: InstancedMesh, follow: { x: number; z: number }): 
     );
   }
   return distances;
+}
+
+/** The `TerrainTiles` a `WorldCells` composed, so its residency is observable from the outside. */
+function terrainOf(world: WorldCells): TerrainTiles {
+  const terrain = world.children.find((child) => child instanceof TerrainTiles);
+  if (terrain === undefined) throw new Error("WorldCells composed no TerrainTiles.");
+  return terrain;
+}
+
+/** The one surface a batch draws with: an `InstancedMesh` is built from one, unlike a source mesh. */
+function batchMaterial(mesh: InstancedMesh | undefined): Material {
+  const material = mesh?.material;
+  if (!(material instanceof Material))
+    throw new Error(`No batch mesh named '${mesh?.name ?? "undefined"}'.`);
+  return material;
+}
+
+/** Every batch mesh the world drew for `asset`'s level and part, across every resident cell. */
+function partsOf(
+  world: WorldCells,
+  asset: string,
+  level: number,
+  part: number,
+): readonly InstancedMesh[] {
+  const suffix = `:${asset}:${String(level)}:${String(part)}`;
+  const meshes: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    if (object instanceof InstancedMesh && object.name.endsWith(suffix)) meshes.push(object);
+  });
+  return meshes;
 }
 
 async function flush(rounds = 12): Promise<void> {
@@ -1047,7 +1138,7 @@ describe("WorldCells", () => {
     const before = world.stats().rebuilds;
     const meshes = world.children.filter((child) => child instanceof InstancedMesh);
     expect(before).toBe(0);
-    expect(world.getObjectByName("1:2:pine:1")).toBeDefined();
+    expect(world.getObjectByName("1:2:pine:1:0")).toBeDefined();
     // The three cells ring 2 reaches from the extent's corner cell, one lod mesh each.
     expect(world.stats().residentCells).toBe(3);
     expect(meshes).toHaveLength(3);
@@ -1265,5 +1356,272 @@ describe("WorldCells", () => {
       expect(shape.disposals()).toBe(1);
       expect(shape.destroys()).toBe(3);
     }
+  });
+
+  it("batches every primitive of a multi-primitive asset, at its own offset and material", async () => {
+    // A GLB with several primitives loads as a `Group` of one child `Mesh` per primitive. Batching
+    // only the first is what drew 62k trees as bare trunks.
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const loader = treeLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    // One batch per (level, part), and the part is named, so a scene dump can tell them apart.
+    const bark = levelMesh(world, "pine", 0, 0) as InstancedMesh;
+    const needles = levelMesh(world, "pine", 0, 1) as InstancedMesh;
+    const farBark = levelMesh(world, "pine", 1, 0) as InstancedMesh;
+    const farNeedles = levelMesh(world, "pine", 1, 1) as InstancedMesh;
+    expect(bark).toBeDefined();
+    expect(needles).toBeDefined();
+    expect(farBark).toBeDefined();
+    expect(farNeedles).toBeDefined();
+    // Each part keeps its own geometry and its own material; neither level borrows the other's.
+    expect(bark.geometry).toBe(loader.geometryFor("pine.glb", 0));
+    expect(needles.geometry).toBe(loader.geometryFor("pine.glb", 1));
+    expect(farBark.geometry).toBe(loader.geometryFor("pine_lod1.glb", 0));
+    expect(farNeedles.geometry).toBe(loader.geometryFor("pine_lod1.glb", 1));
+    expect(bark.material).toBe(loader.materialFor("pine.glb", 0));
+    expect(needles.material).not.toBe(loader.materialFor("pine.glb", 1));
+    // Every placement is in both parts, and the whole run is still drawn exactly once per part.
+    expect(needles.count).toBe(bark.count);
+    expect(farNeedles.count).toBe(farBark.count);
+    expect(bark.count + farBark.count).toBe(85);
+
+    // The needles instance is the placement transformed by the part's own offset in the model, so
+    // `placementMatrix * partLocalMatrix` is recoverable from the pair whatever the placement's
+    // rotation and scale are.
+    const placed = new Matrix4();
+    const raised = new Matrix4();
+    const local = new Matrix4();
+    const expected = new Matrix4().makeTranslation(0, 1.5, 0);
+    for (let index = 0; index < bark.count; index += 1) {
+      bark.getMatrixAt(index, placed);
+      needles.getMatrixAt(index, raised);
+      local.copy(placed).invert().multiply(raised);
+      for (let element = 0; element < 16; element += 1)
+        expect(local.elements[element]).toBeCloseTo(expected.elements[element] as number, 4);
+    }
+    world.dispose();
+  });
+
+  it("draws a transparent scatter part as a cutout clone, and as authored with `blend`", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const loader = treeLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    // An `InstancedMesh` cannot sort its instances, so the BLEND part draws as a cutout: the clone
+    // writes depth and discards below the threshold, and the GLB's own material is untouched.
+    const needles = batchMaterial(levelMesh(world, "pine", 0, 1));
+    const authored = loader.materialFor("pine.glb", 1);
+    expect(needles).not.toBe(authored);
+    expect(needles.transparent).toBe(false);
+    expect(needles.depthWrite).toBe(true);
+    expect(needles.alphaTest).toBe(0.5);
+    expect(authored.transparent).toBe(true);
+    expect(authored.alphaTest).toBe(0);
+    // An opaque part is used as authored, with no clone made for it.
+    expect(batchMaterial(levelMesh(world, "pine", 0, 0))).toBe(loader.materialFor("pine.glb", 0));
+    world.dispose();
+
+    // A material that already names a cutout point keeps it.
+    const thresholded = treeLoader({ alphaTest: 0.25 });
+    const second = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: thresholded.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    second.update();
+    await flush();
+    expect(batchMaterial(levelMesh(second, "pine", 0, 1)).alphaTest).toBe(0.25);
+    second.dispose();
+
+    // One clone per asset part, so every cell batch of the asset shares it.
+    const ringed = followAt(-32, -32);
+    const shared = treeLoader();
+    const wide = await WorldCells.load({
+      budgets: largeBudgets,
+      follow: ringed,
+      loadModel: shared.load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    wide.update();
+    await flush();
+    const near = partsOf(wide, "pine", 0, 1);
+    expect(near.length).toBeGreaterThan(1);
+    expect(new Set(near.map((mesh) => mesh.material)).size).toBe(1);
+    wide.dispose();
+
+    // `"blend"` keeps the old behaviour: the material as the package authored it, no clone.
+    const blended = treeLoader();
+    const old = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: blended.load,
+      ring: 0,
+      surface,
+      transparentScatter: "blend",
+      url: "/world/world.json",
+    });
+    old.update();
+    await flush();
+    const part = batchMaterial(levelMesh(old, "pine", 0, 1));
+    expect(part).toBe(blended.materialFor("pine.glb", 1));
+    expect(part.transparent).toBe(true);
+    expect(part.alphaTest).toBe(0);
+    old.dispose();
+
+    await expect(
+      WorldCells.load({
+        budgets: largeBudgets,
+        follow,
+        loadModel: blended.load,
+        ring: 0,
+        surface,
+        transparentScatter: "sort" as "blend",
+        url: "/world/world.json",
+      }),
+    ).rejects.toThrow(/transparentScatter/u);
+  });
+
+  it("releases every part of every level exactly once when its last cell leaves", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    const loader = treeLoader();
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    const released = [
+      vi.spyOn(loader.geometryFor("pine.glb", 0), "dispose"),
+      vi.spyOn(loader.geometryFor("pine.glb", 1), "dispose"),
+      vi.spyOn(loader.geometryFor("pine_lod1.glb", 0), "dispose"),
+      vi.spyOn(loader.geometryFor("pine_lod1.glb", 1), "dispose"),
+      vi.spyOn(loader.materialFor("pine.glb", 0), "dispose"),
+      vi.spyOn(loader.materialFor("pine.glb", 1), "dispose"),
+      vi.spyOn(loader.materialFor("pine_lod1.glb", 0), "dispose"),
+      vi.spyOn(loader.materialFor("pine_lod1.glb", 1), "dispose"),
+      // The two cutout clones this class owns are released with the parts that hold them.
+      vi.spyOn(batchMaterial(levelMesh(world, "pine", 0, 1)), "dispose"),
+      vi.spyOn(batchMaterial(levelMesh(world, "pine", 1, 1)), "dispose"),
+    ];
+
+    follow.position.x = 100_000;
+    follow.position.z = 100_000;
+    world.update();
+    await flush();
+
+    expect(world.stats().residentKeys).toEqual([]);
+    for (const dispose of released) expect(dispose).toHaveBeenCalledTimes(1);
+    expect(world.assetRefCounts()).toEqual({});
+    world.dispose();
+  });
+
+  it("keeps terrain resident at its own radius while the cell ring stays at the ring", async () => {
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    const ring = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 2,
+      surface,
+      terrain: { tileResolution: 9 },
+      url: "/world/world.json",
+    });
+    ring.update();
+    expect(ring.stats().residentCells).toBe(16);
+    expect(terrainOf(ring).residentTileCount).toBe(25);
+
+    // Terrain to the horizon, props at the ring: 81 tiles under the same ring 2.
+    const wide = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 2,
+      surface,
+      terrain: { streamRadius: 4, tileResolution: 9 },
+      url: "/world/world.json",
+    });
+    wide.update();
+    const terrain = terrainOf(wide);
+    expect(wide.stats().residentCells).toBe(16);
+    expect(terrain.residentTileCount).toBe(81);
+    // The default `lodDistances` are tile-size multiples, so a wider ring puts its far tiles on the
+    // coarse levels instead of drawing 81 tiles at full resolution.
+    expect(terrain.getTile("0:0")?.lodLevel).toBe(0);
+    expect(terrain.getTile("4:4")?.lodLevel).toBe(2);
+    ring.dispose();
+    wide.dispose();
+  });
+
+  it("gives only the tiles inside `terrain.colliderRadius` a body, and moves that set", async () => {
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const created: string[] = [];
+    const disposed: string[] = [];
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      createCollider: ({ key }) => {
+        created.push(key);
+        return { dispose: () => disposed.push(key) };
+      },
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 1,
+      surface,
+      terrain: { colliderRadius: 0, tileResolution: 9 },
+      url: "/world/world.json",
+    });
+    const terrain = terrainOf(world);
+    const center = cellCenter(1, 1);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+    expect(terrain.residentTileCount).toBe(9);
+    expect(terrain.residentColliderKeys).toEqual(["0:0"]);
+
+    // One tile east: the body follows the follow point rather than being fixed at tile creation.
+    const east = cellCenter(2, 1);
+    follow.position.x = east.x;
+    follow.position.z = east.z;
+    world.update();
+    expect(terrain.residentColliderKeys).toEqual(["1:0"]);
+    expect(created).toContain("1:0");
+    expect(disposed).toContain("0:0");
+    world.dispose();
   });
 });

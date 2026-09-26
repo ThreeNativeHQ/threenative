@@ -2875,7 +2875,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven { … }
 
 - **Use when:** stream terrain without cracks · keep generated terrain resident around a moving player · put a generated terrain tile into a game-owned physics world
 - **Constraints:** sampleHeight and surface are required game choices; no landform or surface preset is installed · residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
-- **Overrides:** tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets
+- **Overrides:** tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, and budgets
 
 ```ts
 const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
@@ -2898,15 +2898,15 @@ const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer
 
 ### `WorldCells`
 
-`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run and distance level, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game.
+`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances.
 
 ```ts
 export class WorldCells extends Group implements IComputeDriven { … }
 ```
 
 - **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
-- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
-- **Overrides:** ring, budgets, terrain tile size/resolution, load `concurrency`, `rebuildsPerUpdate` and the package's per-asset maxDistance
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
+- **Overrides:** ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate` and the package's per-asset maxDistance
 
 ```ts
 const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });

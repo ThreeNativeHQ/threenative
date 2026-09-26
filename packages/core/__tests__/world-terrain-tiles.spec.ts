@@ -768,6 +768,65 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("gives only the tiles inside `colliderRadius` a body, and moves that set as follow moves", () => {
+    // The whole point of a stream radius larger than a collider radius: 49 tiles of ground render
+    // while 9 of them are solid, so a wide horizon does not cost a physics body per tile.
+    const created: string[] = [];
+    const disposed: string[] = [];
+    const tiles = new TerrainTiles({
+      colliderRadius: 1,
+      createCollider: ({ key }) => {
+        created.push(key);
+        const collider: IWorldTileCollider = { dispose: () => disposed.push(key) };
+        return collider;
+      },
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.residentTileCount).toBe(49);
+    expect(tiles.residentColliderKeys).toEqual([
+      "-1:-1",
+      "-1:0",
+      "-1:1",
+      "0:-1",
+      "0:0",
+      "0:1",
+      "1:-1",
+      "1:0",
+      "1:1",
+    ]);
+    // A tile outside the radius never got a body to hand back.
+    expect(created).not.toContain("2:2");
+
+    tiles.follow({ x: 48, z: 0 });
+    expect(tiles.residentColliderKeys).toEqual([
+      "2:-1",
+      "2:0",
+      "2:1",
+      "3:-1",
+      "3:0",
+      "3:1",
+      "4:-1",
+      "4:0",
+      "4:1",
+    ]);
+    // The followed tile's own body is released as it leaves the radius, and the tile that arrived
+    // gets one: the set follows the player instead of being fixed at load.
+    expect(disposed).toContain("0:0");
+    expect(created).toContain("3:0");
+    expect(created).toContain("4:0");
+
+    tiles.dispose();
+    expect(disposed).toContain("4:0");
+  });
+
   it("leaves settled mixed-LOD seams alone instead of rewriting them every frame", () => {
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
