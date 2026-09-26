@@ -375,23 +375,25 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
     verdict: "none"
   };
 }
-function capabilityDetail(symbol, manifestFile = defaultManifestPath(), importPath) {
+function capabilityDetails(symbol, manifestFile = defaultManifestPath(), importPath) {
   if (typeof symbol !== "string" || symbol.trim().length === 0)
     throw new Error("engine_capability_detail requires a non-empty symbol string.");
-  const manifest = loadCapabilityManifest(manifestFile);
-  const matches = manifest.entries.filter(
+  const matches = loadCapabilityManifest(manifestFile).entries.filter(
     (candidate) => candidate.symbol === symbol && (importPath === void 0 || candidate.importPath === importPath)
   );
-  const entry = matches[0];
-  if (entry === void 0)
+  if (matches.length === 0)
     throw new Error(
       `Unknown engine capability '${symbol}'${importPath === void 0 ? "" : ` in '${importPath}'`}.`
     );
+  return matches;
+}
+function capabilityDetail(symbol, manifestFile = defaultManifestPath(), importPath) {
+  const matches = capabilityDetails(symbol, manifestFile, importPath);
   if (matches.length > 1)
     throw new Error(
       `Ambiguous engine capability '${symbol}': pass importPath, one of ${matches.map((match) => `'${match.importPath}'`).join(", ")}.`
     );
-  return entry;
+  return matches[0];
 }
 var TOOL_DEFINITIONS = [
   {
@@ -415,7 +417,7 @@ var TOOL_DEFINITIONS = [
   {
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_capability_detail",
-    description: "Inspect one engine capability's import, signature, example, constraints, and overrides.",
+    description: "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -486,7 +488,15 @@ function handleToolCall(params, manifestFile) {
       throw new Error("engine_capability_detail requires a string 'symbol' argument.");
     if (argumentsValue.importPath !== void 0 && typeof argumentsValue.importPath !== "string")
       throw new Error("engine_capability_detail 'importPath' must be a string when given.");
-    const detail = capabilityDetail(argumentsValue.symbol, manifestFile, argumentsValue.importPath);
+    const matches = capabilityDetails(
+      argumentsValue.symbol,
+      manifestFile,
+      argumentsValue.importPath
+    );
+    const detail = matches.length === 1 ? matches[0] : {
+      guidance: `${matches.length} packages export '${argumentsValue.symbol}'. Import the match whose summary fits; pass importPath to get one.`,
+      matches
+    };
     logToolCall({
       importPath: argumentsValue.importPath,
       symbol: argumentsValue.symbol,
@@ -548,4 +558,4 @@ if (entryPath !== void 0 && realpathSync(path.resolve(entryPath)) === realpathSy
   }
 }
 
-export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };
+export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilityDetails, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };
