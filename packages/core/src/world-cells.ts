@@ -154,9 +154,37 @@ function resolveRelative(baseUrl: string, relative: string): string {
   return `${baseUrl}${relative.replace(/^\//u, "")}`;
 }
 
-/** Where a logical path is served from: the manifest's output, or the first authored candidate. */
-async function resolveLogical(assets: IAssetLoader, path: string): Promise<string> {
-  return (await assets.resolve(path))[0] ?? path;
+/**
+ * Load a package file from the first candidate the loader says might serve it, the way the
+ * loader's own `loadFirst` walks them: the authored name, then the project's `assets/` source. One
+ * candidate is what a manifest gives, and a delete-test project has no manifest, so taking only
+ * the first is a 404 for a package that is present on disk. When none answer, one error names every
+ * url tried and its status — the failure is two places looked at, not one missing file.
+ */
+async function loadLogical<T>(
+  assets: IAssetLoader,
+  path: string,
+  load: (url: string) => Promise<T>,
+): Promise<T> {
+  const candidates = await assets.resolve(path);
+  const failures: string[] = [];
+  for (const url of candidates) {
+    try {
+      return await load(url);
+    } catch (error) {
+      failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
+    }
+  }
+  throw new Error(
+    `World file '${path}' could not be loaded from ${String(candidates.length)} candidate url(s): ${failures.join("; ")}`,
+  );
+}
+
+/** A `fetch` that refuses anything but an ok response, so candidates are walked on status. */
+async function fetchOk(url: string): Promise<Response> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`status ${String(response.status)}`);
+  return response;
 }
 
 function firstRenderable(
@@ -373,22 +401,20 @@ export class WorldCells extends Group implements IComputeDriven {
     // leading slash, and the directory the manifest itself sits in as their base.
     const manifestPath = options.url.replace(/^\//u, "");
     const logicalBase = manifestPath.slice(0, manifestPath.lastIndexOf("/") + 1);
-    const manifestResponse = await fetch(await resolveLogical(assets, manifestPath));
-    if (!manifestResponse.ok)
-      throw new Error(
-        `World manifest request failed with status ${String(manifestResponse.status)} for ${options.url}.`,
-      );
-    const manifest = (await manifestResponse.json()) as IWorldPackage;
-    const placementsResponse = await fetch(
-      await resolveLogical(assets, resolveRelative(logicalBase, manifest.placements)),
+    const manifest = await loadLogical(
+      assets,
+      manifestPath,
+      async (url) => (await (await fetchOk(url)).json()) as IWorldPackage,
     );
-    if (!placementsResponse.ok)
-      throw new Error(
-        `World placements request failed with status ${String(placementsResponse.status)} for ${manifest.placements}.`,
-      );
-    const placements = await placementsResponse.arrayBuffer();
-    const heightmap = await loadWorldHeightmap(
-      await resolveLogical(assets, resolveRelative(logicalBase, manifest.terrain.heightmap)),
+    const placements = await loadLogical(
+      assets,
+      resolveRelative(logicalBase, manifest.placements),
+      async (url) => (await fetchOk(url)).arrayBuffer(),
+    );
+    const heightmap = await loadLogical(
+      assets,
+      resolveRelative(logicalBase, manifest.terrain.heightmap),
+      loadWorldHeightmap,
     );
     const validation = validateWorldPackage(manifest, {
       heightmapByteLength: heightmap.length * 2,

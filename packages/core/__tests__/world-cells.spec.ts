@@ -177,6 +177,33 @@ function stubCompiledFetch(): { requested: string[] } {
   return { requested };
 }
 
+/**
+ * A compiled project with its compile step's output deleted: no manifest is served, and the only
+ * names that answer are the sources the author left under `assets/`. The authored path 404s, which
+ * is exactly the case the loader's second candidate exists for.
+ */
+function stubSourceDirFetch(): { requested: string[] } {
+  const served = new Map<string, Buffer>([
+    ["assets/world/world.json", readFileSync(path.join(fixture, "world.json"))],
+    ["assets/world/placements.bin", readFileSync(path.join(fixture, "placements.bin"))],
+    [
+      "assets/world/terrain/heightmap.u16",
+      readFileSync(path.join(fixture, "terrain", "heightmap.u16")),
+    ],
+  ]);
+  const requested: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown): Promise<IResponseLike> => {
+      const url = String(input);
+      requested.push(url);
+      const buffer = served.get(url);
+      return buffer === undefined ? notFound : fileResponse(buffer);
+    }),
+  );
+  return { requested };
+}
+
 /** A loader that never settles until `release`, so concurrency can be measured mid-flight. */
 interface IGatedLoader {
   readonly probe: { current: number; max: number; total: number };
@@ -712,10 +739,10 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
-  it("still loads the authored names when the compiled output is gone", async () => {
-    // The delete-test: no manifest is served, and the only names that answer are the ones the
-    // author wrote.
-    const { requested } = stubFixtureFetch();
+  it("still loads the package from assets/ when the compiled output is gone", async () => {
+    // The delete-test: every compiled output is gone, so only the author's `assets/` sources are
+    // left to serve the package, and nothing names them.
+    const { requested } = stubSourceDirFetch();
     const follow = followAt(0, 0);
     const world = await WorldCells.load({
       budgets: largeBudgets,
@@ -723,7 +750,7 @@ describe("WorldCells", () => {
       loadModel: controlledLoader().load,
       ring: 1,
       surface,
-      url: "/world/world.json",
+      url: "world/world.json",
     });
 
     const center = cellCenter(1, 1);
@@ -734,11 +761,15 @@ describe("WorldCells", () => {
 
     expect(world.stats().failures).toBe(0);
     expect(world.stats().residentCells).toBe(9);
+    // Each file was asked for by its authored name first, 404ed, and then found under `assets/`.
     expect(requested).toEqual([
       "assets.manifest.json",
       "world/world.json",
+      "assets/world/world.json",
       "world/placements.bin",
+      "assets/world/placements.bin",
       "world/terrain/heightmap.u16",
+      "assets/world/terrain/heightmap.u16",
     ]);
     world.dispose();
   });
