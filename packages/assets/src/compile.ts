@@ -1257,7 +1257,9 @@ function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
  * A target with the KTX2 decoder keeps the configured compression. Without one, an explicitly
  * declared `maxSize` still has to reach the artifact, so the pass resizes embedded images to
  * PNG instead of encoding them; `"none"`, absent, and a config with no cap keep shipping the
- * authored bytes exactly as before.
+ * authored bytes exactly as before. The per-slot overrides ride along for the same reason they do
+ * on the standalone path: a `codec: "none"` slot is a project asking for its authored bytes, and a
+ * cap is a decision about the project's *other* textures.
  */
 function embeddedTexturesFor(
   configured: IModelTexturesOptions | "none" | undefined,
@@ -1265,7 +1267,13 @@ function embeddedTexturesFor(
 ): { readonly textures?: IModelTexturesOptions | "none" } {
   if (ktx2) return {};
   if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
-    return { textures: { decoderFree: true, maxSize: configured.maxSize } };
+    return {
+      textures: {
+        decoderFree: true,
+        maxSize: configured.maxSize,
+        ...(configured.overrides === undefined ? {} : { overrides: configured.overrides }),
+      },
+    };
   }
   return { textures: "none" as const };
 }

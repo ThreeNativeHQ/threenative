@@ -156,6 +156,19 @@ test("a misspelled ceiling, an unknown key and a wrong type are all exit 2, neve
   ).rejects.toThrow(/is not valid JSON/u);
 });
 
+test("a report that omits its budget is refused, not read as a profile with no ceilings", async () => {
+  const { artifact, report } = await fixture();
+  const parsed = JSON.parse(await readFile(report, "utf8")) as Record<string, unknown>;
+  // A build always writes the key (`null` when the profile declares none), so an absent one is a
+  // report that lost its ceilings — the run must stop, not pass with the bound deleted.
+  delete parsed.performanceBudget;
+  await writeReport(report, parsed);
+
+  await expect(
+    resolveBuildReport(config({ artifactPath: artifact, buildReportPath: report })),
+  ).rejects.toThrow(/TN_PLAYTEST_BUILD_REPORT_INVALID.*performanceBudget/su);
+});
+
 test("a budget the target cannot observe is refused before the run, not dropped", async () => {
   const { artifact, report } = await fixture();
   const parsed = JSON.parse(await readFile(report, "utf8")) as Record<string, unknown>;

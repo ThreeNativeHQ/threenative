@@ -151,6 +151,15 @@ async function readReport(reportPath: string): Promise<IBuildReport> {
     throw invalid(reportPath, `is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
   const report = requireKeys(parsed, "report", REPORT_KEYS, reportPath) as Partial<IBuildReport> as IBuildReport;
+  // A build always writes `performanceBudget`, `null` when no profile declared one, so a report
+  // *missing* the key is not a profile without ceilings — it is a report whose ceilings were
+  // removed, and a run that adopted it would pass on a bound nothing evaluates any more.
+  if (!("performanceBudget" in report)) {
+    throw invalid(
+      reportPath,
+      "report.performanceBudget is missing; a build always writes it, null when no profile declares one.",
+    );
+  }
   if (report.schemaVersion !== 1) {
     throw invalid(reportPath, `schemaVersion must be 1, received ${JSON.stringify(report.schemaVersion)}.`);
   }
