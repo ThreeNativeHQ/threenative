@@ -8,6 +8,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseCubesFixture } from "../../examples/engine-load-test/src/cubes-fixture.js";
+import {
+  FOXES_ASSET_SHA256,
+  FOXES_UPSTREAM_COMMIT,
+  parseFoxesFixture,
+} from "../../examples/engine-load-test/src/foxes-fixture.js";
 import { LIGHTS_CELL } from "../../examples/engine-load-test/src/lights-fixture.js";
 import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
 import {
@@ -20,6 +25,7 @@ import {
 import { writeCampaignReport } from "./bundle.js";
 import { type ICubesComparison, compareCubesRuns, parseCubesRun } from "./cubes-compare.js";
 import { type ICullComparison, compareCullRuns, parseCullRun } from "./cull-compare.js";
+import { type IFoxesComparison, compareFoxesRuns, parseFoxesRun } from "./foxes-compare.js";
 import {
   type ILightsComparison,
   type ILightsRun,
@@ -49,10 +55,12 @@ import { runAndroidArm } from "./run-android.js";
 import {
   prepareBevyArm,
   runBevyDesktop,
+  runBevyFoxesDesktop,
   runCapturing,
   runGodotDesktop,
   runTnCubesDesktop,
   runTnDesktop,
+  runTnFoxesDesktop,
 } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 
@@ -1109,9 +1117,136 @@ async function compareCubesArms(): Promise<void> {
   if (!comparison.outcome.valid) process.exitCode = 2;
 }
 
+async function runFoxesArm(arm: string): Promise<void> {
+  if (arm !== "bevy-desktop" && arm !== "tn-desktop")
+    throw new BenchError("TN_BENCH_BAD_ARM", `unknown many-foxes arm ${arm}`);
+  const variantFlag = flag("foxes-variant") ?? "staggered";
+  if (variantFlag !== "sync" && variantFlag !== "staggered")
+    throw new BenchError("TN_BENCH_BAD_FOXES_VARIANT", `unknown variant ${variantFlag}`);
+  const variant = variantFlag as "sync" | "staggered";
+  const count = positiveFlag("count", 50, 1);
+  const frames = positiveFlag("frames", 600, 2);
+  const warmup = positiveFlag("warmup", 120, 0);
+  const display = requiredDisplay();
+  const artifacts = path.resolve(repoRoot, "artifacts/engine-load-test");
+  const identity = await prepareBevyArm(repoRoot, "foxes");
+  // The pinned asset's digest, hashed here from the checkout the Bevy arm loads and the counterpart
+  // arm's build injects, so one number covers both arms and the fixture states it.
+  const assetPath = path.join(
+    repoRoot,
+    "artifacts/engine-load-test/sources/bevy/assets/models/animated/Fox.glb",
+  );
+  const asset = await fileIdentity(assetPath);
+  if (asset.sha256 !== FOXES_ASSET_SHA256)
+    throw new BenchError("TN_BENCH_FOXES_ASSET_UNPINNED", `${assetPath} is not the pinned Fox.glb`);
+  process.env.TN_FOXES_ASSET_SHA256 = asset.sha256;
+  const file = path.resolve(
+    repoRoot,
+    flag("out") ?? `artifacts/engine-load-test/foxes-${count}-${variant}-${arm}.json`,
+  );
+  const fixture = path.resolve(
+    repoRoot,
+    flag("foxes-fixture") ??
+      `artifacts/engine-load-test/foxes-${count}-${variant}-${frames}f-bevy-fixture.json`,
+  );
+  const run = {
+    artifacts,
+    count,
+    display,
+    frames,
+    variant,
+    warmup,
+  } as const;
+  let raw: Record<string, unknown>;
+  if (arm === "bevy-desktop") {
+    // The Bevy arm is the exporting arm: it writes the fixture the counterpart arm then reads, so a
+    // TN-only rerun keeps hashing the same bytes the comparison was built on.
+    const exported = await runBevyFoxesDesktop(repoRoot, run, identity);
+    raw = exported.report;
+  } else {
+    if (!existsSync(fixture))
+      throw new BenchError(
+        "TN_BENCH_FOXES_FIXTURE_MISSING",
+        `run the Bevy arm first: ${path.relative(repoRoot, fixture)}`,
+      );
+    raw = await runTnFoxesDesktop(repoRoot, run, fixture);
+  }
+  const parsed = parseFoxesRun(raw);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    `${JSON.stringify(
+      {
+        ...raw,
+        identity: {
+          asset: {
+            bytes: asset.bytes,
+            path: path.relative(repoRoot, assetPath),
+            sha256: asset.sha256,
+          },
+          display,
+          fixture: path.relative(repoRoot, fixture),
+          profile: "smoke",
+          source: {
+            adapter: { path: "benchmark/bevy-prd449/foxes_arm.rs", sha256: identity.adapter },
+            bevy: { commit: FOXES_UPSTREAM_COMMIT, sha256: identity.upstream },
+            tn: await sourceIdentity(),
+          },
+        },
+        profile: "smoke",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  process.stdout.write(
+    `wrote ${parsed.arm} ${parsed.variant} run: ${path.relative(repoRoot, file)} (${parsed.meanMs.toFixed(3)} ms mean over ${parsed.frameIntervals.length} frames)\n`,
+  );
+}
+
+async function compareFoxesArms(): Promise<void> {
+  const tnPath = flag("foxes-compare");
+  const bevyPath = flag("foxes-against");
+  if (tnPath === undefined || bevyPath === undefined)
+    throw new BenchError(
+      "TN_BENCH_FOXES_COMPARE_ARGS",
+      "--foxes-compare <tn.json> also needs --foxes-against <bevy.json>",
+    );
+  const bevyRecord = JSON.parse(await readFile(path.resolve(repoRoot, bevyPath), "utf8")) as {
+    fixture: { path?: string };
+  };
+  const fixturePath = bevyRecord.fixture?.path;
+  if (fixturePath === undefined)
+    throw new BenchError("TN_BENCH_FOXES_FIXTURE_MISSING", "the Bevy record names no fixture");
+  const resolvedFixture = path.isAbsolute(fixturePath)
+    ? fixturePath
+    : path.resolve(repoRoot, fixturePath);
+  const fixture = parseFoxesFixture(await readFile(resolvedFixture, "utf8"));
+  const comparison: IFoxesComparison = compareFoxesRuns(
+    fixture,
+    parseFoxesRun(JSON.parse(await readFile(path.resolve(repoRoot, bevyPath), "utf8")) as unknown),
+    parseFoxesRun(JSON.parse(await readFile(path.resolve(repoRoot, tnPath), "utf8")) as unknown),
+  );
+  const file = path.resolve(
+    repoRoot,
+    flag("out") ?? "artifacts/engine-load-test/foxes-comparison.json",
+  );
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    `${JSON.stringify({ ...comparison, fixture: resolvedFixture }, null, 2)}\n`,
+  );
+  const ratio =
+    comparison.ratio === null ? "ratio withheld" : `ratio ${comparison.ratio.ratio.toFixed(3)}`;
+  process.stdout.write(
+    `wrote ${path.relative(repoRoot, file)}\n  bevy-desktop  ${comparison.arms.bevy.meanMs.toFixed(3)} ms\n  tn-desktop    ${comparison.arms.tn.meanMs.toFixed(3)} ms  ${ratio} (${comparison.ratio?.verdict ?? "no ratio"})\n  rings bevy ${comparison.conformance.perArm.bevy.ringMaxDelta.toExponential(2)}/tn ${comparison.conformance.perArm.tn.ringMaxDelta.toExponential(2)}, oracle bevy ${comparison.conformance.perArm.bevy.oracleMaxDelta.toExponential(2)}@${comparison.conformance.perArm.bevy.worstOracleFrame}/tn ${comparison.conformance.perArm.tn.oracleMaxDelta.toExponential(2)}@${comparison.conformance.perArm.tn.worstOracleFrame} (tolerance ${comparison.conformance.tolerance.oracleAbs})\n  bones cross-arm ${comparison.conformance.crossArm.boneMaxDelta.toExponential(2)}, skin ${comparison.conformance.crossArm.skinMatrixMaxDelta.toExponential(2)} (tolerances ${comparison.conformance.tolerance.boneAbs}/${comparison.conformance.tolerance.matrixAbs})\n  distinct poses bevy ${comparison.conformance.distinctPoses.bevy}/tn ${comparison.conformance.distinctPoses.tn} of ${comparison.census.foxes}\n  comparability ${comparison.outcome.comparability}${comparison.outcome.problems.length > 0 ? ` (${comparison.outcome.problems.join(", ")})` : ""}\n`,
+  );
+  if (!comparison.outcome.valid) process.exitCode = 2;
+}
+
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --mesh-arm <plain-three-web|tn-web|tn-desktop> [--count N --variant name --frames N --warmup N --out file.json]  # production-build smoke on the named GPU; needs TN_BENCH_DISPLAY or `sh scripts/xvfb.sh`\n       pnpm bench:engines --cull-arm <godot-desktop|tn-desktop> [--cull-variant name --cull-authoring scene-node-independent|clustered-default --frames N --warmup N --cull-fixture path --out file.json]  # real-GPU culling arm; needs DISPLAY and the pinned godot-benchmarks checkout\n       pnpm bench:engines --cull-compare <tn.json> --cull-against <godot.json> [--out cull-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --lights-arm <godot-desktop|tn-desktop> [--frames N --warmup N --lights-fixture path --out file.json]  # real-GPU lights/meshes arm on the box-100-omni-10-slow cell; needs DISPLAY and the pinned godot-benchmarks checkout (godot-desktop exports the fixture)\n       pnpm bench:engines --lights-compare <tn.json> --lights-against <godot.json> [--out lights-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --cubes-arm <bevy-desktop|tn-desktop> [--cubes-variant static|rotating --cubes-authoring default|independent --count N --frames N --warmup N --out file.json]  # real-GPU many-cubes arm; needs DISPLAY and the pinned bevy checkout (bevy-desktop exports the fixture)\n       pnpm bench:engines --cubes-compare <tn.json> --cubes-against <bevy.json> [--out cubes-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --mesh-compare <baseline.json> --mesh-against <candidate.json> [--out mesh-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --plan --suite cross-engine --out <bundle-dir>  # writes a draft plan only\n       pnpm bench:engines --report-html <bundle-dir>  # partial bundles render with exit 2\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --mesh-arm <plain-three-web|tn-web|tn-desktop> [--count N --variant name --frames N --warmup N --out file.json]  # production-build smoke on the named GPU; needs TN_BENCH_DISPLAY or `sh scripts/xvfb.sh`\n       pnpm bench:engines --cull-arm <godot-desktop|tn-desktop> [--cull-variant name --cull-authoring scene-node-independent|clustered-default --frames N --warmup N --cull-fixture path --out file.json]  # real-GPU culling arm; needs DISPLAY and the pinned godot-benchmarks checkout\n       pnpm bench:engines --cull-compare <tn.json> --cull-against <godot.json> [--out cull-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --lights-arm <godot-desktop|tn-desktop> [--frames N --warmup N --lights-fixture path --out file.json]  # real-GPU lights/meshes arm on the box-100-omni-10-slow cell; needs DISPLAY and the pinned godot-benchmarks checkout (godot-desktop exports the fixture)\n       pnpm bench:engines --lights-compare <tn.json> --lights-against <godot.json> [--out lights-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --cubes-arm <bevy-desktop|tn-desktop> [--cubes-variant static|rotating --cubes-authoring default|independent --count N --frames N --warmup N --out file.json]  # real-GPU many-cubes arm; needs DISPLAY and the pinned bevy checkout (bevy-desktop exports the fixture)\n       pnpm bench:engines --cubes-compare <tn.json> --cubes-against <bevy.json> [--out cubes-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --foxes-arm <bevy-desktop|tn-desktop> [--foxes-variant sync|staggered --count N --frames N --warmup N --out file.json]  # real-GPU many-foxes arm; needs DISPLAY and the pinned bevy checkout (bevy-desktop exports the fixture)\n       pnpm bench:engines --foxes-compare <tn.json> --foxes-against <bevy.json> [--out foxes-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --mesh-compare <baseline.json> --mesh-against <candidate.json> [--out mesh-comparison.json]  # one smoke block, no verdict\n       pnpm bench:engines --plan --suite cross-engine --out <bundle-dir>  # writes a draft plan only\n       pnpm bench:engines --report-html <bundle-dir>  # partial bundles render with exit 2\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 
@@ -1152,6 +1287,9 @@ async function main(): Promise<void> {
   const cubesArm = flag("cubes-arm");
   if (cubesArm !== undefined) return runCubesArm(cubesArm);
   if (flag("cubes-compare") !== undefined) return compareCubesArms();
+  const foxesArm = flag("foxes-arm");
+  if (foxesArm !== undefined) return runFoxesArm(foxesArm);
+  if (flag("foxes-compare") !== undefined) return compareFoxesArms();
   if (flag("mesh-compare") !== undefined) return compareMeshArms();
   if (process.argv.includes("--regression-collection")) return runRegressionCollectionCommand();
   if (process.argv.includes("--regression")) return runRegressionCommand();

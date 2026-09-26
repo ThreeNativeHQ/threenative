@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU) **and the first `bevy-many-cubes` slice (1k static and 1k all-rotating, both arms on one hardware GPU, execution conformance passed, real hardware comparison retained)**, Phase 4 Godot-culling family (the two arms now render byte-identical primitives and drain at the same boundary, and a fresh 600-frame `basic_cull` pair is refused for exactly one remaining named cause — Godot's occlusion culling drops 1,459 objects the counterpart arm draws; the shadows-on and light variants remain open), and Phase 5 partial report renderer are built or proved as stated below. The many-cubes family has **no** Bevy diagnostic cells, no ten-thousand rung, no seven-block pair and no A/A calibration, and none of the other five families is claimed; no `godot-culling` or `bevy-many-cubes` cell carries a verdict.
+**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU) **and the first `bevy-many-cubes` slice (1k static and 1k all-rotating, both arms on one hardware GPU, execution conformance passed, real hardware comparison retained)**, Phase 4 Godot-culling family (the two arms now render byte-identical primitives and drain at the same boundary, and a fresh 600-frame `basic_cull` pair is refused for exactly one remaining named cause — Godot's occlusion culling drops 1,459 objects the counterpart arm draws; the shadows-on and light variants remain open) **and the first `bevy-many-foxes` slice (50 foxes, synchronized and deterministically staggered, both arms on one hardware GPU, independently evaluated skeletons and pose diversity proved in both directions, two qualified real-hardware comparisons retained)**, and Phase 5 partial report renderer are built or proved as stated below. The many-cubes and many-foxes families have **no** diagnostic cells, no rung above their first slice, no seven-block pair and no A/A calibration, and none of the other four families is claimed; no `godot-culling`, `bevy-many-cubes` or `bevy-many-foxes` cell carries a verdict.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -583,8 +583,144 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 
 ### Phase 4: Animation, Godot rendering workloads and City
 
-- [ ] Pass foxes conformance with independently animated staggered skeletons.
-- [ ] Retain a real hardware comparison for the foxes family.
+- [x] Implement the locked Bevy many-foxes adapter, and read `SkeletalMesh3D` before writing it.
+  [foxes_arm.rs](../../../../benchmark/bevy-prd449/foxes_arm.rs) is the pinned upstream
+  `examples/stress_tests/many_foxes.rs` (10,542 bytes, SHA-256 `460ff72abe4f9547…`), compiled
+  *inside* that checkout as the example `prd449_foxes` by symlinking the tracked file into
+  `examples/`, so no pinned file is edited; the adapter is 81,218 bytes, SHA-256
+  `cb59514968c3243a…`, recorded in every run. The ring hierarchy, the alternating directions, the
+  2 m spacing, the 0.01 scale, the `base_rotation * Quat::from_rotation_y(-fox_angle)` facing, the
+  three clips and their `add_clips([2, 1, 0])` order, the `seek_to(entity_index / 10)` phase,
+  `update_fox_rings`, `keyboard_animation_control`, the plane, the camera framing and
+  `setup_scene_once_loaded` are verbatim. The five declared patches are the fixture clock, shadows
+  off, MSAA off, undecorated window plus the four measurement options, and
+  `AssetPlugin.file_path` pointed back at the checkout's `assets/` (bevy's default asset root is the
+  *executable's* directory, `target/release/examples/`, so the upstream path string would resolve to
+  a file that does not exist). Each is in the file's header and in the fixture's own
+  `source.patch`.
+
+  `cargo build --release --example prd449_foxes` builds with zero errors and zero warnings.
+
+  **The manifest search was done first and it changed the design.**
+  `SkeletalMesh3D` is real and its skeleton-safe clone is the one thing this workload needs, but its
+  semantics do not match: its `AnimationPlayer` applies the stride convention to a looping clip by
+  default, holding the playback rate inside 0.15x–3x of the ground the body covers, and every fox
+  here is parented under a rotating ring and never translates relative to it — so each fox's measured
+  ground speed is zero and the rate would clamp to the 0.15 floor while the pinned source plays every
+  clip at rate 1.0. `strideSync: false` restores the authored rate, and at that point the wrapper is
+  a thin `AnimationMixer` over the same three.js a game would use, whose per-clip foot-plant sample
+  the timed path should not pay for. Its `size` normalisation is opt-in and is omitted, which is what
+  preserves the pinned 0.01 scale. The counterpart arm therefore uses `SkeletonUtils.clone` per fox
+  and one `AnimationMixer` per fox, and says so in its own header.
+
+  **What the fixture carries, and what it cannot.** The pinned asset is
+  `assets/models/animated/Fox.glb`, 162,852 bytes, Git blob `1ef5c0d05658caea…`, SHA-256
+  `d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7`, attribution PixelMannen (CC0)
+  for the model and @tomkranis (CC-BY 4.0) for the rigging and animation, which the file's own
+  `asset.copyright` also states and which now travels in the fixture. Bevy 0.19 has **no** accessor
+  for a loaded clip's keyframes — `AnimationClip` keeps its curves in a private `AnimationCurves` map
+  of `VariableCurve`s — so the clip's bytes, its interpolation and the joint order are read from the
+  glTF JSON inside that file, and the runtime confirms what it can: every clip's glTF animation index
+  (from its asset label), its duration and its animation-target and curve counts (21 curves over 20
+  distinct nodes, because `b_Hip_01` carries both a translation and a rotation channel), the 24-joint
+  skeleton against the file's 24, the 24 inverse bind matrices componentwise to 1e-6, and every
+  bone's animated transform at six frames. The bind matrices ship as f64 numbers because they are
+  small and because they are the one thing two independent glTF loaders could genuinely disagree
+  about. The mesh channels ship as a correspondence digest, not as bytes, because the asset's SHA-256
+  already covers them.
+- [x] Pass foxes conformance for the first slice: 50 foxes, synchronized and deterministically
+  staggered, with every skeleton independently evaluated.
+  Both arms ran the exported fixture on the real GPU and were checked against f64 oracles built from
+  its own schedule, not against each other, at frames 0, 1, 60, 120, 300 and 599 of 600 measured
+  frames. Ring rotations, the clip time and the oracle channel's value are oracles; the bone poses
+  have no f64 oracle, so their only honest check is that the two engines agree, that they move, and
+  that the staggered foxes differ while the synchronized ones do not.
+
+  | check | tolerance | staggered | synchronized |
+  |---|---|---|---|
+  | ring rotation vs the f64 oracle, bevy / tn | 1e-3 | 2.06e-5 / 1.11e-16 | 2.06e-5 / 1.11e-16 |
+  | oracle channel value vs the f64 lerp, bevy / tn | 1e-3 | 1.76e-4@599 / 4.87e-13@599 | 2.06e-4@599 / 4.65e-13@599 |
+  | bone poses, cross-arm | 1e-3 | 1.76e-4 | 2.06e-4 |
+  | skin matrices, cross-arm | 4e-3 | 4.96e-4 | 5.01e-4 |
+  | pose scalars, cross-arm | 1e-4 | 3.49e-6 | 3.62e-6 |
+  | distinct poses, bevy / tn of 50 | 50 / 1 by variant | 50 / 50 | 1 / 1 |
+
+  **The tolerances are derived from the competitor's own f32 arithmetic, and the derivation is the
+  substance of this box.** With `n = 720` clock steps, `u = 2^-24` and the ring's 12 rad accumulated
+  angle: a quaternion *product* accumulated `n` times bounds a component at `n·u·theta = 2.6e-4`, and
+  the same angle error times the largest ring radius bounds a skin-matrix entry at 2.1e-3; an f32
+  *sum* bounds the accumulated playhead at `u·(n/60)·sqrt(n) = 1.9e-5 s`, which against the clip's
+  fastest channel (the fixture's oracle channel is chosen as the largest max-min in the clip, 12.23
+  units over 1.158 s, so 10.6 units/s) bounds a bone value at 2.0e-4. The declared constants are
+  4x, 2x, 5x and 5x those. The disagreement is overwhelmingly *bevy's*: its worst oracle deviation
+  is 1.76e-4 where the counterpart arm's is 4.87e-13, because the counterpart arm accumulates its
+  clip time in doubles and composes each ring's rotation once in f64. These are horizon bounds, so
+  at the 2-frame gate they are far looser than the arithmetic needs — deliberately, since one
+  declared constant is checked at whatever horizon the cell runs.
+
+  **Two loader differences are measured, not assumed, and both are outside one digest.** three's
+  `GLTFLoader` renormalises every vertex's four skin weights (`SkinnedMesh.normalizeSkinWeights`,
+  added for malformed assets) and bevy takes them as authored, and three's loader leaves the pinned
+  primitive's absent normals absent where bevy's loader computes flat ones. The weights are therefore
+  outside `threenative-foxes-mesh/1` and the normals are generated by the counterpart arm, both stated
+  in the fixture and in both records; the digest still carries the normals *flag*, so a side holding
+  values would differ. Everything else in the mesh, all 24 joint names in order, all 24 inverse bind
+  matrices and the whole clip match: clip digest `6b11c24d34b20f07`, mesh digest `096243f15b2f5ded`,
+  skin digest `e6b65bdb49a2fbab`, and the asset's SHA-256 identical on both arms.
+
+  [foxes-compare.ts](../../../../scripts/engine-load-test/foxes-compare.ts) is pure and
+  unit-proved by [engine-load-test-foxes-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-foxes-compare.spec.ts),
+  11/11, including both retained real pairs read from disk. Its red state is proved rather than
+  asserted: reverting the reader's step count to one fewer makes the retained-pair test and the
+  oracle test fail, and both pass again with the fix. The nine focused benchmark suites passed
+  186/186, root `pnpm exec tsc --noEmit -p tsconfig.json` and `biome check .` exited 0.
+- [x] Retain a real-hardware comparison for the 50-fox synchronized and staggered cells (one smoke
+  block each, no verdict).
+  One real-hardware smoke block per cell per arm, retained under `artifacts/engine-load-test/` with
+  raw frame series, the fixture, counters and identity, labelled `profile: "smoke"`, `blocks: 1` in
+  the artifact itself. Hardware for every arm: NVIDIA GeForce RTX 2080, driver `615.71.09`, through
+  `DISPLAY=:0`; the Bevy arm reaches it over Vulkan (`DiscreteGpu`, `NVIDIA GeForce RTX 2080`), the
+  counterpart arm through the owned host's wgpu-native backend (`vendor nvidia, architecture turing`,
+  `NVIDIA: 615.71.09 615.71.9.0`), host
+  `packages/runtime-native/build/tn-linux/mystral` 101,551,728 bytes, SHA-256 `f9386044bdbf114d…`,
+  Bevy adapter 81,218 bytes.
+
+  | cell | Bevy mean ms | TN mean ms | ratio (observation) | comparability |
+  |---|---|---|---|---|
+  | 50 synchronized | 2.174 | 2.697 | 0.806 | `qualified` |
+  | 50 staggered | 2.203 | 2.734 | 0.806 | `qualified` |
+
+  Every number is one block of 600 measured frames after a 120-frame warmup, both arms' means derived
+  from `N+1` boundaries plus one GPU completion wait, and the ratio is `verdict: "insufficient"`:
+  §8 supports no faster/slower statement from one block with no A/A calibration. Both pairs are
+  `qualified`, never `matched-task`, because the shaded environments differ (bevy PBR with its own
+  window clear colour against three's `MeshStandardMaterial` on a black background) and because each
+  side generates the normals the pinned asset declares no values for.
+
+  The counters say what each engine actually did. The counterpart arm submitted 52 draws and 28,803
+  triangles at the midpoint frame — 50 foxes of 576 triangles, 28,800, plus the two-triangle plane —
+  with 50 admitted foxes and **50 mixers**, its own count of independently evaluated skeletons. Bevy
+  reports `authoredFoxes` 50 and `visibleFoxes` 50 with `submittedDrawCalls` and
+  `submittedTriangles` **null** and a stated reason, because Bevy 0.19 exposes neither to the main
+  world; a missing metric as `null`, never the zero that would look like free work. Both arms report
+  shadows off and MSAA off from their own state, and the comparator refuses the pair if either does
+  not. The 2-frame validation gate ran first on both arms and both variants and is retained
+  (`foxes-50-*-2f-*.json`, `foxes-50-*-comparison-2f.json`); the fixture name carries the frame count
+  because the fixture carries the frame schedule, so a gate run and the measured cell no longer
+  overwrite each other's oracle.
+
+  What is **not** here, and is not claimed: the cross-arm visual half (§6.2's depth/silhouette and
+  object-ID coverage) does not exist for this family, for the same reason it does not exist for
+  many-cubes — Bevy 0.19 exposes no read-back path this adapter uses, so only the counterpart arm's
+  coverage grid could be produced and there is nothing to compare it against. The TD companion had the
+  same gap recorded for cubes. The remaining §5 cells are open in the box below.
+- [ ] Measure the rest of the `bevy-many-foxes` family.
+  Not started. §5 requires 100, 250, 500 and 1,000 foxes in both animation variants; at 100 and 1,000
+  the two diagnostic controls (paused animation with the rings still moving, and animation enabled
+  with directional shadows — the second needs the shadows-on patch the common profile forbids, and a
+  declared shadow-setting disclosure); TN web at 100 and 500; and seven paired blocks with an A/A
+  calibration before any cell carries a verdict. The 50-fox slice above is one block per cell with no
+  calibration, so it can never publish a ratio.
 - [ ] Pass Godot culling conformance with the RID authoring distinction documented.
   [The headless census probe](../../../../benchmark/godot-prd449/probe.gd) loads the pinned
   upstream `culling.gd` from its source checkout, seeds exactly as its `Manager` does, and

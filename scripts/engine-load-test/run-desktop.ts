@@ -230,30 +230,75 @@ export function bevyCheckout(repoRoot: string): string {
   return path.join(repoRoot, "artifacts/engine-load-test/sources/bevy");
 }
 
-export async function prepareBevyArm(repoRoot: string): Promise<{
+export interface IBevyArm {
   binary: string;
   adapter: string;
   upstream: string;
-}> {
+}
+
+/**
+ * The pinned Bevy arm. `many_cubes` and `many_foxes` are both examples of the pinned checkout, so each
+ * adapter is compiled *inside* that tree from its tracked source in `benchmark/bevy-prd449/` by
+ * symlink: the compiled source is the repository's file, whose SHA-256 the report carries, and no
+ * pinned file is edited.
+ */
+export async function prepareBevyArm(
+  repoRoot: string,
+  family: "cubes" | "foxes" = "cubes",
+): Promise<IBevyArm> {
   const checkout = bevyCheckout(repoRoot);
-  await access(path.join(checkout, "examples/stress_tests/many_cubes.rs"));
-  const adapter = path.join(repoRoot, "benchmark/bevy-prd449/cubes_arm.rs");
+  const upstreamRelative =
+    family === "cubes"
+      ? "examples/stress_tests/many_cubes.rs"
+      : "examples/stress_tests/many_foxes.rs";
+  await access(path.join(checkout, upstreamRelative));
+  const adapter = path.join(repoRoot, `benchmark/bevy-prd449/${family}_arm.rs`);
   // The link is what makes the example target exist at all; the path cargo compiles is the tracked file.
-  const link = path.join(checkout, "examples/prd449_cubes.rs");
+  const link = path.join(checkout, `examples/prd449_${family}.rs`);
   await rm(link, { force: true });
   await symlink(adapter, link);
-  const binary = path.join(checkout, "target/release/examples/prd449_cubes");
+  const binary = path.join(checkout, `target/release/examples/prd449_${family}`);
   return {
     adapter: await sha256File(adapter),
     binary,
-    upstream: await sha256File(path.join(checkout, "examples/stress_tests/many_cubes.rs")),
+    upstream: await sha256File(path.join(checkout, upstreamRelative)),
   };
+}
+
+async function runBevy(
+  repoRoot: string,
+  identity: IBevyArm,
+  args: readonly string[],
+  display: string,
+): Promise<Record<string, unknown>> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    DISPLAY: display,
+    // Bevy's window has to land on the real display, and winit picks Wayland when it is set, so the
+    // backend is named rather than left to whatever the session happens to export.
+    WINIT_UNIX_BACKEND: "x11",
+    TN_BENCH_BEVY_ADAPTER_SHA256: identity.adapter,
+    TN_BENCH_BEVY_BINARY: identity.binary,
+    TN_BENCH_BEVY_FEATURES: "bevy default (pbr, render, winit, x11)",
+    TN_BENCH_BEVY_UPSTREAM_SHA256: identity.upstream,
+  };
+  // The pinned asset's SHA-256 is computed here, from the same path the counterpart arm's build
+  // injects, so one hash covers both arms: the pinned Rust dependencies carry no SHA-256
+  // implementation, which is why the adapter cannot compute it itself. It does read the file and
+  // refuses any length other than the pinned one.
+  if (process.env.TN_FOXES_ASSET_SHA256 !== undefined)
+    env.TN_BENCH_FOX_ASSET_SHA256 = process.env.TN_FOXES_ASSET_SHA256;
+  return (await runCapturing(identity.binary, args, {
+    cwd: bevyCheckout(repoRoot),
+    env,
+    timeoutMs: 900_000,
+  })) as Record<string, unknown>;
 }
 
 export async function runBevyDesktop(
   repoRoot: string,
   options: ICubesOptions,
-  identity: { adapter: string; binary: string; upstream: string },
+  identity: IBevyArm,
 ): Promise<{ fixture: string; report: Record<string, unknown> }> {
   const fixture = path.join(
     options.artifacts,
@@ -271,22 +316,78 @@ export async function runBevyDesktop(
     fixture,
   ];
   if (options.variant === "rotating") args.push("--rotate-cubes");
-  const report = (await runCapturing(identity.binary, args, {
-    cwd: bevyCheckout(repoRoot),
-    // Bevy's window has to land on the real display, and winit picks Wayland when it is set, so the
-    // backend is named rather than left to whatever the session happens to export.
-    env: {
-      ...process.env,
-      DISPLAY: options.display,
-      WINIT_UNIX_BACKEND: "x11",
-      TN_BENCH_BEVY_ADAPTER_SHA256: identity.adapter,
-      TN_BENCH_BEVY_BINARY: identity.binary,
-      TN_BENCH_BEVY_FEATURES: "bevy default (pbr, render, winit, x11)",
-      TN_BENCH_BEVY_UPSTREAM_SHA256: identity.upstream,
-    },
+  return { fixture, report: await runBevy(repoRoot, identity, args, options.display) };
+}
+
+export interface IFoxesOptions {
+  /** `sync` or `staggered`; the variant is also the arm's phase question, never both. */
+  variant: "sync" | "staggered";
+  count: number;
+  frames: number;
+  warmup: number;
+  display: string;
+  artifacts: string;
+}
+
+export async function runBevyFoxesDesktop(
+  repoRoot: string,
+  options: IFoxesOptions,
+  identity: IBevyArm,
+): Promise<{ fixture: string; report: Record<string, unknown> }> {
+  // The frame count is in the name because the fixture carries the frame schedule: a 2-frame
+  // validation run and the 600-frame cell would otherwise overwrite each other's oracle.
+  const fixture = path.join(
+    options.artifacts,
+    `foxes-${options.count}-${options.variant}-${options.frames}f-bevy-fixture.json`,
+  );
+  await mkdir(options.artifacts, { recursive: true });
+  const args = [
+    "--count",
+    String(options.count),
+    "--warmup-frames",
+    String(options.warmup),
+    "--measured-frames",
+    String(options.frames),
+    "--fixture-out",
+    fixture,
+  ];
+  if (options.variant === "sync") args.push("--sync");
+  return { fixture, report: await runBevy(repoRoot, identity, args, options.display) };
+}
+
+async function buildNativeBundle(
+  example: string,
+  environment: NodeJS.ProcessEnv,
+  failure: string,
+): Promise<void> {
+  await mkdir(path.join(example, "dist"), { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("npx", ["vite", "build"], {
+      cwd: example,
+      env: environment,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    child.once("error", reject);
+    child.once("close", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${failure}: exit ${code}`)),
+    );
+  });
+}
+
+async function runNativeBundle(
+  repoRoot: string,
+  bundleName: string,
+  display: string,
+): Promise<Record<string, unknown>> {
+  const binary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
+  const bundle = path.join(repoRoot, `examples/engine-load-test/dist/${bundleName}`);
+  const hostArgs = ["run", bundle];
+  if (process.env.TN_BENCH_VSYNC !== "on") hostArgs.push("--no-vsync");
+  return (await runCapturing(binary, hostArgs, {
+    cwd: repoRoot,
+    env: { ...x11Environment(), DISPLAY: display },
     timeoutMs: 900_000,
   })) as Record<string, unknown>;
-  return { fixture, report };
 }
 
 export async function runTnCubesDesktop(
@@ -294,34 +395,37 @@ export async function runTnCubesDesktop(
   options: ICubesOptions,
   fixture: string,
 ): Promise<Record<string, unknown>> {
-  const example = path.join(repoRoot, "examples/engine-load-test");
-  const authoring = options.authoring ?? "default";
-  await mkdir(path.join(example, "dist"), { recursive: true });
-  const buildEnvironment: NodeJS.ProcessEnv = {
-    ...process.env,
-    TN_BENCH_PLATFORM: "desktop",
-    TN_BENCH_TARGET: "native-cubes",
-    TN_CUBES_AUTHORING: authoring,
-    TN_CUBES_FIXTURE: fixture,
-  };
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("npx", ["vite", "build"], {
-      cwd: example,
-      env: buildEnvironment,
-      stdio: ["ignore", "inherit", "inherit"],
-    });
-    child.once("error", reject);
-    child.once("close", (code) =>
-      code === 0 ? resolve() : reject(new Error(`TN_BENCH_CUBES_BUILD_FAILED: exit ${code}`)),
-    );
-  });
-  const binary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
-  const bundle = path.join(example, "dist/engine-load-test-cubes-desktop.js");
-  const hostArgs = ["run", bundle];
-  if (process.env.TN_BENCH_VSYNC !== "on") hostArgs.push("--no-vsync");
-  return (await runCapturing(binary, hostArgs, {
-    cwd: repoRoot,
-    env: { ...x11Environment(), DISPLAY: options.display },
-    timeoutMs: 900_000,
-  })) as Record<string, unknown>;
+  await buildNativeBundle(
+    path.join(repoRoot, "examples/engine-load-test"),
+    {
+      ...process.env,
+      TN_BENCH_PLATFORM: "desktop",
+      TN_BENCH_TARGET: "native-cubes",
+      TN_CUBES_AUTHORING: options.authoring ?? "default",
+      TN_CUBES_FIXTURE: fixture,
+    },
+    "TN_BENCH_CUBES_BUILD_FAILED",
+  );
+  return runNativeBundle(repoRoot, "engine-load-test-cubes-desktop.js", options.display);
+}
+
+export async function runTnFoxesDesktop(
+  repoRoot: string,
+  options: IFoxesOptions,
+  fixture: string,
+): Promise<Record<string, unknown>> {
+  await buildNativeBundle(
+    path.join(repoRoot, "examples/engine-load-test"),
+    {
+      ...process.env,
+      TN_BENCH_PLATFORM: "desktop",
+      TN_BENCH_TARGET: "native-foxes",
+      // The pinned asset, straight out of the bevy checkout the competitor loaded it from.
+      TN_FOXES_ASSET: path.join(bevyCheckout(repoRoot), "assets/models/animated/Fox.glb"),
+      TN_FOXES_AUTHORING: "default",
+      TN_FOXES_FIXTURE: fixture,
+    },
+    "TN_BENCH_FOXES_BUILD_FAILED",
+  );
+  return runNativeBundle(repoRoot, "engine-load-test-foxes-desktop.js", options.display);
 }

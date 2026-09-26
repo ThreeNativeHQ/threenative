@@ -60,12 +60,31 @@ function cubesFixtureJson(): string {
   return readFileSync(path, "utf8");
 }
 
+// The Bevy many-foxes fixture, exported by the pinned Bevy arm, and the pinned asset itself. The
+// asset is injected as base64 from the same checkout the Bevy arm loaded it from, so the counterpart
+// arm parses the very bytes the competitor rendered rather than a copy that could drift.
+function foxesFixtureJson(): string {
+  const path = process.env.TN_FOXES_FIXTURE;
+  if (path === undefined || path.trim() === "")
+    throw new Error("TN_FOXES_FIXTURE must name the Bevy-exported many-foxes fixture.");
+  return readFileSync(path, "utf8");
+}
+
+function foxAssetBase64(): string {
+  const path = process.env.TN_FOXES_ASSET;
+  if (path === undefined || path.trim() === "")
+    throw new Error("TN_FOXES_ASSET must name the pinned Fox.glb inside the bevy checkout.");
+  return readFileSync(path).toString("base64");
+}
+
 const native = process.env.TN_BENCH_TARGET === "native";
 const nativeMesh = process.env.TN_BENCH_TARGET === "native-mesh";
 const nativeCull = process.env.TN_BENCH_TARGET === "native-cull";
 const nativeLights = process.env.TN_BENCH_TARGET === "native-lights";
 const nativeCubes = process.env.TN_BENCH_TARGET === "native-cubes";
-const nativeTarget = native || nativeMesh || nativeCull || nativeLights || nativeCubes;
+const nativeFoxes = process.env.TN_BENCH_TARGET === "native-foxes";
+const nativeTarget =
+  native || nativeMesh || nativeCull || nativeLights || nativeCubes || nativeFoxes;
 
 export default defineConfig({
   build: nativeTarget
@@ -73,20 +92,22 @@ export default defineConfig({
         lib: {
           entry: resolve(
             import.meta.dirname,
-            nativeCubes
-              ? "src/cubes-native.ts"
-              : nativeCull
-                ? "src/cull-native.ts"
-                : nativeLights
-                  ? "src/lights-native.ts"
-                  : nativeMesh
-                    ? "src/mesh-native.ts"
-                    : "src/native.ts",
+            nativeFoxes
+              ? "src/foxes-native.ts"
+              : nativeCubes
+                ? "src/cubes-native.ts"
+                : nativeCull
+                  ? "src/cull-native.ts"
+                  : nativeLights
+                    ? "src/lights-native.ts"
+                    : nativeMesh
+                      ? "src/mesh-native.ts"
+                      : "src/native.ts",
           ),
           // Per-target filename: the desktop and Android arms build from the same source, and a
           // shared name means one arm's rebuild silently replaces the bundle the other is running.
           fileName: () =>
-            `engine-load-test-${nativeCubes ? "cubes-" : nativeCull ? "cull-" : nativeLights ? "lights-" : nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
+            `engine-load-test-${nativeFoxes ? "foxes-" : nativeCubes ? "cubes-" : nativeCull ? "cull-" : nativeLights ? "lights-" : nativeMesh ? "mesh-" : ""}${process.env.TN_BENCH_PLATFORM ?? "desktop"}.js`,
           formats: ["es"],
         },
         minify: false,
@@ -125,6 +146,17 @@ export default defineConfig({
             // comparison; `independent` switches the projection off and is a named diagnostic.
             authoring: process.env.TN_CUBES_AUTHORING ?? "default",
             fixtureJson: cubesFixtureJson(),
+          }),
+        }
+      : {}),
+    ...(nativeFoxes
+      ? {
+          __TN_FOXES_ASSET_B64__: JSON.stringify(foxAssetBase64()),
+          __TN_FOXES_CONFIG__: JSON.stringify({
+            // `default` is the package's ordinary authoring, which §3.1 makes the primary native
+            // comparison; this family has no instanced diagnostic of its own.
+            authoring: process.env.TN_FOXES_AUTHORING ?? "default",
+            fixtureJson: foxesFixtureJson(),
           }),
         }
       : {}),
