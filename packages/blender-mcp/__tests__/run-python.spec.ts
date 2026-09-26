@@ -163,6 +163,7 @@ withBlender("blender_run_python against a real Blender", () => {
       "unwrap",
       "bake_ao",
       "retarget",
+      "export_world",
     ]);
 
     const read = await handleLine(
@@ -178,7 +179,7 @@ withBlender("blender_run_python against a real Blender", () => {
         ?.text ?? "null",
     ) as { source: string };
     // The whole point of the tool: an agent gets the working text, not a name it must guess from.
-    expect(payload.source).toContain("DECIMATE");
+    expect(payload.source).toContain("collapse_decimate");
     expect(payload.source).toContain("SPDX-License-Identifier: GPL-2.0-or-later");
   });
 });

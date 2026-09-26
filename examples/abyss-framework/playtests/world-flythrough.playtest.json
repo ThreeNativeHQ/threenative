@@ -1,0 +1,72 @@
+{
+  "name": "world-flythrough",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": false },
+  "steps": [
+    { "label": "cross-a", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "label": "cross-b", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "label": "cross-c", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "label": "cross-d", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "label": "cross-e", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "label": "cross-f", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "label": "cross-g", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "label": "cross-h", "press": "KeyF", "release": true, "waitTicks": 40 },
+    { "kind": "wait", "label": "settle", "release": true, "waitTicks": 120 }
+  ],
+  "assert": {
+    "performance": { "maxFrameMsP95": 93 },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "component": "residentCells",
+        "entity": "world",
+        "gte": 1,
+        "changed": true,
+        "allowTrivial": "Residency is already nonzero after warm-up; the load-bearing half is that the count changed as the camera crossed cell boundaries."
+      },
+      {
+        "component": "maxResidentCells",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The peak is reported from the first observation; the run proves it only stayed at least one."
+      },
+      {
+        "component": "residenceChanges",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "Residency changes during warm-up too, so the floor can hold at the baseline observation."
+      },
+      {
+        "component": "evictions",
+        "entity": "world",
+        "gte": 1
+      },
+      {
+        "component": "instances",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "A resident cell always carries placement instances from the first observation."
+      },
+      {
+        "component": "failures",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "A cumulative failure counter is zero at the baseline by construction; the run is what keeps it there."
+      },
+      {
+        "component": "loadsInFlight",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "This is the settle guarantee at the end of the run, not a value that starts life wrong."
+      }
+    ]
+  }
+}
