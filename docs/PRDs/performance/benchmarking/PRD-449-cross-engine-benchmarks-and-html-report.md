@@ -868,6 +868,14 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   mask is a plausible cause, **not proved**. The pair has no ratio; the next conformance probe must
   read a silhouette/depth signal independent of that shaded-colour threshold.
 
+  Build provenance is now retained for fresh culling runs: the 600-frame `basic_cull` pair at
+  `artifacts/engine-load-test/diagnostics/cull-archived-{tn,godot,comparison}.json` was recorded
+  from clean commit `e3b42479f` on the physical RTX 2080. Godot mean was 1.551 ms; TN mean was
+  17.162 ms; the comparator reported `qualified`. Each archived Godot binary, TN native host and
+  TN JS bundle rehashed to the byte count and SHA-256 in its raw `identity.build`; the Godot adapter
+  hash is also recorded. This is one smoke block without preflight, A/A or a source lock, so it
+  carries no publication verdict.
+
   **Both arms now drain at the same boundary.** Godot's `drain` was `none-available` and its mean
   paced on submission, so the two means did not measure the same thing. The arm now calls
   `RenderingServer.force_sync()` — which Godot's own `RenderingServer` reference defines as forcing
