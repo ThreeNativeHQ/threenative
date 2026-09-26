@@ -198,6 +198,13 @@ describe("FixedStepLoop", () => {
     expect(loop.tick()).toBe(3);
   });
 
+  it("rejects an invalid settle count without freezing the clock", () => {
+    const loop = new FixedStepLoop({ onUpdate: () => undefined });
+    expect(() => loop.freezeClock(-1)).toThrow(/settleSteps/u);
+    expect(() => loop.freezeClock(1.5)).toThrow(/settleSteps/u);
+    expect(loop.clockFrozen).toBe(false);
+  });
+
   it("advances no frames after the clock is frozen before the run", () => {
     // A browser playtest runner announces itself before the page loads and then pumps live frames
     // through the whole startup compile wait. Those frames used to advance a tick-counting

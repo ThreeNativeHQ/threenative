@@ -254,10 +254,10 @@ export class FixedStepLoop {
   freezeClock(settleSteps = FROZEN_SETTLE_STEPS): void {
     // Armed by the *transition* into frozen, so `advance()` — which implies the freeze — does not
     // re-arm it and spend a settling pass after every tick-counted step the runner takes.
-    if (!this.#clockFrozen) this.#primePending = true;
-    this.#clockFrozen = true;
     if (!Number.isInteger(settleSteps) || settleSteps < 0)
       throw new Error("settleSteps must be a non-negative integer.");
+    if (!this.#clockFrozen) this.#primePending = true;
+    this.#clockFrozen = true;
     this.#settleSteps = settleSteps;
     this.#lastTime = Number.POSITIVE_INFINITY;
   }
