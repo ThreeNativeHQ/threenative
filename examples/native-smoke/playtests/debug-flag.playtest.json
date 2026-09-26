@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "native-debug-flag-reads-tn-debug-env",
+  "target": "desktop",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitTicks": 30, "label": "settled" }],
+  "artifacts": { "console": true, "screenshots": false },
+  "assert": {
+    "resources": [
+      { "id": "GameState", "path": "frames", "changed": true },
+      {
+        "id": "GameState",
+        "path": "debugProbe",
+        "equals": true,
+        "allowTrivial": "The flag is read once at load and published unchanged, so no run can move it; what this row proves is that the native host forwarded TN_DEBUG_PROBE into the game's process.env, which only a launched host can do."
+      }
+    ]
+  }
+}

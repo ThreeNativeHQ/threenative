@@ -764,6 +764,21 @@ export class CanvasLayer { … }
 const hud = new CanvasLayer(ctx.viewport);
 ```
 
+### `captureMouse`
+
+`function` — Lock the pointer to the game's surface: the capture every first-person mouse look needs. A browser grants capture only from a user gesture, so call it from a click or a pointerdown handler. A relative binding such as `look: { pointerRelative: true }` already requests capture on the first canvas click; this is the same request for a game that starts capture from another named gesture, and `ctx.input.captureMouse()` is the map's own way to ask.
+
+```ts
+export function captureMouse(target: EventTarget): Promise<void> | undefined { … }
+```
+
+- **Use when:** lock the mouse pointer so first-person mouse look keeps the cursor out of the way · stop the cursor leaving the window in the middle of a turn
+- **Constraints:** the browser grants capture only from a user gesture and a refusal is reported, never swallowed · a relative binding requests capture on canvas click unless `captureOnClick: false` opts out
+
+```ts
+canvas.addEventListener("click", () => captureMouse(canvas));
+```
+
 ### `clipBoneCoverage`
 
 `function` — Report which bones of a character a clip does not drive.
@@ -922,7 +937,7 @@ const capture = game.runtime.pipelineCensus?.();
 export function createRandom(seed?: number): IRandom { … }
 ```
 
-- **Use when:** seed enemy patrol choices · reproduce the same procedural level in a playtest
+- **Use when:** get a seeded deterministic random number generator — the same mulberry32 a game would hand-roll · seed enemy patrol choices · reproduce the same procedural level in a playtest
 - **Constraints:** use the returned source instead of Math.random for replayable behavior
 - **Supersedes (writing this fails `pnpm budgets`):** Math.random(
 
@@ -943,6 +958,22 @@ export function createReplayDriver( recording: Recording, target: EventTarget, p
 
 ```ts
 const driver = createReplayDriver(recording, ctx.renderer.domElement);
+```
+
+### `debugFlag`
+
+`function` — Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
+
+```ts
+export function debugFlag(name: string): boolean { … }
+```
+
+- **Use when:** read a debug toggle from the URL or an environment variable
+- **Constraints:** a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM` · `0` and `false` are off, so a saved URL cannot turn a switch back on
+
+```ts
+import { debugFlag } from "@threenative/core";
+if (debugFlag("freeCam")) camera.flyMode = true;
 ```
 
 ### `defineGame`
@@ -1071,6 +1102,23 @@ renderer.render(scene, camera);
 tracker.commit(scene);
 ```
 
+### `exposeDebug`
+
+`function` — Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
+
+```ts
+export function exposeDebug(name: string, value: unknown): void { … }
+```
+
+- **Use when:** expose a game object to a capture script or the console in dev builds
+- **Constraints:** development builds only; a production build publishes nothing
+
+```ts
+import { exposeDebug } from "@threenative/core";
+exposeDebug("player", player);
+// then from the console: __THREENATIVE__.debug.player
+```
+
 ### `FlightModel`
 
 `class` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
@@ -1158,7 +1206,7 @@ if (renderListValidationRequested()) console.log(formatValidationReport(report))
 export class FrameBudget { … }
 ```
 
-- **Use when:** find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay · tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp · split a frame's draw calls and triangles per render pass (main, shadow, reflection) · tell a shadow or reflection pass's cost from the main colour pass
+- **Use when:** show an on-screen frame time meter with p50, p95 and p99 percentiles · find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay · tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp · split a frame's draw calls and triangles per render pass (main, shadow, reflection) · tell a shadow or reflection pass's cost from the main colour pass
 - **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement · per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main · GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
 
 ```ts
@@ -1273,6 +1321,22 @@ import { GroundSnap } from "@threenative/core";
 const snap = new GroundSnap(character, { enabled: true });
 ```
 
+### `InputMap`
+
+`class` — The map a game reads input through: named actions, 2D vectors and scalar axes resolved from keyboard, gamepad, mouse, wheel, pinch and touch. `defineGame({ input })` builds one and hands it to the running game as `ctx.input`, so the usual route is a binding in the config and `ctx.input.axis("move")` in the update. Construct one directly to drive a menu, a replay or a test outside a running game.
+
+```ts
+export class InputMap { … }
+```
+
+- **Use when:** map WASD keys to a movement axis instead of reading the held key set in the update loop · read a jump, a fire or a reload as one named action bound to key, gamepad button and mouse button together · read mouse look, wheel zoom or a two-finger pinch as an axis the frame loop already ticks
+- **Constraints:** `buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it · scroll, pinch and pointer-relative sources are declared on the binding and read through `axis(name)`; a game adds no window listener of its own
+
+```ts
+const game = defineGame({ input: { move: { up: ["KeyW"], down: ["KeyS"], left: ["KeyA"], right: ["KeyD"] } }, scenes: { Play } });
+// inside the scene, per frame: ctx.input.axis("move") is 0 at rest and 1 at full tilt
+```
+
 ### `installSpanProbes`
 
 `function` — Attach the span probes to a renderer: three's `render`, `_projectObject`, the render list's `sort`, the per-draw submission, and the scene-graph walk. Installed for you when `TN_FRAME_SPANS` asks; exported so a harness can wrap a renderer it owns.
@@ -1318,7 +1382,7 @@ export function invalidateStatic(object: Object3D): number | undefined { … }
 - **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
 
 ```ts
-markStatic(island); invalidateStatic(drawbridge);
+invalidateStatic(drawbridge);
 ```
 
 ### `isMobile`
@@ -1363,7 +1427,7 @@ export function isStatic(root: Object3D): boolean { … }
 - **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
 
 ```ts
-markStatic(island); invalidateStatic(drawbridge);
+invalidateStatic(drawbridge);
 ```
 
 ### `isTouchscreenAvailable`
@@ -1412,16 +1476,31 @@ export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TI
 const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));
 ```
 
+### `lodPixelScale`
+
+`function` — The screen pixels one world unit covers at `depth` for this camera and viewport. Perspective divides the projected scale by the depth; orthographic has no depth term and uses the frustum height instead. This is the number a level of detail is chosen against: multiply a level's world-space error by it and you have the on-screen error a player can see, which is the comparison `updateModelLods` makes from the baked chain.
+
+```ts
+export function lodPixelScale(camera: Camera, viewportHeight: number, depth: number): number { … }
+```
+
+- **Use when:** pick a level of detail from an object's projected size in pixels on screen · know how many screen pixels a world-space error covers at a given distance
+- **Constraints:** a non-positive viewport height, a non-positive frustum height or an unprojectable camera throws · a non-positive depth has no projected scale and returns Infinity
+
+```ts
+const pixels = lodPixelScale(camera, canvas.clientHeight, mesh.position.distanceTo(camera.position));
+```
+
 ### `markStatic`
 
-`function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
+`function` — Freeze a subtree nobody moves: `markStatic(root)` composes its transforms once and stops the per-frame recompose. It is the call a game makes on scenery, terrain, buildings and props. The engine re-arms a root whose own transform the game changes; a write deeper inside a frozen subtree is announced with `invalidateStatic(object)`.
 
 ```ts
 export function markStatic(root: Object3D): number { … }
 ```
 
-- **Use when:** cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves · keep a frozen subtree correct when the game does move it after all
-- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+- **Use when:** freeze a static mesh or subtree so its matrices are not recomputed every frame · stop the engine recomposing the transforms of props, terrain and buildings each frame
+- **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
 
 ```ts
 markStatic(island); invalidateStatic(drawbridge);
@@ -1435,7 +1514,7 @@ markStatic(island); invalidateStatic(drawbridge);
 export class MatrixWorldPass { … }
 ```
 
-- **Use when:** the per-frame world matrix walk is hot in a profile · stop multiplying matrices for hidden models, LOD levels and merged stand-ins · a game needs every node walked, exactly as three's own updateMatrixWorld does
+- **Use when:** update the world matrices of the visible objects each frame instead of the whole scene · the per-frame world matrix walk is hot in a profile · stop multiplying matrices for hidden models, LOD levels and merged stand-ins · a game needs every node walked, exactly as three's own updateMatrixWorld does
 - **Constraints:** a game that reads a hidden object's matrixWorld directly must use getWorldPosition or updateWorldMatrix(true, false) first · `renderer.matrixWorld: "all"` visits every node; `TN_PROJECTION` reports the visited count either way
 - **Overrides:** renderer.matrixWorld: "all" runs three's full walk instead of the visible-only default
 
@@ -1457,6 +1536,24 @@ export function measureThreePose( object: Object3D, options: IMeasureThreePoseOp
 
 ```ts
 const measurement = measureThreePose(model);
+```
+
+### `mergeByMaterial`
+
+`function` — Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in. already made; nothing here decides appearance tree: add them to root and remove the sources yourself, or both draw vertices are not its own to bake texture mapping; a missing normal is recomputed
+
+```ts
+export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }
+```
+
+- **Use when:** collapse a building or ship of dozens of boxes into one draw call per material · consolidate the static parts of a group before adding it to the scene
+- **Constraints:** the material is the game's own instance and the split follows the materials the game · the meshes come back in root's local space and unparented, with the originals still in the · a skinned or instanced mesh, and a mesh with several materials, is left out — its · a group where only some meshes carry uv throws naming the label rather than losing the
+- **Overrides:** skip leaves one mesh out of its group and out of the result
+
+```ts
+const [hull, deck] = mergeByMaterial(ship, { label: "ship" });
+// a piece that must keep moving at run time:
+const [steady] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
 ```
 
 ### `mergeParts`
@@ -1769,7 +1866,7 @@ export function refreshStaticTransforms(): void { … }
 - **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
 
 ```ts
-markStatic(island); invalidateStatic(drawbridge);
+invalidateStatic(drawbridge);
 ```
 
 ### `RenderChain`
@@ -1858,7 +1955,7 @@ export function resetStaticTransforms(): void { … }
 - **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
 
 ```ts
-markStatic(island); invalidateStatic(drawbridge);
+invalidateStatic(drawbridge);
 ```
 
 ### `resolveAtmosphereLutResolutions`
@@ -2203,7 +2300,7 @@ export function staticTransformCensus(): IStaticTransformCensus { … }
 - **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
 
 ```ts
-markStatic(island); invalidateStatic(drawbridge);
+invalidateStatic(drawbridge);
 ```
 
 ### `TracerPool3D`
@@ -2234,7 +2331,7 @@ export function unmarkStatic(root: Object3D): void { … }
 - **Constraints:** staticness is authored, never guessed; no heuristic watches gameplay and decides for you · it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless · a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
 
 ```ts
-markStatic(island); invalidateStatic(drawbridge);
+invalidateStatic(drawbridge);
 ```
 
 ### `updateAtmosphereParameters`

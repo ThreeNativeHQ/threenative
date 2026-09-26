@@ -4,15 +4,19 @@ import {
   BufferGeometry,
   Color,
   ExtrudeGeometry,
+  Group,
+  InstancedMesh,
   InterleavedBuffer,
   InterleavedBufferAttribute,
   Matrix4,
   Mesh,
+  MeshStandardMaterial,
   Shape,
+  SkinnedMesh,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { describe, expect, it, vi } from "vitest";
-import { mergeParts } from "../src/merge-parts.js";
+import { mergeByMaterial, mergeParts } from "../src/merge-parts.js";
 
 /** The mismatch that actually happens: a lofted profile is non-indexed, a primitive is indexed. */
 function extruded(): ExtrudeGeometry {
@@ -301,5 +305,114 @@ describe("mergeParts", () => {
     expect(Array.from(data)).toEqual([
       0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
     ]);
+  });
+});
+
+describe("mergeByMaterial", () => {
+  /** A named material, so a refusal names `label:material` and not a group index. */
+  function surface(name: string): MeshStandardMaterial {
+    const material = new MeshStandardMaterial();
+    material.name = name;
+    return material;
+  }
+
+  it("should return one mesh per material with transforms baked and the game's own surface", () => {
+    const hull = surface("hull");
+    const deck = surface("deck");
+    const mast = surface("mast");
+    const root = new Group();
+    for (let part = 0; part < 3; part += 1) {
+      for (const material of [hull, deck, mast]) {
+        const mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
+        mesh.position.set((part + 1) * 10, 1, 2);
+        root.add(mesh);
+      }
+    }
+
+    const merged = mergeByMaterial(root, { label: "ship" });
+
+    expect(merged).toHaveLength(3);
+    expect(merged.map((mesh) => mesh.material)).toEqual([hull, deck, mast]);
+    for (const mesh of merged) {
+      expect(mesh.geometry.getAttribute("position").count).toBe(3 * 36);
+      // Box corners sit at ±0.5 and the first piece is placed at (10, 1, 2), so the first merged
+      // vertex reads 10.5 — the placement is in the buffer, not on a node.
+      expect(mesh.geometry.getAttribute("position").getX(0)).toBeCloseTo(10.5, 5);
+      expect(mesh.geometry.getAttribute("position").getY(0)).toBeCloseTo(1.5, 5);
+      expect(mesh.geometry.getAttribute("position").getZ(0)).toBeCloseTo(2.5, 5);
+      expect(mesh.geometry.getAttribute("uv")).toBeDefined();
+      expect(mesh.geometry.getAttribute("normal")).toBeDefined();
+    }
+  });
+
+  it("should leave root and its meshes untouched", () => {
+    const root = new Group();
+    root.position.set(4, 0, 0);
+    const mesh = new Mesh(new BoxGeometry(1, 1, 1), surface("plate"));
+    root.add(mesh);
+    mesh.position.set(1, 2, 3);
+    const before = Array.from(mesh.geometry.getAttribute("position").array);
+
+    const [merged] = mergeByMaterial(root, { label: "plate" });
+
+    // Merged in the root's own frame, so the bake is 1 + 0.5 rather than 4 + 1 + 0.5.
+    expect(merged?.geometry.getAttribute("position").getX(0)).toBeCloseTo(1.5, 5);
+    expect(Array.from(mesh.geometry.getAttribute("position").array)).toEqual(before);
+    expect(root.children).toEqual([mesh]);
+    expect(mesh.position.toArray()).toEqual([1, 2, 3]);
+  });
+
+  it("should honour skip", () => {
+    const hull = surface("hull");
+    const root = new Group();
+    const moving = new Mesh(new BoxGeometry(1, 1, 1), hull);
+    moving.name = "radar";
+    root.add(
+      moving,
+      new Mesh(new BoxGeometry(1, 1, 1), hull),
+      new Mesh(new BoxGeometry(1, 1, 1), hull),
+    );
+
+    const [merged] = mergeByMaterial(root, {
+      label: "hull",
+      skip: (mesh) => mesh.name === "radar",
+    });
+
+    expect(merged?.geometry.getAttribute("position").count).toBe(2 * 36);
+    expect(merged?.geometry.getAttribute("uv")).toBeDefined();
+  });
+
+  it("should refuse a group where only some meshes carry uv, naming the label", () => {
+    const hull = surface("hull");
+    const root = new Group();
+    const bare = new BoxGeometry(1, 1, 1);
+    bare.deleteAttribute("uv");
+    root.add(new Mesh(new BoxGeometry(1, 1, 1), hull), new Mesh(bare, hull));
+
+    expect(() => mergeByMaterial(root, { label: "ship" })).toThrow(
+      /mergeParts\(ship:hull\).*no uv/u,
+    );
+  });
+
+  it("should throw naming the label when a group cannot be merged", () => {
+    const root = new Group();
+    const hull = surface("hull");
+    root.add(new Mesh(new BoxGeometry(1, 1, 1), hull));
+    root.add(new Mesh(new BufferGeometry(), hull));
+
+    expect(() => mergeByMaterial(root, { label: "ship" })).toThrow(/mergeParts\(ship:hull\)/);
+  });
+
+  it("should leave a skinned or instanced mesh out of the bake", () => {
+    const hull = surface("hull");
+    const root = new Group();
+    const staticMesh = new Mesh(new BoxGeometry(1, 1, 1), hull);
+    const skinned = new SkinnedMesh(new BoxGeometry(1, 1, 1), hull);
+    const instanced = new InstancedMesh(new BoxGeometry(1, 1, 1), hull, 2);
+    root.add(staticMesh, skinned, instanced);
+
+    const [merged] = mergeByMaterial(root, { label: "crew" });
+
+    expect(merged?.geometry.getAttribute("position").count).toBe(36);
   });
 });
