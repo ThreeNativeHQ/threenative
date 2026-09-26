@@ -908,6 +908,17 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // A draft PR spends no runner: every job needs `scope`, so skipping it and the always() gate
+  // skips the board, and `ready_for_review` starts it once the draft is marked ready.
+  it("runs nothing on draft pull requests until they are marked ready", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(triggerSection(ci)).toContain(
+      "types: [opened, synchronize, reopened, ready_for_review]",
+    );
+    expect(ci).toContain("name: Change scope\n    if: ${{ !github.event.pull_request.draft }}");
+    expect(ci).toContain("if: ${{ always() && !github.event.pull_request.draft }}");
+  });
+
   it("preserves main qualification while enabling develop PRs and serializes release lanes", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
