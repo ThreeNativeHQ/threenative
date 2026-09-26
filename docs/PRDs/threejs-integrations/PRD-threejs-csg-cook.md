@@ -26,8 +26,8 @@ Use a 4m x 3m x 0.3m wall minus a through-cutter making a 1m x 2m opening. Rays 
 - [x] Execute the dependency-free active-range regression corpus: 10 failing tests before implementation, then 10 passing tests on Node 22.16.0.
 
 ### Phase 2 — offline generation and round-trip
-- [ ] Implement the editable authoring script and active-range normalization.
-  Code is present; donor-backed build/generation must still execute before this combined claim is checked.
+- [x] Implement the editable authoring script and active-range normalization.
+  The strict dependency build, 10 range contracts and real CLI generation/readback now pass; overwrite protection is exercised by the CLI integration test.
 - [ ] Pass the GLB validation and geometry round-trip tests.
 - [ ] Prove failure diagnostics and shared-input disposal behavior.
 - [x] Strict-check the dependency-free normalization module with local TypeScript 5.8.3: exit 0.
@@ -61,6 +61,12 @@ Executed: `node --experimental-strip-types --test tests/contracts.test.mjs` — 
 **Dependency-backed CI, 2026-09-25:** Integration csg run 36201601920 installed successfully and failed TypeScript 5.9.3 at export-glb.ts: the explicit Uint16Array/Uint32Array cast widened the new buffer to ArrayBufferLike, which glTF Transform does not accept. This commit creates an owned Uint16Array or Uint32Array without the widening cast. The real build was the failing regression; the rerun result remains unverified until observed. No check or test was disabled. Pure contracts remain 10/10 locally; no GLB round-trip success is claimed yet.
 
 Formal engine capability tools, transitive-license audit, lockfile generation, Biome, full repository tests and all GPU/native/collision lanes are unrun. No iOS support claim. Keep draft. Reject adoption rather than relaxing topology/export or platform gates. Removing the authoring dependency must leave cooked GLBs loadable. Do not change WorldCells #317 or cook profiles #330 implicitly.
+
+## CI repair verification — 2026-09-26
+
+`npm test` passes with the pinned dependencies: strict TypeScript 5.9.3 build, 10 active-range contracts and 5 real donor/export/CLI integration tests (15 passed, 0 failed). The doorway retains its opening through NodeIO GLB write/read. The new CLI test spawns the real compiled authoring command, reads its GLB, then proves a second invocation rejects EEXIST and leaves the original bytes unchanged. This is added coverage of existing behavior, not a claimed new runtime bug fix.
+
+Biome 1.9.4 checks all 8 package source/config/test files with the unchanged repository rules, exit 0 after formatting and replacing the flagged cleanup forEach with a for-of loop. The temporary read-only cross-PR diagnostic workflow has been removed from this branch. This supersedes the earlier local dependency and export-type limitations. Khronos GLB validation, the complete engine cook/load/collision route, browser/native/Android playtests, full repository checks and independent review remain open; CPU export/readback is not platform admission.
 
 ## References
 
