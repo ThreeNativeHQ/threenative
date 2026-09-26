@@ -720,6 +720,21 @@ import { boneLengths } from "@threenative/core";
 const baseline = boneLengths(character);
 ```
 
+### `bvhIntersectFirstHit`
+
+`function` — Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
+
+```ts
+bvhIntersectFirstHit = upstream.bvhIntersectFirstHit
+```
+
+- **Use when:** trace thousands of scene rays inside a TSL kernel · build a contact-occlusion or visibility query over loaded meshes
+- **Constraints:** call rebuild() after a scene transform or geometry change; the snapshot is static by default · rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
+
+```ts
+const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
+```
+
 ### `CameraShake`
 
 `class` — Produce a game-authored camera shake offset for a template-owned camera rig.
@@ -2676,6 +2691,21 @@ const mirror = subscribeUiState(bridge);
 
 ## `@threenative/core/world`
 
+### `cellPlacements`
+
+`function` — Borrow the run's placement records as a live view over the placement buffer.
+
+```ts
+export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32Array { … }
+```
+
+- **Use when:** feed one cell's instance transforms into a batch without copying
+- **Constraints:** the returned view aliases the caller's buffer; writing to it mutates the source
+
+```ts
+const records = cellPlacements(buffer, { asset: "tree", offset: 0, count: 120 });
+```
+
 ### `getWorldCapabilities`
 
 `function` — Resolve the active world-generation path from host capability facts. The function accepts the adapter facts instead of reaching through a renderer-specific global, so browser and native hosts can report the same object. Missing limits are not treated as infinite: a host must either provide a valid GPU limit report or explicitly choose CPU fallback. GPU generation remains unavailable until a GPU readback can own the canonical field; a host adapter report therefore never upgrades a CPU fallback into a GPU generation claim.
@@ -2708,6 +2738,36 @@ export class Heightfield extends Group implements IComputeDriven { … }
 const field = Heightfield.fromSampler({ rows: 65, columns: 65, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: terrainHeight });
 ```
 
+### `heightSamplerFromHeightmap`
+
+`function` — Build a game-usable `sampleHeight` from a raw v1 heightmap. The returned function interpolates bilinearly in world units and clamps to the map edges, so it plugs straight into `Heightfield.fromSampler` and `TerrainTiles`. Height is `heightMin + v / 65535 * (heightMax - heightMin)` at vertex `(column, row)`.
+
+```ts
+export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWorldExtent, data: Uint16Array, ): (x: number, z: number) => number { … }
+```
+
+- **Use when:** turn an exported raw heightmap into terrain collision and rendering · query ground height from a Blender-authored world package
+- **Constraints:** the sampler reads the game's data; the framework never selects a terrain shape
+
+```ts
+const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));
+```
+
+### `loadWorldHeightmap`
+
+`function` — Fetch a raw little-endian uint16 heightmap and expose it as samples.
+
+```ts
+export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { … }
+```
+
+- **Use when:** load a world package's heightmap once before building terrain
+- **Constraints:** a non-OK response throws; bytes are byte-swapped only on a big-endian host
+
+```ts
+const data = await loadWorldHeightmap("/world/terrain/heightmap.u16");
+```
+
 ### `TerrainTiles`
 
 `class` — Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.
@@ -2722,6 +2782,39 @@ export class TerrainTiles extends Object3D implements IComputeDriven { … }
 
 ```ts
 const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
+```
+
+### `validateWorldPackage`
+
+`function` — Validate a `world.json` manifest against the v1 contract. Never throws on garbage input: a non-object manifest is `WORLD_MALFORMED`. Every problem is collected, so an exporter sees the complete list at once.
+
+```ts
+export function validateWorldPackage( manifest: unknown, options: IWorldPackageValidationOptions, ): { … }
+```
+
+- **Use when:** check a Blender-exported world package before the runtime attaches anything · report why a world package cannot be streamed
+- **Constraints:** validation only checks structure and ranges; it never fetches the heightmap or GLBs
+
+```ts
+const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });
+```
+
+### `WorldCells`
+
+`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game.
+
+```ts
+export class WorldCells extends Group implements IComputeDriven { … }
+```
+
+- **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell
+- **Overrides:** ring, budgets, terrain tile size/resolution, load `concurrency` and the package's per-asset maxDistance
+
+```ts
+const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
+scene.add(world);
+world.update();
 ```
 
 ## `@threenative/physics`
@@ -3294,6 +3387,21 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
 
 ```ts
 assertCaptureNotBlank(png, "first frame");
+```
+
+### `assertFrameShowsSomething`
+
+`function` — Fail closed when a screenshot is blank or uniform.
+
+```ts
+assertFrameShowsSomething = assertCaptureNotBlank
+```
+
+- **Use when:** guard a visual playtest against a blank frame · prove a screenshot contains more than a loading surface
+- **Constraints:** the assertion throws instead of returning a false pass
+
+```ts
+assertFrameShowsSomething(png, "first frame");
 ```
 
 ### `CaptureGuardError`
