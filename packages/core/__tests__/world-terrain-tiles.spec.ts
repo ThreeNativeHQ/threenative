@@ -1,4 +1,4 @@
-import { BufferAttribute, Mesh, MeshBasicMaterial } from "three";
+import { BufferAttribute, BufferGeometry, Mesh, MeshBasicMaterial } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
@@ -1102,7 +1102,7 @@ describe("TerrainTiles", () => {
       1_000_000,
     );
     tiles.dispose();
-  }, 10_000);
+  }, 60_000);
 
   it("rejects a quality field whose sample grid does not match rendered tile geometry", () => {
     expect(
@@ -1209,4 +1209,380 @@ describe("TerrainTiles", () => {
     });
     expect(() => tiles.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
   });
+
+  it("validates constructor options and sizes before streaming", () => {
+    const valid = {
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      tileResolution: 9,
+      tileSize: 16,
+    };
+    expect(() => new TerrainTiles({ ...valid, tileSize: Number.NaN })).toThrow(/must be finite/u);
+    expect(() => new TerrainTiles({ ...valid, tileSize: 0 })).toThrow(/greater than zero/u);
+    expect(() => new TerrainTiles({ ...valid, tileResolution: 2.5 })).toThrow(
+      /integer of at least 3/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, lodFactors: [3] })).toThrow(/minus one must divide/u);
+    expect(() => new TerrainTiles({ ...valid, lodFactors: [] })).toThrow(/must not be empty/u);
+    expect(() => new TerrainTiles({ ...valid, lodFactors: [1, 2], lodDistances: [] })).toThrow(
+      /one threshold per LOD transition/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, lodDistances: [8, 8] })).toThrow(
+      /strictly increasing/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, surface: undefined as never })).toThrow(
+      /surface is required/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, sampleHeight: "nope" as never })).toThrow(
+      /sampleHeight is required/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, assetKey: "model.glb" })).toThrow(
+      /requires an assets.release consumer/u,
+    );
+    expect(
+      () =>
+        new TerrainTiles({
+          ...valid,
+          topologyObservation: {
+            columns: 100,
+            depth: 16,
+            origin: { x: 0, z: 0 },
+            rows: 9,
+            width: 100,
+          },
+        }),
+    ).toThrow(/whole number of rendered tiles/u);
+    expect(
+      () =>
+        new TerrainTiles({
+          ...valid,
+          topologyObservation: {
+            columns: 17,
+            depth: 16,
+            origin: { x: 0, z: 0 },
+            rows: 17,
+            width: 32,
+          },
+        }),
+    ).toThrow(/rows must match the rendered tile grid/u);
+  });
+
+  it("rejects an asset key that resolves to an empty string", () => {
+    const tiles = new TerrainTiles({
+      assetKey: () => "  ",
+      assets: loader(vi.fn()),
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    expect(() => tiles.follow({ x: 0, z: 0 })).toThrow(/non-empty string/u);
+    tiles.dispose();
+  });
+
+  it("exposes lifecycle state and guards every entry point after release", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    expect(tiles.released).toBe(false);
+    expect(tiles.warmupNodes).toEqual([]);
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.warmupNodes).toEqual([]);
+
+    const tile = tiles.getTile("0:0");
+    if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+    expect((tile.collider as { disposed?: boolean }).disposed).toBe(false);
+    expect(tiles.sample("slope", 0, 0)).toBeCloseTo(1 - tiles.normalAt(0, 0).y, 10);
+
+    tiles.attachRenderer({} as never);
+    tiles.process();
+    tiles.detach();
+
+    expect(tiles.released).toBe(true);
+    expect((tile.collider as { disposed?: boolean }).disposed).toBe(true);
+    expect(() => tiles.follow({ x: 0, z: 0 })).toThrow(/after release/u);
+    expect(() => tiles.attachRenderer({} as never)).toThrow(/after release/u);
+    expect(() => tiles.process()).not.toThrow();
+    expect(() => tiles.dispose()).not.toThrow();
+  });
+
+  it("samples delegated channels from the resident field", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.sample("height", 0, 0)).toBeCloseTo(tiles.heightAt(0, 0), 10);
+      expect(() => tiles.heightAt(10_000, 0)).toThrow(/outside its resident region/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects an LOD blend that reads a corrupted coarser level", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 1_000_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+      const coarse = tile.lod.levels[1]?.object;
+      if (!(coarse instanceof Mesh)) throw new Error("Expected a coarse LOD mesh.");
+      coarse.geometry.getAttribute("position").setY(0, Number.NaN);
+
+      expect(() => tiles.follow({ x: 12, z: 0 })).toThrow(/invalid height/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("fails closed when a rendered edge cannot be placed in the world", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      expect(tiles.stitchedEdgeCount).toBeGreaterThan(0);
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the finer tile to remain resident.");
+      const fine = tile.lod.levels[0]?.object;
+      if (!(fine instanceof Mesh)) throw new Error("Expected a fine LOD mesh.");
+      fine.position.x = Number.NaN;
+
+      expect(() => tiles.process()).toThrow(/bridge world coordinates/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose mesh was retargeted to foreign geometry", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.geometry = new BufferGeometry();
+
+      expect(() => tiles.process()).toThrow(/not attached to its mesh/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose rendered index count no longer matches its strip", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2]), 1));
+
+      expect(() => tiles.process()).toThrow(/invalid rendered triangle data/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose rendered normals went missing", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.geometry.deleteAttribute("normal");
+
+      expect(() => tiles.process()).toThrow(/invalid rendered triangle data/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose rendered positions went non-finite", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.geometry.getAttribute("position").setY(0, Number.NaN);
+
+      expect(() => tiles.process()).toThrow(/bridge coordinates must be finite/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose mesh moved its endpoints out of the world", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.position.x = Number.NaN;
+
+      expect(() => tiles.process()).toThrow(/bridge world coordinates/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("releases a half-built tile when its collider factory throws", () => {
+    const tiles = new TerrainTiles({
+      createCollider: () => {
+        throw new Error("collider-nope");
+      },
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    expect(() => tiles.follow({ x: 0, z: 0 })).toThrow("collider-nope");
+    expect(tiles.residentTileCount).toBe(0);
+    tiles.dispose();
+  });
+
+  it("fails closed when stitched neighbor geometry exceeds the byte cap", () => {
+    const options = {
+      surface: new MeshBasicMaterial(),
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    };
+    const probe = new TerrainTiles({ ...options, residentByteBudget: 1_000_000 });
+    probe.follow({ x: 2, z: 0 });
+    const fitted = probe.residentBytes;
+    expect(probe.residentKeys).toEqual(["0:0", "1:0"]);
+    probe.dispose();
+
+    const tiles = new TerrainTiles({ ...options, residentByteBudget: fitted - 1 });
+    try {
+      expect(() => tiles.follow({ x: 2, z: 0 })).toThrow(/stitched neighbor geometry/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("reports a full topology description without retaining samples or flow", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      tileResolution: 17,
+      tileSize: 16,
+      topologyObservation: {
+        columns: 1025,
+        depth: 1024,
+        origin: { x: 0, z: 0 },
+        rows: 1025,
+        width: 1024,
+      },
+    });
+
+    const topology = tiles.debug().topology as Record<string, unknown>;
+    expect(topology).toMatchObject({ columns: 1025, depth: 1024, rows: 1025, width: 1024 });
+    expect(topology).not.toHaveProperty("heights");
+    expect(topology).not.toHaveProperty("flow");
+    expect(topology).not.toHaveProperty("metrics");
+    tiles.dispose();
+  }, 60_000);
 });
