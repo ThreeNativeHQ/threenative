@@ -95,6 +95,10 @@ describe("core constraints", () => {
           // them. It reads appearance fields only to compare them; it constructs, sets and chooses
           // nothing, and the surface kept is the package's own.
           file !== "render/material-key.ts" &&
+          // The daylight rig wires a sky, a sun, a fill light, haze and the tone curve from values
+          // the game must supply — every colour, angle, intensity, density and exposure is a
+          // required option. It constructs the objects those values need and chooses none of them.
+          file !== "render/daylight.ts" &&
           // The mip-aware cutout compensates the SAMPLING of a texture the game owns: it reads a
           // map's texel size and moves the cutoff the alpha is compared against, so a needle card
           // survives the mip chain instead of being discarded at mip one. The cutoff itself, the

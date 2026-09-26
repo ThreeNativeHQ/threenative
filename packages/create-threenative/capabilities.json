@@ -1234,6 +1234,30 @@
     {
       "aliases": [],
       "constraints": [
+        "every value is required; there is no default sun, sky, haze or exposure",
+        "`skySize` must keep the sky box's corners inside the camera's far plane",
+        "shadowExtents follow `VirtualShadowNode`: half-widths, finest first, strictly increasing"
+      ],
+      "example": "const daylight = new Daylight({ follow: ctx.camera, sunDirection, sunColor, sunIntensity: 4, shadowExtents: [24, 96, 320], sky: { turbidity: 3, rayleigh: 1.4, mieCoefficient: 0.004, mieDirectionalG: 0.8 }, fill: { sky, ground, intensity: 1.1 }, haze: { color: horizon, density: 0.0011 }, exposure: 2 ** -0.6, skySize: 1600 });\nctx.add(daylight);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "sky uniforms stay live on `daylight.sky`; the light and fill are `daylight.sun` and `daylight.fill`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class Daylight extends Group implements IComputeDriven { … }",
+      "situations": [
+        "daytime sky, sun and shadows for a large outdoor map",
+        "distant terrain should fade into the sky instead of a coloured wall",
+        "match a Blender look-dev scene's sun, sky and exposure in the game"
+      ],
+      "summary": "An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye, hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.",
+      "supersedes": [],
+      "symbol": "Daylight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "a name in camelCase becomes UPPER_SNAKE: `debugFlag(\"freeCam\")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`",
         "`0` and `false` are off, so a saved URL cannot turn a switch back on"
       ],
