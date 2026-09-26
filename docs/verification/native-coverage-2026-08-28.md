@@ -16,17 +16,17 @@ targets could not be built and are named below.
 | `src/js/` | 2785 | 2212 | 79.43% |
 | `src/platform/` | 1270 | 914 | 71.97% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2331 | 1852 | 79.45% |
+| `src/runtime.cpp` | 2338 | 1856 | 79.38% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9661 | 7370 | 76.29% |
+| `src/webgpu/` | 9661 | 7379 | 76.38% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24025** | **18866** | **78.53%** |
+| **TOTAL** | **24032** | **18879** | **78.56%** |
 
-Source digest: `sha256:f258174b4a39fa2e62673911911098f056f55be359989408418149854a0b97d7`
+Source digest: `sha256:17bd056e5be0700c32a2cef75469b75fe98999bd07ff45c24d5346d439c4bd06`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
