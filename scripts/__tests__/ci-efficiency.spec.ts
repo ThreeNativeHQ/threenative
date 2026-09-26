@@ -319,7 +319,11 @@ describe("PRD-373 fail-closed required verdict", () => {
 
   it("always evaluates and does not depend on advisory summary work", () => {
     const gate = job("ci-required");
-    expect(gate).toContain("if: ${{ always() }}");
+    // PR #340 gives the gate the draft guard, so a draft PR starts no board at all and this job
+    // skips with the rest. What the assertion is about still holds: `always()` is the first term,
+    // so the gate evaluates even when an upstream job failed. `ci-structure.spec.ts` pins the same
+    // string from the workflow side.
+    expect(gate).toContain("if: ${{ always() && !github.event.pull_request.draft }}");
     expect(gate).toContain("toJSON(needs)");
     expect(gate).toContain("node scripts/ci-required.mjs");
     expect(gate).not.toContain("continue-on-error");
