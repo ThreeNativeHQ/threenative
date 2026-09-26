@@ -1,5 +1,10 @@
 packages: ['packages/*', 'examples/*', 'site']
 
+# `pnpm install` stops on an interactive "remove the existing node_modules and reinstall?"
+# confirmation when a checkout's modules directory was not created by this pnpm. A fresh worktree
+# has no TTY, so the agent hangs until `CI=true` or a human answers. Answer it here instead.
+confirmModulesPurge: false
+
 catalog:
   three: 0.185.1
   '@gltf-transform/core': 4.4.2
