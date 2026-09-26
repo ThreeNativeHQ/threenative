@@ -83,6 +83,7 @@ function messageFor(logicalPath: string, result: BridgeResult): string {
 
 export function blenderImportPass(options: IBlenderImportOptions = {}): IAssetPass {
   return {
+    appliesTo: ["model"],
     configuration: { extensions: [...BLENDER_SOURCE_EXTENSIONS].sort() },
     name: BLENDER_IMPORT_PASS,
     async apply(input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> {

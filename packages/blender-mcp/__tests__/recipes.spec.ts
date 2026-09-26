@@ -74,7 +74,7 @@ async function glbFacts(file: string): Promise<{ triangles: number; uvSets: numb
 
 describe("recipe registry", () => {
   it("should ship the source of every recipe it lists", () => {
-    expect(recipeNames()).toEqual(["decimate", "unwrap", "bake_ao", "retarget"]);
+    expect(recipeNames()).toEqual(["decimate", "unwrap", "bake_ao", "retarget", "export_world"]);
     for (const recipe of RECIPES) {
       const source = recipeSource(recipe);
       expect(source, recipe.name).toContain("SPDX-License-Identifier: GPL-2.0-or-later");

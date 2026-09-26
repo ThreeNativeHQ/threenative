@@ -36,6 +36,11 @@ import {
   blenderImportPass,
   needsBlenderImport,
 } from "./passes/blender-import.js";
+import type {
+  IModelCompactInstanceOptions,
+  IModelCompactOptions,
+  IModelCompactSummary,
+} from "./passes/compact.js";
 import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
@@ -50,7 +55,7 @@ import type {
   IModelVirtualOptions,
 } from "./passes/model.js";
 import { createSharedImageStore, unpackGlb } from "./passes/shared-images.js";
-import { texturePass } from "./passes/texture.js";
+import { texturePass, textureResizePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions, TextureSkipReason } from "./passes/texture.js";
 import {
   formatAudioSizes,
@@ -124,6 +129,13 @@ export interface IAssetPass {
   readonly needsRuntimeDecoder?: boolean;
   readonly name: string;
   /**
+   * Input kinds whose bytes this pass can change. The compile hashes only the passes that can
+   * change an asset into that asset's digest, so a model-only option edit does not rename every
+   * texture. `undefined` (the default for a caller-supplied pass) means any kind, which stays
+   * conservative: an unknown pass can change every asset.
+   */
+  readonly appliesTo?: readonly AssetKind[];
+  /**
    * JSON-serializable snapshot of every option that changes this pass's output. Part of the
    * compile cache key: without it, editing a config value (texture quality, quantize bits, an
    * override's codec) leaves the pass name and input hash untouched and the stale output is
@@ -174,6 +186,11 @@ export interface IAssetSourceConfig {
 }
 
 export interface IModelsConfig {
+  /**
+   * Lossless scene-graph compaction (flatten → instance → join) against one protected-node set.
+   * Default true ({@link IModelCompactOptions}); `false` ships the scene graph as authored.
+   */
+  readonly compact?: boolean | IModelCompactOptions;
   /** Generate standard TEXCOORD_1 lightmap UVs. Absent means no lightmap pass. */
   readonly lightmap?: ILightmapPassOptions;
   readonly passes?: IModelPassesOptions;
@@ -323,6 +340,8 @@ interface IAssetManifestEntry {
   readonly simplify?: ISimplifyRow;
   /** Automatic discrete LOD generation, when the effective policy ran (model pass). */
   readonly lod?: ILodRow;
+  /** Lossless scene-graph compaction (PRD-443), when it ran (model pass). */
+  readonly compact?: IModelCompactSummary;
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
@@ -409,8 +428,10 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
  * output and a cached `public/` from v7 has no receipt to delete.
  * v9: audio is conditioned and encoded to Ogg Vorbis instead of passing through byte-identical,
  * so every audio output from v8 has the wrong extension and the wrong bytes.
+ * v10: a decoder-free target honours a declared `textures.maxSize`/`models.textures.maxSize` by
+ * resampling to PNG, and the cache digest is per-asset kind instead of one global pass list.
  */
-const PIPELINE_VERSION = 9;
+const PIPELINE_VERSION = 10;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
   // Converted to GLB by `blenderImportPass` before `modelPass` sees them. Until PRD-346 these four
@@ -458,6 +479,90 @@ function simplifyRow(value: unknown): ISimplifyRow | undefined {
     requestedRatio: value.requestedRatio as number,
     trianglesAfter: value.trianglesAfter as number,
     trianglesBefore: value.trianglesBefore as number,
+  };
+}
+
+function compactRow(value: unknown): IModelCompactSummary | undefined {
+  if (!isRecord(value)) return undefined;
+  const flatten = value.flatten;
+  const instance = value.instance;
+  const join = value.join;
+  if (!isRecord(flatten) || !isRecord(instance) || !isRecord(join)) return undefined;
+
+  if (typeof flatten.enabled !== "boolean" || typeof flatten.reparented !== "number") {
+    return undefined;
+  }
+  if (
+    typeof instance.batches !== "number" ||
+    typeof instance.enabled !== "boolean" ||
+    typeof instance.instances !== "number" ||
+    (instance.reason !== undefined && typeof instance.reason !== "string")
+  ) {
+    return undefined;
+  }
+  if (
+    typeof join.enabled !== "boolean" ||
+    typeof join.primitivesAfter !== "number" ||
+    typeof join.primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  const nodesAfter = value.nodesAfter;
+  const nodesBefore = value.nodesBefore;
+  const primitivesAfter = value.primitivesAfter;
+  const primitivesBefore = value.primitivesBefore;
+  if (
+    typeof nodesAfter !== "number" ||
+    typeof nodesBefore !== "number" ||
+    typeof primitivesAfter !== "number" ||
+    typeof primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value.removed) || !Array.isArray(value.protected)) return undefined;
+  const removed: string[] = [];
+  for (const name of value.removed) {
+    if (typeof name !== "string") return undefined;
+    removed.push(name);
+  }
+
+  const protectedNodes: IModelCompactSummary["protected"][number][] = [];
+  for (const entry of value.protected) {
+    if (!isRecord(entry) || typeof entry.name !== "string") return undefined;
+    const rule = entry.rule;
+    if (
+      rule !== "allow-list" &&
+      rule !== "animation-ancestor" &&
+      rule !== "animation-target" &&
+      rule !== "regex" &&
+      rule !== "skin-joint"
+    ) {
+      return undefined;
+    }
+    protectedNodes.push({ name: entry.name, rule });
+  }
+
+  return {
+    flatten: { enabled: flatten.enabled, reparented: flatten.reparented },
+    instance: {
+      batches: instance.batches,
+      enabled: instance.enabled,
+      instances: instance.instances,
+      ...(instance.reason === undefined ? {} : { reason: instance.reason }),
+    },
+    join: {
+      enabled: join.enabled,
+      primitivesAfter: join.primitivesAfter,
+      primitivesBefore: join.primitivesBefore,
+    },
+    nodesAfter,
+    nodesBefore,
+    primitivesAfter,
+    primitivesBefore,
+    removed,
+    protected: protectedNodes,
   };
 }
 
@@ -809,6 +914,7 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
   const allowed = [
+    "compact",
     "lightmap",
     "passes",
     "quantize",
@@ -826,6 +932,7 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   // vocabulary; a malformed value surfaces as TN_ASSETS_CONFIG_* when the registry is built.
   const passes = raw.passes === undefined ? {} : parseModelPasses(raw.passes);
   const quantize = raw.quantize === undefined ? {} : parseModelQuantize(raw.quantize);
+  const compact = raw.compact === undefined ? undefined : parseModelCompact(raw.compact);
   const lightmap = raw.lightmap === undefined ? undefined : parseLightmap(raw.lightmap);
   const simplify = raw.simplify === undefined ? undefined : parseModelSimplify(raw.simplify);
   const textures = raw.textures === undefined ? undefined : parseModelTextures(raw.textures);
@@ -835,12 +942,108 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   }
   return {
     sharedImages: raw.sharedImages !== false,
+    ...(compact === undefined ? {} : { compact }),
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
     ...(simplify === undefined ? {} : { simplify }),
     ...(textures === undefined ? {} : { textures }),
     ...(virtual === undefined ? {} : { virtual }),
+  };
+}
+
+const MODEL_COMPACT_KEYS: readonly string[] = [
+  "flatten",
+  "instance",
+  "join",
+  "protectedNames",
+  "protectedPattern",
+];
+
+/**
+ * `true`/absent runs every compaction sub-pass with defaults; `false` is the kill switch; an
+ * object configures the sub-passes and the protected-node rules. Every key is validated here,
+ * because a silently-dropped `protectedNames` is a node the author expected to keep addressable
+ * and would not.
+ */
+function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
+  if (typeof raw === "boolean") return raw;
+  if (!isRecord(raw)) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.compact must be a boolean or an object.",
+    );
+  }
+  for (const key of Object.keys(raw)) {
+    if (!MODEL_COMPACT_KEYS.includes(key)) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.compact.${key} is not recognised.`,
+      );
+    }
+  }
+  for (const key of ["flatten", "join"] as const) {
+    if (raw[key] !== undefined && typeof raw[key] !== "boolean") {
+      throw new Error(`TN_ASSETS_CONFIG_INVALID: assets.models.compact.${key} must be a boolean.`);
+    }
+  }
+  let instance: boolean | IModelCompactInstanceOptions | undefined;
+  if (raw.instance !== undefined) {
+    if (typeof raw.instance === "boolean") {
+      instance = raw.instance;
+    } else if (isRecord(raw.instance)) {
+      for (const key of Object.keys(raw.instance)) {
+        if (key !== "min")
+          throw new Error(
+            `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.compact.instance.${key} is not recognised.`,
+          );
+      }
+      if (
+        raw.instance.min !== undefined &&
+        (typeof raw.instance.min !== "number" ||
+          !Number.isSafeInteger(raw.instance.min) ||
+          raw.instance.min < 2)
+      )
+        throw new Error(
+          "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance.min must be an integer of at least 2.",
+        );
+      instance = raw.instance.min === undefined ? {} : { min: raw.instance.min };
+    } else {
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance must be a boolean or an object.",
+      );
+    }
+  }
+  if (raw.protectedNames !== undefined) {
+    if (
+      !Array.isArray(raw.protectedNames) ||
+      raw.protectedNames.some((name) => typeof name !== "string")
+    )
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedNames must be an array of strings.",
+      );
+  }
+  if (raw.protectedPattern !== undefined) {
+    if (typeof raw.protectedPattern !== "string")
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedPattern must be a string.",
+      );
+    try {
+      new RegExp(raw.protectedPattern, "iu");
+    } catch {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedPattern is not a valid regular expression: '${raw.protectedPattern}'.`,
+      );
+    }
+  }
+  return {
+    ...(raw.flatten === undefined ? {} : { flatten: raw.flatten as boolean }),
+    ...(instance === undefined ? {} : { instance }),
+    ...(raw.join === undefined ? {} : { join: raw.join as boolean }),
+    ...(raw.protectedNames === undefined
+      ? {}
+      : { protectedNames: raw.protectedNames as readonly string[] }),
+    ...(raw.protectedPattern === undefined
+      ? {}
+      : { protectedPattern: raw.protectedPattern as string }),
   };
 }
 
@@ -1242,6 +1445,33 @@ function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
   return raw as IModelQuantizeOptions;
 }
 
+/**
+ * The effective `models.textures` for a target after capability filtering.
+ *
+ * A target with the KTX2 decoder keeps the configured compression. Without one, an explicitly
+ * declared `maxSize` still has to reach the artifact, so the pass resizes embedded images to
+ * PNG instead of encoding them; `"none"`, absent, and a config with no cap keep shipping the
+ * authored bytes exactly as before. The per-slot overrides ride along for the same reason they do
+ * on the standalone path: a `codec: "none"` slot is a project asking for its authored bytes, and a
+ * cap is a decision about the project's *other* textures.
+ */
+function embeddedTexturesFor(
+  configured: IModelTexturesOptions | "none" | undefined,
+  ktx2: boolean,
+): { readonly textures?: IModelTexturesOptions | "none" } {
+  if (ktx2) return {};
+  if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
+    return {
+      textures: {
+        decoderFree: true,
+        maxSize: configured.maxSize,
+        ...(configured.overrides === undefined ? {} : { overrides: configured.overrides }),
+      },
+    };
+  }
+  return { textures: "none" as const };
+}
+
 function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayout {
   const config: unknown = options.config ?? {};
   if (!isRecord(config)) {
@@ -1317,7 +1547,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : {
                 passes: { ...(configuredModels.passes ?? {}), meshopt: false },
               }),
-          ...(runtimeDecoderCapabilities.ktx2 ? {} : { textures: "none" as const }),
+          ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
         };
   const textures = configuredTextures;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
@@ -1346,6 +1576,21 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         kind: "texture",
         needsRuntimeDecoder: true,
         options: textures,
+      });
+    }
+    if (
+      textures !== undefined &&
+      !runtimeDecoderCapabilities.ktx2 &&
+      textures.maxSize !== undefined
+    ) {
+      // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
+      // decoder-free resize pass needs no runtime decoder and runs in its place. The overrides
+      // ride along so a `codec: "none"` glob keeps the authored bytes on this path too.
+      const resize = { maxSize: textures.maxSize, overrides: textures.overrides };
+      registerBuiltin(textureResizePass(resize), {
+        kind: "texture-resize",
+        needsRuntimeDecoder: false,
+        options: resize,
       });
     }
     if (lightmap !== undefined) {
@@ -2106,13 +2351,27 @@ export async function compileAssets(
     : layout.passSpecs.filter((spec) => spec.kind !== "blender-import");
 
   const passNames = activePasses.map((pass) => pass.name);
-  const passCacheKeys = activePasses.map((pass) => pass.cacheKey ?? null);
-  const passConfiguration = JSON.stringify({
-    ...(passCacheKeys.some((key) => key !== null) ? { passCacheKeys } : {}),
-    pipelineVersion: PIPELINE_VERSION,
-    passes: passNames,
-    options: activePasses.map((pass) => pass.configuration ?? null),
-  });
+  // Per-kind, so an asset hashes only the passes that can change it. A model-only option edit
+  // (an LOD preset, an audio knob, a quantize bit depth) must not rename every texture; a pass
+  // that does not declare `appliesTo` is assumed able to change any input and stays everywhere.
+  const passConfigurationFor = (kind: AssetKind): string => {
+    const included = activePasses.filter(
+      (pass) => pass.appliesTo === undefined || pass.appliesTo.includes(kind),
+    );
+    const cacheKeys = included.map((pass) => pass.cacheKey ?? null);
+    return JSON.stringify({
+      ...(cacheKeys.some((key) => key !== null) ? { passCacheKeys: cacheKeys } : {}),
+      pipelineVersion: PIPELINE_VERSION,
+      passes: included.map((pass) => pass.name),
+      options: included.map((pass) => pass.configuration ?? null),
+    });
+  };
+  const passConfigurations: Readonly<Record<AssetKind, string>> = {
+    audio: passConfigurationFor("audio"),
+    model: passConfigurationFor("model"),
+    other: passConfigurationFor("other"),
+    texture: passConfigurationFor("texture"),
+  };
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
   const costInputs = new Map<string, IPassCostRecord>();
@@ -2220,6 +2479,7 @@ export async function compileAssets(
           ? {}
           : { embeddedTextures: entry.embeddedTextures }),
         ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
+        ...(entry.compact === undefined ? {} : { compact: entry.compact }),
         ...(entry.lod === undefined ? {} : { lod: entry.lod }),
         extensions: entry.extensions,
         logicalPath: logical,
@@ -2257,7 +2517,7 @@ export async function compileAssets(
     const input = await readInput(layout.sourceRoot, logical);
     const digest = createHash("sha256")
       .update(input)
-      .update(passConfiguration, "utf8")
+      .update(passConfigurations[classify(logical)], "utf8")
       .digest("hex");
     // The output name carries the digest of the input bytes and the whole pass configuration,
     // so a previous entry under that exact name, with every file it declares still on disk, is
@@ -2306,6 +2566,7 @@ export async function compileAssets(
             bytesBefore: input.length,
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,

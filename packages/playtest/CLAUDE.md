@@ -18,7 +18,11 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
 Exit `0` passed, `1` assertions failed, `2` never reached assertions, `69` when a command's
 external decoder is absent so nothing was inspected, and `75` when the capture lock queue timed
 out — the last two are explicitly **not** test failures, and `75` prints the holder and queue
-depth. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
+depth. `--build-report <artifact>.build-report.json` adopts the `performanceBudget` a
+`threenative build` published beside that artifact: the run re-hashes the artifact under test and
+exits `2` when it is not the one the report describes (`TN_PLAYTEST_BUILD_REPORT_STALE`), and
+merges the budget per key into the scenario's own `assert.performance`. It needs `--artifact` on
+browser and Android, which is the only thing that says which build the run exercises. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
 project; there is no root `pnpm dev`. `--browser-recipe webgpu` supplies the current Chromium WebGPU
 flags including `--enable-features=Vulkan`, without which Chromium silently serves WebGPU from
 SwiftShader and reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape

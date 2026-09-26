@@ -10,6 +10,10 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  MirroredRepeatWrapping,
+  NoColorSpace,
+  RepeatWrapping,
+  SRGBColorSpace,
   Texture,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -293,6 +297,67 @@ describe("IAssetLoader", () => {
   });
 });
 
+describe("IAssetLoader.texture options", () => {
+  it("should apply the options to a copy and leave the cached instance untouched", async () => {
+    const cached = new Texture();
+    // What an image file arrives as: sRGB. A normal map is not, and asking for one must not say so
+    // to every other material sharing the same bytes.
+    cached.colorSpace = SRGBColorSpace;
+    cached.anisotropy = 16;
+    const assets = createAssetLoader({ texture: async () => cached });
+
+    const configured = await assets.texture("normal.png", {
+      anisotropy: 8,
+      data: true,
+      repeat: [2, 3],
+      wrap: RepeatWrapping,
+    });
+
+    expect(configured).not.toBe(cached);
+    expect(configured.image).toBe(cached.image);
+    expect(configured.colorSpace).toBe(NoColorSpace);
+    expect(configured.wrapS).toBe(RepeatWrapping);
+    expect(configured.wrapT).toBe(RepeatWrapping);
+    expect(configured.repeat.toArray()).toEqual([2, 3]);
+    expect(configured.anisotropy).toBe(8);
+    // The shared instance other callers of the same path hold.
+    expect(cached.colorSpace).toBe(SRGBColorSpace);
+    expect(cached.wrapS).not.toBe(RepeatWrapping);
+    expect(cached.repeat.toArray()).toEqual([1, 1]);
+    expect(cached.anisotropy).toBe(16);
+    // And a configured load is not cached, so the next one is configured again from the same bytes.
+    expect(await assets.texture("normal.png", { data: true })).not.toBe(configured);
+    expect((await assets.texture("normal.png", { data: true })).colorSpace).toBe(NoColorSpace);
+  });
+
+  it("should treat one repeat number as both axes and sRGB as the explicit non-data space", async () => {
+    const assets = createAssetLoader({ texture: async () => new Texture() });
+
+    const tiled = await assets.texture("tile.png", { data: false, repeat: 5 });
+    const wrapped = await assets.texture("tile.png", { wrap: MirroredRepeatWrapping });
+
+    expect(tiled.colorSpace).toBe(SRGBColorSpace);
+    expect(tiled.repeat.toArray()).toEqual([5, 5]);
+    expect(tiled.wrapS).not.toBe(MirroredRepeatWrapping);
+    expect(wrapped.wrapS).toBe(MirroredRepeatWrapping);
+    expect(wrapped.wrapT).toBe(MirroredRepeatWrapping);
+    // Options without `data` are colour: a loader's linear default must not wash out an albedo.
+    expect(wrapped.colorSpace).toBe(SRGBColorSpace);
+  });
+
+  it("should hand back the same cached instance when no options are given", async () => {
+    const cached = new Texture();
+    const assets = createAssetLoader({ texture: async () => cached });
+
+    const first = await assets.texture("albedo.png");
+    const second = await assets.texture("albedo.png");
+
+    expect(first).toBe(cached);
+    expect(second).toBe(cached);
+    expect(assets.progress.requested).toBe(1);
+  });
+});
+
 describe("IAssetLoader through the asset manifest", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -325,6 +390,31 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(texture).toBeInstanceOf(Texture);
     expect(fetchAsset).toHaveBeenCalledWith("/assets/my-assets.json");
     expect(requests).toEqual(["/assets/rock.a1b2c3.png"]);
+  });
+
+  it("should record the manifest output that served a load", async () => {
+    // `progress` counts loads and cannot say which url answered. A project whose manifest 404s
+    // and one whose manifest named the output are indistinguishable from the game's own side,
+    // which is how a silently-unreadable manifest became an invisible uncompiled fallback.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "rock.png": { output: "rock.a1b2c3.png", kind: "texture", bytes: 1, passes: [] },
+          },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/assets", texture: async () => new Texture() });
+
+    await assets.texture("rock.png");
+
+    expect(assets.resolved.get("rock.png")).toEqual({
+      url: "/assets/rock.a1b2c3.png",
+      via: "manifest",
+    });
   });
 
   it("should hand a game the served urls of a path its own loader has to fetch", async () => {
@@ -440,6 +530,26 @@ describe("IAssetLoader through the asset manifest", () => {
     await expect(assets.model("rock.png")).resolves.toEqual({ url: "assets/rock.png" });
     // Verbatim first: a project with no pipeline at all keeps working, and pays nothing.
     expect(requests).toEqual(["rock.png", "assets/rock.png"]);
+  });
+
+  it("should record the candidate that actually answered, not the one that was tried first", async () => {
+    // The delete-test's own shape: the verbatim path 404s and the source directory serves it. The
+    // record names the winner, so a reader can tell this apart from a manifest-served load.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => manifestResponse("gone", 404)),
+    );
+    const assets = createAssetLoader({
+      basePath: "/",
+      model: async (url) => {
+        if (url !== "/assets/rock.png") throw new Error(`404: ${url}`);
+        return { url };
+      },
+    });
+
+    await assets.model("rock.png");
+
+    expect(assets.resolved.get("rock.png")).toEqual({ url: "/assets/rock.png", via: "source" });
   });
 
   it("should not reach for the source directory when the verbatim path works", async () => {
