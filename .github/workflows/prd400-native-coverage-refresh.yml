@@ -1,0 +1,44 @@
+name: PRD-400 native coverage refresh
+
+on:
+  push:
+    branches:
+      - perf/prd-400-ac1
+    paths:
+      - .github/workflows/prd400-native-coverage-refresh.yml
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install native coverage dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          clang llvm
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      - name: Regenerate native coverage evidence
+        run: pnpm --filter @threenative/runtime-native native:coverage
+      - name: Upload generated coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: prd400-native-coverage-report
+          path: docs/verification/native-coverage-2026-08-28.md
+          if-no-files-found: error
+          retention-days: 7
