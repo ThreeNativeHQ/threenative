@@ -75,18 +75,11 @@ const NODE_CLASSES: ReadonlyMap<string, NodeMaterialClass> = new Map<string, Nod
  */
 const UNSYNCED = new Set(["positionNode", "_listeners", "id", "uuid", "version"]);
 
-interface IDeformable {
-  isNodeMaterial?: boolean;
-  positionNode?: unknown;
-  castShadowPositionNode?: unknown;
-  displacementMap?: unknown;
-  type: string;
-}
-
 function nodeClassOf(material: Material): NodeMaterialClass | undefined {
-  const deformable = material as unknown as IDeformable;
-  if (deformable.isNodeMaterial === true) return material.constructor as NodeMaterialClass;
-  return NODE_CLASSES.get(deformable.type);
+  if (Reflect.get(material, "isNodeMaterial") === true) {
+    return material.constructor as NodeMaterialClass;
+  }
+  return NODE_CLASSES.get(material.type);
 }
 
 /**
@@ -95,12 +88,11 @@ function nodeClassOf(material: Material): NodeMaterialClass | undefined {
  * three's own skinning path.
  */
 export function skinnedMaterialBlocked(material: Material): boolean {
-  const deformable = material as unknown as IDeformable;
   return (
     nodeClassOf(material) === undefined ||
-    deformable.positionNode != null ||
-    deformable.castShadowPositionNode != null ||
-    deformable.displacementMap != null
+    Reflect.get(material, "positionNode") != null ||
+    Reflect.get(material, "castShadowPositionNode") != null ||
+    Reflect.get(material, "displacementMap") != null
   );
 }
 
@@ -291,10 +283,9 @@ export class SkinnedBatch {
 
   /** Copies the game's current material values onto the draw's twin, as three's own conversion does. */
   #syncMaterial(target: NodeMaterial): void {
-    const from = this.sourceMaterial as unknown as Record<string, unknown>;
-    const to = target as unknown as Record<string, unknown>;
+    const from = this.sourceMaterial;
     for (const key in from) {
-      if (!UNSYNCED.has(key)) to[key] = from[key];
+      if (!UNSYNCED.has(key)) Reflect.set(target, key, Reflect.get(from, key));
     }
   }
 

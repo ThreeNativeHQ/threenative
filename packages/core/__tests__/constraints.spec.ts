@@ -48,6 +48,9 @@ describe("core constraints", () => {
           file !== "particles.ts" &&
           file !== "projection-plan.ts" &&
           file !== "projection-apply.ts" &&
+          // The skinned lane draws a node twin of the game's material; every value on it is copied
+          // from the game's own material each frame. Its tighter check is below.
+          file !== "projection-skinned.ts" &&
           file !== "renderProjection.ts" &&
           file !== "renderer.ts" &&
           file !== "react-host.ts" &&
@@ -120,6 +123,13 @@ describe("core constraints", () => {
     // sharing its material. It never constructs a material, never configures one, and never reads
     // a property that describes how anything looks. The assertions below are what keep that true:
     // the moment it makes an appearance decision, this fails.
+    const skinned = withoutComments(
+      readFileSync(path.join(sourceDirectory, "projection-skinned.ts"), "utf8"),
+    );
+    expect(skinned).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\s*=|new\s+\w*Light|tonemapping|\.wgsl/iu,
+    );
+    expect(skinned.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
     const warmup = readFileSync(path.join(sourceDirectory, "warmup.ts"), "utf8");
     expect(warmup).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
     expect(warmup).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
