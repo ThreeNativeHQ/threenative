@@ -1137,6 +1137,13 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   Still open in this family, named: the twelve other upstream named variants, the coverage question
   above, and any statement about TN's draw-call shape under a different authoring. No
   `qualified` or `matched-task` pair exists for this family and no family-level claim is made.
+  An isolated diagnostic ran the same 600-frame Godot lights arm from a copied project with
+  `use_occlusion_culling=false`, leaving the pinned checkout unchanged. Its visible-object range
+  stayed 94–98 and all four covered fractions were byte-for-byte unchanged from the default-on
+  run (`0.911296`, `0.909537`, `0.929136`, `0.931358`). The record is at
+  `artifacts/engine-load-test/diagnostics/lights-occlusion-off-600f.json` (local, ignored).
+  Occlusion culling is therefore ruled out as the cause of this cell's coverage refusal; the
+  light-size/shading explanation remains a hypothesis, not a verified fix.
 - [ ] Pass City conformance for both frozen fixture sizes and both movement states.
 - [x] Retain a real hardware comparison for the City family.
 
