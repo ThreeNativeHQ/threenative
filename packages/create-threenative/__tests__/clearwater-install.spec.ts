@@ -30,26 +30,29 @@ it("installs source and license, then refuses to overwrite an edited game", asyn
   }
 });
 
-it.each(["src", "src/render"])("refuses a %s directory symlink before writing", async (relative) => {
-  const target = await makeTempDir("clearwater-link-");
-  const external = await makeTempDir("clearwater-external-");
-  try {
-    const link = path.join(target, relative);
-    await mkdir(path.dirname(link), { recursive: true });
-    await symlink(external, link, "dir");
-    await expect(run(process.execPath, [path.join(bundle, "install.mjs"), target])).rejects.toThrow(
-      "Refusing to install through symbolic link",
-    );
-    expect((await lstat(link)).isSymbolicLink()).toBe(true);
-    expect(await readdir(external)).toEqual([]);
-    if (relative === "src/render") {
-      expect(await readdir(path.join(target, "src"))).toEqual(["render"]);
+it.each(["src", "src/render"])(
+  "refuses a %s directory symlink before writing",
+  async (relative) => {
+    const target = await makeTempDir("clearwater-link-");
+    const external = await makeTempDir("clearwater-external-");
+    try {
+      const link = path.join(target, relative);
+      await mkdir(path.dirname(link), { recursive: true });
+      await symlink(external, link, "dir");
+      await expect(
+        run(process.execPath, [path.join(bundle, "install.mjs"), target]),
+      ).rejects.toThrow("Refusing to install through symbolic link");
+      expect((await lstat(link)).isSymbolicLink()).toBe(true);
+      expect(await readdir(external)).toEqual([]);
+      if (relative === "src/render") {
+        expect(await readdir(path.join(target, "src"))).toEqual(["render"]);
+      }
+    } finally {
+      await rm(target, { recursive: true, force: true });
+      await rm(external, { recursive: true, force: true });
     }
-  } finally {
-    await rm(target, { recursive: true, force: true });
-    await rm(external, { recursive: true, force: true });
-  }
-});
+  },
+);
 
 it("rejects dangling directory links without leaving a partial installation", async () => {
   const target = await makeTempDir("clearwater-dangling-");
@@ -57,7 +60,9 @@ it("rejects dangling directory links without leaving a partial installation", as
     const src = path.join(target, "src");
     await mkdir(src);
     await symlink(path.join(target, "missing"), path.join(src, "render"), "dir");
-    await expect(run(process.execPath, [path.join(bundle, "install.mjs"), target])).rejects.toThrow();
+    await expect(
+      run(process.execPath, [path.join(bundle, "install.mjs"), target]),
+    ).rejects.toThrow();
     expect(await readdir(src)).toEqual(["render"]);
     expect(await readdir(target)).toEqual(["src"]);
   } finally {
@@ -76,7 +81,9 @@ it("preflights a late filename collision before copying any source", async () =>
     );
     expect(await readdir(path.join(target, "src"))).toEqual(["render"]);
     expect(await readdir(render)).toEqual(["clearwater.ts"]);
-    expect(await readFile(path.join(render, "clearwater.ts"), "utf8")).toBe("// game-owned edits\n");
+    expect(await readFile(path.join(render, "clearwater.ts"), "utf8")).toBe(
+      "// game-owned edits\n",
+    );
   } finally {
     await rm(target, { recursive: true, force: true });
   }
