@@ -119,6 +119,19 @@ export interface IThreeNativeModelPassesConfig {
 }
 
 export interface IThreeNativeModelsConfig {
+  /**
+   * Lossless scene-graph compaction (flatten, join, instance) against one protected-node set.
+   * `false` ships the scene graph as authored; absent means on with defaults.
+   */
+  readonly compact?:
+    | boolean
+    | {
+        readonly flatten?: boolean;
+        readonly instance?: boolean | { readonly min?: number };
+        readonly join?: boolean;
+        readonly protectedNames?: readonly string[];
+        readonly protectedPattern?: string;
+      };
   readonly lightmap?: {
     readonly atlasSize: number;
     readonly padding: number;
@@ -1166,6 +1179,7 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   if (raw === "none") return "none";
   const models = assertRecord(raw, "assets.models");
   assertKeys(models, "assets.models", [
+    "compact",
     "lightmap",
     "passes",
     "quantize",
@@ -1236,6 +1250,7 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   // feature the compile step already supported.
   const simplify = models.simplify as IThreeNativeModelsConfig["simplify"];
   const textures = models.textures as IThreeNativeModelsConfig["textures"];
+  const compact = models.compact as IThreeNativeModelsConfig["compact"];
   let virtual: IThreeNativeModelsConfig["virtual"];
   if (models.virtual === "none") {
     virtual = "none";
@@ -1265,6 +1280,7 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
     virtual = bake as IThreeNativeModelsConfig["virtual"];
   }
   return {
+    ...(compact === undefined ? {} : { compact }),
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(passes === undefined || Object.keys(passes).length === 0 ? {} : { passes }),
     ...(quantize === undefined || Object.keys(quantize).length === 0 ? {} : { quantize }),

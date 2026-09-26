@@ -71,6 +71,7 @@ describe("modelPass with a Draco input", () => {
   it("should leave the file untouched when every sub-pass is off", async () => {
     const input = await dracoFixture();
     const result = await modelPass({
+      compact: false,
       passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
       virtual: "none",
     }).apply(input, "legacy.glb");

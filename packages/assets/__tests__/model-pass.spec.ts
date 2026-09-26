@@ -113,6 +113,7 @@ describe("modelPass", () => {
     // Control twin: switch meshopt off and the declaration disappears, so the assertion
     // above measures the pass rather than the fixture.
     const uncompressed = await modelPass({
+      compact: false,
       passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
       textures: "none",
       virtual: "none",
@@ -122,9 +123,10 @@ describe("modelPass", () => {
 
   it("should leave the model byte-identical when every sub-pass is switched off", async () => {
     const input = Buffer.from(await buildFixtureGlb());
-    // Embedded-texture compression and the cluster-DAG bake are their own switches and both
-    // default to on, so a complete opt-out names all three.
+    // Texture compression, the cluster-DAG bake and lossless compaction are their own switches
+    // and all default to on, so a complete opt-out names all four.
     const result = await modelPass({
+      compact: false,
       passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
       textures: "none",
       virtual: "none",
