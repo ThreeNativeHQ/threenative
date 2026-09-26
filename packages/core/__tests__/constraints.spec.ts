@@ -99,6 +99,9 @@ describe("core constraints", () => {
           // the game must supply — every colour, angle, intensity, density and exposure is a
           // required option. It constructs the objects those values need and chooses none of them.
           file !== "render/daylight.ts" &&
+          // The splat terrain surface builds its material from the world package's own table:
+          // textures, tiles, tints, thresholds and noise scales are all the package's values.
+          file !== "world-terrain-splat.ts" &&
           // The mip-aware cutout compensates the SAMPLING of a texture the game owns: it reads a
           // map's texel size and moves the cutoff the alpha is compared against, so a needle card
           // survives the mip chain instead of being discarded at mip one. The cutoff itself, the

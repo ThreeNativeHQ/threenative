@@ -2867,6 +2867,23 @@ export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWor
 const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));
 ```
 
+### `loadTerrainSplat`
+
+`function` — The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Nothing here is a look choice: textures, tiles, tints, thresholds and noise scales all come from the package's table, which the game authors once and its DCC shares.
+
+```ts
+export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }
+```
+
+- **Use when:** terrain textured by splat masks exported from Blender with the world package · the game's terrain should match the DCC's terrain material without a second copy
+- **Constraints:** the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by the `export_terrain_layers.py` recipe · WebGPU allows 16 sampled textures per stage: planes + diffuse maps + normal maps must fit
+- **Overrides:** every value comes from the package's table; the returned material is the game's to adjust
+
+```ts
+const surface = await loadTerrainSplat({ assets: ctx.assets, url: "world/world.json" });
+const world = await WorldCells.load({ assets: ctx.assets, url: "world/world.json", surface, follow, ring: 2 });
+```
+
 ### `loadWorldHeightmap`
 
 `function` — Fetch a raw little-endian uint16 heightmap and expose it as samples.

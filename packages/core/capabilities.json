@@ -3652,6 +3652,28 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by the `export_terrain_layers.py` recipe",
+        "WebGPU allows 16 sampled textures per stage: planes + diffuse maps + normal maps must fit"
+      ],
+      "example": "const surface = await loadTerrainSplat({ assets: ctx.assets, url: \"world/world.json\" });\nconst world = await WorldCells.load({ assets: ctx.assets, url: \"world/world.json\", surface, follow, ring: 2 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [
+        "every value comes from the package's table; the returned material is the game's to adjust"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
+      "situations": [
+        "terrain textured by splat masks exported from Blender with the world package",
+        "the game's terrain should match the DCC's terrain material without a second copy"
+      ],
+      "summary": "The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Nothing here is a look choice: textures, tiles, tints, thresholds and noise scales all come from the package's table, which the game authors once and its DCC shares.",
+      "supersedes": [],
+      "symbol": "loadTerrainSplat"
+    },
+    {
+      "aliases": [],
       "constraints": ["a non-OK response throws; bytes are byte-swapped only on a big-endian host"],
       "example": "const data = await loadWorldHeightmap(\"/world/terrain/heightmap.u16\");",
       "importPath": "@threenative/core/world",

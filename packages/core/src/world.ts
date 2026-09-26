@@ -496,6 +496,13 @@ export type {
 } from "./world-package.js";
 
 export { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
+export { loadTerrainSplat } from "./world-terrain-splat.js";
+export type {
+  ILoadTerrainSplatOptions,
+  ITerrainSplatLayer,
+  ITerrainSplatMaskedLayer,
+  ITerrainSplatTable,
+} from "./world-terrain-splat.js";
 
 export { WorldCells } from "./world-cells.js";
 export type {
