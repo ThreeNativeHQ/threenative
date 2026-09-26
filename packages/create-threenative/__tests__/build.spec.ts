@@ -1,9 +1,11 @@
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   assertNativeAssetsCompatible,
@@ -14,7 +16,9 @@ import {
   buildWeb,
   nativeOrientation,
   parseBuildArgs,
+  publishStagedArtifact,
   runtimeHasWebAssembly,
+  stagingPath,
   writePackagingConfig,
 } from "../src/build.js";
 import { ANDROID_RELEASE_SIGNING_ENV } from "../src/doctor.js";
@@ -22,6 +26,25 @@ import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
+
+// Putting the previous artifact back only happens on a rename that failed, so one `rename` is made
+// to fail for the staged path alone. The put-back renames from the `.previous-` sibling instead, so
+// the restore itself still goes through the real filesystem — a mock that failed every rename would
+// leave the previous artifact stranded in the aside, which is the opposite of what this proves.
+const renameFault = vi.hoisted(() => ({ from: undefined as string | undefined }));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    rename: async (from: string, to: string) => {
+      if (from === renameFault.from) {
+        throw Object.assign(new Error(`EXDEV: rename ${from} -> ${to} refused`), { code: "EXDEV" });
+      }
+      return original.rename(from, to);
+    },
+  };
+});
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
@@ -62,6 +85,19 @@ await writeFile(path.join(out, "assets", "game.js"), "export const game = true;\
 `,
   );
   return bin;
+}
+
+/** The workspace's own Vite, symlinked into a temp project that has no install of its own. */
+async function linkWorkspaceVite(project: string): Promise<void> {
+  const entry = (await readdir(path.resolve("node_modules/.pnpm"))).find((name) =>
+    name.startsWith("vite@"),
+  );
+  if (entry === undefined) throw new Error("The workspace Vite package is missing.");
+  await symlink(
+    path.resolve("node_modules/.pnpm", entry, "node_modules/vite"),
+    path.join(project, "node_modules/vite"),
+    "dir",
+  );
 }
 
 // A physically separate copy of a package the bundle may end up carrying twice: same name, same
@@ -175,6 +211,13 @@ describe("threenative build", () => {
     });
     expect(() => parseBuildArgs(["package"])).toThrow(/Usage: threenative build/u);
     expect(() => parseBuildArgs(["build", "--target", "console"])).toThrow(/console/u);
+    // PRD-448: the CLI consumes --profile itself; Vite never sees it.
+    expect(parseBuildArgs(["build", "--profile", "compact", "--base", "/g/"])).toEqual({
+      profile: "compact",
+      target: "web",
+      viteArgs: ["--base", "/g/"],
+    });
+    expect(() => parseBuildArgs(["build", "--profile"])).toThrow(/--profile requires a value/u);
   });
 
   // PRD-212 phase 2. The CLI must reject an unsupported request before any work, and pass a
@@ -250,6 +293,301 @@ describe("threenative build", () => {
       );
     }
   });
+
+  // PRD-448. The web build publishes the way a native artifact already does, so the last working
+  // `dist` is what a player is served until a build that finished replaces it. A Vite run that
+  // dies half-way through its write must not take that with it.
+  it("leaves the previous web outDir byte-identical when Vite fails", async () => {
+    const root = await makeTempDir("threenative-web-failed-");
+    roots.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-failed" }));
+    // Writes into whatever outDir it was handed, then fails: the shape of a real build that dies
+    // after emptying the directory, which is the write the old in-place outDir could not survive.
+    const vite = await installDeterministicVite(root);
+    await writeFile(
+      vite,
+      `#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const index = process.argv.indexOf("--outDir");
+const out = path.resolve(index === -1 ? "dist" : process.argv[index + 1]);
+await mkdir(out, { recursive: true });
+await writeFile(path.join(out, "index.html"), "half-written\\n");
+process.exit(1);
+`,
+    );
+    await mkdir(path.join(root, "dist"), { recursive: true });
+    await writeFile(path.join(root, "dist", "index.html"), "previous\n");
+    const previous = await tree(path.join(root, "dist"));
+
+    await expect(buildWeb(root)).rejects.toThrow(/exited with code 1/u);
+
+    expect(await tree(path.join(root, "dist"))).toEqual(previous);
+    expect((await readdir(root)).filter((name) => name.startsWith(".staging-"))).toEqual([]);
+  });
+
+  it("replaces the previous web outDir with the finished build", async () => {
+    const root = await makeTempDir("threenative-web-published-");
+    roots.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-published" }));
+    await installDeterministicVite(root);
+    // A file only the previous build wrote: a published outDir is replaced, never merged into.
+    await mkdir(path.join(root, "dist"), { recursive: true });
+    await writeFile(path.join(root, "dist", "stale.txt"), "last release\n");
+
+    await buildWeb(root);
+
+    await expect(readFile(path.join(root, "dist", "index.html"), "utf8")).resolves.toContain(
+      "web-published",
+    );
+    expect(existsSync(path.join(root, "dist", "stale.txt"))).toBe(false);
+    expect((await readdir(root)).filter((name) => name.startsWith(".staging-"))).toEqual([]);
+  });
+
+  /** A web project whose profile caps the artifact at a ceiling the stub Vite output exceeds. */
+  async function budgetedWebProject(severity: "error" | "warn"): Promise<string> {
+    const root = await makeTempDir("threenative-web-budget-");
+    roots.push(root);
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-budget" }));
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      [
+        "export default {",
+        "  buildProfiles: {",
+        '    defaults: { web: "capped" },',
+        "    profiles: {",
+        `      capped: { artifactBudget: { artifactBytes: { limit: 10, severity: "${severity}" } } },`,
+        "    },",
+        "  },",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    await mkdir(path.join(root, "dist"), { recursive: true });
+    await writeFile(path.join(root, "dist", "index.html"), "previous\n");
+    await installDeterministicVite(root);
+    return root;
+  }
+
+  // PRD-448. `artifactBudget` was measured for native artifacts only, so a web build shipped
+  // whatever it produced under a profile that declared a hard ceiling: the one target a player
+  // downloads was the one the budget never saw.
+  it("refuses a web build over its profile's artifact budget and leaves the previous dist", async () => {
+    const root = await budgetedWebProject("error");
+
+    await expect(buildWeb(root)).rejects.toThrow(
+      /TN_BUILD_ARTIFACT_BUDGET_EXCEEDED.*artifactBytes measured \d+ bytes over its 10-byte limit/u,
+    );
+
+    expect(await readFile(path.join(root, "dist", "index.html"), "utf8")).toBe("previous\n");
+    expect((await readdir(root)).filter((name) => name.startsWith(".staging-"))).toEqual([]);
+  });
+
+  it("prints the same sentence and publishes a web build whose ceiling only warns", async () => {
+    const root = await budgetedWebProject("warn");
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+      lines.push(String(chunk));
+      return true;
+    });
+
+    await buildWeb(root);
+
+    expect(await readFile(path.join(root, "dist", "index.html"), "utf8")).toContain("web-budget");
+    expect(lines.join("")).toMatch(
+      /threenative build: artifactBytes measured \d+ bytes over its 10-byte limit\.\n/u,
+    );
+  });
+
+  /**
+   * A real Vite project whose cook writes to `cooked/`, so the only thing that can put the cooked
+   * bytes in `dist` is the build telling Vite where its `publicDir` is. `ownPublicDir` is the one
+   * choice the build must not overrule.
+   */
+  async function cookedOutputProject(ownPublicDir?: string): Promise<string> {
+    const root = await makeTempDir("threenative-web-cooked-");
+    roots.push(root);
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await mkdir(path.join(root, "node_modules"), { recursive: true });
+    await linkWorkspaceVite(root);
+    // The bake copies three's Basis transcoder next to its output, resolved through the project.
+    await symlink(
+      path.resolve("packages/core/node_modules/three"),
+      path.join(root, "node_modules/three"),
+      "dir",
+    );
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "cooked-output", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { assets: { concurrency: 1, output: "cooked" } };\n',
+    );
+    await writeFile(
+      path.join(root, "index.html"),
+      '<!doctype html><html><body><script type="module" src="/src/main.ts"></script></body></html>\n',
+    );
+    await writeFile(path.join(root, "src", "main.ts"), 'console.info("cooked");\n');
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        blue: (x, y) => (x * 31 + y * 17) % 256,
+        green: (x, y) => (x * 7 + y * 29) % 256,
+        height: 64,
+        red: (x, y) => (x * 13 + y * 11) % 256,
+        width: 64,
+      }),
+    );
+    if (ownPublicDir !== undefined) {
+      await mkdir(path.join(root, ownPublicDir), { recursive: true });
+      await writeFile(path.join(root, ownPublicDir, "brand.txt"), "the project's own choice\n");
+      await writeFile(
+        path.join(root, "vite.config.ts"),
+        `import { defineConfig } from "vite";\nexport default defineConfig({ publicDir: ${JSON.stringify(ownPublicDir)} });\n`,
+      );
+    }
+    return root;
+  }
+
+  // PRD-448. A project that cooked anywhere but `public/` shipped a `dist` with no
+  // `assets.manifest.json` in it: Vite copied its own `publicDir` and the cook's output sat next
+  // to the build, unread. The build knows the asset root, so the build is what has to say so.
+  it("builds a web dist out of the configured asset root, and keeps a publicDir the project set", async () => {
+    const cooked = await cookedOutputProject();
+
+    await buildWeb(cooked);
+
+    const manifest = JSON.parse(
+      await readFile(path.join(cooked, "dist", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string } | undefined> };
+    // Nothing was ever cooked into Vite's default, so the served manifest cannot have come from
+    // it: the bytes in `dist` are the ones the config named.
+    expect(existsSync(path.join(cooked, "public"))).toBe(false);
+    expect(
+      existsSync(path.join(cooked, "dist", String(manifest.entries["rock.png"]?.output))),
+    ).toBe(true);
+
+    // An explicit `publicDir` is the project's own decision, and the build leaves it alone.
+    const own = await cookedOutputProject("brand");
+    await buildWeb(own);
+    expect(await readFile(path.join(own, "dist", "brand.txt"), "utf8")).toBe(
+      "the project's own choice\n",
+    );
+    expect(existsSync(path.join(own, "dist", "assets.manifest.json"))).toBe(false);
+  }, 180_000);
+
+  it("stages under the artifact's own name and publishes every file the packager wrote beside it", async () => {
+    const root = await makeTempDir("threenative-publish-family-");
+    roots.push(root);
+    const final = path.join(root, "dist-native", "space-game");
+    const staging = stagingPath(final);
+    // Packagers name things after their output's basename, so the staged name must be the real one.
+    expect(path.basename(staging)).toBe("space-game");
+    await mkdir(path.dirname(staging), { recursive: true });
+    for (const name of ["space-game", "space-game.tar.gz", "space-game-setup.exe"])
+      await writeFile(path.join(path.dirname(staging), name), `${name}\n`);
+    await writeFile(`${final}.tar.gz`, "previous container\n");
+
+    await publishStagedArtifact(final, staging);
+
+    for (const name of ["space-game", "space-game.tar.gz", "space-game-setup.exe"])
+      await expect(readFile(path.join(root, "dist-native", name), "utf8")).resolves.toBe(
+        `${name}\n`,
+      );
+    expect(await readdir(path.join(root, "dist-native"))).toEqual([
+      "space-game",
+      "space-game-setup.exe",
+      "space-game.tar.gz",
+    ]);
+  });
+
+  it("puts the previous artifact back when the rename-in fails", async () => {
+    const root = await makeTempDir("threenative-publish-restore-");
+    roots.push(root);
+    const final = path.join(root, "game.js");
+    const staging = stagingPath(final);
+    await writeFile(final, "previous artifact\n");
+    await mkdir(path.dirname(staging), { recursive: true });
+    await writeFile(staging, "new artifact\n");
+    renameFault.from = staging;
+
+    await expect(publishStagedArtifact(final, staging)).rejects.toThrow(/EXDEV/u);
+
+    renameFault.from = undefined;
+    await expect(readFile(final, "utf8")).resolves.toBe("previous artifact\n");
+    // The aside the previous artifact was moved to is gone: it went back rather than being left
+    // stranded under a second name. The staged artifact itself is the caller's to remove, which
+    // is what `buildWeb` and `packageStaged` do with it.
+    expect(existsSync(path.join(path.dirname(staging), "game.js.previous"))).toBe(false);
+  });
+
+  it("drops a cook output the current bake does not declare from the web outDir", async () => {
+    // Vite copies the whole output root, so without the packagers' own selector an orphan from
+    // an earlier bake ships in every web build and is never loaded by anything. The bake is the
+    // real one: only a bake that actually cooked something leaves a manifest naming its outputs.
+    const root = await makeTempDir("threenative-web-orphan-");
+    roots.push(root);
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    const runtime = path.join(root, "node_modules", "@threenative", "runtime-native", "scripts");
+    await mkdir(runtime, { recursive: true });
+    await writeFile(
+      path.join(runtime, "..", "package.json"),
+      '{"name":"@threenative/runtime-native","type":"module"}\n',
+    );
+    await writeFile(
+      path.join(runtime, "asset-manifest.mjs"),
+      await readFile(path.resolve("packages/runtime-native/scripts/asset-manifest.mjs"), "utf8"),
+    );
+    // The bake copies three's Basis transcoder next to its output, resolved through the project.
+    await symlink(
+      path.resolve("packages/core/node_modules/three"),
+      path.join(root, "node_modules", "three"),
+      "dir",
+    );
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "web-orphan" }));
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      "export default { assets: { concurrency: 1 } };\n",
+    );
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        blue: (x, y) => (x * 31 + y * 17) % 256,
+        green: (x, y) => (x * 7 + y * 29) % 256,
+        height: 64,
+        red: (x, y) => (x * 13 + y * 11) % 256,
+        width: 64,
+      }),
+    );
+    // A cook output from a bake this one knows nothing about: an orphan no game loads.
+    await mkdir(path.join(root, "public"), { recursive: true });
+    await writeFile(path.join(root, "public", "ghost.22222222.png"), "orphan");
+    const vite = await installDeterministicVite(root);
+    await writeFile(
+      vite,
+      `#!/usr/bin/env node
+import { cpSync, mkdirSync } from "node:fs";
+import path from "node:path";
+// The outDir it was handed, as Vite honours it: the build stages its own sibling.
+const index = process.argv.indexOf("--outDir");
+const out = path.resolve(index === -1 ? "dist" : process.argv[index + 1]);
+mkdirSync(out, { recursive: true });
+cpSync("public", out, { recursive: true });
+`,
+    );
+
+    await buildWeb(root);
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "dist", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+    expect(existsSync(path.join(root, "dist", manifest.entries["rock.png"]?.output ?? ""))).toBe(
+      true,
+    );
+    expect(existsSync(path.join(root, "dist", "ghost.22222222.png"))).toBe(false);
+  }, 60_000);
 
   it("emits index.html for the native overlay loader", async () => {
     const root = await makeTempDir("threenative-ui-build-");

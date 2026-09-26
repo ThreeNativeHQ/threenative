@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
+import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { compileAssets } from "../src/index.js";
 import { modelPass } from "../src/passes/model.js";
@@ -173,6 +174,90 @@ describe("the determinism gate (PRD-319 phase 0)", () => {
       for (const [file, hash] of sequentialHashes) {
         expect(concurrentHashes.get(file), `${file} differs at concurrency 4`).toBe(hash);
       }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+});
+
+const RESIZE_CONFIG = { textures: { maxSize: 32 } } as const;
+
+async function stageResizable(prefix: string): Promise<string> {
+  const root = await makeTempDir(prefix);
+  await mkdir(path.join(root, "assets"));
+  await writeFile(
+    path.join(root, "assets", "rock.png"),
+    rgbaPng({
+      blue: (x, y) => (x * 19 + y * 23) % 256,
+      green: (x, y) => (x * 29 + y * 31) % 256,
+      height: 64,
+      red: (x, y) => (x * 37 + y * 41) % 256,
+      width: 64,
+    }),
+  );
+  return root;
+}
+
+/**
+ * The decoder-free cap is a cook like any other: it must reproduce from source bytes alone, the
+ * warm cache must recognise its own output, and the per-asset digest must not rename an image
+ * because a model-only option changed.
+ */
+describe("decoder-free resizing is deterministic and cache-correct", () => {
+  it("should bake identical bytes into independent directories, then reuse them warm", async () => {
+    const first = await stageResizable("threenative-resize-determinism-a-");
+    const second = await stageResizable("threenative-resize-determinism-b-");
+    try {
+      await compileAssets({ config: RESIZE_CONFIG, cwd: first, platform: "android" });
+      const warm = await compileAssets({ config: RESIZE_CONFIG, cwd: first, platform: "android" });
+      await compileAssets({ config: RESIZE_CONFIG, cwd: second, platform: "android" });
+
+      expect(warm.written).toBe(0);
+      expect(warm.skipped).toBe(1);
+
+      const hashesA = await hashOutputRoot(path.join(first, "public"));
+      const hashesB = await hashOutputRoot(path.join(second, "public"));
+      expect([...hashesA.keys()].sort()).toEqual([...hashesB.keys()].sort());
+      for (const [file, hash] of hashesA) {
+        expect(hashesB.get(file), `${file} differs across directories`).toBe(hash);
+      }
+    } finally {
+      await rm(first, { force: true, recursive: true });
+      await rm(second, { force: true, recursive: true });
+    }
+  });
+
+  it("should rename a texture when its cap changes but not when only lod config changes", async () => {
+    const root = await stageResizable("threenative-digest-per-asset-");
+    await writeFile(path.join(root, "assets", "character.glb"), await buildFixtureGlb());
+    try {
+      const outputs = async (config: {
+        readonly lod?: { readonly enabled: boolean };
+        readonly textures: { readonly maxSize: number };
+      }): Promise<Record<string, string>> => {
+        await compileAssets({ config, cwd: root, platform: "android" });
+        const manifest = JSON.parse(
+          await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+        ) as { entries: Record<string, { output: string }> };
+        return Object.fromEntries(
+          Object.entries(manifest.entries).map(([logical, entry]) => [logical, entry.output]),
+        );
+      };
+
+      const base = await outputs(RESIZE_CONFIG);
+      const capped = await outputs({ textures: { maxSize: 16 } });
+      expect(capped["rock.png"]).not.toBe(base["rock.png"]);
+      // A standalone texture cap does not touch the model, whose embedded textures are "none".
+      expect(capped["character.glb"]).toBe(base["character.glb"]);
+
+      const lodChanged = await outputs({
+        lod: { enabled: true },
+        textures: { maxSize: 32 },
+      });
+      // The model-only lod policy is not in the texture's digest...
+      expect(lodChanged["rock.png"]).toBe(base["rock.png"]);
+      // ...but it is in the model's, which must not serve the stale geometry.
+      expect(lodChanged["character.glb"]).not.toBe(base["character.glb"]);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

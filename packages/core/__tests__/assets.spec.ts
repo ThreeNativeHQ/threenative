@@ -392,6 +392,31 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(requests).toEqual(["/assets/rock.a1b2c3.png"]);
   });
 
+  it("should record the manifest output that served a load", async () => {
+    // `progress` counts loads and cannot say which url answered. A project whose manifest 404s
+    // and one whose manifest named the output are indistinguishable from the game's own side,
+    // which is how a silently-unreadable manifest became an invisible uncompiled fallback.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "rock.png": { output: "rock.a1b2c3.png", kind: "texture", bytes: 1, passes: [] },
+          },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/assets", texture: async () => new Texture() });
+
+    await assets.texture("rock.png");
+
+    expect(assets.resolved.get("rock.png")).toEqual({
+      url: "/assets/rock.a1b2c3.png",
+      via: "manifest",
+    });
+  });
+
   it("should hand a game the served urls of a path its own loader has to fetch", async () => {
     // An HDR sky, a font, a data file: loaders this surface does not wrap. Without this a game
     // hard-codes the hashed output name and breaks on the next bake — Wildwood's sky did.
@@ -505,6 +530,26 @@ describe("IAssetLoader through the asset manifest", () => {
     await expect(assets.model("rock.png")).resolves.toEqual({ url: "assets/rock.png" });
     // Verbatim first: a project with no pipeline at all keeps working, and pays nothing.
     expect(requests).toEqual(["rock.png", "assets/rock.png"]);
+  });
+
+  it("should record the candidate that actually answered, not the one that was tried first", async () => {
+    // The delete-test's own shape: the verbatim path 404s and the source directory serves it. The
+    // record names the winner, so a reader can tell this apart from a manifest-served load.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => manifestResponse("gone", 404)),
+    );
+    const assets = createAssetLoader({
+      basePath: "/",
+      model: async (url) => {
+        if (url !== "/assets/rock.png") throw new Error(`404: ${url}`);
+        return { url };
+      },
+    });
+
+    await assets.model("rock.png");
+
+    expect(assets.resolved.get("rock.png")).toEqual({ url: "/assets/rock.png", via: "source" });
   });
 
   it("should not reach for the source directory when the verbatim path works", async () => {
