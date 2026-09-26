@@ -82,3 +82,33 @@
   fail/inventory/progress/touch-controls PASS, boss-win PAGE_NAVIGATED crash — so the golden path
   is ALSO not green on this machine before my change. The gate target is the 7-template sweep with
   racing's `racing-finish-behind-rival-is-dnf` green; any other red must be reported by name.
+- [16:26] Second-order damage, measured the same way: a frozen clock alone broke
+  `platformer-one-way` — the character captures its visual-attachment baseline on its first grounded
+  contact, so a run starting at tick 0 read `visualAttached: false` where the unfixed run starting
+  at tick 59 read `true` (platformer alone: 15/15 exit 0 at HEAD~2, 1/15 at HEAD). The boot this
+  removed was the defect, not a fixture: 59 ticks on a quiet machine, thousands on a loaded one.
+- [16:37] FIX, final shape: `freezeClock(settleSteps = FROZEN_SETTLE_STEPS=60)` +
+  `FixedStepLoop.#primeFrame()` = `advance(60)` once, on the first live frame after the hold
+  releases, so the world is settled by a FIXED count instead of by boot wall clock. `#tick` moves
+  with it (the simulation really is that old and the report says so). `settleSteps: 0` is a real
+  answer; negative/fractional throw. Note: a zero-dt prime is NOT available —
+  `IPhysicsSimulation.step requires a positive finite deltaTime`.
+- [16:40] racing alone: 5/5 exit 0, `firstTick: 60` on every scenario including
+  `racing-finish-behind-rival-is-dnf`. platformer alone: 15/15 exit 0, `platformer-one-way`
+  firstTick 60 (baseline 59, one-step prime 0).
+- [16:48] **GATE RUN 3: exit 0** (16:41:50→16:48:32), 51/51 scenarios green, 10 templates
+  (action-rpg, defense, minimal, platformer, puzzle, racing, runner, sailing, shooter, starter).
+  **GATE RUN 4: exit 0** (16:48:42→16:55:01), 51/51 green. `racing-finish-behind-rival-is-dnf`
+  reports firstTick 60 / frames 2648 / lastTick 2736 in BOTH runs — bit-identical under different
+  machine load, which is the determinism the fix is for. (The trailing failure in each log is the
+  gate's own mutation control, which must fail.)
+- [16:57] typecheck exit 0; lint exit 0. Lint needed `.tmp/` kept free of scratch: a pnpm store
+  left in `.tmp/opencode-data` by tooling gave 373 phantom "errors" and my own probe script 1 more.
+  Scratch now lives in /home/joao/.tn-tmp/lane.
+- [17:05] Tests: `vitest run packages` = 358 files / 4288 tests pass, exit 0 (covers core 1541,
+  playtest+create-threenative 1936). `pnpm test` aborts at `packages/runtime-native` with 18
+  failures, ALL of the form "<cmake executable> is not built. Run: cmake --build ..." —
+  `packages/runtime-native/build` does not exist because `pnpm native:build` is opt-in and was
+  never run in this worktree. No native test imports FixedStepLoop or freezeClock. Reported as
+  environmental, not as a green.
+- Next: push branch fix/prd-112-racing-sequence, open ONE PR to develop with auto-merge.
