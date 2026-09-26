@@ -83,6 +83,11 @@ test("wind material has a TSL graph and stable conservative bounds", () => {
     const radius = geometry.boundingSphere.radius;
     wind.expandBounds(geometry);
     assert.equal(geometry.boundingSphere.radius, radius);
+    // Direction is world space, so a yawed clone sways along any local horizontal axis.
+    for (const axis of ["x", "z"]) {
+      assert.equal(geometry.boundingBox.max[axis], 0.5 + 2);
+      assert.equal(geometry.boundingBox.min[axis], -0.5 - 2);
+    }
     assert.throws(() => wind.updateTime(Number.NaN));
     wind.updateTime(1);
   } finally {

@@ -1,9 +1,23 @@
 import type { BufferGeometry, Object3D } from "three";
-import { Fn, float, normalGeometry, normalLocal, positionGeometry, uniform, vec3 } from "three/tsl";
+import {
+  Fn,
+  float,
+  modelWorldMatrixInverse,
+  normalGeometry,
+  normalLocal,
+  positionGeometry,
+  uniform,
+  vec3,
+  vec4,
+} from "three/tsl";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 import { type IWind, validateWind } from "../geometry.js";
 
-/** Editable appearance, intentionally not an engine preset. This lane is for ordinary meshes. */
+/**
+ * Editable appearance, intentionally not an engine preset. This lane is for ordinary meshes.
+ * `direction` is world space, so yawed clones sharing the material sway together; amplitude,
+ * base and extent are in the mesh's local units.
+ */
 export function createTreeWind(base: MeshStandardNodeMaterial, options: IWind) {
   const wind = validateWind(options);
   if (base.positionNode || base.normalNode || base.displacementMap)
@@ -13,7 +27,7 @@ export function createTreeWind(base: MeshStandardNodeMaterial, options: IWind) {
   const material = base.clone();
   const simulationTime = uniform(0);
   let disposed = false;
-  const direction = vec3(wind.direction[0], 0, wind.direction[1]);
+  const worldDirection = vec4(wind.direction[0], 0, wind.direction[1], 0);
   material.positionNode = Fn(
     (
       _: unknown,
@@ -29,6 +43,7 @@ export function createTreeWind(base: MeshStandardNodeMaterial, options: IWind) {
         throw new Error(
           "Tree wind currently supports ordinary meshes only; use static generated variants for instanced forests.",
         );
+      const direction = modelWorldMatrixInverse.mul(worldDirection).xyz.normalize();
       const t = positionGeometry.y.sub(wind.base).div(wind.extent).clamp(0, 1);
       const oscillation = simulationTime
         .mul(wind.frequency)
@@ -58,13 +73,12 @@ export function createTreeWind(base: MeshStandardNodeMaterial, options: IWind) {
       if (disposed) throw new Error("Tree wind is disposed.");
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
+      // Any yaw maps the world direction onto a local horizontal axis, so pad both.
       if (geometry.boundingBox) {
-        const x = Math.abs(wind.direction[0]) * wind.amplitude;
-        const z = Math.abs(wind.direction[1]) * wind.amplitude;
-        geometry.boundingBox.min.x -= x;
-        geometry.boundingBox.max.x += x;
-        geometry.boundingBox.min.z -= z;
-        geometry.boundingBox.max.z += z;
+        geometry.boundingBox.min.x -= wind.amplitude;
+        geometry.boundingBox.max.x += wind.amplitude;
+        geometry.boundingBox.min.z -= wind.amplitude;
+        geometry.boundingBox.max.z += wind.amplitude;
       }
       if (geometry.boundingSphere) geometry.boundingSphere.radius += wind.amplitude;
     },
