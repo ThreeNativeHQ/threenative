@@ -25,6 +25,7 @@ import {
 } from "./browser.js";
 import { writeCampaignReport } from "./bundle.js";
 import { type ICityComparison, compareCityRuns, parseCityRun } from "./city-compare.js";
+import { type CullArm, collectCullPair } from "./collect-v2-cull.js";
 import { type CityArm, collectCityPair, resolveMachineIdentity } from "./collect-v2.js";
 import { type ICubesComparison, compareCubesRuns, parseCubesRun } from "./cubes-compare.js";
 import { type ICullComparison, compareCullRuns, parseCullRun } from "./cull-compare.js";
@@ -1365,6 +1366,51 @@ async function collectCityPairCommand(): Promise<void> {
   if (result.partial) process.exitCode = 2;
 }
 
+/**
+ * PRD-449's v2 intake for an archived `godot-culling` pair: the two raw runs become immutable schema-2
+ * records in a real campaign bundle, and the report is regenerated from them. It is the City's route
+ * with the family's own facts: the Godot arm's staged project is re-hashed so the occlusion-off
+ * adaptation is verified rather than believed, and the counterpart arm's renderer has no occlusion
+ * culling to disable, which the record states as unobserved instead of assuming. As with City, the
+ * arm that ran first is named by the operator, the outcome is deliberately partial, and no ratio,
+ * winner or speed verdict is printed.
+ */
+async function collectCullPairCommand(): Promise<void> {
+  const bundleDir = flag("collect-cull-pair");
+  const godotRaw = flag("godot-run");
+  const tnRaw = flag("tn-run");
+  const firstArm = flag("first-arm");
+  const block = flag("block");
+  const session = flag("session");
+  const machineJson = flag("machine-json");
+  if (
+    bundleDir === undefined ||
+    godotRaw === undefined ||
+    tnRaw === undefined ||
+    firstArm === undefined ||
+    block === undefined ||
+    session === undefined ||
+    machineJson === undefined
+  )
+    throw new BenchError(
+      "TN_BENCH_V2_COLLECT_ARGS",
+      "--collect-cull-pair <bundle-dir> also needs --godot-run <godot.json> --tn-run <tn.json> --first-arm <godot-desktop|tn-desktop> --block N --session N --machine-json <machine.json>",
+    );
+  const result = await collectCullPair({
+    block: positiveFlag("block", 1, 1),
+    bundleDir: path.resolve(repoRoot, bundleDir),
+    firstArm: firstArm as CullArm,
+    godotRaw: path.resolve(repoRoot, godotRaw),
+    machine: await resolveMachineIdentity({ machineJson: path.resolve(repoRoot, machineJson) }),
+    root: repoRoot,
+    session: positiveFlag("session", 1, 1),
+    tnRaw: path.resolve(repoRoot, tnRaw),
+  });
+  process.stdout.write(
+    `collected ${path.relative(repoRoot, result.bundleDir)} into ${result.runIds.length} immutable v2 runs\n  cell ${result.cell}, session ${session} block ${block}, declared first arm ${firstArm}\n${result.runIds.map((id) => `  ${id}`).join("\n")}\n  comparability ${result.comparability}, with the Godot arm's occlusion culling verified off in its staged project and its RID authoring against the counterpart arm's scene nodes named as reasons\n  every run is invalid, because this archived pair recorded no thermal preflight and no frozen sources.lock.json\n  report ${result.partial ? "PARTIAL" : "complete"}: measurements retained in results.json, no winner claimed\n`,
+  );
+  if (result.partial) process.exitCode = 2;
+}
 async function compareCityArms(): Promise<void> {
   const tnPath = flag("city-compare");
   const bevyPath = flag("city-against");
@@ -1660,6 +1706,7 @@ function printUsage(): void {
       "       pnpm bench:engines --city-arm <bevy-desktop|tn-desktop> [--city-variant static|moving --size N --seed N --frames N --warmup N --out file.json]  # real-GPU bevy-city arm; needs DISPLAY and the pinned bevy checkout with the vendored Kenney pack, which bevy-desktop also exports as the fixture",
       "       pnpm bench:engines --city-compare <tn.json> --city-against <bevy.json> [--out city-comparison.json]  # one smoke block, no verdict",
       "       pnpm bench:engines --collect-city-pair <bundle-dir> --bevy-run <bevy.json> --tn-run <tn.json> --first-arm <bevy-desktop|tn-desktop> --block N --session N --machine-json <bundle machine.json>  # import an archived city pair as two immutable v2 runs; the plan's arm order is never used, and the bundle stays partial with no winner",
+      "       pnpm bench:engines --collect-cull-pair <bundle-dir> --godot-run <godot.json> --tn-run <tn.json> --first-arm <godot-desktop|tn-desktop> --block N --session N --machine-json <bundle machine.json>  # the same v2 import for an archived godot-culling pair; the Godot arm's staged project is re-hashed to verify its occlusion culling really was off, and the bundle stays partial with no winner",
       "       pnpm bench:engines --cubes-arm <bevy-desktop|tn-desktop> [--cubes-variant static|rotating --cubes-authoring default|independent --count N --frames N --warmup N --out file.json]  # real-GPU many-cubes arm; needs DISPLAY and the pinned bevy checkout (bevy-desktop exports the fixture)",
       "       pnpm bench:engines --cubes-compare <tn.json> --cubes-against <bevy.json> [--out cubes-comparison.json]  # one smoke block, no verdict",
       "       pnpm bench:engines --foxes-arm <bevy-desktop|tn-desktop> [--foxes-variant sync|staggered --count N --frames N --warmup N --out file.json]  # real-GPU many-foxes arm; needs DISPLAY and the pinned bevy checkout (bevy-desktop exports the fixture)",
@@ -1712,9 +1759,10 @@ async function main(): Promise<void> {
   if (flag("lights-compare") !== undefined) return compareLightsArms();
   const cityArm = flag("city-arm");
   if (cityArm !== undefined) return runCityArm(cityArm);
-  // Presence, not a parsed value: a bare `--collect-city-pair` is this route's missing-argument
-  // case, and `flag()` cannot see a flag whose value is missing.
+  // Presence, not a parsed value: a bare `--collect-city-pair` or `--collect-cull-pair` is that
+  // route's missing-argument case, and `flag()` cannot see a flag whose value is missing.
   if (process.argv.includes("--collect-city-pair")) return collectCityPairCommand();
+  if (process.argv.includes("--collect-cull-pair")) return collectCullPairCommand();
   if (flag("city-compare") !== undefined) return compareCityArms();
   const cubesArm = flag("cubes-arm");
   if (cubesArm !== undefined) return runCubesArm(cubesArm);

@@ -193,6 +193,11 @@ func _run() -> void:
 		"drain": "measurement-boundary-completion",
 		"drainBoundaryFrame": frames,
 		"drainFinalWaitMs": float(_final_completion_us - _drain_boundary_us) / 1000.0,
+		# `warmupMs` keeps the name every earlier raw published under it, and under that name it was
+		# the clock reading taken when the warmup began, not an elapsed time. The elapsed warmup is
+		# therefore published under its own field, so an intake can tell the two shapes apart and read
+		# a duration only from a field that means one.
+		"warmupDurationMs": float(_warmup_us) / 1000.0,
 		"warmupFrames": warmup,
 		"warmupMs": float(_warmup_us) / 1000.0,
 		"captures": _captures,
@@ -287,6 +292,7 @@ func _measure(frames: int, warmup: int, captures_dir: String) -> void:
 		await process_frame
 		if _capture_frames.has(index):
 			await _capture(captures_dir, index, _variant, true)
+	_warmup_us = Time.get_ticks_usec() - _warmup_us
 	_scene.time_accum = 0.0
 	_boundary_us.append(Time.get_ticks_usec())
 	for frame in frames:

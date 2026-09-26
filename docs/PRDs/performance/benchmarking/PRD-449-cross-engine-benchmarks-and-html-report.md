@@ -879,7 +879,19 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   The Godot culling adapter now writes its already measured microsecond frame boundaries and final
   `force_sync()` completion as a v2-compatible `rawSeries`, rather than reconstructing them from
   rounded wall samples. The pinned Godot 4.7.1 `--check-only` parse passed; a physical-GPU record
-  and bundle import remain open.
+  now exists at `artifacts/engine-load-test/diagnostics/cull-series-{godot,tn,comparison}.json`
+  from clean commit `3a1156279`: Godot 1.550 ms, TN 16.965 ms, comparator `qualified`. Each arm
+  retained 601 strictly increasing boundaries for 600 scored frames; recomputing the complete span
+  reproduced each mean, and all three archived build components rehashed. Bundle import remains open.
+
+  `--collect-cull-pair` now validates and imports a culling pair into immutable v2 run records,
+  preserving the verified occlusion-off patch and RID-versus-Mesh qualification. Six focused
+  collector tests passed, including tampered build, project, fixture, GPU and driver refusals;
+  the full repository test run passed 6,072 tests with 8 skipped. The Godot adapter now emits
+  `warmupDurationMs` from elapsed warmup time; the collector marks older records' warmup duration
+  unavailable because their `warmupMs` held a start clock. A clean GPU run and actual bundle import
+  with this revision remain open, and the imported smoke runs will remain invalid without the
+  required preflight and frozen source lock.
 
   **Both arms now drain at the same boundary.** Godot's `drain` was `none-available` and its mean
   paced on submission, so the two means did not measure the same thing. The arm now calls

@@ -55,6 +55,18 @@ const SOURCE_SCOPE =
   "sha256 of this run's own identity.source descriptor (its adapter, bevy and tn entries) only: not a repository tree hash, not a dependency lock, and no substitute for sources.lock.json";
 const CAMPAIGN_RECIPE = "prd449-v2-campaign-1";
 const TN_BUILD_RECIPE = "prd449-tn-desktop-build-1";
+
+export {
+  CAMPAIGN_RECIPE,
+  MEASURED_FRAMES,
+  OUTCOME_REASON,
+  PREFLIGHT_REASON,
+  SCHEDULED_WARMUP_FRAMES,
+  SOFTWARE_ADAPTER,
+  SOURCE_SCOPE,
+  TN_BUILD_DEFINITION,
+  TN_BUILD_RECIPE,
+};
 const TN_BUILD_DEFINITION = `sha256 of the line "${TN_BUILD_RECIPE}", then one "name=sha256:byteCount" line per archived build component in name order, each line newline-terminated`;
 const DERIVATION_VERSION = "collect-city-v2-1";
 /** The two arms expose the adapter in different shapes, so each names the field it recorded. */
@@ -87,14 +99,15 @@ export interface ICityIntakeResult {
   runIds: string[];
 }
 
-function fail(code: string, detail: string): never {
+export function fail(code: string, detail: string): never {
   throw new BenchError(code, detail);
 }
 
-const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+export const sha256 = (bytes: Buffer | string): string =>
+  createHash("sha256").update(bytes).digest("hex");
 
 /** A named recipe over named components, so a reader can recompute the digest by hand. */
-function canonicalDigest(recipe: string, components: Record<string, string>): string {
+export function canonicalDigest(recipe: string, components: Record<string, string>): string {
   const body = Object.keys(components)
     .sort()
     .map((name) => `${name}=${components[name]}`)
@@ -102,20 +115,20 @@ function canonicalDigest(recipe: string, components: Record<string, string>): st
   return sha256(`${recipe}\n${body}\n`);
 }
 
-function text(source: Record<string, unknown>, key: string, label: string): string {
+export function text(source: Record<string, unknown>, key: string, label: string): string {
   const value = source[key];
   if (typeof value !== "string" || value.trim().length === 0)
     fail("TN_BENCH_V2_SHAPE", `${label} must be a non-empty string`);
   return value;
 }
 
-function hash(source: Record<string, unknown>, key: string, label: string): string {
+export function hash(source: Record<string, unknown>, key: string, label: string): string {
   const value = text(source, key, label);
   if (!/^[0-9a-f]{64}$/u.test(value)) fail("TN_BENCH_V2_SHAPE", `${label} must be SHA-256 hex`);
   return value;
 }
 
-function count(source: Record<string, unknown>, key: string, label: string): number {
+export function count(source: Record<string, unknown>, key: string, label: string): number {
   const value = source[key];
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0)
     fail("TN_BENCH_V2_SHAPE", `${label} must be a non-negative integer`);
@@ -126,23 +139,23 @@ function count(source: Record<string, unknown>, key: string, label: string): num
  * A timestamp is any finite non-negative number, because a raw monotonic clock carries fractions and
  * §7.4's completed work is their difference. `count` still guards every frame count.
  */
-function timestamp(source: Record<string, unknown>, key: string, label: string): number {
+export function timestamp(source: Record<string, unknown>, key: string, label: string): number {
   const value = requireNumber(source, key, label);
   if (value < 0) fail("TN_BENCH_V2_SHAPE", `${label} must be a finite non-negative number`);
   return value;
 }
 
-function optional(source: Record<string, unknown>, key: string): string | null {
+export function optional(source: Record<string, unknown>, key: string): string | null {
   const value = source[key];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-async function readObject(file: string, label: string): Promise<Record<string, unknown>> {
+export async function readObject(file: string, label: string): Promise<Record<string, unknown>> {
   return requireObject(JSON.parse(await readFile(file, "utf8")), label);
 }
 
 /** Streamed, because an archived Bevy binary is a hundred megabytes. */
-async function fileIdentity(file: string): Promise<{ bytes: number; sha256: string }> {
+export async function fileIdentity(file: string): Promise<{ bytes: number; sha256: string }> {
   const digest = createHash("sha256");
   let bytes = 0;
   for await (const chunk of createReadStream(file)) {
@@ -158,7 +171,7 @@ async function fileIdentity(file: string): Promise<{ bytes: number; sha256: stri
  * itself the violation; a `..` that walks out, a path outside the root, or a symlink whose target
  * leaves it are. The check runs on the real path before the read, so nothing outside is ever opened.
  */
-async function insideRoot(root: string, ref: string, label: string): Promise<string> {
+export async function insideRoot(root: string, ref: string, label: string): Promise<string> {
   const base = await realpath(root);
   const resolved = path.resolve(base, ref);
   const target = await realpath(resolved);
@@ -224,22 +237,23 @@ function armSource(raw: Record<string, unknown>, arm: CityArm): ISourceIdentity 
   };
 }
 
-interface IBuildComponent {
+export interface IBuildComponent {
   bytes: number;
   name: string;
   sha256: string;
 }
 
 /** The archived bytes a run measured, re-hashed here: a lock is only a lock while the file is there. */
-async function archivedBuilds(
+export async function archivedBuilds(
   raw: Record<string, unknown>,
-  arm: CityArm,
+  arm: string,
+  names: readonly string[],
   root: string,
 ): Promise<IBuildComponent[]> {
   const identity = requireObject(raw.identity, `${arm} raw record identity`);
   const build = requireObject(identity.build, `${arm} identity.build`);
   const components: IBuildComponent[] = [];
-  for (const name of BUILD_COMPONENTS[arm]) {
+  for (const name of names) {
     const entry = requireObject(build[name], `${arm} identity.build.${name}`);
     const sha256 = hash(entry, "sha256", `${arm} identity.build.${name}.sha256`);
     const bytes = count(entry, "bytes", `${arm} identity.build.${name}.bytes`);
@@ -314,9 +328,9 @@ function plannedCityCell(cells: readonly unknown[], motion: string, size: number
 }
 
 /** The retained frame boundaries and the completed work they span, boundaries + 1 for the drain. */
-function seriesOf(
+export function seriesOf(
   raw: Record<string, unknown>,
-  arm: CityArm,
+  arm: string,
 ): { measure: number; series: Record<string, unknown> } {
   const series = requireObject(raw.rawSeries, `${arm} raw record rawSeries`);
   const boundaries = series.boundaries;
@@ -338,6 +352,101 @@ function seriesOf(
       `${arm} completed no work: its final completion precedes its first boundary`,
     );
   return { measure, series };
+}
+
+/** The record layout every v2 intake writes, before a family's own flags are folded in. */
+export interface IV2RecordInput {
+  arm: string;
+  backend: string;
+  block: number;
+  buildHash: string;
+  buildType: BuildType;
+  campaignHash: string;
+  campaignId: string;
+  cell: IPlannedCell;
+  checksums: Record<string, string>;
+  comparability: IV2RunRecord["comparability"];
+  comparabilityReason: string;
+  derivationVersion: string;
+  durationMs: IV2RunRecord["durationMs"];
+  engine: string;
+  flags: Record<string, string>;
+  fixture: { evidence: string; hash: string };
+  gpu: string;
+  machine: { id: string; os: string };
+  measure: number;
+  order: number;
+  planHash: string;
+  runId: string;
+  seriesRef: string;
+  session: number;
+  sourceDigest: string;
+  timingDefinition: string;
+  version: string;
+  warmupFrames: number;
+}
+
+/**
+ * The whole schema-2 record, including the explicit `null`s the contract requires beside real values.
+ * Each family supplies its own flags and its own phase durations; the skeleton holds the parts two
+ * intakes would otherwise drift apart on: the preflight and outcome reasons are the same §11 argument
+ * for both, and the primary metric is always completed work over the retained boundaries.
+ */
+export function v2RunRecord(input: IV2RecordInput): Record<string, unknown> {
+  return {
+    arm: {
+      backend: input.backend,
+      build: { hash: input.buildHash, type: input.buildType },
+      engine: input.engine,
+      flags: input.flags,
+      id: input.arm,
+      version: input.version,
+    },
+    block: input.block,
+    campaignHash: input.campaignHash,
+    campaignId: input.campaignId,
+    checksums: input.checksums,
+    comparability: input.comparability,
+    comparabilityReason: input.comparabilityReason,
+    derivationVersion: input.derivationVersion,
+    durationMs: input.durationMs,
+    experiment: input.cell.experiment,
+    fixture: {
+      conformance: "pass",
+      evidence: input.fixture.evidence,
+      hash: input.fixture.hash,
+    },
+    machine: {
+      gpu: input.gpu,
+      id: input.machine.id,
+      lane: "physical-hardware",
+      os: input.machine.os,
+      preflight: { passed: false, reason: PREFLIGHT_REASON },
+    },
+    metrics: [
+      { name: PRIMARY_METRIC, reason: null, unit: "ms", value: input.measure / MEASURED_FRAMES },
+      {
+        name: "gpu-ms",
+        reason: "this arm retained no per-frame GPU timestamp samples",
+        unit: "ms",
+        value: null,
+      },
+    ],
+    order: input.order,
+    outcome: { reason: OUTCOME_REASON, runStatus: "invalid" },
+    planHash: input.planHash,
+    runId: input.runId,
+    schemaVersion: 2,
+    session: input.session,
+    sourceHash: input.sourceDigest,
+    timing: {
+      definition: input.timingDefinition,
+      measuredFrames: MEASURED_FRAMES,
+      rawSeries: input.seriesRef,
+      rawSeriesReason: null,
+      warmupFrames: input.warmupFrames,
+    },
+  };
 }
 
 interface IArmFacts {
@@ -366,7 +475,7 @@ interface IArmFacts {
   warmupFrames: number;
 }
 
-/** The record as written, including the explicit `null`s the contract requires beside real values. */
+/** The City arm's own flags and phase durations, over the shared record layout. */
 function buildRecord(
   facts: IArmFacts,
   shared: {
@@ -407,18 +516,15 @@ function buildRecord(
         }
       : {}),
   };
-  return {
-    arm: {
-      backend: facts.backend,
-      build: { hash: facts.buildHash, type: facts.buildType },
-      engine: arm === "bevy-desktop" ? "bevy" : "threenative",
-      flags,
-      id: arm,
-      version: facts.version,
-    },
+  return v2RunRecord({
+    arm,
+    backend: facts.backend,
     block: facts.block,
+    buildHash: facts.buildHash,
+    buildType: facts.buildType,
     campaignHash: shared.campaignHash,
     campaignId: shared.campaignId,
+    cell,
     checksums: facts.checksums,
     comparability: shared.comparability,
     comparabilityReason: shared.comparabilityReason,
@@ -431,47 +537,26 @@ function buildRecord(
       warmup: null,
       warmupReason: `this arm recorded ${facts.warmupFrames} discarded warmup frames and no separately timed warmup duration`,
     },
-    experiment: cell.experiment,
-    fixture: {
-      conformance: "pass",
-      evidence: shared.fixture.evidence,
-      hash: shared.fixture.hash,
-    },
-    machine: {
-      gpu: facts.gpu,
-      id: shared.machine.id,
-      lane: "physical-hardware",
-      os: shared.machine.os,
-      preflight: { passed: false, reason: PREFLIGHT_REASON },
-    },
-    metrics: [
-      { name: PRIMARY_METRIC, reason: null, unit: "ms", value: facts.measure / MEASURED_FRAMES },
-      {
-        name: "gpu-ms",
-        reason: "this arm retained no per-frame GPU timestamp samples",
-        unit: "ms",
-        value: null,
-      },
-    ],
+    engine: arm === "bevy-desktop" ? "bevy" : "threenative",
+    flags,
+    fixture: shared.fixture,
+    gpu: facts.gpu,
+    machine: shared.machine,
+    measure: facts.measure,
     order: facts.order,
-    outcome: { reason: OUTCOME_REASON, runStatus: "invalid" },
     planHash: shared.planHash,
     runId: facts.runId,
-    schemaVersion: 2,
+    seriesRef: facts.seriesRef,
     session: facts.session,
-    sourceHash: facts.source.digest,
-    timing: {
-      definition: `completed work from the first retained frame boundary to the final completion observation; ${optional(raw, "boundarySemantics") ?? "boundary semantics not recorded"}`,
-      measuredFrames: MEASURED_FRAMES,
-      rawSeries: facts.seriesRef,
-      rawSeriesReason: null,
-      warmupFrames: facts.warmupFrames,
-    },
-  };
+    sourceDigest: facts.source.digest,
+    timingDefinition: `completed work from the first retained frame boundary to the final completion observation; ${optional(raw, "boundarySemantics") ?? "boundary semantics not recorded"}`,
+    version: facts.version,
+    warmupFrames: facts.warmupFrames,
+  });
 }
 
 /** A content-addressed evidence copy: same ref, same bytes, so a second collector dedupes. */
-async function writeEvidence(root: string, ref: string, bytes: Buffer): Promise<void> {
+export async function writeEvidence(root: string, ref: string, bytes: Buffer): Promise<void> {
   const target = path.join(root, ref);
   await mkdir(path.dirname(target), { recursive: true });
   try {
@@ -582,8 +667,18 @@ export async function collectCityPair(intake: ICityIntake): Promise<ICityIntakeR
     );
 
   const builds = {
-    "bevy-desktop": await archivedBuilds(bevyRaw, "bevy-desktop", intake.root),
-    "tn-desktop": await archivedBuilds(tnRaw, "tn-desktop", intake.root),
+    "bevy-desktop": await archivedBuilds(
+      bevyRaw,
+      "bevy-desktop",
+      BUILD_COMPONENTS["bevy-desktop"],
+      intake.root,
+    ),
+    "tn-desktop": await archivedBuilds(
+      tnRaw,
+      "tn-desktop",
+      BUILD_COMPONENTS["tn-desktop"],
+      intake.root,
+    ),
   };
   const cell = plannedCityCell(plan.cells, bevyRun.variant, fixture.size);
   if (
