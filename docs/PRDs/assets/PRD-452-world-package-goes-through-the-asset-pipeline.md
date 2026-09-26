@@ -1,6 +1,6 @@
 # PRD-452 — A world package goes through the asset pipeline
 
-**Status:** PARTIAL (Phase 1 landed and verified; the KTX2 case, the example move and Machinefall are open)
+**Status:** PARTIAL (Phases 1 and 2 landed and verified; the desktop run and Machinefall are open)
 **Complexity:** 4 (LOW-MEDIUM); risk override: none. One core module (`world-cells.ts`), one spec, one example move, and a consumer change in Machinefall.
 **Owner:** unassigned (drafted by Claude, 2026-09-25)
 **Depends on:** PRD-448 (merged in #317). First consumer: Machinefall PRD-001 (jonit-dev/machinefall#2).
@@ -30,12 +30,13 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 
 - [x] AC-1 [local; actor: agent]: a core spec serves the `world-v1` fixture in its compiled, content-addressed layout through a stubbed `fetch` and `WorldCells.load({ url: "world/world.json" })` goes resident with 0 failures; the red run on the pre-change code fails on `world.json` — proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts`, 14/14 green; red on the unchanged `world-cells.ts` (stashed) fails with `Error: World manifest request failed with status 404 for world/world.json.` The spec builds the layout in memory (each file served under a `sha256`-derived name, `assets.manifest.json` v1 mapping every logical path, authored names 404ing) instead of calling `compileAssets` into a temp dir: `@threenative/assets` is build-time tooling (`sharp`, gltf-transform, wasm encoders) and a core unit test may not inherit it. The names are the shape the compile step writes; the manifest keys are what the loader looks up.
 - [x] AC-2 [local; actor: agent]: the same spec with the manifest gone (the delete-test) still loads the package from the compiled project's own `assets/` sources, nothing answering under the authored names — proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts packages/core/__tests__/world-heightmap.spec.ts`, 20/20 green; the delete-test case `still loads the package from assets/ when the compiled output is gone` asserts the exact request log `["assets.manifest.json", "world/world.json", "assets/world/world.json", "world/placements.bin", "assets/world/placements.bin", "world/terrain/heightmap.u16", "assets/world/terrain/heightmap.u16"]` — 9 resident cells, 0 failures, each file asked for by its authored name first and then found under `assets/`, so the loader's second candidate is walked rather than dropped.
-- [ ] AC-3 [local; actor: agent]: a GLB with an embedded texture, compiled to KTX2, loads through `WorldCells` with `assets: ctx.assets` inside a game — proof: pending (a KTX2 fixture loaded through `WorldCells.load({ assets: ctx.assets })` in a playtest scenario).
-- [ ] AC-4 [local; actor: agent]: `examples/abyss-framework` `world-flythrough` (webgpu recipe) passes against the compiled package with the same residency counts as PRD-448 AC-6 (6 evictions, 0 failures) — Evidence: pending.
-- [ ] AC-5 [local; actor: agent]: Machinefall's package, compiled, is measured against the 6.4 GiB baseline (total bytes, uncooked bytes, compile wall time), and its `map-walk` playtest passes with 0 failed loads — Evidence: pending.
+- [x] AC-3 [local; actor: agent]: a GLB with an embedded texture, compiled to KTX2, loads through `WorldCells` with `assets: ctx.assets` inside a game — proof: the example's `assets/world/assets/pine.glb` carries a 64x64 embedded texture; `pnpm --filter abyss-framework build` compiles it to `world/assets/pine.e8619385.glb` with `KHR_texture_basisu` in `extensionsRequired`, `image/ktx2` and `shared/images/99eff915884b390e.etc1s.ktx2` (manifest `embeddedTextures.formats: {"probe_bark_tex":"etc1s"}`, 14179 -> 1925 B, GPU 21845 -> 2731 B), and the `world-flythrough` playtest on the compiled build passes with `failures` 0 -> 0. Red control, the same build with `assets: ctx.assets` removed: `failures` 1 -> 4 and the run exits 1, which is the renderer-less default loader refusing the KTX2 image.
+- [x] AC-4 [local; actor: agent]: `examples/abyss-framework` `world-flythrough` (webgpu recipe) passes against the compiled package with the same residency counts as PRD-448 AC-6 (6 evictions, 0 failures) — proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/world-flythrough.playtest.json --url 'http://127.0.0.1:5181/?world' --server-command 'pnpm --filter abyss-framework preview --host 127.0.0.1 --port 5181 --strictPort' --browser-recipe webgpu --headed` after `pnpm --filter abyss-framework build` — `pass: true`, 440 frames, adapter NVIDIA turing (not SwiftShader; `texture-compression-bc` present), resident cells 3 -> 6 with a peak of 12, 7 residence changes, 6 evictions, 0 failures, 1 463 instances, 0 loads in flight at the end, 0 console and 0 network errors, frame p95 47.2 ms against the 93 ms budget. The counts match PRD-448 AC-6/AC-7 exactly.
+- [ ] AC-5 [local; actor: agent]: Machinefall's package, compiled, is measured against the 6.4 GiB baseline (total bytes, uncooked bytes, compile wall time), and its `map-walk` playtest passes with 0 failed loads — proof: the four Phase 3 boxes below, each naming its own command.
 
 ## Decisions
 
+- **2026-09-25 — the example owns its copy of the `world-v1` package under `assets/world/`.** It streamed the fixture through Vite's `?url` import of `packages/core/__tests__/fixtures/world-v1`, which is a package's test fixture reached across the package boundary and cannot pass through a compile step (one source dir per project). The copy is 192 KB and one asset diverges on purpose: `assets/pine.glb` carries a 64x64 embedded texture so the KTX2 path is exercised in a real run rather than only in a spec (AC-3). The core fixture is untouched.
 - **2026-09-25 — no ambient path from a core system to the running game's `ctx.assets`.** `game.ts` builds the loader as a local inside `start()` and stores it only on the ctx object literal; core has no game/scene/loader registry to read it from. A global (a `globalThis` slot, a bus entry, a `WeakRef` on the renderer) was rejected — it outlives the game, leaks a loader across a `stop()`/`start()` cycle, and the two `Symbol.for` precedents in the tree are cross-bundle audio/render state, not an asset pipeline. So the loader is an option the game passes: `WorldCells.load({ assets: ctx.assets, … })`. The default is a fresh `createAssetLoader()` per load, which handles the manifest and the verbatim-then-`assets/` source fallback but has no renderer, so it cannot transcode KTX2.
 
 ## Integration Ledger
@@ -43,13 +44,13 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
 | Compiled world package | `threenative build` → `compileAssets` over `assets/world/` → `assets.manifest.json` | Serving the export raw from `public/` | AC-1, AC-4, AC-5 |
-| World loads via the game's loader | `WorldCells.load` → `ctx.assets.resolve` / `ctx.assets.model` | `defaultLoadModel` (renderer-less `createAssetLoader()`) and raw `fetch` of package files | AC-1, AC-3 |
+| World loads via the game's loader | `WorldCells.load` → `ctx.assets.resolve` / `ctx.assets.model` | `defaultLoadModel` (renderer-less `createAssetLoader()`) and raw `fetch` of package files | AC-1, AC-3, AC-4 |
 
 ## Execution Phases
 
 #### Phase 1: `WorldCells` loads through the asset loader
-**Status:** PARTIAL — red, green and the delete-test are verified; the KTX2 case is open (see below)
-**ACs:** AC-1, AC-2 done; AC-3 open
+**Status:** DONE (red, green, delete-test and the KTX2 case verified)
+**ACs:** AC-1, AC-2, AC-3 done
 **Files:**
 - `packages/core/src/world-cells.ts`: logical paths, `assets.resolve`/`assets.model`, the loader as default.
 - `packages/core/src/world-heightmap.ts`: unchanged — `loadWorldHeightmap` already takes a url and throws on a non-ok response, so it is handed each candidate in turn and its status ends up in the combined error.
@@ -63,21 +64,25 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 - [x] red: compiled fixture fails on `world.json` with today's `WorldCells`. proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts` with `packages/core/src/world-cells.ts` stashed — `Error: World manifest request failed with status 404 for world/world.json.`, 2 failed / 12 passed.
 - [x] green: compiled fixture resident, 0 failures. proof: same command with the change in place — 14/14, `stats().failures === 0`, 9 resident cells, the chunk attached and instanced batches built, every requested url matching `assets.manifest.json` or a content-hash name.
 - [x] delete-test: no manifest still loads, from the project's `assets/` sources. proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts packages/core/__tests__/world-heightmap.spec.ts`, case `still loads the package from assets/ when the compiled output is gone` — 9 resident cells, 0 failures, request log the four authored names each 404ing and the same three found under `assets/`; red on the pre-fix `world-cells.ts` (which took only candidate `[0]`) with `Error: World manifest request failed with status 404 for world/world.json.`, 1 failed / 19 passed.
-- [ ] KTX2 GLB loads through `WorldCells` with `assets: ctx.assets`. proof: pending — a KTX2-compiled GLB fixture loaded through `WorldCells.load({ assets: ctx.assets })` in a playtest scenario. Left open: the default loader has no renderer, so it cannot transcode; the fix is the game passing `ctx.assets` (AC-3), which needs a KTX2 fixture the core lane must not build. Nothing ships claiming it works.
+- [x] KTX2 GLB loads through `WorldCells` with `assets: ctx.assets`. proof: AC-3 — `assets/world/assets/pine.glb` given a 64x64 embedded texture compiles to a GLB declaring `KHR_texture_basisu`, and the `world-flythrough` playtest on the compiled build reports `failures` 0 -> 0. Red control: the same build with the `assets` option removed reports `failures` 1 -> 4 and exits 1.
 
 **Checkpoint:** package files and models resolve through the loader's manifest; the authored names still work without one. The `assets` default is per-load `createAssetLoader()` because no non-new path to `ctx.assets` exists; a game opts in with `{ assets: ctx.assets }`.
 
 #### Phase 2: Example world moves to `assets/`
-**Status:** NOT STARTED
-**ACs:** AC-4
+**Status:** DONE (the move, the compiling build, the web fly-through and the desktop fly-through are verified)
+**ACs:** AC-4 done; AC-3 done here too (the KTX2 case rides the same run)
 **Files:**
-- `examples/abyss-framework/`: world package under `assets/world/`, `world-main.ts`/`world-native.ts` URLs.
+- `examples/abyss-framework/assets/world/`: the example's own copy of the `world-v1` package; `assets/pine.glb` carries a 64x64 embedded texture.
+- `examples/abyss-framework/src/scenes/WorldProbe.ts`: logical `url: "world/world.json"` and `assets: ctx.assets`; the cross-package `?url` import of core's test fixture is gone.
+- `examples/abyss-framework/vite.config.ts` + `package.json` + `.gitignore` + `biome.json`: the template's `assetsWatchPlugin`, `build: threenative build` (which compiles before Vite), the generated `public/` outputs ignored, and `playtest:world` pointed at build + preview.
 
-**Verification:** the `world-flythrough.playtest.json` command from PRD-448 AC-6, `--browser-recipe webgpu`, adapter checked.
-- [ ] web fly-through passes on compiled output: residency counts recorded
-- [ ] desktop fly-through (`world-flythrough.desktop.playtest.json`) passes
+**Implementation:** the package was never in `public/` as the PRD assumed — the scene imported `packages/core/__tests__/fixtures/world-v1/world.json?url`, which serves the fixture verbatim and cannot pass through a compile (one source dir per project). So the example owns a copy. The dev loop keeps working through the watcher every template already uses; the built lane is what the PRD asks for and what the scenario now runs.
 
-**Checkpoint:** pending
+**Verification:** the AC-4 command in the acceptance list, `--browser-recipe webgpu`, adapter checked in `artifacts/playtest/capture.json`.
+- [x] web fly-through passes on compiled output: residency counts recorded. proof: `pnpm --filter abyss-framework build` then the AC-4 command — `pass: true`, 440 frames, adapter NVIDIA turing, resident 3 -> 6 (peak 12), 7 residence changes, 6 evictions, 0 failures, 0 loads in flight at the end, 1463 instances, 0 console/network errors, p95 47.2 ms of 93 ms. Manifest and compiled names: `world/world.json -> world/world.0d5bab07.json`, `world/placements.bin -> world/placements.2b739a45.bin`, `world/terrain/heightmap.u16 -> world/terrain/heightmap.a29283dd.u16`, all 11 files content-addressed.
+- [x] desktop fly-through (`world-flythrough.desktop.playtest.json`) passes. proof: `pnpm native:build` (host `packages/runtime-native/build/tn-linux/mystral`), then the desktop-platform compile plus `bundle.mjs --project examples/abyss-framework --entry src/world-native.ts --target desktop` and `package-desktop.mjs --bundle … --assets examples/abyss-framework/public --runtime …`, then `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/world-flythrough.desktop.playtest.json --target desktop --executable /tmp/…/pkg --host-arg run --host-arg .threenative/game.js` — `pass: true`, `runtime: native`, 440 frames, adapter NVIDIA GeForce RTX 2080, resident 3 -> 6 (peak 12), 7 residence changes, 6 evictions, 0 failures, 0 loads in flight at the end, 1463 instances — the same counts as the web run and PRD-448 AC-7. `src/world-native.ts` lost its `/world.json` override: the desktop build compiles the package and stages the manifest beside the bundle, so the logical path resolves on the host. `threenative build --target desktop` in this example still stops at `TN_UI_ENTRY_MISSING` (its config leaves `ui.renderer` at the `web` default and the example has no `src/ui/main.tsx`), so the two scripts were run directly, as PRD-448 phase 4b did.
+
+**Checkpoint:** the example's world package is compiled source, not a served fixture, and the web run proves the compiled names, the manifest and the KTX2 path in one flight.
 
 #### Phase 3: Machinefall compiles its world
 **Status:** NOT STARTED
@@ -88,9 +93,9 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 - `apps/client/src/level/World.ts`: logical URL.
 
 **Implementation:** re-export to disk (needs ~7 GB free on `/home`), run `threenative build`, measure.
-- [ ] export on disk, not `/tmp`
-- [ ] compiled bytes vs 6.4 GiB baseline, uncooked bytes, and compile time recorded here
-- [ ] LOD1 images deduped by `sharedImages` (count of distinct images in `shared/images/` vs the asset count)
-- [ ] `map-walk` passes, 0 failed loads
+- [ ] export on disk, not `/tmp`. proof: `apps/client/package.json` `world:export` writing `assets/world`, and the path listed in `apps/client/.gitignore` with a populated directory on `/home`.
+- [ ] compiled bytes vs 6.4 GiB baseline, uncooked bytes, and compile time recorded here. proof: the `threenative build` run's `TN_ASSETS_BUDGET` lines and wall time, pasted into this file.
+- [ ] LOD1 images deduped by `sharedImages` (count of distinct images in `shared/images/` vs the asset count). proof: `ls public/shared/images | wc -l` against the manifest's image count, with both numbers here.
+- [ ] `map-walk` passes, 0 failed loads. proof: the `map-walk.playtest.json` run against the compiled client, with the `failed loads` component reported as 0.
 
 **Checkpoint:** pending
