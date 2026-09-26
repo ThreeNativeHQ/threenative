@@ -6789,6 +6789,16 @@
       "guidance": "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
       "id": "networked-multiplayer",
       "situations": ["authoritative replication", "client prediction"]
+    },
+    {
+      "guidance": "The framework owns no vegetation system. Copy the MIT source in examples/integrations/vegetation/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/vegetation/src) into your src/: tree.ts generates seeded, vertex-budgeted EZ Tree variants that wear your own materials (depend on the pinned ez-tree source, not the npm 1.1.0 bundle, which loads textures at import); render/wind.ts adds TSL wind whose direction is world space, reused by the shadow pass. Give bark and leaves one wind setting, place variants with root.clone(), and cut leaves with material.maskNode so shadows follow them. Instanced wind, GLB cook and LOD selection are unproven. Worked sample: the grove game in github.com/ThreeNativeHQ/examples.",
+      "id": "procedural-vegetation",
+      "situations": [
+        "procedural trees",
+        "swaying trees",
+        "tree foliage wind sway",
+        "generate a forest of trees"
+      ]
     }
   ],
   "version": 2

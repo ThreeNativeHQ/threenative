@@ -1,6 +1,6 @@
 # PRD: Procedural vegetation asset generation
 
-**Status:** PARTIAL — actual EZ Tree adapter, TSL wind source and executable tests added; platform/forest admission open.
+**Status:** PARTIAL — EZ Tree adapter, TSL wind and a browser WebGPU grove demo proven; GLB/LOD, instanced wind and native/Android open.
 **Priority:** P2. **PR:** #333. **Base:** develop `663de7c69fca3446303da8a39de7c8871bfe33c6`.
 
 ## Goal and ownership
@@ -16,7 +16,8 @@ Cover reproducible seeded geometry, index values 65535/65536, invalid indices, c
 ## Implementation order
 
 ### Phase 1 — generation admission
-- [ ] Search existing assets, batching and LOD capabilities and record the chosen integration point.
+- [x] Search existing assets, batching and LOD capabilities and record the chosen integration point.
+  proof: 2026-09-26 `engine_search_capabilities` — vegetation `none` (now a `procedural-vegetation` guidance row); batching: per-variant `root.clone()` today, `InstancedBatch` once instanced wind exists; LOD authority: cook-baked `updateModelLods` (`assets.lod`) after GLB export.
 - [ ] Pin the donor and audit code, noise attribution and all fixture textures separately.
 - [ ] Add failing determinism, index-boundary and GLB round-trip tests.
 - [x] Run ten dependency-free index/wind contracts after the observed failing baseline: 10 passed, 0 failed on Node 22.16.0.
@@ -24,14 +25,15 @@ Cover reproducible seeded geometry, index values 65535/65536, invalid indices, c
 ### Phase 2 — offline variants and editable wind
 - [ ] Implement bounded variant generation through the ordinary asset workflow.
   Actual donor generation now passes the pinned CPU suite; asset export/cook remains unverified.
-- [ ] Implement game-owned TSL wind with matching shadow deformation and conservative bounds.
-  Ordinary-mesh TSL source is present; actual GPU shadow proof remains open.
+- [x] Implement game-owned TSL wind with matching shadow deformation and conservative bounds.
+  proof: ordinary meshes only. Direction is world space (yawed clones sway together) and bounds pad both horizontal axes (red z 0.5, green 2.5). three's shadow pass reuses `material.positionNode`; grove wind-on vs amplitude-0 frames at the same tick differ on 10.9% of the shadow-only band (y 520-600, max delta 73/255).
 - [ ] Pass geometry, material, ownership and cleanup tests.
 - [ ] Prove which runtime path selects every exported LOD rather than assuming support.
 - [x] Strict-check the pure geometry/wind-reference module with TypeScript 5.8.3: exit 0.
 
 ### Phase 3 — forest fixture proof
-- [ ] Pass the grove browser WebGPU playtest with actual image captures.
+- [x] Pass the grove browser WebGPU playtest with actual image captures.
+  proof: sandbox `grove` (ThreeNativeHQ/examples 063e630), `grove` + `atmosphere` scenarios pass on `webgpu:architecture=turing|vendor=nvidia`; 22 trees, 51,646 vertices, frameDiff 0.28-0.32. Control: amplitude 0 gives changedPixelRatio 0 and the scenario goes red.
 - [ ] Pass the same fixture on desktop native, naming OS and adapter.
 - [ ] Pass the same fixture on Android, naming the executed lane.
 - [ ] Record silhouette, alpha-coverage and frame-cost comparisons at fixed content/quality.
@@ -46,10 +48,12 @@ Cover reproducible seeded geometry, index values 65535/65536, invalid indices, c
 - [ ] Seeded vegetation assets are reproducible and load through the normal asset loader.
 - [x] Geometry requiring indices above 65535 is safe or rejected before corruption.
   `npm test`: 65535/65536 boundary, invalid-index, complete-triangle and actual donor generation tests pass.
-- [ ] The runtime wind path uses TSL rather than the donor's GLSL compile hook.
+- [x] The runtime wind path uses TSL rather than the donor's GLSL compile hook.
+  proof: donor materials are discarded; the grove renders the `positionNode` wind on WebGPU with zero console errors.
 - [ ] Wind deformation and shadow/culling behavior agree.
 - [ ] Every claimed LOD is actually selected in the tested runtime.
-- [ ] Browser WebGPU evidence is recorded.
+- [x] Browser WebGPU evidence is recorded.
+  proof: see the Phase 3 grove box (nvidia turing, not SwiftShader).
 - [ ] Desktop-native evidence is recorded.
 - [ ] Android evidence is recorded.
 
@@ -66,6 +70,10 @@ Formal capability tools, installed transitive audit, lockfile, Biome, repository
 `npm test` passes with the pinned dependencies: strict TypeScript 5.9.3 build, 10 contracts and 3 real EZ Tree/Three integration tests (13 passed, 0 failed). This includes the upstream-source build and the regression for the published package's eager DOM access; no DOM shim or skipped assertion was added. Biome 1.9.4 applied the repository's unchanged rules to this package: 9 files checked, exit 0 after formatting. The same formatted source was retested locally on Node 22.16.0.
 
 This supersedes the earlier local dependency-download limitation, not the remaining GPU, GLB round-trip, LOD, platform, full-repository or independent-review requirements. The source remains experimental and the PRD remains partial.
+
+## Grove demo and visual review — 2026-09-26
+
+The sandbox game `grove` (published `create-threenative@0.2.6` minimal, source copied from this example) was the visual judge. The screenshots found three reuse bugs, each fixed red-green here: wind direction was mesh-local, so yawed clones swayed apart and escaped their bounds; `generateTree` returned the donor `Tree`, whose constructor adds two empty meshes to every `clone()`; `geometry.ts` failed `noUncheckedIndexedAccess`, which scaffolded games enable. `npm test` 13/13 after each. Game-side lessons are in README: bark and leaves need one wind setting (0.35/0.15 m slid leaves off twigs), and leaf cut-outs belong in `maskNode` so shadows are dappled. The template's radiance sky rendered dark and faceted at midday; that is a template issue outside this PRD, recorded in the grove's FRICTION.md. `frameDiff` ignores `region`, so the shadow-band number above is a direct image measurement rather than a scenario assertion.
 
 ## References
 
