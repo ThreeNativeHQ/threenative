@@ -23,7 +23,7 @@ Cover reproducible seeded geometry, index values 65535/65536, invalid indices, c
 
 ### Phase 2 — offline variants and editable wind
 - [ ] Implement bounded variant generation through the ordinary asset workflow.
-  Actual donor code is present; dependency-backed generation and asset export/cook remain unverified.
+  Actual donor generation now passes the pinned CPU suite; asset export/cook remains unverified.
 - [ ] Implement game-owned TSL wind with matching shadow deformation and conservative bounds.
   Ordinary-mesh TSL source is present; actual GPU shadow proof remains open.
 - [ ] Pass geometry, material, ownership and cleanup tests.
@@ -44,7 +44,8 @@ Cover reproducible seeded geometry, index values 65535/65536, invalid indices, c
 
 ## Acceptance criteria
 - [ ] Seeded vegetation assets are reproducible and load through the normal asset loader.
-- [ ] Geometry requiring indices above 65535 is safe or rejected before corruption.
+- [x] Geometry requiring indices above 65535 is safe or rejected before corruption.
+  `npm test`: 65535/65536 boundary, invalid-index, complete-triangle and actual donor generation tests pass.
 - [ ] The runtime wind path uses TSL rather than the donor's GLSL compile hook.
 - [ ] Wind deformation and shadow/culling behavior agree.
 - [ ] Every claimed LOD is actually selected in the tested runtime.
@@ -59,6 +60,12 @@ Executed: pure Node contracts 10/10 and TypeScript 5.8.3 strict checking of geom
 **Dependency-backed CI, 2026-09-25:** run 36201842596 found two TS7006 errors; explicit TSL callback types fixed the build. Run 36202878013 then passed the actual strict build and 10 contracts but failed when published EZ Tree 1.1.0 eagerly invoked TextureLoader at module import with no document. The test was not weakened. This commit builds the inspected upstream source revision `dcf309bd86bd521083d9c70f01f2de45fdc7c457` with esbuild, externalizing Three and copying its license. That source takes caller-provided texture maps instead. The published package is used only as a declaration facade; its JavaScript is never loaded. No DOM shim is installed. The same real donor test is the regression and a fresh run must prove the source-build fix. Local build-script syntax and the unchanged ten CPU contracts pass.
 
 Formal capability tools, installed transitive audit, lockfile, Biome, repository suite and independent review remain open. Keep draft; no iOS claim. Retain existing authored vegetation if the donor fails generation/quality admission instead of loosening geometry checks.
+
+## CI repair verification — 2026-09-26
+
+`npm test` passes with the pinned dependencies: strict TypeScript 5.9.3 build, 10 contracts and 3 real EZ Tree/Three integration tests (13 passed, 0 failed). This includes the upstream-source build and the regression for the published package's eager DOM access; no DOM shim or skipped assertion was added. Biome 1.9.4 applied the repository's unchanged rules to this package: 9 files checked, exit 0 after formatting. The same formatted source was retested locally on Node 22.16.0.
+
+This supersedes the earlier local dependency-download limitation, not the remaining GPU, GLB round-trip, LOD, platform, full-repository or independent-review requirements. The source remains experimental and the PRD remains partial.
 
 ## References
 
