@@ -36,7 +36,8 @@ const config: IThreeNativeConfig = {
   //       assets: { textures: { maxSize: 1024 }, models: { textures: { maxSize: 1024 } } },
   //     } },
   // },
-  // Contract, byte definitions, the build report: `agent-docs/build-profiles.md`.
+  // Contract, byte definitions, the build report:
+  //   node_modules/create-threenative/agent-docs/references/build-profiles.md
   renderer: {
     preferWebGPU: true, // Use WebGPU when the host exposes it.
     // The engine holds the `display.maxFps` budget by scaling the 3D drawing buffer, and reports
