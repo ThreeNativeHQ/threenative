@@ -10,6 +10,28 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Skinned rigs share one palette draw per pass — 2026-09-25
+
+The render projection now folds `SkinnedMesh` rigs that share a geometry and material into one
+instanced palette draw per pass (`packages/core/src/projection-skinned.ts`); games write nothing.
+Bench: `pnpm exec tsx scripts/engine-load-test/skinned-crowd.ts` (tn-web, hardware NVIDIA Turing,
+shadows on, 32-bone rigs, one render per animation-frame tick, 300 frames per arm, 6 paired
+stock/projected runs plus an A/A pair; medians):
+
+| Rigs | Frame p50 stock → lane | CPU p50 stock → lane | Pairs faster |
+| --- | --- | --- | --- |
+| 8 | 2.55 → 2.45 ms | 0.75 → 0.70 ms | noise |
+| 32 | 6.30 → 6.15 ms | 2.40 → 2.15 ms | noise |
+| 128 | 10.25 → 7.20 ms | 5.90 → 3.70 ms | 6/6 |
+| 512 | 47.05 → 24.45 ms | 37.0 → 17.75 ms | 6/6 |
+
+Draws at 512 rigs: 1026 → 4. Captures of the same frame are pixel-identical at 128 rigs and within
+1/255 at 8 (stock A/A: exact). The machine carried load average 12–18 from other lanes during the
+run. Pitfall: three refreshes a stock skeleton once per animation-frame tick, so a bench that
+renders several frames per tick draws stale poses and under-prices the stock arm by about half.
+Native: `examples/skinned-crowd` scenario, 130 → 4 draws on the desktop host and 4 draws on the
+Android emulator (API 35, x86_64). Not measured: physical-device frame time.
+
 ## Read the distribution, not the average — 2026-09-19
 
 The single most expensive habit in this file's history, measured five times in one session. Every

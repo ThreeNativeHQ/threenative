@@ -29,6 +29,7 @@ import type {
   IProjectionMaterialGroup,
   IProjectionProjectPlan,
 } from "./projection-plan.js";
+import { SkinnedBatch, isSimilarityTransform } from "./projection-skinned.js";
 import {
   disposeBatchedMeshVelocity,
   ensureBatchedMeshVelocity,
@@ -59,6 +60,12 @@ const ZERO_MATRIX = /* @__PURE__ */ new Matrix4().multiplyScalar(0);
  */
 const BATCH_GROWTH = 1.5;
 const BATCH_MIN_SLOTS = 16;
+
+/**
+ * WebGPU's guaranteed minimum `maxStorageBufferBindingSize`. A skinned palette never binds more,
+ * so no device is asked for a limit it may not grant; rigs past it keep their own draw.
+ */
+const PALETTE_BINDING_BYTES = 134_217_728;
 
 /**
  * PRD-238 measurement (2026-08-28, tn-web on NVIDIA/Turing, 3 paired runs, frames 226–899): the
@@ -115,7 +122,7 @@ interface ISourceState {
   geometry: BufferGeometry | undefined;
   material: Material | Material[] | undefined;
   /** The batch this source is an instance of, so a lane change releases the old slot directly. */
-  batch: IBatch | IBatched;
+  batch: IBatch | IBatched | SkinnedBatch;
 }
 
 /** Element-wise equality, which is what "did this object move" reduces to. */
@@ -216,6 +223,7 @@ export class ProjectionMirror {
   readonly scene = new Scene();
   readonly #batches = new Map<IProjectionBatchGroup, IBatch>();
   readonly #materialBatches = new Map<IProjectionMaterialGroup, IBatched>();
+  readonly #skinnedBatches = new Map<IProjectionBatchGroup, SkinnedBatch>();
   readonly #state = new Map<Object3D, ISourceState>();
   /** Exact-lane stand-ins, keyed by the source they mirror. */
   readonly #proxies = new Map<Object3D, Object3D>();
@@ -260,7 +268,12 @@ export class ProjectionMirror {
   }
 
   get batchCount(): number {
-    return this.#batches.size + this.#materialBatches.size;
+    return this.#batches.size + this.#materialBatches.size + this.#skinnedBatches.size;
+  }
+
+  /** Batches on the skinned lane — rigs sharing a geometry and material drawn from one palette. */
+  get skinnedBatchCount(): number {
+    return this.#skinnedBatches.size;
   }
 
   /** Batches on the instanced lane — one shared geometry instance folded into an `InstancedMesh`. */
@@ -344,6 +357,7 @@ export class ProjectionMirror {
       }
     }
     this.#applyMaterialGroups(plan);
+    this.#applySkinnedGroups(plan);
     for (let index = 0; index < this.#exactLaneCount; index += 1) {
       const entry = this.#exactLane[index] as IProjectionExactEntry;
       const object = exactObject(entry);
@@ -354,8 +368,110 @@ export class ProjectionMirror {
       this.#syncProxy(object);
     }
     this.#retire(plan.seen, plan.lights, plan.lightCount);
+    // After retirement, so a slot freed this frame uploads collapsed rather than one frame late.
+    for (const batch of this.#skinnedBatches.values()) batch.end();
     this.#clearExactScratch();
     return undefined;
+  }
+
+  /**
+   * Applies the plan's skinned groups: one palette draw per group, each rig a slot re-posed from
+   * its own skeleton every frame.
+   *
+   * The world transform is folded into the palette, which is exact only for a similarity
+   * transform, so a rig scaled unevenly or mirrored keeps its own draw with that reason named.
+   */
+  #applySkinnedGroups(plan: IProjectionProjectPlan): void {
+    for (let index = 0; index < plan.skinnedGroupCount; index += 1) {
+      const group = plan.skinnedGroups[index] as IProjectionBatchGroup;
+      const batch = this.#ensureSkinned(group);
+      batch?.begin();
+      for (let member = 0; member < group.memberCount; member += 1) {
+        const rig = group.members[member] as SkinnedMesh;
+        const refused = batch === undefined ? "unsupportedGeometry" : this.#syncSkinned(batch, rig);
+        if (refused === undefined) {
+          this.#projectedObjects += 1;
+          continue;
+        }
+        this.#release(rig);
+        this.#appendExact(rig, refused);
+      }
+    }
+  }
+
+  /** Poses one rig in its palette slot, or names why it keeps a draw of its own. */
+  #syncSkinned(batch: SkinnedBatch, rig: SkinnedMesh): ProjectionExactReason | undefined {
+    if (!isSimilarityTransform(rig.matrixWorld.elements)) {
+      return rig.matrixWorld.determinant() <= 0 ? "negativeScale" : "nonUniformScale";
+    }
+    const slot = this.#claimSkinned(batch, rig);
+    if (slot === undefined) return "batchOverflow";
+    const state = this.#state.get(rig) as ISourceState;
+    const visible = this.#visibleInWorld(rig);
+    if (!visible) batch.hide(slot);
+    else {
+      // A rig coming back into view has collapsed history; it starts from its own pose.
+      if (!state.visible) batch.restart(slot);
+      batch.write(slot, rig);
+    }
+    state.visible = visible;
+    state.matrixWorld.copy(rig.matrixWorld);
+    state.material = rig.material;
+    return undefined;
+  }
+
+  #claimSkinned(batch: SkinnedBatch, rig: SkinnedMesh): number | undefined {
+    const previous = this.#state.get(rig);
+    if (previous !== undefined && previous.batch !== batch) this.#release(rig);
+    this.#releaseProxy(rig);
+    const known = batch.instances.has(rig);
+    const slot = batch.claim(rig);
+    if (slot === undefined) return undefined;
+    if (!known) {
+      this.#state.set(rig, {
+        matrixWorld: new Matrix4(),
+        visible: true,
+        geometry: rig.geometry,
+        material: rig.material,
+        batch,
+      });
+    }
+    return slot;
+  }
+
+  /** The palette draw for one skinned group, rebuilt at a larger size when the group outgrows it. */
+  #ensureSkinned(group: IProjectionBatchGroup): SkinnedBatch | undefined {
+    const existing = this.#skinnedBatches.get(group);
+    if (existing !== undefined && existing.capacity >= group.memberCount) return existing;
+    const startedAt = globalThis.performance?.now() ?? 0;
+    const first = group.members[0] as SkinnedMesh;
+    const rigBytes = first.skeleton.bones.length * 64;
+    const capacity = Math.min(
+      Math.max(BATCH_MIN_SLOTS, Math.ceil(group.memberCount * BATCH_GROWTH)),
+      Math.floor(PALETTE_BINDING_BYTES / rigBytes),
+    );
+    if (existing !== undefined) {
+      if (existing.capacity >= capacity) return existing;
+      this.#disposeSkinned(existing);
+    }
+    let batch: SkinnedBatch;
+    try {
+      batch = new SkinnedBatch({ first, capacity, velocity: this.#velocityEnabled });
+    } catch {
+      return undefined;
+    }
+    this.#skinnedBatches.set(group, batch);
+    this.scene.add(batch.mesh);
+    this.#compileMs += (globalThis.performance?.now() ?? 0) - startedAt;
+    return batch;
+  }
+
+  #disposeSkinned(batch: SkinnedBatch): void {
+    for (const object of batch.instances.keys()) this.#state.delete(object);
+    batch.dispose();
+    for (const [group, candidate] of this.#skinnedBatches) {
+      if (candidate === batch) this.#skinnedBatches.delete(group);
+    }
   }
 
   #appendExact(object: Object3D, reason: ProjectionExactReason): void {
@@ -449,6 +565,12 @@ export class ProjectionMirror {
         sources: [...batch.instances.keys()],
       });
     }
+    for (const batch of this.#skinnedBatches.values()) {
+      ownership.set(batch.mesh, {
+        kind: "instancedBatch",
+        sources: [...batch.instances.keys()],
+      });
+    }
     return ownership;
   }
 
@@ -460,6 +582,7 @@ export class ProjectionMirror {
   ): void {
     this.#retireBatches(seen);
     this.#retireMaterialBatches(seen);
+    this.#retireSkinnedBatches(seen);
     this.#retireProxies(seen);
     this.#retireLights(lights, lightCount);
   }
@@ -496,6 +619,17 @@ export class ProjectionMirror {
         this.#state.delete(object);
       }
       if (batch.instances.size === 0) this.#disposeBatched(batch);
+    }
+  }
+
+  #retireSkinnedBatches(seen: { has(object: Object3D): boolean }): void {
+    for (const batch of this.#skinnedBatches.values()) {
+      for (const object of batch.instances.keys()) {
+        if (seen.has(object)) continue;
+        batch.release(object);
+        this.#state.delete(object);
+      }
+      if (batch.instances.size === 0) this.#disposeSkinned(batch);
     }
   }
 
@@ -980,6 +1114,11 @@ export class ProjectionMirror {
   #release(object: Object3D): void {
     const state = this.#state.get(object);
     const batch = state === undefined ? undefined : state.batch;
+    if (batch instanceof SkinnedBatch) {
+      batch.release(object);
+      this.#state.delete(object);
+      return;
+    }
     const slot = batch?.instances.get(object);
     if (batch !== undefined && slot !== undefined) {
       // Hidden or collapsed before the slot is handed back, so a freed slot draws nothing until
@@ -1053,6 +1192,8 @@ export class ProjectionMirror {
       batch.mesh.dispose();
     }
     this.#materialBatches.clear();
+    for (const batch of this.#skinnedBatches.values()) batch.dispose();
+    this.#skinnedBatches.clear();
     for (const proxy of this.#proxies.values()) this.scene.remove(proxy);
     this.#proxies.clear();
     for (const proxy of this.#lightProxies.values()) this.scene.remove(proxy);
@@ -1091,7 +1232,9 @@ export class ProjectionMirror {
     if (batch === undefined || slot === undefined) return undefined;
     const matrixWorld = new Matrix4();
     // Both lanes answer the same way; which primitive backs the batch is not the caller's business.
-    if ((batch as IBatch).mesh.isInstancedMesh === true && slot < 0) {
+    if (batch instanceof SkinnedBatch) {
+      matrixWorld.copy(state.matrixWorld);
+    } else if ((batch as IBatch).mesh.isInstancedMesh === true && slot < 0) {
       matrixWorld.copy(state.matrixWorld);
     } else {
       batch.mesh.getMatrixAt(slot, matrixWorld);
@@ -1106,6 +1249,9 @@ export class ProjectionMirror {
     }
     for (const batch of this.#materialBatches.values()) {
       if (batch.material === material) return true;
+    }
+    for (const batch of this.#skinnedBatches.values()) {
+      if (batch.sourceMaterial === material) return true;
     }
     for (const proxy of this.#proxies.values()) {
       if ((proxy as Mesh).material === material) return true;

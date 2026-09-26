@@ -7,8 +7,10 @@ import type {
   Mesh,
   Object3D,
   Scene,
+  SkinnedMesh,
 } from "three";
 
+import { skinnedMaterialBlocked } from "./projection-skinned.js";
 import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjection.js";
 
 /**
@@ -50,6 +52,17 @@ export const MIN_BATCH_MEMBERS = 4;
  * projection that cannot beat this ratio is abandoned before it costs anything.
  */
 const WORTHWHILE_DRAW_RATIO = 0.75;
+
+/**
+ * How many rigid meshes one skinned rig counts as against the mesh floor, which is priced in rigid
+ * draws. Measured 2026-09-25 on tn-web, NVIDIA Turing, shadows on, 300 frames per arm
+ * (`scripts/engine-load-test/skinned-crowd.ts`): 512 shadow-casting boxes cost 0.8 ms of CPU a
+ * frame and 512 rigs of 32 bones 20.8 ms, so a rig submits about 26 rigid draws' worth. The scenes
+ * this admits below the rigid floor were measured faster, not merely equal: 4 rigs beside 100 props
+ * went 6.2 -> 3.85 ms a frame and 8 rigs beside 150 props 9.7 -> 6.85 ms (medians of 4 pairs). A
+ * scene whose props cannot batch is still declined by the draw-ratio rule above.
+ */
+const SKINNED_FLOOR_WEIGHT = 26;
 
 function isMesh(object: Object3D): object is Mesh {
   return (object as Mesh).isMesh === true;
@@ -121,6 +134,40 @@ function geometryLaneReason(geometry: BufferGeometry): ProjectionExactReason | u
   const range = geometry.drawRange;
   if (range !== undefined && (range.start !== 0 || Number.isFinite(range.count))) {
     return "drawRange";
+  }
+  return undefined;
+}
+
+/**
+ * Why a skinned mesh cannot join a skinned batch, or `undefined` when it can.
+ *
+ * The same semantics a batched draw cannot carry as on the other lanes, plus the ones the palette
+ * shader cannot: a material that already moves its own vertices, and a geometry without the four
+ * weighted bone influences and the normal the palette deforms.
+ */
+function skinnedLaneReason(object: Object3D): ProjectionExactReason | undefined {
+  const candidate = object as ProjectionCandidate & SkinnedMesh;
+  if (Array.isArray(candidate.material)) return "multiMaterial";
+  if (candidate.customDepthMaterial != null || candidate.customDistanceMaterial != null) {
+    return "customDepthMaterial";
+  }
+  const geometry = candidate.geometry;
+  if (geometry === undefined) return "unsupportedGeometry";
+  const geometryReason = geometryLaneReason(geometry);
+  if (geometryReason !== undefined) return geometryReason;
+  if ((object.renderOrder ?? 0) !== 0) return "renderOrder";
+  const material = candidate.material as Material | undefined;
+  if (material === undefined) return "unsupportedGeometry";
+  if (material.transparent === true) return "transparent";
+  if (
+    skinnedMaterialBlocked(material) ||
+    candidate.skeleton === undefined ||
+    candidate.skeleton.bones.length === 0 ||
+    geometry.getAttribute("normal")?.itemSize !== 3 ||
+    geometry.getAttribute("skinIndex")?.itemSize !== 4 ||
+    geometry.getAttribute("skinWeight")?.itemSize !== 4
+  ) {
+    return "skinned";
   }
   return undefined;
 }
@@ -269,6 +316,17 @@ export interface IProjectionScanWorkspace {
   readonly seen: IProjectionSeenWorkspace;
   readonly eligible: Array<Mesh | undefined>;
   eligibleCount: number;
+  /** Skinned meshes the palette lane can draw, grouped separately from the rigid lanes. */
+  readonly skinned: Array<SkinnedMesh | undefined>;
+  skinnedCount: number;
+  readonly skinnedGroupsByGeometry: WeakMap<
+    BufferGeometry,
+    WeakMap<Material, Map<number, IProjectionBatchGroup>>
+  >;
+  readonly activeSkinnedGroups: Array<IProjectionBatchGroup | undefined>;
+  activeSkinnedGroupCount: number;
+  readonly skinnedGroups: Array<IProjectionBatchGroup | undefined>;
+  skinnedGroupCount: number;
   readonly exactLane: IProjectionExactEntry[];
   readonly exactEntryPool: IProjectionExactEntry[];
   exactLaneCount: number;
@@ -324,6 +382,9 @@ export interface IProjectionProjectPlan {
   /** Material-keyed groups worth batching across differing geometries, sized before anything is built. */
   readonly materialGroups: readonly (IProjectionMaterialGroup | undefined)[];
   readonly materialGroupCount: number;
+  /** Skinned groups worth one palette draw each; their members share geometry, material and rig size. */
+  readonly skinnedGroups: readonly (IProjectionBatchGroup | undefined)[];
+  readonly skinnedGroupCount: number;
   /** Group members below the batching floor: released from batches, drawn on the exact lane. */
   readonly belowFloor: readonly (Mesh | undefined)[];
   readonly belowFloorCount: number;
@@ -355,6 +416,13 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     seen: new ProjectionSeen(),
     eligible: [],
     eligibleCount: 0,
+    skinned: [],
+    skinnedCount: 0,
+    skinnedGroupsByGeometry: new WeakMap(),
+    activeSkinnedGroups: [],
+    activeSkinnedGroupCount: 0,
+    skinnedGroups: [],
+    skinnedGroupCount: 0,
     exactLane: [],
     exactEntryPool: [],
     exactLaneCount: 0,
@@ -410,6 +478,27 @@ function releaseActiveMaterialGroup(
   }
 }
 
+/** The skinned lane's share of `releaseProjectionScanWorkspace`. */
+function releaseSkinnedScan(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.skinnedCount; index += 1) {
+    workspace.skinned[index] = undefined;
+  }
+  for (let index = 0; index < workspace.activeSkinnedGroupCount; index += 1) {
+    const group = workspace.activeSkinnedGroups[index] as IProjectionBatchGroup;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      group.members[member] = undefined;
+    }
+    group.memberCount = 0;
+    workspace.activeSkinnedGroups[index] = undefined;
+  }
+  for (let index = 0; index < workspace.skinnedGroupCount; index += 1) {
+    workspace.skinnedGroups[index] = undefined;
+  }
+  workspace.skinnedCount = 0;
+  workspace.activeSkinnedGroupCount = 0;
+  workspace.skinnedGroupCount = 0;
+}
+
 export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspace): void {
   for (let index = 0; index < workspace.exactEntryPool.length; index += 1) {
     const entry = workspace.exactEntryPool[index] as IProjectionExactEntry;
@@ -433,6 +522,7 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
     workspace.eligible[index] = undefined;
   }
+  releaseSkinnedScan(workspace);
   for (let index = 0; index < workspace.exactLaneCount; index += 1) {
     const entry = workspace.exactLane[index] as IProjectionExactEntry;
     entry.object = undefined;
@@ -495,20 +585,67 @@ function addToBatchGroup(
   mesh: Mesh,
   scanNumber: number,
 ): void {
+  const byFlags = flagGroupsOf(workspace.groupsByGeometry, mesh);
+  const flags = batchFlagsOf(mesh);
+  const group = activeGroupOf(byFlags, flags, mesh, scanNumber);
+  if (group.memberCount === 0) {
+    workspace.activeGroups[workspace.activeGroupCount] = group;
+    workspace.activeGroupCount += 1;
+  }
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
+}
+
+/**
+ * Files a skinned mesh under (geometry, material, flags, bone count). The bone count is part of
+ * the key because it is the palette stride: rigs of different sizes cannot share one shader.
+ */
+function addToSkinnedGroup(
+  workspace: IProjectionScanWorkspace,
+  mesh: SkinnedMesh,
+  scanNumber: number,
+): void {
+  const byFlags = flagGroupsOf(workspace.skinnedGroupsByGeometry, mesh);
+  // Bone counts stay far below 2^16, so the composite key stays an exact integer.
+  const key = batchFlagsOf(mesh) * 65536 + mesh.skeleton.bones.length;
+  const group = activeGroupOf(byFlags, key, mesh, scanNumber);
+  if (group.memberCount === 0) {
+    workspace.activeSkinnedGroups[workspace.activeSkinnedGroupCount] = group;
+    workspace.activeSkinnedGroupCount += 1;
+  }
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
+}
+
+function flagGroupsOf(
+  index: WeakMap<BufferGeometry, WeakMap<Material, Map<number, IProjectionBatchGroup>>>,
+  mesh: Mesh,
+): Map<number, IProjectionBatchGroup> {
   const geometry = mesh.geometry;
   const material = mesh.material as Material;
-  let byMaterial = workspace.groupsByGeometry.get(geometry);
+  let byMaterial = index.get(geometry);
   if (byMaterial === undefined) {
     byMaterial = new WeakMap();
-    workspace.groupsByGeometry.set(geometry, byMaterial);
+    index.set(geometry, byMaterial);
   }
   let byFlags = byMaterial.get(material);
   if (byFlags === undefined) {
     byFlags = new Map();
     byMaterial.set(material, byFlags);
   }
-  const flags = batchFlagsOf(mesh);
-  let group = byFlags.get(flags);
+  return byFlags;
+}
+
+/** The group for `key`, emptied on its first sighting this scan. */
+function activeGroupOf(
+  byFlags: Map<number, IProjectionBatchGroup>,
+  key: number,
+  mesh: Mesh,
+  scanNumber: number,
+): IProjectionBatchGroup {
+  const geometry = mesh.geometry;
+  const material = mesh.material as Material;
+  let group = byFlags.get(key);
   if (group === undefined) {
     group = {
       geometry,
@@ -521,16 +658,13 @@ function addToBatchGroup(
       memberCount: 0,
       activeScan: 0,
     };
-    byFlags.set(flags, group);
+    byFlags.set(key, group);
   }
   if (group.activeScan !== scanNumber) {
     group.activeScan = scanNumber;
     group.memberCount = 0;
-    workspace.activeGroups[workspace.activeGroupCount] = group;
-    workspace.activeGroupCount += 1;
   }
-  group.members[group.memberCount] = mesh;
-  group.memberCount += 1;
+  return group;
 }
 
 /**
@@ -733,6 +867,14 @@ function visitProjectionObject(
   if (!isRenderable(object)) return;
   state.renderables += 1;
   workspace.seen.add(object);
+  if ((object as SkinnedMesh).isSkinnedMesh === true) {
+    const skinnedReason = skinnedLaneReason(object);
+    if (skinnedReason === undefined) {
+      workspace.skinned[workspace.skinnedCount] = object as SkinnedMesh;
+      workspace.skinnedCount += 1;
+    } else addExactEntry(workspace, object, skinnedReason);
+    return;
+  }
   const reason = walkLaneReason(object);
   if (reason === undefined && isMesh(object)) {
     workspace.eligible[workspace.eligibleCount] = object;
@@ -764,6 +906,9 @@ function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: nu
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
     addToBatchGroup(workspace, workspace.eligible[index] as Mesh, scanNumber);
   }
+  for (let index = 0; index < workspace.skinnedCount; index += 1) {
+    addToSkinnedGroup(workspace, workspace.skinned[index] as SkinnedMesh, scanNumber);
+  }
   // Meshes whose own (geometry, material, flags) group is too small to instance-batch are exactly
   // the population a material-keyed batch exists for — distinct geometries over a shared
   // surface. A mesh whose geometry group made the floor never reaches here; instancing stays its
@@ -776,6 +921,25 @@ function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: nu
     }
   }
   watchMaterialGroupGeometries(workspace);
+}
+
+/**
+ * A skinned group is one draw per pass however many rigs it holds; below the floor each rig keeps
+ * its own, exactly as it had. Groups that make the floor are claimed into the plan here.
+ */
+function predictSkinnedDraws(workspace: IProjectionScanWorkspace): number {
+  let draws = 0;
+  for (let index = 0; index < workspace.activeSkinnedGroupCount; index += 1) {
+    const group = workspace.activeSkinnedGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount < MIN_BATCH_MEMBERS) {
+      draws += group.memberCount;
+      continue;
+    }
+    workspace.skinnedGroups[workspace.skinnedGroupCount] = group;
+    workspace.skinnedGroupCount += 1;
+    draws += 1;
+  }
+  return draws;
 }
 
 function predictDraws(workspace: IProjectionScanWorkspace): number {
@@ -795,6 +959,7 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
     }
     predictedDraws += group.memberCount;
   }
+  predictedDraws += predictSkinnedDraws(workspace);
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount < MIN_BATCH_MEMBERS) {
@@ -812,6 +977,14 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
 }
 
 function collectBelowFloor(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.activeSkinnedGroupCount; index += 1) {
+    const group = workspace.activeSkinnedGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      workspace.belowFloor[workspace.belowFloorCount] = group.members[member] as Mesh;
+      workspace.belowFloorCount += 1;
+    }
+  }
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
@@ -860,7 +1033,7 @@ export function scanProjection(
       seen: workspace.seen,
     };
   }
-  if (workspace.eligibleCount < minMeshes) {
+  if (workspace.eligibleCount + workspace.skinnedCount * SKINNED_FLOOR_WEIGHT < minMeshes) {
     return {
       exactLane: workspace.exactLane,
       exactLaneCount: workspace.exactLaneCount,
@@ -900,6 +1073,8 @@ export function scanProjection(
       batchGroupCount: workspace.batchGroupCount,
       materialGroups: workspace.materialGroups,
       materialGroupCount: workspace.materialGroupCount,
+      skinnedGroups: workspace.skinnedGroups,
+      skinnedGroupCount: workspace.skinnedGroupCount,
       belowFloor: workspace.belowFloor,
       belowFloorCount: workspace.belowFloorCount,
       exactLane: workspace.exactLane,

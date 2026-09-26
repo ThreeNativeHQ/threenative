@@ -6436,8 +6436,10 @@
       "importPath": "src/game.ts",
       "kind": "function",
       "signature": "renderer.projection?: boolean",
-      "summary": "The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.",
+      "summary": "The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it.",
       "situations": [
+        "a crowd of animated characters draws slowly",
+        "many SkinnedMesh copies of one rig, each its own draw call",
         "the game got slower after the projection engaged",
         "turn off the render projection, batching, or the instanced mirror",
         "draw count fell but frame time did not",
