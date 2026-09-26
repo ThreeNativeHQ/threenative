@@ -106,6 +106,23 @@ export interface IThreeNativeModelPassesConfig {
 
 /** Model optimization options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeModelsConfig {
+  /**
+   * Lossless scene-graph compaction: flatten empty transform chains, join sibling primitives
+   * that share a material, and batch a mesh several nodes reuse as `EXT_mesh_gpu_instancing`.
+   *
+   * On by default; `false` ships the scene graph as authored. A node matching `protectedPattern`,
+   * named in `protectedNames`, targeted by an animation or a skin joint is never merged or
+   * instanced, so an exact-name lookup or a bone-driven node survives.
+   */
+  readonly compact?:
+    | boolean
+    | {
+        readonly flatten?: boolean;
+        readonly instance?: boolean | { readonly min?: number };
+        readonly join?: boolean;
+        readonly protectedNames?: readonly string[];
+        readonly protectedPattern?: string;
+      };
   /** Standard glTF TEXCOORD_1 atlas generation for offline static-light assets. */
   readonly lightmap?: {
     readonly atlasSize: number;
