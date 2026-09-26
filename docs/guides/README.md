@@ -5,6 +5,7 @@ so a change here is a change to the published docs.
 
 ## Start
 
+- [Why ThreeNative?](why-threenative.md)
 - [Get started](getting-started.md)
 - [Architecture](architecture.md)
 - [Compare engines](comparison.md)
@@ -36,3 +37,7 @@ so a change here is a change to the published docs.
 
 Line 1 is the `# Title`. The first paragraph is the page summary. Link other guides by file name
 and source files by relative path. Add the guide to the list above, or the site will not show it.
+Link a package folder, such as `../../packages/physics`, to reach its API reference page.
+
+The site also renders every `packages/create-threenative/agent-docs/references/*.md` as Recipes, and
+an API reference page per package from `packages/create-threenative/capabilities.json`.
