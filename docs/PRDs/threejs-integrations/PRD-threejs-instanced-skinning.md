@@ -28,7 +28,8 @@ Before performance admission, establish identical 8/128/512-instance content and
 - [ ] Add failing instance-identity, pose, culling and previous-frame-history tests.
 - [ ] Implement only the WebGPU mechanism needed by the admitted fixture.
   Prototype code is present; no admission/GPU execution is claimed.
-- [ ] Pass capacity, invalid-input, slot-reuse and shared-resource-disposal tests.
+- [x] Pass capacity, invalid-input, slot-reuse and shared-resource-disposal tests.
+  Thirteen palette contracts and four real Three integration tests now pass; shader/pass correctness remains a separate gate.
 - [ ] Prove shadows, picking and temporal output at unchanged quality.
 - [x] Strict-check dependency-free palette.ts using TypeScript 5.8.3: exit 0.
 
@@ -62,6 +63,12 @@ Executed locally: pure contracts 13/13 and strict checking of palette.ts. Actual
 **Dependency-backed CI, 2026-09-25:** run 36202048620 reported attribute-node swizzle typing errors plus a nullable skeleton palette. The initialized-palette guard fixed the latter. Run 36203050977 showed that wrapping a widened AttributeNode<string> in vector constructors cannot restore its generic type. This commit supplies explicit `attribute<'uvec4'>` and `attribute<'vec4'>` type parameters at creation, matching the upstream generic declaration, with no runtime conversion or unsafe cast. The strict build remains the regression gate. Local syntax validation passed; a fresh dependency-backed run must establish success. No test was disabled and no GPU/shadow/velocity claim follows from this type fix.
 
 A focused PR workflow runs the command because examples are outside root Vitest. Formal capability tools, installed audit/lockfile, Biome, full repository suite and independent review remain open. Keep draft. The standalone Three pin does not apply the framework renderer patch. No iOS claim.
+
+## CI repair verification — 2026-09-26
+
+`npm test` passes with the pinned dependencies: strict TypeScript 5.9.3 build, 13 palette contracts and 4 real Three integration tests (17 passed, 0 failed). The added integration test verifies that projective instance matrices are rejected before allocating a slot or changing a live transform. It passed against the existing affine guard; this is additional regression coverage, not a claimed new runtime bug fix.
+
+Applied Biome 1.9.4's captured formatting and split the seven multi-variable declarations reported by lint, without changing lint rules, assertions or mechanism behavior. Fresh repository CI must validate the final tree. This supersedes the earlier local dependency and attribute-typing uncertainty; GPU shader compilation, shadow/temporal output, paired benchmarks, native/Android qualification and the full repository suite remain open. Keep experimental and partial.
 
 ## References
 

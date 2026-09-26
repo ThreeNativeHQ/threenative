@@ -1,21 +1,114 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';
-import {FramePalette,skinPoint} from '../src/palette.ts';
-const matrix=(x=0)=>new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,x,0,0,1]);
-const create=(capacity=3,bones=1)=>new FramePalette(capacity,bones,1024*1024);
-test('packs independent poses and stable logical identities',()=>{const p=create();const a=p.allocate(matrix(1),matrix(10));const b=p.allocate(matrix(2),matrix(20));const r=p.prepare(1);assert.equal(r.count,2);assert.equal(p.drawSlots[0],a.slot);assert.equal(p.drawSlots[1],b.slot);assert.equal(p.currentBones[12],1);assert.equal(p.currentBones[28],2);});
-test('new instances start with zero artificial motion',()=>{const p=create();p.allocate(matrix(4),matrix(8));p.prepare(1);assert.deepEqual([...p.currentBones.slice(0,16)],[...p.previousBones.slice(0,16)]);assert.deepEqual([...p.currentTransforms.slice(0,16)],[...p.previousTransforms.slice(0,16)]);});
-test('previous frame survives updates and multiple render passes',()=>{const p=create();const h=p.allocate(matrix(1),matrix(10));p.prepare(1);p.writePose(h,matrix(2));p.prepare(2);assert.equal(p.previousBones[12],1);assert.equal(p.currentBones[12],2);p.writePose(h,matrix(3));p.prepare(2);assert.equal(p.previousBones[12],1);assert.equal(p.currentBones[12],2);p.prepare(3);assert.equal(p.previousBones[12],2);assert.equal(p.currentBones[12],3);});
-test('slot reuse invalidates old handles and resets motion history',()=>{const p=create(1);const a=p.allocate(matrix(1),matrix());p.prepare(1);p.release(a);const b=p.allocate(matrix(99),matrix());assert.equal(a.slot,b.slot);assert.notEqual(a.generation,b.generation);assert.throws(()=>p.writePose(a,matrix()),/stale/);p.prepare(2);assert.equal(p.previousBones[12],99);});
-test('draw compaction carries the right previous pose rather than the previous draw index',()=>{const p=create();const a=p.allocate(matrix(1),matrix());const b=p.allocate(matrix(2),matrix());p.prepare(1);p.release(a);p.writePose(b,matrix(3));p.prepare(2);assert.equal(p.drawSlots[0],b.slot);assert.equal(p.currentBones[12],3);assert.equal(p.previousBones[12],2);});
-test('bad writes are atomic and do not poison a live palette',()=>{const p=create();const h=p.allocate(matrix(4),matrix());const bad=matrix(7);bad[5]=NaN;assert.throws(()=>p.writePose(h,bad));p.prepare(1);assert.equal(p.currentBones[12],4);});
-test('capacity, byte budget, handle and frame failures are explicit',()=>{assert.throws(()=>new FramePalette(1000,1000,100));const p=create(1);const h=p.allocate(matrix(),matrix());assert.throws(()=>p.allocate(matrix(),matrix()),/capacity/);p.prepare(2);assert.throws(()=>p.prepare(1),/frame/);p.release(h);assert.throws(()=>p.release(h),/stale/);});
-test('no active instances means no draw instances',()=>{const p=create();assert.equal(p.prepare(1).count,0);});
-test('CPU skinning computes weighted affine transforms',()=>{const bones=new Float32Array([...matrix(2),...matrix(6)]);assert.deepEqual(skinPoint(bones,[0,1,0,0],[0.25,0.75,0,0],[1,2,3]),[6,2,3]);});
-test('CPU skinning rejects out of range indices even for zero weight',()=>{assert.throws(()=>skinPoint(matrix(),[0,99,0,0],[1,0,0,0],[0,0,0]));});
-test('CPU skinning rejects malformed weights',()=>{assert.throws(()=>skinPoint(matrix(),[0,0,0,0],[0.5,0,0,0],[0,0,0]));assert.throws(()=>skinPoint(matrix(),[0,0,0,0],[1,NaN,0,0],[0,0,0]));});
-test('dispose invalidates operations and is idempotent',()=>{const p=create();p.dispose();p.dispose();assert.throws(()=>p.prepare(1),/disposed/);assert.throws(()=>p.allocate(matrix(),matrix()),/disposed/);});
-test('rejects finite values that overflow GPU float32 storage atomically',()=>{
- const p=new FramePalette(1,1,10000);const pose=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);const h=p.allocate(pose,pose);
- const tooLarge=Array.from(pose);tooLarge[12]=1e100;
- assert.throws(()=>p.writeTransform(h,tooLarge),/finite|float32/);p.prepare(0);assert.equal(p.currentTransforms[12],0);
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { FramePalette, skinPoint } from "../src/palette.ts";
+const matrix = (x = 0) => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 0, 1]);
+const create = (capacity = 3, bones = 1) => new FramePalette(capacity, bones, 1024 * 1024);
+test("packs independent poses and stable logical identities", () => {
+  const p = create();
+  const a = p.allocate(matrix(1), matrix(10));
+  const b = p.allocate(matrix(2), matrix(20));
+  const r = p.prepare(1);
+  assert.equal(r.count, 2);
+  assert.equal(p.drawSlots[0], a.slot);
+  assert.equal(p.drawSlots[1], b.slot);
+  assert.equal(p.currentBones[12], 1);
+  assert.equal(p.currentBones[28], 2);
+});
+test("new instances start with zero artificial motion", () => {
+  const p = create();
+  p.allocate(matrix(4), matrix(8));
+  p.prepare(1);
+  assert.deepEqual([...p.currentBones.slice(0, 16)], [...p.previousBones.slice(0, 16)]);
+  assert.deepEqual([...p.currentTransforms.slice(0, 16)], [...p.previousTransforms.slice(0, 16)]);
+});
+test("previous frame survives updates and multiple render passes", () => {
+  const p = create();
+  const h = p.allocate(matrix(1), matrix(10));
+  p.prepare(1);
+  p.writePose(h, matrix(2));
+  p.prepare(2);
+  assert.equal(p.previousBones[12], 1);
+  assert.equal(p.currentBones[12], 2);
+  p.writePose(h, matrix(3));
+  p.prepare(2);
+  assert.equal(p.previousBones[12], 1);
+  assert.equal(p.currentBones[12], 2);
+  p.prepare(3);
+  assert.equal(p.previousBones[12], 2);
+  assert.equal(p.currentBones[12], 3);
+});
+test("slot reuse invalidates old handles and resets motion history", () => {
+  const p = create(1);
+  const a = p.allocate(matrix(1), matrix());
+  p.prepare(1);
+  p.release(a);
+  const b = p.allocate(matrix(99), matrix());
+  assert.equal(a.slot, b.slot);
+  assert.notEqual(a.generation, b.generation);
+  assert.throws(() => p.writePose(a, matrix()), /stale/);
+  p.prepare(2);
+  assert.equal(p.previousBones[12], 99);
+});
+test("draw compaction carries the right previous pose rather than the previous draw index", () => {
+  const p = create();
+  const a = p.allocate(matrix(1), matrix());
+  const b = p.allocate(matrix(2), matrix());
+  p.prepare(1);
+  p.release(a);
+  p.writePose(b, matrix(3));
+  p.prepare(2);
+  assert.equal(p.drawSlots[0], b.slot);
+  assert.equal(p.currentBones[12], 3);
+  assert.equal(p.previousBones[12], 2);
+});
+test("bad writes are atomic and do not poison a live palette", () => {
+  const p = create();
+  const h = p.allocate(matrix(4), matrix());
+  const bad = matrix(7);
+  bad[5] = Number.NaN;
+  assert.throws(() => p.writePose(h, bad));
+  p.prepare(1);
+  assert.equal(p.currentBones[12], 4);
+});
+test("capacity, byte budget, handle and frame failures are explicit", () => {
+  assert.throws(() => new FramePalette(1000, 1000, 100));
+  const p = create(1);
+  const h = p.allocate(matrix(), matrix());
+  assert.throws(() => p.allocate(matrix(), matrix()), /capacity/);
+  p.prepare(2);
+  assert.throws(() => p.prepare(1), /frame/);
+  p.release(h);
+  assert.throws(() => p.release(h), /stale/);
+});
+test("no active instances means no draw instances", () => {
+  const p = create();
+  assert.equal(p.prepare(1).count, 0);
+});
+test("CPU skinning computes weighted affine transforms", () => {
+  const bones = new Float32Array([...matrix(2), ...matrix(6)]);
+  assert.deepEqual(skinPoint(bones, [0, 1, 0, 0], [0.25, 0.75, 0, 0], [1, 2, 3]), [6, 2, 3]);
+});
+test("CPU skinning rejects out of range indices even for zero weight", () => {
+  assert.throws(() => skinPoint(matrix(), [0, 99, 0, 0], [1, 0, 0, 0], [0, 0, 0]));
+});
+test("CPU skinning rejects malformed weights", () => {
+  assert.throws(() => skinPoint(matrix(), [0, 0, 0, 0], [0.5, 0, 0, 0], [0, 0, 0]));
+  assert.throws(() => skinPoint(matrix(), [0, 0, 0, 0], [1, Number.NaN, 0, 0], [0, 0, 0]));
+});
+test("dispose invalidates operations and is idempotent", () => {
+  const p = create();
+  p.dispose();
+  p.dispose();
+  assert.throws(() => p.prepare(1), /disposed/);
+  assert.throws(() => p.allocate(matrix(), matrix()), /disposed/);
+});
+test("rejects finite values that overflow GPU float32 storage atomically", () => {
+  const p = new FramePalette(1, 1, 10000);
+  const pose = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  const h = p.allocate(pose, pose);
+  const tooLarge = Array.from(pose);
+  tooLarge[12] = 1e100;
+  assert.throws(() => p.writeTransform(h, tooLarge), /finite|float32/);
+  p.prepare(0);
+  assert.equal(p.currentTransforms[12], 0);
 });
