@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { writeCampaignReport } from "../engine-load-test/bundle.js";
 import { buildDraftPlan } from "../engine-load-test/plan.js";
 
 describe("campaign bundle writer", () => {
   const hash = (text: string) => createHash("sha256").update(text).digest("hex");
   it("renders a partial bundle and verifies the output manifest", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tn-campaign-"));
+    const dir = await makeTempDir("tn-campaign-");
     try {
       await writeFile(path.join(dir, "plan.json"), `${JSON.stringify(buildDraftPlan())}\n`);
       const result = await writeCampaignReport(dir);
@@ -31,8 +31,8 @@ describe("campaign bundle writer", () => {
   });
 
   it("refuses a symlinked plan that escapes the bundle", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tn-campaign-"));
-    const outside = await mkdtemp(path.join(tmpdir(), "tn-outside-"));
+    const dir = await makeTempDir("tn-campaign-");
+    const outside = await makeTempDir("tn-outside-");
     try {
       await writeFile(path.join(outside, "plan.json"), `${JSON.stringify(buildDraftPlan())}\n`);
       await symlink(path.join(outside, "plan.json"), path.join(dir, "plan.json"));
@@ -44,7 +44,7 @@ describe("campaign bundle writer", () => {
   });
 
   it("checks source and machine locks before clearing publication metadata gaps", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tn-campaign-"));
+    const dir = await makeTempDir("tn-campaign-");
     try {
       const plan = buildDraftPlan();
       await writeFile(path.join(dir, "plan.json"), `${JSON.stringify(plan)}\n`);
@@ -124,7 +124,7 @@ describe("campaign bundle writer", () => {
   });
 
   it("verifies every referenced raw artifact before deriving any result", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tn-campaign-"));
+    const dir = await makeTempDir("tn-campaign-");
     try {
       const plan = buildDraftPlan();
       const cell = plan.cells[0];
@@ -206,7 +206,7 @@ describe("campaign bundle writer", () => {
   });
 
   it("regenerates a paired result and all published bytes from retained inputs", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "tn-campaign-"));
+    const dir = await makeTempDir("tn-campaign-");
     try {
       const cell = buildDraftPlan().cells[0];
       if (cell === undefined) throw new Error("missing test cell");

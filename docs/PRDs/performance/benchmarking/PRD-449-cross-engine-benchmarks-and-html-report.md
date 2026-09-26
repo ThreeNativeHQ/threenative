@@ -1118,6 +1118,9 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   locked machine details when present. Present locks are checked against planned arms/runs and
   checksummed. The three focused report/bundle tests passed 12/12, root TypeScript passed, and
   Biome error-level checks passed with pre-existing nonfatal complexity warnings.
+  The full repository test exposed that this bundle spec created temporary directories outside the
+  registered test helper. It now uses `makeTempDir` while retaining its `finally` cleanup; the
+  bundle and temporary-directory guard suites pass 6/6 in the focused rerun.
 - [x] Prove table/chart/CSV consistency with the canonical derived dataset. A seven-block 10 ms/20 ms fixture produces the same run median in the table, load chart and CSV, with a 2.00× ratio; deterministic regeneration and empty-data cases pass in the focused tests. The bundle writer retains `plan.json`, `results.json`, `results.csv`, `report.html` and `checksums.sha256`; a CLI smoke run generated those files from the draft plan and exited 2 because it contained zero measured runs.
 - [x] Expose uncertainty, optimization class and comparability beside each displayed ratio. The report shows a 95% paired-block interval or `interval unavailable`, verdict, comparability, block count, class, profile and protocol; incomplete pairs have no ratio. The draft fixture is marked `insufficient`, not faster/slower.
 - [ ] Link each experiment to raw runs, effective settings, source patches and matching captures.
