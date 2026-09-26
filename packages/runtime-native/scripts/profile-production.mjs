@@ -1087,9 +1087,7 @@ const tnProductionBusyWait = (milliseconds) => {
 };
 ${productionPerformanceReader()}
 ${productionExecutionHold(paceTicks)}
-${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
-  tnProductionInstallPace();
   tnProductionInstallPace();
   const frameIndex = tnProductionFrameIndex++;
   const inWarmup = frameIndex < tnProductionWarmupFrames;
