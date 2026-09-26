@@ -68,6 +68,28 @@ describe("BoundedWorldPassQueue", () => {
         }),
     ).toThrow(/erosion.*node/u);
   });
+
+  it("fails closed for the wrong stage count or physical order", () => {
+    expect(
+      () =>
+        new BoundedWorldPassQueue({
+          dispatchBudget: 1,
+          stages: [{ name: "synthesis", nodes: [{}] }],
+        }),
+    ).toThrow(/require synthesis, erosion, flow, and moisture stages/u);
+    expect(
+      () =>
+        new BoundedWorldPassQueue({
+          dispatchBudget: 1,
+          stages: [
+            { name: "synthesis", nodes: [{}] },
+            { name: "flow", nodes: [{}] },
+            { name: "erosion", nodes: [{}] },
+            { name: "moisture", nodes: [{}] },
+          ],
+        }),
+    ).toThrow(/expected 'erosion' at stage 1/u);
+  });
 });
 
 describe("simulateWorldPassesCpu", () => {
@@ -130,6 +152,81 @@ describe("simulateWorldPassesCpu", () => {
       }),
     ).toThrow(/rainfall/u);
   });
+
+  it("routes every downhill source once and normalizes flow and moisture by hand", () => {
+    const heights = Float32Array.from([3, 2, 1, 0]);
+    const result = simulateWorldPassesCpu({
+      cellDepth: 1,
+      cellWidth: 1,
+      columns: 2,
+      erosion: { ...erosion, iterations: 0 },
+      heights,
+      rows: 2,
+    });
+
+    // 0 -> 2 -> 3 and 1 -> 3: accumulated drainage is [1, 1, 2, 4].
+    const scale = Math.log1p(4);
+    const expectedFlow = [1, 1, 2, 4].map((value) => Math.log1p(value) / scale);
+    expect([...result.flow].map((value) => Number(value.toFixed(6)))).toEqual(
+      expectedFlow.map((value) => Number(value.toFixed(6))),
+    );
+    expect([...result.moisture].map((value) => Number(value.toFixed(6)))).toEqual(
+      expectedFlow.map((value) => Number((value * 0.7).toFixed(6))),
+    );
+    expect(result.heights).toEqual(heights);
+  });
+
+  it.each([
+    ["rows", { rows: 2.5 }, /rows must be an integer of at least 2/u],
+    ["rows below two", { rows: 1 }, /rows must be an integer of at least 2/u],
+    ["columns", { columns: 0 }, /columns must be an integer of at least 2/u],
+    ["heights length", { heights: new Float32Array(3) }, /expected 4 heights, received 3/u],
+    ["cellWidth", { cellWidth: 0 }, /cellWidth must be finite and at least/u],
+    ["cellWidth NaN", { cellWidth: Number.NaN }, /cellWidth/u],
+    ["cellDepth", { cellDepth: -1 }, /cellDepth must be finite and at least/u],
+    [
+      "iterations",
+      { erosion: { ...erosion, iterations: -1 } },
+      /iterations must be a non-negative integer/u,
+    ],
+    [
+      "fractional iterations",
+      { erosion: { ...erosion, iterations: 1.5 } },
+      /iterations must be a non-negative integer/u,
+    ],
+    [
+      "rainfall",
+      { erosion: { ...erosion, rainfall: -1 } },
+      /rainfall must be finite and at least 0/u,
+    ],
+    ["evaporation NaN", { erosion: { ...erosion, evaporation: Number.NaN } }, /evaporation/u],
+    [
+      "evaporation above one",
+      { erosion: { ...erosion, evaporation: 1.5 } },
+      /evaporation must not exceed 1/u,
+    ],
+    ["timeStep", { erosion: { ...erosion, timeStep: 0 } }, /timeStep must be finite and at least/u],
+    ["sedimentCapacity", { erosion: { ...erosion, sedimentCapacity: -1 } }, /sedimentCapacity/u],
+    ["erosionRate", { erosion: { ...erosion, erosionRate: Number.NaN } }, /erosionRate/u],
+    ["depositionRate", { erosion: { ...erosion, depositionRate: -1 } }, /depositionRate/u],
+    [
+      "non-finite height",
+      { heights: Float32Array.from([3, 2, 1, Number.NaN]) },
+      /height sample must be finite/u,
+    ],
+  ])("fails closed for an invalid %s", (_label, overrides, pattern) => {
+    expect(() =>
+      simulateWorldPassesCpu({
+        cellDepth: 1,
+        cellWidth: 1,
+        columns: 2,
+        erosion,
+        heights: new Float32Array(4),
+        rows: 2,
+        ...overrides,
+      }),
+    ).toThrow(pattern);
+  });
 });
 
 describe("createWorldGpuPasses", () => {
@@ -157,6 +254,20 @@ describe("createWorldGpuPasses", () => {
     expect(passes.queue.complete).toBe(false);
 
     passes.dispose();
+  });
+
+  it("fails closed before allocating when the height count does not match the grid", () => {
+    expect(() =>
+      createWorldGpuPasses({
+        cellDepth: 1,
+        cellWidth: 1,
+        columns: 2,
+        dispatchBudget: 1,
+        erosion,
+        heights: new Float32Array(3),
+        rows: 2,
+      }),
+    ).toThrow(/expected 4 heights, received 3/u);
   });
 
   it("keeps a real erosion stage when iterations are zero", () => {
