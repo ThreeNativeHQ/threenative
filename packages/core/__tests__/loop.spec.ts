@@ -4,6 +4,7 @@ import {
   type IRenderPerformanceMetrics,
   createAfterPhysicsPhase,
 } from "../src/loop.js";
+import { FRAME_PASS_KINDS, type IRenderPassSample } from "../src/render-pass-budget.js";
 
 describe("FixedStepLoop", () => {
   it("should reject a maxSteps that can never run an update", () => {
@@ -387,6 +388,55 @@ describe("FixedStepLoop metrics collection", () => {
     expect(loop.stepFrame(121 * 16.6667)).toBe(1);
     expect(steps).toEqual([1 / 60]);
     expect(loop.tick()).toBe(1);
+  });
+});
+
+describe("FixedStepLoop retained render samples", () => {
+  // One frame of 30 nested render() calls across all four kinds: a shadow-casting cathedral with a
+  // post chain. The retained sample used to carry one entry per call, so a full window no longer
+  // fitted the playtest bridge's payload and `assert.performance` died before frame 0.
+  function nestedPasses(): IRenderPassSample[] {
+    return Array.from({ length: 30 }, (_, index) => ({
+      draws: index + 1,
+      kind: FRAME_PASS_KINDS[index % 4] ?? "nested",
+      triangles: (index + 1) * 10,
+    }));
+  }
+  function makeNestedLoop() {
+    return new FixedStepLoop({
+      collectMetrics: true,
+      onRender: () => ({ drawCalls: 465, passes: nestedPasses(), triangles: 4_650 }),
+      onUpdate: () => undefined,
+    });
+  }
+
+  it("keeps one entry per pass kind, summed over that frame's render calls", () => {
+    const loop = makeNestedLoop();
+    loop.start(0);
+    // The first frame only establishes the previous-render timestamp; samples start from the second.
+    loop.stepFrame(16);
+    loop.stepFrame(32);
+
+    // Summed per kind, not the first call of each: 1+5+...+29 draws is the whole main lane.
+    expect(loop.runtimeDiagnosticsSeries()[0]?.passes).toEqual([
+      { draws: 120, kind: "main", triangles: 1_200 },
+      { draws: 128, kind: "shadow", triangles: 1_280 },
+      { draws: 105, kind: "reflection", triangles: 1_050 },
+      { draws: 112, kind: "nested", triangles: 1_120 },
+    ]);
+  });
+
+  it("serialises a full 1,024-sample window under the bridge's 1 MB payload ceiling", () => {
+    // The ceiling the runner enforces on every observation (`assertBoundedPayload`), restated
+    // rather than imported: core does not depend on the playtest package.
+    const loop = makeNestedLoop();
+    loop.start(0);
+    // One frame only establishes the previous-render timestamp, so samples start from the second.
+    for (let frame = 1; frame <= 1_026; frame += 1) loop.stepFrame(frame * 16);
+    const series = loop.runtimeDiagnosticsSeries();
+
+    expect(series).toHaveLength(1_024);
+    expect(JSON.stringify(series).length).toBeLessThan(1_000_000);
   });
 });
 
