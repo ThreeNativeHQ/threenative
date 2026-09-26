@@ -463,9 +463,18 @@ async function flush(rounds = 12): Promise<void> {
  * the one that admits them. A test that has just awaited `flush()` and wants to see what a cell draws
  * steps once more — and with this suite's unbounded budget, one step is all of it.
  */
+/**
+ * Settles a world: loads resolved and the per-frame admission backlog drained. The admission
+ * budget is wall-clock, so on a loaded machine one update may defer work a quiet one finishes;
+ * a test asserts what streaming settles to, not what one frame managed.
+ */
 async function flushed(world: WorldCells): Promise<void> {
-  await flush();
-  world.update();
+  for (let pass = 0; pass < 200; pass += 1) {
+    await flush();
+    world.update();
+    const stats = world.stats();
+    if (stats.admission.backlog === 0 && stats.loadsInFlight === 0) return;
+  }
 }
 
 function followAt(x: number, z: number): { position: { x: number; z: number } } {
@@ -560,6 +569,55 @@ afterEach(() => {
 });
 
 describe("WorldCells", () => {
+  it("recycles batch meshes across cells instead of creating new ones", async () => {
+    // three's WebGPU renderer rebuilds a node program for every new InstancedMesh, so a streamed
+    // walk that creates fresh meshes per cell stalls on shader builds; recycled, it builds once.
+    stubFixtureFetch();
+    const follow = followAt(0, 0);
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: controlledLoader().load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    const drawn = (): Set<InstancedMesh> => {
+      const meshes = new Set<InstancedMesh>();
+      world.traverse((object) => {
+        if ((object as InstancedMesh).isInstancedMesh) meshes.add(object as InstancedMesh);
+      });
+      return meshes;
+    };
+    // Batch names start with their cell key; a mesh that reappears under another cell's key was
+    // recycled from an evicted cell into an admitted one.
+    const cellOf = new Map<InstancedMesh, string>();
+    // One cell at a time, as a player walks: the ring keeps the assets resident while cells
+    // behind are evicted and cells ahead admitted.
+    const walk = [
+      { x: 1, z: 1 },
+      { x: 2, z: 1 },
+      { x: 3, z: 1 },
+      { x: 3, z: 2 },
+    ];
+    let reused = 0;
+    for (const cell of walk) {
+      const center = cellCenter(cell.x, cell.z);
+      follow.position.x = center.x;
+      follow.position.z = center.z;
+      await flushed(world);
+      for (const mesh of drawn()) {
+        const cell = mesh.name.split(":")[0] ?? "";
+        const before = cellOf.get(mesh);
+        if (before !== undefined && before !== cell) reused += 1;
+        cellOf.set(mesh, cell);
+      }
+    }
+    // A mesh drawn again after its cell left was recycled into a newly admitted cell's batch.
+    expect(reused).toBeGreaterThan(0);
+    world.dispose();
+  });
+
   it("keeps exactly the in-ring cells, plus hysteresis, along a scripted path", async () => {
     stubFixtureFetch();
     const ring = 1;

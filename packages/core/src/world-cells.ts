@@ -540,6 +540,10 @@ function levelAt(distances: readonly number[], distance: number): number {
   return level;
 }
 
+function poolKey(geometry: BufferGeometry, material: Material): string {
+  return `${geometry.uuid}:${material.uuid}`;
+}
+
 function positiveInteger(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 1)
     throw new Error(`WorldCells ${name} must be a positive integer.`);
@@ -723,6 +727,15 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #resident = new Map<string, IResidentCell>();
   /** Surfaces shared by material content across every asset part; see `materialKey`. */
   readonly #surfaces = new Map<string, ISharedSurface>();
+  /**
+   * Batch meshes out of the scene, keyed by geometry and material, for the next cell to refill.
+   * three's WebGPU renderer keys an instanced mesh's compiled node program by the mesh itself, so
+   * every new InstancedMesh rebuilds its shader: creating a cell's few hundred batches fresh was
+   * 60 % of every streaming spike. Recycled, a mesh is built once and reused for the whole walk.
+   */
+  readonly #meshPool = new Map<string, InstancedMesh[]>();
+  /** The largest run of each asset in any cell: a pooled mesh sized to it fits every cell. */
+  readonly #runMax = new Map<string, number>();
   /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
   readonly #castShadowLevels: number;
   readonly #receiveShadow: boolean;
@@ -760,6 +773,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#follow = init.follow;
     this.#manifest = init.manifest;
     this.#cells = init.manifest.cells;
+    for (const cell of this.#cells)
+      for (const run of cell.runs)
+        this.#runMax.set(run.asset, Math.max(this.#runMax.get(run.asset) ?? 0, run.count));
     this.#cellSize = init.manifest.cellSize;
     this.#minX = init.manifest.extent.minX;
     this.#minZ = init.manifest.extent.minZ;
@@ -956,6 +972,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#released) return;
     this.#released = true;
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
+    if (this.#drainPool() > 0) this.#failures += 1;
     this.#terrain.dispose();
     this.removeFromParent();
   }
@@ -1163,8 +1180,7 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const entry of job.replaced) {
       const at = cell.batches.indexOf(entry);
       if (at >= 0) cell.batches.splice(at, 1);
-      entry.mesh?.removeFromParent();
-      if (release(entry.mesh)) this.#failures += 1;
+      this.#retire(entry.mesh);
     }
   }
 
@@ -1224,11 +1240,15 @@ export class WorldCells extends Group implements IComputeDriven {
         continue;
       }
       const batch = levelBatches[part] as InstancedBatch;
+      const into = this.#meshPool.get(poolKey(batch.geometry, batch.material))?.pop();
       const mesh = batch.build({
+        capacity: this.#runMax.get(asset.id),
         castShadow: this.#castShadowLevels > level,
+        ...(into === undefined ? {} : { into }),
         name: `${cell.key}:${asset.id}:${String(level)}:${String(part)}`,
         receiveShadow: this.#receiveShadow,
       });
+      if (into !== undefined && mesh !== into) this.#retire(into);
       job.fresh.push({
         asset: asset.id,
         batch,
@@ -1495,8 +1515,7 @@ export class WorldCells extends Group implements IComputeDriven {
       return false;
     });
     for (const entry of cell.batches) {
-      entry.mesh?.removeFromParent();
-      if (release(entry.mesh)) this.#failures += 1;
+      this.#retire(entry.mesh);
     }
     cell.batches.length = 0;
     for (const chunk of cell.chunks) {
@@ -1578,7 +1597,33 @@ export class WorldCells extends Group implements IComputeDriven {
     const levels = asset.levels;
     asset.levels = [];
     let failed = 0;
+    const geometries = new Set<BufferGeometry>();
+    for (const parts of levels) for (const part of parts) geometries.add(part.geometry);
+    failed += this.#drainPool(geometries);
     for (const parts of levels) failed += this.#releaseParts(parts);
     if (failed > 0) this.#failures += 1;
+  }
+
+  /** Out of the scene and into the pool, for the next batch of the same geometry and material. */
+  #retire(mesh: InstancedMesh | undefined): void {
+    if (mesh === undefined) return;
+    mesh.removeFromParent();
+    const key = poolKey(mesh.geometry, mesh.material as Material);
+    const pool = this.#meshPool.get(key);
+    if (pool === undefined) this.#meshPool.set(key, [mesh]);
+    else pool.push(mesh);
+  }
+
+  /** Disposes the pooled meshes drawing any of `geometries` (or all of them); returns failures. */
+  #drainPool(geometries?: ReadonlySet<BufferGeometry>): number {
+    let failed = 0;
+    for (const [key, pool] of this.#meshPool) {
+      const first = pool[0];
+      if (geometries !== undefined && (first === undefined || !geometries.has(first.geometry)))
+        continue;
+      for (const mesh of pool) if (release(mesh)) failed += 1;
+      this.#meshPool.delete(key);
+    }
+    return failed;
   }
 }

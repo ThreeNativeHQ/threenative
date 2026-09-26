@@ -43,6 +43,15 @@ export interface IInstancedBatchBuildOptions {
   readonly parent?: Object3D;
   /** Passed straight to the built mesh. Default `false`, as in Three.js. */
   readonly receiveShadow?: boolean;
+  /**
+   * An existing mesh to refill instead of creating one: used when it draws this batch's geometry
+   * and material and holds at least this many instances. Reusing matters on WebGPU, where three
+   * keys an instanced mesh's compiled node program by the mesh itself — every new InstancedMesh
+   * rebuilds its shader, and a streamed world creating hundreds a cell stalls on it.
+   */
+  readonly into?: InstancedMesh;
+  /** Instance slots to allocate when a new mesh is created, so later refills fit. Default: count. */
+  readonly capacity?: number;
 }
 
 /**
@@ -174,8 +183,21 @@ export class InstancedBatch {
     if (this.#built)
       throw new Error("InstancedBatch.build was already called; the instance count is fixed.");
     this.#built = true;
-    if (this.#matrices.length === 0) return undefined;
-    const mesh = new InstancedMesh(this.geometry, this.material, this.#matrices.length);
+    const count = this.#matrices.length;
+    if (count === 0) return undefined;
+    const into = options.into;
+    const mesh =
+      into !== undefined &&
+      into.geometry === this.geometry &&
+      into.material === this.material &&
+      into.instanceMatrix.count >= count
+        ? into
+        : new InstancedMesh(
+            this.geometry,
+            this.material,
+            Math.max(count, options.capacity ?? count),
+          );
+    mesh.count = count;
     if (options.name !== undefined) mesh.name = options.name;
     for (let index = 0; index < this.#matrices.length; index += 1) {
       mesh.setMatrixAt(index, this.#matrices[index] as Matrix4);
