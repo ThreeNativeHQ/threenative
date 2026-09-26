@@ -1045,6 +1045,31 @@ async function runCityArm(arm: string): Promise<void> {
     raw = await runTnCityDesktop(repoRoot, run, fixture);
   }
   const parsed = parseCityRun(raw);
+  const build =
+    arm === "bevy-desktop"
+      ? {
+          bevyBinary: {
+            path: path.relative(repoRoot, identity.binary),
+            ...(await fileIdentity(identity.binary)),
+          },
+        }
+      : {
+          tnBundle: {
+            path: "examples/engine-load-test/dist/engine-load-test-city-desktop.js",
+            ...(await fileIdentity(
+              path.join(
+                repoRoot,
+                "examples/engine-load-test/dist/engine-load-test-city-desktop.js",
+              ),
+            )),
+          },
+          nativeHost: {
+            path: "packages/runtime-native/build/tn-linux/mystral",
+            ...(await fileIdentity(
+              path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral"),
+            )),
+          },
+        };
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(
     file,
@@ -1053,6 +1078,7 @@ async function runCityArm(arm: string): Promise<void> {
         ...raw,
         identity: {
           authoring: "default",
+          build,
           display,
           fixture: path.relative(repoRoot, fixture),
           profile: "smoke",

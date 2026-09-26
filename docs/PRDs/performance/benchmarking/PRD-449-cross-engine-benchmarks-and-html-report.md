@@ -273,7 +273,10 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   run identity. Missing files keep the HTML visibly partial and present files enter the checksum
   manifest; malformed files fail closed. This is a schema and unit-tested guard, **not** the actual
   source/build/asset lock. Bevy build flags, source checkout, asset bytes/SHA-256 and other lock
-  fields remain open.
+  fields remain open. The City collector now records SHA-256 and byte count for the exact Bevy
+  executable, or the TN bundle and native host, after each measured run. Earlier City smoke files
+  lack these build identities and are not upgraded by inference; the next hardware run must check
+  that the new identity is present. The remaining families still need complete build locks.
 - [ ] Freeze the expanded six-family matrix with exact actual fixture censuses.
   A deliberately non-publishable [draft matrix](../../../../scripts/engine-load-test/plan.ts)
   now expands 73 stable cell IDs across all six families, each with seven planned paired blocks
