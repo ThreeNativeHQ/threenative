@@ -1,0 +1,22 @@
+{
+  "name": "threenative-integration-csg",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22.16.0" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test:contracts": "node --experimental-strip-types --test tests/contracts.test.mjs",
+    "test:integration": "node --test tests/integration.test.mjs",
+    "test": "npm run build && npm run test:contracts && npm run test:integration",
+    "generate": "node dist/generate.js"
+  },
+  "dependencies": {
+    "three": "0.185.1",
+    "three-mesh-bvh": "0.9.14",
+    "three-bvh-csg": "0.0.18",
+    "@gltf-transform/core": "4.4.2"
+  },
+  "devDependencies": { "typescript": "5.9.3", "@types/three": "0.185.3", "@types/node": "24.3.0" }
+}
