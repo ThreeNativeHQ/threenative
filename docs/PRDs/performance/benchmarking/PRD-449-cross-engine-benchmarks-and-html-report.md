@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (three real-GPU hardware cells retained, one of them refused as cadence-capped), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks and the Godot-culling family's three single-block cells; no Bevy, fox, City or publication-grade cross-engine result is claimed.
+**Status:** PARTIAL — Phase 1 Godot binary pin, Phase 2 v2 contract/statistics, Phase 3 independent-mesh family (all three arms measured on one hardware GPU), Phase 4 Godot-culling family (four real-GPU hardware cells retained, one of them refused as cadence-capped; the shadows-on and rotating variants blocked on named evidence), and Phase 5 partial report renderer are built or proved as stated below. The only measured results so far are the independent-mesh family's single smoke blocks and the Godot-culling family's four single-block cells; no Bevy, fox, City or publication-grade cross-engine result is claimed.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -504,7 +504,7 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   motion checks pass on the real GPU. The remaining gap is depth/object-ID capture, and the
   comparison is qualified rather than matched-task for the three stated reasons it records.
 - [x] Retain a real hardware comparison for the Godot culling family.
-  Three real-hardware smoke cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver `615.71.09`
+  Four real-hardware smoke cells on the RTX 2080 (TU104) through `DISPLAY=:0`, driver `615.71.09`
   — 600 measured frames after 120 warmup, both arms on the identical fixture `1283daf331d1`,
   retained under `artifacts/engine-load-test/`. Godot reported its Forward+/Vulkan device with its own
   per-frame CPU and GPU samples (its `drain` is `none-available`, and its wall mean therefore paces
@@ -516,6 +516,7 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   | static, unshaded | `basic_cull` | `scene-node-independent` | 19.45 | 1.07 | 0.89 / 0.66 | `qualified`, ratio 0.055 |
   | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | — | **refused** |
   | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | 1.26 / 3.41 | `qualified`, ratio 0.152 |
+  | 100 static omni lights | `static_omni_light_cull` | `scene-node-independent` | 20.54 | 1.18 | 1.06 / 0.68 | `qualified`, ratio 0.058 |
 
   The refusal is the result worth having. TN's ordinary authoring at 10,000 objects puts 588 of 600
   frames on the host's 16.667 ms frame loop, so its mean is the present, not the work; the
@@ -539,21 +540,45 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   and Godot 1,028/5,340/5,362 changed samples at the three later captures). A static workload would
   have hidden both halves of that, because nothing moves.
 
-  All three comparisons are `qualified`, never `matched-task`: the competitor authors
+  Every retained comparison is `qualified`, never `matched-task`: the competitor authors
   `RenderingServer` RIDs, each engine tessellates its own primitives (Godot/TN triangles per kind
-  12/12, 4224/3968, 3456/2176, 768/256, 8/12), and the shaded environments differ. Coverage deltas
-  across the two arms are 0.0146–0.0224 of the frame. The native host has no PNG encoder, so the
-  retained visual evidence is the read-back coverage grid both arms compute on the same 240x135
-  lattice rather than a pair of image files. The remaining primary cell, `dynamic_rotate_cull`, and
-  every diagnostic light variant are still open, and `directional_light_cull` needs the counterpart
-  arm's shadow-enabled light path, which has not been executed on a GPU yet.
+  12/12, 4224/3968, 3456/2176, 768/256, 8/12), and the shaded environments differ. The light cell
+  matches its light census exactly (100 omni, 0 spot, 0 directional) and names the shadow
+  technique it does not have: Godot's dual-paraboloid omni shadows against three's cube-map point
+  lights, which is why it is `omniShadowMode: dual-paraboloid` in the record rather than a
+  like-for-like claim. Coverage deltas are 0.0146–0.0224 of the frame. The native host has no PNG
+  encoder, so the retained visual evidence is the read-back coverage grid both arms compute on the
+  same 240x135 lattice rather than a pair of image files.
+
+  Two harness defects surfaced while trying to add the light cells, both fixed at their root and
+  both confirmed by the red-green check named below. The Godot arm recognised the dynamic light set
+  by indexing `dynamic_instances[0]`, which a static light variant leaves empty: the index raised
+  an unhandled error inside `_run`, and because the arm extends `SceneTree` that left it running
+  with nothing left to quit it, so the run hung instead of reporting anything. And
+  [`runCapturing`](../../../../scripts/engine-load-test/run-desktop.ts) waited on a child that
+  never reports and never exits with no bound of its own, which is how that hang became an 1,800 s
+  session timeout; it is now bounded and fails with `TN_BENCH_TIMEOUT` and the child's own last
+  output. The arm also now refuses a sampled state that carries no probe
+  (`TN_BENCH_GODOT_STATE_UNOBSERVED`) instead of emitting a record the collector cannot read.
+
+  What is still open in this family, named: `dynamic_rotate_cull` (the earlier prototype timed out
+  and remains invalid), every shadows-on variant, and the four remaining light variants. The
+  shadows-on cells are blocked on evidence, not on code: the arm's own effective-shadow probe reads
+  a luma delta of 0.0001 or less for `directional_light_cull`, so that variant exits 2 with
+  `TN_BENCH_GODOT_SHADOW_PASS_NOT_OBSERVED` and `TN_BENCH_GODOT_DIRECTIONAL_NOT_EFFECTIVE` before a
+  single frame is compared. A mean-luma delta is too weak a detector for self-shadowing on 10,000
+  small objects spread over the upstream camera's whole frustum; the next step is a changed-pixel
+  count between the shadows-on and shadows-off probe captures, not a looser threshold. No number
+  from any of those variants is claimed.
 
   [cull-compare.ts](../../../../scripts/engine-load-test/cull-compare.ts) is pure and unit-proved
   by [engine-load-test-cull-compare.spec.ts](../../../../scripts/__tests__/engine-load-test-cull-compare.spec.ts):
   9/9 pass, and each of the three checks this slice added — the capture's frame-to-frame difference,
-  the cadence refusal, and the clock ordering — was confirmed red against the pre-fix code. The
-  eleven focused suites passed 162/162 and root `pnpm exec tsc --noEmit -p tsconfig.json` and
+  the cadence refusal, and the clock ordering — was confirmed red against the pre-fix code.
+  The bounded capture is proved in `engine-load-test.spec.ts` (100/100). The eleven focused suites
+  passed 162/162 and root `pnpm exec tsc --noEmit -p tsconfig.json` and
   `pnpm exec biome check --diagnostic-level=error` exited 0.
+
 
 
 - [ ] Pass lights/meshes conformance including requested-versus-actual counts and changing lights.

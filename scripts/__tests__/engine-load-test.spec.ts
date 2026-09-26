@@ -2125,6 +2125,19 @@ describe("engine load test desktop capture", () => {
       runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() }),
     ).rejects.toThrow(/TN_BENCH_NO_REPORT/);
   }, 30_000);
+
+  it("should fail a host that neither reports nor exits instead of waiting on it forever", async () => {
+    // The Godot culling arm's shape: an unhandled error inside `_run` left the SceneTree running
+    // with nothing left to quit it, and the capture had no bound of its own.
+    const started = Date.now();
+    await expect(
+      runCapturing("sh", ["-c", "echo working; sleep 300"], {
+        cwd: process.cwd(),
+        timeoutMs: 1_000,
+      }),
+    ).rejects.toThrow(/TN_BENCH_TIMEOUT/);
+    expect(Date.now() - started).toBeLessThan(20_000);
+  }, 30_000);
 });
 
 describe("the performance baseline gate", () => {

@@ -102,7 +102,15 @@ func _run() -> void:
 	_dynamic_rids = [] as Array[RID]
 	if _scene.dynamic_instances != null:
 		_dynamic_rids = _scene.dynamic_instances
-		_dynamic_is_lights = not _scene.light_instances.is_empty() and _dynamic_rids[0] == _scene.light_instances[0]
+	# A static variant assigns `dynamic_instances_xforms` but leaves `dynamic_instances` empty, so
+	# the light set has to be recognised without indexing it. Indexing an empty array raises an
+	# unhandled error inside `_run`, and this SceneTree is then left running with nothing to quit
+	# it: the run hangs until the harness gives up rather than reporting what went wrong.
+	_dynamic_is_lights = (
+		not _dynamic_rids.is_empty()
+		and not _scene.light_instances.is_empty()
+		and _dynamic_rids[0] == _scene.light_instances[0]
+	)
 	for child in _scene.get_children():
 		if child is DirectionalLight3D:
 			_directional = child
@@ -212,6 +220,13 @@ func _rejections() -> Array:
 			problems.append("TN_BENCH_GODOT_STATIC_SCENE_MOVED")
 		if dynamic and motion <= 0:
 			problems.append("TN_BENCH_GODOT_DYNAMIC_SCENE_FROZEN")
+	# A sampled state that carries no probe is a frame the arm read nothing from, which is not the
+	# same as a static one: the counterpart arm has a per-frame transform to check and would be
+	# checking it against an absence. Named here so the record never leaves this arm unparseable.
+	for state in _states:
+		if (state as Dictionary).is_empty() or (state.get("probes", []) as Array).is_empty():
+			problems.append("TN_BENCH_GODOT_STATE_UNOBSERVED")
+			break
 	return problems
 
 

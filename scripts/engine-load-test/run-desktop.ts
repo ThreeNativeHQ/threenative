@@ -27,9 +27,10 @@ function x11Environment(): NodeJS.ProcessEnv {
 export async function runCapturing(
   command: string,
   args: readonly string[],
-  options: { cwd: string; env?: NodeJS.ProcessEnv },
+  options: { cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number },
 ): Promise<unknown> {
   const output: string[] = [];
+  const timeoutMs = options.timeoutMs ?? 900_000;
   const code = await new Promise<number>((resolve, reject) => {
     // Its own process group: the desktop arms run behind `xvfb-run`, so signalling the child only
     // reaches the wrapper and leaves the host it spawned running. The group reaches both.
@@ -52,9 +53,24 @@ export async function runCapturing(
     // benchmark into a silent hang with the answer already sitting in the buffer. The Android
     // runner has always read its marker and then stopped the app; this now matches it.
     let settled = false;
+    // A child that dies mid-run without printing the marker — an unhandled script error inside a
+    // `SceneTree` that then has nothing left to quit it — neither reports nor exits, so this wait
+    // had no end of its own and the arm hung until the session did. Bounded, so a hang is a named
+    // failure with the child's own last output instead of a stall.
+    const deadline = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      stop();
+      reject(
+        new Error(
+          `TN_BENCH_TIMEOUT: ${command} produced no report within ${timeoutMs} ms.\n${output.join("").slice(-2_000)}`,
+        ),
+      );
+    }, timeoutMs);
     const finish = (value: number): void => {
       if (settled) return;
       settled = true;
+      clearTimeout(deadline);
       resolve(value);
     };
     const collect = (chunk: unknown): void => {
