@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { read as readKTX2 } from "ktx-parse";
+import { PNG } from "pngjs";
 import { describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -373,6 +374,145 @@ describe("the ktx2 texture pass", () => {
     expect((await stat(path.join(root, "public", "basis", "basis_transcoder.js"))).isFile()).toBe(
       true,
     );
+  });
+});
+
+// A target with no Basis transcoder used to ignore `textures.maxSize` outright and ship the
+// authored bytes. The cap is a project decision, not a property of the codec, so it has to be
+// honoured by resampling to PNG instead of encoding.
+describe("the decoder-free size cap", () => {
+  const noise = (x: number, y: number, salt: number): number => {
+    let value = Math.imul(x + salt, 0x45d9f3b) ^ Math.imul(y + salt, 0x119de1f3);
+    value = Math.imul(value ^ (value >>> 16), 0x45d9f3b);
+    return (value ^ (value >>> 16)) & 0xff;
+  };
+
+  it("should cap colour, normal and alpha textures to 1024 by resampling, leaving the source and a small texture alone", async () => {
+    const root = await makeTempDir("threenative-tex-resize-");
+    await mkdir(path.join(root, "assets"));
+    const color = rgbaPng({
+      blue: (x, y) => noise(x, y, 97),
+      green: (x, y) => noise(x, y, 53),
+      height: 4096,
+      red: (x, y) => noise(x, y, 11),
+      width: 4096,
+    });
+    const normal = rgbaPng({
+      blue: () => 255,
+      green: (x, y) => noise(x, y, 53),
+      height: 4096,
+      red: (x, y) => noise(x, y, 11),
+      width: 4096,
+    });
+    const alpha = rgbaPng({
+      alpha: (x) => (x < 2048 ? 0 : 255),
+      height: 4096,
+      width: 4096,
+    });
+    const small = rgbaPng({ height: 512, width: 512 });
+    await writeFile(path.join(root, "assets", "cliff.png"), color);
+    await writeFile(path.join(root, "assets", "bricks_normal.png"), normal);
+    await writeFile(path.join(root, "assets", "decal.png"), alpha);
+    await writeFile(path.join(root, "assets", "small.png"), small);
+
+    // Android is the decoder-free case: no WebAssembly, so the KTX2 pass drops and the cap is
+    // applied by the resize pass. Read back the emitted bytes, not the resolved config.
+    await compileAssets({
+      config: { textures: { maxSize: 1024 } },
+      cwd: root,
+      platform: "android",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string } | undefined> };
+    for (const logical of ["cliff.png", "bricks_normal.png", "decal.png"]) {
+      const entry = manifest.entries[logical];
+      if (entry === undefined) throw new Error(`no manifest entry for '${logical}'`);
+      expect(entry.output).toMatch(/\.png$/u);
+      const resized = PNG.sync.read(await readFile(path.join(root, "public", entry.output)));
+      expect([resized.width, resized.height]).toEqual([1024, 1024]);
+    }
+
+    // The alpha-bearing source survives the resample with real transparency, not an opaque
+    // RGBA container that discarded it.
+    const decalEntry = manifest.entries["decal.png"];
+    const decal = PNG.sync.read(
+      await readFile(path.join(root, "public", String(decalEntry?.output))),
+    );
+    const alphaValues = new Set<number>();
+    for (let offset = 3; offset < decal.data.length; offset += 4) {
+      alphaValues.add(decal.data[offset] ?? 255);
+    }
+    expect(alphaValues.has(0)).toBe(true);
+    expect(alphaValues.size).toBeGreaterThan(1);
+
+    // Authored sources are never rewritten.
+    expect((await readFile(path.join(root, "assets", "cliff.png"))).equals(color)).toBe(true);
+    expect((await readFile(path.join(root, "assets", "decal.png"))).equals(alpha)).toBe(true);
+
+    // Under the cap: byte-identical, no re-encode.
+    const smallEntry = manifest.entries["small.png"];
+    const smallOut = await readFile(path.join(root, "public", String(smallEntry?.output)));
+    expect(smallOut.equals(small)).toBe(true);
+  }, 180_000);
+
+  // A `codec: "none"` override is a project saying "ship these bytes as authored". The KTX2 pass
+  // honoured that; the decoder-free path that replaced it on a phone resized the same files
+  // anyway, so the opt-out only worked on the targets that still had a Basis transcoder.
+  it('keeps a texture a `codec: "none"` override excluded at its authored bytes', async () => {
+    const root = await makeTempDir("threenative-tex-resize-opt-out-");
+    await mkdir(path.join(root, "assets", "ui"), { recursive: true });
+    const rock = rgbaPng({
+      blue: (x, y) => noise(x, y, 97),
+      green: (x, y) => noise(x, y, 53),
+      height: 128,
+      red: (x, y) => noise(x, y, 11),
+      width: 128,
+    });
+    const icon = rgbaPng({
+      blue: (x, y) => noise(x, y, 17),
+      green: (x, y) => noise(x, y, 71),
+      height: 128,
+      red: (x, y) => noise(x, y, 23),
+      width: 128,
+    });
+    await writeFile(path.join(root, "assets", "rock.png"), rock);
+    await writeFile(path.join(root, "assets", "ui", "x.png"), icon);
+
+    await compileAssets({
+      config: { textures: { maxSize: 64, overrides: [{ codec: "none", glob: "ui/**" }] } },
+      cwd: root,
+      platform: "android",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string } | undefined> };
+    const excluded = await readFile(
+      path.join(root, "public", String(manifest.entries["ui/x.png"]?.output)),
+    );
+    expect(excluded.equals(icon)).toBe(true);
+    const capped = PNG.sync.read(
+      await readFile(path.join(root, "public", String(manifest.entries["rock.png"]?.output))),
+    );
+    expect([capped.width, capped.height]).toEqual([64, 64]);
+  });
+
+  it("should reject corrupt image bytes, naming the logical path", async () => {
+    const root = await makeTempDir("threenative-tex-resize-corrupt-");
+    await mkdir(path.join(root, "assets"));
+    const valid = rgbaPng({ height: 4096, width: 4096 });
+    // A PNG signature and a truncated body: the header never parses and no decoder can read it.
+    await writeFile(path.join(root, "assets", "broken.png"), valid.subarray(0, 64));
+
+    await expect(
+      compileAssets({
+        config: { textures: { maxSize: 1024 } },
+        cwd: root,
+        platform: "android",
+      }),
+    ).rejects.toThrow(/TN_ASSETS_TEXTURE_UNDECODABLE.*broken\.png/su);
   });
 });
 

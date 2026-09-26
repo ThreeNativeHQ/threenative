@@ -2,6 +2,7 @@ import type { Document, Texture } from "@gltf-transform/core";
 import { KHRTextureBasisu } from "@gltf-transform/extensions";
 import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-transform/functions";
 import { read as readKTX2 } from "ktx-parse";
+import { PNG } from "pngjs";
 import { textureStats } from "../health.js";
 import { encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
@@ -34,6 +35,13 @@ export interface IModelTextureOverride {
 }
 
 export interface IModelTexturesOptions {
+  /**
+   * Resolved by the compiler from the target's runtime capabilities, never by a project: the
+   * target has no KTX2 decoder, so an over-cap embedded image is box-resampled and re-emitted as
+   * a PNG instead of being encoded. Everything else — authored-byte retention under the cap,
+   * per-image deduplication, colour space — is unchanged.
+   */
+  readonly decoderFree?: boolean;
   /**
    * Longest edge an embedded image may keep, default 2048. Larger images are box-resampled
    * down preserving aspect ratio; smaller ones are never upscaled.
@@ -391,6 +399,7 @@ export async function compressEmbeddedTextures(
   const root = document.getRoot();
   const textures = root.listTextures();
   if (textures.length === 0) return undefined;
+  const decoderFree = options.decoderFree === true;
   const maxSize = options.maxSize ?? DEFAULT_MAX_SIZE;
   const quality = Math.min(255, Math.max(1, Math.round(options.quality ?? DEFAULT_ETC1S_QUALITY)));
   const keys = textureKeys(root);
@@ -410,6 +419,19 @@ export async function compressEmbeddedTextures(
       throw new Error(
         `TN_ASSETS_MODEL_TEXTURE_MISSING: '${logicalPath}' declares texture '${key}' with no image data.`,
       );
+    }
+    // Decoder-free store hit: the stored bytes are already the cooked PNG (or the authored bytes
+    // under the cap), so they are neither decoded nor resized again; the summary reports what the
+    // model's source measured and the file it resolved to.
+    const recalledFree = decoderFree ? recalled.get(index) : undefined;
+    if (recalledFree !== undefined) {
+      const shape = imageShape(image, texture.getMimeType());
+      bytesBefore += recalledFree.sourceBytes;
+      bytesAfter += image.byteLength;
+      gpuBytesBefore += gpuBytes(shape.width, shape.height, "none");
+      gpuBytesAfter += gpuBytes(shape.width, shape.height, "none");
+      formats[key] = "none";
+      continue;
     }
     // Already compressed upstream: left exactly as authored, and still counted so the
     // reported GPU total is the whole model rather than only the part this stage touched.
@@ -456,6 +478,35 @@ export async function compressEmbeddedTextures(
       bytesAfter += image.byteLength;
       gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
       formats[key] = "none";
+      continue;
+    }
+    if (decoderFree) {
+      // No Basis transcoder on this target, so the cap is honoured by resampling and re-emitting
+      // a PNG. An image already within the cap keeps its authored bytes; the file is never
+      // rewritten and KHR_texture_basisu is never declared.
+      const target = cappedSize(decoded.width, decoded.height, maxSize);
+      if (target.width === decoded.width && target.height === decoded.height) {
+        bytesAfter += image.byteLength;
+        gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
+        formats[key] = "none";
+        continue;
+      }
+      const data = resampleRgba(
+        decoded.data,
+        decoded.width,
+        decoded.height,
+        target.width,
+        target.height,
+        getTextureColorSpace(texture) === "srgb",
+      );
+      const png = new PNG({ height: target.height, width: target.width });
+      png.data = Buffer.from(data);
+      const encoded = PNG.sync.write(png);
+      texture.setImage(encoded).setMimeType("image/png");
+      bytesAfter += encoded.byteLength;
+      gpuBytesAfter += gpuBytes(target.width, target.height, "none");
+      formats[key] = "none";
+      resized += 1;
       continue;
     }
 

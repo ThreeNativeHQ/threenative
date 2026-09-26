@@ -129,7 +129,7 @@ export interface ILoadAllOptions {
 }
 
 const DEFAULT_SLICE_SIZE = 256;
-const DEFAULT_CONCURRENCY = 6;
+export const DEFAULT_CONCURRENCY = 6;
 
 const now = (): number => globalThis.performance?.now() ?? Date.now();
 

@@ -11,9 +11,10 @@ import {
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
+  Texture,
   type Vector2,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 import { type IGamePluginHooks, defineGame } from "../src/game.js";
 import { playtest } from "../src/playtest.js";
@@ -349,7 +350,12 @@ describe("playtest plugin", () => {
         tags: {},
         world: { seed: null },
       });
-      expect(snapshot.resources).toEqual({ GameState: { score: 0 }, state: { score: 0 } });
+      // `assets` is the loader's own ledger and is empty for a scene that loads none.
+      expect(snapshot.resources).toEqual({
+        GameState: { score: 0 },
+        assets: {},
+        state: { score: 0 },
+      });
       expect(snapshot.runtimeDiagnosticsSeries).toEqual([]);
       expect(drawingBufferReads).toBeGreaterThan(0);
     } finally {
@@ -639,6 +645,59 @@ describe("playtest plugin", () => {
       expect(snapshot.gameplay?.contacts).toEqual([]);
     } finally {
       game.stop();
+    }
+  });
+
+  it("publishes where every asset was served from, addressed by its logical path", async () => {
+    // The record a scenario asserts on. It has to survive the bridge's JSON serialisation on
+    // every target, and it has to be addressable by a dotted observation path even though the
+    // logical path it is keyed by is itself dotted.
+    vi.stubGlobal("document", {
+      body: { append: () => undefined },
+      location: { href: "file:///game.html" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("assets.manifest.json")
+          ? Response.json({
+              entries: { "native-proof.png": { output: "native-proof.a1b2c3.png" } },
+              version: 1,
+            })
+          : new Response(new Uint8Array([137, 80, 78, 71])),
+      ),
+    );
+    class LoadingScene extends Scene {
+      override async load(ctx: ICtx): Promise<void> {
+        await ctx.assets.texture("native-proof.png");
+      }
+    }
+    const game = defineGame({
+      // The decode is stubbed; the url the manifest named is the thing under test.
+      assets: { texture: async () => new Texture() },
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { load: LoadingScene },
+      start: "load",
+    });
+
+    await game.start();
+    try {
+      const resources = (await bridge().sample({})).resources;
+      expect(resources?.assets).toEqual({
+        "native-proof": { png: { url: "native-proof.a1b2c3.png", via: "manifest" } },
+      });
+      // Read the way `assert.resources` does: split the path on dots and walk the value.
+      const read = (path: string): unknown =>
+        path.split(".").reduce<unknown>((value, part) => {
+          if (typeof value !== "object" || value === null) return undefined;
+          return (value as Record<string, unknown>)[part];
+        }, resources?.assets);
+      expect(read("native-proof.png.via")).toBe("manifest");
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
     }
   });
 
