@@ -5279,13 +5279,13 @@ renderer: { minimumProjectedPixels: 2 } // in threenative.config.ts
 
 ### `renderer.projection`
 
-`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.
+`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it.
 
 ```ts
 renderer.projection?: boolean
 ```
 
-- **Use when:** the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer
+- **Use when:** a crowd of animated characters draws slowly · many SkinnedMesh copies of one rig, each its own draw call · the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer
 - **Constraints:** Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it. · An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame. · TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.
 
 ```ts
