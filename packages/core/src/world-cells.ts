@@ -9,7 +9,7 @@ import {
   Quaternion,
   Vector3,
 } from "three";
-import { createAssetLoader } from "./assets.js";
+import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import type { IRendererLike } from "./renderer.js";
@@ -53,8 +53,18 @@ export interface IWorldCellsTerrainOptions {
 }
 
 export interface IWorldCellsLoadOptions {
-  /** URL of `world.json`; every other path in the package resolves relative to it. */
+  /**
+   * Logical path of `world.json` (`world/world.json`); every other path in the package resolves
+   * against it. A leading `/` is accepted and stripped, so an uncompiled `public/world` keeps
+   * working.
+   */
   readonly url: string;
+  /**
+   * Loader the package's paths resolve through — its manifest, or the authored names when there is
+   * none. Defaults to a fresh `createAssetLoader()`; inside a game, pass `ctx.assets` so the
+   * package's compiled output and compressed textures reach the renderer the game booted with.
+   */
+  readonly assets?: IAssetLoader;
   /** Game-owned terrain surface, handed straight to `TerrainTiles`. */
   readonly surface: IWorldTilesOptions["surface"];
   /** Passed straight to `TerrainTiles` for per-tile colliders. */
@@ -65,7 +75,10 @@ export interface IWorldCellsLoadOptions {
   readonly ring: number;
   readonly budgets: IWorldCellsBudget;
   readonly terrain?: IWorldCellsTerrainOptions;
-  /** `(url) => Promise<Object3D>`; defaults to the engine GLB loader. */
+  /**
+   * `(url) => Promise<Object3D>`, overriding `assets.model`; a raw `GLTFLoader` or a game's own
+   * loader works. The url is the authored one, so a compiled package wants `assets` instead.
+   */
   readonly loadModel?: (url: string) => Promise<Object3D>;
   /**
    * Model loads in flight at once, assets and chunks together. Defaults to `loadAll`'s
@@ -124,22 +137,26 @@ interface IWorldCellsInit extends IWorldCellsLoadOptions {
   readonly placements: ArrayBuffer;
   readonly heightmap: Uint16Array;
   readonly baseUrl: string;
+  /** `baseUrl` as the loader keys it: no leading slash, which is what a manifest lists. */
+  readonly logicalBase: string;
 }
 
-let defaultLoader: ReturnType<typeof createAssetLoader> | undefined;
-
-async function defaultLoadModel(url: string): Promise<Object3D> {
-  defaultLoader ??= createAssetLoader();
-  const gltf = await defaultLoader.model<{ scene?: Object3D }>(url);
+async function loadModelWith(assets: IAssetLoader, path: string): Promise<Object3D> {
+  const gltf = await assets.model<{ scene?: Object3D }>(path);
   const scene = gltf?.scene;
   if (!(scene instanceof Object3D))
-    throw new Error(`World asset '${url}' loaded without an Object3D scene.`);
+    throw new Error(`World asset '${path}' loaded without an Object3D scene.`);
   return scene;
 }
 
 function resolveRelative(baseUrl: string, relative: string): string {
   if (/^(?:[a-z]+:)?\/\//iu.test(relative) || relative.startsWith("data:")) return relative;
   return `${baseUrl}${relative.replace(/^\//u, "")}`;
+}
+
+/** Where a logical path is served from: the manifest's output, or the first authored candidate. */
+async function resolveLogical(assets: IAssetLoader, path: string): Promise<string> {
+  return (await assets.resolve(path))[0] ?? path;
 }
 
 function firstRenderable(
@@ -275,7 +292,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #cells: readonly IWorldCell[];
   readonly #cellSize: number;
   readonly #follow: IWorldCellsFollow;
-  readonly #loadModel: (url: string) => Promise<Object3D>;
+  readonly #loader: IAssetLoader;
+  readonly #loadModel: ((url: string) => Promise<Object3D>) | undefined;
   readonly #limiter: ModelLoadLimiter;
   readonly #manifest: IWorldPackage;
   readonly #minX: number;
@@ -284,6 +302,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #ring: number;
   readonly #terrain: TerrainTiles;
   readonly #baseUrl: string;
+  readonly #logicalBase: string;
   readonly #assets = new Map<string, IAssetState>();
   readonly #resident = new Map<string, IResidentCell>();
   readonly #position = new Vector3();
@@ -314,7 +333,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
     this.#baseUrl = init.baseUrl;
-    this.#loadModel = init.loadModel ?? defaultLoadModel;
+    this.#logicalBase = init.logicalBase;
+    this.#loader = init.assets ?? createAssetLoader();
+    this.#loadModel = init.loadModel;
     this.#limiter = new ModelLoadLimiter(
       positiveInteger(init.concurrency ?? DEFAULT_CONCURRENCY, "concurrency"),
     );
@@ -346,21 +367,28 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   static async load(options: IWorldCellsLoadOptions): Promise<WorldCells> {
+    const assets = options.assets ?? createAssetLoader();
     const baseUrl = options.url.slice(0, options.url.lastIndexOf("/") + 1);
-    const manifestResponse = await fetch(options.url);
+    // Logical paths, which is what the loader keys its manifest by: the authored name with no
+    // leading slash, and the directory the manifest itself sits in as their base.
+    const manifestPath = options.url.replace(/^\//u, "");
+    const logicalBase = manifestPath.slice(0, manifestPath.lastIndexOf("/") + 1);
+    const manifestResponse = await fetch(await resolveLogical(assets, manifestPath));
     if (!manifestResponse.ok)
       throw new Error(
         `World manifest request failed with status ${String(manifestResponse.status)} for ${options.url}.`,
       );
     const manifest = (await manifestResponse.json()) as IWorldPackage;
-    const placementsResponse = await fetch(resolveRelative(baseUrl, manifest.placements));
+    const placementsResponse = await fetch(
+      await resolveLogical(assets, resolveRelative(logicalBase, manifest.placements)),
+    );
     if (!placementsResponse.ok)
       throw new Error(
         `World placements request failed with status ${String(placementsResponse.status)} for ${manifest.placements}.`,
       );
     const placements = await placementsResponse.arrayBuffer();
     const heightmap = await loadWorldHeightmap(
-      resolveRelative(baseUrl, manifest.terrain.heightmap),
+      await resolveLogical(assets, resolveRelative(logicalBase, manifest.terrain.heightmap)),
     );
     const validation = validateWorldPackage(manifest, {
       heightmapByteLength: heightmap.length * 2,
@@ -379,7 +407,15 @@ export class WorldCells extends Group implements IComputeDriven {
       error.name = "WorldPackageValidationError";
       throw error;
     }
-    return new WorldCells({ ...options, baseUrl, heightmap, manifest, placements });
+    return new WorldCells({
+      ...options,
+      assets,
+      baseUrl,
+      heightmap,
+      logicalBase,
+      manifest,
+      placements,
+    });
   }
 
   get released(): boolean {
@@ -542,12 +578,23 @@ export class WorldCells extends Group implements IComputeDriven {
     if (!asset.pending) this.#startAssetLoad(asset);
   }
 
+  /**
+   * One model, from the loader the package was given. `loadModel` keeps the override and takes the
+   * authored url, so a game's own GLB loader is unchanged; without it the logical path goes to
+   * `assets.model`, which is what makes a compiled package and its KTX2 textures work.
+   */
+  #model(path: string): Promise<Object3D> {
+    return this.#loadModel === undefined
+      ? loadModelWith(this.#loader, path)
+      : this.#loadModel(resolveRelative(this.#baseUrl, path));
+  }
+
   #startAssetLoad(asset: IAssetState): void {
     asset.pending = true;
-    const url = resolveRelative(this.#baseUrl, asset.definition.glb);
+    const path = resolveRelative(this.#logicalBase, asset.definition.glb);
     this.#limiter
       .load(
-        () => this.#loadModel(url),
+        () => this.#model(path),
         () => !this.#released && this.#assets.get(asset.id) === asset && !asset.disposed,
       )
       .then(
@@ -662,12 +709,13 @@ export class WorldCells extends Group implements IComputeDriven {
   #startChunkLoad(cell: IResidentCell): void {
     const generation = cell.generation;
     const paths: string[] = [];
-    for (const chunk of cell.cell.chunks ?? []) paths.push(resolveRelative(this.#baseUrl, chunk));
+    for (const chunk of cell.cell.chunks ?? [])
+      paths.push(resolveRelative(this.#logicalBase, chunk));
     loadAll(
       paths,
-      (url) =>
+      (path) =>
         this.#limiter.load(
-          () => this.#loadModel(url),
+          () => this.#model(path),
           () => this.#cellLive(cell, generation),
         ),
       { marker: false },

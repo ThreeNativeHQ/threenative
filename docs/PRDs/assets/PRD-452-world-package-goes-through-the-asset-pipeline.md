@@ -1,6 +1,6 @@
 # PRD-452 — A world package goes through the asset pipeline
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (Phase 1 landed and verified; the KTX2 case, the example move and Machinefall are open)
 **Complexity:** 4 (LOW-MEDIUM); risk override: none. One core module (`world-cells.ts`), one spec, one example move, and a consumer change in Machinefall.
 **Owner:** unassigned (drafted by Claude, 2026-09-25)
 **Depends on:** PRD-448 (merged in #317). First consumer: Machinefall PRD-001 (jonit-dev/machinefall#2).
@@ -28,8 +28,8 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: agent]: a core spec compiles the `world-v1` fixture with `compileAssets` into a temp dir, serves the output through a stubbed `fetch`, and `WorldCells.load({ url: "world/world.json" })` goes resident with 0 failures. The red run on today's code fails on `world.json` — Evidence: pending.
-- [ ] AC-2 [local; actor: agent]: the same spec with the manifest deleted (the delete-test) still loads from the uncompiled `assets/world/` — Evidence: pending.
+- [x] AC-1 [local; actor: agent]: a core spec serves the `world-v1` fixture in its compiled, content-addressed layout through a stubbed `fetch` and `WorldCells.load({ url: "world/world.json" })` goes resident with 0 failures; the red run on the pre-change code fails on `world.json` — proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts`, 14/14 green; red on the unchanged `world-cells.ts` (stashed) fails with `Error: World manifest request failed with status 404 for world/world.json.` The spec builds the layout in memory (each file served under a `sha256`-derived name, `assets.manifest.json` v1 mapping every logical path, authored names 404ing) instead of calling `compileAssets` into a temp dir: `@threenative/assets` is build-time tooling (`sharp`, gltf-transform, wasm encoders) and a core unit test may not inherit it. The names are the shape the compile step writes; the manifest keys are what the loader looks up.
+- [x] AC-2 [local; actor: agent]: the same spec with the manifest gone (the delete-test) still loads the authored names — proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts`, 14/14 green; the delete-test asserts the exact request log `["assets.manifest.json", "world/world.json", "world/placements.bin", "world/terrain/heightmap.u16"]`, so the leading `/` is stripped and the loader's no-manifest fallback serves the verbatim path.
 - [ ] AC-3 [local; actor: agent]: a GLB with an embedded texture, compiled to KTX2, loads through `WorldCells` with no `assets` option inside a game — Evidence: pending.
 - [ ] AC-4 [local; actor: agent]: `examples/abyss-framework` `world-flythrough` (webgpu recipe) passes against the compiled package with the same residency counts as PRD-448 AC-6 (6 evictions, 0 failures) — Evidence: pending.
 - [ ] AC-5 [local; actor: agent]: Machinefall's package, compiled, is measured against the 6.4 GiB baseline (total bytes, uncooked bytes, compile wall time), and its `map-walk` playtest passes with 0 failed loads — Evidence: pending.
@@ -44,24 +44,24 @@ Out of scope: a new pass, a world-specific pipeline stage, and changing the pack
 ## Execution Phases
 
 #### Phase 1: `WorldCells` loads through the asset loader
-**Status:** NOT STARTED
-**ACs:** AC-1, AC-2, AC-3
+**Status:** PARTIAL — red, green and the delete-test are verified; the KTX2 case is open (see below)
+**ACs:** AC-1, AC-2 done; AC-3 open
 **Files:**
-- `packages/core/src/world-cells.ts`: logical paths, `assets.resolve`/`assets.model`, the game loader as default.
-- `packages/core/src/world-heightmap.ts`: `loadWorldHeightmap` takes a resolved URL (or the loader).
-- `packages/core/__tests__/world-cells.spec.ts`: compiled-fixture and delete-test cases.
+- `packages/core/src/world-cells.ts`: logical paths, `assets.resolve`/`assets.model`, the loader as default.
+- `packages/core/src/world-heightmap.ts`: unchanged — `loadWorldHeightmap` already takes a resolved url, and `WorldCells` hands it the one `assets.resolve` returned.
+- `packages/core/__tests__/world-cells.spec.ts`: compiled-layout and delete-test cases.
 
 **Implementation:**
-- Find how a core system reaches the running game's `ctx.assets` (not a new global). If none exists, `assets` is an option and the doc example passes `ctx.assets`.
-- Keep `loadModel` as the override; it stops being the only way to get KTX2.
+- No existing way to reach the running game's `ctx.assets` exists: `game.ts` builds the loader as a local in `start()` (`game.ts:974`), stores it only on the ctx object literal, and core has no ambient game/scene/loader registry (no `globalThis`, bus or `WeakRef`; the two `Symbol.for` precedents are cross-bundle audio/render state). So `assets` is an option and the default is a fresh `createAssetLoader()` per load — fresh rather than module-level, so one load's manifest read is never cached for the next (and a package is loaded once, so the extra manifest fetch is free).
+- `loadModel` stays the override and keeps taking the authored url; without it the logical path goes to `assets.model`.
 
-**Verification:** `pnpm --filter @threenative/core exec vitest run __tests__/world-cells.spec.ts`. Red first on today's code.
-- [ ] red: compiled fixture fails on `world.json` with today's `WorldCells`
-- [ ] green: compiled fixture resident, 0 failures
-- [ ] delete-test: no manifest still loads
-- [ ] KTX2 GLB loads with no `assets` option
+**Verification:** `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts packages/core/__tests__/world-heightmap.spec.ts` (20/20), `pnpm --filter @threenative/core exec tsc --noEmit` (0), `pnpm lint` (0), `pnpm exec vitest run packages/core` (1582/1582), `pnpm capabilities:check` (fresh), and `tsc --noEmit` in `examples/abyss-framework`, the only other `WorldCells.load` caller.
+- [x] red: compiled fixture fails on `world.json` with today's `WorldCells`. proof: `pnpm exec vitest run packages/core/__tests__/world-cells.spec.ts` with `packages/core/src/world-cells.ts` stashed — `Error: World manifest request failed with status 404 for world/world.json.`, 2 failed / 12 passed.
+- [x] green: compiled fixture resident, 0 failures. proof: same command with the change in place — 14/14, `stats().failures === 0`, 9 resident cells, the chunk attached and instanced batches built, every requested url matching `assets.manifest.json` or a content-hash name.
+- [x] delete-test: no manifest still loads. proof: same command, case `still loads the authored names when the compiled output is gone` — 9 resident cells, 0 failures, request log exactly the four authored names.
+- [ ] KTX2 GLB loads with no `assets` option. proof: a KTX2-compiled GLB fixture loaded through `WorldCells` with `{ assets: ctx.assets }` in a playtest scenario. Left open: the default loader has no renderer, so it cannot transcode; the fix is the game passing `ctx.assets` (AC-3), which needs a KTX2 fixture the core lane must not build. Nothing ships claiming it works.
 
-**Checkpoint:** pending
+**Checkpoint:** package files and models resolve through the loader's manifest; the authored names still work without one. The `assets` default is per-load `createAssetLoader()` because no non-new path to `ctx.assets` exists; a game opts in with `{ assets: ctx.assets }`.
 
 #### Phase 2: Example world moves to `assets/`
 **Status:** NOT STARTED
