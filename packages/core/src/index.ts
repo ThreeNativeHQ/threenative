@@ -93,6 +93,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  */
 export { createAssetLoader } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
+export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
 export type { IAssetLoader, IAssetLoaderOptions } from "./assets.js";
 export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
@@ -402,6 +403,27 @@ export { baseGeometryOf } from "./model-lod.js";
  */
 export { alwaysRender } from "./render-camera-cull.js";
 /**
+ * Walk the scene graph's world matrices each frame without recursing into a hidden subtree.
+ *
+ * On by default as `renderer.matrixWorld: "visible"`. three's `updateMatrixWorld` recurses into
+ * every child whatever its `visible` flag, so a hidden LOD body, a merged stand-in and a parked
+ * model cost a world-matrix multiply each while nothing under them can draw. This pass mirrors
+ * three exactly for every visible node and defers a hidden node's subtree until the frame it shows
+ * again. A class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a
+ * hidden node that holds bones is walked, so no skeleton or view matrix goes stale.
+ *
+ * @situation the per-frame world matrix walk is hot in a profile
+ * @situation stop multiplying matrices for hidden models, LOD levels and merged stand-ins
+ * @situation a game needs every node walked, exactly as three's own updateMatrixWorld does
+ * @constraint a game that reads a hidden object's matrixWorld directly must use getWorldPosition or updateWorldMatrix(true, false) first
+ * @constraint `renderer.matrixWorld: "all"` visits every node; `TN_PROJECTION` reports the visited count either way
+ * @override renderer.matrixWorld: "all" runs three's full walk instead of the visible-only default
+ * @example import { MatrixWorldPass } from "@threenative/core";
+ * const pass = new MatrixWorldPass(); // renderer.matrixWorld defaults to "visible"
+ */
+export { MatrixWorldPass } from "./matrix-world.js";
+export type { IMatrixWorldReport, MatrixWorldMode } from "./matrix-world.js";
+/**
  * Read where the frame's milliseconds went, per presented frame, on any platform; each
  * `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and
  * triangles each render pass submitted.
@@ -430,6 +452,125 @@ export type {
   IFramePhaseSample,
 } from "./frame-budget.js";
 export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
+/**
+ * Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks.
+ * Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as
+ * a residual instead of being filed under "other"; a child that outlives its parent reports a
+ * negative residual rather than a clamped zero.
+ * @situation find out what inside the render phase is actually costing the frame
+ * @situation tell a shadow pass's traversal from the main pass's, with the residual computed
+ * @situation price an optimisation against a measured part of the phase rather than the whole of it
+ * @constraint off by default and installed by `TN_FRAME_SPANS=1`; unset, every call site is one guarded return
+ * @constraint the tree is closed against the frame budget's own render phase, so `TN_FRAME_SPANS` and `TN_FRAME_BUDGET` describe the same frames
+ * @constraint measurement only: no span changes what is drawn, in what order, or with which renderer
+ * @example if (spansRequested()) setSpanRecorder(new SpanRecorder());
+ */
+export {
+  SPANS,
+  SPANS_FLAG,
+  SPANS_MARKER,
+  SPAN_COUNT,
+  SPAN_NAMES,
+  SpanRecorder,
+  addSpan,
+  beginSpan,
+  endSpan,
+  formatSpansWindow,
+  setSpanRecorder,
+  spanNow,
+  spanRecorder,
+  spansRequested,
+} from "./profiling/Spans.js";
+export type { ISpanSummary, ISpanWindow, SpanId } from "./profiling/Spans.js";
+/**
+ * Attach the span probes to a renderer: three's `render`, `_projectObject`, the render list's
+ * `sort`, the per-draw submission, and the scene-graph walk. Installed for you when
+ * `TN_FRAME_SPANS` asks; exported so a harness can wrap a renderer it owns.
+ * @situation measure which part of three's render path costs the frame
+ * @situation attach the span tree to a renderer a test or a tool constructed itself
+ * @constraint returns an uninstall that restores every wrapper, asserted by test
+ * @constraint a renderer whose internals have moved loses that span rather than throwing, and it is absent from the report rather than zero
+ * @constraint only the outermost `_projectObject` opens a span, because three's recurses per child
+ * @example const uninstall = installSpanProbes(renderer.raw, scene);
+ */
+export { installSpanProbes } from "./profiling/span-probes.js";
+export type { ISpanProbeTarget } from "./profiling/span-probes.js";
+/**
+ * Count the frame's host-boundary crossings and the bytes it writes into GPU buffers, off unless
+ * `TN_FRAME_SPANS` asks for them. On the frame budget's own window as `counters`, so a crossing
+ * count and a millisecond split describe the same frames.
+ * @situation decide whether a CPU-bound frame is paying for the V8-to-host boundary
+ * @situation measure how many bytes a frame writes into GPU buffers, and how many commands it issues
+ * @constraint counts command-encoder and queue methods only; `mapAsync` and the presentation path are named, not folded in
+ * @constraint `gpuBytes` is `queue.writeBuffer` exactly, so it reconciles against a driver; texture uploads are not included
+ * @constraint `jsAllocBytes` needs `performance.memory` and stays absent where the platform lacks it
+ * @example const counters = FrameCounters.install(counterDeviceOf(renderer.raw));
+ */
+export { FrameCounters, counterDeviceOf } from "./profiling/FrameCounters.js";
+export type { ICounterDevice, IFrameCounters } from "./profiling/FrameCounters.js";
+/**
+ * Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its
+ * JS render phase is longer than the display's own period is a scene-shape problem, and the engine
+ * already has the shape. On by default, printed at most once per reported window as
+ * `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
+ * @situation find out whether a slow frame is the scene's shape or the device
+ * @situation tell an authoring agent what to reduce before it promises a merge
+ * @constraint the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant
+ * @constraint no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence
+ * @constraint the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking
+ * @example defineGame({ display: { maxFps: 60 }, scenes: { Play } });
+ */
+export {
+  SCENE_WARNING_MARKER,
+  describeSceneShape,
+  describeSceneWarning,
+  displayPeriodMs,
+  formatSceneWarning,
+  sceneWarning,
+} from "./profiling/scene-warning.js";
+export type { ISceneShape, ISceneWarning } from "./profiling/scene-warning.js";
+/**
+ * Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the
+ * subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and
+ * `invalidateStatic(object)` announces a write deeper inside one.
+ * @situation cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves
+ * @situation keep a frozen subtree correct when the game does move it after all
+ * @constraint staticness is authored, never guessed; no heuristic watches gameplay and decides for you
+ * @constraint it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless
+ * @constraint a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+ * @example markStatic(island); invalidateStatic(drawbridge);
+ */
+export {
+  STATIC_TRANSFORM_MARKER,
+  invalidateStatic,
+  isStatic,
+  markStatic,
+  refreshStaticTransforms,
+  resetStaticTransforms,
+  staticTransformCensus,
+  unmarkStatic,
+} from "./static-transform.js";
+export type { IStaticTransformCensus } from "./static-transform.js";
+/**
+ * Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes
+ * every world matrix the long way, every frame, and throws on the first element that disagrees
+ * with what the frame is about to draw.
+ * @situation prove a static freeze did not leave a stale transform on screen
+ * @situation gate a scene in CI against silent transform divergence
+ * @constraint off by default and expensive by construction — it does the work it is checking, twice
+ * @constraint it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads
+ * @constraint it proves the frames it ran on and nothing else
+ * @example if (renderListValidationRequested()) console.log(formatValidationReport(report));
+ */
+export {
+  RENDERLIST_VALIDATE_FLAG,
+  RENDERLIST_VALIDATE_MARKER,
+  RenderListValidator,
+  formatValidationReport,
+  renderListValidationRequested,
+  validateWorldMatrices,
+} from "./profiling/render-list-validate.js";
+export type { IValidationReport } from "./profiling/render-list-validate.js";
 export {
   GEOMETRY_CAPTURE_DEFAULT_LIMIT,
   GEOMETRY_CAPTURE_MAX_LIMIT,

@@ -21,6 +21,7 @@
     "caps:recall": "tsx scripts/capability-recall.ts",
     "census": "tsx scripts/generate-native-census.ts",
     "check:docs": "tsx scripts/check-doc-links.ts",
+    "check:flight-cost": "tsx scripts/check-flight-cost.ts --max-mean-ms 0.35",
     "ci:fast": "bash scripts/ci-fast.sh",
     "ci:local": "bash scripts/ci-local.sh",
     "coverage": "vitest run --coverage",
@@ -52,9 +53,6 @@
     "round:deletions": "tsx scripts/round-deletions.ts",
     "round:next": "tsx scripts/round-next.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
-    "site:build": "pnpm --filter threenative-site run build",
-    "site:deploy": "pnpm --filter threenative-site run deploy",
-    "site:dev": "pnpm --filter threenative-site run dev",
     "stamp:template-loading": "tsx scripts/stamp-template-loading.ts",
     "stamp:template-render": "tsx scripts/stamp-template-render.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",
@@ -82,7 +80,9 @@
     "visuals:baseline": "sh scripts/xvfb.sh tsx scripts/template-baseline.ts",
     "visuals:realism-effects": "sh scripts/xvfb.sh tsx scripts/realism-effects-visual.ts",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
-    "worktree:status": "tsx scripts/worktree-lifecycle.ts status"
+    "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
+    "census:content": "tsx scripts/content-census.ts",
+    "bench:host-boundary": "timeout 240 packages/runtime-native/build/tn-linux/mystral run packages/runtime-native/scripts/bench-host-boundary.js --headless"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -101,7 +101,12 @@
     "typescript": "catalog:",
     "vitest": "4.1.10"
   },
-  "description": "ThreeNative is an application framework for games whose same vanilla Three.js source runs in the browser on WebGPU and on an owned C++ runtime for desktop, Android, and iOS. It uses Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every surface.",
+  "description": "ThreeNative is an application framework for games whose same vanilla Three.js source runs in the browser on WebGPU and on an owned C++ runtime for desktop and Android. It uses Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every surface.",
+  "pnpm": {
+    "overrides": {
+      "sharp": ">=0.35.4"
+    }
+  },
   "main": "index.js",
   "directories": {
     "doc": "docs",

@@ -40,6 +40,16 @@ test("the proof covers every engine the build carries and fails closed on none",
   );
 });
 
+test("the Promise proof drains finished decodes, as the runtime's pollEvents does", () => {
+  // The decode leaves the frame thread, so nothing settles it until the host drains; a proof that
+  // only pumps microtasks would hang instead of failing.
+  assert.match(
+    read("tests/audio_decode_promise_test.cpp"),
+    /mystral::audio::drainAudioDecodes\(\);/u,
+    "the proof must drain decodes the way the runtime does",
+  );
+});
+
 test("QuickJS implements the per-frame microtask pump the runtime calls", () => {
   // `Engine::processMicrotasks` has an empty default body, so an engine that does not override it
   // makes the runtime's frame pump a silent no-op — and a binding that hands back a settled

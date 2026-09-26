@@ -3,9 +3,12 @@
 #include "mystral/cold_start.h"
 
 #include <atomic>
+#include <cstdlib>
+#include <cstring>
 #include <charconv>
 #include <deque>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <string_view>
 
@@ -79,12 +82,39 @@ std::atomic<uint64_t> g_dropped{0};
 std::atomic<bool> g_attached{false};
 std::atomic<bool> g_uiReadyIntentReceived{false};
 
+/** How many interactive rectangles the page last published, for the OS press verdict line. */
+std::atomic<size_t> g_hitRegionCount{0};
+
 /**
  * A HUD publishes its rectangles on layout change and its intents on a tap, so a healthy run
  * queues single-digit frames per tick. A backlog past this means the game stopped draining —
  * paused, or wedged — and the newest frames are the ones worth keeping.
  */
 constexpr size_t kMaxQueuedUiMessages = 256;
+
+#if defined(__ANDROID__)
+/**
+ * The latest page frame, published by the in-frame producer in `TnUiOverlay`.
+ *
+ * Android's default lane is wgpu-native, which has no external-texture import, so the producer's
+ * buffer is read back to CPU pixels here and uploaded by the existing compose path
+ * (`compositeUiOverlayToWebGPU` -> `uploadUiFrame`). Latest-wins: a frame that arrives while the
+ * game is not looking replaces the one before it, so the composite never shows a stale page.
+ *
+ * A `shared_ptr` rather than a plain vector because the compositor holds the pointer across the
+ * upload while the UI thread may publish the next frame. `uiOverlayFrame` retains the current
+ * buffer until the following call, so a publish can never free a buffer mid-read.
+ */
+std::mutex g_androidFrameMutex;
+std::shared_ptr<const std::vector<uint8_t>> g_androidFrame;
+std::shared_ptr<const std::vector<uint8_t>> g_androidFrameRetained;
+uint32_t g_androidFrameWidth = 0;
+uint32_t g_androidFrameHeight = 0;
+uint32_t g_androidFrameStride = 0;
+uint64_t g_androidFrameCounter = 0;
+std::atomic<uint64_t> g_androidFramesPublished{0};
+std::atomic<bool> g_androidFrameRgba{false};
+#endif
 
 bool isUiReadyIntent(const std::string& frame) {
     // UI_READY_INTENT is sent through sendUiIntent, whose JSON.stringify wire shape is canonical.
@@ -103,6 +133,51 @@ bool isUiReadyIntent(const std::string& frame) {
 }
 
 }  // namespace
+
+#if defined(__ANDROID__)
+/**
+ * Publish one produced page frame, copied out of the producer's direct buffer.
+ *
+ * Called on Android's UI thread from the `TnUiOverlay` JNI callback; the copy is the CPU-readback
+ * cost the wgpu lane pays instead of an external-texture import. Measured by the on-device probe
+ * at ~1.1 ms for a full 1080x2400 `RGBA_8888` plane.
+ */
+void publishAndroidUiFrame(const void* pixels, size_t length, uint32_t width, uint32_t height,
+                           uint32_t stride) {
+    if (pixels == nullptr || length == 0 || width == 0 || height == 0 || stride == 0) return;
+    auto owned = std::make_shared<std::vector<uint8_t>>(length);
+    std::memcpy(owned->data(), pixels, length);
+    std::lock_guard<std::mutex> lock(g_androidFrameMutex);
+    g_androidFrame = std::move(owned);
+    g_androidFrameWidth = width;
+    g_androidFrameHeight = height;
+    g_androidFrameStride = stride;
+    g_androidFrameCounter += 1;
+    g_androidFrameRgba.store(true, std::memory_order_relaxed);
+    g_androidFramesPublished.store(g_androidFrameCounter, std::memory_order_relaxed);
+}
+
+/**
+ * Hand back the latest produced page frame, retaining it until the following call.
+ *
+ * Defined outside `TN_ENABLE_UI_OVERLAY` because Android ships that flag off — its overlay is the
+ * child WebView's own compositor, not the desktop offscreen host — so the frame seam must be
+ * reachable on the disabled-overlay path too.
+ */
+bool takeAndroidUiOverlayFrame(UiOverlayFrame& frame) {
+    std::lock_guard<std::mutex> lock(g_androidFrameMutex);
+    if (!g_androidFrame || g_androidFrame->empty()) return false;
+    g_androidFrameRetained = g_androidFrame;
+    frame.pixels = g_androidFrameRetained->data();
+    frame.length = g_androidFrameRetained->size();
+    frame.width = g_androidFrameWidth;
+    frame.height = g_androidFrameHeight;
+    frame.stride = g_androidFrameStride;
+    frame.counter = g_androidFrameCounter;
+    frame.isRgba = g_androidFrameRgba.load(std::memory_order_relaxed);
+    return true;
+}
+#endif
 
 void queueUiMessage(std::string frame) {
     if (isUiReadyIntent(frame)) g_uiReadyIntentReceived.store(true, std::memory_order_release);
@@ -139,6 +214,8 @@ void setUiOverlayAttached(bool attached) {
     if (attached) mystral::coldStartMark("ui_overlay_attached");
     else mystral::coldStartMark("ui_overlay_detached");
 }
+
+size_t uiOverlayHitRegionCount() { return g_hitRegionCount.load(std::memory_order_relaxed); }
 
 #if TN_ENABLE_UI_OVERLAY
 namespace {
@@ -242,6 +319,8 @@ bool uiOverlayFrame(UiOverlayFrame& frame) {
     frame.stride = layout.stride;
     frame.counter = layout.counter;
     return frame.pixels != nullptr && frame.length > 0;
+#elif defined(__ANDROID__)
+    return takeAndroidUiOverlayFrame(frame);
 #else
     (void)frame;
     return false;
@@ -252,6 +331,8 @@ uint64_t uiOverlayFramesPublished() {
 #if defined(__linux__) && !defined(__ANDROID__)
     if (!uiOverlayAttached()) return 0;
     return tn_ui_overlay_frames_published();
+#elif defined(__ANDROID__)
+    return g_androidFramesPublished.load(std::memory_order_relaxed);
 #else
     return 0;
 #endif
@@ -265,6 +346,7 @@ void uiOverlaySetSize(int width, int height) {
 }
 
 void setUiHitRegions(const std::vector<float>& regions) {
+    g_hitRegionCount.store(regions.size() / 4, std::memory_order_relaxed);
     if (!uiOverlayAttached()) return;
     tn_ui_overlay_set_hit_regions(regions.empty() ? nullptr : regions.data(),
                                   static_cast<uint32_t>(regions.size() / 4));
@@ -281,6 +363,27 @@ void detachDesktopUiOverlay() {
 bool uiOverlayHitTest(float nx, float ny) {
     if (!uiOverlayAttached()) return false;
     return tn_ui_overlay_hit_test(nx, ny) == 1;
+}
+
+/**
+ * One line per state posted to the page and per pointer action routed to it, on the launch clock.
+ *
+ * PRD-398 asks for two ages that no screenshot can see: how long a state the game published takes to
+ * reach the screen, and how long a pointer action takes to produce the response the player is owed.
+ * Both start on this side of the bridge — the game thread posts state here, and every pointer action,
+ * real or synthetic, enters at `uiOverlayRoutePointer` — and both end at a composited frame the game
+ * thread also stamps (`TN_UI_COMPOSITE_TRACE`). One clock, one ordinal each, so a reader subtracts
+ * two numbers from the same origin and pairs the *n*-th post with the *n*-th new page frame instead
+ * of guessing from wall-clock timestamps.
+ *
+ * Off unless `TN_UI_LATENCY_TRACE` is set: a line per posted frame is noise in every other run.
+ */
+void traceUiLatency(const char* event, unsigned long long ordinal, const char* detail) {
+    static const bool enabled = std::getenv("TN_UI_LATENCY_TRACE") != nullptr;
+    if (!enabled) return;
+    std::printf("TN_UI_LATENCY_TRACE:{\"event\":\"%s\",\"n\":%llu,\"detail\":\"%s\",\"atMs\":%.3f}\n",
+                event, ordinal, detail, mystral::coldStartNowMs());
+    std::fflush(stdout);
 }
 
 bool uiOverlayInjectPointer(const char* type, float nx, float ny, int buttons, int pointerId) {
@@ -346,6 +449,23 @@ struct UiPointerGesture {
             if (buttons == 0) uiOwned = false;
             return true;
         }
+        if (kind == "pointermove") {
+            // The page observes every move, inside a UI island or not: an offscreen view has no
+            // cursor, so hover is only ever what the host forwards. This is a side effect, not a
+            // claim — the ownership rules below still decide whether the game also sees the move,
+            // so motion is never stolen from it.
+            uiOverlayInjectPointer(type, nx, ny, buttons, pointerId);
+            if (uiOwned) {
+                lastX = nx;
+                lastY = ny;
+                return true;
+            }
+            if (gameOwned) return false;
+            if (!uiOverlayHitTest(nx, ny)) return false;
+            lastX = nx;
+            lastY = ny;
+            return true;
+        }
         if (uiOwned) {
             lastX = nx;
             lastY = ny;
@@ -373,6 +493,11 @@ bool uiOverlayKeyboardCaptured() {
 
 bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId) {
     if (!uiOverlayAttached() || type == nullptr) return false;
+    // The arrival of a pointer action, before ownership is decided: this is the one function both
+    // the OS event loop and the playtest bridge's synthetic input come through, so an action's age
+    // is measured from here rather than from whichever side later claimed it.
+    static unsigned long long routed = 0;
+    traceUiLatency("pointer", ++routed, type);
     return g_uiGesture.route(type, nx, ny, buttons, pointerId);
 }
 #else
@@ -382,10 +507,22 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
 }
 void pumpUiOverlay() {}
 bool uiOverlayFrame(UiOverlayFrame& frame) {
+#if defined(__ANDROID__)
+    // The in-frame producer publishes here even though `TN_ENABLE_UI_OVERLAY` is off on Android:
+    // this is the CPU-readback seam, not the desktop offscreen host.
+    return takeAndroidUiOverlayFrame(frame);
+#else
     (void)frame;
     return false;
+#endif
 }
-uint64_t uiOverlayFramesPublished() { return 0; }
+uint64_t uiOverlayFramesPublished() {
+#if defined(__ANDROID__)
+    return g_androidFramesPublished.load(std::memory_order_relaxed);
+#else
+    return 0;
+#endif
+}
 void uiOverlaySetSize(int width, int height) {
     (void)width;
     (void)height;
@@ -428,7 +565,11 @@ bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, in
 
 bool postUiMessage(const std::string& frame) {
 #if TN_ENABLE_UI_OVERLAY
-    if (uiOverlayAttached()) return tn_ui_overlay_post(frame.c_str()) == 0;
+    if (uiOverlayAttached()) {
+        static unsigned long long posted = 0;
+        traceUiLatency("post", ++posted, "");
+        return tn_ui_overlay_post(frame.c_str()) == 0;
+    }
 #endif
 #if defined(__APPLE__) && TARGET_OS_IPHONE
     if (uiOverlayAttached()) return postIosUiMessage(frame);
@@ -489,6 +630,40 @@ JNIEXPORT void JNICALL Java_com_threenative_runtime_TnUiOverlay_nativeUiOverlayA
     mystral::platform::setUiOverlayAttached(attached == JNI_TRUE);
     __android_log_print(ANDROID_LOG_INFO, "Mystral", "TN_UI_OVERLAY:{\"attached\":%s}",
                         attached == JNI_TRUE ? "true" : "false");
+}
+
+/**
+ * The in-frame producer published one page frame.
+ *
+ * `pixels` is the producer's direct `ImageReader` plane buffer, valid only for this call; the
+ * copy into the latest-wins mailbox happens here, on Android's UI thread.
+ */
+JNIEXPORT void JNICALL Java_com_threenative_runtime_TnUiOverlay_nativeUiFrame(
+    JNIEnv* environment, jclass, jobject pixels, jint width, jint height, jint stride) {
+    if (pixels == nullptr) return;
+    void* data = environment->GetDirectBufferAddress(pixels);
+    const jlong capacity = environment->GetDirectBufferCapacity(pixels);
+    if (data == nullptr || capacity <= 0) return;
+    mystral::platform::publishAndroidUiFrame(data, static_cast<size_t>(capacity),
+                                             static_cast<uint32_t>(width),
+                                             static_cast<uint32_t>(height),
+                                             static_cast<uint32_t>(stride));
+}
+
+/**
+ * The host names which composite path it took, so a run reports it rather than inferring it.
+ *
+ * `in-frame-cpu` is the wgpu Android lane (no external-texture import, CPU readback upload);
+ * `child-window` is today's transparent child WebView. Never silently downgrade.
+ */
+JNIEXPORT void JNICALL Java_com_threenative_runtime_TnUiOverlay_nativeUiCompositePath(
+    JNIEnv* environment, jclass, jstring path) {
+    if (path == nullptr) return;
+    const char* text = environment->GetStringUTFChars(path, nullptr);
+    if (text == nullptr) return;
+    __android_log_print(ANDROID_LOG_INFO, "Mystral", "TN_UI_COMPOSITE_PATH:{\"path\":\"%s\"}",
+                        text);
+    environment->ReleaseStringUTFChars(path, text);
 }
 
 }  // extern "C"

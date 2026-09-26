@@ -150,6 +150,15 @@ set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameL
 option(TN_WEBGPU_GPU_DRAIN_PROFILE "Block after present to measure remaining GPU work (diagnostic builds only)" OFF)
 option(TN_ANDROID_JS_PROFILE "Profile Android JavaScript render bindings" OFF)
 option(TN_ANDROID_JS_PROFILE_BUSY_LOOP "Add a negative-control busy loop to profiled bindings" OFF)
+# The V8 CPU profiler behind `--cpu-prof` and TN_JS_CPU_PROFILE. On by default for a desktop build
+# so a user can name a hot function without installing a system profiler (PRD-444); off for a
+# shipping mobile build, where the Android profiling build keeps its own opt-in above.
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(TN_JS_PROFILE_DEFAULT OFF)
+else()
+    set(TN_JS_PROFILE_DEFAULT ON)
+endif()
+option(TN_JS_PROFILE "Compile the V8 CPU profiler into this build" ${TN_JS_PROFILE_DEFAULT})
 option(TN_ENABLE_COVERAGE "Instrument native targets for source-based coverage" OFF)
 option(TN_ENABLE_SANITIZERS "Instrument native targets with AddressSanitizer and UBSan" OFF)
 option(TN_ENABLE_CLANG_TIDY "Run clang-tidy over ThreeNative native sources" OFF)
@@ -216,6 +225,7 @@ add_compile_definitions(
     TN_WEBGPU_GPU_DRAIN_PROFILE=$<BOOL:${TN_WEBGPU_GPU_DRAIN_PROFILE}>
     TN_ANDROID_JS_PROFILE=$<BOOL:${TN_ANDROID_JS_PROFILE}>
     TN_ANDROID_JS_PROFILE_BUSY_LOOP=$<BOOL:${TN_ANDROID_JS_PROFILE_BUSY_LOOP}>
+    TN_JS_PROFILE=$<BOOL:${TN_JS_PROFILE}>
     TN_ABLATE_BACKEND=$<BOOL:${TN_ABLATE_BACKEND}>
     TN_ABLATE_UI_COMPOSITE=$<BOOL:${TN_ABLATE_UI_COMPOSITE}>
 )
@@ -1408,6 +1418,7 @@ set(TN_RUNTIME_SCRIPT_NAMES
     image-bitmap-polyfill
     webtransport-polyfill
     webtransport-stub
+    install-async-audio-decode
     audio-context-constructor
     audio-source-properties
     audio-gain-param
@@ -1474,6 +1485,7 @@ set(MYSTRAL_SOURCES
     src/fs/file_watcher.cpp
     src/audio/audio_context.cpp
     src/audio/audio_bindings.cpp
+    src/audio/async_audio_decode.cpp
     src/audio/vorbis_impl.c
     src/vfs/embedded_bundle.cpp
     src/storage/local_storage.cpp
@@ -2078,6 +2090,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
 
     target_link_libraries(mystral PRIVATE mystral-runtime)
+
+    # Linux desktop only: put every function and datum in its own section so the link can drop
+    # what the runtime never reaches. Android already carries section GC; macOS and Windows keep
+    # their own dead-code story, so this is scoped to Linux.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
+        target_compile_options(mystral-runtime PRIVATE -ffunction-sections -fdata-sections)
+        target_link_options(mystral PRIVATE -Wl,--gc-sections)
+    endif()
 
     # Build-time tools stay out of the runtime executable that gets copied into compiled games.
     # The runtime CLI preserves `mystral compile` and `mystral bake` by dispatching to this

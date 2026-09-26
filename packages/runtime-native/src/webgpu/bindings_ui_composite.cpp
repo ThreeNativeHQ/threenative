@@ -24,11 +24,13 @@
 
 #include "bindings_state.h"
 #include "bindings_presentation.h"
+#include "mystral/cold_start.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/checked_handle.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -238,10 +240,17 @@ bool ensureUiPipeline(BindingsState* state, WGPUTextureFormat format) {
     return true;
 }
 
-/** Create or resize the UI texture, dropping any bind group that named the old view. */
-bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
+/**
+ * Create or resize the UI texture, dropping any bind group that named the old view.
+ *
+ * `format` follows the source's channel order: cairo hands over `B,G,R,A` on a little-endian host
+ * (`BGRA8Unorm`), Android's `ImageReader` hands over `R,G,B,A` (`RGBA8Unorm`). The shader decodes
+ * whichever was uploaded; only the storage layout differs, so the same pipeline serves both.
+ */
+bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height,
+                     WGPUTextureFormat format) {
     if (state->ui.texture != nullptr && state->ui.textureWidth == width &&
-        state->ui.textureHeight == height)
+        state->ui.textureHeight == height && state->ui.textureFormat == format)
         return true;
     if (state->ui.bindGroup != nullptr) {
         wgpuBindGroupRelease(state->ui.bindGroup);
@@ -262,9 +271,9 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
     descriptor.mipLevelCount = 1;
     descriptor.sampleCount = 1;
     descriptor.dimension = WGPUTextureDimension_2D;
-    // Not `BGRA8UnormSrgb`: the shader does the decode, because the same shader has to serve a
-    // linear target and an sRGB one.
-    descriptor.format = WGPUTextureFormat_BGRA8Unorm;
+    // Not `*-Srgb`: the shader does the decode, because the same shader has to serve a linear
+    // target and an sRGB one.
+    descriptor.format = format;
     descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     state->ui.texture = wgpuDeviceCreateTexture(state->device, &descriptor);
     if (!requireHandleHostSide(state->ui.texture, "uiComposite.createTexture")) {
@@ -273,7 +282,7 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
     }
 
     WGPUTextureViewDescriptor viewDescriptor = {};
-    viewDescriptor.format = WGPUTextureFormat_BGRA8Unorm;
+    viewDescriptor.format = format;
     viewDescriptor.dimension = WGPUTextureViewDimension_2D;
     viewDescriptor.baseMipLevel = 0;
     viewDescriptor.mipLevelCount = 1;
@@ -286,19 +295,43 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height) {
     }
     state->ui.textureWidth = width;
     state->ui.textureHeight = height;
+    state->ui.textureFormat = format;
     // The new texture holds nothing, so the next frame uploads whatever the page already has
     // rather than waiting for it to change again.
     state->ui.uploadedCounter = 0;
     return true;
 }
 
+/**
+ * One line per composited frame, only when `TN_UI_COMPOSITE_TRACE` is set.
+ *
+ * `TN_UI_COMPOSITE` aggregates a second, which is enough for a rate and useless for a gap: a
+ * second with forty uploads and a 300 ms hole in it reads the same as one without. AC-2 and AC-4 of
+ * PRD-398 ask for update-gap percentiles and display latency, which need the per-frame timeline —
+ * every frame the compositor reached, the page counter it saw, and whether that frame uploaded. Off
+ * unless the variable is set, because a line per frame is noise in every other run.
+ *
+ * The clock is the same launch clock `TN_UI_COMPOSITE` uses, so these frames and the once-a-second
+ * summaries can be lined up without subtracting two unrelated origins.
+ */
+void traceUiComposite(uint64_t counter, bool uploaded) {
+    static const bool enabled = std::getenv("TN_UI_COMPOSITE_TRACE") != nullptr;
+    if (!enabled) return;
+    std::cout << "TN_UI_COMPOSITE_TRACE:{\"atMs\":" << coldStartNowMs()
+              << ",\"counter\":" << counter
+              << ",\"uploaded\":" << (uploaded ? "true" : "false") << "}" << std::endl;
+}
+
 /** Upload the page's frame, or skip it because the page has not changed since the last one. */
 bool uploadUiFrame(BindingsState* state, const platform::UiOverlayFrame& frame) {
     if (state->ui.uploadedCounter == frame.counter) {
         state->ui.skippedUploads += 1;
+        traceUiComposite(frame.counter, false);
         return true;
     }
-    if (!ensureUiTexture(state, frame.width, frame.height)) return false;
+    const WGPUTextureFormat sourceFormat =
+        frame.isRgba ? WGPUTextureFormat_RGBA8Unorm : WGPUTextureFormat_BGRA8Unorm;
+    if (!ensureUiTexture(state, frame.width, frame.height, sourceFormat)) return false;
 
     WGPUImageCopyTexture_Compat destination = {};
     destination.texture = state->ui.texture;
@@ -316,6 +349,7 @@ bool uploadUiFrame(BindingsState* state, const platform::UiOverlayFrame& frame) 
                           &writeSize);
     state->ui.uploadedCounter = frame.counter;
     state->ui.uploads += 1;
+    traceUiComposite(frame.counter, true);
     return true;
 }
 }  // namespace
@@ -343,9 +377,12 @@ void reportUiComposite(BindingsState* state, const platform::UiOverlayFrame& fra
     // The very first line has no interval behind it; report it anyway, with the totals, so a run
     // that lasts under a second still says the UI composited at all.
     last = now;
-    std::cout << "TN_UI_COMPOSITE:{\"uploads\":" << uploads << ",\"skipped\":" << skipped
+    std::cout << "TN_UI_COMPOSITE:{\"atMs\":" << coldStartNowMs()
+              << ",\"uploads\":" << uploads << ",\"skipped\":" << skipped
               << ",\"uploadsPerSecond\":" << deltaUploads << ",\"skippedPerSecond\":" << deltaSkipped
-              << ",\"frame\":" << frame.width << "x" << frame.height
+              // Quoted, because every other field here is JSON and this one used to be the only
+              // thing making the whole payload unparseable: `"frame":1280x720` is not a value.
+              << ",\"frame\":\"" << frame.width << "x" << frame.height << "\""
               << ",\"counter\":" << frame.counter
               << ",\"uploadedCounter\":" << state->ui.uploadedCounter
               << ",\"format\":" << static_cast<int>(state->ui.pipelineFormat)

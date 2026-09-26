@@ -63,6 +63,13 @@ export const GAME_STATE_MESSAGE = "tn:state";
 /** The message the UI end sends when the player acts on a control. */
 export const UI_INTENT_MESSAGE = "tn:intent";
 /**
+ * The frame rate the game end publishes when it was launched in dev mode.
+ *
+ * Separate from the state stream because it is not game state: a HUD that showed it would be
+ * showing the engine's own measurement, and a game that never asked for dev mode never sends it.
+ */
+export const UI_DEV_METRICS_MESSAGE = "tn:dev-metrics";
+/**
  * The intent the UI layer sends once, when its tree has rendered and its rectangles are published.
  *
  * Namespaced so it cannot collide with a game's own vocabulary, and framework-sent so a game does

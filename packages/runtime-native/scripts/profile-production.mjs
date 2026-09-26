@@ -53,6 +53,9 @@ const SLOW_STARTUP_DELAY_MS = 5_100;
 const FRAME_SAMPLE_BATCH_SIZE = 30;
 // Android logcat truncates long lines, so native samples use a smaller JSON batch.
 const NATIVE_FRAME_SAMPLE_BATCH_SIZE = 5;
+// The wall-clock a paced fixed step gives each tick, so a synthetic workload's tick budget stands
+// in for the seconds it names and the host's render loop actually presents frames while it runs.
+const PRODUCTION_TICK_INTERVAL_MS = 1_000 / 60;
 const DESKTOP_SCREENSHOT_TIMEOUT_MS = 5_000;
 const PRODUCTION_PROFILE = 'production';
 const REGRESSION_PROFILE = 'regression';
@@ -260,7 +263,9 @@ export async function collectProduction(options, context, runId) {
     );
   }
 
-  const temporaryRoot = await mkdtemp(join(tmpdir(), 'threenative-production-'));
+  const stagingParent = inRepositoryCheckout ? join(commandRoot, '.runtime', 'profile-production') : tmpdir();
+  await mkdir(stagingParent, { recursive: true });
+  const temporaryRoot = await mkdtemp(join(stagingParent, 'threenative-production-'));
   const project = join(temporaryRoot, 'platformer');
   const startedAt = new Date().toISOString();
   try {
@@ -910,10 +915,8 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   };
 }
 
-// `xvfb-run`'s cleanup kill can replace a successful child's status (xorg-server-xvfb 21.1.24),
-// reporting a run that rendered every frame as red. The packaged wrapper owns a private display and
-// hands back the child's own status. Fail closed when a private display is needed but the packaged
-// wrapper is missing, rather than running blind.
+// `xvfb-run` can replace a successful child's status with its cleanup failure. Use the
+// repository wrapper in headless Linux and preserve the child's own status.
 function privateDisplayCommand(executable, args) {
   if (process.platform !== 'linux' || process.env.DISPLAY !== undefined) {
     return { args, command: executable };
@@ -929,7 +932,15 @@ function privateDisplayCommand(executable, args) {
 }
 
 function spawnNative(artifactPath, project, options, mailboxRoot) {
+  const bundle = join(project, '.threenative/build/game.js');
+  // A packaged desktop artifact embeds the instrumented game entry under its own module root, and
+  // an explicit `run <absolute path>` is resolved against that root rather than the filesystem, so
+  // the external bundle never loads and the run reports TN_PLAYTEST_BRIDGE_MISSING at zero frames.
+  // Launch the embedded entry. A bare runtime supplied through `--prebuilt-artifact` carries no
+  // embedded entry and still needs the external bundle named on the command line.
+  const launchesExternalBundle = options.prebuiltArtifact !== undefined;
   const nativeArgs = [
+    ...(launchesExternalBundle ? ['run', bundle] : []),
     '--width', String(options.renderSize.width),
     '--height', String(options.renderSize.height),
     '--headless',
@@ -954,10 +965,10 @@ export async function installNativeProfileEntry(project, target, options) {
   const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), options.project === undefined)}\n${mailbox}export default game;\n`;
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
-  await setNativeProfileEntry(project, 'src/profile-native-entry.ts');
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', options.renderSize);
 }
 
-export async function setNativeProfileEntry(project, entry) {
+export async function setNativeProfileEntry(project, entry, renderSize = undefined) {
   const configPath = join(project, 'threenative.config.ts');
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
@@ -966,8 +977,12 @@ export async function setNativeProfileEntry(project, entry) {
       /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
       `$1"${entry}"$2`,
     );
-    if (withEntry !== config) {
-      await writeFile(configPath, withEntry);
+    // The packaged desktop artifact carries the game's config embedded, and the native host reads
+    // its window size from there before any command-line flag, so the profiled surface is only the
+    // requested render size when the config states it.
+    const sized = renderSize === undefined ? withEntry : applyWindowSize(withEntry, renderSize);
+    if (sized !== config) {
+      await writeFile(configPath, sized);
     }
     if (withEntry !== config) {
       const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
@@ -984,34 +999,54 @@ export async function setNativeProfileEntry(project, entry) {
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
+function applyWindowSize(config, renderSize) {
+  return config
+    .replace(/(\bwindow\s*:\s*\{[^}]*?\bwidth\s*:\s*)\d+/mu, `$1${renderSize.width}`)
+    .replace(/(\bwindow\s*:\s*\{[^}]*?\bheight\s*:\s*)\d+/mu, `$1${renderSize.height}`);
+}
+
 function productionPerformanceReader() {
   return `
+// The installed bridge answers through a promise: core's playtest plugin wraps sample() to merge
+// its runtime observation contributions asynchronously, so reading the returned snapshot inline
+// saw a thenable and dropped every draw-call and triangle reading. Keep the last resolved
+// performance read and answer it on the next frame instead.
+let tnProductionLastPerformance;
 const tnProductionReadPerformance = () => {
   const bridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
-  if (typeof bridge?.sample !== "function") return {};
-  try {
-    const snapshot = bridge.sample({});
-    if (snapshot === null || typeof snapshot !== "object" || typeof snapshot.then === "function") return {};
-    const performance = snapshot.performance;
-    return {
-      ...(Number.isFinite(performance?.drawCalls) ? { drawCalls: performance.drawCalls } : {}),
-      ...(performance?.phases !== undefined ? { phases: performance.phases } : {}),
-      ...(Number.isFinite(performance?.triangles) ? { triangles: performance.triangles } : {}),
-    };
-  } catch {
-    return {};
+  if (typeof bridge?.sample === "function") {
+    try {
+      const snapshot = bridge.sample({});
+      if (snapshot !== null && typeof snapshot === "object") {
+        if (typeof snapshot.then === "function") {
+          snapshot.then((resolved) => { tnProductionLastPerformance = resolved?.performance; }).catch(() => undefined);
+        } else {
+          tnProductionLastPerformance = snapshot.performance;
+        }
+      }
+    } catch {
+    }
   }
+  const performance = tnProductionLastPerformance;
+  return {
+    ...(Number.isFinite(performance?.drawCalls) ? { drawCalls: performance.drawCalls } : {}),
+    ...(performance?.phases !== undefined ? { phases: performance.phases } : {}),
+    ...(Number.isFinite(performance?.triangles) ? { triangles: performance.triangles } : {}),
+  };
 };
 `;
 }
 
-// The collector's real-time hold. A playtest bridge is installed by the game after this
-// instrumentation evaluates, and the runner reads `advance` off that bridge on every call, so
-// wrapping the one property here paces the scenario's fixed ticks to wall clock without touching
-// playtest or game code. The patch rides the first animation frame the loop schedules; by the time
-// a runner can call `advance`, the bridge exists and has been wrapped. It is enabled only for the
-// synthetic `--duration` workload, whose tick budget stands in for the requested seconds; a
-// project's own authored scenario keeps the accelerated pacing it was written for.
+/**
+ * Pace the fixed step to wall time so a synthetic workload's tick budget is the seconds it names.
+ *
+ * The native device transport drives the simulation through `bridge.advance(ticks)`, and the host
+ * runs that loop synchronously: a single `advance(3600)` finishes in milliseconds, so the host's
+ * requestAnimationFrame loop never presents the 60 seconds of frames the scenario asked to warm up
+ * or measure, and the warmup boundary is never reached. Wrapping `advance` to wait one display
+ * interval per tick lets the host's own loop run during the wait, so the frames exist to be
+ * measured.
+ */
 export function productionExecutionHold(paceTicks = false) {
   return `
 const tnProductionPaceEnabled = ${paceTicks === true};
@@ -1048,6 +1083,7 @@ if (typeof tnProductionRequestAnimationFrame !== "function") {
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
+let tnProductionPresentation;
 let tnProductionSamples = [];
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
@@ -1056,7 +1092,9 @@ const tnProductionBusyWait = (milliseconds) => {
 };
 ${productionPerformanceReader()}
 ${productionExecutionHold(paceTicks)}
+${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
+  tnProductionInstallPace();
   tnProductionInstallPace();
   const frameIndex = tnProductionFrameIndex++;
   const inWarmup = frameIndex < tnProductionWarmupFrames;
@@ -1106,7 +1144,6 @@ if (typeof tnProductionRequestAnimationFrame !== "function") {
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
-let tnProductionPresentation;
 let tnProductionSamples = [];
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {

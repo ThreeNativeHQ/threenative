@@ -137,6 +137,17 @@ const nativeBackend =
   process.env.THREENATIVE_NATIVE_BACKEND === "enabled" ||
   process.env.THREENATIVE_PHYSICS_PROOF === "enabled";
 const loadingProof = process.env.THREENATIVE_LOADING_PROOF === "enabled";
+/**
+ * The desktop UI-frame gate's build.
+ *
+ * `proveAudioDecodePromise` proves the `decodeAudioData` contract by decoding an empty buffer on
+ * purpose, and the host correctly logs that refusal on stderr — which the playtest lane counts as
+ * an unexpected console error and fails the run for. That is the right default for every other
+ * lane, and this flag is not a waiver: it removes the deliberate negative case from a build whose
+ * subject is the UI, so the gate keeps the strictest console policy there is. The proof still runs
+ * in every other native build of this example, including the loading-proof one.
+ */
+const uiFrameGate = process.env.THREENATIVE_UI_FRAME_GATE === "enabled";
 const packedFixture = resolve(import.meta.dirname, "physics-parity.scenario.json");
 const fixture = readFileSync(
   existsSync(packedFixture)
@@ -168,6 +179,7 @@ export default defineConfig({
     ),
     __TN_CONTINUOUS_COLLISION_PROOF__: JSON.stringify(continuousCollisionProof),
     __TN_LOADING_PROOF__: JSON.stringify(loadingProof),
+    __TN_UI_FRAME_GATE__: JSON.stringify(uiFrameGate),
     __TN_NETWORKING_CONFIG__: JSON.stringify(networkingConfig),
     __TN_PLAYTEST_ENABLED__: JSON.stringify(process.env.THREENATIVE_PLAYTEST_BRIDGE !== "disabled"),
     __TN_RUNTIME__: JSON.stringify(nativeBackend ? "native" : "web"),

@@ -198,7 +198,7 @@ test('Android V8 interruption leaves time to cache and resume Ninja state', () =
     ?.split('\n')
     .map((line) => line.replace(/^ {8}/u, ''))
     .join('\n');
-  expect(script).toContain('timeout --signal=TERM --kill-after=30s 120m');
+  expect(script).toContain('timeout --signal=TERM --kill-after=30s 180m');
   expect(androidV8Action.indexOf('Save resumable V8 source state')).toBeGreaterThan(
     androidV8Action.indexOf('Build the pinned Android V8 payload'),
   );
@@ -245,7 +245,7 @@ wait "$child"
     // build shell. The timeout must fail after the fake Ninja state has been written.
     const interrupted = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '1s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '1s')],
       { cwd: runtime, env, encoding: 'utf8' },
     );
     expect(interrupted.status).toBe(124);
@@ -253,7 +253,7 @@ wait "$child"
 
     const resumed = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '5s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '5s')],
       { cwd: runtime, env: { ...env, TN_V8_RESUME: '1' }, encoding: 'utf8' },
     );
     expect(resumed.status).toBe(0);
@@ -403,10 +403,15 @@ test('iOS workflow dispatch can run without unrelated platform cancellation', ()
   expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
 });
 
-test('iOS consumer proof is a required gate after the simulator proof passes', () => {
-  // Fail-closed since the simulator's worker proof passed in isolated run 33498394620.
+test('iOS consumer proof runs but cannot hold the merge verdict', () => {
+  // iOS is not a supported target (owner decision, 2026-09-23), so the simulator lane runs and
+  // reports its own red but is deliberately non-blocking — otherwise a red iOS leg holds the
+  // develop->main `ci-required` verdict. `native-release.yml` still validates the iOS rows for a
+  // release, so only the merge verdict is dropped. Mirrors
+  // scripts/__tests__/ci-structure.spec.ts's android-not-blocking / ios-blocking contract.
   const iosJob = workflow.slice(workflow.indexOf('  ios-simulator:'));
-  expect(iosJob).not.toContain('continue-on-error: true');
+  expect(iosJob).toContain('continue-on-error: true');
+  expect(iosJob).toContain('verify-ios-simulator.mjs');
   expect(workflow).not.toContain('worker proof is unresolved');
 });
 
@@ -845,6 +850,47 @@ test('release provenance is generated and validated before publishing release as
   expect(stripped).not.toContain('generate-native-release-provenance.mjs');
 });
 
+test('release publication uploads regular files only, never the compliance directory', () => {
+  // `release/*` expanded to `release/compliance`, the directory the SBOM step writes, and
+  // `gh release create` refused it — `read release/compliance: is a directory` — after every
+  // build had already passed (run 36149533979). The step must enumerate regular files, and a
+  // directory sitting under `release/` must never reach the upload argument list.
+  const step = releaseWorkflow.match(
+    /- name: Publish runtimes and checksum lock\n[\s\S]*?run: \|\n([\s\S]*?)(?=\n {6}- |\n {2}[a-z0-9-]+:)/u,
+  )?.[1];
+  assert.ok(step, 'the publication step must remain reachable');
+  // The command, not the comment above it that also names `gh release create`.
+  const publish = step.search(/^\s*gh release create/mu);
+  assert.ok(publish > -1, 'the step must still publish through gh release create');
+  // The upload argument is the files-only array, never the bare directory-including glob.
+  assert.match(step.slice(publish), /gh release create[^\n]*"\$\{assets\[@\]\}"/u);
+  assert.doesNotMatch(step.slice(publish), /release\/\*/u);
+
+  // Reproduce the failure on a real fixture: a genuine asset beside the compliance directory.
+  const directory = makeTempDirSync('threenative-release-assets-');
+  mkdirSync(join(directory, 'release', 'compliance'), { recursive: true });
+  writeFileSync(join(directory, 'release', 'prebuilt-lock.json'), '{}');
+  writeFileSync(join(directory, 'release', 'compliance', 'native-dependencies.cdx.json'), '{}');
+  // Negative control: the old glob really did carry the directory into the upload.
+  const glob = spawnSync('bash', ['-c', 'printf "%s\\n" release/*'], { cwd: directory, encoding: 'utf8' });
+  assert.match(glob.stdout, /^release\/compliance$/mu);
+  // The shipped expansion drops it, so `gh release create` receives only regular files.
+  const expansion = step
+    .slice(0, publish)
+    .split('\n')
+    .map((line) => line.replace(/^\x20{10}/u, ''))
+    .join('\n')
+    .trim();
+  const listed = spawnSync(
+    'bash',
+    ['-c', `set -euo pipefail\n${expansion}\nprintf '%s\\n' "\${assets[@]}"`],
+    { cwd: directory, encoding: 'utf8' },
+  );
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout.trim(), 'release/prebuilt-lock.json');
+  assert.doesNotMatch(listed.stdout, /compliance/u);
+});
+
 test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   // The release-candidate gate resolves parity/provenance reports by artifact
   // reference. These were emitted from android-emulator-parity on the premise
@@ -868,6 +914,14 @@ test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   expect(job).toContain('--web evidence/desktop/conformance/web/report.json');
   // `warn` is what let a green run ship with no reports; both uploads fail closed now.
   expect(job).not.toContain('if-no-files-found: warn');
+  // The artifact must carry `reports/parity.json`, the exact path the candidate gate resolves.
+  // upload-artifact strips everything before the first wildcard, so a bare `reports/parity.json`
+  // flattened to `parity.json` and the gate refused it ("missing the exact report path"). The
+  // leading wildcard keeps the `reports/` directory inside the artifact.
+  expect(job).toContain('path: "*/parity.json"');
+  expect(job).toContain('path: "*/provenance.json"');
+  expect(job).not.toMatch(/path: reports\/parity\.json/u);
+  expect(job).not.toMatch(/path: reports\/provenance\.json/u);
 });
 
 // --- PRD-221 phase 3: an observed page size, or no 16 KB qualification -------------------------

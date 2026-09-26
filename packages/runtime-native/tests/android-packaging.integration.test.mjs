@@ -93,14 +93,18 @@ if [ -f app/build/generated/threenative/assets/game/level.bin ]; then
   jar --update --file "$out" \\
     -C app/build/generated/threenative/assets game/level.bin
 fi
-# A real Android app ships native libraries for both 64-bit ABIs, and PRD-221's census refuses to
-# credit an artifact that contains none. These stand in for them so the gate has something to read.
-mkdir -p app/build/fake-libs/lib/arm64-v8a app/build/fake-libs/lib/x86_64
-printf 'runtime' > app/build/fake-libs/lib/arm64-v8a/libmystral-runtime.so
-printf 'runtime' > app/build/fake-libs/lib/x86_64/libmystral-runtime.so
-jar --update --file "$out" \\
-  -C app/build/fake-libs lib/arm64-v8a/libmystral-runtime.so \\
-  -C app/build/fake-libs lib/x86_64/libmystral-runtime.so
+# Native libraries for the ABIs the build asked for, exactly as build.gradle.kts resolves them:
+# \`-PthreenativeAbis\` when given, both 64-bit ABIs otherwise. PRD-221's census refuses to credit an
+# artifact that omits a requested ABI, so these stand in for them and give the gate something to read.
+abis="arm64-v8a x86_64"
+for arg in "$@"; do
+  case "$arg" in -PthreenativeAbis=*) abis=$(printf '%s' "\${arg#*=}" | tr ',' ' ');; esac
+done
+for abi in $abis; do
+  mkdir -p "app/build/fake-libs/lib/$abi"
+  printf 'runtime' > "app/build/fake-libs/lib/$abi/libmystral-runtime.so"
+  jar --update --file "$out" -C app/build/fake-libs "lib/$abi/libmystral-runtime.so"
+done
 `,
 
   );
@@ -221,10 +225,22 @@ public final class PackageManager {
     'android/content/Intent.java': `package android.content;
 
 public final class Intent {
-  private final java.util.Map<String, String> extras = new java.util.HashMap<>();
-  public String getStringExtra(String key) { return extras.get(key); }
+  private final java.util.Map<String, Object> extras = new java.util.HashMap<>();
+  public String getStringExtra(String key) {
+    Object value = extras.get(key);
+    return value instanceof String ? (String) value : null;
+  }
+  public boolean getBooleanExtra(String key, boolean fallback) {
+    Object value = extras.get(key);
+    return value instanceof Boolean ? ((Boolean) value).booleanValue() : fallback;
+  }
   public Intent putExtra(String key, String value) { extras.put(key, value); return this; }
+  public Intent putExtra(String key, boolean value) { extras.put(key, Boolean.valueOf(value)); return this; }
 }
+`,
+    'android/view/MotionEvent.java': `package android.view;
+
+public class MotionEvent {}
 `,
     'android/view/WindowManager.java': `package android.view;
 
@@ -395,6 +411,7 @@ public class SDLActivity {
   }
   public void configureMetadata(Bundle metadata) { packageManager = new PackageManager(metadata); }
   public void runOnUiThread(Runnable action) { action.run(); }
+  public boolean dispatchTouchEvent(android.view.MotionEvent event) { return false; }
   public float requestedFrameRate() { return mSurface.getHolder().getSurface().requestedFrameRate; }
   public int frameRateRequestCount() { return mSurface.getHolder().getSurface().requestCount; }
 }
@@ -413,6 +430,14 @@ public final class TnUiOverlay {
     return new TnUiOverlay();
   }
 
+  public static TnUiOverlay attachInFrame(Object activity) {
+    attachCount += 1;
+    return new TnUiOverlay();
+  }
+
+  public boolean isInFrame() { return false; }
+  public boolean dispatchTouchEvent(android.view.MotionEvent event) { return false; }
+  public void releaseProducer() {}
   public void postToPage(String frame) { lastPosted = frame; }
 }
 `,

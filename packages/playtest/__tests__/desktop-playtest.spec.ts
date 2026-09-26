@@ -85,6 +85,20 @@ test("desktop runner constructs its driver with the configured host arguments", 
   expect(constructed).toEqual([[]]);
 });
 
+test("desktop runner forwards --cpu-prof to the native host", async () => {
+  const constructed: (readonly string[] | undefined)[] = [];
+  const driverFactory = (options: { args?: readonly string[] }): IDevicePlaytestDriver => {
+    constructed.push(options.args);
+    throw new Error("captured");
+  };
+
+  await runDesktopPlaytest(
+    { ...minimalConfig("desktop"), cpuProfilePath: "/project/out.cpuprofile" },
+    { driverFactory },
+  ).catch(() => undefined);
+  expect(constructed).toEqual([["--cpu-prof=/project/out.cpuprofile"]]);
+});
+
 test("desktop CLI routing selects the shared desktop runner", async () => {
   const calls: string[] = [];
   const report = { pass: true } as never;

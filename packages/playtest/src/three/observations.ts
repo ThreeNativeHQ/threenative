@@ -56,6 +56,9 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
     ...(input.gameplay === undefined ? {} : { gameplay: input.gameplay() }),
     ...(renderPerformance === undefined ? {} : { performance: renderPerformance }),
     ...(renderChain === undefined ? {} : { renderChain }),
+    // The series is a window of up to a thousand samples, so an unconditional copy made every
+    // device sample payload grow past the protocol's byte ceiling once a paced run actually
+    // rendered that many frames. Answer it only when the request asks, like every other field.
     ...(input.runtimeDiagnosticsSeries === undefined || request.include?.includes("runtimeDiagnosticsSeries") !== true
       ? {}
       : { runtimeDiagnosticsSeries: input.runtimeDiagnosticsSeries().map((sample) => ({ ...sample })) }),

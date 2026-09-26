@@ -18,6 +18,9 @@ import path from "node:path";
  * hashes the installed `@threenative/*` dist trees at boot, forces vite to re-bundle its
  * optimized deps when they changed, and names any still-running server that is serving the
  * older build.
+ *
+ * It also stops the web build shipping three's decoder libraries as dead assets, described on
+ * `rewriteDecoderAssetUrls` below.
  */
 
 /** Shape of `node_modules/.vite/threenative-engine-build.json`, written once the server listens. */
@@ -40,6 +43,29 @@ export interface IEngineFreshnessVitePlugin {
       address(): { readonly port?: number } | string | null;
     } | null;
   }): void;
+  transform(code: string, id: string): { code: string; map: null } | null;
+}
+
+/**
+ * The two three loader modules whose default decoder URLs Vite copies into `dist/assets`.
+ *
+ * `@threenative/core` imports them dynamically; `KTX2Loader.js` and `DRACOLoader.js` each hold
+ * `new URL('../libs/…', import.meta.url)` literals, which Vite's asset-import-meta-url handling
+ * turns into hashed files. Nothing ever fetches them: core calls `setTranscoderPath`/
+ * `setDecoderPath` pointing at the compile-copied `basis/` and `draco/` folders instead, so a
+ * template web build shipped 1.93 MB of dead decoder files.
+ */
+const DECODER_LOADER_ID = /[/\\]examples[/\\]jsm[/\\]loaders[/\\](?:KTX2Loader|DRACOLoader)\.js$/u;
+const DECODER_LIB_ASSET_URL =
+  /new URL\(\s*(['"])\.\.\/libs\/([^'"]+)\1\s*,\s*import\.meta\.url\s*\)(?:\.toString\s*\(\s*\)|\.href\s*)?/gu;
+
+/**
+ * Replaces `new URL('../libs/…', import.meta.url).toString()` with a plain relative string, so
+ * Vite has no asset URL to emit. The loaders only ever use these as defaults that core always
+ * overrides, so the plain string is never resolved.
+ */
+export function rewriteDecoderAssetUrls(code: string): string {
+  return code.replace(DECODER_LIB_ASSET_URL, '"../libs/$2"');
 }
 
 const MARKER_RELATIVE = path.join("node_modules", ".vite", "threenative-engine-build.json");
@@ -146,6 +172,11 @@ export function createEngineFreshnessPlugin(): IEngineFreshnessVitePlugin {
         );
       }
       return { resolve, optimizeDeps: { force: true } };
+    },
+    transform(code, id) {
+      if (!DECODER_LOADER_ID.test(id)) return null;
+      const rewritten = rewriteDecoderAssetUrls(code);
+      return rewritten === code ? null : { code: rewritten, map: null };
     },
     configureServer(server) {
       const root = rootOf(server.config);

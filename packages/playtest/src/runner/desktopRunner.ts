@@ -29,9 +29,11 @@ export interface IDesktopPlaytestDependencies {
 /**
  * Arguments the native desktop host is launched with, from repeatable `--host-arg`.
  * A host that needs none still launches, so an absent list is empty rather than undefined.
+ * `--cpu-prof` rides along as the host's own flag (PRD-444).
  */
 function desktopHostArgs(config: IStandalonePlaytestConfig): readonly string[] {
-  return config.desktop?.hostArgs ?? [];
+  const args = config.desktop?.hostArgs ?? [];
+  return config.cpuProfilePath === undefined ? args : [...args, `--cpu-prof=${config.cpuProfilePath}`];
 }
 
 export async function runDesktopPlaytest(

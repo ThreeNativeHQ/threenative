@@ -57,6 +57,9 @@ for (const [mode, description] of [
   ["shutdown-full", "shutdown wakes workers blocked by completed-image backpressure"],
   ["saturation", "queue saturation rejects asynchronously instead of decoding on the frame thread"],
   ["owner-lifetime", "a queued completion cannot use a destroyed owner after recreation"],
+  ["shutdown-owner", "shutdown destroys in-flight callback captures on the owning thread"],
+  ["allocation-failure", "RGBA allocation failure rejects, frees codec pixels, and preserves the worker"],
+  ["missing-error", "codec failure without a diagnostic rejects safely"],
 ]) {
   nativeTest(description, () => {
     const result = spawnSync(contractBinary(), [mode], { encoding: "utf8", timeout: 10_000 });

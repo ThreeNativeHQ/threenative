@@ -82,11 +82,23 @@ struct UiOverlayFrame {
     uint32_t stride = 0;
     /// Advances only when the page's pixels changed, so an unchanged frame needs no upload.
     uint64_t counter = 0;
+    /**
+     * True when the bytes are `R,G,B,A` rather than the desktop's `B,G,R,A`.
+     *
+     * Android's `ImageReader` hands back `RGBA_8888`; cairo's `ARGB32` on a little-endian host is
+     * already `BGRA8Unorm`. The compositor picks its texture format from this rather than guessing,
+     * because a wrong pick renders the page with red and blue swapped.
+     */
+    bool isRgba = false;
 };
 
 /**
  * The newest completed UI frame. Returns false until the page has painted once, and false on
  * Windows and macOS, whose web views draw themselves and never pass through here.
+ *
+ * Android returns the in-frame producer's latest frame when `TN_UI_INFRAME` selected that path;
+ * with the flag off its child WebView still draws itself and this returns false, the pre-existing
+ * behavior.
  *
  * Call once per frame, before drawing the UI quad: the pointer it hands back belongs to the frame
  * it was asked about.
@@ -116,6 +128,9 @@ void setUiHitRegions(const std::vector<float>& regions);
  * nothing is attached.
  */
 bool uiOverlayHitTest(float nx, float ny);
+
+/** How many interactive rectangles the page last published, for the OS press verdict line. */
+size_t uiOverlayHitRegionCount();
 
 /**
  * Dispatch one synthetic pointer event into the page, at a point normalized to the viewport.

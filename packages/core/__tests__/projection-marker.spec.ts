@@ -8,6 +8,7 @@ import {
   SkinnedMesh,
 } from "three";
 import { describe, expect, it } from "vitest";
+import { MatrixWorldPass } from "../src/matrix-world.js";
 import { formatProjectionWindow, rankExactReasons } from "../src/projection-marker.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
@@ -89,6 +90,26 @@ describe("projection window marker", () => {
     // A declined frame draws the authored scene, so its plan is the authored count, not zero —
     // zero would read as "this frame cost nothing".
     expect(line.drawsPlanned).toBe(4);
+  });
+
+  it("should report the world-matrix walk's mode and visited count", () => {
+    const projection = new SceneRenderProjection(scenery(300), { minMeshes: 8 });
+    projection.reconcile();
+    const pass = new MatrixWorldPass({ mode: "all" });
+    pass.beginFrame();
+    pass.apply(scenery(3));
+    const line = payload(formatProjectionWindow(projection.report, 4, 41, undefined, pass.report));
+
+    expect(line.matrixWorld).toEqual({ mode: "all", visited: 4 });
+    pass.dispose();
+  });
+
+  it("should omit the world-matrix report when the engine did not run a walk", () => {
+    const projection = new SceneRenderProjection(scenery(300), { minMeshes: 8 });
+    projection.reconcile();
+    const line = payload(formatProjectionWindow(projection.report, 1, undefined));
+
+    expect("matrixWorld" in line).toBe(false);
   });
 
   it("should carry the reconcile timing so the frame attribution can read it", () => {

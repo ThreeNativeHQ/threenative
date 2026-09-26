@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -908,6 +908,17 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // A draft PR spends no runner: every job needs `scope`, so skipping it and the always() gate
+  // skips the board, and `ready_for_review` starts it once the draft is marked ready.
+  it("runs nothing on draft pull requests until they are marked ready", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(triggerSection(ci)).toContain(
+      "types: [opened, synchronize, reopened, ready_for_review]",
+    );
+    expect(ci).toContain("name: Change scope\n    if: ${{ !github.event.pull_request.draft }}");
+    expect(ci).toContain("if: ${{ always() && !github.event.pull_request.draft }}");
+  });
+
   it("preserves main qualification while enabling develop PRs and serializes release lanes", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
@@ -1204,9 +1215,26 @@ describe("CI pipeline structure", () => {
 
     const templateRoot = path.join(repo, "packages/create-threenative/templates");
     for (const [template, count] of new Map(entries.map((e) => [e.template, e.count]))) {
+      // The lane copies `template-playtests/<template>/` into the scaffold before it classifies
+      // (PRD-449), so the count is the union of the template's own scenarios and the engine
+      // guards a new game no longer ships. Classifying the template alone would understate a
+      // starter as 1 non-visual and condemn a matrix that is still correct.
+      const root = await makeTempDir("threenative-template-scenarios-");
+      const playtests = path.join(root, "playtests");
+      await mkdir(playtests, { recursive: true });
+      for (const source of [
+        path.join(templateRoot, template, "playtests"),
+        path.join(repo, "packages/create-threenative/template-playtests", template),
+      ]) {
+        await cp(source, playtests, { recursive: true }).catch((error: unknown) => {
+          // Most templates ship no guards, so the directory simply is not there.
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          throw error;
+        });
+      }
       const result = spawnSync(
         process.execPath,
-        [path.join(repo, "scripts/non-visual-scenarios.mjs"), path.join(templateRoot, template)],
+        [path.join(repo, "scripts/non-visual-scenarios.mjs"), root],
         { encoding: "utf8" },
       );
       expect(result.status, `${template}: ${result.stderr}`).toBe(0);
@@ -1215,6 +1243,7 @@ describe("CI pipeline structure", () => {
         count,
         `${template} declares ${count} shards for ${scenarios.length} scenarios`,
       ).toBeLessThanOrEqual(scenarios.length);
+      await rm(root, { force: true, recursive: true });
     }
   });
 
@@ -1981,30 +2010,16 @@ describe("CI pipeline structure", () => {
     );
   });
 
-  it("uses the cache-aware pnpm and Chromium actions in site and Android lanes", async () => {
-    const site = await readFile(path.join(repo, ".github/workflows/site.yml"), "utf8");
-    const siteBuild = requiredJob(site, "build");
-    const siteDeploy = requiredJob(site, "deploy");
+  it("uses the cache-aware pnpm and Chromium actions in the Android lane", async () => {
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
     const android = requiredJob(native, "android-emulator-parity");
-
-    for (const [name, section] of [
-      ["site build", siteBuild],
-      ["site deploy", siteDeploy],
-    ] as const) {
-      expect(section, `${name} does not use the local pnpm action`).toContain(
-        "uses: ./.github/actions/pnpm",
-      );
-      expect(section, `${name} still installs pnpm through the registry`).not.toContain(
-        "pnpm/action-setup",
-      );
-    }
-    expect(siteBuild).toContain("uses: ./.github/actions/playwright-chromium");
-    expect(siteBuild.indexOf("playwright-chromium")).toBeLessThan(siteBuild.indexOf("test:e2e"));
-    expect(siteBuild).not.toContain("playwright install --with-deps chromium");
+    expect(android).toContain("uses: ./.github/actions/pnpm");
+    expect(android, "android still installs pnpm through the registry").not.toContain(
+      "pnpm/action-setup",
+    );
     expect(android).toContain("uses: ./.github/actions/playwright-chromium");
     expect(android).not.toContain("playwright install --with-deps chromium");
   });
@@ -2109,6 +2124,13 @@ describe("CI pipeline structure", () => {
     // It reports its own red rather than swallowing it, and — since 2026-09-02 — without taking
     // the sibling legs down with it: see "no job cancels its own run".
     expect(android).toContain("Verify captured parity ledger");
+
+    // iOS is not a supported target (owner decision, 2026-09-23), so its simulator lane runs and
+    // reports but cannot fail the reusable workflow — otherwise a red iOS leg holds the
+    // develop->main `ci-required` verdict. `native-release.yml` still gates the iOS rows for a
+    // release, so this only leaves the merge verdict.
+    const ios = requiredJob(native, "ios-simulator");
+    expect(ios).toContain("continue-on-error: true");
   });
 
   it("job-level env never reads the runner context", async () => {
@@ -2568,6 +2590,25 @@ describe("CI pipeline structure", () => {
     expect(simulator).not.toContain("--help");
   });
 
+  it("proves desktop release signing with test credentials on both hosted hosts", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const desktop = requiredJob(native, "desktop");
+    // Owner decision 2026-09-23: each developer signs their own game; the engine ships no
+    // certificate. The lane proves the credential path with a runner-generated certificate on each
+    // host, and reads the signature back independently of the adapter that wrote it. Without this
+    // the macOS half signs ad-hoc and the credentialed path the decision names stays unwired.
+    expect(desktop).toContain("Create a self-signed code-signing certificate for the proof");
+    expect(desktop).toContain("Create a self-signed code-signing certificate for the macOS proof");
+    expect(desktop).toContain("THREENATIVE_DESKTOP_SIGN_SUBJECT=ThreeNative CI Signing Proof");
+    expect(desktop).toContain('THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY"');
+    expect(desktop).toContain("Get-AuthenticodeSignature");
+    expect(desktop).toContain("codesign --verify --strict --deep");
+    expect(desktop).toContain("Authority=ThreeNative CI Signing Proof");
+  });
+
   it("plans real alternating pairs and rejects unsafe or incomparable hardware evidence", () => {
     expect(
       plannedPerformancePairs("native-android", "/repo/baseline", "/repo/candidate").map(
@@ -2809,8 +2850,6 @@ describe("PRD-373 selective feature verification", () => {
     ["docs/PRDs/inert.md", "prose"],
     ["AGENTS.md", "instructions"],
     ["packages/playtest/CLAUDE.md", "instructions"],
-    ["site/src/components/Hero.tsx", "website"],
-    ["site/e2e/drawer.spec.ts", "website"],
   ])("selects %s on develop without scheduling native", async (relative, selection) => {
     const fixture = await scopeFixture();
     try {
@@ -2822,7 +2861,6 @@ describe("PRD-373 selective feature verification", () => {
       expect(jobs["native-platforms"]?.reason.length).toBeGreaterThan(10);
       expect(jobs["supply-chain"]?.required).toBe(selection !== "prose");
       expect(jobs.lint?.required).toBe(selection !== "prose");
-      expect(jobs.website?.required).toBe(selection === "website");
       expect((plan.checks as Record<string, boolean>).instructions).toBe(
         selection === "instructions",
       );
@@ -2837,7 +2875,6 @@ describe("PRD-373 selective feature verification", () => {
     "packages/create-threenative/templates/starter/src/game.ts",
     "packages/physics/src/index.ts",
     "examples/native-smoke/src/index.ts",
-    "site/package.json",
     "tsconfig.base.json",
     ".github/workflows/ci.yml",
     "templates/topdown/CLAUDE.md",
@@ -2854,7 +2891,6 @@ describe("PRD-373 selective feature verification", () => {
           "test-native": { required: true },
           "golden-path-template": { required: true },
           "template-nonvisual": { required: true },
-          website: { required: true },
         });
         const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
         expect(native?.reason.length).toBeGreaterThan(10);
@@ -2863,6 +2899,19 @@ describe("PRD-373 selective feature verification", () => {
       }
     },
   );
+
+  it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
+    // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
+    // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
+    // hand; this setting answers it for every install. pnpm reads workspace config from
+    // pnpm-workspace.yaml, so a plain grep of package.json would not prove it.
+    const result = spawnSync("pnpm", ["config", "get", "confirmModulesPurge"], {
+      cwd: repo,
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("false");
+  });
 
   it.each([
     "packages/runtime-native/native/CMakeLists.txt",
@@ -3003,32 +3052,29 @@ describe("PRD-373 selective feature verification", () => {
     }
   });
 
-  it("unions docs, instructions and website checks without losing either rename endpoint", async () => {
+  it("unions docs and instructions without losing either rename endpoint", async () => {
     const fixture = await scopeFixture();
     try {
-      await commitScopeChange(fixture, "site/src/old.ts", "export const old = 1;\n", "site");
-      await commitScopeChange(fixture, "AGENTS.md", "instructions\n", "agents");
-      let head = fixture.git(["rev-parse", "HEAD"]);
+      const head = await commitScopeChange(fixture, "AGENTS.md", "instructions\n", "agents");
       expect(
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]),
       ).toMatchObject({
-        selection: "mixed",
-        checks: { instructions: true, website: true },
-        jobs: { website: { required: true }, "native-platforms": { required: false } },
+        selection: "instructions",
+        checks: { instructions: true },
+        jobs: { "native-platforms": { required: false } },
       });
       await mkdir(path.join(fixture.root, "packages/core/src"), { recursive: true });
-      fixture.git(["mv", "site/src/old.ts", "packages/core/src/moved.ts"]);
+      fixture.git(["mv", "AGENTS.md", "packages/core/src/moved.ts"]);
       fixture.git(["commit", "--quiet", "-m", "rename into shared runtime"]);
-      head = fixture.git(["rev-parse", "HEAD"]);
+      const renamed = fixture.git(["rev-parse", "HEAD"]);
       expect(
-        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
+        classifyScope(fixture.root, fixture.base, renamed, ["--target", "develop"]).selection,
       ).toBe("full");
-      const beforeDelete = head;
       fixture.git(["rm", "packages/core/src/moved.ts"]);
       fixture.git(["commit", "--quiet", "-m", "delete shared runtime"]);
-      expect(
-        classifyScope(fixture.root, beforeDelete, "HEAD", ["--target", "develop"]).selection,
-      ).toBe("full");
+      expect(classifyScope(fixture.root, renamed, "HEAD", ["--target", "develop"]).selection).toBe(
+        "full",
+      );
     } finally {
       await removeFixture(fixture.root);
     }

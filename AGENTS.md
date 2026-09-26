@@ -100,7 +100,9 @@ retarget in-flight PRs individually, and never rewrite another worktree. Keep th
 gates and exact-main push qualification. Activation and rollback:
 `docs/PRDs/production-readiness/PRD-373-selective-ci-and-develop-promotion.md`.
 **Prove it locally before you push** and record unrun platform gates honestly. Registry commands
-take the untracked local `.npmrc` explicitly (`npm --userconfig .npmrc <command>`); never print it.
+read auth from the user's npm config (`~/.npmrc`); a checkout-local untracked `.npmrc` is passed
+explicitly (`npm --userconfig .npmrc <command>`) when one exists, and a fresh worktree has none.
+Never print either file.
 
 TypeScript 5.9 `strict`, **ESM only**; relative imports carry `.js` even though the file is `.ts`. Versions come from the `catalog:` in `pnpm-workspace.yaml`, templates excepted. Biome owns formatting — do not hand-format. Interfaces are `I`-prefixed, classes and type aliases are not. Unit tests are `<package>/__tests__/*.spec.ts`, vitest, node environment, DOM and GPU stubbed.
 

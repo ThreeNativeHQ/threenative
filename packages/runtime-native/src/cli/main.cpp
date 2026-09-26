@@ -17,6 +17,7 @@
 #include "mystral/screenshot_gate.h"
 #include "tool_dispatch.h"
 #include "mystral/platform/ui_overlay.h"
+#include "mystral/platform/window.h"
 #include "mystral/vfs/embedded_bundle.h"
 #include "mystral/debug/debug_server.h"
 #include "mystral/video/async_capture.h"
@@ -30,6 +31,7 @@
 #include <cstdint>
 #include <cstring>
 #include <chrono>
+#include <csignal>
 #include <thread>
 #include <condition_variable>
 #include <cstdlib>
@@ -53,6 +55,16 @@ static void dumpLlvmProfile() {
 }
 #else
 static void dumpLlvmProfile() {}
+#endif
+
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+// Flush a requested CPU profile before a deliberate `_exit`, which runs no destructor. Idempotent.
+static int finalizeCpuProfile(int exitCode) {
+    if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
+    return mystral::js::g_cpuProfileFailed ? 1 : exitCode;
+}
+#else
+static int finalizeCpuProfile(int exitCode) { return exitCode; }
 #endif
 
 // WebP animation encoding (for video recording)
@@ -463,6 +475,10 @@ VIDEO RECORDING OPTIONS:
                           Directly encodes to H.264 MP4 with low CPU overhead
     --gpu-capture         Force GPU readback capture (fallback mode, works everywhere)
 
+PROFILING OPTIONS:
+    --cpu-prof <file>     Write a Chrome DevTools .cpuprofile of this run and print the top
+                          self-time functions on exit; no system profiler to install.
+
 DEBUG/TESTING OPTIONS:
     --debug               Enable verbose debug logging (WebGPU, shaders, etc.)
     --debug-port <port>   Enable debug server on specified port (e.g., 9222)
@@ -590,6 +606,8 @@ struct CLIOptions {
     // Verbose logging
     bool debug = false;  // Enable verbose WebGPU/shader logging
 
+    std::string cpuProfilePath;  // PRD-444: DevTools `.cpuprofile` target; empty = summary only
+
     // The built UI bundle to render over the game surface, or empty for the native renderer.
     std::string uiRoot;
     bool bypassUiLoading = false;
@@ -683,6 +701,10 @@ CLIOptions parseArgs(int argc, char* argv[]) {
             // measurement of the monitor. `configureSurface` already refuses to fall back to FIFO
             // when an uncapped mode is unavailable, so this either measures the engine or fails.
             opts.vsync = false;
+        } else if (arg == "--cpu-prof" && i + 1 < argc) {
+            opts.cpuProfilePath = argv[++i];
+        } else if (arg.rfind("--cpu-prof=", 0) == 0) {  // the playtest runner's one-arg form
+            opts.cpuProfilePath = arg.substr(std::string("--cpu-prof=").size());
         } else if (arg == "--quiet" || arg == "-q") {
             opts.quiet = true;
         } else if (arg == "--headless") {
@@ -1265,18 +1287,15 @@ static int runScreenshotMode(
         }
     }
     // Finalize capture before the deliberate exit; runtime destruction may crash after screenshots.
-#if TN_ANDROID_JS_PROFILE
-    if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
-#endif
     host.finalizePipelineCapture();
     std::cout.flush();
     std::cerr.flush();
 #ifndef MYSTRAL_CLI_NO_MAIN
     dumpLlvmProfile();
-    _exit(success ? 0 : 1);
+    _exit(finalizeCpuProfile(success ? 0 : 1));
 #else
     runtime.reset();
-    return success ? 0 : 1;
+    return finalizeCpuProfile(success ? 0 : 1);
 #endif
 }
 
@@ -1394,7 +1413,7 @@ static int runLegacyWebPVideo(const CLIOptions& opts, std::unique_ptr<mystral::R
     }
     std::cout.flush();
     std::cerr.flush();
-    _exit(success ? 0 : 1);
+    _exit(finalizeCpuProfile(success ? 0 : 1));
 }
 #endif
 
@@ -1451,7 +1470,7 @@ static int runVideoRecorder(const CLIOptions& opts, std::unique_ptr<mystral::Run
     SDL_PumpEvents();
     std::cout.flush();
     std::cerr.flush();
-    _exit(success ? 0 : 1);
+    _exit(finalizeCpuProfile(success ? 0 : 1));
 }
 
 static int runVideoMode(const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
@@ -1694,6 +1713,7 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
     }
     if (!opts.quiet) std::cout << "=== Script finished ===" << std::endl;
 #ifndef MYSTRAL_CLI_NO_MAIN
+    exitCode = finalizeCpuProfile(exitCode);
 #ifdef __APPLE__
     // SDL3's audio callback threads can prevent graceful shutdown, so give them a moment then kill.
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -1706,7 +1726,7 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
     ExitProcess(exitCode);
 #endif
 #else
-    return exitCode;
+    return finalizeCpuProfile(exitCode);
 #endif
 }
 
@@ -1724,6 +1744,14 @@ int runScript(const CLIOptions& opts) {
     }
 
     setupHeadlessEnvironment(opts);
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    if (!opts.cpuProfilePath.empty()) mystral::js::g_cpuProfilePath = opts.cpuProfilePath;
+#else
+    if (!opts.cpuProfilePath.empty()) {
+        std::cerr << "Error: --cpu-prof requires a build compiled with TN_JS_PROFILE=ON." << std::endl;
+        return 1;
+    }
+#endif
     bool screenshotMode = !opts.screenshotPath.empty();
     bool videoMode = !opts.videoPath.empty();
     printRunBanner(opts, screenshotMode, videoMode);
@@ -1768,10 +1796,21 @@ int runScript(const CLIOptions& opts) {
     // more than once a launch. This brackets the one that is the game.
     mystral::coldStartMark("game_eval_begin");
     if (!runtime->loadScript(opts.scriptPath)) {
+        // The window is already open, so this is the one failure a developer sees without reading
+        // a log: the title says the game did not start, the line is prefixed so a grep finds it,
+        // and the process exits non-zero rather than leaving a window that draws nothing. A launch
+        // that survives a bundle which never evaluated is the silent failure this refuses.
+        const char* title = "ThreeNative - the game did not start (TN_FATAL in the log)";
+        mystral::platform::setWindowTitle(title);
+        std::cerr << "[TN_FATAL] the game script did not load: " << opts.scriptPath << std::endl;
         stopUiDeadlineAndReport();
-        std::cerr << "Error: Failed to evaluate script!" << std::endl;
         return 1;
     }
+#if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
+    // After runtime startup (SDL resets dispositions); the render loop flushes on the flag.
+    if (!opts.cpuProfilePath.empty())
+        std::signal(SIGTERM, [](int) { mystral::js::g_cpuProfileStopRequested = 1; });
+#endif
     const int exitCode = driveMainLoop(opts, runtime);
     return stopUiDeadlineAndReport() ? 1 : exitCode;
 }

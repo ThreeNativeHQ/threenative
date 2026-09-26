@@ -132,7 +132,8 @@ jobs:
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
+    timeout-minutes: 210
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
@@ -746,15 +747,19 @@ jobs:
           test -s reports/parity.json
           test -s reports/provenance.json
       # `error`, not `warn`. A warn here is what let a green run ship with no reports at all.
+      # The leading wildcard is load-bearing: upload-artifact strips everything before the first
+      # wildcard, and a bare `reports/parity.json` flattened to `parity.json`, which the candidate
+      # gate resolves as `reports/parity.json` and then refuses. `*/parity.json` matches `reports`
+      # and keeps `reports/parity.json` inside the artifact.
       - uses: actions/upload-artifact@v7
         with:
           name: native-release-parity
-          path: reports/parity.json
+          path: "*/parity.json"
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
           name: native-release-provenance
-          path: reports/provenance.json
+          path: "*/provenance.json"
           if-no-files-found: error
 
   desktop-parity:
@@ -898,6 +903,16 @@ jobs:
           pnpm parity:ledger "$RUNNER_TEMP/prd-303-desktop-parity-ledger.md"
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/desktop "desktop parity"
+      # The one platform whose UI path differs: on Linux the page is a texture inside the game's
+      # own frame, so this gate asserts the composite's counter and size, the page's own colour in
+      # the captured frame, and the routing table, all from one run. Windows and macOS run the same
+      # verifier through `native:verify:desktop` in the `desktop` matrix job below — exactly how the
+      # loading gate is wired — and there it asserts the child-web-view half and names the two
+      # frame assertions it cannot make (platform::uiOverlayFrame reports no page frame off Linux).
+      # Android and iOS attach their own web views from their own hosts (Java/Swift) and keep their
+      # own lanes; nothing in this gate applies to them.
+      - name: Verify the web UI composites into the game's own frame
+        run: pnpm --filter @threenative/runtime-native native:verify:ui-frame
       - name: Collect bounded desktop performance evidence from the existing binary
         if: always()
         run: |
@@ -1230,6 +1245,70 @@ jobs:
           if (-not $signtool) { throw 'TN_DESKTOP_SIGNING_PROOF: no signtool.exe found in the Windows SDK' }
           Add-Content -Path $env:GITHUB_PATH -Value $signtool.DirectoryName
           Write-Host "created $($cert.Thumbprint) for CN=$subject; signtool at $($signtool.FullName)"
+      # PRD-365 phase 3, macOS half of the owner's 2026-09-23 decision: prove that
+      # `threenative build --mode release` signs with a developer credential, using a certificate
+      # generated on the runner. The Windows leg already does this with `signtool /n`; this mirrors
+      # it for `codesign`. The certificate is self-signed and discarded, so this proves the adapter,
+      # `codesign` and the host, not Developer ID trust or notarization — those stay PENDING.
+      - name: Create a self-signed code-signing certificate for the macOS proof
+        if: matrix.platform == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/tn-signing-proof.keychain-db"
+          password="$(openssl rand -hex 16)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          # A certificate is only a codesigning identity when it carries the codeSigning extended
+          # key usage; without it `security find-identity -p codesigning` never lists it and
+          # `codesign` reports "no identity found". A config file rather than `-addext` because
+          # macOS ships LibreSSL, whose `req` support differs from OpenSSL's.
+          cat > "$RUNNER_TEMP/tn-signing-proof.cnf" <<'EOF'
+          [req]
+          distinguished_name = dn
+          x509_extensions = codesign
+          prompt = no
+          [dn]
+          CN = ThreeNative CI Signing Proof
+          [codesign]
+          keyUsage = digitalSignature
+          extendedKeyUsage = codeSigning
+          basicConstraints = critical, CA:FALSE
+          EOF
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+            -keyout "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+            -out "$RUNNER_TEMP/tn-signing-proof-cert.pem" \
+            -config "$RUNNER_TEMP/tn-signing-proof.cnf"
+          # LibreSSL and OpenSSL 3 disagree on the PKCS#12 default cipher, and a failed import here
+          # would read later as "no identity found". OpenSSL 3's modern default (AES-256-CBC with
+          # a SHA-256 MAC) exports fine but macOS refuses it with "SecKeychainItemImport: MAC
+          # verification failed during PKCS12 import" — so lead with the legacy algorithms macOS
+          # accepts, and fall back to the modern default only where -legacy is unavailable (LibreSSL,
+          # whose default is already importable).
+          # macOS `security import` fails the MAC check on an empty-password PKCS#12, so use a throwaway one.
+          p12_password="$(openssl rand -hex 16)"
+          p12="$RUNNER_TEMP/tn-signing-proof.p12"
+          if ! openssl pkcs12 -export -legacy -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout "pass:$p12_password" 2>/dev/null; then
+            openssl pkcs12 -export -out "$p12" -inkey "$RUNNER_TEMP/tn-signing-proof-key.pem" \
+              -in "$RUNNER_TEMP/tn-signing-proof-cert.pem" -passout "pass:$p12_password"
+          fi
+          security import "$p12" -k "$keychain" -P "$p12_password" -T /usr/bin/codesign
+          # Without the partition list `codesign` blocks on a keychain-access prompt a hosted runner
+          # cannot answer, which reads as a signing failure.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security default-keychain -s "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # A throwaway self-signed certificate is never trusted, so `find-identity -v` (valid only)
+          # lists nothing; codesign still signs with an untrusted identity named by its SHA-1 hash.
+          security find-identity -p codesigning "$keychain" | tee "$RUNNER_TEMP/tn-signing-identity.txt"
+          identity_hash="$(grep 'ThreeNative CI Signing Proof' "$RUNNER_TEMP/tn-signing-identity.txt" | head -1 | awk '{print $2}')"
+          if [ -z "$identity_hash" ]; then
+            echo "TN_DESKTOP_SIGNING_PROOF: the generated certificate is not a usable codesigning identity." >&2
+            exit 1
+          fi
+          echo "TN_SIGNING_PROOF_IDENTITY=$identity_hash" >> "$GITHUB_ENV"
       # The container records every DLL the executable imports so it can be relocated, and
       # `desktop-distribution.mjs` reads them with `dumpbin`, which lives only inside the Visual
       # Studio developer environment. Enter it here rather than exporting it through GITHUB_ENV,
@@ -1253,9 +1332,10 @@ jobs:
           set -euo pipefail
           pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/desktop-finalization.test.mjs
           target="$RUNNER_TEMP/threenative-starter-native"
-          # Ad-hoc signing proves seal integrity and hardened-runtime playability without
-          # claiming Developer ID trust, notarization or Gatekeeper acceptance.
-          THREENATIVE_DESKTOP_CODESIGN_IDENTITY=- \
+          # The test credential created above, exactly as the Windows leg passes its own subject:
+          # this proves the release build signs with a developer identity rather than ad-hoc, while
+          # Developer ID trust, notarization and Gatekeeper acceptance stay PENDING.
+          THREENATIVE_DESKTOP_CODESIGN_IDENTITY="$TN_SIGNING_PROOF_IDENTITY" \
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-macos/mystral" \
             pnpm --dir "$target" exec threenative build --target desktop --mode release
       - name: Relocate and extract the release container outside the project
@@ -1371,6 +1451,31 @@ jobs:
             [ -f "$container/$icon" ] || {
               echo "TN_DESKTOP_IDENTITY_ICON_MISSING: recorded icon $icon is absent from the container." >&2; exit 1; }
           fi
+      # PRD-365 phase 3, macOS half: read the release build's signature back independently of the
+      # code that wrote it. The manifest records the scheme; `codesign` confirms the seal and
+      # `codesign -dv` names the test signer. This is what turns "the build passed a credential"
+      # into "the artifact a player downloads is signed by it".
+      - name: Read the macOS signature back off the release container
+        if: matrix.platform == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="$TN_RELEASE_CONTAINER_ROOT"
+          manifest=$(find "$container" -name threenative-container.json -type f -print)
+          signed=$(node -e "const m=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'));process.stdout.write(String(m.signed)+' '+String(m.signingScheme))" "$manifest")
+          printf '%s\n' "manifest signed/scheme: $signed"
+          case "$signed" in
+            "true codesign") ;;
+            *) echo "TN_DESKTOP_SIGNING_PROOF: release manifest records '$signed', not 'true codesign'." >&2; exit 1 ;;
+          esac
+          codesign --verify --strict --deep "$container"
+          details=$(codesign -dv --verbose=4 "$container" 2>&1)
+          printf '%s\n' "$details"
+          printf '%s\n' "$details" | grep -q 'Authority=ThreeNative CI Signing Proof' || {
+            echo "TN_DESKTOP_SIGNING_PROOF: the release container is not signed by the CI proof identity." >&2
+            exit 1
+          }
+          echo "TN_DESKTOP_SIGNING_PROOF_SCHEME:codesign"
       # PRD-375: the shipped brand inspector, against the exact packaged artifact. It reads the
       # .exe's own RT_GROUP_ICON/RT_ICON and RT_VERSION/VS_FIXEDFILEINFO on Windows and the
       # .icns/Info.plist linkage on macOS, comparing them with the consumer config the build
@@ -1829,6 +1934,12 @@ jobs:
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60
+    # Non-blocking since 2026-09-23: iOS is not a supported target (owner decision, see
+    # docs/PRDs/production-readiness/README.md). The lane still runs and reports its own red, but a
+    # red here no longer fails the reusable workflow, so it cannot hold the develop->main
+    # promotion's `ci-required` verdict. `native-release.yml` still validates the iOS rows for a
+    # release, so dropping this from the merge verdict does not weaken release provenance.
+    continue-on-error: true
     # The simulator verifier and the exact no-Xcode consumer handoff passed in isolated run
     # 33498394620 on 2026-09-01, including the worker proof, package telemetry, and consumer
     # physics scenarios. The job is fail-closed: a later regression is visible immediately on

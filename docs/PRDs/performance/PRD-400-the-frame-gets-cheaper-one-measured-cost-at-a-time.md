@@ -10,6 +10,7 @@ prd_contract: v1
 recorder and the C++ replay (+3), retained projection and command-plan state (+2), crosses the native
 host build (+2); risk override: none.
 **Owner:** Engine performance agent, executing through the `perf-loop` skill Phase 1 creates.
+**Rescue note (2026-09-25):** PR #289 was reconciled onto current `develop` after 51 commits of integration drift. The previous Windows native qualification failed in the PRD-400 production collector while rebuilding its staged platformer: Vite/Rolldown rejected the generated `.threenative-ui-*.html` path from the Windows OS temp volume. Normal Windows desktop packaging in the same job was green. The collector now stages repository qualification under the checkout's `.runtime/` volume, preserving the authored web UI and the newer prebuilt-runtime/window-size fixes from `develop`. The failing Windows job is the RED; latest-head Windows qualification is the GREEN gate and remains pending until CI runs.
 **Depends on:** nothing to start. Absorbs, never repeats: [PRD-388](critical/PRD-388-an-automatic-optimizer-must-price-its-own-cost.md)
 (projection prices its own cost), [PRD-389](critical/PRD-389-the-frame-budgets-instruments-do-not-lie.md)
 (instrument honesty), PRD-395/396 (render-phase attribution, branch-only), and

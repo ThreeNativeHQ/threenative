@@ -197,10 +197,22 @@ pub struct Shared {
 
 impl Shared {
     pub fn push_command(&self, command: Command) {
-        self.commands
+        let mut queue = self
+            .commands
             .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .push_back(command);
+            .unwrap_or_else(|error| error.into_inner());
+        // A move that lands while an earlier move is still waiting replaces it: the page only needs
+        // the newest position, and a 1000 Hz mouse would otherwise queue an evaluation per sample
+        // against the snapshot work on the same thread. Only the command at the back is collapsed,
+        // so a press, release, resize or post queued after a move keeps that move in front of it and
+        // order is preserved; a move queued after one of those starts a new pending move.
+        let replace_back = matches!(&command, Command::Pointer { kind, .. } if kind == "pointermove")
+            && matches!(queue.back(), Some(Command::Pointer { kind, .. }) if kind == "pointermove");
+        if replace_back {
+            *queue.back_mut().expect("back() was Some") = command;
+        } else {
+            queue.push_back(command);
+        }
     }
 
     fn take_command(&self) -> Option<Command> {
@@ -750,11 +762,22 @@ struct Driver {
     /// symptom a reader can act on.
     requests: u64,
     last_round_trip: Duration,
+    /// Time the last completion spent copying and comparing, so the trace can separate WebKit's
+    /// raster/IPC from this thread's own read of it.
+    last_read: Duration,
     last_report: Instant,
     /// The bytes published last, kept so an unchanged frame is not published at all.
     previous: Option<Arc<Vec<u8>>>,
     /// Buffers to write the next snapshot into, so a static HUD is not an allocation per tick.
     pool: Vec<Vec<u8>>,
+    /// Force one full invalidation before the next snapshot.
+    ///
+    /// Only the first request after create, and the first after a resize: at those points the page
+    /// may have painted nothing at the current size, so WebKit has no invalidated region to
+    /// snapshot and would hand back the previous (or blank) surface. Every later request relies on
+    /// the page's own rAF, which invalidates exactly what changed; forcing a full redraw per poll
+    /// makes WebKit re-raster the whole page on every ask, which is most of the measured round trip.
+    force_draw: bool,
 }
 
 impl Driver {
@@ -778,9 +801,11 @@ impl Driver {
             cadence: Cadence::new(Instant::now()),
             requests: 0,
             last_round_trip: Duration::ZERO,
+            last_read: Duration::ZERO,
             last_report: Instant::now(),
             previous: None,
             pool: Vec::new(),
+            force_draw: true,
         }
     }
 
@@ -961,6 +986,9 @@ impl Driver {
         self.size = (width, height);
         self.window.set_size_request(width as i32, height as i32);
         self.view.set_size_request(width as i32, height as i32);
+        // The page has not painted at the new size, so the next snapshot needs one forced
+        // invalidation or it reads the old-size backing store.
+        self.force_draw = true;
         self.wake();
     }
 
@@ -983,7 +1011,13 @@ impl Driver {
         self.cadence.requested(self.in_flight_since);
         self.requests += 1;
         trace_snapshot("request", self.requests, "");
-        self.view.queue_draw();
+        // See `force_draw`: only the first ask after create, and the first after a resize, need a
+        // full invalidation. The page's own rAF invalidates every later change, and re-rasterizing
+        // the whole page on every poll is the cost this avoids.
+        if self.force_draw {
+            self.view.queue_draw();
+            self.force_draw = false;
+        }
         let driver = Rc::clone(driver);
         self.view.snapshot(
             SnapshotRegion::Visible,
@@ -996,18 +1030,19 @@ impl Driver {
     fn complete(&mut self, result: Result<gtk::cairo::Surface, gtk::glib::Error>) {
         self.in_flight = false;
         let now = Instant::now();
+        // Request -> callback: WebKit's raster and snapshot IPC. The copy and compare that follow
+        // are this thread's own work and are timed separately, so a run can say which dominates.
         self.last_round_trip = self.in_flight_since.elapsed();
-        let Some((width, height, stride, buffer)) = self.read(result) else {
+        let read_started = Instant::now();
+        let read = self.read(result);
+        self.last_read = read_started.elapsed();
+        let Some((width, height, stride, buffer, unchanged)) = read else {
             // A snapshot that failed or came back in a shape we cannot upload: try again, but not
             // in a tight loop, so a permanently broken web view cannot spin a core.
             self.cadence.settled(now, false);
             self.trace_settled(now, false);
             return;
         };
-        let unchanged = self
-            .previous
-            .as_deref()
-            .is_some_and(|previous| previous.as_slice() == buffer.as_slice());
         if unchanged {
             self.pool.push(buffer);
         } else {
@@ -1033,9 +1068,10 @@ impl Driver {
             "settled",
             self.requests,
             &format!(
-                ",\"changed\":{},\"roundTripMs\":{},\"quietMs\":{},\"waitMs\":{}",
+                ",\"changed\":{},\"snapshotMs\":{},\"readMs\":{},\"quietMs\":{},\"waitMs\":{}",
                 changed,
                 self.last_round_trip.as_millis(),
+                self.last_read.as_millis(),
                 self.cadence.quiet(now).as_millis(),
                 self.cadence.wait(now).as_millis()
             ),
@@ -1043,10 +1079,14 @@ impl Driver {
     }
 
     /// Read a completed snapshot into a pooled buffer, or `None` if it is not something we can use.
+    ///
+    /// The returned flag is the "unchanged" the cadence backs off on, decided in the same pass that
+    /// copies the pixels: the frame is compared against `previous` row by row as it is copied, so an
+    /// idle HUD no longer pays a second full sweep of an 8.3 MB `memcmp` after the copy.
     fn read(
         &mut self,
         result: Result<gtk::cairo::Surface, gtk::glib::Error>,
-    ) -> Option<(u32, u32, u32, Vec<u8>)> {
+    ) -> Option<(u32, u32, u32, Vec<u8>, bool)> {
         let surface = result.ok()?;
         surface.flush();
         let mut image = gtk::cairo::ImageSurface::try_from(surface).ok()?;
@@ -1061,11 +1101,56 @@ impl Driver {
         if data.len() < length {
             return None;
         }
+        let previous = self.previous.clone();
         let mut buffer = self.pool.pop().unwrap_or_default();
-        buffer.clear();
-        buffer.extend_from_slice(&data[..length]);
-        Some((width as u32, height as u32, stride as u32, buffer))
+        let unchanged = copy_and_compare(
+            &data[..length],
+            stride as usize,
+            previous.as_deref().map(Vec::as_slice),
+            &mut buffer,
+        );
+        Some((
+            width as u32,
+            height as u32,
+            stride as u32,
+            buffer,
+            unchanged,
+        ))
     }
+}
+
+/// Copy `data` into `buffer` one row at a time, deciding equality against `previous` as it goes.
+///
+/// `row` is the stride in bytes. Returns true only when every copied byte matches a `previous` of
+/// the same length — the exact "unchanged" the cadence used to derive from a second `memcmp`.
+/// A `previous` of a different length (a resize) is never unchanged. The comparison short-circuits
+/// the moment a row differs, but the copy never stops.
+fn copy_and_compare(
+    data: &[u8],
+    row: usize,
+    previous: Option<&[u8]>,
+    buffer: &mut Vec<u8>,
+) -> bool {
+    buffer.clear();
+    buffer.reserve(data.len());
+    let previous = previous.filter(|previous| previous.len() == data.len());
+    let mut unchanged = previous.is_some();
+    match previous {
+        Some(previous) => {
+            let mut start = 0;
+            while start < data.len() {
+                let end = (start + row).min(data.len());
+                let chunk = &data[start..end];
+                if unchanged && chunk != &previous[start..end] {
+                    unchanged = false;
+                }
+                buffer.extend_from_slice(chunk);
+                start = end;
+            }
+        }
+        None => buffer.extend_from_slice(data),
+    }
+    unchanged
 }
 
 /// A JSON string literal holding `frame`, so a quote or a newline in the payload cannot end it.
@@ -1388,6 +1473,68 @@ send('loaded');
         assert!(shared.take_command().is_none());
     }
 
+    fn pointer_move(nx: f32) -> Command {
+        Command::Pointer {
+            kind: "pointermove".to_string(),
+            nx,
+            ny: 0.0,
+            buttons: 0,
+            pointer_id: 1,
+        }
+    }
+
+    fn take_move(shared: &Shared) -> f32 {
+        match shared.take_command() {
+            Some(Command::Pointer { kind, nx, .. }) => {
+                assert_eq!(kind, "pointermove");
+                nx
+            }
+            _ => panic!("expected a pending pointermove"),
+        }
+    }
+
+    #[test]
+    fn consecutive_moves_collapse_to_the_newest_but_never_across_another_command() {
+        let shared = Shared::default();
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(pointer_move(0.2));
+        shared.push_command(pointer_move(0.3));
+        assert_eq!(take_move(&shared), 0.3, "three moves leave the newest");
+        assert!(shared.take_command().is_none());
+
+        // A move queued before a press stays in front of it: collapsing it would reorder the press
+        // ahead of a position the page had already been told about.
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(Command::Pointer {
+            kind: "pointerdown".to_string(),
+            nx: 0.1,
+            ny: 0.0,
+            buttons: 1,
+            pointer_id: 1,
+        });
+        shared.push_command(pointer_move(0.2));
+        shared.push_command(pointer_move(0.3));
+        assert_eq!(take_move(&shared), 0.1, "the move before the press is kept");
+        match shared.take_command() {
+            Some(Command::Pointer { kind, .. }) => assert_eq!(kind, "pointerdown"),
+            _ => panic!("the press follows the move it was queued after"),
+        }
+        assert_eq!(take_move(&shared), 0.3, "moves after the press collapse together");
+        assert!(shared.take_command().is_none());
+
+        // Any non-move command between two moves breaks the collapse as well.
+        shared.push_command(pointer_move(0.1));
+        shared.push_command(Command::Post("state".to_string()));
+        shared.push_command(pointer_move(0.2));
+        assert_eq!(take_move(&shared), 0.1);
+        match shared.take_command() {
+            Some(Command::Post(frame)) => assert_eq!(frame, "state"),
+            _ => panic!("the post keeps its place"),
+        }
+        assert_eq!(take_move(&shared), 0.2);
+        assert!(shared.take_command().is_none());
+    }
+
     #[test]
     fn page_frames_are_served_oldest_first() {
         let shared = Shared::default();
@@ -1410,5 +1557,34 @@ send('loaded');
         assert_eq!(serde_frame("a\"b"), "\"a\\\"b\"");
         assert_eq!(serde_frame("a\nb"), "\"a\\nb\"");
         assert_eq!(serde_frame("plain"), "\"plain\"");
+    }
+
+    #[test]
+    fn the_scan_says_unchanged_only_for_byte_identical_pixels() {
+        let frame = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        let mut buffer = Vec::new();
+        assert!(
+            copy_and_compare(&frame, 4, Some(frame.as_slice()), &mut buffer),
+            "a frame equal to the previous one is unchanged"
+        );
+        assert_eq!(buffer, frame, "the copy is the whole frame either way");
+
+        let mut changed = frame.clone();
+        changed[4] = 9;
+        assert!(
+            !copy_and_compare(&changed, 4, Some(frame.as_slice()), &mut buffer),
+            "one differing byte anywhere makes the frame changed"
+        );
+        assert_eq!(buffer, changed, "a changed frame is copied in full");
+    }
+
+    #[test]
+    fn a_previous_frame_of_another_size_is_never_unchanged() {
+        // A resize: the old buffer's length differs, which must publish, not back off.
+        let mut buffer = Vec::new();
+        let frame = vec![0u8; 8];
+        assert!(!copy_and_compare(&frame, 4, Some(&[0u8; 4]), &mut buffer));
+        assert!(!copy_and_compare(&frame, 4, None, &mut buffer));
+        assert_eq!(buffer, frame);
     }
 }

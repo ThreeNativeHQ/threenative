@@ -94,7 +94,31 @@ void AudioParam::setTargetAtTime(float value, double startTime, double timeConst
     automation_.store(Automation::Target, std::memory_order_release);
 }
 
+bool AudioParam::isConstantOver(double from, double to) const {
+    const float start = startValue_.load(std::memory_order_relaxed);
+    const float target = targetValue_.load(std::memory_order_relaxed);
+    const double startTime = startTime_.load(std::memory_order_relaxed);
+    const double endOrConstant = endOrConstant_.load(std::memory_order_relaxed);
+    switch (automation_.load(std::memory_order_acquire)) {
+    case Automation::Immediate:
+        return true;
+    case Automation::Scheduled:
+        return to < startTime || from >= startTime;
+    case Automation::Linear:
+        return start == target || to <= startTime || from >= endOrConstant;
+    case Automation::Target:
+        if (start == target || to <= startTime) return true;
+        return from > startTime &&
+            std::abs(start - target) * std::exp(-(from - startTime) / endOrConstant) <=
+                1e-6 * std::max(1.0f, std::abs(target));
+    }
+    return false;
+}
+
 float AudioParam::valueAtTime(double time) const {
+    // A plain load and store, never a locked read-modify-write: this runs per sample on the audio
+    // thread, and a `fetch_add` here measured as a net regression on native Midway (PRD-444).
+    valueAtTimeCalls_.store(valueAtTimeCalls_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     const float start = startValue_.load(std::memory_order_relaxed);
     const float target = targetValue_.load(std::memory_order_relaxed);
     const double startTime = startTime_.load(std::memory_order_relaxed);
@@ -165,10 +189,21 @@ GainNode::GainNode(AudioContext* context)
 void GainNode::process(float* output, size_t numFrames, int numChannels) {
     const double startTime = context_->currentTime();
     const double secondsPerFrame = 1.0 / context_->sampleRate();
-    for (size_t frame = 0; frame < numFrames; frame++) {
-        const float gainValue = gain_.valueAtTime(startTime + frame * secondsPerFrame);
-        for (int channel = 0; channel < numChannels; channel++) {
-            output[frame * numChannels + channel] *= gainValue;
+    if (gain_.isConstantOver(startTime, startTime + numFrames * secondsPerFrame)) {
+        // A static or settled gain is the common case and does not change across the block, so one
+        // read replaces four atomic loads, a switch and (for a target) an `exp` per sample.
+        const float gainValue = gain_.valueAtTime(startTime);
+        for (size_t frame = 0; frame < numFrames; frame++) {
+            for (int channel = 0; channel < numChannels; channel++) {
+                output[frame * numChannels + channel] *= gainValue;
+            }
+        }
+    } else {
+        for (size_t frame = 0; frame < numFrames; frame++) {
+            const float gainValue = gain_.valueAtTime(startTime + frame * secondsPerFrame);
+            for (int channel = 0; channel < numChannels; channel++) {
+                output[frame * numChannels + channel] *= gainValue;
+            }
         }
     }
     AudioNode::process(output, numFrames, numChannels);
@@ -522,9 +557,8 @@ AudioVector3 AudioContext::listenerRight() const {
     return {x, y, z};
 }
 
-std::shared_ptr<AudioBuffer> AudioContext::decodeAudioDataSync(const uint8_t* data, size_t length) {
-    return decodeAudioFile(data, length, sampleRate_);
-}
+// The synchronous entry point is gone with its only caller: `decodeAudioData` now queues the
+// bytes for `AsyncAudioDecoder`, so no decode runs on the frame thread.
 
 void AudioContext::resume() {
     std::lock_guard<std::mutex> lock(lifecycleMutex_);

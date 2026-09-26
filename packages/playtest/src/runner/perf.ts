@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
+import { decideDisplayStrategy } from "./captureEnvironment.js";
 
 import { discoverAdb } from "./android.js";
 import { formatPipelineCacheObservations, parsePipelineCacheObservations, type IPipelineCacheObservation } from "./pipeline-cache-observations.js";
@@ -34,6 +35,32 @@ export const PROJECTION_MARKER = "TN_PROJECTION:";
 export const HOST_GAP_MARKER = "TN_HOST_GAP:";
 export const HITCH_MARKER = "TN_FRAME_HITCH:";
 
+/**
+ * The host's own stall report, emitted after any phase that took at least 250 ms
+ * (`runtime-native/src/runtime.cpp`, `SlowPhaseWatch`). `atMs` is the phase's **end**.
+ */
+export const SLOW_PHASE_MARKER = "TN_SLOW_PHASE:";
+
+/**
+ * The host's own frames-versus-presents counter (`runtime-native/src/webgpu/bindings_presentation.cpp`,
+ * `reportPresentTick`), emitted periodically on every platform.
+ *
+ * It is the only reading in a log that says whether the loop's cadence reached the display: the
+ * presentation cap lets a loop iterate many times per present, so a budget window's `fps` can be the
+ * loop's rate rather than the display's. Measured on midway's native launch: 1740 loop frames, 133
+ * presents, cap 60 Hz, beside a window reporting 2631 fps.
+ */
+export const PRESENTS_TICK_MARKER = "TN_PRESENTS_TICK:";
+
+export interface IPresentsTickJson {
+  readonly bufferMB?: number;
+  readonly capHz?: number;
+  readonly frames: number;
+  readonly presents: number;
+  readonly textureMB?: number;
+  readonly textures?: number;
+}
+
 export interface IPerfSummary {
   readonly mean: number;
   readonly p50: number;
@@ -53,11 +80,20 @@ export interface IFrameSurfaceJson {
 }
 
 export interface IFrameBudgetWindowJson {
+  /**
+   * The loop's cadence. It is the display's where the loop presents every frame — the web, via rAF —
+   * and is inflated by the presentation-cap ratio where it does not, so prefer
+   * {@link presentedFps} whenever the engine reports it.
+   */
   readonly fps: number;
   readonly frames: number;
   readonly frame?: IPerfSummary;
   readonly hitches: number;
   readonly phases?: Readonly<Record<string, IPerfSummary>>;
+  /** Frames that reached the display in this window, when the host can count them. */
+  readonly presents?: number;
+  /** The rate those presents imply, over the window's own duration. */
+  readonly presentedFps?: number;
   readonly surface?: IFrameSurfaceJson;
   /** GPU milliseconds from `timestamp-query`, absent when the adapter has none. */
   readonly gpuMs?: number;
@@ -80,6 +116,13 @@ export interface IHostGapWindowJson {
  * One `TN_FRAME_HITCH` window from the native host: the first 300 presented frames after launch,
  * reported as a distribution. The `pipelineCompile` fields are PRD-327 Phase 4's late-sync-compile
  * attribution — absent on lines from hosts older than the field, which must still parse.
+ *
+ * **Two engine modules emit this marker name with different payloads.** The native host
+ * (`runtime-native/include/mystral/cold_start.h`) emits the window below; core's own frame budget
+ * (`packages/core/src/frame-budget.ts`, `endFrame`) emits `{ gapMs, uptimeMs, wallClock }` the
+ * moment a present gap exceeds `hitchMs`, on every platform. A reader that assumes one shape turns
+ * the other into an absent `maxMs` and prints `worst NaN ms` — measured on midway's native launch
+ * log, which carried three gap lines of 2.1-3.0 s beside the host's windows.
  */
 export interface IHitchWindowJson {
   readonly window: number;
@@ -91,10 +134,25 @@ export interface IHitchWindowJson {
   readonly pipelineCompileCalls?: number;
 }
 
+/** A phase the native host watched take longer than its stall threshold. */
+export interface ISlowPhaseJson {
+  readonly atMs: number;
+  readonly ms: number;
+  readonly phase: string;
+}
+
+/** One present gap the JS frame budget reported, not a 300-frame window. */
+export interface IPresentGapJson {
+  readonly gapMs: number;
+  readonly uptimeMs: number;
+  readonly wallClock?: number;
+}
+
 export type IPerfViolationCode =
   | "TN_PERF_BOUNDS_NOT_ASSESSABLE"
   | "TN_PERF_MAX_FRAME_P95"
   | "TN_PERF_MIN_FPS"
+  | "TN_PERF_VIRTUAL_DISPLAY"
   | "TN_PERF_WINDOWS_MISSING";
 
 export interface IPerfViolation {
@@ -134,12 +192,38 @@ export interface IProjectionWindowJson {
 export interface IPerfMarkerParse {
   readonly budgets: readonly IFrameBudgetWindowJson[];
   readonly hitches: readonly IHitchWindowJson[];
+  readonly presentGaps: readonly IPresentGapJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pipelineEvents: readonly IPipelineCaptureEvent[];
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly presentMode: string | undefined;
+  readonly presents: readonly IPresentsTickJson[];
   readonly projections: readonly IProjectionWindowJson[];
+  readonly slowPhases: readonly ISlowPhaseJson[];
 }
+
+/**
+ * What the run painted on, as far as the command can know.
+ *
+ * `virtual` means the operator never asked for the host display, so whatever this run drew on is a
+ * private Xvfb — the arrangement in which the present wait lands inside the engine's update phase
+ * and a frame rate is wrong rather than missing. `fpsSuppressed` says the report refused to print
+ * one, which the text output must state rather than leave as a blank column.
+ */
+export interface IPerfDisplay {
+  readonly fpsSuppressed: boolean;
+  /** Why the frame rate was not presented — a private display, or frames the host never presented. */
+  readonly reason?: string;
+  readonly strategy: string;
+  readonly virtual: boolean;
+}
+
+/**
+ * Below this share of loop frames reaching the display, the loop's cadence is not a frame rate a
+ * player would see. The presentation cap permits many iterations per present, so a loop spinning
+ * faster than the cap inflates `fps` by exactly that factor.
+ */
+export const PRESENTS_REACHED_DISPLAY_RATIO = 0.95;
 
 export interface IPerfReport {
   readonly budgets: readonly IFrameBudgetWindowJson[];
@@ -148,9 +232,13 @@ export interface IPerfReport {
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pipelineEvents?: readonly IPipelineCaptureEvent[];
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
+  readonly display?: IPerfDisplay;
   readonly pass: boolean;
+  readonly presentGaps: readonly IPresentGapJson[];
   readonly presentMode: string | undefined;
+  readonly presents: readonly IPresentsTickJson[];
   readonly projections: readonly IProjectionWindowJson[];
+  readonly slowPhases: readonly ISlowPhaseJson[];
   readonly source: string;
   readonly violations: readonly IPerfViolation[];
 }
@@ -171,6 +259,8 @@ export function rankExactReasons(
 }
 
 export interface IPerfBounds {
+  /** Accept a frame rate measured on a private Xvfb, which the same package's `trace` never does. */
+  readonly allowVirtualDisplay?: boolean;
   readonly maxFrameMsP95?: number;
   readonly minFps?: number;
   readonly requireWindows: number;
@@ -193,10 +283,29 @@ const PRESENT_MODE_PATTERN = /Present mode: (\S+ \(vsync=(?:true|false)\))/u;
  * counted as absent, because "absent" is itself a failure here and a silent drop would hide the
  * difference between the two.
  */
+/**
+ * Which of the two `TN_FRAME_HITCH` payloads this is.
+ *
+ * The gap shape is `{ gapMs, uptimeMs, wallClock }` and nothing else; the window shape carries
+ * `window` and a `maxMs`. A payload with neither is treated as a window so the window reader names
+ * the fields it is missing rather than this silently dropping the line.
+ */
+function isPresentGap(payload: IHitchWindowJson | IPresentGapJson): payload is IPresentGapJson {
+  const candidate = payload as Partial<IPresentGapJson> & Partial<IHitchWindowJson>;
+  return (
+    Number.isFinite(candidate.gapMs) &&
+    Number.isFinite(candidate.uptimeMs) &&
+    candidate.window === undefined
+  );
+}
+
 export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const budgets: IFrameBudgetWindowJson[] = [];
   const budgetPayloads = new Set<string>();
   const hitches: IHitchWindowJson[] = [];
+  const presentGaps: IPresentGapJson[] = [];
+  const presents: IPresentsTickJson[] = [];
+  const slowPhases: ISlowPhaseJson[] = [];
   const hitchPayloads = new Set<string>();
   const hostGaps: IHostGapWindowJson[] = [];
   const projections: IProjectionWindowJson[] = [];
@@ -215,15 +324,33 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
         budgets.push(budget);
       }
     }
-    const hitch = parseMarkerLine<IHitchWindowJson>(line, HITCH_MARKER);
+    const hitch = parseMarkerLine<IHitchWindowJson | IPresentGapJson>(line, HITCH_MARKER);
     if (hitch !== undefined) {
       // Same reason the budget lines are de-duplicated: Android mirrors console output twice.
       const payload = JSON.stringify(hitch);
       if (!hitchPayloads.has(payload)) {
         hitchPayloads.add(payload);
-        hitches.push(hitch);
+        // Two engine modules share this marker name: the native host's 300-frame window and core's
+        // own per-frame present gap. Reading every line as a window is what printed `worst NaN ms`.
+        if (isPresentGap(hitch)) {
+          presentGaps.push(hitch);
+        } else {
+          // Neither shape: the window reader would print a maximum it never received. Name the
+          // line instead — a marker that cannot be read is the finding, never a rendered number.
+          if (!Number.isFinite(hitch.maxMs)) {
+            throw new Error(
+              `TN_PERF_MARKER_MALFORMED: a ${HITCH_MARKER} line carries neither a present gap ` +
+                `(gapMs) nor a window's maxMs: ${line.trim()}`,
+            );
+          }
+          hitches.push(hitch);
+        }
       }
     }
+    const tick = parseMarkerLine<IPresentsTickJson>(line, PRESENTS_TICK_MARKER);
+    if (tick !== undefined) presents.push(tick);
+    const slowPhase = parseMarkerLine<ISlowPhaseJson>(line, SLOW_PHASE_MARKER);
+    if (slowPhase !== undefined) slowPhases.push(slowPhase);
     const hostGap = parseMarkerLine<IHostGapWindowJson>(line, HOST_GAP_MARKER);
     if (hostGap !== undefined) hostGaps.push(hostGap);
     const projection = parseMarkerLine<IProjectionWindowJson>(line, PROJECTION_MARKER);
@@ -239,7 +366,18 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     const mode = PRESENT_MODE_PATTERN.exec(line);
     if (mode?.[1] !== undefined) presentMode = mode[1];
   }
-  return { budgets, hitches, hostGaps, pipelineEvents, pipelineCaches: parsePipelineCacheObservations(text), presentMode, projections };
+  return {
+    budgets,
+    hitches,
+    hostGaps,
+    pipelineEvents,
+    pipelineCaches: parsePipelineCacheObservations(text),
+    presentGaps,
+    presentMode,
+    presents,
+    projections,
+    slowPhases,
+  };
 }
 
 const PROJECTION_TIMING_KEYS = ["compileMs", "reconcileMs", "lastReconcileMs", "maxReconcileMs"] as const;
@@ -290,11 +428,50 @@ function parseMarkerLine<T>(line: string, marker: string): T | undefined {
  * windows than `requireWindows` is a `TN_PERF_WINDOWS_MISSING` violation — the run did not
  * produce enough evidence to assess, which is a failure, not an empty pass.
  */
-export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, source: string): IPerfReport {
+export function assessPerfMarkers(
+  parse: IPerfMarkerParse,
+  bounds: IPerfBounds,
+  source: string,
+  display?: { readonly strategy: string; readonly virtual: boolean },
+): IPerfReport {
   const discardCount = parse.budgets.length > 1 ? 1 : 0;
   const discardedWindows = parse.budgets.slice(0, discardCount).map(({ window }) => window);
   const steady = parse.budgets.slice(discardCount);
   const violations: IPerfViolation[] = [];
+  /** Windows that counted presents but no present period long enough to carry a rate. */
+  const unassessableWindows: number[] = [];
+  // A frame rate from a private Xvfb is wrong, not missing: without vsync the present wait lands
+  // inside the update phase, and the same package's `trace` measured 13.3 fps there against 57.7
+  // on the real display from one build. So the number is never presented, and an fps bound is
+  // refused rather than satisfied by it — 16,666 fps passed a 60 bound on midway's desktop build.
+  // A log says for itself whether the loop's cadence reached the display: the host counts loop
+  // frames and presents separately, and the presentation cap lets many frames pass between them.
+  // Midway's native launch: 1740 frames, 133 presents, cap 60 Hz, beside a window reporting 2631
+  // fps. That number is the loop's, not a player's, so it is not printed either.
+  const tick = parse.presents.at(-1);
+  const presentsRatio =
+    tick === undefined || !Number.isFinite(tick.frames) || tick.frames <= 0 || !Number.isFinite(tick.presents)
+      ? undefined
+      : tick.presents / tick.frames;
+  // A window that carries the display's own count has answered the question the tick ratio was
+  // standing in for: its `presentedFps` is the rate a player saw, so nothing is suppressed.
+  const windowsCarryPresents =
+    parse.budgets.length > 0 && parse.budgets.every((window) => Number.isFinite(window.presents));
+  const unvouchableBy = (): string | undefined => {
+    if (windowsCarryPresents) return display?.virtual === true ? `a ${display.strategy} display` : undefined;
+    if (presentsRatio !== undefined && presentsRatio < PRESENTS_REACHED_DISPLAY_RATIO) {
+      return (
+        `the host presented ${tick?.presents} of ${tick?.frames} loop frames` +
+        (tick?.capHz === undefined ? "" : ` (cap ${tick.capHz} Hz)`)
+      );
+    }
+    return display?.virtual === true ? `a ${display.strategy} display` : undefined;
+  };
+  const unvouchable = unvouchableBy();
+  const virtualDisplay = unvouchable !== undefined && bounds.allowVirtualDisplay !== true;
+  if (virtualDisplay && bounds.minFps !== undefined) {
+    violations.push({ bound: bounds.minFps, code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, window: -1 });
+  }
   if (steady.length < bounds.requireWindows) {
     violations.push({ bound: bounds.requireWindows, code: "TN_PERF_WINDOWS_MISSING", observed: steady.length, window: -1 });
   }
@@ -307,19 +484,61 @@ export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, 
         violations.push({ bound: bounds.maxFrameMsP95, code: "TN_PERF_MAX_FRAME_P95", observed: frameP95, window: window.window });
       }
     }
-    if (bounds.minFps !== undefined && window.fps < bounds.minFps) {
-      violations.push({ bound: bounds.minFps, code: "TN_PERF_MIN_FPS", observed: window.fps, window: window.window });
+    // Only the frame-rate bound is unassessable here: a frame callback's own duration was still
+    // measured, but the rate it was presented at was not.
+    if (bounds.minFps !== undefined && !virtualDisplay) {
+      // Three cases, and they are not the same fact: a window carrying the display's own rate is
+      // assessed on it; a window that counted presents but none of them is too short to carry a
+      // rate at all; a window with no present series is assessed on the loop's cadence, as before.
+      const rate = window.presentedFps;
+      if (rate !== undefined) {
+        if (rate < bounds.minFps)
+          violations.push({ bound: bounds.minFps, code: "TN_PERF_MIN_FPS", observed: rate, window: window.window });
+      } else if (window.presents === undefined) {
+        if (window.fps < bounds.minFps)
+          violations.push({ bound: bounds.minFps, code: "TN_PERF_MIN_FPS", observed: window.fps, window: window.window });
+      } else {
+        unassessableWindows.push(window.window);
+      }
     }
+  }
+  // Every steady window counted presents and none of them presented anything: the display's rate
+  // was never measured in this run, so the bound is unassessable rather than passed. The same
+  // fail-closed rule the frame summary already follows.
+  if (
+    unassessableWindows.length > 0 &&
+    unassessableWindows.length === steady.length &&
+    bounds.minFps !== undefined
+  ) {
+    violations.push({
+      bound: bounds.minFps,
+      code: "TN_PERF_BOUNDS_NOT_ASSESSABLE",
+      observed: undefined,
+      window: -1,
+    });
   }
   return {
     budgets: parse.budgets,
     discardedWindows,
+    ...(display !== undefined || unvouchable !== undefined
+      ? {
+          display: {
+            fpsSuppressed: virtualDisplay,
+            ...(unvouchable === undefined ? {} : { reason: unvouchable }),
+            strategy: display?.strategy ?? "host",
+            virtual: display?.virtual === true,
+          },
+        }
+      : {}),
     hitches: parse.hitches,
     hostGaps: parse.hostGaps,
+    presentGaps: parse.presentGaps,
+    presents: parse.presents,
     pipelineEvents: parse.pipelineEvents,
     pipelineCaches: parse.pipelineCaches ?? [],
     pass: violations.length === 0 && parse.budgets.length > 0,
     presentMode: parse.presentMode,
+    slowPhases: parse.slowPhases,
     projections: parse.projections,
     source,
     violations,
@@ -335,13 +554,16 @@ export interface IPerfSources {
 
 export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
   const sources: IPerfSources = { hostArgs: [] };
-  const bounds: { maxFrameMsP95?: number; minFps?: number; requireWindows: number } = { requireWindows: 2 };
+  const bounds: { allowVirtualDisplay?: boolean; maxFrameMsP95?: number; minFps?: number; requireWindows: number } = {
+    requireWindows: 2,
+  };
   let text = false;
   let timeoutSeconds = 180;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (flag === "--text") text = true;
+    else if (flag === "--allow-virtual-display") bounds.allowVirtualDisplay = true;
     else if (flag === "--file") { sources.file = requireValue(flag, value); index += 1; }
     else if (flag === "--executable") { sources.executable = requireValue(flag, value); index += 1; }
     else if (flag === "--host-arg") {
@@ -365,6 +587,7 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     throw new PlaytestCliUsageError("threenative-playtest perf: --file, --executable and --logcat are mutually exclusive.");
   }
   return {
+    allowVirtualDisplay: bounds.allowVirtualDisplay === true,
     executable: sources.executable,
     file: sources.file,
     hostArgs: sources.hostArgs,
@@ -420,6 +643,9 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
 /** Spawn the host, collect its output, and stop once enough windows have closed. */
 async function runExecutable(args: IPerfArgs, executable: string): Promise<number> {
   const source = `executable: ${[executable, ...args.hostArgs].join(" ")}`;
+  // The same decision every other lane makes: the operator asked for the host display or this run
+  // paints on a private one. A run that owns its Xvfb cannot report a frame rate from it.
+  const strategy = decideDisplayStrategy({ env: process.env, platform: process.platform });
   const child = spawn(executable, args.hostArgs, { stdio: ["ignore", "pipe", "pipe"] });
   let collected = "";
   let stopped = false;
@@ -448,7 +674,10 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
     });
     child.on("exit", () => {
       clearTimeout(timeout);
-      const code = emit(parsePerformanceMarkers(collected), args, source);
+      const code = emit(parsePerformanceMarkers(collected), args, source, {
+        strategy: strategy.kind,
+        virtual: strategy.kind === "private-xvfb",
+      });
       process.exitCode = code;
       settleExit(code);
     });
@@ -464,13 +693,29 @@ async function readLogcat(serial: string): Promise<string> {
   return stdout;
 }
 
-function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string): number {
-  const report = assessPerfMarkers(parse, args, source);
+function emit(
+  parse: IPerfMarkerParse,
+  args: IPerfArgs,
+  source: string,
+  display?: { readonly strategy: string; readonly virtual: boolean },
+): number {
+  const report = assessPerfMarkers(parse, args, source, display);
   const windowsMissing = report.violations.some(({ code }) => code === "TN_PERF_WINDOWS_MISSING");
   const exitCode: 0 | 1 | 2 = windowsMissing ? 2 : report.pass ? 0 : 1;
   process.stdout.write(args.text ? formatPerfReport(report) : `${JSON.stringify(report, null, 2)}\n`);
   process.exitCode = exitCode;
   return exitCode;
+}
+
+
+function describeSuppression(report: IPerfReport): string {
+  const reason = report.display?.reason;
+  if (reason !== undefined) {
+    return reason.startsWith("the host presented")
+      ? `${reason} — the loop's cadence, not the display's`
+      : `this run painted on ${reason}, where the present wait lands inside the update phase`;
+  }
+  return "this run's frame rate could not be vouched for";
 }
 
 export function formatPerfReport(report: IPerfReport): string {
@@ -516,15 +761,29 @@ export function formatPerfReport(report: IPerfReport): string {
         "'timestamp-query'. Check the TN_WEBGPU_FEATURES line in the same log for what it did grant.",
     );
   }
+  const fpsSuppressed = report.display?.fpsSuppressed === true;
+  if (fpsSuppressed) {
+    // Named, never blank: a missing column reads as a zero, and the number it would have carried is
+    // not zero — it is wrong. The phase rows below are unaffected and are what the native lane's
+    // baselines quote.
+    lines.push(
+      `fps suppressed: ${describeSuppression(report)}, so the frame rate is not the one a player ` +
+        "would read. The phase rows below are unaffected. Rerun on the host display with " +
+        "TN_PLAYTEST_HOST_DISPLAY=1 for a quotable frame rate, or pass --allow-virtual-display to " +
+        "accept the phase timings with it.",
+    );
+  }
   lines.push(
-    `window  fps     frame p50/p95    render p50/p95   hostGap p50/p95${anyGpu ? "  gpu ms" : ""}`,
+    `window  ${fpsSuppressed ? "        " : "fps     "}frame p50/p95    render p50/p95   hostGap p50/p95${anyGpu ? "  gpu ms" : ""}`,
   );
   for (const window of report.budgets) {
     const label = report.discardedWindows.includes(window.window) ? `${window.window}*` : String(window.window);
     lines.push(
       [
         label.padEnd(7),
-        window.fps.toFixed(2).padEnd(7),
+        fpsSuppressed
+          ? "".padEnd(7)
+          : (window.presentedFps ?? (window.presents === 0 ? 0 : window.fps)).toFixed(2).padEnd(7),
         summary(window.frame).padEnd(16),
         summary(window.phases?.render).padEnd(16),
         summary(window.phases?.hostGap),
@@ -537,6 +796,15 @@ export function formatPerfReport(report: IPerfReport): string {
     );
   }
   if (report.discardedWindows.length > 0) lines.push("* discarded as startup (window 1 always lies)");
+  // A zero in the fps column is true and easy to misread as a frozen game: name the windows where
+  // the display simply showed nothing in a window of loop frames too short to contain a present.
+  const presentedNothing = report.budgets.filter((window) => window.presents === 0);
+  if (presentedNothing.length > 0) {
+    lines.push(
+      `windows ${presentedNothing.map((window) => window.window).join(", ")} presented nothing in their loop frames: ` +
+        "too short to contain a present, so their frame rate is unmeasured rather than zero",
+    );
+  }
   lines.push(...formatProjection(report.projections));
   const lastGap = report.hostGaps.at(-1);
   if (lastGap !== undefined) {
@@ -545,7 +813,7 @@ export function formatPerfReport(report: IPerfReport): string {
       lines.push(`  ${name.padEnd(16)}${segment.p50Ms.toFixed(3)}`);
     }
   }
-  lines.push(...formatHitches(report.hitches));
+  lines.push(...formatHitches(report.hitches, report.presentGaps, report.slowPhases));
   for (const violation of report.violations) {
     const observed = violation.observed === undefined ? "absent" : round(violation.observed).toString();
     lines.push(`FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}`);
@@ -611,11 +879,76 @@ function summary(summaryValue: IPerfSummary | undefined): string {
  * name. A host older than the field omits it and is named as such rather than read as a zero,
  * which is the same rule the gpu column follows.
  */
-function formatHitches(hitches: readonly IHitchWindowJson[]): string[] {
-  if (hitches.length === 0) return [];
-  const lines = [
-    `hitch windows (post-launch, ${hitches.length}): worst ${Math.max(...hitches.map((h) => h.maxMs)).toFixed(3)} ms`,
-  ];
+/**
+ * The two `TN_FRAME_HITCH` series, reported as what each one measured.
+ *
+ * A window is the host's distribution over its first 300 presented frames; a present gap is one
+ * frame the JS budget found more than `hitchMs` after the last. Folding the second into the first
+ * printed `worst NaN ms` beside a note blaming an older host, and threw away the only record of a
+ * multi-second stall the launch had.
+ */
+
+/**
+ * Which of the host's slow phases fall inside a present gap, innermost first.
+ *
+ * A gap spans `[uptimeMs - gapMs, uptimeMs]` — the budget notices at a present that the last one was
+ * that long ago. A phase spans `[atMs - ms, atMs]`, its `atMs` being the end. The host's outermost
+ * watcher brackets a whole iteration and therefore *contains* the phases inside it, so a containing
+ * phase is dropped whenever it also overlaps a phase it contains: naming `pollEvents` for a stall
+ * the host itself attributed to `imageDecodeDrain` would be the same empty answer as naming nothing.
+ */
+export function phasesWithinGap(
+  gap: IPresentGapJson,
+  slowPhases: readonly ISlowPhaseJson[],
+): ISlowPhaseJson[] {
+  const start = gap.uptimeMs - gap.gapMs;
+  const overlapping = slowPhases.filter(
+    (phase) => phase.atMs > start && phase.atMs - phase.ms < gap.uptimeMs,
+  );
+  const innermost = overlapping.filter(
+    (candidate) =>
+      !overlapping.some(
+        (other) =>
+          other !== candidate &&
+          other.atMs <= candidate.atMs &&
+          other.atMs - other.ms >= candidate.atMs - candidate.ms,
+      ),
+  );
+  const reportable = innermost.length > 0 ? innermost : overlapping;
+  return [...reportable].sort((left, right) => right.ms - left.ms).slice(0, 3);
+}
+
+function describeGap(gap: IPresentGapJson, slowPhases: readonly ISlowPhaseJson[]): string {
+  const phases = phasesWithinGap(gap, slowPhases);
+  if (phases.length === 0) {
+    return slowPhases.length === 0
+      ? "no slow phase reported in this log"
+      : "no slow phase fell inside it";
+  }
+  return phases.map((phase) => `${phase.phase} ${phase.ms.toFixed(3)} ms`).join(", ");
+}
+
+function formatHitches(
+  hitches: readonly IHitchWindowJson[],
+  presentGaps: readonly IPresentGapJson[] = [],
+  slowPhases: readonly ISlowPhaseJson[] = [],
+): string[] {
+  const lines: string[] = [];
+  if (presentGaps.length > 0) {
+    const worst = Math.max(...presentGaps.map((gap) => gap.gapMs));
+    const at = presentGaps.reduce((best, gap) => (gap.gapMs >= best.gapMs ? gap : best));
+    lines.push(
+      `present gaps (${presentGaps.length}): worst ${worst.toFixed(3)} ms at uptime ${at.uptimeMs.toFixed(0)} ms` +
+        ` — one frame each, reported by the frame budget's own hitch threshold`,
+    );
+    // The host watched the phases either side of those gaps and said so in another marker. Joining
+    // them is the difference between "3000 ms" and "3000 ms, and it was the image decode" — the
+    // engine's own stall report exists because a stall that names nothing is nobody's to fix.
+    for (const gap of presentGaps) lines.push(`  gap ${gap.gapMs.toFixed(3)} ms at uptime ${gap.uptimeMs.toFixed(0)} ms: ${describeGap(gap, slowPhases)}`);
+  }
+  if (hitches.length === 0) return lines;
+  const windows = `hitch windows (post-launch, ${hitches.length}): worst ${Math.max(...hitches.map((h) => h.maxMs)).toFixed(3)} ms`;
+  lines.push(windows);
   const named = hitches.filter((hitch) => (hitch.pipelineCompileCalls ?? 0) > 0);
   if (named.length === 0) {
     // A missing field and a measured zero are different facts: the first means the host predates

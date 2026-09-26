@@ -251,6 +251,60 @@ test('production desktop mailbox uses atomic request writes', () => {
   assert.match(source, /const mailbox = new runner\.LocalDeviceMailbox\(\);/u);
 });
 
+test('packaged desktop artifacts launch their embedded entry while bare runtimes still name the bundle', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const project = '/fixture/scaffold';
+  const mailboxRoot = join(project, '.runtime-mailbox');
+  const launched = [];
+  const context = {
+    join,
+    process: { platform: 'linux', env: { DISPLAY: ':fixture' } },
+    spawn: (command, args) => {
+      launched.push({ args, command });
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async () => undefined,
+    rename: async () => undefined,
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+  };
+  runInNewContext(driverSource, context);
+  const renderSize = { height: 1080, width: 1920 };
+  const packaged = context.createDesktopDriver('/fixture/dist-native/platformer', project, { renderSize }, mailboxRoot);
+  await packaged.launch();
+  assert.equal(launched[0].command, '/fixture/dist-native/platformer');
+  assert.deepEqual([...launched[0].args], ['--width', '1920', '--height', '1080', '--headless']);
+  const bare = context.createDesktopDriver('/fixture/mystral', project, { prebuiltArtifact: '/fixture/mystral', renderSize }, mailboxRoot);
+  await bare.launch();
+  assert.deepEqual([...launched[1].args], [
+    'run', join(project, '.threenative/build/game.js'), '--width', '1920', '--height', '1080', '--headless',
+  ]);
+});
+
+test('desktop profiling writes the requested render size into the packaged window config', async () => {
+  const project = makeTempDirSync('tn-profile-window-size-');
+  temporary.push(project);
+  mkdirSync(join(project, 'src'), { recursive: true });
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'platformer' }));
+  writeFileSync(join(project, 'threenative.config.ts'), [
+    'const config = {',
+    '  window: { title: "platformer", width: 1280, height: 720, resizable: true },',
+    '  nativeEntry: "src/game.ts",',
+    '  ui: { renderer: "web" },',
+    '};',
+    'export default config;',
+    '',
+  ].join('\n'));
+  await installNativeProfileEntry(project, 'desktop', { renderSize: { height: 1080, width: 1920 }, warmup: 1 });
+  const rendered = readFileSync(join(project, 'threenative.config.ts'), 'utf8');
+  assert.match(rendered, /window: \{ title: "platformer", width: 1920, height: 1080, resizable: true \}/u);
+  assert.match(rendered, /nativeEntry: "src\/profile-native-entry.ts"/u);
+  assert.match(rendered, /ui: \{ renderer: "web" \}/u);
+});
+
 test('failed production commands name the timeout or carry their stderr tail', async () => {
   const timedOut = await runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], process.cwd(), undefined, 200);
   assert.equal(timedOut.timedOut, true);
@@ -362,6 +416,25 @@ test('production evidence uses nearest-rank pacing and arithmetic mean fps', () 
   assert.equal(budget.failures.length, 0);
   assert.ok(budget.mean > 60);
   assert.deepEqual(evaluateFrameBudget({ frameIntervalsMs: [40, 40, 40] }, { minFps: 30 }).failures, ['TN_PROD_PERFORMANCE_BUDGET']);
+});
+
+test('counter budgets ignore a window-opening frame with no renderer reading', () => {
+  const intervals = [
+    { frameMs: 16, sequence: 1, timestampMs: 0 },
+    { drawCalls: 80, frameMs: 16, sequence: 2, timestampMs: 16, triangles: 3_204 },
+    { drawCalls: 79, frameMs: 16, sequence: 3, timestampMs: 32, triangles: 3_200 },
+  ];
+  const budget = evaluateFrameBudget(
+    { drawCalls: 80, frameIntervalsMs: [16, 16, 16], intervals, meanFps: 175, p95FrameMs: 16.6, p99FrameMs: 17, triangles: 3_204 },
+    { maxDrawCalls: 200, maxTriangles: 7_700, minMeanFps: 60 },
+  );
+  assert.deepEqual(budget.failures, []);
+  assert.equal(budget.drawCalls, 80);
+  assert.equal(budget.triangles, 3_204);
+  assert.deepEqual(evaluateFrameBudget(
+    { frameIntervalsMs: [16], intervals: [{ frameMs: 16, sequence: 1, timestampMs: 0 }] },
+    { maxDrawCalls: 200 },
+  ).failures, ['TN_PROD_PERFORMANCE_BUDGET']);
 });
 
 test('complete current evidence is the only PASS state', () => {
@@ -1348,6 +1421,58 @@ test('post-warmup frame metrics exclude warmup samples from mean and percentiles
   assert.deepEqual(metrics.frameIntervalsMs, expected.frameIntervalsMs);
   assert.equal(metrics.meanFps, expected.meanFps);
   assert.equal(metrics.p99FrameMs, expected.p99FrameMs);
+});
+
+test('paced native instrumentation waits one display interval per fixed-step tick', () => {
+  const paced = nativeFrameInstrumentation(undefined, 0, true);
+  assert.match(paced, /const tnProductionPaceEnabled = true;/u);
+  assert.match(paced, /tnProductionBridge\.advance = async \(ticks\)/u);
+  assert.match(paced, /tnProductionTickIntervalMs = 16\.666/u);
+  assert.match(paced, /tnProductionInstallPace\(\);/u);
+  assert.match(nativeFrameInstrumentation(undefined, 0), /const tnProductionPaceEnabled = false;/u);
+});
+
+test('native instrumentation caches the async bridge sample for the next frame', async () => {
+  let scheduled;
+  let now = 0;
+  const samples = [];
+  const context = {
+    __THREENATIVE_PLAYTEST_BRIDGE__: {
+      sample: async () => ({ performance: { drawCalls: 7, triangles: 11 } }),
+    },
+    cancelAnimationFrame: () => undefined,
+    console: {
+      log: (line) => {
+        const prefix = 'TN_PROD_FRAME_SAMPLES:';
+        if (typeof line === 'string' && line.startsWith(prefix)) samples.push(...JSON.parse(line.slice(prefix.length)));
+      },
+    },
+    performance: { now: () => now },
+    requestAnimationFrame: (callback) => { scheduled = callback; return 1; },
+  };
+  runInNewContext(nativeFrameInstrumentation(undefined, 0), context);
+  const schedule = context.requestAnimationFrame;
+  for (let frame = 0; frame <= 6; frame += 1) {
+    scheduled = undefined;
+    schedule(() => undefined);
+    now = frame * 16;
+    scheduled(now);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.ok(samples.length > 1);
+  const cached = samples.find((sample) => sample.drawCalls === 7);
+  assert.ok(cached !== undefined);
+  assert.equal(cached.triangles, 11);
+});
+
+test('scaffolded native profile paces the fixed step so the host renders the measured frames', async () => {
+  const project = makeTempDirSync('tn-profile-paced-');
+  temporary.push(project);
+  mkdirSync(join(project, 'src'));
+  writeFileSync(join(project, 'package.json'), '{}');
+  writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  await installNativeProfileEntry(project, 'desktop', { warmup: 1 });
+  assert.match(readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8'), /const tnProductionPaceEnabled = true;/u);
 });
 
 test('slow-path control is bounded and returns the intended exit-1 budget failure', async () => {

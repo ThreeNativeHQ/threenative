@@ -333,9 +333,14 @@ describe("registry publication", () => {
       );
       expect(decision.code, `${decision.stdout}\n${decision.stderr}`).toBe(0);
       expect(JSON.parse(decision.stdout)).toMatchObject({ decision: "accepted", score: 8 });
+      // PRD-449: the project reads the recipe from the installed package, so what the tarball must
+      // ship is the page itself — the `files` list is the whole installation mechanism.
       await expect(
-        readFile(path.join(project.target, "agent-docs/dream-loop.md"), "utf8"),
+        readFile(path.join(packageRoot, "agent-docs/references/dream-loop.md"), "utf8"),
       ).resolves.toContain("node scripts/visual-loop.mjs");
+      await expect(readFile(path.join(project.target, "AGENTS.md"), "utf8")).resolves.toContain(
+        "node_modules/create-threenative/agent-docs/references/dream-loop.md",
+      );
     } finally {
       await fixture.close();
       await rm(root, { force: true, recursive: true });

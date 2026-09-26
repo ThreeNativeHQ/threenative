@@ -10,6 +10,537 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Read the distribution, not the average — 2026-09-19
+
+The single most expensive habit in this file's history, measured five times in one session. Every
+wrong conclusion below came from reading an aggregate where the answer was in the events
+underneath it, and every one was cheap to disprove once the right thing was counted.
+
+- `nodes.updateBefore` "costs 4.4 µs per draw under shadows" — a total over a call count. One
+  call per frame renders the shadow map at 3,600 µs while ~393 cost 0.2 µs. **A mean is not a
+  per-call cost unless the calls are alike.** `scripts/render-profile` now reports `maxMs` per
+  stage so the two cannot be confused again.
+- The same stage "costs 7 µs per shadow-pass draw" — arithmetic by subtraction across two arms,
+  never asking which calls held the time. Bucketing by material answered it in one run.
+- A host "spins without presenting", then "never enters a render loop" — both from fps averages
+  and a p50 of 0 ms. The event stream showed the overlay attaching, the game loading and
+  `TN_SURFACE_FRAME` advancing: it presents 118 frames in 26 seconds, a few percent of the
+  iterations its counter counts.
+- A freeze measured at "no difference" — per-frame samples against a clock Chrome coarsens to
+  100 µs, wider than the whole 9 µs effect. Batching 100 updates per sample made it visible.
+
+The rule that survives all four: **when a number is suspicious, look at the spread, the maximum
+and the call counts before believing the mean** — and when a change claims to delete work, count
+the work rather than timing it.
+
+## What the render phase is made of, measured on a scene that renders — 2026-09-19
+
+**Subject:** `examples/engine-load-test` (deterministic seeded lattice, one shared material) and a
+purpose-built 1,561-object caster field, Chrome WebGPU, 1280x720, 480 measured frames per rung,
+RTX 2080. Instruments: `scripts/render-profile/renderer-stage-hooks.ts` (function wrapping) and a
+CDP V8 sampling profile (stack sampling). Wrapping inflates absolute time, so proportions and
+unit costs are the finding and milliseconds are not comparable to an unprofiled run.
+
+**Why not the reference game.** `sandbox/midway-open-pacific` could not render on this machine in
+either lane: another tenant held 6.2 GiB of the 8 GiB card, Dawn lost the device on native and
+Chromium reported `VK_ERROR_OUT_OF_DEVICE_MEMORY` on `CreateTexture` in the browser. Rather than
+report nothing, the attribution was measured on scenes that fit. Every number below is synthetic.
+
+**The render phase splits 87 / 14 / 1.** At 4,096 objects and 2,469 draws, `renderer.renderScene`
+is 25.20 ms/frame: the per-draw loop 21.98 ms (87%), the scene-graph walk 3.57 ms (14%), the
+render-list sort 0.31 ms (1.2%). No single stage inside the per-draw loop is a majority — it is
+the sum of six, ranked by cost per draw: bindings 2.64 µs, render-object lookup 1.08 µs, node
+updates 1.03 µs, the draw itself 0.71 µs, pipelines 0.55 µs, geometries 0.35 µs. **The practical
+consequence is that no single fix recovers the render phase.**
+
+**Two unit costs, for pricing future work.**
+
+| | 1,024 obj / 629 draws | 4,096 obj / 2,469 draws |
+|---|---|---|
+| per draw (`renderObjects` ÷ draws) | 7.74 µs | 8.90 µs |
+| per object (`projectObject` ÷ objects) | 0.92 µs | 0.87 µs |
+
+Traversal is linear; per-draw cost grows with draw count. Applied to a 1,561-mesh, 573-draw game,
+these bound a perfect static freeze at ~1.4 ms and a perfect draw-call merge at ~5.1 ms.
+
+**Two independent instruments name the same subsystem.** The sampling profile, which shares no
+mechanism with the wrappers, ranks by non-idle self time: `writeBuffer` 10.0%, three's WebGPU
+`get` 8.6%, `updateForRender` 3.9%, `getForRender` 2.9%, `updateNode` 2.6%, `setBindGroup` 2.6%,
+`needsRenderUpdate` 2.3%, `updateGroup` 2.1%, `updateBinding` 1.5% — **48% of non-idle time in
+binding, uniform and node-update work.** `(garbage collector)` is 454 ms, 6.7% of non-idle: real
+but not dominant.
+
+**The shadow finding, which is the most actionable thing here.** The identical 1,561-object scene
+with `shadowMap.enabled` flipped, nothing else changed:
+
+| | off | on | |
+|---|---|---|---|
+| draw calls | 1,535 | 3,074 | ×2.00 |
+| `renderer.renderScene` | 16.09 ms | 43.16 ms | **×2.68** |
+| `renderer.projectObject` | 1.71 ms | 3.03 ms | +1.31 ms |
+| `nodes.updateBefore` | 0.33 ms | **13.49 ms** | **×40** |
+
+Doubling the draws nearly triples the render phase. Every per-draw stage holds its per-call cost
+(bindings ×1.0, lookup ×1.0, draw ×0.9, pipelines ×1.0, geometries ×1.0) except
+`nodes.updateBefore`, which is 13.16 ms of the 27.08 ms a shadow pass adds; the second traversal
+is +1.31 ms and is the cheap part. **That stage is resolved below, and it is not a per-call
+regression** — an earlier revision of this paragraph reported it as 0.216 µs → 4.391 µs per
+call, ×20.3, which was a whole render pass divided by a draw count.
+
+**The ×20 resolved: it is the shadow-map render, billed to one draw.** Two experiments were
+needed and the first one's conclusion was wrong, which is recorded here because the wrong step is
+instructive.
+
+*First*, `light.shadow.autoUpdate = false` after frame 2 — the shadow map stops being
+re-rendered, everything else identical:
+
+| | `nodes.updateBefore` | calls/frame | per call | `renderScene` |
+|---|---|---|---|---|
+| shadow re-rendered | 11.20 ms | 3,073 | 3.646 µs | 34.74 ms |
+| shadow frozen after frame 2 | 0.39 ms | 1,534 | 0.253 µs | 14.37 ms |
+
+From that I concluded the excess was spread across the shadow pass's own draws at ~7 µs each. It
+was arithmetic by subtraction — charge the survivors at the frozen rate, divide the remainder by
+the calls that disappeared — and it never checked **which** calls held the time.
+
+*Second*, bucketing every call by the material it draws with and the number of `updateBefore`
+nodes the render object carries, with per-call maxima:
+
+| bucket | calls/frame | mean per call | max | calls over 100 µs |
+|---|---|---|---|---|
+| `MeshStandardMaterial`, 1 updateBefore node (main pass) | 394 | 5.695 µs | **3,600 µs** | **1.43** |
+| `NodeMaterial`, 0 updateBefore nodes (shadow pass) | 396 | 0.205 µs | 100 µs | 0.31 |
+
+**About one call per frame carries the entire stage.** The shadow pass's own draws are the cheap
+ones — they use a shadow material with no `updateBefore` nodes at all. The lit material carries a
+single RENDER-typed node whose `updateBefore` renders the shadow map, and three's `NodeFrame`
+guard runs it once per render id, on whichever lit draw comes first.
+
+**The consequence is bigger than the number.** `nodes.updateBefore` is not a per-draw stage in a
+shadowed scene: most of its total is one whole render pass executed inside a method that a
+wrapping profiler attributes per draw. Any attribution built on wrapping that method — including
+this record's own table — will show a per-draw cost that is really a pass. The 28x and 7 µs
+figures from the first experiment are withdrawn; the per-draw cost of node updates in a shadowed
+frame is about 0.2 µs, the same as without shadows, and the mass is a shadow-map render.
+
+**A cross-validation that could have failed.** 0.87 µs/object × 1,561 predicts a 1.36 ms second
+traversal; the measured delta is 1.31 ms — 4% error, on a different scene at a different object
+count from the one the unit cost came from.
+
+**Native, with the collapse switched off: the browser's shape holds.** The same 1,561-mesh
+lattice through `defineGame` on the packaged host (`sh scripts/xvfb.sh --headless`, 900 frames,
+480 measured), as a 2x2 over the engine's projection and shadows. The switch is
+`render: { projection }` — `renderer:` takes a renderer instance, and passing the flag there
+silently does nothing, which cost one round of identical "arms" before it was caught.
+
+| arm | `renderScene` | draws/frame | µs/draw |
+|---|---|---|---|
+| projection off, no shadows | **9.98 ms** | 1,535 | 4.17 |
+| projection off, shadows | **30.40 ms** | 3,074 | 8.35 |
+| projection on, no shadows | **2.31 ms** | 3 | — |
+| projection on, shadows | 2.56 ms | 4 | — |
+
+Three things transfer from this:
+
+1. **Per-object traversal agrees across runtimes.** 1.472 ms over 1,566 visited objects is
+   **0.94 µs/object** on native, against 0.87-0.92 µs measured in the browser on a different
+   scene at different object counts.
+2. **The shadow result reproduces.** Draws exactly double, and `renderScene` goes up **3.05x**
+   (9.98 -> 30.40 ms) where the browser saw 2.68x. A shadow pass costing far more than the draws
+   it adds is not a browser artifact.
+3. **Native is about twice as cheap per draw** — 4.17 µs against the browser's 7.74-8.90 µs on
+   comparable scenes — which is the clearest single argument in this record for the native host.
+
+**The engine's collapse, measured against a real control this time.** With projection on, 1,561
+authored meshes become one instanced batch and 3 draws
+(`"sourceRenderables":1562,"instancedBatches":1,"projectedObjects":1561`), and `renderScene` falls
+from 9.98 ms to **2.31 ms — 4.3x less CPU**, with no game-side work. For PRD-397 this is the
+number that matters: the runtime already performs the collapse a build-time merge proposes,
+wherever geometry and material repeat. A merge can only win where this declines, which is the
+reference game's shape of 426 meshes over 232 materials — the residue the census measured at
+220 -> 192 buckets.
+
+**The 960-call anomaly explained, and it is the most useful result here.** Five per-subsystem
+stages recorded 960 calls in one native arm against 739,680 in another. That was not an instrument
+fault and not the shadow pass: **the native probe never moved anything, and the browser probe
+rotated every cube every frame.** Isolating exactly that, same scene, same host, projection off,
+no shadows:
+
+| | `bindings.updateForRender` calls/frame | that stage | `renderScene` |
+|---|---|---|---|
+| nothing moves | **2** | 0.03 ms | **10.10 ms** |
+| all 1,561 objects rotate | **1,534** | 3.94 ms | **17.45 ms** |
+
+**Moving 1,561 objects costs +7.35 ms of render phase**, and three skips the per-object binding
+update entirely when nothing changes. A static object is already cheap, automatically, with no
+API and no authoring — which is why the earlier arms disagreed by three orders of magnitude on
+call count, and why the ratios computed across them were discarded.
+
+This is the number PRD-396 should have been written against. Its `markStatic` freeze removes
+matrix composition and is worth 0.009 ms on a scene this size; the binding work that dominates a
+moving scene is already skipped for anything the game does not touch. **The engine rewards
+staticness by roughly 7 ms on this scene before any freeze API exists.**
+
+It also cautions every other row here: the browser attribution animated its scene and the native
+2x2 did not, so per-subsystem comparisons between them are not like-for-like. The stage-level
+totals (`renderScene`, `projectObject`, draw counts) are, and those are what the cross-runtime
+claims above rest on.
+
+**The bound on batching.** The same 4,096 objects rendered through the framework's collapse pass
+take 3 draws and **0.24 ms instead of 25.20 ms, 106× less CPU.** That is what perfect batching of
+a one-material scene achieves, and it is an upper bound: a game with 232 materials over 426 meshes
+does not collapse that far.
+
+**Host-boundary price, native.** One empty V8→host call costs **74.07 / 75.33 ns** measured by
+`packages/runtime-native/scripts/bench-host-boundary.js`. At 4,131 WebGPU commands per frame that
+is 0.31 ms — filling 10.9 ms would need 145,917 crossings per frame, 255 per draw, against the 7.2
+per draw actually made. **The boundary is not where render time goes**, which prices WASM-hot-loop
+proposals down rather than up.
+
+## A real-time native gameplay lane, and what the render term is made of — 2026-09-19
+
+**Subject:** `sandbox/midway-open-pacific`, airborne cruise, packaged desktop binary (host
+`build/tn-linux/mystral` `1059b36b`, CMake Release; game bundled against the sandbox tarballs),
+RTX 2080 driver 615.71.09, 1280x720, MSAA 4x, `resolutionScale` 1, present mode fifo at 60 Hz.
+Campaign record, raw logs and the tools are in
+`artifacts/native-performance-loop/native-desktop-midway-20260919/` (untracked).
+
+**A `.playtest.json` cannot measure native frame pacing, and this is why.** A step's
+`waitTicks`/`holdTicks` (and `waitFrames`, which a fixed-step bridge converts to ticks —
+`steps.ts:302`) call `GameLoop.advance()`, and `advance()` runs the fixed-step callbacks in a tight
+loop **with no render and no present** (`packages/core/src/loop.ts:296`). Measured: a 5010-tick
+flight scenario presented ~60 frames in total, and its six `TN_FRAME_BUDGET` windows were the
+loading screen (windows 2-6: `presents: 0`, `render p50 0`). The scenario is a correctness harness,
+not a workload.
+
+**The lane this record now has:** `tools/realtime-drive.mjs` attaches the same mailbox bridge (so the
+boot hold releases), drives a fixed input choreography, and then leaves the host alone for a
+wall-clock window while it runs its own loop; `tools/measure.mjs` reads the host's own markers with
+the existing `threenative-playtest perf` parser and reduces the last 8 windows whose every counted
+loop frame reached the display. Both arms must run on `TN_PLAYTEST_HOST_DISPLAY=1`, because a
+private Xvfb's frame rate is wrong rather than missing.
+
+**Baseline, three runs, 8 fully presented windows (2400 presented frames) each, zero hitches:**
+
+| metric | median | spread over three runs |
+| --- | ---: | --- |
+| frame p50 | 15.00 ms | 14.80-15.20 |
+| frame p95 | 18.34 ms | 18.33-19.47 |
+| render p50 (JS) | 12.30 ms | 11.84-12.55 |
+| gpuMs | 1.8 ms | 1.4-2.3 |
+| presentedFps | 57.9 | 57.6-58.3 |
+
+Noise margin, predeclared and applied to every later candidate: the larger of 3% of the baseline and
+twice the largest deviation from the median — **±2.25 ms p95, ±0.45 ms p50, ±0.93 ms render p50**.
+Launch on the same runs: `ready` at 9033 ms (median; 8192-9618), with `audio` 1.2 s →
+`scene-load-total` 3.8 s → `enter` 5.1 s. This supersedes the 2026-09-17 probe's 21.4-22.9 ms p50
+airborne reading, which was a different camera instant under the old load stall.
+
+**What the 12.3 ms render term is made of.** A `TN_ANDROID_JS_PROFILE=ON` host of the same revision
+(names JS functions and attributes a native frame to its JS caller; it also prints a per-frame
+marker), 90,923 samples over frames 900-2000 of the same cruise. Attribution only — the build's own
+absolute milliseconds are inflated and are never quoted as a timing claim:
+
+| self % | entry |
+| ---: | --- |
+| 9.22 | `_projectObject` (three RenderList) |
+| 9.07 | `updateMatrixWorld` |
+| 8.45 | `native <- buffer.mapAsync` (via `install-async-pipelines.js:80`) |
+| 6.54 | `_update` (three node update) |
+| 5.92 | `update` (`AnimationAction`) |
+| 4.74 | `multiplyMatrices` |
+| 4.13 | `_renderObjectDirect` |
+| 3.89 | `get` (binding cache) |
+| 3.71 + 1.56 | `RenderCameraCull.#visit` (engine) |
+| 2.89 | `traverse` |
+
+Per frame, from the same host: render-thread CPU 21.9 ms of which **JS frame 19.8 ms** and all
+bridge crossings 3.3 ms (`mapAsync` 3.39 ms, `getCurrentTexture` 0.52 ms); 4131 WebGPU commands
+(`setVertexBuffer` 1144, `writeBuffer` 949, `setBindGroup` 664, `drawIndexed` 538,
+`setIndexBuffer` 524, `setPipeline` 253) in 5 submits, writing 1091 KB into 643 distinct buffers.
+So the frame is **JS-owned, not bridge-owned**: the crossings are 15% of it, and three's render list,
+its matrix walk and its node update are over half.
+
+**One hypothesis refused before it cost a build:** the per-frame GPU-timestamp resolve
+(`renderer.resolveGpuFrame()`, `game.ts:1456`) shows up as 8.45% self time in `mapAsync` and looked
+like the single biggest engine-owned item. It is not added work — `handleGpuBufferMapAsync` begins
+with `flushRecordedFrameOps` (`bindings_resources.cpp:1140`), replaying the frame-op stream the frame
+boundary would replay anyway, so the profile attributes relocated replay to the map. The promise,
+readback buffer and extra submit are what would actually be saved.
+
+**exp-01 — the double scene walk does not exist on this workload, and the change built for it was
+reverted.** Three does walk the whole graph at the top of every `render()` (`Renderer.js`:
+`if ( scene.matrixWorldAutoUpdate === true ) scene.updateMatrixWorld();`), and a mirrored pass is a
+second `render()` of the same scene — so the duplicate is real *where auto-update is left on*.
+**midway does not leave it on.** It sets `scene.matrixWorldAutoUpdate = false` at startup and walks
+the scene itself once per presented frame from the engine's `beforeRender` seam, with its own comment
+saying why: *"Shadow and reflection passes (which draw through their own cameras) reuse the
+transforms prepared here."* A probe on the live host counted, over 1200 frames, **3180 nested
+renders, 1746 calls to the scene's own `updateMatrixWorld` — every one at render depth 0 with
+`matrixWorldAutoUpdate === false` — and zero suppressions.** There was no second walk to remove.
+
+The guard this campaign committed for it (`e0c31a8a3`) is **reverted** here, its test deleted and
+`renderer.spec.ts`'s identity assertion restored. Two lessons worth the ink:
+
+- **A timing pair is the wrong instrument for a claim about removed work.** Three wall-clock series
+  for this change came back `invalid` on a shared box; what settled it was *counting* the walks a
+  probe saw (two runs, unambiguous). Where a change claims to delete work, count the work first.
+- **The engine already has this lever, twice over.** `renderProjection.ts` walks its source once and
+  leaves `matrixWorldAutoUpdate` false for the passes that follow, and midway does the same by hand.
+  A change that adds a third mechanism for a case two existing mechanisms already cover is exactly
+  what the charter's kill switch is for.
+
+For a game that leaves auto-update on, the duplicate walk is real and **unmeasured here** — it is
+recorded as a lead, not taken.
+
+**A false positive worth recording, because the obvious fix causes it.** Pairing the arms by their
+recorded load average looks objective and is not: the tool matched *both* candidate runs against the
+one slow incumbent and printed `keep — frame p50 improved 2.140 ms against a 0.450 ms margin`, out of
+environment noise. `tools/pair-decision.mjs` now pairs by execution adjacency, never reuses a run in
+two pairs, and refuses a verdict when the incumbent arm's own spread exceeds the effect being
+claimed. On a shared machine the honest output of a paired experiment is often `invalid`, and a tool
+that cannot say so is worse than no tool.
+
+**The launch, attributed the same way.** Frames 1-700 of a launch under the same profile host,
+78,301 samples. Load timeline: `audio` 1252 ms → `aircraft` 1967 → `ships` 2364 → `fleet` 2846 →
+`hulls` 3365 → `environment` 3437 → `deck-crew` 3459 → `scene-load-total` 4107 → `enter` 5638 →
+`ready` 9882. So 4.1 s of scene loading and 4.2 s between `enter` and `ready`. The bridge counters
+name two costs inside it: **146 `decodeAudioData` calls, ~542 ms of them inside a single frame**
+(still synchronous on the loading thread — the same finding as the 2026-09-17 probe), and
+**27,647 `fillRect` calls with 27,647 `__nativeSetFillStyle` calls, ~60 ms of crossings, again inside
+about one frame**. Those crossings are the game's own texture generation — the bundle writes
+`ctx.fillStyle = rgba(...)` then `ctx.fillRect(...)` once per iteration over 25,000 iterations and
+over a 512x512 step-3 grid. It is recorded here as a lead, not a fix: the same texture written into
+an `ImageData` and uploaded once is one crossing instead of 27,647, which is the game's call and
+changes no pixel; the audio decode is an engine seam that is still synchronous by construction.
+
+**exp-03 — the audio decode leaves the frame thread.** `decodeAudioData` decoded inline and handed
+back a promise settled by the hand-rolled thenable, because a *settled* promise was the only shape
+that object could fake. A real `Promise` has no such problem, so the decode can leave the thread:
+`AsyncAudioDecoder` (one worker, bounded queue, results delivered on the draining thread — the shape
+`AsyncImageDecoder` already had), resolvers in `src/runtime-scripts/install-async-audio-decode.js`,
+and `processAudioEvents()` draining once per `pollEvents()`.
+
+Measured with the campaign's own instrument on the same profile lane, frames 1-700 of a launch:
+
+| | sync decode (before) | queued decode (after) |
+| --- | ---: | ---: |
+| `decodeAudioData` bridge time, 146 calls, inside one frame | **541.99 ms** | **4.66 ms** |
+
+**Behaviour, which is what caught this:** `native-playtests/audio-sweep.playtest.json` (6631 frames)
+and `speech-once.playtest.json` (2892 frames) both pass, with 146 clips decoded off-thread and zero
+load failures; the whole `@threenative/runtime-native` suite passes (1370 tests, 23 skipped); the
+decode contract test is red when the binding decodes inline again (`expected 5 decodes outstanding,
+saw 0`) and green with the queue. **One existing contract had to change with it**:
+`threenative-audio-decode-promise-test` asserted that `decodeAudioData`'s legacy `successCallback`
+had already fired when the call returned — true only because decoding was synchronous, and not what a
+browser does. It now asserts the browser contract in both directions: the callback has *not* fired
+before the decode lands, and it does fire when it lands. That pair is the red-green for the contract,
+and the proof's pump drains the way `pollEvents()` does. **The launch *seconds* did not clear this
+box's noise**: three alternating pairs against the unchanged control read +3200, +622 and −509 ms on
+`ready`, while the `audio` load step itself moved only +134, +59 and −49 ms. So the block is gone — a
+loading screen that froze for half a second per burst does not — and the launch-total claim stays
+unresolved here.
+
+**exp-05 — the asset-read burst does not own a frame either.** `processPendingFileCallbacks()`
+emptied the whole queue in one phase: a real launch measured a single `fileCallbacks` phase of **625,
+824 and 1043 ms** across three runs — every completed read's callback in one frame, each copying its
+bytes into a fresh ArrayBuffer before the game could continue. The reads are issued in parallel, so
+they arrive together; the work is the same either way, and what was missing was a frame between
+batches. It is now bounded the way the engine already bounds its scheduler drain (4 ms, 256
+callbacks, `processMicrotasks()` between them so a callback that enqueues the next read advances).
+
+Three paired runs against the unchanged build: worst `fileCallbacks` phase **0, 0, 0 ms** — below the
+host's own 250 ms reporting threshold — against 625/1043/824 ms; `ready` moved −728, −1766 and
+−310 ms (median −728 ms, secondary and load-dependent), with **zero unresolved assets, zero decode
+failures and zero cue warnings in all six runs**. Gates: `launch` (2011 frames), `briefing` (631) and
+`audio-sweep` (6631) native playtests pass; the whole `@threenative/runtime-native` suite passes
+(1372 tests); the shape test fails on the unbounded drain with *"the drain must carry a time budget"*
+and passes on the bounded one.
+
+**The 1.7-2.6 s `timerCallbacks` launch phase is one callback, not a burst — bounded, measured,
+reverted.** The same shape as the file drain looked like it applied to the *largest* single phase in
+a launch: `executeTimerCallbacks()` emptied its queue unbounded, and three launches reported one
+`timerCallbacks` phase of 1744, 2139 and 2608 ms. A probe that counted callbacks inside the phase
+answered it in one run: **`{"callbacks":1,"ms":2663}`** — a single callback, which no drain budget can
+bound, because a callback is not preemptible. Three paired runs against the unchanged build read
+2062, 1813 and 2248 ms with the bound in place: **no change**, so the bound was reverted. The
+callback is **not** a defect either, and that is worth writing down because it is the third time this
+campaign's instrument changed the conclusion: instrumented per callback, on a machine at load 10-14,
+**no timer callback exceeded 50 ms across two full runs** — while every 1.7-2.6 s reading was taken at
+load 17-29. The phase is ordinary timer work whose *wall* time is inflated by contention, which is
+exactly the confound this record's honest-gap note describes. Nothing was wrong with the drain, and
+the lead closes here.
+
+**The remaining launch lead is a one-off first-upload callback, not a decode queue.** The engine
+already names slow decode callbacks itself (`TN_SLOW_DECODE_CALLBACK`, 100 ms floor), and across eight
+launches that marker fired **exactly once each**: 1347-1835 ms, `waiting: 0`, for a 512x512 and a
+2048x2048 image alike. Size-independence rules out the RGBA copy; the callback is
+`engine->call(callback, {bitmap, null})`, so the cost is whatever the JS continuation does with the
+first texture — three's upload path. `AsyncImageDecoder::drain()` is *already* bounded and its
+leftovers wait for a later poll, so the drain is not the lever; the cost inside that one continuation
+is. A split probe answered the ownership question in two runs: the callback's **native** half — building
+the V8 ArrayBuffer from 16.8 MB of RGBA — is **2.96 and 4.26 ms**, and the JS continuation is **1391.7
+and 1418.4 ms**; a third run on a 512x512 image reads 0.16 ms native against 1567.2 ms of JS, so the
+engine's half tracks the bytes while the JS half does not. Accumulating the engine's own texture-upload
+bindings (`copyExternalImageToTexture`, `queue.writeTexture`) over the same window gives **0 ms**: the time is JavaScript outside the engine's
+upload path, so the lever is in the game's or three's continuation, not in the host. That closes the
+launch lead for this campaign: the engine's share of the worst single frame in a launch is 5 ms of
+1.8 s.
+
+```
+TN_DECODE_CALLBACK_SPLIT:{"nativeMs":4.26,"jsMs":1818.44,"uploadMs":0,"w":2048,"h":2048,"bytes":16777216}
+```
+
+**A second game walks the kept changes.** The scaffolded production platformer — the repository's
+own template, packed from the workspace at `50c26f9ba` and built against the changed host — launches
+and passes `playtests/collect.playtest.json` on desktop (83 frames, no diagnostics). Its
+`playtests/performance.playtest.json` reads 15.6 fps under the runner's private Xvfb and fails its
+30 fps floor, then passes that floor on the real display (`TN_PLAYTEST_HOST_DISPLAY=1`) and fails only
+its 33 ms p95 product budget at 107 ms — on a box at 1-minute load ~20, with no pre-change control
+arm built (that needs a full CMake reconfigure, and the question it would answer is the template's
+own budget, not this campaign's changes). The Xvfb figure is the repo's own documented artifact
+(13.3 fps there against 57.7 on the real display, one build), which is why the second run named the
+display.
+
+**Harness observation, not a change:** `pnpm profile:production -- --target desktop` reports
+`BLOCKED` with `TN_PROD_PLAYTEST_FAILED` and *"Desktop application did not expose a playtest bridge"*
+for that same scaffolded platformer, while the same project built and driven directly by the playtest
+runner passes. The harness's desktop invocation is the part that fails on this checkout; nothing in
+the two kept changes is implicated.
+
+**The second workload is vsync-bound, and its 72% profile entry is the wait.** The scaffolded
+platformer profiled the same way as midway (profile host, frames after the choreography) reads frame
+p50 15.48 ms with **render p50 14.27 ms** — the same CPU-bound shape — but one entry owns
+**71.97%** of all JS samples: `native <- _getDefaultRenderPassDescriptor @ game.js:103420`, a native
+frame whose nearest named JS caller is three's canvas-target lookup inside
+`WebGPUBackend._getDefaultRenderPassDescriptor`. That lookup is a plain getter, so the sample is deeper
+than the name suggests.
+
+Running the same game with `--no-vsync` settles it: the entry falls to **6.74%**, `render` p50 falls
+14.27 -> **5.58 ms**, and the 8.7 ms moves to `hostGap` (6.07 ms). The platformer was waiting for the
+next swapchain image inside the pass descriptor path, not working: it has **5.6 ms of work in a
+16.7 ms budget**, and with the wait removed the largest remaining term is the per-frame GPU-timestamp
+resolve (`native <- buffer.mapAsync`, 29.49%) — the relocated frame-op replay this record already
+refused as a lever.
+
+Two conclusions, both worth keeping: midway is the right primary workload, because it is the one that
+is *CPU-bound*; and a profile share is not a cost until the wait has been taken out of it.
+
+**The same trap, twice more, and the pairing rule that caught it.** The scaffolded platformer's
+profile is led by a *different* entry in every configuration: at 60 Hz the swapchain wait above, and
+uncapped `native <- buffer.mapAsync` (the per-frame GPU timestamp readback) at **30.91% and 31.75%**
+of all samples across two control runs. Removing the readback outright changed no frame: control frame
+p50 5.58/5.35 ms against 4.56/6.60 ms without it, with the arm's own spread (2.04 ms) wider than any
+difference between arms and the render phase moving the *other* way (2.79-2.88 against 3.74-5.24) —
+the shape of relocated work rather than work removed. The readback's CPU sits on the main thread
+inside the host poll and submit path, which is exactly where a paced loop already spends its wait.
+
+The first, unpaired reading of that same A/B showed a 2.67 ms win. It was load noise, and it is the
+reason the campaign alternates its arms instead of running them one after another: on this box a
+single arm's spread exceeds every steady-frame effect measured so far, so an unpaired pair can
+manufacture any answer. Cadence was tested too — sampling every fourth frame holds 75 GPU samples in
+a 300-frame window at a 1-frame age against the scaler's limit of 8 — and it bought no frame time, so
+it was reverted rather than shipped as measurement density traded for nothing.
+
+**Every engine-owned entry in the steady frame is now accounted for, and none is reducible without
+changing behaviour.** On the primary workload the engine's own share is small and spread, and each
+piece was read rather than assumed:
+
+- **The camera cull** (3.7-5.3%, about 0.5-0.7 ms) is property- and `WeakMap`-bound, not
+  trigonometry: it already owns its scratch vector, scratch matrix, visitor and hidden list, and the
+  per-object arithmetic a rewrite would replace (one `sqrt`, one divide, one `applyMatrix4` for a
+  point, one `getMaxScaleOnAxis`) prices at roughly 15 microseconds across 1,529 objects. A
+  "faster" version would be a cosmetic diff.
+- **The per-frame GPU timestamp readback** (0.40 ms on this workload, 30.91% and 31.75% of the
+  second workload's samples) was priced against a paired control and removed outright; the frame did
+  not move, because its CPU sits in the host poll and submit path, where a paced loop already spends
+  its wait.
+- **The frame-op recorder** (about 0.5 ms, 4,131 commands a frame) is already fast-pathed: typed
+  upload paths per view width, resource ids cached on the object, a manual `DataView` encoder. What
+  remains is the byte copy the deferred design requires - a megabyte a frame on this workload, and
+  the safety property that lets the game reuse its own buffers before replay.
+
+That is the whole of the engine's named steady-frame cost, and the campaign's bar is 0.5 ms.
+
+**The kept launch change reproduced on a later day, and the reproduction is the point.** The
+campaign's queued row was a quiet-machine re-run of the file-drain pair, and it ran on 2026-09-20
+under loads the script prints per run (9.4 to 16.1, so no row is left queued): every control run
+reported the worst `fileCallbacks` phase the change was accepted for (783.5, 647.5 and 638.1 ms) and
+every candidate run reported nothing at all, below the host's 250 ms threshold - three of three, on a
+metric that does not move with machine load. Launch `ready` moved the *other* way this time (median
+8,438 ms control against 9,307 ms candidate), with the candidate runs carrying the higher loads,
+which is the load dependence the original record already attached to that number and the reason its
+decision was never placed there. A reproduction that only repeated the accepted numbers would have
+proved less than one that also shows which metric is allowed to disagree.
+
+The reproduction wrote into the same `raw/exp-05-<arm>-<slot>` paths as the original pairs and
+replaced those logs; the original values survive in the experiment's own fields, and `raw/exp-05/`
+and `raw/exp-05-gates/` are untouched.
+
+**Batching a scene is bounded by its material count, not by its object count.** The engine's own
+guidance says to reach for `mergeParts` when many different shapes never move relative to each
+other, and the arithmetic behind that looked strong: a game whose frame is JavaScript with the GPU
+idle, 1,561 meshes, and ~2 microseconds of three.js work per object per pass implies about 5 ms of a
+16 ms render that fewer objects would delete.
+
+Measured on that game, a per-material merge (material, `castShadow`, `receiveShadow` and the layer
+mask all part of the bucket key, animated and game-toggled subtrees skipped) replaced **246 parts
+with 61 meshes: 1,561 -> 1,376**, and moved nothing - 46.5 fps against 48-51 for the same build
+without it, inside that run's own spread. The reason is in the buckets: of 459 meshes it could even
+consider, **274 buckets held 213 singletons**, because an imported model carries a material per
+part. A merge can only collapse parts that share a material, so a scene authored that way has
+almost nothing to collapse; the rest of the population sat inside subtrees the game toggles per
+object and correctly refused to merge.
+
+So the lever is real but its size is a content property, and the number to read before promising
+anything is the bucket census, not the object count. A scene that wants it needs shared materials -
+an atlas, one material per hull - or repeated shapes for `InstancedBatch`. Where neither is true,
+"fewer objects" is not available, and the remaining lever is moving the walk itself.
+
+**What a C++ traversal would actually recover, priced against the profile rather than the slogan.**
+The per-object block on the measured scene is 32.4% of a 16.1 ms JS frame (5.22 ms). Split by what
+each entry is, not by which file it lives in: traversal — the walk plus the frustum and projection
+tests that build the render list — is 3.71 ms of it (project 1.48, matrix walk 2.22), and per-draw
+bookkeeping keyed on JavaScript object identity is 1.51 ms, inside three.js's own
+`_renderObjectDirect`: `_objects.get`, `_nodes.needsRefresh`, `_geometries.updateForRender`,
+`_bindings.updateForRender`, `_pipelines.updateForRender`. The shadow lane is a second full walk of
+the same machinery, so these numbers are paid per pass.
+
+Moving traversal to C++ behind the existing frame-op stream, staying inside the charter (three.js
+stays the renderer), recovers **1.1-1.9 ms of a 20.2 ms frame — 49.5 to about 52-55 fps** — because
+the other 60% of the block is either the matrix walk three consumes on the same frame or bookkeeping
+whose key is a JS object. It cannot reach the 3.7-4.6 ms that "move traversal to C++" suggests. It
+would also have to publish about 187 KB per frame of compiled traversal output (against 17% of
+today's packet; 104 KB of that is command overhead), which is a real cost the transport already
+measured once in PR #275.
+
+The comparison that matters: where a scene shares materials or repeats shapes, batching with the
+capabilities the engine already ships recovers as much or more (2.0-2.9 ms) for no engine work at
+all; where it does not — as measured above — batching recovers nothing and the walk is what is left.
+
+**A trap worth naming, because it produced a confident wrong number.** The first arm of this
+experiment embedded a *stale* `generated/runtime_scripts.h`: the game build copies a host binary
+(`THREENATIVE_RUNTIME_BINARY`), and that host had been linked before the install script's shape fix,
+so the script was present as text but never ran. `__tnAudioDecodePending` was missing, every one of
+the 146 audio loads failed, **no decode happened at all**, and the launch looked ~1.2 s faster in
+six of six pairs because the work had been deleted rather than moved. The audio playtests failed
+(0 cues played) and that is the only reason it was caught. Before measuring an arm, confirm the
+*executed* artifact carries the change — `strings <game binary> | grep <new marker>` — not just the
+source tree.
+
+**Honest gap: this box is shared, and both obvious metrics fail on it.** A paired series taken at
+1-minute load 10-32 read the *incumbent* binary 13% slower than the baseline above, which compares
+the neighbours rather than the code; that series is retained as `raw/exp-01-confounded/`. A
+second attempt at a robust lane measured the host process's own CPU time at each
+`TN_FRAME_BUDGET` window boundary (CPU excludes the waiting a preempted thread does) and closed
+itself the same day: at load 33 the *unchanged* binary read **68.7 ms frame p50 and 85.3 ms of
+process CPU per frame**, against 15.0 ms and ~15 ms on a quiet run. Roughly 5x inflation in the
+work itself, not only in the waiting — cache and memory pressure at 11 resident CPU hogs. So no
+metric this record can take is comparable while the machine is loaded, and `tools/run-pairs.sh` now
+refuses to start a pair above 1-minute load 4 and abandons one above 8. Any number in this file
+taken during such a window is not comparable and is marked as such where it appears.
+
 ## Midway native probe — desktop steady state, the load stall, and a desktop perf-series gap — 2026-09-17
 
 **Subject:** the tarball sandbox game `sandbox/midway-open-pacific`, packaged desktop binary built
@@ -2367,6 +2898,158 @@ Error: TN_DAWN_ANDROID_ARCHIVE_MISSING: /home/joao/projects/threenative/threenat
 The surface marker, sRGB bridge and Android backend contracts pass their focused tests, but the
 desktop native binary and the phone pair were not built in this attempt. Therefore no suspect has
 a measured `>=` or `< 2 ms` delta, and no product default changed.
+
+### 1.4.3 A per-aircraft step was 18x its own cost, in the object shape rather than the math (2026-09-19)
+
+Found by profiling the game, not by reading the engine. `midway-open-pacific`'s own fixed-step
+budget (68 airborne, p95 ≤ 4 ms) failed at **4.293 ms**. A V8 CPU profile of that run put **34% of
+all sampled CPU inside `flightForces`**, with line-level ticks concentrated on the return literal's
+property stores — `{ ...coeff, airspeed, alpha, … }`. A spread cannot use the boilerplate V8 gives a
+fixed literal; it goes through `CopyDataProperties`, property by property, twice per aircraft per
+step. After that literal was written out field by field, the next profile's hottest single line in
+the entire fixed step was `FlightModel.stepDeck`'s `{ ...this.environment, modifiers }`.
+
+Engine harness, `scripts/check-flight-cost.ts` (32 aircraft, 600 timed ticks, three runs a side),
+`--max-mean-ms 0.35` — now reachable by name as **`pnpm check:flight-cost`**, whose red control is
+reintroducing the spread, which makes it exit 1:
+
+| | mean step | p95 | exit | `finalStateSha256` |
+| --- | --- | --- | --- | --- |
+| as shipped | 0.805–0.824 ms | 1.95–2.15 ms | 1 | `bde0e51b5700123a…` |
+| forces literal written out | 0.089–0.094 ms | 0.14–0.18 ms | 0 | `bde0e51b5700123a…` |
+| + one step environment per model | 0.044–0.048 ms | 0.05–0.06 ms | 0 | `bde0e51b5700123a…` |
+
+The identical `finalStateSha256` at every step is the point: the physics did not move, so only the
+cost did. On the game's own gate the same two changes take the cap population from mean 2.154 ms /
+p95 4.293 ms (FAIL) to mean 0.669–0.698 ms / p95 1.07–1.22 ms (PASS, three runs), and the marginal
+cost at the top of the range from 30.9 to 8.7 µs per aircraft per step. Commits `b04b9d3a1`,
+`302780021`. Three cheaper explanations were measured and rejected first: `Math.hypot` in the same
+path is 1.09x here (not the 6.4x `ripple-field` saw), and an inlined coefficient writer with scratch
+vectors is 1.07x.
+
+**The remaining per-frame allocation is not in the loop.** §1.4.1 left "the remaining ~57 events'
+worth" unowned. Driving `FixedStepLoop.stepFrame` with `collectMetrics: false`, a no-op update and
+no-op render for 200,000 frames under `node --heap-prof --heap-prof-interval=2048` attributes about
+**4 B/frame** of sampled allocation, and the engine-attributed sites are single samples
+(`stepFrame` 11.1 KB, `FrameBudget.endFrame` 10.8 KB, `#recordFrameTiming` 7.4 KB) rather than
+per-frame churn. The instrument is coarse at this scale, so read that as "no per-frame allocation
+site found in the loop", not as a proof of zero. What is left to attribute is the budget's
+per-*window* report path and the game's own step, and neither was chased here.
+
+**The projected-size gate is not the frame's hidden cost.** In the same browser profile the largest
+engine-owned self time was `RenderCameraCull`'s `#visit` (578 ms of a 20 s sample), and the gate does
+walk the whole scene every frame while its two siblings (`updateClusteredMeshes`, `updateModelLods`)
+iterate a tracked set. Measured in isolation instead — 19,446 objects with 4,276 renderables, the
+game's own census, `RenderCameraCull.apply` at `minimumPixels: 2` — it costs **0.42 ms per frame
+median**, of which the traverse itself is 0.27 ms. The profile figure was stall attribution: a
+handful of samples carried the ~350 ms wall-frame stalls the same capture reports, which is the
+reason a self-time leaderboard read from a GPU-bound profile is not CPU time. A live Chrome trace of
+the same game (`threenative-playtest trace`, 20 s, 135,784 events) agrees with the bench rather than
+with the profile: `#visit` is **2.3 % of sampled CPU**, behind three's own `_projectObject` (5.4 %)
+and `updateMatrixWorld` (3.8 %), with the main thread 49 % idle. Replacing the walk
+with a maintained registry would save at most 0.27 ms/frame and add an index to keep correct across
+three scene seams, so it was not done.
+
+### 1.4.4 `perf` printed a frame rate from a display it cannot vouch for (2026-09-19)
+
+`threenative-playtest perf --executable` spawned the desktop host in whatever `DISPLAY` it inherited
+and printed that run's `fps` column — including a private Xvfb, where the same package's `trace`
+already refuses to print one, for a reason it measured: without vsync the present wait lands inside
+the update phase, and the number is wrong rather than missing (13.3 fps there against 57.7 on the
+real display, one build).
+
+Measured on midway's desktop build under the capture-lock Xvfb, one binary, one command:
+
+| window | fps | frame p50/p95 |
+| --- | ---: | --- |
+| 2 | 1123.60 | 0.0/0.0 |
+| 3 | 20000.00 | 0.0/0.0 |
+
+and `--min-fps 55` **passed, exit 0**. A bound satisfied by 20,000 fps is a green with nothing
+behind it, which is the failure mode this package's own doctrine — "a check that cannot run must
+fail, never skip" — exists to prevent.
+
+`perf --executable` now decides its display the way every other lane does, and when the operator did
+not ask for the host display it prints no frame rate, names the reason and both escapes, and refuses
+a `--min-fps` bound with `TN_PERF_VIRTUAL_DISPLAY` (exit 1). `--allow-virtual-display` accepts the
+run explicitly, the same flag `trace` takes. `--max-frame-p95` is untouched: the callback's own
+duration was measured, the rate it was presented at was not. `--file` and `--logcat` sources carry
+no display knowledge and keep their meaning, so the device lanes' `--logcat … --min-fps 60` flows and
+the phase baselines quoted in `packages/runtime-native/AGENTS.md` are unaffected. Commit `5ea4b9c76`;
+seven tests in `packages/playtest/__tests__/perf.spec.ts`; rule recorded in
+`packages/playtest/AGENTS.md`.
+
+### 1.4.5 One marker name, two payloads, and a reader that printed `NaN` (2026-09-19)
+
+The native host emits `TN_FRAME_HITCH` once per 300-frame window
+(`{window,maxMs,maxAtFrame,p99Ms,p50Ms,…}`, `runtime-native/include/mystral/cold_start.h`). Core's own
+frame budget emits the **same marker** for a different event on every platform — one line the moment
+a present gap exceeds `hitchMs` (`{gapMs,uptimeMs,wallClock}`, `packages/core/src/frame-budget.ts`).
+`perf` parsed every line as a window.
+
+Measured on midway's native launch log (`artifacts/playtest/01-native-playtests-launch.playtest.json/console.json`,
+read with `perf --file`), which carried three gap lines of 2.1–3.0 s:
+
+```text
+hitch windows (post-launch, 3): worst NaN ms
+  late sync compile: unreported — this host predates the pipelineCompile fields (TN_FRAME_HITCH without them)
+```
+
+A maximum it never received, an explanation false for those lines, and the three-second stall — the
+thing worth knowing — discarded. The browser log from the same session lost `present gaps (1): worst
+3683.200 ms at uptime 7301 ms`, which is the launch stall PRD-394 exists for.
+
+Both series are read as what they measured now, and a line carrying neither shape throws
+`TN_PERF_MARKER_MALFORMED` naming the missing field instead of rendering `NaN`. Commit `c798bd21f`;
+four tests in `packages/playtest/__tests__/perf.spec.ts`; package suite 95 files / 1191 tests green.
+The marker collision itself is left in place deliberately: the game `tools/capture-battle-profile.mjs`
+and every recorded log read the gap payload under this name, so the reader discriminates rather than
+the emitter being renamed.
+
+The same command now joins the host's own stall report, `TN_SLOW_PHASE` (one line after any phase
+over 250 ms, `atMs` stamped at the phase's end), so a gap says what it was. On that log:
+
+```text
+present gaps (3): worst 3000.140 ms at uptime 10178 ms
+  gap 3000.140 ms at uptime 10178 ms: imageDecodeDrain 2965.129 ms, animationFrames 473.653 ms
+  gap 2102.540 ms at uptime 13363 ms: animationFrames 2040.518 ms
+  gap 2588.250 ms at uptime 18740 ms: animationFrames 2474.115 ms
+```
+
+A phase that merely contains another overlapping phase is not named — the host's `pollEvents` watcher
+brackets a whole iteration, and attributing a stall to it would be the empty answer this join exists
+to remove. Commit `bc4cf759d`; three tests use that log's own numbers and nesting.
+
+### 1.4.6 The loop's cadence is not the display's (2026-09-19)
+
+`TN_FRAME_BUDGET`'s `fps` is derived from the intervals the game's own frame loop reports. On the web
+that is `requestAnimationFrame`, one per vblank, so it is the number a player would read. On native
+the presentation cap lets the loop iterate many times per present — `paceToPresentationCap` paces the
+*present*, deliberately not the loop, because "pacing an unpresented loop would add sleep to the
+twelve seconds a player already waits" — so a window read `fps 2631.58` on a host that presented 133
+frames in 1740. The reader first refused to print either number (`a85959e71`); the measurement now
+exists.
+
+The host exposes the counter it already keeps — `__tnPresentedCount`, beside `__tnPresentationCap` —
+and core reads it once per frame, so a window carries `presents` and `presentedFps` beside the loop's
+`fps`. Verified on a rebuilt host and a rebuilt desktop artifact, `perf --file <native launch log>`:
+
+| window | fps (loop) | presents | presentedFps |
+| --- | ---: | ---: | ---: |
+| 1 (launch) | 51.28 | 115 | 13.42 |
+| 2-5 (spinning) | 1449–25000 | 0 | absent |
+
+The first cut of this got two things wrong, both caught by that log:
+
+- **Zero is a reading, absent is no seam.** 300 loop frames at 20,000 fps is 20 ms, which can contain
+  no present at all; the first cut reported those windows as absent, hiding four of five.
+- **A window with no presents carries no rate.** `presentedFps` is absent rather than 0, the reader
+  prints `0.00` and names those windows in words, and a `--min-fps` bound over windows that all lack
+  a rate fails closed as `TN_PERF_BOUNDS_NOT_ASSESSABLE` rather than passing on a loop number.
+
+Commit `8db1fd632`. The prerequisite recorded below while scoping this — a window must say which
+cadence it counted — is what `presents`/`presentedFps` being present-or-absent implements: no reader
+infers a basis from a log any more. Suites: core 126 files, playtest 95 files, 2649 tests green.
 
 ### 1.5 Untried, named
 
