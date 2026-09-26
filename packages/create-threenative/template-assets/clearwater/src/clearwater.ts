@@ -156,7 +156,8 @@ export function createClearwater(ctx: WaterContext, input: IClearwaterOptions = 
         if (sample === undefined) return undefined;
         // Match rippleAt()'s two-texel smoothstep in render/clearwater.ts, including after follow().
         const edge =
-          0.5 - Math.max(Math.abs(x - ripples.centerX), Math.abs(z - ripples.centerZ)) / ripples.size;
+          0.5 -
+          Math.max(Math.abs(x - ripples.centerX), Math.abs(z - ripples.centerZ)) / ripples.size;
         const t = Math.max(0, Math.min(1, (edge * ripples.resolution) / 2));
         const rippleHeight = ripples.heightAt(x, z) * t * t * (3 - 2 * t);
         return {
