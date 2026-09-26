@@ -1,5 +1,25 @@
 # Release readiness — 2026-09-23
 
+## Status 2026-09-25
+
+**R1 shipped.** 0.3.3 is published (`@threenative/core` `latest`=`next`=`0.3.3`; `create-threenative`
+`0.2.6`) with [runtime-native-v0.3.3](https://github.com/ThreeNativeHQ/threenative/releases/tag/runtime-native-v0.3.3)
+(tag `279adb2ca`, 20 assets). The next-targeted clean room passed all ten steps. Tickable and ticked:
+PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
+`alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
+
+**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-112
+repair re-run of the seven-template packed journey after the racing fix (#305) · PRD-399 Android 60 Hz
+UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
+controls and web/native parity · PRD-365/375 CI signing proof green, public Authenticode/notarization
+superseded (each developer signs their own), registry-consumer rows remain · PRD-445 is filed in
+[`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
+20 boxes ticked; the `site` deploy is green on `main`, run 36063649413, so only an upstream
+`threenative-sculpt-mcp` release and three owner calls remain).
+
+**Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
+`max(50 ms, 4 panel frames)` with in-frame behind the off flag.
+
 **Verdict: not ready for a production (1.0) release.** ThreeNative is *already public* as an
 alpha: the repository is public under MIT and `@threenative/*@0.3.2` is the npm `latest`. By the
 project's own bar it does not currently qualify even as that alpha: `pnpm alpha:bar` prints
@@ -18,7 +38,9 @@ target, and no public text may claim iOS until a later decision adds it.
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
-**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): eleven files.**
+**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): eight files**
+(nine on 2026-09-23; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25 because
+its only remaining work is blocked).
 The 1.0 PRDs under R3 stay in their own folders and block nothing until the beta ships.
 
 ## What was measured today
@@ -82,7 +104,7 @@ to 0.3.3 and not released.
 3. **Security and honesty debt a stranger sees first**: the high `sharp` advisory, `SECURITY.md`
    naming the wrong supported line, no 0.3.x changelog, stale `CURRENT-CHALLENGES.md` and
    `alpha-bar.md`, and a red site deploy on `main`. No PRD owned these. **New:
-   [PRD-445](critical/PRD-445-public-release-hygiene.md).**
+   [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md).**
 
 ### R2 — a public beta that ships a game
 
@@ -121,7 +143,7 @@ acceptance) and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-bran
    its implemented Phase 1 exact-candidate preflight was removed by PRD-445 Phase 3).
 5. **iOS is not a supported target** (decision 2). [PRD-065](../BLOCKED/requires-ios-ecossystem/PRD-065-ios-evidence-lane.md)
    (3/15) and iOS rows in other PRDs block nothing; the public README still claims iOS, which
-   [PRD-445](critical/PRD-445-public-release-hygiene.md) removes.
+   [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) removes.
 
 ## The critical path
 
@@ -171,7 +193,7 @@ cohort that R1 and R2 fix.
 
 ## Housekeeping found while inspecting
 
-These fold into [PRD-445](critical/PRD-445-public-release-hygiene.md):
+These fold into [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md):
 
 - PRD-060 exists twice, with different titles and progress
   ([here](PRD-060-promoted-consumer-distribution.md) and its former
@@ -181,4 +203,4 @@ These fold into [PRD-445](critical/PRD-445-public-release-hygiene.md):
   PRD-066 and PRD-112-repair.
 
 **Next action (under two minutes):** open
-[PRD-445](critical/PRD-445-public-release-hygiene.md) phase 1 — the `sharp` bump is the first box.
+[PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) phase 1 — the `sharp` bump is the first box.

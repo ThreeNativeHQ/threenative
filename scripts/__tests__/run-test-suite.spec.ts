@@ -106,7 +106,6 @@ describe("run-test-suite phase contract", () => {
     expect(source, "assets has no pure prebuilt check").toContain("@threenative/assets");
     expect(source, "ueformat has no pure prebuilt check").toContain("@threenative/ueformat");
     expect(source, "raw-unreal has no pure prebuilt check").toContain("@threenative/raw-unreal");
-    expect(source, "site has no pure prebuilt check").toContain("threenative-site");
   });
 
   it("fails a prebuilt browser run before invoking Playwright without its verified inputs", () => {

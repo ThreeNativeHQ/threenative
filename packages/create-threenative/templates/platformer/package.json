@@ -44,7 +44,13 @@
   "optionalDependencies": {
     "@threenative/runtime-native": "0.3.3"
   },
+  "overrides": {
+    "sharp": ">=0.35.4"
+  },
   "pnpm": {
+    "overrides": {
+      "sharp": ">=0.35.4"
+    },
     "onlyBuiltDependencies": ["@threenative/core", "@threenative/runtime-native"],
     "patchedDependencies": {
       "three@0.185.1": "patches/three@0.185.1.patch"

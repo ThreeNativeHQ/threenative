@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { progressOf, readSections } from "../prd-progress.js";
+import { progressOf, proofWarnings, readSections } from "../prd-progress.js";
 
 /** The shape that caused the 2026-09-08 stall: acceptance boxes only, no phase boxes. */
 const ACCEPTANCE_ONLY = `# PRD-365 — consumer desktop distribution
@@ -34,6 +34,42 @@ const TWO_PHASES = `# PRD-x
 
 const FINISHED = TWO_PHASES.replaceAll("- [ ]", "- [x]");
 
+/**
+ * R6: work that is outside the author's reach lives under "## Blocked on" and is NOT a box that
+ * counts toward progress. Here every countable box is ticked and the only open line is blocked.
+ */
+const BLOCKED_ONLY = `### Phase 1 — first
+
+- [x] wire the caller. proof: \`pnpm test\`
+- [x] required test green. proof: CI job \`unit\`
+
+### Phase 2 — second
+
+- [x] wire the caller. proof: \`pnpm test\`
+- [x] required test green. proof: CI job \`unit\`
+
+## Acceptance criteria
+
+- [x] the whole thing works. proof: PR #1
+
+## Blocked on
+
+- [ ] A named physical device, on loan from the hardware owner.
+- [ ] One owner call on the product name, 2026-09-25.
+`;
+
+/** R1: a box with no \`proof:\` marker is a warning, never a failure, so old PRDs still run. */
+const MIXED_PROOF = `### Phase 1 — first
+
+- [x] wire the caller. proof: \`pnpm test\`
+- [x] required test green
+- [ ] no proof marker either
+
+## Acceptance criteria
+
+- [x] the whole thing works. proof: PR #1
+`;
+
 describe("readSections", () => {
   it("should attribute boxes to the phase heading above them", () => {
     const sections = readSections(TWO_PHASES);
@@ -54,6 +90,14 @@ describe("progressOf", () => {
   it("should report zero phases for a PRD whose only boxes are acceptance criteria", () => {
     // The caller turns this into a non-zero exit; it must never be reported as progress.
     expect(progressOf(ACCEPTANCE_ONLY)).toMatchObject({ percent: 0, phases: 0 });
+  });
+
+  it("should exclude boxes under a Blocked on heading from the counts (R6)", () => {
+    const progress = progressOf(BLOCKED_ONLY);
+    expect(progress.phaseBoxes).toBe(4);
+    expect(progress.phaseBoxesTicked).toBe(4);
+    expect(progress.acceptanceTicked).toBe(1);
+    expect(progress.label.name).toBe("prd:100% — ready");
   });
 
   it("should bucket one of two verified phases at 50% orange", () => {
@@ -126,5 +170,18 @@ describe("progressOf", () => {
   it("should refuse to reach 100% when a PRD has no acceptance criteria to satisfy", () => {
     const noAcceptance = FINISHED.slice(0, FINISHED.indexOf("## Acceptance criteria"));
     expect(progressOf(noAcceptance).percent).toBe(75);
+  });
+});
+
+describe("proofWarnings", () => {
+  it("should name every countable box without a proof: marker and ignore Blocked on boxes (R1)", () => {
+    const warnings = proofWarnings(MIXED_PROOF);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("required test green");
+    expect(warnings[1]).toContain("no proof marker either");
+  });
+
+  it("should return nothing when every countable box carries proof:", () => {
+    expect(proofWarnings(BLOCKED_ONLY)).toEqual([]);
   });
 });
