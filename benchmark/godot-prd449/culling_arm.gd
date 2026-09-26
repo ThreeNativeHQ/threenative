@@ -180,6 +180,7 @@ func _run() -> void:
 		"frameP95Ms": _summary(_wall_ms)["p95"],
 		"frameP99Ms": _summary(_wall_ms)["p99"],
 		"meanMs": _completed_work_mean(),
+		"rawSeries": _raw_series(),
 		"renderCpuMeanMs": _mean(_render_cpu_ms),
 		"renderGpuMeanMs": _mean(_render_gpu_ms),
 		"work": _work_at_mid,
@@ -712,6 +713,22 @@ func _completed_work_mean() -> float:
 	if _boundary_us.is_empty() or _final_completion_us == 0:
 		return 0.0
 	return float(_final_completion_us - _boundary_us[0]) / 1000.0 / float(_wall_ms.size())
+
+
+## The boundaries this arm actually recorded, in the series shape a v2 intake reads, so every interval
+## and the completed-work span can be re-derived from the microsecond stamps themselves instead of
+## from the rounded `wallMs` samples. Boundary 0 starts scoring; boundary i+1 closes frame i, so
+## the array is one longer than the frame count. `finalCompletionMs` is the `force_sync()` return.
+func _raw_series() -> Dictionary:
+	var boundaries := []
+	for index in _boundary_us.size():
+		boundaries.append({"frameId": index, "monotonicMs": float(_boundary_us[index]) / 1000.0})
+	return {
+		"schemaVersion": 1,
+		"unit": "ms",
+		"boundaries": boundaries,
+		"finalCompletionMs": float(_final_completion_us) / 1000.0,
+	}
 
 
 func _mean(samples: Array) -> float:

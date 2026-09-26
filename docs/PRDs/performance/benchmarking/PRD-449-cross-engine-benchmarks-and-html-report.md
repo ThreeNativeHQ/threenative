@@ -876,6 +876,11 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   hash is also recorded. This is one smoke block without preflight, A/A or a source lock, so it
   carries no publication verdict.
 
+  The Godot culling adapter now writes its already measured microsecond frame boundaries and final
+  `force_sync()` completion as a v2-compatible `rawSeries`, rather than reconstructing them from
+  rounded wall samples. The pinned Godot 4.7.1 `--check-only` parse passed; a physical-GPU record
+  and bundle import remain open.
+
   **Both arms now drain at the same boundary.** Godot's `drain` was `none-available` and its mean
   paced on submission, so the two means did not measure the same thing. The arm now calls
   `RenderingServer.force_sync()` — which Godot's own `RenderingServer` reference defines as forcing
