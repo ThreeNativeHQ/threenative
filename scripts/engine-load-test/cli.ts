@@ -2,8 +2,8 @@
 // into `pnpm test`, and the Godot arms are the only thing that needs Godot installed.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { constants, createReadStream, existsSync } from "node:fs";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -211,8 +211,53 @@ async function sourceIdentity(): Promise<{ commit: string; dirty: boolean }> {
 
 /** The host binary is the native arm's build lock: its bytes decide which engine produced a number. */
 async function fileIdentity(file: string): Promise<{ bytes: number; sha256: string }> {
-  const bytes = await readFile(file);
-  return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+  // Streamed, not read: the arm binaries measured here are hundreds of megabytes.
+  const hash = createHash("sha256");
+  let bytes = 0;
+  for await (const chunk of createReadStream(file)) {
+    bytes += chunk.length;
+    hash.update(chunk);
+  }
+  return { bytes, sha256: hash.digest("hex") };
+}
+
+/**
+ * A hash is a lock only while the bytes it names still exist, and every build output a run measures
+ * is a mutable path: the next `dist/` or `target/` build of the same arm overwrites it, which leaves
+ * an earlier run's checksum unverifiable. So each measured file is copied to its own content
+ * address under `builds/` and the record names both paths. A matching address is the same bytes by
+ * construction, so it is reused; bytes that disagree with the address they sit at are a broken lock
+ * and no run is recorded over them.
+ */
+export async function archiveBuild(
+  file: string,
+  buildsDir = path.join(artifactRoot, "builds"),
+): Promise<{ archived: string; bytes: number; path: string; sha256: string }> {
+  const { bytes, sha256 } = await fileIdentity(file);
+  const archived = path.join(buildsDir, `${sha256}${path.extname(file)}`);
+  await mkdir(buildsDir, { recursive: true });
+  try {
+    // `COPYFILE_EXCL` is the one copy that cannot clobber: the kernel refuses when a concurrent
+    // collector won the race to the same address, and the bytes never pass through JS memory.
+    await copyFile(file, archived, constants.COPYFILE_EXCL);
+  } catch (error) {
+    // A collector that archived these same bytes first is the dedupe case, not a failure.
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  // Checked whether this call copied the bytes or found them, and against the source read above, so
+  // a source rebuilt mid-copy is caught instead of recorded.
+  const copy = await fileIdentity(archived);
+  if (copy.sha256 !== sha256 || copy.bytes !== bytes)
+    throw new BenchError(
+      "TN_BENCH_BUILD_ARCHIVE_CORRUPT",
+      `${archived} does not hash to its own address; refusing to record a build lock over it`,
+    );
+  return {
+    archived: path.relative(repoRoot, archived),
+    bytes,
+    path: path.relative(repoRoot, file),
+    sha256,
+  };
 }
 
 async function runMeshArm(arm: string): Promise<void> {
@@ -1045,30 +1090,18 @@ async function runCityArm(arm: string): Promise<void> {
     raw = await runTnCityDesktop(repoRoot, run, fixture);
   }
   const parsed = parseCityRun(raw);
+  // The raw run is written only after its build files are archived, so the bytes this run measured
+  // are still there to check when the next arm rebuilds the same `dist/` or `target/` path.
   const build =
     arm === "bevy-desktop"
-      ? {
-          bevyBinary: {
-            path: path.relative(repoRoot, identity.binary),
-            ...(await fileIdentity(identity.binary)),
-          },
-        }
+      ? { bevyBinary: await archiveBuild(identity.binary) }
       : {
-          tnBundle: {
-            path: "examples/engine-load-test/dist/engine-load-test-city-desktop.js",
-            ...(await fileIdentity(
-              path.join(
-                repoRoot,
-                "examples/engine-load-test/dist/engine-load-test-city-desktop.js",
-              ),
-            )),
-          },
-          nativeHost: {
-            path: "packages/runtime-native/build/tn-linux/mystral",
-            ...(await fileIdentity(
-              path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral"),
-            )),
-          },
+          tnBundle: await archiveBuild(
+            path.join(repoRoot, "examples/engine-load-test/dist/engine-load-test-city-desktop.js"),
+          ),
+          nativeHost: await archiveBuild(
+            path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral"),
+          ),
         };
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(
@@ -1463,15 +1496,20 @@ async function main(): Promise<void> {
   printUsage();
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode =
-    error instanceof BenchError
-      ? error.exitCode
-      : error &&
-          typeof error === "object" &&
-          "exitCode" in error &&
-          (error.exitCode === 1 || error.exitCode === 2)
+// Invoked, not imported: a spec imports `archiveBuild` from this module, and an import is not a run.
+if (
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+)
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode =
+      error instanceof BenchError
         ? error.exitCode
-        : 1;
-});
+        : error &&
+            typeof error === "object" &&
+            "exitCode" in error &&
+            (error.exitCode === 1 || error.exitCode === 2)
+          ? error.exitCode
+          : 1;
+  });

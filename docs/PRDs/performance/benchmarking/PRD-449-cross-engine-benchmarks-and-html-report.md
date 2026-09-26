@@ -274,13 +274,21 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   manifest; malformed files fail closed. This is a schema and unit-tested guard, **not** the actual
   source/build/asset lock. Bevy build flags, source checkout, asset bytes/SHA-256 and other lock
   fields remain open. The City collector now records SHA-256 and byte count for the exact Bevy
-  executable, or the TN bundle and native host, after each measured run. A fresh 600-frame static
-  size-8 pair on the RTX 2080 checked every recorded digest against the actual file bytes:
-  Bevy binary `390fac9b…`, TN bundle `1bcb6c14…`, native host `f9386044…`, with clean source
-  identity in both raw records. The qualified one-block smoke comparison measured Bevy 5.738 ms
-  and TN 29.853 ms with conformance passed; it is not a campaign verdict. Earlier City smoke files
-  lack these build identities and are not upgraded by inference. The remaining families still need
-  complete build locks.
+  executable, or the TN bundle and native host, after each measured run, and copies every measured
+  build file to `artifacts/engine-load-test/builds/<sha256><ext>` before writing the raw run: the
+  record names the source path and the content-addressed archive of the bytes it measured, a
+  matching archive is reused, the copy is re-hashed after write, and an archive whose bytes
+  disagree with its own address fails the run. A fresh 600-frame static size-8 pair on the RTX 2080
+  recorded Bevy binary `390fac9b…`, TN bundle `1bcb6c14…` and native host `f9386044…`, with clean
+  source identity in both raw records — but those digests were taken against mutable `dist/` and
+  `target/` paths, and the following moving run overwrote
+  `dist/engine-load-test-city-desktop.js` (`f7f4db2d…`), so the static pair's TN bundle bytes are
+  gone and its recorded digest can no longer be checked against anything. Every City run recorded
+  before this archive existed, that static pair included, stays insufficient as a build lock and is
+  not upgraded by inference; the next hardware run must re-check that each record's archive still
+  hashes to the digest that record names. The qualified one-block smoke comparison measured Bevy
+  5.738 ms and TN 29.853 ms with conformance passed; it is not a campaign verdict. The remaining
+  families still need complete build locks.
 - [ ] Freeze the expanded six-family matrix with exact actual fixture censuses.
   A deliberately non-publishable [draft matrix](../../../../scripts/engine-load-test/plan.ts)
   now expands 73 stable cell IDs across all six families, each with seven planned paired blocks
