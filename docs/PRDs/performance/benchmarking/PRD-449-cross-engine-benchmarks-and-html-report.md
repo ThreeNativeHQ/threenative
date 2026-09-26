@@ -1106,6 +1106,17 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
 - [ ] Pass City conformance for both frozen fixture sizes and both movement states.
 - [ ] Retain a real hardware comparison for the City family.
 
+  The pinned Bevy City adapter and TN native counterpart now export and replay the small 8×8
+  fixture with 14,082 nodes, 4,323 mesh nodes, 41 unique meshes, 16 materials, 9 images,
+  767 cars, 128 roads and 2,372,052 authored triangles. Both static and upstream-moving arms
+  completed a 2-frame conformance gate and a 600-frame/120-warmup smoke pair on the RTX 2080.
+  The comparator accepts both 600-frame pairs with camera, node and car-state tolerances met;
+  Bevy's common profile records atmosphere, bloom, TAA, HDR and shadows off. These runs are
+  exploratory: the TN records identify the branch as dirty while the adapter was being fixed,
+  one block has no A/A calibration or cross-arm visual proof, and the upstream-default-size and
+  TN web cells have not run. Rerun from a committed source before ticking the hardware box or
+  publishing the observed means.
+
 ### Phase 5: Deliver the offline report generator
 
 - [x] Render every expanded plan cell with its actual coverage/outcome state. The draft plan's 73 cells and 169 arms all appear with explicit `not-run` status when empty; failed attempts and incomplete pairs remain visible. `pnpm exec vitest run scripts/__tests__/engine-load-test-campaign.spec.ts scripts/__tests__/engine-load-test-html.spec.ts` passed 5/5. This proves rendering, not a measured campaign.

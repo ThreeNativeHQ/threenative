@@ -265,6 +265,59 @@ export async function prepareBevyArm(
   };
 }
 
+export interface ICityArm {
+  /** Every source file of the pinned `bevy_city` package, and the one file the adapter changed. */
+  adapter: string;
+  binary: string;
+  upstream: string;
+  upstreamFiles: string;
+}
+
+/**
+ * The pinned `bevy_city` arm. That example is a three-module binary crate rather than a single-file
+ * cargo example, so it cannot be compiled by symlink into the checkout the way `many_cubes` and
+ * `many_foxes` are: it is a package of its own in `benchmark/bevy-prd449/city/`, whose `bevy`
+ * dependency is the pinned checkout by path. Two of its four sources are the pinned files byte for
+ * byte, `assets.rs` differs by one line, and `main.rs` carries the declared adapter patches. The
+ * `CARGO_TARGET_DIR` is the checkout's own, so the pinned tree's dependency builds are reused rather
+ * than repeated.
+ *
+ * The 57-file Kenney pack is vendored under the checkout's `assets/kenney/` by
+ * `fetch-city-assets.mjs` and resolved through `BEVY_ASSET_ROOT`, so the run is offline and its
+ * bytes are hashable. Its absence is a named failure, not a silent network fetch.
+ */
+export async function prepareCityArm(repoRoot: string): Promise<ICityArm> {
+  const checkout = bevyCheckout(repoRoot);
+  const packageDir = path.join(repoRoot, "benchmark/bevy-prd449/city");
+  const upstreamDir = path.join(checkout, "examples/large_scenes/bevy_city/src");
+  for (const name of ["assets.rs", "generate_city.rs", "main.rs", "settings.rs"]) {
+    await access(path.join(upstreamDir, name));
+    await access(path.join(packageDir, "src", name));
+  }
+  const pack = path.join(checkout, "assets/kenney/city-kit-suburban/fence.glb");
+  await access(pack);
+  const digest = async (target: string): Promise<string> => sha256File(target);
+  // One digest over all four upstream files in a fixed order, so the record names the whole pinned
+  // source rather than only the file the adapter happens to differ in.
+  const upstreamFiles = createHash("sha256");
+  for (const name of ["assets.rs", "generate_city.rs", "main.rs", "settings.rs"]) {
+    upstreamFiles.update(name);
+    upstreamFiles.update(await digest(path.join(upstreamDir, name)));
+  }
+  const adapter = createHash("sha256");
+  for (const name of ["Cargo.toml", "src/assets.rs", "src/export.rs", "src/main.rs"]) {
+    adapter.update(name);
+    adapter.update(await digest(path.join(packageDir, name)));
+  }
+  const upstreamSha256 = upstreamFiles.digest("hex");
+  return {
+    adapter: adapter.digest("hex"),
+    binary: path.join(checkout, "target/release/prd449_city"),
+    upstream: upstreamSha256,
+    upstreamFiles: upstreamSha256,
+  };
+}
+
 async function runBevy(
   repoRoot: string,
   identity: IBevyArm,
@@ -317,6 +370,67 @@ export async function runBevyDesktop(
   ];
   if (options.variant === "rotating") args.push("--rotate-cubes");
   return { fixture, report: await runBevy(repoRoot, identity, args, options.display) };
+}
+
+export interface ICityOptions {
+  /** `static` is upstream's own "Simulate Cars" unchecked; `moving` is its upstream default. */
+  variant: "static" | "moving";
+  /** Upstream's seed, default 42, and the generator's block-loop size. */
+  seed: number;
+  size: number;
+  frames: number;
+  warmup: number;
+  display: string;
+  artifacts: string;
+}
+
+export async function runBevyCityDesktop(
+  repoRoot: string,
+  options: ICityOptions,
+  identity: ICityArm,
+): Promise<{ fixture: string; report: Record<string, unknown> }> {
+  // The frame count is in the name because the fixture carries the frame schedule: a 2-frame
+  // validation run and the 600-frame cell would otherwise overwrite each other's oracle.
+  const fixture = path.join(
+    options.artifacts,
+    `city-size${options.size}-${options.variant}-${options.frames}f-bevy-fixture.json`,
+  );
+  await mkdir(options.artifacts, { recursive: true });
+  const args = [
+    "--seed",
+    String(options.seed),
+    "--size",
+    String(options.size),
+    "--variant",
+    options.variant,
+    "--profile",
+    "common",
+    "--warmup-frames",
+    String(options.warmup),
+    "--measured-frames",
+    String(options.frames),
+    "--fixture-out",
+    fixture,
+  ];
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    BEVY_ASSET_ROOT: bevyCheckout(repoRoot),
+    DISPLAY: options.display,
+    WINIT_UNIX_BACKEND: "x11",
+    TN_BENCH_BEVY_ADAPTER_SHA256: identity.adapter,
+    TN_BENCH_BEVY_BINARY: identity.binary,
+    TN_BENCH_BEVY_FEATURES:
+      "bevy default (pbr, render, winit, x11) plus https, free_camera, bevy_feathers, web_asset_cache",
+    TN_BENCH_BEVY_UPSTREAM_SHA256: identity.upstreamFiles,
+  };
+  return {
+    fixture,
+    report: (await runCapturing(identity.binary, args, {
+      cwd: bevyCheckout(repoRoot),
+      env,
+      timeoutMs: 3_600_000,
+    })) as Record<string, unknown>,
+  };
 }
 
 export interface IFoxesOptions {
@@ -407,6 +521,25 @@ export async function runTnCubesDesktop(
     "TN_BENCH_CUBES_BUILD_FAILED",
   );
   return runNativeBundle(repoRoot, "engine-load-test-cubes-desktop.js", options.display);
+}
+
+export async function runTnCityDesktop(
+  repoRoot: string,
+  options: ICityOptions,
+  fixture: string,
+): Promise<Record<string, unknown>> {
+  await buildNativeBundle(
+    path.join(repoRoot, "examples/engine-load-test"),
+    {
+      ...process.env,
+      TN_BENCH_PLATFORM: "desktop",
+      TN_BENCH_TARGET: "native-city",
+      TN_CITY_AUTHORING: "default",
+      TN_CITY_FIXTURE: fixture,
+    },
+    "TN_BENCH_CITY_BUILD_FAILED",
+  );
+  return runNativeBundle(repoRoot, "engine-load-test-city-desktop.js", options.display);
 }
 
 export async function runTnFoxesDesktop(

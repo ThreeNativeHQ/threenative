@@ -1,0 +1,33 @@
+[package]
+# PRD-449 `bevy-city` arm. The pinned upstream example is a three-module binary crate, so it cannot
+# be compiled as a single-file cargo example the way `many_cubes` and `many_foxes` are; it is a
+# package of its own whose `bevy` dependency is the pinned checkout by path, and whose
+# `src/generate_city.rs` and `src/settings.rs` are the pinned files byte for byte.
+name = "prd449_city"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+# Its own workspace root, so this package does not become a member of the pinned checkout's
+# workspace and no pinned `Cargo.toml` is edited.
+[workspace]
+
+[[bin]]
+name = "prd449_city"
+path = "src/main.rs"
+
+[dependencies]
+# Upstream `examples/large_scenes/bevy_city/Cargo.toml`, at the pinned commit: the same bevy by
+# path, the same four features, the same three dependency versions.
+bevy = { path = "../../../artifacts/engine-load-test/sources/bevy", features = [
+  "https",
+  "free_camera",
+  "bevy_feathers",
+  "web_asset_cache",
+] }
+
+argh = "0.1"
+noise = "0.9.0"
+rand = "0.10.0"
+serde_json = "1"
