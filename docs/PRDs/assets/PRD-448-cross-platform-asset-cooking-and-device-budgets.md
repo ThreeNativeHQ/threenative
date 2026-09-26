@@ -1,10 +1,10 @@
 # PRD-448 — Cross-Platform Asset Cooking and Device Budgets
 
-**Status:** IN PROGRESS (Phases 1–4 done)  
+**Status:** IN PROGRESS (Phases 1–5 done)  
 **Complexity:** 9 (HIGH); risk override: none.  
 **Owner:** ThreeNative maintainers; implementation owner to be assigned.  
 **Depends on:** Existing `@threenative/assets`, native packaging, and playtest infrastructure. Reuse the PRD-377 discrete-LOD contract; do not reopen or duplicate that PRD.  
-**Progress:** Phases 1–4 of 6 done (AC-1–AC-10; AC-11 moot).  
+**Progress:** Phases 1–5 of 6 done (AC-1–AC-10, AC-12; AC-11 moot).  
 **Source snapshot:** `ThreeNativeHQ/threenative`, `main` at `af60e210aa500e504e9370b3657caaf8340f5650`, inspected September 25, 2026.  
 **Authorization:** Planning-only scope. Owner explicitly authorized filing this documentation directly on `develop`; this does not authorize implementation, publishing, or deployment.  
 **Filing:** `docs/PRDs/assets/PRD-448-cross-platform-asset-cooking-and-device-budgets.md` on `develop`.  
@@ -321,7 +321,7 @@ All paths below exist in the inspected tree unless explicitly marked **new**. Im
 - [x] **AC-9 [shared; actor: native qualification runner]:** The same fixture consumes the selected packaged representation on one explicitly identified supported desktop OS/architecture. **Evidence:** E4 — Linux x64 only: starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25; `threenative build --target desktop` with the locally built `tn-linux` host, runner `--target desktop --executable dist-native/starter`: pass 5/5, png/glb `via: manifest`, adapter NVIDIA GeForce RTX 2080. The device copy drops `diagnostics`/`visibility` rows (browser-only kinds, fail closed on device transports). Windows/macOS not run here.
 - [x] **AC-10 [shared; actor: native qualification runner]:** The same fixture consumes the decoder-safe packaged representation on Android. **Evidence:** E4 — Android emulator `threenative_api35` (`-gpu host`), not a device: starter scaffolded from this branch's packed tarballs, scenario `templates/starter/playtests/assets.playtest.json`, 2026-09-25; APK from `threenative build --target android --allow-source-build` with the QuickJS engine (no V8 payload on this machine) and this branch's runtime source; runner `--target android`: pass 5/5, png/glb `via: manifest` with their own decoder-free outputs (`native-proof.584fed98.png`). Compatibility only, no thermal/perf claim.
 - **AC-11 — moot.** iOS is not a supported target (owner decision 2026-09-23: web, Windows, macOS, Linux, Android). Restore this criterion if iOS support returns.
-- [ ] **AC-12 [unreachable-now/local; actor: implementation agent]:** A declared runtime-budget violation makes the real playtest invocation fail against observations from the identified artifact. **Evidence:** E5, pending.
+- [x] **AC-12 [unreachable-now/local; actor: implementation agent]:** A declared runtime-budget violation makes the real playtest invocation fail against observations from the identified artifact. **Evidence:** E5 — `performanceBudget` on a profile (keys = the runner's `assert.performance` fields; a spec fails if the two lists drift); `threenative build` publishes `<artifact>.build-report.json` atomically beside the artifact (target, profile, artifact sha256, manifest sha256, measured bytes, budget); `threenative-playtest --build-report` re-hashes the artifact under test and merges the budget into `assert.performance`. Real runner on the packed-tarball starter (web, `--browser-recipe webgpu --headed`, profile `maxDrawCalls: 1`): exit 1 `TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED` (300 observed draw calls vs 1); one byte of `dist` changed → exit 2 `TN_PLAYTEST_BUILD_REPORT_STALE` naming both hashes; `maxDrawCalss` in the report → exit 2 `TN_PLAYTEST_BUILD_REPORT_INVALID`. Native `--build-report` lanes are unit-covered only. 2026-09-25.
 
 ## Execution Phases
 
@@ -389,7 +389,7 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 #### Phase 5: Consume budgets through existing playtests
 
-**Status:** NOT STARTED  
+**Status:** DONE  
 **ACs:** AC-12  
 **Files:** Existing `packages/playtest/src/runner/` CLI and performance schema/validator modules, located before editing; `packages/core/src/frame-budget.ts` or existing bridge serialization only for an identified observation gap; **new** report-reader module if needed; existing invalid/vacuous-assertion tests.
 
@@ -397,8 +397,8 @@ Six phases and 24 required boxes in total: 12 acceptance boxes and 12 phase boxe
 
 **Verification:** E5 — run the real runner against the identified built fixture. Use a known draw/timing violation, a stale report, a misspelled metric, and a missing required observation. Each must produce a non-passing result for its own reason. A constant mock counter or a standalone budget-comparison helper cannot prove this feature.
 
-- [ ] The public playtest invocation consumes the build's resolved budget.
-- [ ] Missing required observations cannot satisfy a hard performance limit.
+- [x] The public playtest invocation consumes the build's resolved budget. — see AC-12.
+- [x] Missing required observations cannot satisfy a hard performance limit. — `packages/playtest/__tests__/build-report.spec.ts` "a budget with no measured series fails"; a budget field the target cannot observe is refused before the run, not dropped.
 
 **Checkpoint:** Pending; review measurement meanings and false-pass risks, especially loop FPS and reduced resolution.
 

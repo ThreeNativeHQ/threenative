@@ -261,6 +261,39 @@ export interface IThreeNativeArtifactBudgetLimit {
   readonly severity: "error" | "warn";
 }
 
+/**
+ * Runtime ceilings a profile wants every playtest of the artifact it builds to hold.
+ *
+ * The fields are the playtest harness's own `assert.performance` fields, one name for one meaning:
+ * a budget declared here is merged into each scenario's performance assertion, so a budget and a
+ * scenario bound the same number instead of two vocabularies for one measurement. Spelled out
+ * rather than imported — the harness runs against plain Three.js with no dependency on this
+ * package, and core must not invert that. A closed key list validated in both places is the price;
+ * `create-threenative/__tests__/build-report.spec.ts` fails if the two lists drift.
+ */
+export interface IThreeNativePerformanceBudget {
+  /** Per-pass draw-call ceilings, keyed by pass kind: main, shadow, reflection, nested. */
+  readonly maxPassDrawCalls?: Readonly<Partial<Record<ThreeNativeRenderPassKind, number>>>;
+  /** Per-pass triangle ceilings, keyed by pass kind: main, shadow, reflection, nested. */
+  readonly maxPassTriangles?: Readonly<Partial<Record<ThreeNativeRenderPassKind, number>>>;
+  /** Per-phase millisecond ceilings at nearest-rank p95: hostGap, update, render, overlay, residual. */
+  readonly maxPhaseMsP95?: Readonly<Partial<Record<ThreeNativeFramePhase, number>>>;
+  /** Maximum renderer draw-call count across every pass combined. */
+  readonly maxDrawCalls?: number;
+  /** Maximum nearest-rank 95th-percentile frame time in milliseconds. */
+  readonly maxFrameMsP95?: number;
+  /** Maximum renderer triangle count across every pass combined. */
+  readonly maxTriangles?: number;
+  /** Frame-budget floor: the median presented frame must sustain at least this many frames a second. */
+  readonly minFps?: number;
+}
+
+/** The engine's frame-budget phases, as a budget spells them. */
+export type ThreeNativeFramePhase = "hostGap" | "overlay" | "render" | "residual" | "update";
+
+/** The render-pass kinds a per-pass budget bounds. */
+export type ThreeNativeRenderPassKind = "main" | "shadow" | "reflection" | "nested";
+
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -330,6 +363,14 @@ export interface IThreeNativeConfig {
             readonly artifactBytes?: IThreeNativeArtifactBudgetLimit;
             readonly packagedAssetBytes?: IThreeNativeArtifactBudgetLimit;
           };
+          /**
+           * Runtime ceilings this profile's artifact must hold, published into the
+           * `<artifact>.build-report.json` a build writes beside it and merged by
+           * `threenative-playtest --build-report` into every scenario's `assert.performance`. The
+           * build measures none of it — it cannot; the numbers exist only once a runtime drew
+           * frames — so a budget never refuses a build and never passes one either.
+           */
+          readonly performanceBudget?: IThreeNativePerformanceBudget;
           readonly assets?: Pick<
             NonNullable<IThreeNativeConfig["assets"]>,
             "audio" | "budget" | "lod" | "models" | "targets" | "textures"

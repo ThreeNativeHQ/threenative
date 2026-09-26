@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { compileAssets } from "@threenative/assets";
+import { BUILD_REPORT_SUFFIX, measureTreeBytes, writeBuildReport } from "./buildReport.js";
 import { writeCompressionSidecars } from "./compress.js";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
 
@@ -356,6 +357,13 @@ export async function buildWeb(
         `web main chunk ${report.entry}: raw ${report.raw} B, gzip ${report.gzip} B, brotli ${report.brotli} B\n`,
       );
     }
+    await writeBuildReport({
+      artifact: staging,
+      assets: assetRoot(cwd, config),
+      config,
+      packagedAssetBytes: await measurePackagedAssetBytes(cwd, assetRoot(cwd, config)),
+      target: "web",
+    });
     await publishStagedArtifact(outDir, staging);
   } catch (error) {
     // Nothing half-written survives the failure, and `outDir` was never written to.
@@ -563,17 +571,6 @@ async function bundleNative(
   return output;
 }
 
-/** The bytes one file or directory holds; a directory is the recursive sum, `.app` bundle included. */
-async function measureBytes(target: string): Promise<number> {
-  const info = await stat(target);
-  if (!info.isDirectory()) return info.size;
-  let total = 0;
-  for (const entry of await readdir(target, { withFileTypes: true })) {
-    total += await measureBytes(path.join(target, entry.name));
-  }
-  return total;
-}
-
 /** The one packaging selector, as `runtime-native/scripts/asset-manifest.mjs` exports it. */
 interface IPackagingSelector {
   selectManifestAssets(
@@ -600,7 +597,7 @@ async function packagingSelector(cwd: string): Promise<IPackagingSelector | unde
 async function measurePackagedAssetBytes(cwd: string, assets: string): Promise<number> {
   if (!existsSync(assets)) return 0;
   const selector = await packagingSelector(cwd);
-  if (selector === undefined) return measureBytes(assets);
+  if (selector === undefined) return measureTreeBytes(assets);
   let total = 0;
   // Silent: the packager is seconds away printing these same skips and the unmanaged line.
   for (const file of selector.selectManifestAssets(assets, { log: () => {} }).selected)
@@ -630,7 +627,11 @@ async function assertArtifactBudget(
   const budget = config.buildProfile?.artifactBudget;
   if (budget === undefined) return;
   const metrics = [
-    { declared: budget.artifactBytes, measured: await measureBytes(staged), name: "artifactBytes" },
+    {
+      declared: budget.artifactBytes,
+      measured: await measureTreeBytes(staged),
+      name: "artifactBytes",
+    },
     {
       declared: budget.packagedAssetBytes,
       measured: await measurePackagedAssetBytes(cwd, assets),
@@ -704,7 +705,7 @@ async function buildNative(
         "--output",
         output,
       ],
-      { assets, config },
+      { assets, config, target: "ios" },
     );
     return;
   }
@@ -740,7 +741,7 @@ async function buildNative(
         "--output",
         output,
       ],
-      { assets, config },
+      { assets, config, target: "android" },
     );
     return;
   }
@@ -765,7 +766,7 @@ async function buildNative(
       "--output",
       output,
     ],
-    { assets, config },
+    { assets, config, target: "desktop" },
   );
 }
 
@@ -782,7 +783,7 @@ async function packageStaged(
   output: string,
   cwd: string,
   args: readonly string[],
-  budget?: { assets: string; config: IResolvedThreeNativeConfig },
+  report?: { assets: string; config: IResolvedThreeNativeConfig; target: BuildTarget },
 ): Promise<void> {
   const staged = stagingPath(output);
   const index = args.indexOf("--output");
@@ -794,8 +795,18 @@ async function packageStaged(
   try {
     await mkdir(path.dirname(staged), { recursive: true });
     await run(process.execPath, packager, cwd);
-    if (budget !== undefined)
-      await assertArtifactBudget(cwd, budget.config, output, staged, budget.assets);
+    if (report !== undefined) {
+      const produced = await producedArtifact(staged);
+      if (report.config.buildProfile?.artifactBudget !== undefined)
+        await assertArtifactBudget(cwd, report.config, output, produced, report.assets);
+      await writeBuildReport({
+        artifact: produced,
+        assets: report.assets,
+        config: report.config,
+        packagedAssetBytes: await measurePackagedAssetBytes(cwd, report.assets),
+        target: report.target,
+      });
+    }
   } catch (error) {
     await rm(path.dirname(staged), { force: true, recursive: true });
     throw error;
@@ -817,6 +828,28 @@ export function stagingPath(final: string): string {
 }
 
 /**
+ * The file a packager actually wrote for `staged`. Its name is not always the requested one: a
+ * Windows executable gains `.exe`, and a desktop release writes only its container
+ * (`<name>.tar.gz`, a zipped `.app`), never a bare `<name>`. Exact name first, then the
+ * executable and bundle spellings, then the one other thing the packager left beside it.
+ */
+async function producedArtifact(staged: string): Promise<string> {
+  const directory = path.dirname(staged);
+  const name = path.basename(staged);
+  const entries = existsSync(directory) ? await readdir(directory) : [];
+  for (const candidate of [name, `${name}.exe`, `${name}.app`]) {
+    if (entries.includes(candidate)) return path.join(directory, candidate);
+  }
+  const other = entries.filter((entry) => !entry.endsWith(BUILD_REPORT_SUFFIX)).sort()[0];
+  if (other === undefined) {
+    throw new Error(
+      `TN_BUILD_ARTIFACT_MISSING: the packager exited successfully but wrote no artifact to ${staged}.`,
+    );
+  }
+  return path.join(directory, other);
+}
+
+/**
  * Publish everything a staging build produced over the artifacts it replaces, then drop the
  * staging directory.
  *
@@ -828,7 +861,7 @@ export function stagingPath(final: string): string {
 export async function publishStagedArtifact(final: string, staging: string): Promise<void> {
   const from = path.dirname(staging);
   const produced = existsSync(from) ? await readdir(from) : [];
-  if (!produced.includes(path.basename(staging))) {
+  if (!produced.some((name) => !name.endsWith(BUILD_REPORT_SUFFIX))) {
     throw new Error(
       `TN_BUILD_ARTIFACT_MISSING: the packager exited successfully but wrote no artifact to ${staging}; ${final} is unchanged.`,
     );

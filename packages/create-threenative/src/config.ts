@@ -67,6 +67,8 @@ export interface IResolvedThreeNativeConfig {
     readonly target: BuildTarget;
     /** The byte ceilings this build must measure against before publishing its artifact. */
     readonly artifactBudget?: ArtifactBudget;
+    /** The runtime ceilings published into this build's report, for `threenative-playtest`. */
+    readonly performanceBudget?: PerformanceBudget;
   };
   readonly renderer: {
     readonly preferWebGPU: boolean;
@@ -1592,6 +1594,8 @@ interface IResolvedProfile {
   readonly assets: Record<string, unknown>;
   /** The validated byte ceilings on what this profile's build may produce. */
   readonly artifactBudget?: ArtifactBudget;
+  /** The validated runtime ceilings published into this build's report for the playtest lane. */
+  readonly performanceBudget?: PerformanceBudget;
   readonly name: string;
   readonly source: "flag" | "default";
   readonly target: BuildTarget;
@@ -1603,8 +1607,112 @@ type ArtifactBudget = NonNullable<
 >;
 type ArtifactBudgetLimit = Required<ArtifactBudget>["artifactBytes"];
 
+/** The runtime ceilings a profile declares on what its artifact does. */
+type PerformanceBudget = NonNullable<
+  NonNullable<IThreeNativeConfig["buildProfiles"]>["profiles"][string]["performanceBudget"]
+>;
+
 const ARTIFACT_BUDGET_KEYS: readonly string[] = ["artifactBytes", "packagedAssetBytes"];
 const ARTIFACT_BUDGET_SEVERITIES: readonly string[] = ["error", "warn"];
+
+/**
+ * The playtest harness's own `assert.performance` fields, mirrored rather than imported.
+ *
+ * `@threenative/playtest` deliberately depends on nothing from this monorepo — it runs against
+ * plain Three.js — so the one list that has to agree with it is spelled out on both sides and
+ * pinned by `__tests__/build-report.spec.ts`, which fails the moment the two drift. A budget key
+ * the harness does not know is a key nothing would ever evaluate.
+ */
+export const PERFORMANCE_BUDGET_KEYS: readonly string[] = [
+  "maxDrawCalls",
+  "maxFrameMsP95",
+  "maxPassDrawCalls",
+  "maxPassTriangles",
+  "maxPhaseMsP95",
+  "maxTriangles",
+  "minFps",
+];
+/** Mirrors `PLAYTEST_FRAME_BUDGET_PHASES`. */
+const PERFORMANCE_BUDGET_PHASES: readonly string[] = [
+  "hostGap",
+  "overlay",
+  "render",
+  "residual",
+  "update",
+];
+/** Mirrors `PLAYTEST_FRAME_PASS_KINDS`. */
+const PERFORMANCE_BUDGET_PASSES: readonly string[] = ["main", "shadow", "reflection", "nested"];
+
+/**
+ * A per-phase or per-pass ceiling: a non-empty map of known names to non-negative ceilings, the
+ * shape the harness evaluates. An unknown name is refused here rather than reaching a run that
+ * could not measure it.
+ */
+function validatePerformanceBudgetMap(
+  raw: unknown,
+  label: string,
+  names: readonly string[],
+  unit: string,
+): Record<string, number> {
+  const map = assertRecord(raw, label);
+  const entries = Object.entries(map);
+  if (entries.length === 0)
+    fail("TN_CONFIG_PROFILE_INVALID", `${label} must name at least one entry.`);
+  const budget: Record<string, number> = {};
+  for (const [name, ceiling] of entries) {
+    if (!names.includes(name)) {
+      fail(
+        "TN_CONFIG_PROFILE_INVALID",
+        `${label}.${name} is not recognised. Expected one of: ${names.join(", ")}.`,
+      );
+    }
+    if (typeof ceiling !== "number" || !Number.isFinite(ceiling) || ceiling < 0) {
+      fail(
+        "TN_CONFIG_PROFILE_INVALID",
+        `${label}.${name} must be a non-negative number of ${unit}.`,
+      );
+    }
+    budget[name] = ceiling;
+  }
+  return budget;
+}
+
+function validatePerformanceBudget(raw: unknown, label: string): PerformanceBudget {
+  const budget = assertRecord(raw, `${label}.performanceBudget`);
+  assertKeys(budget, `${label}.performanceBudget`, PERFORMANCE_BUDGET_KEYS);
+  if (Object.keys(budget).length === 0) {
+    fail(
+      "TN_CONFIG_PROFILE_INVALID",
+      `${label}.performanceBudget must declare at least one ceiling; an empty budget bounds nothing.`,
+    );
+  }
+  const out: Record<string, unknown> = {};
+  for (const key of ["maxDrawCalls", "maxFrameMsP95", "maxTriangles", "minFps"] as const) {
+    const value = budget[key];
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      fail(
+        "TN_CONFIG_PROFILE_INVALID",
+        `${label}.performanceBudget.${key} must be a non-negative number.`,
+      );
+    }
+    out[key] = value;
+  }
+  for (const [key, names, unit] of [
+    ["maxPassDrawCalls", PERFORMANCE_BUDGET_PASSES, "draw calls"],
+    ["maxPassTriangles", PERFORMANCE_BUDGET_PASSES, "triangles"],
+    ["maxPhaseMsP95", PERFORMANCE_BUDGET_PHASES, "milliseconds"],
+  ] as const) {
+    if (budget[key] === undefined) continue;
+    out[key] = validatePerformanceBudgetMap(
+      budget[key],
+      `${label}.performanceBudget.${key}`,
+      names,
+      unit,
+    );
+  }
+  return out as PerformanceBudget;
+}
 
 function artifactBudgetLimit(raw: unknown, label: string): ArtifactBudgetLimit {
   const limit = assertRecord(raw, label);
@@ -1676,6 +1784,7 @@ function resolveBuildProfile(
   // Every declared profile is validated, not only the selected one: a broken budget that only
   // bites when someone names that profile is a build that fails at the worst possible moment.
   const budgets: Record<string, ArtifactBudget> = {};
+  const performanceBudgets: Record<string, PerformanceBudget> = {};
   for (const name of declared) {
     const label = `buildProfiles.profiles['${name}']`;
     if (!PROFILE_NAME.test(name)) {
@@ -1685,7 +1794,7 @@ function resolveBuildProfile(
       );
     }
     const profile = assertRecord(profiles[name], label);
-    assertKeys(profile, label, ["artifactBudget", "assets"]);
+    assertKeys(profile, label, ["artifactBudget", "assets", "performanceBudget"]);
     assertKeys(
       assertRecord(profile.assets, `${label}.assets`),
       `${label}.assets`,
@@ -1693,6 +1802,9 @@ function resolveBuildProfile(
     );
     if (profile.artifactBudget !== undefined) {
       budgets[name] = validateArtifactBudget(profile.artifactBudget, label);
+    }
+    if (profile.performanceBudget !== undefined) {
+      performanceBudgets[name] = validatePerformanceBudget(profile.performanceBudget, label);
     }
   }
   for (const [target, name] of Object.entries(defaults)) {
@@ -1719,6 +1831,9 @@ function resolveBuildProfile(
   return {
     assets: isRecord(profile.assets) ? profile.assets : {},
     ...(budgets[name] === undefined ? {} : { artifactBudget: budgets[name] }),
+    ...(performanceBudgets[name] === undefined
+      ? {}
+      : { performanceBudget: performanceBudgets[name] }),
     name,
     source: requested === undefined ? "default" : "flag",
     target: selection.target,
@@ -1861,6 +1976,9 @@ async function loadConfigInternal(
                 ...(profile.artifactBudget === undefined
                   ? {}
                   : { artifactBudget: profile.artifactBudget }),
+                ...(profile.performanceBudget === undefined
+                  ? {}
+                  : { performanceBudget: profile.performanceBudget }),
               },
             }),
       };

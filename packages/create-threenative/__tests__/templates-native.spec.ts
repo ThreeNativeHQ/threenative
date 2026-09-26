@@ -122,6 +122,32 @@ process.exit(1);
     expect(await readdir(path.dirname(artifact))).toEqual(["native-staging"]);
   });
 
+  it("publishes a packager that writes only its container, never a bare <name>", async () => {
+    // A desktop release writes `<name>.tar.gz` and a Windows build `<name>.exe`: no file carries
+    // the requested name, and the publish, the budget and the report must all still find it.
+    const project = await projectRoot("threenative-native-container-");
+    await stubRuntime(
+      project,
+      `import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+const output = process.argv[process.argv.indexOf("--output") + 1];
+await mkdir(path.dirname(output), { recursive: true });
+await writeFile(\`\${output}.tar.gz\`, "a release container");
+`,
+    );
+    await writeFile(path.join(project, "threenative.config.ts"), budgetedProject("warn"));
+
+    await expect(build({ cwd: project, target: "desktop" })).resolves.toBeUndefined();
+    const dist = path.join(project, "dist-native");
+    expect((await readdir(dist)).sort()).toEqual([
+      "native-staging.tar.gz",
+      "native-staging.tar.gz.build-report.json",
+    ]);
+    expect(await readFile(path.join(dist, "native-staging.tar.gz"), "utf8")).toBe(
+      "a release container",
+    );
+  });
+
   it("refuses a second build while a live pid holds the lock, and reclaims a dead one", async () => {
     const project = await projectRoot("threenative-native-lock-");
     await stubRuntime(project, PACKAGES);
