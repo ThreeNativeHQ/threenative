@@ -25,12 +25,28 @@ import {
   cellPlacements,
   validateWorldPackage,
 } from "./world-package.js";
-import { type IWorldTilesOptions, TerrainTileBudgetError, TerrainTiles } from "./world-tiles.js";
+import {
+  type IAdmissionBudget,
+  type IWorldTilesOptions,
+  TerrainTileBudgetError,
+  TerrainTiles,
+} from "./world-tiles.js";
 
 const PLACEMENT_RECORD_BYTES = 32;
 const PLACEMENT_RECORD_FLOATS = 8;
 const DEFAULT_TILE_RESOLUTION = 129;
 const CHUNK_NAME = "world-chunk";
+/** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
+const DEFAULT_ADMISSION_BUDGET_MS = 2;
+/**
+ * Placements filtered per unit of admission work.
+ *
+ * One unit is what a frame can overshoot its budget by, so it is sized to stay small rather than to
+ * divide the work evenly: a slice is a few hundred placements' worth of matrix maths, tens of
+ * microseconds, whatever the cell holds. ponytail: a count, not a time — the budget is the clock,
+ * and this only decides how often it is read.
+ */
+const ADMISSION_SLICE_PLACEMENTS = 256;
 
 /** The point a streamed world follows; an `Object3D` satisfies this shape. */
 export interface IWorldCellsFollow {
@@ -111,6 +127,22 @@ export interface IWorldCellsLoadOptions {
    * not get its turn keeps drawing the batches it has until a later update replaces them.
    */
   readonly rebuildsPerUpdate?: number;
+  /**
+   * Milliseconds one `update` may spend admitting streamed content — cell batches, terrain tiles,
+   * colliders and `maxDistance`/`lods` refilters together. Defaults to 2, and `Infinity` opts out
+   * of the ceiling entirely.
+   *
+   * The ceiling is a budget, not a promise: one unit of work always finishes, so a frame spends at
+   * most this plus its last unit. Work that does not fit waits for the next `update` rather than
+   * being dropped, and `stats().admission` reports what is waiting. A frame that admits nothing
+   * costs nothing here.
+   */
+  readonly admissionBudgetMs?: number;
+  /**
+   * Milliseconds source for the admission budget, `performance.now` by default. Injectable so a
+   * test can prove the ceiling instead of hoping a machine is slow enough to show it.
+   */
+  readonly admissionNow?: () => number;
 }
 
 export interface IWorldCellsStats {
@@ -127,6 +159,20 @@ export interface IWorldCellsStats {
   readonly failures: number;
   /** Cumulative rejected requests: cells skipped, instances or bytes refused, terrain retries. */
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
+  /**
+   * What the last `update` spent on admitting streamed content, and what it left behind.
+   *
+   * A rising `backlog` is the honest signal that admission is not keeping up with the follow point;
+   * it is the one number that says a player is outrunning the world.
+   */
+  readonly admission: {
+    /** Milliseconds the last `update` spent admitting; at most the budget plus its last unit. */
+    readonly spentMs: number;
+    /** Cell-asset builds the last `update` had no budget for, still queued for a later one. */
+    readonly deferred: number;
+    /** Units of work those builds still owe — placement slices left plus meshes left to publish. */
+    readonly backlog: number;
+  };
 }
 
 interface ICellBatch {
@@ -149,6 +195,34 @@ interface IResidentCell {
   readonly bytes: number;
   readonly batches: ICellBatch[];
   readonly chunks: Object3D[];
+}
+
+/**
+ * One cell's asset run waiting to be built, in units small enough to fit a frame's admission
+ * budget: a slice of placements, or one mesh built.
+ *
+ * A job outlives the `update` that queued it, so every field it needs to resume is on the job and
+ * not on the call stack — a streamed cell holds its residency slot while it waits, so the work is
+ * never spent on a cell that has since left.
+ */
+interface IBuildJob {
+  readonly asset: IAssetState;
+  readonly cell: IResidentCell;
+  readonly run: IWorldRun;
+  /** The follow position this build filters for; a deferred build keeps the answer it was queued for. */
+  readonly filterX: number;
+  readonly filterZ: number;
+  /** A refilter's outgoing batches, drawn until this job's own batches are attached. */
+  readonly replaced: readonly ICellBatch[];
+  /** This job's built batches, attached together when the last one is ready. */
+  readonly fresh: ICellBatch[];
+  /** The run's placement records, read once and kept across the slices that filter them. */
+  records: Float32Array | undefined;
+  /** Next placement to filter; the filter is complete when it reaches `run.count`. */
+  next: number;
+  batches: InstancedBatch[][] | undefined;
+  /** How many of the (level, part) meshes have been built. */
+  published: number;
 }
 
 /** One drawable part of one level, read out of the level's own GLB. */
@@ -368,8 +442,30 @@ function disposeModels(models: readonly (Object3D | undefined)[]): number {
 }
 
 /**
+ * One empty batch per (level, part), so a placement is filtered and drawn together and an emptied
+ * level or a part nobody placed costs one missing mesh rather than the whole cell's run.
+ */
+function newBatches(asset: IAssetState): InstancedBatch[][] {
+  const batches: InstancedBatch[][] = [];
+  for (const parts of asset.levels) {
+    const levelBatches: InstancedBatch[] = [];
+    for (const part of parts)
+      levelBatches.push(new InstancedBatch({ geometry: part.geometry, material: part.material }));
+    batches.push(levelBatches);
+  }
+  return batches;
+}
+
+/** How many meshes a build will publish: one per (level, part). */
+function publishCount(batches: readonly InstancedBatch[][]): number {
+  let total = 0;
+  for (const levelBatches of batches) total += levelBatches.length;
+  return total;
+}
+
+/**
  * The distance a `maxDistance` prop actually culls at, one eighth short of itself: the slack
- * `#buildBatch` leaves, so a follow point that has not moved a whole eighth of the cull distance
+ * `#addPlacements` leaves, so a follow point that has not moved a whole eighth of the cull distance
  * cannot have culled a placement it had not already culled.
  */
 function cullDistance(maxDistance: number | undefined): number | undefined {
@@ -430,6 +526,18 @@ function positiveInteger(value: number, name: string): number {
 function nonNegativeInteger(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 0)
     throw new Error(`WorldCells ${name} must be a non-negative integer.`);
+  return value;
+}
+
+/**
+ * The admission budget: a positive number of milliseconds, or `Infinity` for no ceiling at all —
+ * which is what a game that wants one `update` to admit everything it can asks for. Zero is refused
+ * rather than obeyed, because a world whose budget is spent before it starts never streams at all,
+ * and that is never what anyone meant to write.
+ */
+function admissionBudgetMs(value: number): number {
+  if (Number.isNaN(value) || value <= 0)
+    throw new Error("WorldCells admissionBudgetMs must be a positive number of milliseconds.");
   return value;
 }
 
@@ -506,6 +614,42 @@ class ModelLoadLimiter {
 }
 
 /**
+ * One frame's admission allowance, shared by every path that puts streamed content on screen.
+ *
+ * A streaming world has no frame-time ceiling anywhere else: a cell row arriving builds a batch per
+ * asset run over every placement in it, a terrain tile builds every LOD level, and the game's
+ * `createCollider` runs for every resident tile — all in the one frame that discovers them. That is
+ * the 100-330 ms hitch a 60 m/s camera feels every time the ring moves, and it is admission cost,
+ * not streaming: the loads never fail.
+ *
+ * The budget is opened once per `update` and drawn down by the units it admits. A unit always
+ * finishes, so a frame spends at most the limit plus the unit that crossed it, and the rest of the
+ * backlog waits for the next frame rather than being dropped.
+ */
+class AdmissionBudget implements IAdmissionBudget {
+  readonly #limitMs: number;
+  readonly #now: () => number;
+  #spentMs = 0;
+
+  constructor(limitMs: number, now: () => number) {
+    this.#limitMs = limitMs;
+    this.#now = now;
+  }
+
+  get spentMs(): number {
+    return this.#spentMs;
+  }
+
+  admit(work: () => void): boolean {
+    if (this.#spentMs >= this.#limitMs) return false;
+    const startedAt = this.#now();
+    work();
+    this.#spentMs += this.#now() - startedAt;
+    return true;
+  }
+}
+
+/**
  * Stream a Blender-authored world package by cell and keep it resident around a followed point.
  *
  * The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per
@@ -525,8 +669,9 @@ class ModelLoadLimiter {
  * @constraint budgets are hard caps that report pressure instead of over-committing
  * @constraint model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
+ * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
- * @override ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate` and the package's per-asset maxDistance
+ * @override ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
  * @example
  * const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
  * scene.add(world);
@@ -553,12 +698,19 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #logicalBase: string;
   readonly #assets = new Map<string, IAssetState>();
   readonly #resident = new Map<string, IResidentCell>();
+  /** Cell-asset builds waiting for budget, in admission order: nearest cell first. */
+  #jobs: IBuildJob[] = [];
+  /** The (cell, asset) pairs already queued, so a refilter cannot queue itself twice. */
+  readonly #queued = new Set<string>();
   readonly #position = new Vector3();
   readonly #rotation = new Quaternion();
   readonly #scale = new Vector3();
   readonly #matrix = new Matrix4();
   readonly #instance = new Matrix4();
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
+  readonly #budgetMs: number;
+  readonly #now: () => number;
+  #admission = { spentMs: 0, deferred: 0, backlog: 0 };
   #instances = 0;
   #bytes = 0;
   #evictions = 0;
@@ -575,6 +727,8 @@ export class WorldCells extends Group implements IComputeDriven {
       residentCells: positiveInteger(init.budgets.residentCells, "budgets.residentCells"),
     };
     this.#ring = nonNegativeInteger(init.ring, "ring");
+    this.#budgetMs = admissionBudgetMs(init.admissionBudgetMs ?? DEFAULT_ADMISSION_BUDGET_MS);
+    this.#now = init.admissionNow ?? ((): number => globalThis.performance?.now() ?? Date.now());
     this.#follow = init.follow;
     this.#manifest = init.manifest;
     this.#cells = init.manifest.cells;
@@ -693,19 +847,21 @@ export class WorldCells extends Group implements IComputeDriven {
   /**
    * Per-frame residency step; call it wherever `TerrainTiles.process` is called.
    *
-   * Reads the follow target, keeps the in-ring cells, evicts cells beyond the hysteresis ring and
-   * refilters the `maxDistance` and `lods` batches the follow point has moved far enough to have
-   * changed — at most `rebuildsPerUpdate` of them, the rest left drawing what they have until a later
-   * update. A terrain budget throw is caught and counted, and so is a teardown that throws while
-   * releasing what left — `failures` in {@link stats} carries both. Every other error, the game's
-   * included, escapes.
+   * Reads the follow target, keeps the in-ring cells, evicts cells beyond the hysteresis ring, and
+   * spends one admission budget on everything the ring newly wants: cell-asset batches, terrain
+   * tiles, colliders and the `maxDistance`/`lods` refilters the follow point has moved far enough to
+   * have changed. Whatever does not fit waits for the next call — nothing is dropped, and
+   * `stats().admission` is the honest report of what is waiting. A terrain budget throw is caught
+   * and counted, and so is a teardown that throws while releasing what left; `failures` carries
+   * both. Every other error, the game's included, escapes.
    */
   update(renderer?: IRendererLike): void {
     if (this.#released) return;
     const x = this.#follow.position.x;
     const z = this.#follow.position.z;
+    const budget = new AdmissionBudget(this.#budgetMs, this.#now);
     try {
-      this.#terrain.follow({ x, z });
+      this.#terrain.follow({ x, z }, budget);
       this.#terrain.process(renderer);
     } catch (error) {
       if (!(error instanceof TerrainTileBudgetError)) throw error;
@@ -720,6 +876,12 @@ export class WorldCells extends Group implements IComputeDriven {
       z,
     );
     this.#updateMaxDistance(x, z);
+    this.#drain(budget);
+    this.#admission = {
+      backlog: this.#backlog(),
+      deferred: this.#jobs.length,
+      spentMs: budget.spentMs,
+    };
   }
 
   process(renderer?: IRendererLike): void {
@@ -739,6 +901,7 @@ export class WorldCells extends Group implements IComputeDriven {
 
   stats(): IWorldCellsStats {
     return {
+      admission: { ...this.#admission },
       evictions: this.#evictions,
       failures: this.#failures,
       instances: this.#instances,
@@ -840,10 +1003,207 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     asset.refcount += 1;
     if (asset.levels.length > 0) {
-      this.#buildBatch(asset, cell, run);
+      this.#queueBuild(asset, cell, run);
       return;
     }
     if (!asset.pending) this.#startAssetLoad(asset);
+  }
+
+  /**
+   * Ask for one cell-asset run to be built, and do not build it yet.
+   *
+   * Admission is the only thing in this class that has no frame-time ceiling, so it is the only
+   * thing that became a queue: the cell keeps its residency slot from `#admit`, the work waits for
+   * a frame with budget in it, and a game that outruns the backlog sees it as `admission.backlog`
+   * rather than as a frozen frame. A run already queued is not queued twice, which is what stops a
+   * refilter — stale for as many frames as it waits — from stacking a second copy of itself.
+   *
+   * `replaced` is a refilter's outgoing batches, captured now and kept drawn until the replacement
+   * is attached, so a rebuild that waits three frames shows the old level for those three frames
+   * instead of a hole.
+   */
+  #queueBuild(asset: IAssetState, cell: IResidentCell, run: IWorldRun, replace = false): void {
+    const token = `${cell.key}|${asset.id}`;
+    if (this.#queued.has(token)) return;
+    // A cell that already draws this asset is not built again, which is where an adopted asset's
+    // second acquire over a still-resident cell lands.
+    if (!replace && cell.batches.some((entry) => entry.asset === asset.id)) return;
+    this.#queued.add(token);
+    this.#jobs.push({
+      asset,
+      batches: undefined,
+      cell,
+      filterX: this.#follow.position.x,
+      filterZ: this.#follow.position.z,
+      fresh: [],
+      next: 0,
+      published: 0,
+      records: undefined,
+      replaced: replace ? cell.batches.filter((entry) => entry.asset === asset.id) : [],
+      run,
+    });
+  }
+
+  /**
+   * Spend the frame's budget on queued builds, one unit each, and stop when it is gone.
+   *
+   * The queue is served in admission order, which is nearest cell first, and a build is taken to
+   * completion before the next one starts: the units of one run are cheaper together than the
+   * per-frame bookkeeping of interleaving them, and the cell behind it is the same distance away.
+   * A build whose cell or asset has gone is dropped rather than resumed — there is nothing left to
+   * draw it into — and a frame that runs out of budget leaves the rest of the queue for the next.
+   */
+  #drain(budget: IAdmissionBudget): void {
+    const index = 0;
+    while (index < this.#jobs.length) {
+      const job = this.#jobs[index] as IBuildJob;
+      if (this.#resident.get(job.cell.key) !== job.cell || job.asset.levels.length === 0) {
+        this.#forget(index, job);
+        continue;
+      }
+      let finished = false;
+      if (
+        !budget.admit(() => {
+          finished = this.#step(job);
+        })
+      )
+        break;
+      // A finished build leaves the queue at this index, so the next one is served without a skip.
+      if (finished) this.#forget(index, job);
+    }
+  }
+
+  #forget(index: number, job: IBuildJob): void {
+    this.#jobs.splice(index, 1);
+    this.#queued.delete(`${job.cell.key}|${job.asset.id}`);
+  }
+
+  /** Units of work the queue still owes: placement slices left, plus meshes left to publish. */
+  #backlog(): number {
+    let units = 0;
+    for (const job of this.#jobs) {
+      const meshes = job.batches === undefined ? 0 : publishCount(job.batches);
+      units +=
+        Math.ceil(Math.max(0, job.run.count - job.next) / ADMISSION_SLICE_PLACEMENTS) +
+        Math.max(0, meshes - job.published);
+    }
+    return units;
+  }
+
+  /**
+   * One unit of one build: a slice of placements, or one mesh built, or the swap that attaches the
+   * finished batch and retires what a refilter replaced. `true` means the job is done.
+   */
+  #step(job: IBuildJob): boolean {
+    if (job.next < job.run.count) {
+      job.batches ??= newBatches(job.asset);
+      const end = Math.min(job.next + ADMISSION_SLICE_PLACEMENTS, job.run.count);
+      this.#addPlacements(job, job.next, end);
+      job.next = end;
+      return false;
+    }
+    const batches = job.batches;
+    // A run with nothing placed in it publishes nothing, exactly as an unbounded build would.
+    if (batches === undefined) return true;
+    if (job.published < publishCount(batches)) {
+      this.#buildOne(job, batches);
+      return false;
+    }
+    this.#swap(job);
+    return true;
+  }
+
+  /**
+   * Hand the cell its finished batches and take back the ones they replace, in one step.
+   *
+   * This is the no-hole rule. Attaching and detaching in the same synchronous block means no frame
+   * ever shows the replacement beside the batch it replaces, and a refilter that waits three frames
+   * for budget shows the level the cell already had for those three frames rather than nothing.
+   */
+  #swap(job: IBuildJob): void {
+    const { cell } = job;
+    for (const entry of job.fresh) {
+      cell.batches.push(entry);
+      if (entry.mesh !== undefined) this.add(entry.mesh);
+    }
+    for (const entry of job.replaced) {
+      const at = cell.batches.indexOf(entry);
+      if (at >= 0) cell.batches.splice(at, 1);
+      entry.mesh?.removeFromParent();
+      if (release(entry.mesh)) this.#failures += 1;
+    }
+  }
+
+  /**
+   * Filter one slice of a run's placements into the batches they draw from, culling on the position
+   * this build was queued for and switching level where an asset's `lods` say to.
+   */
+  #addPlacements(job: IBuildJob, from: number, to: number): void {
+    const { asset, filterX, filterZ } = job;
+    if (job.records === undefined) job.records = cellPlacements(this.#placements, job.run);
+    const records = job.records;
+    const inner = cullDistance(asset.definition.maxDistance);
+    for (let index = from; index < to; index += 1) {
+      const base = index * PLACEMENT_RECORD_FLOATS;
+      const x = records[base] as number;
+      const y = records[base + 1] as number;
+      const z = records[base + 2] as number;
+      const distance = Math.hypot(x - filterX, z - filterZ);
+      if (inner !== undefined && distance > inner) continue;
+      this.#position.set(x, y, z);
+      this.#rotation.set(
+        records[base + 3] as number,
+        records[base + 4] as number,
+        records[base + 5] as number,
+        records[base + 6] as number,
+      );
+      this.#scale.setScalar(records[base + 7] as number);
+      this.#matrix.compose(this.#position, this.#rotation, this.#scale);
+      // The placement transform, then the part's own offset inside the model: a bark primitive at
+      // the trunk and a needles primitive higher up both land in the one instance matrix.
+      const level = levelAt(asset.distances, distance);
+      const parts = asset.levels[level] as readonly IAssetPart[];
+      const levelBatches = job.batches?.[level] as InstancedBatch[];
+      for (const [part, entry] of parts.entries()) {
+        this.#instance.multiplyMatrices(this.#matrix, entry.local);
+        (levelBatches[part] as InstancedBatch).add(this.#instance);
+      }
+    }
+  }
+
+  /**
+   * Build one (level, part) batch into a mesh. One mesh is one unit, because this is where every
+   * instance matrix is written and the batch's bounds are first computed — the part of admission the
+   * renderer pays for again on the frame it first draws the result. The mesh joins the cell in
+   * {@link #swap}, with the rest of the job, so it is never half a replacement.
+   *
+   * ponytail: a hard switch, no crossfade — a placement crosses a level boundary by being rebuilt
+   * into the other level's batch, so the swap pops. A blend needs a per-instance mix the
+   * InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
+   */
+  #buildOne(job: IBuildJob, batches: readonly InstancedBatch[][]): void {
+    const { asset, cell } = job;
+    let part = job.published;
+    for (const [level, levelBatches] of batches.entries()) {
+      if (part >= levelBatches.length) {
+        part -= levelBatches.length;
+        continue;
+      }
+      const batch = levelBatches[part] as InstancedBatch;
+      const mesh = batch.build({
+        name: `${cell.key}:${asset.id}:${String(level)}:${String(part)}`,
+      });
+      job.fresh.push({
+        asset: asset.id,
+        batch,
+        lastFilterX: job.filterX,
+        lastFilterZ: job.filterZ,
+        mesh,
+        threshold: asset.threshold,
+      });
+      job.published += 1;
+      return;
+    }
   }
 
   /**
@@ -926,6 +1286,12 @@ export class WorldCells extends Group implements IComputeDriven {
     return levels;
   }
 
+  /**
+   * An asset's levels are in, so every resident cell holding it needs its batches — queued, not
+   * built. This is the path that used to be worst: adopting one asset rebuilt every resident cell's
+   * batches for it in a single frame, and a 218-asset package pays it over and over as the ring
+   * moves. The queue turns it into the same per-frame allowance every other admission path gets.
+   */
   #adoptAsset(asset: IAssetState, models: readonly (Object3D | undefined)[]): void {
     if (this.#released || this.#assets.get(asset.id) !== asset || asset.disposed) {
       this.#failures += disposeModels(models);
@@ -936,85 +1302,9 @@ export class WorldCells extends Group implements IComputeDriven {
     asset.levels = levels;
     for (const cell of [...this.#resident.values()]) {
       for (const run of cell.cell.runs) {
-        if (run.asset === asset.id) this.#buildBatch(asset, cell, run);
+        if (run.asset === asset.id) this.#queueBuild(asset, cell, run);
       }
     }
-  }
-
-  #buildBatch(asset: IAssetState, cell: IResidentCell, run: IWorldRun): void {
-    if (asset.levels.length === 0) return;
-    if (cell.batches.some((entry) => entry.asset === asset.id)) return;
-    const records = cellPlacements(this.#placements, run);
-    const filterX = this.#follow.position.x;
-    const filterZ = this.#follow.position.z;
-    const inner = cullDistance(asset.definition.maxDistance);
-    // One batch per (level, part), so a placement is filtered and drawn together and an emptied
-    // level or a part nobody placed costs one missing mesh rather than the whole cell's run.
-    const batches: InstancedBatch[][] = [];
-    for (const parts of asset.levels) {
-      const levelBatches: InstancedBatch[] = [];
-      for (const part of parts)
-        levelBatches.push(new InstancedBatch({ geometry: part.geometry, material: part.material }));
-      batches.push(levelBatches);
-    }
-    for (let index = 0; index < run.count; index += 1) {
-      const base = index * PLACEMENT_RECORD_FLOATS;
-      const x = records[base] as number;
-      const y = records[base + 1] as number;
-      const z = records[base + 2] as number;
-      const distance = Math.hypot(x - filterX, z - filterZ);
-      if (inner !== undefined && distance > inner) continue;
-      this.#position.set(x, y, z);
-      this.#rotation.set(
-        records[base + 3] as number,
-        records[base + 4] as number,
-        records[base + 5] as number,
-        records[base + 6] as number,
-      );
-      this.#scale.setScalar(records[base + 7] as number);
-      this.#matrix.compose(this.#position, this.#rotation, this.#scale);
-      // The placement transform, then the part's own offset inside the model: a bark primitive at
-      // the trunk and a needles primitive higher up both land in the one instance matrix.
-      const level = levelAt(asset.distances, distance);
-      const parts = asset.levels[level] as readonly IAssetPart[];
-      const levelBatches = batches[level] as InstancedBatch[];
-      for (const [part, entry] of parts.entries()) {
-        this.#instance.multiplyMatrices(this.#matrix, entry.local);
-        (levelBatches[part] as InstancedBatch).add(this.#instance);
-      }
-    }
-    this.#publishBatches(cell, asset, batches, filterX, filterZ);
-  }
-
-  /**
-   * Name and attach one mesh per (level, part) batch, and record on each what a refilter needs.
-   *
-   * ponytail: a hard switch, no crossfade — a placement crosses a level boundary by being rebuilt
-   * into the other level's batch, so the swap pops. A blend needs a per-instance mix the
-   * InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
-   */
-  #publishBatches(
-    cell: IResidentCell,
-    asset: IAssetState,
-    batches: readonly InstancedBatch[][],
-    filterX: number,
-    filterZ: number,
-  ): void {
-    for (const [level, levelBatches] of batches.entries())
-      for (const [part, batch] of levelBatches.entries()) {
-        const mesh = batch.build({
-          name: `${cell.key}:${asset.id}:${String(level)}:${String(part)}`,
-        });
-        cell.batches.push({
-          asset: asset.id,
-          batch,
-          lastFilterX: filterX,
-          lastFilterZ: filterZ,
-          mesh,
-          threshold: asset.threshold,
-        });
-        if (mesh !== undefined) this.add(mesh);
-      }
   }
 
   /**
@@ -1063,18 +1353,19 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Refilter the batches whose follow point has moved far enough to have crossed a boundary: a cull
-   * distance, or one of the asset's `lods` switches. This is the same step the `maxDistance` filter
-   * always took, with the level switch added to the distances it can be crossed at, so there is
-   * still no per-frame refiltering pass.
+   * Queue a refilter for every batch whose follow point has moved far enough to have crossed a
+   * boundary: a cull distance, or one of the asset's `lods` switches. This is the same step the
+   * `maxDistance` filter always took, with the level switch added to the distances it can be
+   * crossed at, so there is still no per-frame refiltering pass.
    *
    * Two things keep that pass from costing a frame. A cell's placements all sit inside one
    * rectangle, so the two points that matter — where the batch was built and where the follow point
    * is now — bracket every distance a placement of that cell can have had; with no gate of the
    * asset in that span the level and cull answer is the same and the rebuild could change nothing,
    * and the position the batch was built from is kept so the next move is still measured from it.
-   * What is genuinely stale is done nearest cell first, `rebuildsPerUpdate` of them per call, so a
-   * fast player pays a few stale-but-drawn batches instead of every resident cell's in one frame.
+   * What is genuinely stale is queued nearest cell first, `rebuildsPerUpdate` of them per call, and
+   * the queue spends the frame's admission budget on them like any other build — so a refilter that
+   * cannot be afforded this frame leaves the cell drawing the level it has, not a hole.
    */
   #updateMaxDistance(x: number, z: number): void {
     const stale: Array<{ cell: IResidentCell; distance: number; id: string }> = [];
@@ -1082,23 +1373,12 @@ export class WorldCells extends Group implements IComputeDriven {
       for (const job of this.#staleIn(cell, x, z)) stale.push({ cell, ...job });
     stale.sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id));
     for (const job of stale.slice(0, this.#rebuildsPerUpdate)) {
-      this.#rebuildAsset(job.cell, job.id);
+      const asset = this.#assets.get(job.id);
+      const run = job.cell.cell.runs.find((candidate) => candidate.asset === job.id);
+      if (asset === undefined || asset.levels.length === 0 || run === undefined) continue;
+      this.#queueBuild(asset, job.cell, run, true);
       this.#rebuilds += 1;
     }
-  }
-
-  #rebuildAsset(cell: IResidentCell, id: string): void {
-    const asset = this.#assets.get(id);
-    if (asset === undefined || asset.levels.length === 0) return;
-    for (let index = cell.batches.length - 1; index >= 0; index -= 1) {
-      const entry = cell.batches[index] as ICellBatch;
-      if (entry.asset !== id) continue;
-      cell.batches.splice(index, 1);
-      entry.mesh?.removeFromParent();
-      if (release(entry.mesh)) this.#failures += 1;
-    }
-    const run = cell.cell.runs.find((candidate) => candidate.asset === id);
-    if (run !== undefined) this.#buildBatch(asset, cell, run);
   }
 
   #cellLive(cell: IResidentCell, generation: number): boolean {
@@ -1164,6 +1444,13 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   #evict(cell: IResidentCell): void {
+    // Work queued for a cell that has left is dropped, not resumed: a later frame would build
+    // batches into a graph that no longer holds the cell, and the residency slot is already gone.
+    this.#jobs = this.#jobs.filter((job) => {
+      if (job.cell !== cell) return true;
+      this.#queued.delete(`${cell.key}|${job.asset.id}`);
+      return false;
+    });
     for (const entry of cell.batches) {
       entry.mesh?.removeFromParent();
       if (release(entry.mesh)) this.#failures += 1;

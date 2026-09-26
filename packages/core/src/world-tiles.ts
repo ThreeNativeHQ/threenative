@@ -25,6 +25,24 @@ export interface IWorldTileColliderInput {
   readonly tileZ: number;
 }
 
+/**
+ * One frame's allowance for admission work — the millisecond budget every path that puts streamed
+ * content on screen draws on, spent in bounded units rather than in one lump.
+ *
+ * `admit` is the whole contract: run one unit and charge the frame for it, or report that there was
+ * no room and run nothing. A caller that is refused leaves the work for a later frame instead of
+ * dropping it, so the budget decides *when* content is admitted, never *whether*.
+ *
+ * Nothing here decides what anything looks like; it decides only how much of it a frame may pay for.
+ */
+export interface IAdmissionBudget {
+  /**
+   * Run one unit of admission work, charging the frame's budget for it. `false` means the budget
+   * was spent and `work` was never called, so the caller must stop and resume on a later frame.
+   */
+  admit(work: () => void): boolean;
+}
+
 export interface IWorldTile {
   readonly bytes: number;
   /** `undefined` for a resident tile outside `colliderRadius`, or when no factory was given. */
@@ -1645,7 +1663,18 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#resident.get(key);
   }
 
-  follow(position: IWorldTilesFollowPosition | Pick<Vector3, "x" | "z">): void {
+  /**
+   * Move residency to the followed point: admit, evict and re-level every tile.
+   *
+   * `budget` caps what one call may admit. A tile the budget refuses is not resident this pass and
+   * costs nothing to try again, because `follow` recomputes the wanted set on every call — which is
+   * what makes this safe to defer: the tile was not drawn before either, so a refused admission
+   * leaves a gap rather than a hole. Omitted, a call admits everything it wants, as it always did.
+   */
+  follow(
+    position: IWorldTilesFollowPosition | Pick<Vector3, "x" | "z">,
+    budget?: IAdmissionBudget,
+  ): void {
     if (this.#released) throw new Error("TerrainTiles cannot follow after release.");
     const x = finite(position.x, "follow x");
     const z = finite(position.z, "follow z");
@@ -1695,12 +1724,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           );
         continue;
       }
-      const tile = this.#createTile(
-        candidate.tileX,
-        candidate.tileZ,
-        candidate.distance,
-        this.#wantsCollider(candidate.tileX, candidate.tileZ, centerX, centerZ),
-      );
+      // One tile is one unit: every level is built and the collider made inside it. A refused tile
+      // is wanted again by the next `follow`, so it is deferred, never dropped.
+      const tile = this.#admitCandidate(candidate, centerX, centerZ, budget);
+      if (tile === undefined) continue;
       if (this.residentBytes + tile.bytes > this.residentByteBudget) {
         this.#disposeTile(tile);
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
@@ -1714,7 +1741,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#recordPeaks();
     }
     this.#recordPeaks();
-    this.#updateColliders(centerX, centerZ);
+    this.#updateColliders(centerX, centerZ, budget);
     this.#applyLodTargets(targets);
     this.#coordinateNeighborLods(hadFocus);
     this.#seamPass();
@@ -1924,14 +1951,46 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
+   * Build one wanted tile, if this frame's admission budget has room for it.
+   *
+   * The whole of a tile's cost is inside `#createTile` — every LOD level built, the `LOD` assembled
+   * and the game's `createCollider` called — so one tile is one unit of a frame's budget. A refused
+   * tile is `undefined`, and the next `follow` wants it again: it was not drawn before either, so
+   * deferring it leaves a gap rather than a hole.
+   */
+  #admitCandidate(
+    candidate: { distance: number; tileX: number; tileZ: number },
+    centerX: number,
+    centerZ: number,
+    budget: IAdmissionBudget | undefined,
+  ): IResidentTile | undefined {
+    let tile: IResidentTile | undefined;
+    const created = (): void => {
+      tile = this.#createTile(
+        candidate.tileX,
+        candidate.tileZ,
+        candidate.distance,
+        this.#wantsCollider(candidate.tileX, candidate.tileZ, centerX, centerZ),
+      );
+    };
+    if (budget === undefined) created();
+    else if (!budget.admit(created)) return undefined;
+    return tile;
+  }
+
+  /**
    * Bring every resident tile's collider in line with `colliderRadius`: a tile that entered it gets
    * a body, one that left disposes the body it had. That is the whole cost control — a wide
    * `streamRadius` renders the ground out to the horizon while physics only ever covers the tiles a
    * player can reach — and it needs no per-tile bookkeeping because residency already walks the
    * resident set on every `follow`.
+   *
+   * A body the budget refuses is the same deferral as a refused tile: the tile is inside
+   * `colliderRadius` with no body for a frame or two, and the next `follow` still wants one.
    */
-  #updateColliders(centerX: number, centerZ: number): void {
-    if (this.#createCollider === undefined) return;
+  #updateColliders(centerX: number, centerZ: number, budget?: IAdmissionBudget): void {
+    const createCollider = this.#createCollider;
+    if (createCollider === undefined) return;
     for (const tile of this.#resident.values()) {
       const wanted = this.#wantsCollider(tile.tileX, tile.tileZ, centerX, centerZ);
       if (wanted === (tile.collider !== undefined)) continue;
@@ -1940,13 +1999,18 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tile.collider = undefined;
         continue;
       }
-      tile.collider = this.#createCollider({
-        field: tile.field,
-        key: tile.key,
-        object: tile.lod,
-        tileX: tile.tileX,
-        tileZ: tile.tileZ,
-      });
+      const created = (): void => {
+        tile.collider = createCollider({
+          field: tile.field,
+          key: tile.key,
+          object: tile.lod,
+          tileX: tile.tileX,
+          tileZ: tile.tileZ,
+        });
+      };
+      if (budget === undefined) created();
+      // Out of room: the body is owed, and every later `follow` asks for it again.
+      else if (!budget.admit(created)) continue;
     }
   }
 

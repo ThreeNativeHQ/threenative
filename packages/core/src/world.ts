@@ -471,7 +471,11 @@ export class Heightfield extends Group implements IComputeDriven {
 }
 
 export { TerrainTiles } from "./world-tiles.js";
-export type { IWorldTileColliderInput, IWorldTilesTopologyObservation } from "./world-tiles.js";
+export type {
+  IAdmissionBudget,
+  IWorldTileColliderInput,
+  IWorldTilesTopologyObservation,
+} from "./world-tiles.js";
 
 export { getWorldCapabilities } from "./world-capabilities.js";
 export type { IWorldCapabilities } from "./world-capabilities.js";

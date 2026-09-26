@@ -3689,13 +3689,14 @@
         "budgets are hard caps that report pressure instead of over-committing",
         "model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
+        "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has",
         "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose"
       ],
       "example": "const world = await WorldCells.load({ url: \"/world/world.json\", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });\nscene.add(world);\nworld.update();",
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate` and the package's per-asset maxDistance"
+        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
       ],
       "package": "@threenative/core",
       "signature": "export class WorldCells extends Group implements IComputeDriven { … }",

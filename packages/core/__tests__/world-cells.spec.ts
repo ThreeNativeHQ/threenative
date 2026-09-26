@@ -412,6 +412,16 @@ function terrainOf(world: WorldCells): TerrainTiles {
   return terrain;
 }
 
+/**
+ * A world whose admission has no millisecond ceiling, which is the configuration every assertion in
+ * this file was written against: one `update` admits a whole cell, so a test can say what a cell
+ * draws after a single step. The bounded budget is a real option with its own contract, and
+ * `world-cells-admission.spec.ts` is where that contract is proved.
+ */
+function loadWorld(options: Parameters<typeof WorldCells.load>[0]): Promise<WorldCells> {
+  return WorldCells.load({ admissionBudgetMs: Number.POSITIVE_INFINITY, ...options });
+}
+
 /** The one surface a batch draws with: an `InstancedMesh` is built from one, unlike a source mesh. */
 /** The `alphaTestNode` slot three's node materials carry; the marker of a mip-aware cutout. */
 interface NodeMaterialLike {
@@ -443,6 +453,19 @@ function partsOf(
 async function flush(rounds = 12): Promise<void> {
   for (let round = 0; round < rounds; round += 1)
     await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Let a world's loads settle, then step it again.
+ *
+ * Adopting a loaded model queues the resident cells' batches instead of building them inside the
+ * promise, because a promise callback has no frame to spend a budget in: the step after the load is
+ * the one that admits them. A test that has just awaited `flush()` and wants to see what a cell draws
+ * steps once more — and with this suite's unbounded budget, one step is all of it.
+ */
+async function flushed(world: WorldCells): Promise<void> {
+  await flush();
+  world.update();
 }
 
 function followAt(x: number, z: number): { position: { x: number; z: number } } {
@@ -542,7 +565,7 @@ describe("WorldCells", () => {
     const ring = 1;
     const follow = followAt(0, 0);
     const loader = controlledLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -591,7 +614,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
     const loader = controlledLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -604,7 +627,7 @@ describe("WorldCells", () => {
     follow.position.x = center.x;
     follow.position.z = center.z;
     world.update();
-    await flush();
+    await flushed(world);
 
     expect(world.stats().residentKeys).toEqual([cellKey(1, 1)]);
     expect(world.assetRefCounts()).toEqual({ ground_cover: 1, pine: 1, rock: 1 });
@@ -625,7 +648,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
     const loader = controlledLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -641,7 +664,7 @@ describe("WorldCells", () => {
       follow.position.x = -96 + step * 16;
       follow.position.z = -32;
       world.update();
-      await flush();
+      await flushed(world);
 
       world.traverse((object: Object3D) => {
         if (!(object instanceof InstancedMesh) || !object.name.includes("ground_cover")) return;
@@ -665,7 +688,7 @@ describe("WorldCells", () => {
     const follow = followAt(0, 0);
     const loader = controlledLoader();
     loader.holdChunks = true;
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -701,7 +724,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
     const loader = controlledLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: { residentCells: 2, instances: 1_000_000, bytes: 1_000_000_000 },
       follow,
       loadModel: loader.load,
@@ -722,7 +745,7 @@ describe("WorldCells", () => {
   it("rethrows a game's terrain error instead of reporting it as byte pressure", async () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       createCollider: () => {
         throw new Error("game collider factory failed");
@@ -745,7 +768,7 @@ describe("WorldCells", () => {
   it("rethrows a game error that borrows the terrain budget error's name", async () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       createCollider: () => {
         const error = new Error("game collider factory failed");
@@ -770,7 +793,7 @@ describe("WorldCells", () => {
   it("counts a real terrain byte-budget throw as byte pressure", async () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: controlledLoader().load,
@@ -814,7 +837,7 @@ describe("WorldCells", () => {
       models.push(model);
       return Promise.resolve(model);
     };
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: load,
@@ -862,7 +885,7 @@ describe("WorldCells", () => {
     for (const option of ["concurrency", "rebuildsPerUpdate"] as const)
       for (const value of [0, -1, 1.5, Number.NaN])
         await expect(
-          WorldCells.load({
+          loadWorld({
             budgets: { residentCells: 9, instances: 1_000_000, bytes: 1_000_000_000 },
             follow: followAt(0, 0),
             loadModel: controlledLoader().load,
@@ -882,7 +905,7 @@ describe("WorldCells", () => {
     const follow = followAt(0, 0);
     const gate = gatedLoader();
     const concurrency = 3;
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       concurrency,
       follow,
@@ -918,7 +941,7 @@ describe("WorldCells", () => {
     });
     const follow = followAt(0, 0);
     const gate = gatedLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       concurrency: 1,
       follow,
@@ -954,7 +977,7 @@ describe("WorldCells", () => {
   it("streams a compiled package, every file reached through the asset manifest", async () => {
     const { requested } = stubCompiledFetch();
     const follow = followAt(0, 0);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       ring: 1,
@@ -966,7 +989,7 @@ describe("WorldCells", () => {
     follow.position.x = center.x;
     follow.position.z = center.z;
     world.update();
-    await flush();
+    await flushed(world);
 
     // The models came through the loader too: batches exist, and the one cell carrying a chunk
     // attached it. A model served by an authored name would have 404ed instead.
@@ -985,7 +1008,7 @@ describe("WorldCells", () => {
     // left to serve the package, and nothing names them.
     const { requested } = stubSourceDirFetch();
     const follow = followAt(0, 0);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: controlledLoader().load,
@@ -1018,7 +1041,7 @@ describe("WorldCells", () => {
   it("survives a teardown that throws, and reports it instead of killing the frame", async () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       // Every model hands back a shape the renderer never finished uploading, so releasing an asset
@@ -1059,7 +1082,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const loader = levelLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1068,7 +1091,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     const lodDistance = manifest.assets.pine?.lods?.[0]?.distance as number;
     const near = levelMesh(world, "pine", 0) as InstancedMesh;
@@ -1091,7 +1114,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const loader = levelLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1100,7 +1123,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
     expect((levelMesh(world, "pine", 1) as InstancedMesh).count).toBeGreaterThan(0);
 
     // The cell centre is 45 m away — past the eighth of the 60 m switch the refilter waits for — and
@@ -1133,7 +1156,7 @@ describe("WorldCells", () => {
         })),
     });
     const follow = followAt(-96, -96);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: controlledLoader().load,
@@ -1142,7 +1165,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     const before = world.stats().rebuilds;
     const meshes = world.children.filter((child) => child instanceof InstancedMesh);
@@ -1178,7 +1201,7 @@ describe("WorldCells", () => {
     });
     const follow = followAt(-32, -32);
     const loader = levelLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1187,7 +1210,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     const near = levelMesh(world, "ground_cover", 0);
     expect(near).toBeDefined();
@@ -1210,7 +1233,7 @@ describe("WorldCells", () => {
   it("refilters at most `rebuildsPerUpdate` cell-assets per update, and finishes them all", async () => {
     stubFixtureFetch();
     const follow = followAt(-32, -32);
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: controlledLoader().load,
@@ -1220,7 +1243,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
     expect(world.stats().rebuilds).toBe(0);
 
     // 20 m east puts the 60 m level switch inside every resident cell's span, so all 27 cell-assets
@@ -1268,7 +1291,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const loader = levelLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1277,7 +1300,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     const lod0 = vi.spyOn(loader.geometryFor("pine.glb"), "dispose");
     const lod1 = vi.spyOn(loader.geometryFor("pine_lod1.glb"), "dispose");
@@ -1300,7 +1323,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const loader = levelLoader((url) => url.includes("pine_lod1"));
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1309,7 +1332,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     // Counted as one refused load, and the asset is not refused: both levels draw with the asset's
     // own shape, near and far together, and every placement in the run is still there.
@@ -1326,7 +1349,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);
     const adopted: Array<{ destroys: () => number; disposals: () => number }> = [];
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: (): Promise<Object3D> => {
@@ -1373,7 +1396,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const loader = treeLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1382,7 +1405,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     // One batch per (level, part), and the part is named, so a scene dump can tell them apart.
     const bark = levelMesh(world, "pine", 0, 0) as InstancedMesh;
@@ -1426,7 +1449,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const loader = treeLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1435,7 +1458,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     // An `InstancedMesh` cannot sort its instances, so the BLEND part draws as a cutout: the clone
     // writes depth and discards below the threshold, and the GLB's own material is untouched.
@@ -1453,7 +1476,7 @@ describe("WorldCells", () => {
 
     // A material that already names a cutout point keeps it.
     const thresholded = treeLoader({ alphaTest: 0.25 });
-    const second = await WorldCells.load({
+    const second = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: thresholded.load,
@@ -1462,14 +1485,14 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     second.update();
-    await flush();
+    await flushed(second);
     expect(batchMaterial(levelMesh(second, "pine", 0, 1)).alphaTest).toBe(0.25);
     second.dispose();
 
     // One clone per asset part, so every cell batch of the asset shares it.
     const ringed = followAt(-32, -32);
     const shared = treeLoader();
-    const wide = await WorldCells.load({
+    const wide = await loadWorld({
       budgets: largeBudgets,
       follow: ringed,
       loadModel: shared.load,
@@ -1478,7 +1501,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     wide.update();
-    await flush();
+    await flushed(wide);
     const near = partsOf(wide, "pine", 0, 1);
     expect(near.length).toBeGreaterThan(1);
     expect(new Set(near.map((mesh) => mesh.material)).size).toBe(1);
@@ -1486,7 +1509,7 @@ describe("WorldCells", () => {
 
     // `"blend"` keeps the old behaviour: the material as the package authored it, no clone.
     const blended = treeLoader();
-    const old = await WorldCells.load({
+    const old = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: blended.load,
@@ -1496,7 +1519,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     old.update();
-    await flush();
+    await flushed(old);
     const part = batchMaterial(levelMesh(old, "pine", 0, 1));
     expect(part).toBe(blended.materialFor("pine.glb", 1));
     expect(part.transparent).toBe(true);
@@ -1504,7 +1527,7 @@ describe("WorldCells", () => {
     old.dispose();
 
     await expect(
-      WorldCells.load({
+      loadWorld({
         budgets: largeBudgets,
         follow,
         loadModel: blended.load,
@@ -1523,7 +1546,7 @@ describe("WorldCells", () => {
     const map = new Texture();
     map.image = { width: 2048, height: 2048 };
     const loader = treeLoader({ map });
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1532,7 +1555,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     // The cutout is still a cutout — not transparent, depth-writing, the map intact — and it now
     // carries a dynamic `alphaTestNode`, so the mip the fragment lands on decides the cutoff it is
@@ -1551,7 +1574,7 @@ describe("WorldCells", () => {
     expect(authored.alphaTestNode).toBeUndefined();
 
     const thresholded = treeLoader({ alphaTest: 0.25, map });
-    const second = await WorldCells.load({
+    const second = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: thresholded.load,
@@ -1560,7 +1583,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     second.update();
-    await flush();
+    await flushed(second);
     expect((batchMaterial(levelMesh(second, "pine", 0, 1)) as MeshBasicMaterial).alphaTest).toBe(
       0.25,
     );
@@ -1572,7 +1595,7 @@ describe("WorldCells", () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const loader = treeLoader();
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: loader.load,
@@ -1581,7 +1604,7 @@ describe("WorldCells", () => {
       url: "/world/world.json",
     });
     world.update();
-    await flush();
+    await flushed(world);
 
     const released = [
       vi.spyOn(loader.geometryFor("pine.glb", 0), "dispose"),
@@ -1614,7 +1637,7 @@ describe("WorldCells", () => {
     const center = cellCenter(1, 1);
     follow.position.x = center.x;
     follow.position.z = center.z;
-    const ring = await WorldCells.load({
+    const ring = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: controlledLoader().load,
@@ -1628,7 +1651,7 @@ describe("WorldCells", () => {
     expect(terrainOf(ring).residentTileCount).toBe(25);
 
     // Terrain to the horizon, props at the ring: 81 tiles under the same ring 2.
-    const wide = await WorldCells.load({
+    const wide = await loadWorld({
       budgets: largeBudgets,
       follow,
       loadModel: controlledLoader().load,
@@ -1654,7 +1677,7 @@ describe("WorldCells", () => {
     const follow = followAt(0, 0);
     const created: string[] = [];
     const disposed: string[] = [];
-    const world = await WorldCells.load({
+    const world = await loadWorld({
       budgets: largeBudgets,
       createCollider: ({ key }) => {
         created.push(key);
