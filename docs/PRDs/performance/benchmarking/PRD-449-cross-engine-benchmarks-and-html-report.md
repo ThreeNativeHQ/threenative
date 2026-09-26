@@ -854,8 +854,19 @@ The owner waived the PR requirement on 2026-09-25: implement in the dedicated wo
   | static, unshaded; occlusion off | `basic_cull` | `scene-node-independent` | 16.605 | 1.549 | `qualified` smoke, no verdict |
   | static, unshaded | `basic_cull` | `scene-node-independent` | 18.011 | 0.996 | `non-comparable`, ratio withheld |
   | static, unshaded | `basic_cull` | `clustered-default` | 16.65 | 1.07 | superseded; not re-run |
-  | translating | `dynamic_cull` | `scene-node-independent` | 40.34 | 6.13 | not re-run this round |
+  | translating, occlusion off | `dynamic_cull` | `scene-node-independent` | 36.100 | 4.637 | `non-comparable`, coverage refusal |
   | 100 static omni lights | `static_omni_light_cull` | `scene-node-independent` | 20.54 | 1.18 | not re-run this round |
+
+  A clean-source 600-frame `dynamic_cull` smoke pair at commit `8d1ddd9a3` is retained at
+  `artifacts/engine-load-test/diagnostics/cull-dynamic-{tn,godot,comparison}.json` (local, ignored).
+  The staged occlusion-off Godot project passed the same hash checks. Fixture and all five mesh
+  hashes matched; six sampled transforms agreed within 2.45e-6 m; TN reported effective immediate
+  presentation. The comparator still refused coverage differences of `0.006667`–`0.008210` against
+  the declared `0.002` limit. Godot's shaded mean luma at frame 0 was `0.05126` against TN's
+  `0.01102`, and every mismatching coverage-grid cell counted more samples for Godot. Because the
+  current coverage check thresholds shaded colour against black at 0.02 luma, a lighting-dependent
+  mask is a plausible cause, **not proved**. The pair has no ratio; the next conformance probe must
+  read a silhouette/depth signal independent of that shaded-colour threshold.
 
   **Both arms now drain at the same boundary.** Godot's `drain` was `none-available` and its mean
   paced on submission, so the two means did not measure the same thing. The arm now calls

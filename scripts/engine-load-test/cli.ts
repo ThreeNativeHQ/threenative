@@ -222,6 +222,14 @@ async function fileIdentity(file: string): Promise<{ bytes: number; sha256: stri
   return { bytes, sha256: hash.digest("hex") };
 }
 
+/** One archived build lock: the mutable file a run measured, and the content address its bytes stay at. */
+export interface IArchivedBuild {
+  archived: string;
+  bytes: number;
+  path: string;
+  sha256: string;
+}
+
 /**
  * A hash is a lock only while the bytes it names still exist, and every build output a run measures
  * is a mutable path: the next `dist/` or `target/` build of the same arm overwrites it, which leaves
@@ -233,7 +241,7 @@ async function fileIdentity(file: string): Promise<{ bytes: number; sha256: stri
 export async function archiveBuild(
   file: string,
   buildsDir = path.join(artifactRoot, "builds"),
-): Promise<{ archived: string; bytes: number; path: string; sha256: string }> {
+): Promise<IArchivedBuild> {
   const { bytes, sha256 } = await fileIdentity(file);
   const archived = path.join(buildsDir, `${sha256}${path.extname(file)}`);
   await mkdir(buildsDir, { recursive: true });
@@ -771,6 +779,46 @@ export async function stageGodotCullProject(
   return { created: true, project: staged, projectSha256, upstreamSha256 };
 }
 
+/**
+ * The Godot cull arm's recorded identity. `build` is the arm's build lock, taken before the launch
+ * that measured it so the bytes stay checkable once another run's Godot install replaces the path,
+ * and `source.adapter` names the exact `culling_arm.gd` that produced the numbers. No build type is
+ * claimed — the raw payload states none.
+ */
+export async function godotCullIdentity(args: {
+  adapter: Record<string, unknown>;
+  build: Record<string, IArchivedBuild>;
+  display: string;
+  fixture: string;
+  staged: { project: string; projectSha256: string; upstreamSha256: string };
+}): Promise<Record<string, unknown>> {
+  const adapterScript = path.join(repoRoot, "benchmark/godot-prd449/culling_arm.gd");
+  return {
+    adapter: args.adapter,
+    build: args.build,
+    display: args.display,
+    godot: args.build.godotBinary,
+    source: {
+      adapter: {
+        path: path.relative(repoRoot, adapterScript),
+        sha256: (await fileIdentity(adapterScript)).sha256,
+      },
+      commit: "b059e38a81230a87293828bbf65ab247b6b2d2a8",
+      fixture: path.relative(repoRoot, args.fixture),
+      // What the staged project is, so a reader can tell an occlusion-off object set from an
+      // occlusion-on one without re-deriving the patch: the line that changed, the bytes it changed
+      // them in, and the value the arm read back out of the project it was actually given.
+      occlusionCulling: {
+        applied: `${OCCLUSION_SETTING}=false`,
+        effective: args.adapter.occlusionCulling,
+        projectSha256: args.staged.projectSha256,
+        staged: path.relative(repoRoot, args.staged.project),
+        upstreamProjectSha256: args.staged.upstreamSha256,
+      },
+    },
+  };
+}
+
 async function runGodotCullArm(
   variant: string,
   frames: number,
@@ -784,7 +832,10 @@ async function runGodotCullArm(
   process.stdout.write(
     `godot cull arm: ${staged.created ? "staged" : "reusing"} ${staged.project} (project ${staged.projectSha256}, occlusion culling off)\n`,
   );
-  const godotBinary = await (async () => godot)();
+  // The resolved binary is what this arm measures, and it is a mutable path on PATH: locked to its
+  // content address here, before the launch, so the record stays verifiable over the install it ran.
+  const godotBinary = await resolveGodotBinary();
+  const build = { godotBinary: await archiveBuild(godotBinary) };
   const raw = await runCapturing(
     godotBinary,
     [
@@ -804,25 +855,17 @@ async function runGodotCullArm(
     { cwd: repoRoot, env: { ...process.env, DISPLAY: requiredDisplay() } },
   );
   const adapter = requireObject((raw as Record<string, unknown>).adapter, "adapter");
-  await writeArmRecord(file, raw, {
-    adapter,
-    display: requiredDisplay(),
-    godot: await fileIdentity(await resolveGodotBinary()),
-    source: {
-      commit: "b059e38a81230a87293828bbf65ab247b6b2d2a8",
-      fixture: path.relative(repoRoot, fixture),
-      // What the staged project is, so a reader can tell an occlusion-off object set from an
-      // occlusion-on one without re-deriving the patch: the line that changed, the bytes it changed
-      // them in, and the value the arm read back out of the project it was actually given.
-      occlusionCulling: {
-        applied: `${OCCLUSION_SETTING}=false`,
-        effective: adapter.occlusionCulling,
-        projectSha256: staged.projectSha256,
-        staged: path.relative(repoRoot, staged.project),
-        upstreamProjectSha256: staged.upstreamSha256,
-      },
-    },
-  });
+  await writeArmRecord(
+    file,
+    raw,
+    await godotCullIdentity({
+      adapter,
+      build,
+      display: requiredDisplay(),
+      fixture,
+      staged,
+    }),
+  );
 }
 
 async function resolveGodotBinary(): Promise<string> {
@@ -868,6 +911,35 @@ async function writeArmRecord(
   );
 }
 
+/**
+ * The TN cull arm's recorded identity. `build` is the arm's build lock: the compiled bundle is a
+ * mutable `dist/` path the next cull build overwrites, so it and the host are locked to their own
+ * content addresses before the launch that measured them. No build type is claimed — the raw payload
+ * states none.
+ */
+export async function tnCullIdentity(args: {
+  adapter: unknown;
+  authoring: string;
+  build: Record<string, IArchivedBuild>;
+  display: string;
+  fixture: string;
+  tn: { commit: string; dirty: boolean };
+}): Promise<Record<string, unknown>> {
+  return {
+    adapter: args.adapter,
+    authoring: args.authoring,
+    browserArgs: null,
+    build: args.build,
+    display: args.display,
+    nativeHost: args.build.nativeHost,
+    source: {
+      commit: "b059e38a81230a87293828bbf65ab247b6b2d2a8",
+      fixture: path.relative(repoRoot, args.fixture),
+      tn: args.tn,
+    },
+  };
+}
+
 async function runTnCullArm(
   variant: string,
   authoring: string,
@@ -905,26 +977,29 @@ async function runTnCullArm(
     repoRoot,
     "examples/engine-load-test/dist/engine-load-test-cull-desktop.js",
   );
+  // Locked here, not after the launch: this arm's own `pnpm build` overwrites the bundle the next
+  // cull run measures, so the bytes this run is about to measure are what the record must keep.
+  const build = {
+    nativeHost: await archiveBuild(nativeBinary),
+    tnBundle: await archiveBuild(bundle),
+  };
   const raw = await runCapturing(
     nativeBinary,
     ["run", bundle, "--width", "1920", "--height", "1080", "--no-vsync"],
     { cwd: repoRoot, env: { ...env, SDL_VIDEODRIVER: "x11" } },
   );
-  await writeArmRecord(file, raw, {
-    adapter: (raw as Record<string, unknown>).adapter,
-    authoring,
-    browserArgs: null,
-    display,
-    nativeHost: {
-      path: path.relative(repoRoot, nativeBinary),
-      ...(await fileIdentity(nativeBinary)),
-    },
-    source: {
-      commit: "b059e38a81230a87293828bbf65ab247b6b2d2a8",
-      fixture: path.relative(repoRoot, fixture),
-      tn: { commit: (await sourceIdentity()).commit, dirty: (await sourceIdentity()).dirty },
-    },
-  });
+  await writeArmRecord(
+    file,
+    raw,
+    await tnCullIdentity({
+      adapter: (raw as Record<string, unknown>).adapter,
+      authoring,
+      build,
+      display,
+      fixture,
+      tn: await sourceIdentity(),
+    }),
+  );
 }
 
 async function runCullArm(arm: string): Promise<void> {
