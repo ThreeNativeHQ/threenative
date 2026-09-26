@@ -419,7 +419,9 @@ describe("TerrainTiles", () => {
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
-      sampleHeight: (x, z) => sampleHeight(x, z) * 500,
+      // A 14.7 m error between the two levels, so the complete mismatch is three times the
+      // per-frame step and a complete-mismatch reading would still land under the bound.
+      sampleHeight: (x, z) => sampleHeight(x, z) * 350,
       streamRadius: 1,
       tileResolution: 17,
       tileSize: 16,
@@ -451,7 +453,8 @@ describe("TerrainTiles", () => {
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 1,
-      sampleHeight: (x, z) => sampleHeight(x, z) * 500,
+      // A 12.6 m error between the two levels, so the retarget snaps two thirds of it.
+      sampleHeight: (x, z) => sampleHeight(x, z) * 300,
       streamRadius: 0,
       tileResolution: 17,
       tileSize: 16,
@@ -672,7 +675,10 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
-  it("rejects an LOD transition whose measured mismatch exceeds the pop bound", () => {
+  it("keeps a tile off a level whose height error exceeds the pop bound", () => {
+    // The engine measures the error between the tile's own levels when they are built and
+    // selects the coarsest level that fits the bound, so a game-authored cliff stays finer
+    // instead of throwing a mid-frame error the game cannot act on.
     const tiles = new TerrainTiles({
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
@@ -688,7 +694,43 @@ describe("TerrainTiles", () => {
     expect(() => {
       tiles.follow({ x: 6, z: 0 });
       tiles.process();
-    }).toThrow(/LOD pop threshold/u);
+    }).not.toThrow();
+    expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+    expect(tiles.maxLodPop).toBe(0);
+    tiles.dispose();
+  });
+
+  it("walks a gorge cliff across LOD distances without throwing past the pop bound", () => {
+    // A 2 km map at 128 m tiles and 2 m heightfield spacing, like the 1025x1025 Machinefall
+    // field: a 40 m gorge wall with 20 m terraces on the bench above it, cut across the tile
+    // the camera walks over. The tile beside it is rolling ground the engine can still coarsen.
+    const gorge = (x: number, z: number): number => {
+      const rolling = Math.sin(x * 0.25) * 8 + Math.cos(z * 0.2) * 6;
+      return rolling + (x >= 4 && x < 40 ? 40 + Math.sin(z * 0.9) * 20 : 0);
+    };
+    const tiles = new TerrainTiles({
+      lodDistances: [32, 48],
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 2,
+      sampleHeight: gorge,
+      streamRadius: 1,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 65,
+      tileSize: 128,
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    for (const x of [40, 56]) {
+      tiles.follow({ x, z: 0 });
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+    }
+
+    // The cliffed tile stays on the finest level its own height error allows, and the rolling
+    // tile beside it still transitions, so the per-frame measurement keeps reporting motion.
+    expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+    expect(tiles.lodTransitions).toBeGreaterThan(0);
+    expect(tiles.maxLodPop).toBeGreaterThan(0);
+    expect(tiles.maxLodPop).toBeLessThanOrEqual(16);
     tiles.dispose();
   });
 
