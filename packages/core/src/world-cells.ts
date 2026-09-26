@@ -230,6 +230,8 @@ interface ICellBatch {
  */
 class SharedBatch {
   mesh: InstancedMesh;
+  /** Meshes a grow replaced, kept until the asset is released; see `#segmentIn`. */
+  readonly retired: InstancedMesh[] = [];
   readonly #segmentSize: number;
   readonly #used: boolean[] = [];
 
@@ -1509,8 +1511,11 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#freshThisUpdate += 1;
     const old = shared.grow();
     this.add(shared.mesh);
+    // Detached, not disposed: a cached shadow level can still replay a draw of it until its window
+    // next moves, and destroying its buffer under that replay invalidates every frame's submit.
+    // It is released with the asset (or the world), like the batch that replaced it.
     old.removeFromParent();
-    if (release(old)) this.#failures += 1;
+    shared.retired.push(old);
     return shared.allocate();
   }
 
@@ -1859,6 +1864,7 @@ export class WorldCells extends Group implements IComputeDriven {
       if (assetId !== undefined && !key.startsWith(`${assetId}:`)) continue;
       shared.mesh.removeFromParent();
       if (release(shared.mesh)) failed += 1;
+      for (const old of shared.retired) if (release(old)) failed += 1;
       this.#shared.delete(key);
     }
     return failed;
