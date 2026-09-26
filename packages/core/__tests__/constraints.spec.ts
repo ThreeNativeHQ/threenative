@@ -69,8 +69,9 @@ describe("core constraints", () => {
           file !== "instanced-batch.ts" &&
           // WorldCells streams a package: it reads the geometry and surface out of the package's
           // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
-          // light, colour or shader, and reads no appearance property. The word "light" the
-          // generic filter trips on is inside `loadsInFlight`.
+          // light, colour or shader, and reads no appearance property — a cutout is
+          // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
+          // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
@@ -89,6 +90,12 @@ describe("core constraints", () => {
           // colour, map, roughness or opacity, and the silhouette itself — the alpha test and the
           // texture behind it — stays entirely the game's. The assertions below keep that true.
           file !== "render/alpha-antialiasing.ts" &&
+          // The mip-aware cutout compensates the SAMPLING of a texture the game owns: it reads a
+          // map's texel size and moves the cutoff the alpha is compared against, so a needle card
+          // survives the mip chain instead of being discarded at mip one. The cutoff itself, the
+          // map, the colour, the geometry and every other appearance value stay the game's, and the
+          // assertions below keep it that way.
+          file !== "render/foliage-alpha.ts" &&
           // The geometry capture counts what the renderer submitted. It is handed a material by
           // `onBeforeRender` and puts it in a Set to report how many DISTINCT surfaces an object
           // was drawn with — identity, exactly as `warmup.ts` reads it. It constructs no material,
@@ -171,6 +178,18 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
     );
     expect(alphaAntialiasing.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    const foliageAlpha = readFileSync(
+      path.join(sourceDirectory, "render/foliage-alpha.ts"),
+      "utf8",
+    );
+    expect(foliageAlpha).not.toMatch(
+      /new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    // A map is read for its texel size, and for nothing else: naming a look — a colour, a
+    // roughness, a metalness, an opacity — is how a framework starts deciding one.
+    expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     const particles = readFileSync(path.join(sourceDirectory, "particles.ts"), "utf8");
     expect(particles).not.toMatch(

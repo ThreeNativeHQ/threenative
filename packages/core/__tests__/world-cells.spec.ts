@@ -15,6 +15,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   type Object3D,
+  Texture,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
@@ -343,7 +344,9 @@ interface IPartLoader {
  * needles part 1.5 m up it, which is what three hands back as a `Group` of two child `Mesh`es. The
  * needles part is `transparent`, the way a Blender `BLEND` material arrives.
  */
-function treeLoader(needles: { alphaTest?: number; transparent?: boolean } = {}): IPartLoader {
+function treeLoader(
+  needles: { alphaTest?: number; map?: Texture; transparent?: boolean } = {},
+): IPartLoader {
   const calls: string[] = [];
   const handed = new Map<string, Array<{ geometry: BufferGeometry; material: Material }>>();
   const part = (url: string, index: number): { geometry: BufferGeometry; material: Material } => {
@@ -368,6 +371,7 @@ function treeLoader(needles: { alphaTest?: number; transparent?: boolean } = {})
         if (index === 1) {
           material.transparent = needles.transparent ?? true;
           if (needles.alphaTest !== undefined) material.alphaTest = needles.alphaTest;
+          if (needles.map !== undefined) material.map = needles.map;
         }
         const mesh = new Mesh(geometry, material);
         mesh.position.y = index === 1 ? 1.5 : 0;
@@ -409,6 +413,11 @@ function terrainOf(world: WorldCells): TerrainTiles {
 }
 
 /** The one surface a batch draws with: an `InstancedMesh` is built from one, unlike a source mesh. */
+/** The `alphaTestNode` slot three's node materials carry; the marker of a mip-aware cutout. */
+interface NodeMaterialLike {
+  alphaTestNode?: unknown;
+}
+
 function batchMaterial(mesh: InstancedMesh | undefined): Material {
   const material = mesh?.material;
   if (!(material instanceof Material))
@@ -1505,6 +1514,58 @@ describe("WorldCells", () => {
         url: "/world/world.json",
       }),
     ).rejects.toThrow(/transparentScatter/u);
+  });
+
+  it("compensates the mip chain on a cutout that has one, leaving an unmapped one plain", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    // A leaf card with a needle map, the shape a tree's `BLEND` part arrives as.
+    const map = new Texture();
+    map.image = { width: 2048, height: 2048 };
+    const loader = treeLoader({ map });
+    const world = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flush();
+
+    // The cutout is still a cutout — not transparent, depth-writing, the map intact — and it now
+    // carries a dynamic `alphaTestNode`, so the mip the fragment lands on decides the cutoff it is
+    // compared against instead of a constant 0.5 that discards every needle past mip one.
+    const needles = batchMaterial(levelMesh(world, "pine", 0, 1)) as MeshBasicMaterial &
+      NodeMaterialLike;
+    expect(needles.transparent).toBe(false);
+    expect(needles.depthWrite).toBe(true);
+    expect(needles.map).toBe(map);
+    expect(needles.alphaTest).toBe(0.5);
+    expect(needles.alphaTestNode).not.toBeNull();
+    expect(Reflect.get(needles, "isNodeMaterial")).toBe(true);
+    // The package's own material is untouched, and the authored cutoff still wins where it is named.
+    const authored = loader.materialFor("pine.glb", 1) as MeshBasicMaterial;
+    expect(authored.transparent).toBe(true);
+    expect(authored.alphaTestNode).toBeUndefined();
+
+    const thresholded = treeLoader({ alphaTest: 0.25, map });
+    const second = await WorldCells.load({
+      budgets: largeBudgets,
+      follow,
+      loadModel: thresholded.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    second.update();
+    await flush();
+    expect((batchMaterial(levelMesh(second, "pine", 0, 1)) as MeshBasicMaterial).alphaTest).toBe(
+      0.25,
+    );
+    second.dispose();
+    world.dispose();
   });
 
   it("releases every part of every level exactly once when its last cell leaves", async () => {

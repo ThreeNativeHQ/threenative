@@ -13,6 +13,7 @@ import {
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { InstancedBatch } from "./instanced-batch.js";
+import { cutoutSurface } from "./render/foliage-alpha.js";
 import type { IRendererLike } from "./renderer.js";
 import { DEFAULT_CONCURRENCY, addInSlices, loadAll } from "./streaming.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
@@ -155,9 +156,9 @@ interface IAssetPart {
   readonly geometry: BufferGeometry;
   /** The mesh's transform relative to the model root, composed into every instance matrix. */
   readonly local: Matrix4;
-  /** The surface the batch draws with: the part's own material, or its cutout clone. */
+  /** The surface the batch draws with: the part's own material, or its cutout. */
   readonly material: Material;
-  /** Every surface this part owns and releases with the asset: its own, and any clone made. */
+  /** Every surface this part owns and releases with the asset: its own, and any cutout made. */
   readonly owned: readonly Material[];
 }
 
@@ -276,13 +277,24 @@ async function fetchOk(url: string): Promise<Response> {
 const DEFAULT_CUTOUT_ALPHA = 0.5;
 
 /**
- * The surface a scattered part draws with, and the clone this class owns when it made one.
+ * Mip compensation for scattered foliage. Golus's 0.25 suits dense cards; a needle atlas at ~9 %
+ * coverage averages to ~0.09 alpha by mip 8, where a tree 150 m out samples, so 0.25 still drops
+ * every needle. 0.75 keeps the cutoff under that average through mip 8.
+ * ponytail: one tuned constant; coverage-preserving mips at cook time are the upgrade path.
+ */
+const SCATTER_MIP_ALPHA_SCALE = 0.75;
+
+/**
+ * The surface a scattered part draws with, and the cutout this class owns when it made one.
  *
  * An `InstancedMesh` cannot sort its instances, so a `transparent` material on scattered foliage
  * draws in submission order — wrong against itself, and overdraw on top of it. A cutout keeps the
  * part's own alpha shape, keeps the depth buffer, and lets the draw reject what is behind it. The
- * GLB's material is never mutated: the clone is per asset part, so every cell batch of the asset
+ * GLB's material is never mutated: the cutout is per asset part, so every cell batch of the asset
  * shares one and a game that still wants blending asks for it.
+ *
+ * The cutout itself is `cutoutSurface`, because a cutout that ignores the mip chain deletes itself
+ * at distance: the needle card's mips average to a tenth, and every needle is discarded.
  */
 function scatterMaterial(
   material: Material,
@@ -290,13 +302,12 @@ function scatterMaterial(
 ): { readonly material: Material; readonly owned: readonly Material[] } {
   if (transparentScatter === "blend" || !material.transparent)
     return { material, owned: [material] };
-  const cutout = material.clone();
-  cutout.transparent = false;
-  cutout.depthWrite = true;
-  cutout.alphaTest = material.alphaTest > 0 ? material.alphaTest : DEFAULT_CUTOUT_ALPHA;
-  // `transparent` is a program key in three, so the clone needs its own compile.
-  cutout.needsUpdate = true;
-  // The authored material is owned too: the batch draws the clone, and the GLB's own surface is
+  const cutout = cutoutSurface(
+    material,
+    material.alphaTest > 0 ? material.alphaTest : DEFAULT_CUTOUT_ALPHA,
+    SCATTER_MIP_ALPHA_SCALE,
+  );
+  // The authored material is owned too: the batch draws the cutout, and the GLB's own surface is
   // still this asset's to hand back.
   return { material: cutout, owned: [material, cutout] };
 }
