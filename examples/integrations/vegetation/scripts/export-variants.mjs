@@ -23,6 +23,8 @@ function parse(argv) {
     if (flag === "--out") parsed.out = value;
     else if (flag === "--seeds")
       parsed.seeds = value.split(",").map((seed) => {
+        // Decimal digits only: Number("") is 0 and Number("0x10") is 16, both silent surprises.
+        if (!/^\d+$/.test(seed.trim())) throw new Error(`Seed ${seed} is not a uint32.`);
         const number = Number(seed.trim());
         if (!Number.isInteger(number) || number < 0 || number > 0xffffffff)
           throw new Error(`Seed ${seed} is not a uint32.`);

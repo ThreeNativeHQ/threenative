@@ -26,7 +26,7 @@ import { type IWind, validateWind } from "../geometry.js";
  */
 export function createTreeWind(base: MeshStandardNodeMaterial, options: IWind) {
   const wind = validateWind(options);
-  if (base.positionNode || base.normalNode || base.displacementMap)
+  if (base.positionNode || base.castShadowPositionNode || base.normalNode || base.displacementMap)
     throw new Error(
       "Tree wind needs an unmodified vertex path; compose custom appearance in this source file.",
     );
@@ -89,7 +89,7 @@ export function createTreeWind(base: MeshStandardNodeMaterial, options: IWind) {
      * smallest world scale the mesh is drawn at, since world metres are local metres divided by
      * that scale.
      */
-    expandBounds(geometry: BufferGeometry, minWorldScale = 1): void {
+    expandBounds(geometry: BufferGeometry, minWorldScale: number): void {
       if (disposed) throw new Error("Tree wind is disposed.");
       if (!Number.isFinite(minWorldScale) || minWorldScale <= 0)
         throw new Error("Tree wind bounds need a finite positive smallest world scale.");

@@ -152,20 +152,22 @@ test("generation budget fails before enormous recursion", () => {
 test("wind material has a TSL graph and stable conservative bounds", () => {
   const base = new MeshStandardNodeMaterial();
   const geometry = new BoxGeometry(1, 4, 1);
-  const wind = createTreeWind(base, {
-    amplitude: 2,
-    frequency: 1,
-    phase: 0,
-    height: 4,
-    direction: [1, 0],
-  });
+  const settings = { amplitude: 2, frequency: 1, phase: 0, height: 4, direction: [1, 0] };
+  const wind = createTreeWind(base, settings);
   try {
     assert.ok(wind.material.positionNode.isNode);
+    // A shadow-only vertex path would win the shadow pass and leave shadows still in the wind.
+    const shadowed = new MeshStandardNodeMaterial();
+    shadowed.castShadowPositionNode = wind.material.positionNode;
+    assert.throws(() => createTreeWind(shadowed, settings), /unmodified vertex path/);
+    shadowed.dispose();
     assert.equal(base.positionNode, null);
-    wind.expandBounds(geometry);
+    // No default scale: a cooked mesh carries its quantization scale on the node, so 1 is a guess.
+    assert.throws(() => wind.expandBounds(geometry), /scale/);
+    wind.expandBounds(geometry, 1);
     const box = geometry.boundingBox;
     const sphere = geometry.boundingSphere;
-    wind.expandBounds(geometry);
+    wind.expandBounds(geometry, 1);
     assert.equal(geometry.boundingSphere.radius, sphere.radius);
     // Direction is world space, so a yawed clone sways along any local horizontal axis.
     for (const axis of ["x", "z"]) {
