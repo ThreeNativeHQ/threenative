@@ -19,6 +19,7 @@ import {
   REGRESSION_COLLECTION_PROFILE,
   meanFps,
   nearestRank,
+  oneSecondFrameFloors,
   unmeasurableIntervalCount,
   sha256,
   writeProductionEvidence,
@@ -218,6 +219,10 @@ export async function collectProduction(options, context, runId) {
     );
   }
 
+  // Resolved before the scaffold so a lane that cannot carry a frame rate costs a second, not the
+  // three minutes it takes to pack the workspace and build a platformer nobody may judge.
+  const webDisplay = webArmRequested(options) ? await rateBearingDisplay(tools) : undefined;
+
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'threenative-production-'));
   const project = join(temporaryRoot, 'platformer');
   const startedAt = new Date().toISOString();
@@ -227,9 +232,7 @@ export async function collectProduction(options, context, runId) {
     const scenarios = await writeRunScenarios(project, options);
     const artifactsRoot = join(project, 'artifacts', 'production');
     await mkdir(artifactsRoot, { recursive: true });
-    const web = options.target === 'web' || options.target === 'desktop-pair'
-      ? await collectWeb(project, scenarios, artifactsRoot, options, tools)
-      : undefined;
+    const web = webDisplay === undefined ? undefined : await collectWeb(project, scenarios, artifactsRoot, options, tools, webDisplay);
     const native = nativeTargets.has(options.target) || options.target === 'desktop-pair'
       ? await collectNative(project, scenarios, artifactsRoot, options, tools)
       : undefined;
@@ -428,7 +431,38 @@ export async function writeRunScenarios(project, options) {
   };
 }
 
-async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
+/**
+ * A production frame rate is only evidence from a display that can carry one. The runner provisions
+ * a private software Xvfb by default, and this repository's own playtest contract says a rate read
+ * there is wrong rather than missing. Two collections of the same built platformer at 1920x1080 on
+ * this host agree: the private-display web arm reported 33.97 fps mean and a 117.1 ms p99
+ * (`.runtime/prd064/control/web-baseline-paired/production-evidence.json`) where the session-display
+ * arm reported 163.45 fps and a 19.6 ms p99
+ * (`.runtime/prd064/production/desktop-pair-6/production-evidence.json`) — a 4.8x difference in the
+ * number the gate reads. Judging the budget on the private lane measures the X server, so the run
+ * refuses before it spends a collection on it.
+ */
+export function webRateDisplayFault(strategy) {
+  if (strategy === undefined || strategy.kind !== 'private-xvfb') return undefined;
+  return new ProductionEvidenceError(
+    'TN_PROD_DISPLAY_UNTRUSTWORTHY',
+    `A web frame-rate verdict needs a display that can carry one, and this run would be measured on a private software Xvfb (${strategy.screen}). Run it with TN_PLAYTEST_HOST_DISPLAY=1 on a machine with a live X display, or judge the native arm alone.`,
+  );
+}
+
+function webArmRequested(options) {
+  return options.target === 'web' || options.target === 'desktop-pair';
+}
+
+async function rateBearingDisplay(tools) {
+  const { decideDisplayStrategy } = await import(pathToFileURL(tools.playtestRunner).href);
+  const display = decideDisplayStrategy({ env: process.env, platform: process.platform });
+  const fault = webRateDisplayFault(display);
+  if (fault !== undefined) throw fault;
+  return display;
+}
+
+async function collectWeb(project, scenarios, artifactsRoot, options, tools, display) {
   try {
     await installWebProfileEntry(project, options.control, warmupFramesFor(options));
     // A production build can outlast the default timeout on slow hosted runners.
@@ -455,6 +489,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
       applicationClass: 'platformer-web-build',
       driverClass: 'playwright-chromium-webgpu',
       kind: 'web',
+      display,
       runs,
       startups,
     };
@@ -1401,7 +1436,9 @@ export function postWarmupFrameSamples(samples, warmupFrames = 0) {
 
 export function aggregateMetrics(runs, startups, warmupFrames = 0) {
   const intervals = [];
-  const frameIntervalsMs = [];
+  const callbackIntervalsMs = [];
+  const presentedIntervalsMs = [];
+  const presentedStampsMs = [];
   const clockSamplesMs = [];
   const presentationSamplesMs = [];
   const runWindows = [];
@@ -1411,28 +1448,25 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
     .map(({ firstFrameMs }) => firstFrameMs);
   let timestampMs = 0;
   let sequence = 1;
-  let sampleCount = 0;
-  let hitchCount = 0;
-  let worstFrameMs;
+  let callbackCount = 0;
+  let presentedElapsedMs = 0;
   let missingClock = false;
   let missingPresentationClock = false;
+  let unmeasurablePresentation = false;
   for (const run of runs) {
     let clockOrigin;
     let presentationOrigin;
+    let lastPresentedMs;
     const postWarmupSamples = postWarmupFrameSamples(run.series ?? [], warmupFrames);
     let runDurationMs = 0;
     let runSampleCount = 0;
     for (const sample of postWarmupSamples) {
       if (typeof sample?.frameMs !== 'number') {
-        frameIntervalsMs.push(sample?.frameMs);
+        callbackIntervalsMs.push(sample?.frameMs);
         continue;
       }
-      frameIntervalsMs.push(sample.frameMs);
-      sampleCount += 1;
-      runSampleCount += 1;
-      runDurationMs += sample.frameMs;
-      if (sample.frameMs > 33.3) hitchCount += 1;
-      worstFrameMs = worstFrameMs === undefined ? sample.frameMs : Math.max(worstFrameMs, sample.frameMs);
+      callbackIntervalsMs.push(sample.frameMs);
+      callbackCount += 1;
       if (Number.isFinite(sample.clockMs)) {
         clockOrigin ??= sample.clockMs;
         clockSamplesMs.push(timestampMs + sample.clockMs - clockOrigin);
@@ -1440,10 +1474,34 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
         missingClock = true;
       }
       if (Number.isFinite(sample.presentationMs)) {
+        // The frame interval the budget is about is the gap between presented frames, and the rAF
+        // timestamp is the frame. Both arms run three rAF callbacks per presented frame — the
+        // engine loop, the UI hit-test pump and this instrumentation each register one — so a
+        // `performance.now()` callback delta measures how the host spread its callbacks inside a
+        // fixed display period: at its 95th percentile it is the idle remainder of that period, and
+        // the arm that spends less per callback is the one that reads worse. The presented series
+        // therefore advances only when the presentation stamp changes, and one frame's callbacks
+        // collapse into the single interval they belong to. Every quantity the frame budget counts —
+        // the per-second floor, the window's sample count, the worst frame and the hitch count —
+        // counts this series, because a callback count reads three frames for every frame presented.
+        if (lastPresentedMs !== undefined && sample.presentationMs !== lastPresentedMs) {
+          const presentedDeltaMs = sample.presentationMs - lastPresentedMs;
+          if (presentedDeltaMs > 0) {
+            presentedIntervalsMs.push(presentedDeltaMs);
+            runSampleCount += 1;
+            runDurationMs += presentedDeltaMs;
+            presentedElapsedMs += presentedDeltaMs;
+            presentedStampsMs.push(presentedElapsedMs);
+          } else {
+            unmeasurablePresentation = true;
+          }
+        }
+        lastPresentedMs = sample.presentationMs;
         presentationOrigin ??= sample.presentationMs;
         presentationSamplesMs.push(timestampMs + sample.presentationMs - presentationOrigin);
       } else {
         missingPresentationClock = true;
+        unmeasurablePresentation = true;
       }
       if (sample.phases !== undefined && typeof sample.phases === 'object' && sample.phases !== null) {
         for (const [phase, value] of Object.entries(sample.phases)) {
@@ -1467,34 +1525,49 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
     }
     runWindows.push({ durationSeconds: runDurationMs / 1_000, sampleCount: runSampleCount });
   }
+  // A sample the presentation clock could not place has no place in a cadence series, and a partial
+  // one would publish a percentile of the frames that happened to survive. The series stays
+  // unmeasured, which fails the timing budget and blocks a pair rather than judging a subset. The
+  // windows go with it: a count of presented frames and a duration measured from the same voided
+  // series are the same partial subset under two names.
+  if (unmeasurablePresentation) presentedIntervalsMs.length = 0;
   const phaseP95ByName = Object.fromEntries(
     Object.entries(phaseSamples).map(([phase, samples]) => [phase, nearestRank(samples, 0.95)]),
   );
+  const presentedFrames = presentedIntervalsMs.length;
+  const presentedHitchCount = presentedIntervalsMs.filter((value) => value > 33.3).length;
   return {
     ...(clockSamplesMs.length === 0 ? {} : { clockSamplesMs }),
-    ...(sampleCount === 0 ? {} : { clockSource: missingClock ? 'missing' : 'monotonic-performance' }),
-    ...(frameIntervalsMs.length === 0 ? {} : { frameIntervalsMs }),
-    ...(hitchCount === 0 ? { hitchCount: 0 } : { hitchCount }),
+    ...(callbackCount === 0 ? {} : { clockSource: missingClock ? 'missing' : 'monotonic-performance' }),
+    ...(presentedFrames === 0 ? {} : { frameIntervalsMs: presentedIntervalsMs }),
     ...(intervals.length === 0 ? {} : { intervals }),
     ...(Object.keys(phaseP95ByName).length === 0 ? {} : {
       phaseP95ByName,
       ...(phaseP95ByName.render === undefined ? {} : { phaseP95Ms: phaseP95ByName.render }),
     }),
     ...(presentationSamplesMs.length === 0 ? {} : { presentationSamplesMs }),
-    ...(runWindows.length === 0 ? {} : { runWindows }),
-    ...(sampleCount === 0 ? {} : { presentationClockSource: missingPresentationClock ? 'missing' : 'raf-presentation', sampleCount, worstFrameMs }),
+    ...(runWindows.length === 0 || unmeasurablePresentation ? {} : { runWindows }),
+    ...(callbackCount === 0 ? {} : { presentationClockSource: missingPresentationClock ? 'missing' : 'raf-presentation' }),
     ...(startupSamplesMs.length === 0 ? {} : { startupSamplesMs, startupMs: startupSamplesMs[0] }),
     ...(timestampMs === 0 ? {} : { durationSeconds: timestampMs / 1_000 }),
     ...(startupSamplesMs.length === 0 ? {} : { startupP95Ms: nearestRank(startupSamplesMs, 0.95) }),
-    ...(frameIntervalsMs.length === 0 ? {} : {
-      meanFps: meanFps(frameIntervalsMs),
-      p50FrameMs: nearestRank(frameIntervalsMs, 0.5),
-      p95FrameMs: nearestRank(frameIntervalsMs, 0.95),
-      p99FrameMs: nearestRank(frameIntervalsMs, 0.99),
+    // The presented-frame quantities publish together or not at all: a sample count beside a
+    // percentile of a different series is how a 3x callback count reads as a collected window.
+    ...(presentedFrames === 0 ? {} : {
+      hitchCount: presentedHitchCount,
+      oneSecondFps: oneSecondFrameFloors(presentedStampsMs),
+      sampleCount: presentedFrames,
+      worstFrameMs: Math.max(...presentedIntervalsMs),
     }),
-    ...(unmeasurableIntervalCount(frameIntervalsMs) === 0
+    ...(presentedFrames === 0 ? {} : {
+      meanFps: meanFps(presentedIntervalsMs),
+      p50FrameMs: nearestRank(presentedIntervalsMs, 0.5),
+      p95FrameMs: nearestRank(presentedIntervalsMs, 0.95),
+      p99FrameMs: nearestRank(presentedIntervalsMs, 0.99),
+    }),
+    ...(unmeasurableIntervalCount(callbackIntervalsMs) === 0
       ? {}
-      : { unmeasurableFrameIntervals: unmeasurableIntervalCount(frameIntervalsMs) }),
+      : { unmeasurableCallbackIntervals: unmeasurableIntervalCount(callbackIntervalsMs) }),
     ...(intervals.some(({ drawCalls }) => drawCalls !== undefined) ? { drawCalls: Math.max(...intervals.flatMap(({ drawCalls }) => drawCalls === undefined ? [] : [drawCalls])) } : {}),
     ...(intervals.some(({ triangles }) => triangles !== undefined) ? { triangles: Math.max(...intervals.flatMap(({ triangles }) => triangles === undefined ? [] : [triangles])) } : {}),
   };
@@ -1513,10 +1586,27 @@ function pairMetrics(metrics) {
   };
 }
 
+/**
+ * The display a web frame rate was read from.
+ *
+ * `observations.hardwareIdentity` was the key this used to read and no producer has ever written it,
+ * so every web artifact published an identity with no GPU in it. `webDisplay` is published from the
+ * decision the runner itself made, and it is the field that separates this host's two web
+ * collections: 33.97 fps on the private display, 163.45 fps on the session display.
+ *
+ * The playtest producer writes `report.capture.adapter`, but `safeReport` drops it before this
+ * identity is assembled. It stays absent here until that observed value is threaded through.
+ */
+export function webRateIdentity(web) {
+  const display = web?.display;
+  if (display === undefined) return {};
+  return { webDisplay: display.kind === 'existing' ? `session:${display.display}` : display.kind };
+}
+
 function identityFor(options, web, native, artifactHashes) {
   const common = {
     // Only observed hardware data may certify a promoted comparison. Missing fields remain absent.
-    ...(web?.runs[0]?.report?.observations?.hardwareIdentity ?? native?.runs[0]?.report?.observations?.hardwareIdentity ?? {}),
+    ...webRateIdentity(web),
     workloadHash: web?.workloadHash ?? native?.workloadHash,
     renderHeight: options.renderSize.height,
     renderWidth: options.renderSize.width,
@@ -1655,8 +1745,12 @@ async function createFixtureControlEvidence(options, context, runId) {
 }
 
 async function collectFixtureFrameSeries(control) {
+  // The real producers stamp every sample with the rAF presentation timestamp, so the fixture that
+  // stands in for them carries one too: the judge reads presented cadence, and a fixture without
+  // presentation identity would now be (correctly) unmeasured rather than a passing control.
   const intervals = Array.from({ length: 120 }, (_, index) => ({
     frameMs: 16.5,
+    presentationMs: index * 16.5,
     sequence: index + 1,
     timestampMs: index * 16.5,
   }));
@@ -1664,7 +1758,9 @@ async function collectFixtureFrameSeries(control) {
   for (const index of [intervals.length - 2, intervals.length - 1]) {
     const startedAt = performance.now();
     await new Promise((resolve) => setTimeout(resolve, SLOW_FRAME_DELAY_MS));
-    intervals[index].frameMs = Math.max(SLOW_FRAME_DELAY_MS, performance.now() - startedAt);
+    const slowFrameMs = Math.max(SLOW_FRAME_DELAY_MS, performance.now() - startedAt);
+    intervals[index].frameMs = slowFrameMs;
+    intervals[index].presentationMs = intervals[index - 1].presentationMs + slowFrameMs;
     intervals[index].timestampMs = intervals[index - 1].timestampMs + intervals[index - 1].frameMs;
   }
   return intervals;

@@ -200,6 +200,161 @@ manifest search are corrected on PR #360, which is not yet in this branch's `dev
 packed golden-path mutation test timed out at 120 seconds under this concurrent suite. None of
 these results closes the web performance box above.
 
+**2026-09-27, the p95 gap is root-caused and the box stays open.** The live-display paired collection
+`.runtime/prd064/production/desktop-pair-6/production-evidence.json` clears every absolute budget —
+web 163.45 fps mean, p95 15.30 ms, p99 19.60 ms; native 174.08 fps, p50 0.53 ms, p99 17.52 ms;
+startup p95 3,728 ms — and fails only `TN_PROD_PERFORMANCE_BUDGET`, whose single failing predicate is
+`native.p95FrameMs > web.p95FrameMs` (16.81 against 15.30). **The two clocks are comparable and the
+predicate is not satisfiable by making native faster.** Both arms are vsync-locked at 60 Hz and both
+run three rAF callbacks per presented frame, so exactly one sample in three straddles the display
+period and `frameMs` (a `performance.now()` delta, identically defined in both) is at its 95th
+percentile a percentile of the *idle remainder* of a fixed 16.667 ms budget. Native spends 0.48 ms
+per callback and web 1.70 ms, so native leaves more of the period idle and its straddling sample is
+larger by construction — measured 15.95 ms against web's 12.10 ms at the median. Native can only
+reach web's 15.30 ms by costing **more** than 0.68 ms per callback. Every other predicate agrees
+native is ahead (mean 174.08 v 163.45, p50 0.53 v 3.90, p99 17.52 v 19.60), and native's p95 has
+read 16.68–17.22 ms in all ten collections on this host. The one *real* residual is in presented-frame
+cadence — native 18.42 ms p95 against web's 16.80 ms, a genuine ~1.6 ms pacing looseness in the
+uncapped-free native pump — and closing it is a C++ change plus a full collection, which cannot turn
+this predicate green on its own. Redefining the statistic is PRD-058's call, not this PRD's: the
+p95 comparison is a stated budget, so it is left untouched rather than relaxed to pass.
+
+**2026-09-27, the web arm now refuses a display that cannot carry a rate.** The runner provisions a
+private software Xvfb by default and this host's own two collections disagree by 4.8x on the number
+the gate reads — 33.97 fps / 117.1 ms p99 private
+(`.runtime/prd064/control/web-baseline-paired/`) against 163.45 fps / 19.6 ms on the session display
+— so a web frame-rate verdict now fails `TN_PROD_DISPLAY_UNTRUSTWORTHY` in about a second, before the
+scaffold, instead of publishing a number off the X server. Negative control executed:
+`pnpm profile:production -- --target web --render-size 1920x1080 --cold-starts 1 --warmup 20
+--repetitions 1 --out .runtime/prd064/control/guard-private-display` exits 2 with that code;
+`desktop-pair-6` is the positive control, having published `identity.webDisplay: session::0` through
+the same guard. The identity also now names the display it was read from — `observations.hardwareIdentity`
+was a key no producer has ever written, so every web artifact so far published an identity with no GPU
+in it. The playtest report does produce `report.capture.adapter`, but the production report drops it;
+the published identity currently names only the display. Still open on this box: a passing 1920x1080 paired run, a named GPU,
+and the three negative controls re-observed through the new guard.
+
+**2026-09-27, the judge now measures presented frames, and the residual is real.** The diagnosis above
+was a **producer/judge metric defect against PRD-058's presentation-loop contract, not a spec defect**:
+PRD-058 requires monotonic presentation-loop intervals, and both producers already stamped every
+sample with the rAF presentation timestamp (`presentationMs`), but `aggregateMetrics` published
+`frameMs` — a `performance.now()` delta taken once per rAF *callback* — as `frameIntervalsMs`, which is
+the series `meanFps`/`p50`/`p95`/`p99`, the absolute budgets and the four-leg pair predicate all read.
+The fix is confined to that aggregation: the published series now advances only when the presentation
+stamp changes, so one presented frame's callbacks collapse into the single interval they belong to
+(`packages/runtime-native/scripts/profile-production.mjs`, `aggregateMetrics`). No budget number, no
+predicate and no C++ or game code changed, and both arms need no producer change because the native host
+already stamps every callback it dispatches in one frame with the same timestamp. Fail-closed: a sample
+whose stamp is missing, non-finite, or not later than its predecessor voids the presented series rather
+than publishing a percentile of the frames that survived, which fails `minMeanFps`/`maxFrameMsP95` and
+blocks a pair on `TN_PROD_COMPARISON_METRICS_INCOMPLETE`. The per-callback diagnostics the evidence
+already carried — every sample's `frameMs`, `clockMs`, `hitchCount`, `worstFrameMs` and
+`unmeasurableFrameIntervals` — are unchanged and still describe the callback stream. Red-green in
+`packages/runtime-native/tests/production-profile.test.mjs`: three cases, red before the change
+(180 callbacks read as `frameIntervalsMs` of 0.48/0.48/15.64, a malformed stamp still published, and the
+pair judged native 15.64 against web 13.20), 59/59 passing after.
+
+The live-display paired collection through the corrected judge is
+`.runtime/prd064/production/desktop-pair-8/production-evidence.json` — `pnpm profile:production --
+--target desktop-pair --render-size 1920x1080 --cold-starts 5 --warmup 20 --repetitions 1` with
+`DISPLAY=:0`, `XAUTHORITY=/run/user/1000/xauth_aTQMbZ`, `TN_PLAYTEST_HOST_DISPLAY=1` and
+`--browser-recipe webgpu` (the profile's web arm adds it and `--headed` itself), exit 1, one code
+`TN_PROD_PERFORMANCE_BUDGET`, `identity.webDisplay: session::0`, distinct process and artifact
+identities, 4,435 presented intervals from 12,900 callback samples (2.91 callbacks per frame) and one
+recorded unresolvable callback interval. **web** p50 16.70, p95 16.80, p99 16.80 ms, mean 59.97 fps;
+**native** p50 16.91, p95 18.06, p99 18.94 ms, mean 58.08 fps; startup p95 1,501 ms; draw calls 81 and
+triangles 3,276. Every absolute budget now passes except `minMeanFps: 60`, which web misses by
+0.03 fps (59.97), and all four pair legs fail — so the earlier 16.81-vs-15.30 gap was mostly the
+statistic, and what remains is a native presented-cadence deficit of 1.26 ms at p95 (18.06 against
+16.80) and 2.14 ms at p99, 58.08 against 59.97 fps mean, in the native pump: C++ plus another
+collection. **The box above stays
+open**: no pair has passed, and the GPU adapter is still absent — the production web report carries no
+adapter field, so nothing here names the GPU.
+
+**2026-09-27, the rest of the judge still counted callbacks, and `desktop-pair-8` says by how much.**
+The correction above moved only the percentile series; five quantities beside it still described rAF
+callbacks — `oneSecondFrameFloors(metrics.intervals)`, `runWindows[].sampleCount`, `sampleCount`,
+`hitchCount` and `worstFrameMs`. Recomputed from that collection's own preserved web arm (12,900
+callbacks, 4,435 presented frames, 73.96 s of presented span, 4 run boundaries): the published
+`oneSecondFps` read **180, 180, 180, 178, …** for a display that presented 60 — exactly 3x, so a
+`minOneSecondFps: 60` floor would have passed on cadence the display never showed — while the same
+samples bucketed by presented stamp read **60, 60, …, min 59, max 60** across 73 buckets.
+`runWindows[].sampleCount` published 2,580 for 887 presented frames, so the regression lane's
+1,000-frame window test was 2.91x too lenient (and `desktop-pair-8`'s 14.8 s windows now correctly
+fail it as a regression collection); `sampleCount` published 12,900 for 4,435; `worstFrameMs`
+published 27.70 ms — one callback's sub-interval straddling vsync — against 16.80 ms for the worst
+presented frame. `hitchCount` read 0 on that arm and is blind in general: a dropped frame split into
+three sub-33.3 ms callbacks is invisible to it. Fixed in the same place with no threshold touched —
+`oneSecondFrameFloors` now buckets presented stamps (`packages/runtime-native/scripts/production-evidence.mjs:64`),
+`evaluateFrameBudget` reads the published `metrics.oneSecondFps` or nothing, so an absent floor fails
+the budget instead of passing unseen (`:85`), and `aggregateMetrics` publishes `oneSecondFps`,
+`sampleCount`, `worstFrameMs`, `hitchCount` and `runWindows` from the presented series — together or
+not at all, so a voided presented series takes the windows with it. The one surviving
+callback-only diagnostic is renamed for what it is (`unmeasurableFrameIntervals` →
+`unmeasurableCallbackIntervals`); `intervals[]` keeps its per-callback `frameMs`, which is what the
+draw-call and triangle maxima read. Red-green in
+`packages/runtime-native/tests/production-profile.test.mjs`, one new test: red before the change (a
+40 fps display publishing floors of 120 and passing `minOneSecondFps: 60`, window and sample counts of
+300 against 99 presented, `hitchCount` 0 and `worstFrameMs` 23 for a series whose presented frames all
+missed a display period), 60/60 after; the two counts the previous paragraph called untouched are now
+stated as presented. Gates in this checkout: `pnpm typecheck` 0, `pnpm budgets` 0 (hard invariants;
+two non-fatal native-census drift warnings from this lane's own line growth), `pnpm lint` 0 after
+`".runtime/**"` joined biome's ignore list — the root evidence directory was unignored and its 3.6 MiB
+evidence JSON failed the run, which is why the package-local `.runtime` was already listed and the
+root one was not. The full `@threenative/runtime-native` suite is 1,453 passed / 59 skipped, 130 files.
+
+**Trace, read-only: the native 58.08 fps / p95 18.06 ms deficit is a missing display signal in the
+pacer, not a slow frame.** The pacing loop is `paceToPresentationCap()`,
+`packages/runtime-native/src/webgpu/bindings_presentation.cpp:224`, reached as
+`Runtime::mainLoop`'s `while (running_)` (`src/runtime.cpp:1113`) → `Runtime::pollEvents()`
+(`:1315`) → `executeAnimationFrameCallbacks()` (`:1538`, rAF timestamp from `PerformanceClock::now()` at
+`:1750`) → `webgpu::endDawnFrame` (`:1541` → `src/webgpu/bindings.cpp:2872`) →
+`presentPendingSurface` (`bindings.cpp:2953` → `bindings_presentation.cpp:823`, whose
+`wgpuSurfacePresent` at `:843` does not block) → `paceToPresentationCap()` (`bindings.cpp:2960`).
+That function asks `paceToDisplayFrame()` first (`:230`, defined `:125`), which returns
+`SoftwareDeadline` on its very first check at `:127` — because `g_presentationPacing.running` is set
+only by `notePresentationFramesStarted()`, whose sole caller is the JNI shim
+`Java_com_threenative_runtime_MystralActivity_nativeOnPresentationFrame*` under
+`#if defined(__ANDROID__)` at `bindings_presentation.cpp:1018-1036`. **Desktop therefore never receives a
+display timestamp and always falls through to the `steady_clock` branch at `:245-254`**:
+`sleep_until(g_nextPresentDeadline)` on an absolute host-clock deadline of `1e9/60` ns, reset whenever
+`now > deadline + interval`. The run's own host-gap meter measures the consequence in the preserved
+report: `periodP50Ms 16.96`, `periodMeanMs 17.04` (worst window 18.7) against `sumP50Ms: 1.23` of
+frame work — ~15.7 ms of every 16.96 ms period is a host-clock sleep whose wake-up latency is the
+whole deficit, and the same meter documents the period as rAF-dispatch-to-dispatch (`runtime.cpp:1744`),
+i.e. exactly the series the judge reads. Smallest likely fix: give the desktop pump the display signal
+the shipped display branch already models — route the wait through `PresentationPacing`'s condition
+variable (`bindings_presentation.cpp:94-101`) fed by a desktop vblank/present-completion timestamp, so
+`paceToDisplayFrame` takes its `Display` path instead of short-circuiting. It is an alignment change,
+not a performance one: the frame has 15.7 ms of idle headroom, and headroom is what a cv wake spends.
+Honest corollary: native's rAF timestamp is a host monotonic read at dispatch (`runtime.cpp:1750`) while
+Chromium's is the vsync itself, so even a perfectly aligned pump's "presented" series measures
+dispatch cadence rather than the display's — the same missing signal causes both the pacing deficit
+and the measurement asymmetry, and closing the second needs the timestamp to come from the display's
+own domain, which is what `notePresentationFrame` already carries on Android.
+
+**Trace, read-only: the WebGPU adapter is already in the produced report and only unthreaded.** The
+producer exists and runs for this exact scenario. `readCaptureProvenance`
+(`packages/playtest/src/runner/observationSampling.ts:148`, reading `adapter.info` at `:161-167` into
+`{architecture, description, device, vendor, …}`, failing closed at `:228` when absent) is invoked from
+`packages/playtest/src/runner/runner.ts:485` whenever `needsCapture || requiresWebGpuProvenance`, and
+this lane satisfies **both** switches independently: the scaffolded workload declares
+`artifacts: { screenshots: 'after' }` (`profile-production.mjs:379`, from
+`packages/create-threenative/templates/platformer/playtests/performance.playtest.json:3`) and the web arm
+passes `--browser-recipe webgpu` (`:512`). The value lands at `report.capture.adapter`
+(`runner-support.ts:397` mounting `capture`, declared `packages/playtest/src/report.ts:54-61,77`) and is
+also written to `<artifacts>/capture.json`. Nothing on the consumer side reads it: `safeReport`
+(`profile-production.mjs:1117-1128`) rebuilds the report from six fields and drops `capture`, and
+`webRateIdentity` (`:1600`) reads only `web.display`. The note above is therefore wrong on its own
+reasoning — "the production web scenario declares no visual capture" is false — and the only real gap is
+threading one field through, not obtaining it. `observations.hardwareIdentity`, the key this lane
+removed at `:1592`, is written by no producer anywhere and should stay gone.
+
+**The box above stays open.** Nothing in this pass produced a passing pair or a named GPU, and the C++
+pacing fix is not in it: still open are a green `desktop-pair` at 1920x1080 on a live display, the
+display-synchronised desktop pacer above plus the collection that re-judges it, and threading
+`report.capture.adapter` into `identity`.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:

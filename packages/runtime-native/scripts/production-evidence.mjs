@@ -54,14 +54,21 @@ export function unmeasurableIntervalCount(frameIntervalsMs) {
   return frameIntervalsMs.filter((value) => value === 0).length;
 }
 
-export function oneSecondFrameFloors(intervals) {
-  if (!Array.isArray(intervals) || intervals.length === 0) return [];
-  const first = intervals[0]?.timestampMs;
-  const last = intervals.at(-1)?.timestampMs;
+/**
+ * Presented frames per second, from the elapsed milliseconds at which each presented frame landed.
+ *
+ * The count that used to be bucketed here was one record per rAF *callback*, and both arms run three
+ * callbacks per displayed frame, so a 40 fps display answered 120 and any `minOneSecondFps` floor
+ * passed on cadence it never presented. The stamps are the presented series, one per frame.
+ */
+export function oneSecondFrameFloors(presentedStampsMs) {
+  if (!Array.isArray(presentedStampsMs) || presentedStampsMs.length === 0) return [];
+  const first = presentedStampsMs[0];
+  const last = presentedStampsMs.at(-1);
   if (!Number.isFinite(first) || !Number.isFinite(last) || last - first < 1_000) return [];
   const buckets = Math.floor((last - first) / 1_000);
-  return Array.from({ length: buckets }, (_, bucket) => intervals.filter(({ timestampMs }) => {
-    const offset = timestampMs - first;
+  return Array.from({ length: buckets }, (_, bucket) => presentedStampsMs.filter((stamp) => {
+    const offset = stamp - first;
     return offset >= bucket * 1_000 && offset < (bucket + 1) * 1_000;
   }).length);
 }
@@ -73,7 +80,9 @@ export function evaluateFrameBudget(metrics, budget = {}) {
   const p99 = finiteMetric(metrics.p99FrameMs) ? metrics.p99FrameMs : nearestRank(metrics.frameIntervalsMs, 0.99);
   const medianFrameMs = nearestRank(metrics.frameIntervalsMs, 0.5);
   if (budget.minFps !== undefined && (!finiteMetric(medianFrameMs) || Math.round(100_000 / medianFrameMs) / 100 < budget.minFps)) failures.push('TN_PROD_PERFORMANCE_BUDGET');
-  const floors = metrics.oneSecondFps ?? oneSecondFrameFloors(metrics.intervals ?? []);
+  // Read the published presented-frame floors or nothing: the callback records this used to bucket
+  // are not a frame count, and an absent floor fails the budget rather than passing it unseen.
+  const floors = Array.isArray(metrics.oneSecondFps) ? metrics.oneSecondFps : [];
   const drawCalls = maximumMetric(metrics, 'drawCalls');
   const triangles = maximumMetric(metrics, 'triangles');
   if (budget.minMeanFps !== undefined && (mean === undefined || mean < budget.minMeanFps)) failures.push('TN_PROD_PERFORMANCE_BUDGET');

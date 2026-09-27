@@ -37,6 +37,8 @@ import {
   safeReport,
   setNativeProfileEntry,
   webFrameInstrumentation,
+  webRateDisplayFault,
+  webRateIdentity,
   webScenarioArguments,
   writeRunScenarios,
 } from '../scripts/profile-production.mjs';
@@ -1111,10 +1113,10 @@ test('generated production workload runs through the playtest validator and keep
 
 test('post-warmup frame metrics exclude warmup samples from mean and percentiles', () => {
   const samples = [
-    { frameIndex: 1, frameMs: 500 },
-    { frameIndex: 2, frameMs: 400 },
-    { frameIndex: 61, frameMs: 16 },
-    { frameIndex: 62, frameMs: 17 },
+    { frameIndex: 1, frameMs: 500, presentationMs: 0 },
+    { frameIndex: 2, frameMs: 400, presentationMs: 500 },
+    { frameIndex: 61, frameMs: 16, presentationMs: 4_000 },
+    { frameIndex: 62, frameMs: 17, presentationMs: 4_016 },
   ];
   assert.deepEqual(postWarmupFrameSamples(samples, 60), samples.slice(2));
   assert.deepEqual(postWarmupFrameSamples([{ frameMs: 500 }, { frameMs: 400 }, { frameMs: 16 }], 2), [{ frameMs: 16 }]);
@@ -1123,6 +1125,188 @@ test('post-warmup frame metrics exclude warmup samples from mean and percentiles
   assert.deepEqual(metrics.frameIntervalsMs, expected.frameIntervalsMs);
   assert.equal(metrics.meanFps, expected.meanFps);
   assert.equal(metrics.p99FrameMs, expected.p99FrameMs);
+  // One presented frame separates the two post-warmup samples, so the series is one interval long
+  // however many warmup callbacks preceded it.
+  assert.deepEqual(metrics.frameIntervalsMs, [16]);
+});
+
+/**
+ * One second of the shape this harness actually collects: three rAF callbacks per presented frame
+ * at 60 Hz. The native host stamps every callback it dispatches in one frame with the same
+ * timestamp (`runtime.cpp` `executeAnimationFrameCallbacks`), and the engine loop, the UI hit-test
+ * pump and the profile itself each register one. The callback deltas are real readings of the
+ * per-callback cost the arms reported on this host — native 0.48 ms, web 1.70 ms — so the sample
+ * that straddles the display period is the *remainder* of a fixed 16.6 ms and the faster arm
+ * carries the larger one.
+ */
+function callbacksPerPresentedFrame({ perCallbackMs, presentedPeriodMs = 16.6, frames = 60 }) {
+  const straddlingMs = presentedPeriodMs - perCallbackMs * 2;
+  const series = [];
+  let clockMs = 0;
+  for (let frame = 0; frame < frames; frame += 1) {
+    for (const [index, frameMs] of [perCallbackMs, perCallbackMs, straddlingMs].entries()) {
+      clockMs += frameMs;
+      series.push({
+        clockMs,
+        frameIndex: frame * 3 + index,
+        frameMs,
+        presentationMs: frame * presentedPeriodMs,
+      });
+    }
+  }
+  return series;
+}
+
+function nonBlankScreenshot() {
+  const frame = new PNG({ height: 2, width: 2 });
+  frame.data.fill(255);
+  frame.data[0] = 0;
+  return PNG.sync.write(frame);
+}
+
+test('frame metrics come from successive presented frames, not from rAF callback deltas', () => {
+  const series = callbacksPerPresentedFrame({ perCallbackMs: 0.48 });
+  const metrics = aggregateMetrics([{ series }], []);
+  // 180 callbacks, 60 presented frames, and the first presented stamp has nothing to pair with.
+  assert.equal(series.length, 180);
+  assert.deepEqual(metrics.frameIntervalsMs.map((value) => Math.round(value * 100) / 100), Array.from({ length: 59 }, () => 16.6));
+  assert.equal(Math.round(metrics.p50FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(metrics.p95FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(metrics.p99FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(metrics.meanFps * 100) / 100, 60.24);
+  // The callback diagnostics the evidence also carries are untouched: 180 per-callback samples,
+  // each with the delta the host actually reported, while the counts are the presented frames.
+  assert.equal(metrics.sampleCount, 59);
+  assert.equal(metrics.intervals.length, 180);
+  assert.equal(metrics.intervals[0].frameMs, 0.48);
+  assert.equal(metrics.intervals[2].frameMs, 15.64);
+  assert.equal(Math.round(metrics.worstFrameMs * 100) / 100, 16.6);
+});
+
+test('the one-second floor and the sample counts count presented frames, not the three callbacks each frame runs', () => {
+  // 25 ms presented frames at three rAF callbacks per frame: the display presents 40 a second and
+  // the host records 120 callback records for them. 25 divides exactly in binary, so the per-second
+  // buckets land where the arithmetic says they do.
+  const series = callbacksPerPresentedFrame({ frames: 100, perCallbackMs: 1, presentedPeriodMs: 25 });
+  const metrics = aggregateMetrics([{ series }], []);
+  assert.equal(series.length, 300);
+  // Two full seconds of presented frames, and the callbacks that ran inside them are still there.
+  assert.deepEqual(metrics.oneSecondFps, [40, 40]);
+  assert.equal(metrics.runWindows[0].sampleCount, 99);
+  assert.equal(metrics.sampleCount, 99);
+  assert.equal(metrics.intervals.length, 300);
+  // The floor is what a `minOneSecondFps` budget reads. Counting callbacks answers 120 here, which
+  // passes a 60 fps floor on a display that presented 40; the presented answer must fail it.
+  assert.deepEqual(evaluateFrameBudget(metrics, { minOneSecondFps: 60 }).floors, [40, 40]);
+  assert.deepEqual(
+    evaluateFrameBudget(metrics, { minOneSecondFps: 60 }).failures,
+    ['TN_PROD_PERFORMANCE_BUDGET'],
+  );
+
+  // A dropped frame whose cost is split across three callbacks is still a dropped frame. Nine
+  // presented frames here each missed a display period, while the callback stream they were split
+  // into never exceeded 25 ms and so counted no hitch at all.
+  const dropped = aggregateMetrics(
+    [{ series: callbacksPerPresentedFrame({ frames: 10, perCallbackMs: 25, presentedPeriodMs: 75 }) }],
+    [],
+  );
+  assert.equal(dropped.hitchCount, 9);
+  assert.equal(dropped.worstFrameMs, 75);
+});
+
+test('a sample the presentation clock cannot place voids the presented series', () => {
+  const series = callbacksPerPresentedFrame({ frames: 4, perCallbackMs: 0.48 });
+  const malformed = [undefined, Number.NaN, 'later'];
+  for (const presentationMs of malformed) {
+    const tampered = series.map((sample, index) => (index === 5 ? { ...sample, presentationMs } : sample));
+    const metrics = aggregateMetrics([{ series: tampered }], []);
+    // A partial cadence would publish a percentile of the frames that happened to survive, so the
+    // series stays unmeasured: the budget then fails on the missing mean and a pair blocks.
+    assert.equal(metrics.frameIntervalsMs, undefined);
+    assert.equal(metrics.p50FrameMs, undefined);
+    assert.equal(metrics.p95FrameMs, undefined);
+    assert.equal(metrics.meanFps, undefined);
+    assert.equal(metrics.presentationClockSource, 'missing');
+    // The loss is named rather than hidden: the callbacks were still collected, and the counts
+    // publish no presented frame at all rather than the three-per-frame multiples they would carry.
+    assert.equal(metrics.intervals.length, tampered.length);
+    assert.equal(metrics.sampleCount, undefined);
+    assert.equal(metrics.runWindows, undefined);
+  }
+  // A stamp that goes backwards is not a presented frame either.
+  const backwards = series.map((sample, index) => (index === 5 ? { ...sample, presentationMs: 0 } : sample));
+  assert.equal(aggregateMetrics([{ series: backwards }], []).frameIntervalsMs, undefined);
+});
+
+test('a pair whose native callbacks read worse is compared on presented frame cadence', () => {
+  const screenshot = nonBlankScreenshot();
+  const arm = (perCallbackMs, kind) => ({
+    applicationClass: 'fixture',
+    artifactSha: sha256(Buffer.from(`fixture-artifact-${kind}`)),
+    driverClass: `${kind}-driver`,
+    kind,
+    runs: [{ report: { pass: true }, screenshot, series: callbacksPerPresentedFrame({ perCallbackMs }), status: 0 }],
+    startups: [{ firstFrameMs: 100, report: { pass: true }, screenshot, status: 0 }],
+  });
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: arm(0.48, 'desktop'),
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'desktop-pair',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: '/fixture',
+    runId: 'presented-pair',
+    startedAt: new Date().toISOString(),
+    web: arm(1.7, 'web'),
+  });
+  // The callback statistic this replaced read native 15.64 against web 13.20 — a difference created
+  // by which arm spent less time per callback, with both arms presenting at the same 16.6 ms.
+  assert.equal(Math.round(evidence.metrics.native.p95FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(evidence.metrics.web.p95FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(evidence.metrics.native.p50FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(evidence.metrics.web.p50FrameMs * 100) / 100, 16.6);
+  const result = evaluateProductionEvidence(evidence);
+  assert.equal(result.status, 'PASS');
+  assert.deepEqual(result.codes, []);
+
+  // One arm's stamps unreadable is not a pair that compares well; it is a pair with no cadence.
+  const broken = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: {
+      ...arm(0.48, 'desktop'),
+      runs: [{
+        report: { pass: true },
+        screenshot,
+        series: callbacksPerPresentedFrame({ perCallbackMs: 0.48 }).map((sample, index) => (index === 5 ? { ...sample, presentationMs: undefined } : sample)),
+        status: 0,
+      }],
+    },
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'desktop-pair',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: '/fixture',
+    runId: 'presented-pair-broken',
+    startedAt: new Date().toISOString(),
+    web: arm(1.7, 'web'),
+  });
+  const blocked = evaluateProductionEvidence(broken);
+  assert.equal(blocked.status, 'BLOCKED');
+  assert.equal(blocked.exitCode, 2);
+  assert.ok(blocked.codes.includes('TN_PROD_COMPARISON_METRICS_INCOMPLETE'));
 });
 
 test('paced native instrumentation waits one display interval per fixed-step tick', () => {
@@ -1337,6 +1521,32 @@ test('the web arm runs headed wherever a display exists, because headless WebGPU
   // display. Measured on one RTX 2080: headed reads `nvidia / turing`.
   assert.ok(argv({ DISPLAY: ':0' }).includes('--headed'));
   assert.equal(argv({}).includes('--headed'), false);
+});
+
+test('a web frame rate measured on a private Xvfb is refused, because that lane cannot carry one', () => {
+  // Two collections of the same built platformer at 1920x1080 on this host: the private-display web
+  // arm reported 33.97 fps mean and a 117.1 ms p99, the session-display arm 163.45 fps and 19.6 ms.
+  // The private lane is not the player's experience, so a run that would judge the budget on it
+  // refuses before collecting rather than publishing a number.
+  const fault = webRateDisplayFault({ kind: 'private-xvfb', screen: '1600x900x24' });
+  assert.equal(fault?.code, 'TN_PROD_DISPLAY_UNTRUSTWORTHY');
+  assert.match(fault.message, /TN_PLAYTEST_HOST_DISPLAY=1/u);
+  // The opt-in lane the runner itself selects, and a non-Linux host that owns its display.
+  assert.equal(webRateDisplayFault({ display: ':0', kind: 'existing' }), undefined);
+  assert.equal(webRateDisplayFault({ kind: 'host' }), undefined);
+});
+
+test('the web identity names the display the frame rate was read from', () => {
+  // `observations.hardwareIdentity` was the key this read and no producer ever wrote it, so every
+  // web artifact published an identity with no GPU in it. The display is the field that separates
+  // this host's two web collections, and it is published from the decision the runner made.
+  assert.deepEqual(webRateIdentity({ display: { display: ':0', kind: 'existing' }, runs: [{}] }), {
+    webDisplay: 'session::0',
+  });
+  assert.deepEqual(webRateIdentity({ display: { kind: 'host' }, runs: [{}] }), { webDisplay: 'host' });
+  // The adapter is unobserved: the production web scenario declares no visual capture, so an arm
+  // that named nothing keeps the field absent rather than certifying a zero.
+  assert.deepEqual(webRateIdentity({ runs: [{}] }), {});
 });
 
 test('repository collection sentinel is red only when explicitly enabled', () => {
