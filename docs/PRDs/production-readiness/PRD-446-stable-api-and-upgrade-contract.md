@@ -1,6 +1,7 @@
 # PRD-446 — Stable API and upgrade contract
 
-**Status:** PARTIAL — phase 1 landed and verified (`prd:25%`); phases 2 and 3 open.
+**Status:** PARTIAL — phases 1 and the phase 2 policy landed and verified (`prd:50%`); the phase 2
+runtime deprecation warning and all of phase 3 open.
 **Complexity:** 6 → MEDIUM; touches release scripts and CI, no runtime code.
 **Depends on:** [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
 (1.0) of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
@@ -142,9 +143,38 @@ Out of scope, closed with evidence elsewhere: an upgrade CLI command or codemod 
 
 ### Phase 2 — The policy is written where authors read it
 
-- [ ] Versioning and deprecation policy in `CONTRIBUTING.md`, linked from `README.md`.
+- [x] Versioning and deprecation policy in `CONTRIBUTING.md`, linked from `README.md`. proof:
+  `pnpm check:docs` → `Checked 2345 relative documentation links across 1155 Markdown files`
+  (exit 0) and the strict prose lane
+  (`check-doc-links`, `evidence-budget`, `evidence-citations`, `sync-agent-docs`, `ci-structure`,
+  `ci-needs`) → 6 files / 179 tests passed.
+  A new `## Versioning and deprecation` section defines the public surface as every published
+  package's exported symbols, types, and export subpaths (the 11 in `scripts/api-surface.json`); states
+  `patch`-fixes / `minor`-may-break before 1.0, semver-as-written at and after 1.0; fixes the
+  deprecation window at one minor with no separate clock; and requires every announced break to
+  carry a `### Breaking` migration note (old name, new name, the edit). The pre-1.0 promise leans on
+  the phase 1 gate for exported classes/functions and subpaths: it fails without a `Breaking` entry
+  naming those removals. Type-only exports and version-bump enforcement remain open for 1.0; the
+  policy states the promise without claiming those gates ship yet.
+  Linked from `README.md`'s Docs list by anchor. The one-time `console.warn` and the
+  capability-manifest `deprecated` marker are written as **requirements of a deprecation**, with an
+  explicit line that neither ships yet — the box below is the open part, not this one.
 - [ ] Deprecated symbols warn once at runtime and are marked deprecated in capability detail.
-- [ ] `SECURITY.md` supported-versions table follows the policy.
+  proof: a red test per half, then the focused green (a `__tests__/*.spec.ts` for the once-per-process
+  warning and for the manifest marker read back through `engine_capability_detail`).
+  Open: no runtime code in this lane. `CONTRIBUTING.md` now states both as requirements; what is
+  missing is the implementation — a once-per-process `console.warn` beside the `@deprecated` tag and
+  a `deprecated` marker on the `packages/create-threenative/capabilities.json` entry read by
+  `engine_capability_detail` (the manifest currently contains zero `deprecat` matches). Needs a
+  red test per half.
+- [x] `SECURITY.md` supported-versions table follows the policy. proof: same
+  `pnpm check:docs` and strict prose lane runs above (exit 0, 179 tests).
+  The table supports each package's latest published minor line and drops older minor lines of that
+  package. The policy is per package because current manifest versions are not numerically aligned:
+  for example, `@threenative/core` is 0.3.3, `create-threenative` is 0.2.6, and
+  `threenative-blender-mcp` is 0.1.3 in this checkout. The prose links the policy and says 1.0 is
+  not released. No specific registry version is asserted by this table, so it stays correct as the
+  next cohort publishes.
 
 ### Phase 3 — A game upgrades from N-1
 
