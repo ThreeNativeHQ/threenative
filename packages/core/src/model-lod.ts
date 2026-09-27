@@ -833,20 +833,24 @@ export class DiscreteLodPlugin {
         continue;
       }
       const levels: BufferGeometry[] = [base];
+      // Same vertex positions, so the same bounds; computed here and shared, not cloned, so a chain
+      // holds one bounds object and a game that pads the base's bounds after load — a
+      // vertex-displacement material's, say — reaches every level instead of leaving a coarser one
+      // culled against the bounds that were true at bake time.
+      base.computeBoundingSphere();
+      base.computeBoundingBox();
       for (const indices of pending.indices) {
         const geometry = new BufferGeometry();
         for (const [name, attribute] of Object.entries(base.attributes)) {
           geometry.setAttribute(name, attribute);
         }
         geometry.setIndex(new BufferAttribute(indices, 1));
-        // Same vertex positions, so the same bounds; copying keeps bounds queries off the frame path.
         if (base.boundingSphere !== null && base.boundingSphere !== undefined)
-          geometry.boundingSphere = base.boundingSphere.clone();
+          geometry.boundingSphere = base.boundingSphere;
         if (base.boundingBox !== null && base.boundingBox !== undefined)
-          geometry.boundingBox = base.boundingBox.clone();
+          geometry.boundingBox = base.boundingBox;
         levels.push(geometry);
       }
-      base.computeBoundingSphere();
       const sphere = new Sphere();
       if (base.boundingSphere !== null && base.boundingSphere !== undefined)
         sphere.copy(base.boundingSphere);
