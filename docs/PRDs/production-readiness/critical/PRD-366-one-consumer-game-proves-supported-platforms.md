@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-366 — One installed consumer game proves the supported platform contract
 
-**Status:** PHASE 2 COMPLETE (independent reviewer PASS on `9a30102d5`); phase 3 open — phase 1's local-tarball browser gameplay proof is recorded below; a public-registry cohort install still waits on PRD-196. Phase 2's cross-target scenario policy was corrected in `d10375e500df5d82cf93fe3487e7d70124f1a157`; the bounded evidence-hardening checkpoint below passes 42 isolated Node regressions, but repository gates, real distributed desktop/Android consumer runs and independent approval remain unverified for this repair. The 2026-09-15 native-consumer repair (portable `KeyR` restart, platform-library noise not counted as game console errors) passes its focused lanes — playtest red 3 failed → 28 passed, runtime-native **87 passed** across the three consumer test files (re-measured at HEAD; the earlier "73" cited a pair that does not reproduce), scaffold 61 passed, both package typechecks — and its real distributed consumer rows now execute locally: a starter scaffolded from the candidate's 11 packed tarballs qualifies on **Linux x64 desktop**, on a **physical Pixel 8** (`arm64-v8a`, API 37) and on an **Android emulator** (`x86_64`, API 35) — every row `pass: true`, 5 assertions, 0 failures, the same scenario hash, application id and **the same five assertion ids**, now machine-checked for set equality across targets after a second review found the qualifier trusted an assertion count alone and would pass a run on assertions the scenario never declared. macOS, Windows and iOS are CI-owned by owner decision; PRD-365 release containers stay unrun. Phase 2 closed with an independent reviewer PASS on `9a30102d5`; the reviewer re-ran the B4 exploits and matched every test count. **Reconciled with PRD-375 (`20f5d6191`) on 2026-09-16:** that merge landed the predicted cross-PR hazard — #255 hardened flag parsing and added `--config`, `--brand-only` and `verifyContainerBrand` inside the very file this branch had turned into a router. Resolved by moving #255's implementation, brand surface and hardening into `verify-starter-desktop-base.mjs`, with the router re-exporting both contracts. #255's parser superseded the guard written here (it also rejects unknown flags), so this branch adopted its `TN_NATIVE_STARTER_CLI_INVALID` taxonomy and rewrote its own tests to the incumbent contract; no #255 test was adjusted to pass. Proved by mutation rather than by green: disabling brand inspection in the base file reds 4 of #255's brand rows (4 failed / 67 passed) and restoring gives 71/71, so its tests genuinely execute against the merged file. Desktop family **203 passed** across five suites; typecheck 0, lint 0. Two findings the reviewer raised as non-blocking were fixed after that verdict: the cross-target assertion-set gate is now **wired and tested** (`--qualify-existing --target desktop,android`) where before it could not fire in any caller, and `ROW_OUTDATED` no longer prescribes a remedy that cannot work. Cross-target equality is verified by that wired, executed command, not by a gate that fires on its own in CI — no shipped script passes two targets yet. Phase 3 physical Android qualification (its own collector, provenance schema and performance budget) remains open, and now carries two items this phase produced: rows keyed by `target` alone lose a row when one target has two devices, and the row should retain `diagnostics[0]` so a repeat pre-assertion abort names itself. Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract and repair worked 2026-09-15.
+**Status:** PHASE 2 COMPLETE (independent reviewer PASS on `9a30102d5`); phase 3 open — phase 1's local-tarball browser gameplay proof is recorded below; a public-registry cohort install still waits on PRD-196. Phase 2's cross-target scenario policy was corrected in `d10375e500df5d82cf93fe3487e7d70124f1a157`; the bounded evidence-hardening checkpoint below passes 42 isolated Node regressions, but repository gates, real distributed desktop/Android consumer runs and independent approval remain unverified for this repair. The 2026-09-15 native-consumer repair (portable `KeyR` restart, platform-library noise not counted as game console errors) passes its focused lanes — playtest red 3 failed → 28 passed, runtime-native **87 passed** across the three consumer test files (re-measured at HEAD; the earlier "73" cited a pair that does not reproduce), scaffold 61 passed, both package typechecks — and its real distributed consumer rows now execute locally: a starter scaffolded from the candidate's 11 packed tarballs qualifies on **Linux x64 desktop**, on a **physical Pixel 8** (`arm64-v8a`, API 37) and on an **Android emulator** (`x86_64`, API 35) — every row `pass: true`, 5 assertions, 0 failures, the same scenario hash, application id and **the same five assertion ids**, now machine-checked for set equality across targets after a second review found the qualifier trusted an assertion count alone and would pass a run on assertions the scenario never declared. macOS, Windows and iOS are CI-owned by owner decision; PRD-365 release containers stay unrun. Phase 2 closed with an independent reviewer PASS on `9a30102d5`; the reviewer re-ran the B4 exploits and matched every test count. **Reconciled with PRD-375 (`20f5d6191`) on 2026-09-16:** that merge landed the predicted cross-PR hazard — #255 hardened flag parsing and added `--config`, `--brand-only` and `verifyContainerBrand` inside the very file this branch had turned into a router. Resolved by moving #255's implementation, brand surface and hardening into `verify-starter-desktop-base.mjs`, with the router re-exporting both contracts. #255's parser superseded the guard written here (it also rejects unknown flags), so this branch adopted its `TN_NATIVE_STARTER_CLI_INVALID` taxonomy and rewrote its own tests to the incumbent contract; no #255 test was adjusted to pass. Proved by mutation rather than by green: disabling brand inspection in the base file reds 4 of #255's brand rows (4 failed / 67 passed) and restoring gives 71/71, so its tests genuinely execute against the merged file. Desktop family **203 passed** across five suites; typecheck 0, lint 0. Two findings the reviewer raised as non-blocking were fixed after that verdict: the cross-target assertion-set gate is now **wired and tested** (`--qualify-existing --target desktop,android`) where before it could not fire in any caller, and `ROW_OUTDATED` no longer prescribes a remedy that cannot work. Cross-target equality is verified by that wired, executed command, not by a gate that fires on its own in CI — no shipped script passes two targets yet. Phase 3 physical Android qualification (its own collector, provenance schema and performance budget) remains open, and now carries two items this phase produced: rows keyed by `target` alone lose a row when one target has two devices, and the row should retain `diagnostics[0]` so a repeat pre-assertion abort names itself. Both are landed on the clean-room side as of 2026-09-26 (array shape kept, composite key internal, zero-assertion arm carries the run's own `diagnostics[0]`, and a row with `pass: false` now fails the cohort instead of reporting `exitCode 0`); the physical run itself is still unclaimed. Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract and repair worked 2026-09-15.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 lifecycle/proof state, +1 hosted/device integration).
 **Problem:** Isolated engine feature tests and core smoke screenshots do not establish that a developer can build, customize and distribute a playable game using installed packages only.
 
@@ -182,11 +182,36 @@ pnpm exec threenative-playtest playtests/production-readiness.playtest.json --ta
 
 **Progress:**
 
-- [ ] The clean room carries the physical-mobile identity: `scripts/verify-registry-install.ts`
-      records it in the cohort result. proof: `grep -n physical scripts/verify-registry-install.ts`
-      names the row. — OPEN: the qualifier and its test are live callers today
-      (`packages/runtime-native/package.json` exposes `qualify-physical-mobile`, 21/21 green
-      2026-09-25), but the clean-room leg is not wired yet.
+- [x] The clean room carries the physical-mobile identity: `scripts/verify-registry-install.ts`
+      records it in the cohort result. proof: `pnpm exec vitest run
+      scripts/__tests__/verify-registry-install.spec.ts` — **29 passed** exit 0 (2026-09-27). —
+      VERIFIED LOCALLY: `IRegistryInstallReport.consumerTargets` keeps its public **array** shape; the composite
+      key (`target session architecture osVersion`) is internal, so one target's physical arm
+      (`android-device arm64-v8a 17 (API 37)`) and emulator arm (`android-emulator x86_64 15
+      (API 35)`) both survive with their own `artifactHash` and a caller reads each row's own
+      `session`/`architecture`. The key separates physical from emulator; it is **not** a device
+      identity, so two phones reporting the same values still share one row. A zero-assertion arm
+      carries the run's own `diagnostics[0]` (`code: message`) read back from
+      `artifacts/native/consumer-<target>.stdout.json`, or an explicit
+      `TN_REGISTRY_INSTALL_CONSUMER_DIAGNOSTIC_MISSING` naming the file that holds none. **Found
+      while landing it: a row with `pass: false` did not fail anything** — the native step read the
+      rows and reported `exitCode 0`. The step now fails closed on a failed row
+      (`TN_REGISTRY_INSTALL_CONSUMER_TARGET_FAILED`) *after* the row is recorded, so the returned
+      report keeps `diagnostics[0]` and the step detail repeats it. The same code now also fires on
+      a row that evaluated **zero** assertions whatever `pass` claims, because an empty assertion
+      set is a failure and a row that asserted nothing proved nothing: that row read `exitCode 0`
+      before the clause, red 1 failed / 28 passed, 29/29 after, with the row and its
+      `diagnostics[0]` still carried in the returned report. Red 3 failed / 25 passed with
+      the guard absent (the failing arm read `exitCode 0`) and against the previous record shape;
+      three mutations each red, each restored to 28/28: key → `row.target` 1 failed, diagnostic
+      retention disabled 2 failed, fail-closed guard disabled 1 failed. `pnpm exec tsc --noEmit -p
+      tsconfig.json` exit 0; `pnpm typecheck` exit 0; `pnpm budgets` exit 0; `pnpm lint` exit 0,
+      839 warnings and no new one. **Not claimed here:** any physical execution (the Android box
+      below stays open), and the row *file* still keeps one
+      row per target (`verify-starter-consumer.mjs` replaces a same-target row), so a phone and an
+      emulator must be qualified in separate clean rooms for both to be in one cohort result. The
+      full `pnpm test` passed after the native test executables were built (492 files,
+      6,136 tests passed; 2 files and 8 tests skipped; exit 0). `pnpm check:docs` passed 2,342 links.
 - [x] Required test green: `packages/runtime-native/tests/physical-mobile-qualification.test.mjs`.
       proof: `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts
       tests/physical-mobile-qualification.test.mjs` — 1 file, 21 tests passed, exit 0 (2026-09-25).
@@ -204,10 +229,21 @@ pnpm exec threenative-playtest playtests/production-readiness.playtest.json --ta
 1. **Consumer rows are keyed by `target` alone**, so a physical-device run overwrites an emulator run
    in `consumer-targets.json`. Observed here: the Pixel 8 row replaced the `emulator-5556` row, and
    both survive only because phase 2's evidence document writes them out by hand. A target reachable
-   by more than one device needs the device identity in the key.
+   by more than one device needs the device identity in the key. — Partly closed above: the clean
+   room's cohort result now keeps one row per arm, keyed internally by target **and** what the run
+   named (session, architecture, OS version), so two clean rooms contributing one arm each no longer
+   overwrite each other and one target's phone and emulator both appear. That is a
+   physical-versus-emulator distinction, not a device identity, and the row *file* is unchanged
+   (one row per target, written by `verify-starter-consumer.mjs`), so two devices of one target still
+   need two clean rooms.
 2. **One physical arm64 run aborted before assertions** and its cause was never isolated; the row
    retained only `failureReport()`'s generic pre-assertion shape, not the `diagnostics[0]` that named
-   the real cause. Retaining that entry on the row is the prerequisite for diagnosing a repeat.
+   the real cause. Retaining that entry on the row is the prerequisite for diagnosing a repeat. —
+   Closed on the clean-room side: a zero-assertion row in the cohort result now names the run's own
+   `diagnostics[0]`, and a failed row now fails the cohort instead of reporting `exitCode 0`. The
+   verifier's own row file still stores only `failureReport()`'s shape; the cause is preserved in the
+   cohort result and in the `consumer-<target>.stdout.json` beside it. The physical repeat is not
+   claimed — the Android box below is still open.
 
 **Published 0.3.3 `next` cohort per-target verification — 2026-09-25** (Linux host, Node v20.19.6,
 npm 11.18.0, pnpm 10.25.0, NVIDIA RTX 2080 / Vulkan 1.4.351; full commands and hashes in
