@@ -310,9 +310,45 @@ npm 11.18.0, pnpm 10.25.0, NVIDIA RTX 2080 / Vulkan 1.4.351; full commands and h
 - [ ] **macOS desktop** — CI-owned: job `native-platforms / macOS desktop core` completed **success**
       on the same run, with the same source-vs-registry limitation.
 - [ ] **Android** — owner authorized the Pixel 8 on 2026-09-27; the physical run remains open until
-      the phone is unplugged and the lifecycle observation channel produces real evidence. The published
-      cohort carries `@threenative/runtime-native@0.3.3` for `android-arm64-v8a` / `android-x86_64`;
-      no device or emulator row was run in this lane.
+  the phone is unplugged and the lifecycle observation channel produces real evidence. The published
+  cohort carries `@threenative/runtime-native@0.3.3` for `android-arm64-v8a` / `android-x86_64`;
+  no device row was run in this lane, and the emulator row below is a **source-override diagnostic,
+  not a published-cohort pass**, so this box stays open on both counts.
+  **Emulator diagnostic 2026-09-27 (source override).** `node scripts/download-deps.mjs --android`
+  in this worktree reported `v8-android: OK` (recipe 6, V8 11.0.226.16, `libv8android.so` +
+  `libc++_shared.so` + a per-ABI `snapshot_blob.bin` for `arm64-v8a` and `x86_64`, all 16 KB
+  aligned), and a debug-signed consumer APK for the same 0.3.3-cohort game was built with
+  `THREENATIVE_RUNTIME_SOURCE=<worktree>/packages/runtime-native`,
+  `pnpm exec threenative build --target android --allow-source-build`, JDK 17,
+  `ANDROID_HOME=/home/joao/Android/Sdk`, `TMPDIR=/home/joao/.cache/tn-tmp`: `BUILD SUCCESSFUL in
+  48s`, 8 native libraries 16 KB clean on both ABIs, 107,071,692 B, sha256
+  `e723735513ae1b1975b5768facc7e5cf91c1299f59866dbde7377b27e6fcb664`, `aapt dump badging`
+  applicationId `com.threenative.prd366emulator` (debug key, `META-INF/ANDROIDD.RSA`). The
+  installed consumer runner `node node_modules/@threenative/runtime-native/scripts/
+  verify-starter-consumer.mjs --consumer --target android --device emulator-5554 --project .`
+  installed it (`adb -s emulator-5554 install -r --no-streaming`, `base.apk` hashing to the same
+  sha256 before and after gameplay) and ran the real
+  `playtests/production-readiness.playtest.json` on `emulator-5554` — `x86_64`, `15 (API 35)`,
+  `session: android-emulator` — exit 0, twice, 2/2 with the same result: **`pass: true`, 5
+  assertions / 0 failures**, the same
+  `scenarioHash 4edb52f1fb8d6ded…` and the same five assertion ids phase 2 recorded
+  (`diagnostics, movement.axisDelta, resource.state.entityCount.atSteps,
+  resource.state.score.atSteps, visibility.player`), 941 frames, distance 5.4916,
+  `startup.phase ready` under rule `sustained-frames`, 0 console errors, 0 runtime diagnostics,
+  `-z` delta 3.99997 (≥ 0.5), 3699.6 projected px (≥ 20), `score` 1→0 and `entityCount` 3→4
+  across the `KeyR` restart. **The bridge is present**: the packaged `assets/scripts/main.js`
+  carries `__THREENATIVE_PLAYTEST_BRIDGE__`, and the device console reads `[V8] Version:
+  11.0.226.16`, `JS engine created: V8`, `Using external startup snapshot (45421 bytes)`.
+  **The earlier `TN_PLAYTEST_BRIDGE_MISSING` / 0-assertion failure in the same sandbox is
+  explained rather than reproduced:** that APK came from plain `threenative build --target android`
+  with no `THREENATIVE_RUNTIME_SOURCE`, and Gradle's Problems-report path proves it compiled the
+  **published tarball** `…/node_modules/.pnpm/@threenative+runtime-native@…0.3.3-e5a1dd710cc1.tgz/…`,
+  whose `libmystral-runtime.so` carries no device playtest mailbox (the source-built one carries
+  `TN_PLAYTEST_MAILBOX_ROOT`, `tn-playtest-request.json`, `tn-playtest-response.json`). So the
+  cause was the runtime the packager resolved, not the JS engine; the two intervening QuickJS
+  builds were never played. **Not claimed here:** a public-registry install, any physical-device
+  credit (`x86_64` emulator reporting the SwiftShader WebGPU adapter, so it is not a performance
+  result either), or any native-performance measurement.
 - [ ] **npm install of the published template** — red on this host and at the root, not yet fixed:
       `npm install` dies at `sharp@0.34.5` (`node install/check.js || npm run build`, then a source
       build) because the template's `@gltf-transform/cli@4.4.2` devDependency drags `sharp ~0.34.5`,
