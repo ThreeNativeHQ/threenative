@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "test:contracts": "node --experimental-strip-types --test tests/contracts.test.mjs",
     "test:integration": "node --test tests/integration.test.mjs",
-    "test": "npm run build && npm run test:contracts && npm run test:integration"
+    "test:admission": "node --test tests/admission.test.mjs",
+    "test": "npm run build && npm run test:contracts && npm run test:integration && npm run test:admission"
   },
   "dependencies": {
     "three": "0.185.1",
