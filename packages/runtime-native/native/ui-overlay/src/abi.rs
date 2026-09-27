@@ -59,6 +59,11 @@ pub extern "C" fn tn_ui_overlay_attach(
         return -5;
     };
     crate::HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
+    // WebKit can attach yet paint nothing through DMA buffers on NVIDIA/GBM.
+    // Keep an explicit environment value as the diagnostic override.
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
     OVERLAY.with(|slot| {
         if slot.borrow().is_some() {
             return -1;

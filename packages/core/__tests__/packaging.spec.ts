@@ -257,6 +257,10 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
       "src/objects/BatchedMesh.js",
       "src/nodes/accessors/Instance.js",
       "build/three.webgpu.js",
+      "src/renderers/common/RenderContexts.js",
+      "src/renderers/common/RenderObject.js",
+      "src/renderers/webgpu/utils/WebGPUBindingUtils.js",
+      "src/renderers/webgpu/WebGPUBackend.js",
     ];
     const firstRun = await Promise.all(
       patchedFiles.map(
@@ -266,6 +270,44 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     expect(firstRun[0]?.[1]).toContain("threeNativeBatchedVelocityPatch");
     expect(firstRun[1]?.[1]).toContain("threenative.velocity.previousInstanceMatrices");
     expect(firstRun[2]?.[1]).toContain("_previousMatricesTexture ?? matricesTexture");
+    const patched = new Map(firstRun);
+    expect(patched.get("src/renderers/common/RenderContexts.js")).toContain(
+      "this.renderer.currentSamples",
+    );
+    expect(patched.get("src/renderers/common/RenderObject.js")).toContain(
+      "this.context.sampleCount",
+    );
+    expect(patched.get("src/renderers/common/RenderObject.js")).toContain(
+      "this.renderer.getRenderTarget()?.samples ?? this.renderer.currentSamples",
+    );
+    expect(patched.get("src/renderers/webgpu/utils/WebGPUBindingUtils.js")).toContain(
+      "bindingsData.layoutKey === bindGroupLayoutKey",
+    );
+    expect(patched.get("build/three.webgpu.js")).toContain("this.context.sampleCount");
+    expect(patched.get("build/three.webgpu.js")).toContain(
+      "this.renderer.getRenderTarget()?.samples ?? this.renderer.currentSamples",
+    );
+    expect(patched.get("build/three.webgpu.js")).toContain(
+      "bindingsData.layoutKey === bindGroupLayoutKey",
+    );
+    expect(patched.get("src/renderers/webgpu/WebGPUBackend.js")).toContain(
+      "currentBindingGroups[ i ] !== bindingsData.group",
+    );
+    expect(patched.get("src/renderers/webgpu/WebGPUBackend.js")).toContain(
+      "currentBindingGroups[ i ] = bindingsData.group",
+    );
+    expect(patched.get("build/three.webgpu.js")).toContain(
+      "currentBindingGroups[ i ] !== bindingsData.group",
+    );
+    expect(patched.get("build/three.webgpu.js")).toContain(
+      "currentBindingGroups[ i ] = bindingsData.group",
+    );
+    for (const file of ["src/renderers/webgpu/WebGPUBackend.js", "build/three.webgpu.js"]) {
+      const backend = patched.get(file);
+      expect(backend).toContain("data.bindGroupLayoutKeys !== bindGroupLayoutKeys");
+      expect(backend).toContain("data.bindGroupLayoutKeys = bindGroupLayoutKeys");
+      expect(backend).toContain("bindGroupLayoutKeys,");
+    }
 
     await run(process.execPath, ["./scripts/postinstall.mjs"], {
       cwd: packed,
