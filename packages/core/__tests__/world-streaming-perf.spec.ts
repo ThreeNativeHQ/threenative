@@ -257,7 +257,7 @@ describe("WorldCells streaming performance", () => {
               ["x", shadow[at + 12] as number],
               ["y", shadow[at + 13] as number],
               ["z", shadow[at + 14] as number],
-            ])
+            ] as const)
               expect(
                 (box.min[axis] as number) <= value && value <= (box.max[axis] as number),
                 `${name} slot ${String(index)} at ${String(value)} on ${axis} is outside [${String(box.min[axis])}, ${String(box.max[axis])}]`,

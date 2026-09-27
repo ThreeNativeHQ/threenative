@@ -453,25 +453,60 @@ function renderedLevel(tile: IResidentTile): ILevelGeometry | undefined {
 }
 
 /**
- * What a pair's seam was reconciled against: each side's rendered level and the versions of its
- * position and normal buffers. Every writer to a level sets `needsUpdate`, which bumps the version,
- * so an unchanged state means neither facing edge can have moved since. Numbers, not a string:
- * this runs for every resident pair every frame (544 pairs on a 289-tile ring).
+ * An attribute's vertex count while every component it draws is finite, `NaN` once one is not.
+ * Every writer this package owns goes through `needsUpdate`, which bumps `version`, so a version
+ * alone cannot see a writer that reached past the attribute — and `NaN` never compares equal to the
+ * finite state the last reconcile recorded, so a settled seam still fails closed on it. The scan is
+ * the cost of that, against the per-sample walk it keeps off a settled frame.
  */
-function pairState(pair: NeighborPair): number[] | undefined {
-  const aLevel = renderedLevel(pair[0]);
-  const bLevel = renderedLevel(pair[1]);
-  if (aLevel === undefined || bLevel === undefined) return undefined;
-  return [...levelState(aLevel), ...levelState(bLevel)];
+function positionFingerprint(position: BufferAttribute | undefined): number {
+  if (position === undefined) return -1;
+  const values = position.array;
+  for (let index = 0; index < values.length; index += 1)
+    if (!Number.isFinite(values[index])) return Number.NaN;
+  return position.count;
 }
 
-function levelState(level: ILevelGeometry): [number, number, number] {
+/**
+ * What a pair's seam was reconciled against: each side's rendered level, its buffers and where its
+ * mesh sits. Every writer to a level sets `needsUpdate`, which bumps the version, so an unchanged
+ * state means neither facing edge can have moved since — and an edge is sampled through
+ * `level.mesh.matrixWorld`, so a level mesh moved from outside changed what the observation reads
+ * without touching a single version. Its own transform is what that matrix composes from, and it is
+ * what any outside writer moves: an ancestor of it is either the tiles group, whose own movement the
+ * bridge state already observes, or the LOD this package owns and never moves, and a seam exists
+ * only where a bridge is. Numbers, not a string, and pushed rather than returned: this runs for
+ * every resident pair every frame (544 pairs on a 289-tile ring) into a reused buffer, and the
+ * intermediate array per level and per bridge was itself the cost the settled ring was measured on.
+ */
+function pushLevelState(state: number[], level: ILevelGeometry): void {
   const geometry = level.geometry;
-  return [
+  const { mesh } = level;
+  state.push(
     geometry.id,
     (geometry.getAttribute("position") as BufferAttribute).version,
     (geometry.getAttribute("normal") as BufferAttribute).version,
-  ];
+    mesh.position.x,
+    mesh.position.y,
+    mesh.position.z,
+    mesh.quaternion.x,
+    mesh.quaternion.y,
+    mesh.quaternion.z,
+    mesh.quaternion.w,
+    mesh.scale.x,
+    mesh.scale.y,
+    mesh.scale.z,
+  );
+}
+
+/** Whether both sides of a pair have a rendered level, which is what its state needs to exist. */
+function pushPairState(state: number[], pair: NeighborPair): boolean {
+  const aLevel = renderedLevel(pair[0]);
+  const bLevel = renderedLevel(pair[1]);
+  if (aLevel === undefined || bLevel === undefined) return false;
+  pushLevelState(state, aLevel);
+  pushLevelState(state, bLevel);
+  return true;
 }
 
 /**
@@ -479,28 +514,36 @@ function levelState(level: ILevelGeometry): [number, number, number] {
  * range and buffers. A diagnostic exists to catch a bridge moved, detached, emptied or rewritten,
  * so each of those has to change this state and force a fresh observation.
  */
-function seamState(pair: NeighborPair, bridge: IStitchBridge | undefined): number[] | undefined {
-  const state = pairState(pair);
-  if (state === undefined || bridge === undefined) return state;
-  return [...state, ...bridgeState(bridge)];
-}
-
-function bridgeState(bridge: IStitchBridge): number[] {
-  const { geometry, mesh } = bridge;
+function pushBridgeState(state: number[], bridge: IStitchBridge): void {
+  const { mesh } = bridge;
+  // The mesh's own geometry rather than the record's: a bridge retargeted to foreign geometry reads
+  // perfectly well from the record, and `bridgeCoverageContext` is the only thing that rejects it.
+  const geometry = mesh.geometry;
+  const position = geometry.getAttribute("position") as BufferAttribute | undefined;
+  const normal = geometry.getAttribute("normal") as BufferAttribute | undefined;
   const index = geometry.getIndex();
   mesh.updateMatrixWorld();
-  return [
-    mesh.id,
-    mesh.parent?.id ?? -1,
-    mesh.visible ? 1 : 0,
-    ...mesh.matrixWorld.elements,
+  state.push(mesh.id, mesh.parent?.id ?? -1, mesh.visible ? 1 : 0);
+  const elements = mesh.matrixWorld.elements;
+  for (let element = 0; element < elements.length; element += 1)
+    state.push(elements[element] as number);
+  state.push(
     geometry.id,
-    (geometry.getAttribute("position") as BufferAttribute).version,
+    position?.version ?? -1,
+    positionFingerprint(position),
+    normal?.id ?? -1,
     index?.id ?? -1,
     index?.version ?? -1,
     geometry.drawRange.start,
     geometry.drawRange.count,
-  ];
+  );
+}
+
+function seamState(pair: NeighborPair, bridge: IStitchBridge | undefined): number[] | undefined {
+  const state: number[] = [];
+  if (!pushPairState(state, pair)) return undefined;
+  if (bridge !== undefined) pushBridgeState(state, bridge);
+  return state;
 }
 
 function sameState(a: readonly number[] | undefined, b: readonly number[] | undefined): boolean {
@@ -1524,12 +1567,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #stitchedEdges = 0;
   #stitchBytes = 0;
   readonly #stitches = new Map<string, IStitchBridge>();
-  /** Each pair's `pairSignature` as the last reconcile left it, so a settled seam is not redone. */
+  /** Each pair's `seamState` as the last reconcile left it, so a settled seam is not redone. */
   readonly #pairSignatures = new Map<string, number[]>();
   /** The state each pair was last observed in, per coverage mode, so a settled seam is not re-measured. */
   readonly #observedSeams = new Map<string, number[]>();
   /** The ring state the last full seam pass left behind; `undefined` until one has run. */
   #settledRing: number[] | undefined;
+  /**
+   * The buffer a frame measures its ring state into before comparing it, and the one the last pass
+   * settled. Two buffers trade places instead of being reallocated, because a settled 289-tile ring
+   * measures some twenty thousand numbers a frame and building that many arrays was itself the cost
+   * this fast path exists to avoid.
+   */
+  #ringScratch: number[] = [];
   #released = false;
   #renderer: IRendererLike | undefined;
 
@@ -2231,19 +2281,22 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const pair of pairs) {
       const key = neighborPairKey(pair);
       if (!reconciled.has(key)) continue;
-      const state = pairState(pair);
+      const state = seamState(pair, this.#stitches.get(key));
       if (state === undefined) this.#pairSignatures.delete(key);
       else this.#pairSignatures.set(key, state);
     }
   }
 
   /**
-   * Whether a pair's seam is exactly as the last reconcile left it. Reconciling restores both
-   * facing edges and then stitches the finer one, so redoing a settled pair rewrote its edges and
-   * recomputed whole-tile bounds every frame for nothing. A settled stitch still counts as stitched.
+   * Whether a pair's seam is exactly as the last reconcile left it, bridge included: reconciling
+   * restores both facing edges and then rewrites the bridge, so redoing a settled pair rewrote its
+   * edges and recomputed whole-tile bounds every frame for nothing. A bridge corrupted from outside
+   * changes that state and is reconciled and observed again, never healed silently. A settled
+   * stitch still counts as stitched.
    */
   #settled(key: string, pair: NeighborPair): boolean {
-    if (!sameState(pairState(pair), this.#pairSignatures.get(key))) return false;
+    if (!sameState(seamState(pair, this.#stitches.get(key)), this.#pairSignatures.get(key)))
+      return false;
     if (this.#stitches.has(key)) this.#stitchedEdges += 1;
     return true;
   }
@@ -2326,30 +2379,36 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   /**
    * Reconcile and observe every seam, unless nothing a seam reads changed since the last pass: the
-   * same tiles on the same rendered levels with the same buffer versions, and every bridge where it
-   * was. A settled 289-tile ring then costs one flat state compare a frame instead of walking 544
-   * pairs three times. A settled stitch still counts as stitched, as `#settled` does per pair.
+   * same tiles on the same rendered levels with the same buffer versions, placements and drawn
+   * coordinates, and every bridge where it was. A settled 289-tile ring then costs one flat state
+   * compare a frame instead of walking 544 pairs three times. A settled stitch still counts as
+   * stitched, as `#settled` does per pair.
    */
   #seamPass(): void {
-    if (sameState(this.#ringState(), this.#settledRing)) {
+    this.#ringStateInto(this.#ringScratch);
+    if (sameState(this.#ringScratch, this.#settledRing)) {
       this.#stitchedEdges += this.#stitches.size;
       return;
     }
     this.#recordSeamDiagnostics(false);
     this.#reconcileNeighbors();
     this.#recordSeamDiagnostics();
-    this.#settledRing = this.#ringState();
+    // The pass moved geometry, so the settled state is what it left behind, read into the buffer the
+    // compare just filled; the buffer it compared against becomes the next frame's scratch.
+    const scratch = this.#ringScratch;
+    this.#ringScratch = this.#settledRing ?? [];
+    this.#settledRing = scratch;
+    this.#ringStateInto(this.#settledRing);
   }
 
-  #ringState(): number[] {
-    const state: number[] = [];
+  #ringStateInto(state: number[]): void {
+    state.length = 0;
     for (const tile of this.#resident.values()) {
       const level = renderedLevel(tile);
       if (level === undefined) state.push(-1);
-      else state.push(...levelState(level));
+      else pushLevelState(state, level);
     }
-    for (const bridge of this.#stitches.values()) state.push(...bridgeState(bridge));
-    return state;
+    for (const bridge of this.#stitches.values()) pushBridgeState(state, bridge);
   }
 
   /**

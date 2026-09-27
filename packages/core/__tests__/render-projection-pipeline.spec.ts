@@ -93,18 +93,22 @@ describe("SceneRenderProjection and the installed output pipeline", () => {
         const builder = new WGSLNodeBuilder(mesh, renderer) as WGSLNodeBuilder & {
           setShaderStage(stage: string): void;
           flowStagesNode(node: unknown, output: string): void;
-          getUniforms(stage: string): string;
+          getAttributes(stage: string): string;
         };
         builder.setShaderStage("vertex");
         builder.flowStagesNode(instancedMesh(mesh), "void");
-        declarations.push(builder.getUniforms("vertex"));
+        // The patched Three takes instance matrices off the uniform path — the uniform path
+        // re-uploads them every draw — so the declaration that must match across batches is the
+        // instanced attribute set, and the matrix is the four `vec4<f32>` columns it names.
+        declarations.push(builder.getAttributes("vertex"));
       } finally {
         projection.dispose();
         geometry.dispose();
         material.dispose();
       }
     }
-    expect(declarations[0]).toContain("mat4x4<f32>");
+    expect(declarations[0]).toContain("nodeAttribute0 : vec4<f32>");
+    expect(declarations[0]).toContain("nodeAttribute3 : vec4<f32>");
     expect(declarations[1]).toBe(declarations[0]);
   });
 

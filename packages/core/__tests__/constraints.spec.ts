@@ -76,6 +76,11 @@ describe("core constraints", () => {
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
+          // The mesh pool parks a streamed world's instanced meshes by the (geometry, material)
+          // pair they draw, so the cell after a walk gets a parked object back instead of a fresh
+          // NodeBuilder build. It constructs no material, configures no property of one, and uses
+          // the surface only as a map key; which surface exists and how it looks is the game's.
+          file !== "render/mesh-pool.ts" &&
           // The census records material/object provenance at the renderer boundary; it observes
           // appearance inputs without constructing or choosing any visual output.
           file !== "pipeline-census.ts" &&
@@ -320,6 +325,15 @@ describe("core constraints", () => {
     expect(sceneBvh).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
     expect(sceneBvh).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(sceneBvh.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `render/mesh-pool.ts` is exempt on the same terms as `instanced-batch.ts`: the surface is
+    // named to key a pool by, never built and never tuned. The assertions below keep that true.
+    const meshPool = readFileSync(path.join(sourceDirectory, "render/mesh-pool.ts"), "utf8");
+    expect(meshPool).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(meshPool).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(meshPool.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // The public surface may NAME the types it re-exports (`IGPUSceneBVHMaterialGroup` is a data
     // group, not a look); what it may never do is originate an appearance.

@@ -656,8 +656,9 @@ describe("WorldCells", () => {
     // prewarm is the one exception and it is a different allowance (`PREWARM_PER_UPDATE`), spent on
     // batches no placement has asked for yet — so the ceiling this measures is the drawn meshes.
     const drawn = (): number =>
-      world.children.filter((child) => (child as InstancedMesh).isInstancedMesh && child.count > 0)
-        .length;
+      world.children.filter(
+        (child) => (child as InstancedMesh).isInstancedMesh && (child as InstancedMesh).count > 0,
+      ).length;
     const beforeDrawn = drawn();
     expect(drawn() - beforeDrawn).toBeLessThanOrEqual(1);
     await flushed(world);

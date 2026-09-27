@@ -31,7 +31,7 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 import type { IAssetLoader } from "./assets.js";
 import type { IWorldExtent } from "./world-package.js";
 
-type Component = "r" | "g" | "b" | "a";
+type Channel = "r" | "g" | "b" | "a";
 
 /** One texture set: albedo (and optionally a normal map) tiled in metres, tinted in linear. */
 export interface ITerrainSplatLayer {
@@ -72,7 +72,7 @@ export interface ITerrainSplatTable {
   readonly splat: {
     readonly size: number;
     readonly planes: number;
-    readonly masks: Readonly<Record<string, readonly [number, Component | "rgb"]>>;
+    readonly masks: Readonly<Record<string, readonly [number, Channel | "rgb"]>>;
   };
   /** Package-relative folder of `<id>_diff.jpg` and `<id>_nrm.jpg`. */
   readonly textures: string;
