@@ -262,6 +262,8 @@ struct HostGapMeter {
     struct Sample {
         uint64_t micros[kSegmentCount] = {};
         uint64_t periodMicros = 0;
+        uint64_t rafCallbacksMicros = 0;
+        double rafTimestampMs = 0.0;
         uint64_t frameId = 0;
     };
 
@@ -291,8 +293,9 @@ struct HostGapMeter {
     }
 
     // Dispatch-entry to dispatch-entry of the rAF window — the whole loop period, which the
-    // JavaScript budget reads as presentedDelta and splits into frame + hostGap.
-    void noteRafBegin() {
+    // JavaScript budget reads as presentedDelta and splits into frame + hostGap. timestampMs is
+    // the same monotonic value handed to the callbacks, recorded so the two clocks can be joined.
+    void noteRafBegin(double timestampMs) {
         const auto now = Clock::now();
         if (lastRafBegin_.time_since_epoch().count() != 0) {
             const auto period = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -301,7 +304,16 @@ struct HostGapMeter {
                 current_.periodMicros = static_cast<uint64_t>(period.count());
         }
         lastRafBegin_ = now;
+        current_.rafTimestampMs = timestampMs;
         current_.frameId = ++nextFrameId_;
+    }
+
+    // Wall duration of dispatching the callbacks this frame, from the caller's dispatch start.
+    // Deliberately not a segment: it wraps recorder JS and renderer work the game itself owns.
+    void noteRafCallbacks(Clock::time_point dispatchStart) {
+        current_.rafCallbacksMicros += std::chrono::duration_cast<std::chrono::microseconds>(
+                                           Clock::now() - dispatchStart)
+                                           .count();
     }
 
     // endDawnFrame timed its own interior in bindings.cpp; absorb that split here. Values are
@@ -390,12 +402,29 @@ struct HostGapMeter {
         out << "}";
 #else
         out << ",\"samples\":[";
+        // The default desktop per-frame shape stays frame + webtransportMs;
+        // TN_HOST_GAP_DETAIL=1 adds every segment and the interval ending at this rAF dispatch.
+        const char* detailEnv = std::getenv("TN_HOST_GAP_DETAIL");
+        const bool detail = detailEnv != nullptr && detailEnv[0] == '1' && detailEnv[1] == '\0';
         for (size_t i = 0; i < samples_.size(); ++i) {
             if (i > 0) out << ",";
             const Sample& sample = samples_[i];
-            out << "{\"frame\":" << sample.frameId
-                << ",\"webtransportMs\":"
-                << static_cast<double>(sample.micros[kWebTransport]) / 1000.0 << "}";
+            out << "{\"frame\":" << sample.frameId;
+            if (detail) {
+                for (size_t segment = 0; segment < kSegmentCount; ++segment) {
+                    out << ",\"" << kNames[segment] << "Ms\":"
+                        << static_cast<double>(sample.micros[segment]) / 1000.0;
+                }
+                out << ",\"periodMs\":"
+                    << static_cast<double>(sample.periodMicros) / 1000.0;
+                out << ",\"rafTimestampMs\":" << sample.rafTimestampMs;
+                out << ",\"rafCallbacksMs\":"
+                    << static_cast<double>(sample.rafCallbacksMicros) / 1000.0;
+            } else {
+                out << ",\"webtransportMs\":"
+                    << static_cast<double>(sample.micros[kWebTransport]) / 1000.0;
+            }
+            out << "}";
         }
         out << "]}";
 #endif
@@ -1741,19 +1770,21 @@ private:
     void executeAnimationFrameCallbacks() {
         if (rafCallbacks_.empty()) return;
 
-        // The loop period for the host-gap meter: dispatch-entry to dispatch-entry. The
-        // JavaScript budget reads the same interval as presentedDelta.
-        hostGapMeter_.noteRafBegin();
-
         // Match browser rAF/performance timestamps: finite milliseconds from this runtime's
-        // monotonic time origin, never a wall-clock epoch value.
+        // monotonic time origin, never a wall-clock epoch value. Computed before the dispatch
+        // entry so the meter records the exact value the callbacks receive.
         const auto elapsed = PerformanceClock::now() - performanceOrigin_;
         const double timestamp = std::chrono::duration<double, std::milli>(elapsed).count();
+
+        // The loop period for the host-gap meter: dispatch-entry to dispatch-entry. The
+        // JavaScript budget reads the same interval as presentedDelta.
+        hostGapMeter_.noteRafBegin(timestamp);
 
         // Copy callbacks (they might add new ones during execution)
         auto callbacks = std::move(rafCallbacks_);
         rafCallbacks_.clear();
 
+        const auto dispatchStart = HostGapMeter::Clock::now();
 #if TN_ANDROID_JS_PROFILE
         const uint64_t tnJsFrameStart = js::threadCpuNs();
 #endif
@@ -1766,6 +1797,7 @@ private:
 #if TN_ANDROID_JS_PROFILE
         js::g_jsFrameNs += js::threadCpuNs() - tnJsFrameStart;
 #endif
+        hostGapMeter_.noteRafCallbacks(dispatchStart);
     }
 
     void setupTimers() {
