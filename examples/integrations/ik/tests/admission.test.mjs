@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Link } from "closed-chain-ik/core";
 import {
   Bone,
   BufferGeometry,
@@ -518,4 +519,26 @@ test("E5: dispose is idempotent and the adapter refuses later work", () => {
   r.ik.dispose();
   r.ik.dispose();
   assert.throws(() => r.ik.update(goals(trace(r.body)[0])), /disposed/);
+});
+
+test("E6: a non-finite solver pose found mid-write restores the whole input pose", () => {
+  const r = rig();
+  const before = r.bones.map((bone) => bone.quaternion.toArray());
+  // The last row is written after every other bone, so the rollback has real work to undo.
+  const original = Link.prototype.getWorldQuaternion;
+  Link.prototype.getWorldQuaternion = function (target) {
+    original.call(this, target);
+    if (this.name === "lHand") target[0] = Number.NaN;
+    return target;
+  };
+  try {
+    assert.throws(() => r.ik.update(goals(trace(r.body)[7])), /finite/);
+  } finally {
+    Link.prototype.getWorldQuaternion = original;
+  }
+  assert.deepEqual(
+    r.bones.map((bone) => bone.quaternion.toArray()),
+    before,
+  );
+  r.ik.dispose();
 });
