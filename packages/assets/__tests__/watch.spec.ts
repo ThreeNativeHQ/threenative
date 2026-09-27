@@ -28,6 +28,9 @@ const DEBOUNCE_MS = 25;
 // it breaks. This measures the very operation that has to fit - five sequential writes, on this
 // machine, on this filesystem - immediately at load, and sizes the window from that. The floor
 // keeps a fast machine from picking a window so tight that scheduling noise alone defeats it.
+//
+// Those overruns came from `await writeFile` bursts. The coalescing test now writes synchronously,
+// so it cannot race any window and asserts no burst duration; only the async fail-closed test does.
 const BURST_WRITES = 5;
 
 function measureBurstCostMs(): number {
@@ -468,18 +471,13 @@ describe("watchAssets", () => {
     );
     await openHandles[0]?.ready;
 
-    const burstStartedAt = Date.now();
+    // Synchronous on purpose: fs.watch delivers on this thread, so no event is even queued, let
+    // alone a debounce timer fired, until the whole burst has landed. However long a loaded runner
+    // takes over the five writes (506-783ms overran the old duration check on CI), they are one
+    // burst by construction, and every assertion below measures the watcher, not the machine.
     for (let index = 1; index <= BURST_WRITES; index += 1) {
       writeFileSync(path.join(root, "assets", "rock.png"), `burst write ${index}`);
     }
-    const burstMs = Date.now() - burstStartedAt;
-    // Fail on the premise, not on a downstream symptom. A burst that outruns its own debounce
-    // window is not a coalescing bug: the writes were never in one window to begin with, and every
-    // assertion below would be measuring a machine, not the watcher.
-    expect(
-      burstMs,
-      `the burst took ${burstMs}ms and does not fit the ${BURST_DEBOUNCE_MS}ms window it is meant to coalesce inside; raise BURST_DEBOUNCE_MS rather than trusting the assertions below`,
-    ).toBeLessThan(BURST_DEBOUNCE_MS);
     await recorder.waitForCount(1);
     // Any straggler event outside the debounced burst would have fired well within 3 windows.
     await new Promise((resolve) => setTimeout(resolve, BURST_DEBOUNCE_MS * 3));

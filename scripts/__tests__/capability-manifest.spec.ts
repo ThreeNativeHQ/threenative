@@ -143,6 +143,24 @@ describe("capability manifest generator", () => {
     expect(() => buildCapabilityManifest(root)).toThrow(/MissingSituation/u);
   });
 
+  it("classifies callable exports by type, so an alias or re-bound function is no orphan", async () => {
+    const root = await makeTempDir("threenative-capability-callable-alias-");
+    temporaryRoots.push(root);
+    const source = [
+      documentedClass,
+      "function helper(): void {}",
+      "const upstream = { trace: helper };",
+      "export const AliasedHelper = helper;",
+      "export const ReboundTrace = upstream.trace;",
+      "export const PLAIN_LIMIT = 4;",
+      "",
+    ].join("\n");
+    await writePackage(root, "core", "@threenative/core", source);
+
+    expect(() => buildCapabilityManifest(root)).toThrow(/AliasedHelper.*ReboundTrace/su);
+    expect(() => buildCapabilityManifest(root)).not.toThrow(/PLAIN_LIMIT/u);
+  });
+
   it("rejects an allowlist entry with an empty reason", () => {
     expect(() =>
       validateCapabilityAllowlist([{ package: "@threenative/core", reason: "", symbol: "Hidden" }]),

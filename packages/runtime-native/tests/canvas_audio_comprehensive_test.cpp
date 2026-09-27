@@ -185,6 +185,26 @@ constexpr const char* kCanvasScript = R"JS((() => {
     ctx.strokeStyle = c;
   }
 
+  // Parsing without throwing is not the contract; the pixel is. Each form is painted and read
+  // back, so a colour that parses to the wrong channel fails here rather than on a canvas someone
+  // is looking at.
+  ctx.globalAlpha = 1;
+  for (const [css, want] of [
+    ["rgb(10,20,30)", [10, 20, 30, 255]],
+    ["rgba(10,20,30,0.5)", [10, 20, 30, 127]],
+    ["#0a141e", [10, 20, 30, 255]],
+    ["#0a141e80", [10, 20, 30, 128]],
+    ["hsl(210, 50%, 20%)", [25, 51, 76, 255]],
+  ]) {
+    ctx.clearRect(0, 0, 4, 4);
+    ctx.fillStyle = css;
+    ctx.fillRect(0, 0, 4, 4);
+    const px = ctx.getImageData(0, 0, 1, 1).data;
+    if (px[0] !== want[0] || px[1] !== want[1] || px[2] !== want[2] || px[3] !== want[3]) {
+      throw new Error(`fillStyle ${css} painted rgba(${px[0]},${px[1]},${px[2]},${px[3]}), expected rgba(${want[0]},${want[1]},${want[2]},${want[3]})`);
+    }
+  }
+
   globalThis.__tnCanvasDone = true;
 })())JS";
 

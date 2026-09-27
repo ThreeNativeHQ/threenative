@@ -157,7 +157,7 @@ function happyMcpRunner(): McpRunner {
                 {
                   text: JSON.stringify({
                     text: "Use silhouette and readable geometry.",
-                    topic: "build/geometry_patterns",
+                    topic: "glossary/3d_vocabulary",
                   }),
                 },
               ],
@@ -166,15 +166,18 @@ function happyMcpRunner(): McpRunner {
             ? {
                 content: [
                   {
-                    text: JSON.stringify([
-                      {
-                        constraints: ["requires a navigation world"],
-                        example: "const agent = new NavigationAgent3D(world);",
-                        importPath: "@threenative/physics/navigation",
-                        summary: "Move an agent around obstacles.",
-                        symbol: "NavigationAgent3D",
-                      },
-                    ]),
+                    text: JSON.stringify({
+                      guidance: "",
+                      results: [
+                        {
+                          constraints: ["requires a navigation world"],
+                          example: "const agent = new NavigationAgent3D(world);",
+                          importPath: "@threenative/physics/navigation",
+                          summary: "Move an agent around obstacles.",
+                          symbol: "NavigationAgent3D",
+                        },
+                      ],
+                    }),
                   },
                 ],
               }

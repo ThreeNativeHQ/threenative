@@ -221,8 +221,7 @@ if [[ "$suite_prebuilt" -eq 1 ]]; then
   for tn_prebuilt_package in \
     @threenative/assets \
     @threenative/ueformat \
-    @threenative/raw-unreal \
-    threenative-site; do
+    @threenative/raw-unreal; do
     package_test_command+=(--filter "!$tn_prebuilt_package")
   done
 fi
@@ -242,7 +241,6 @@ verify_prebuilt_outputs() {
     fi
   done
   [[ -f packages/playtest/dist/runner/cli.js ]] || missing+=("packages/playtest/dist/runner/cli.js")
-  [[ -f site/dist/client/index.html ]] || missing+=("site/dist/client/index.html")
 
   if [[ "${#missing[@]}" -gt 0 ]]; then
     printf 'TN_SUITE_PREBUILT_MISSING: %s\n' "${missing[*]}" >&2
@@ -259,7 +257,6 @@ run_prebuilt_package_tests() {
   pnpm --filter @threenative/ueformat exec publint --strict || return $?
   pnpm --filter @threenative/raw-unreal exec vitest run --root ../.. raw-unreal/__tests__ || return $?
   pnpm --filter @threenative/raw-unreal exec publint --strict || return $?
-  pnpm --filter threenative-site exec vitest run || return $?
 }
 
 

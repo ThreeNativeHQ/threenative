@@ -156,6 +156,19 @@ export function addPreflightDiagnostic(
   return diagnostic === undefined ? report : { ...report, diagnostics: [diagnostic, ...report.diagnostics] };
 }
 
+/**
+ * The console cascade a lost WebGPU device leaves behind: core's `TN_DEVICE_LOST` report, three's
+ * own `WebGPU Device Lost` line, and the `mapAsync` rejections from the timestamp-query pool once
+ * the device is gone. A device loss is one event with several error lines, and they must be read as
+ * one so a declared software lane can record it rather than fail on each derived line.
+ */
+const SOFTWARE_DEVICE_LOSS = /TN_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists/iu;
+
+function isSoftwareDeviceLossEntry(entry: IRunnerConsoleEntry): boolean {
+  return (entry.type === "error" || entry.type === "assert" || entry.type === "pageerror")
+    && SOFTWARE_DEVICE_LOSS.test(entry.text);
+}
+
 export function buildReport(
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,
@@ -216,6 +229,20 @@ export function buildReport(
       && scenario.assert?.parity === undefined
     ? undefined
     : afterSnapshot?.runtimeDiagnosticsSeries ?? beforeSnapshot?.runtimeDiagnosticsSeries;
+  // A declared software lane is the one place a lost WebGPU device is an environment artifact
+  // rather than a game defect: SwiftShader's fallback adapter drops the wire Instance under a slow
+  // frame and Chromium restarts the GPU process behind it, which surfaces as a device-lost cascade
+  // of console errors. The operator has already said out loud this run is not render evidence, and
+  // the lane's scenarios assert simulation resources, so the cascade is recorded as a diagnostic
+  // instead of failing `noConsoleErrors`. Nothing is hidden: `console.json` keeps every entry. A
+  // hardware run, or any non-device-loss error on the software lane, still fails the assertion.
+  const softwareAdapter =
+    capture?.rendererKind === "webgpu" ? softwareAdapterName(capture.adapter) : undefined;
+  const softwareLane = config.allowSoftwareAdapter === true && softwareAdapter !== undefined;
+  const deviceLossEntries = softwareLane ? consoleEntries.filter(isSoftwareDeviceLossEntry) : [];
+  const observedConsoleEntries = deviceLossEntries.length === 0
+    ? consoleEntries
+    : consoleEntries.filter((entry) => !isSoftwareDeviceLossEntry(entry));
   const diagnostics: IPlaytestDiagnostic[] = [];
   if (runtimeReady === false && scenario.assert?.diagnostics?.runtimeReady === true) {
     diagnostics.push({
@@ -248,7 +275,7 @@ export function buildReport(
     // Honest placement reporting: what the scenario asked to override, and what applied.
     ...(setup === undefined ? {} : { setup }),
     observations: buildObservations({
-      console: consoleEntries,
+      console: observedConsoleEntries,
       ...(components === undefined
         ? {}
         : { components }),
@@ -312,10 +339,10 @@ export function buildReport(
       ...(beforeSnapshot?.physicsDebugSeries?.[0]?.snapshot === undefined
         ? {}
         : { physicsDebugBefore: beforeSnapshot.physicsDebugSeries[0].snapshot }),
-      runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
+      runtimeDiagnostics: normalizedRuntimeDiagnostics(afterSnapshot, scenario, observedConsoleEntries),
       ...(beforeSnapshot === undefined
         ? {}
-        : { runtimeDiagnosticsBefore: normalizedRuntimeDiagnostics(beforeSnapshot, scenario, consoleEntries) }),
+        : { runtimeDiagnosticsBefore: normalizedRuntimeDiagnostics(beforeSnapshot, scenario, observedConsoleEntries) }),
       ...(visual === undefined ? {} : { visual }),
     }),
   };
@@ -327,11 +354,18 @@ export function buildReport(
   const assertionResults = [...evaluated.assertions, ...(cameraResult === undefined ? [] : [cameraResult])];
   const trivialityOptOuts = collectTrivialityOptOuts(assertionResults);
   const allDiagnostics = [...diagnostics, ...evaluated.diagnostics];
+  if (deviceLossEntries.length > 0) {
+    allDiagnostics.push({
+      code: "TN_PLAYTEST_SOFTWARE_DEVICE_LOST",
+      message: `The software adapter '${softwareAdapter}' lost its WebGPU device during the run; ${deviceLossEntries.length} device-loss console error(s) were recorded instead of failing noConsoleErrors. This lane is not render evidence.`,
+      severity: "warning",
+      suggestion:
+        "Expected on a CPU rasteriser when a frame outlasts the GPU process; rerun on a hardware adapter before reading any pixels.",
+    });
+  }
   // Scoped to WebGPU because that is where the fallback is silent: a WebGL context reports its
   // software renderer in the same provenance field, but the browser never pretends otherwise
   // and the repo already runs WebGL fixtures headless on purpose.
-  const softwareAdapter =
-    capture?.rendererKind === "webgpu" ? softwareAdapterName(capture.adapter) : undefined;
   if (softwareAdapter !== undefined && config.allowSoftwareAdapter !== true) {
     allDiagnostics.push({
       code: "TN_PLAYTEST_SOFTWARE_ADAPTER",

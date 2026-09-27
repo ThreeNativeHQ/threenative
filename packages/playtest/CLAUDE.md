@@ -18,7 +18,11 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
 Exit `0` passed, `1` assertions failed, `2` never reached assertions, `69` when a command's
 external decoder is absent so nothing was inspected, and `75` when the capture lock queue timed
 out — the last two are explicitly **not** test failures, and `75` prints the holder and queue
-depth. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
+depth. `--build-report <artifact>.build-report.json` adopts the `performanceBudget` a
+`threenative build` published beside that artifact: the run re-hashes the artifact under test and
+exits `2` when it is not the one the report describes (`TN_PLAYTEST_BUILD_REPORT_STALE`), and
+merges the budget per key into the scenario's own `assert.performance`. It needs `--artifact` on
+browser and Android, which is the only thing that says which build the run exercises. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
 project; there is no root `pnpm dev`. `--browser-recipe webgpu` supplies the current Chromium WebGPU
 flags including `--enable-features=Vulkan`, without which Chromium silently serves WebGPU from
 SwiftShader and reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape
@@ -33,6 +37,22 @@ cannot capture WebGPU here, so it changes what you measure. The runner takes a c
 when it detects competing runners — or always with `CAPTURE_LOCK=1`; lock state is printed to stderr
 either way. `sh scripts/xvfb.sh` remains as an optional compatibility wrapper — never `xvfb-run`,
 whose exit status is its own failing cleanup kill rather than the command's.
+
+**A frame rate from that private Xvfb is wrong, not missing**, so no command may print one as
+though it were measured: without vsync the present wait lands inside the update phase (13.3 fps
+there against 57.7 on the real display, one build). `trace` never prints one. `perf` prefers the
+display's own rate whenever a window carries one — core reads the host's `__tnPresentedCount` and
+reports `presents`/`presentedFps` beside the loop's `fps` — and otherwise suppresses the column and
+refuses a `--min-fps` bound when the run's display is private (`--executable`) **or the log says for
+itself that the frames never reached the display**: the host counts loop frames and presents
+separately in `TN_PRESENTS_TICK`, and a loop the presentation cap outran inflates `fps` by exactly
+that ratio — midway's native launch log reported 2631 fps beside its own
+`{"frames":1740,"presents":133,"capHz":60}`, and passed a 55 fps bound. A window that counted zero
+presents carries no rate at all: the column prints `0.00`, the windows are named in words, and a
+bound over windows that all lack a rate fails closed. Both refusals take `--allow-virtual-display`
+when the operator is deliberately reading phase timings alone. A
+`--min-fps` bound that can be satisfied by a number nobody can vouch for is a green with nothing
+behind it — the desktop build above reported 20,000 fps that way.
 
 In a scaffolded project the same CLI is `npx @threenative/playtest`, and `diagnostics`, console,
 network, screenshot and trace assertions work against any URL. The framework template installs the
@@ -100,7 +120,11 @@ without bounds the command reports and exits 0. The host's `Present mode:` line 
 when the host logs one. `--text` renders the human-readable table; default output is JSON.
 
 Desktop spawn under a headless session rides the same Xvfb rule as any pixel run:
-`sh scripts/xvfb.sh threenative-playtest perf --executable … --host-arg run --host-arg game.js …`.
+`sh scripts/xvfb.sh threenative-playtest perf --executable … --host-arg run --host-arg game.js …`,
+and that Xvfb is exactly the display whose frame rate cannot be trusted — such a run prints no
+`fps` column and refuses `--min-fps` (exit 1, `TN_PERF_VIRTUAL_DISPLAY`) unless the operator passes
+`--allow-virtual-display`. The phase and host-gap rows, which are what the native lane's baselines
+quote, are unaffected.
 The command never launches a browser — the browser lane already bounds performance through
 `assert.performance` — and it never tunes anything; it is a meter reader.
 

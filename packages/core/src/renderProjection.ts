@@ -1,6 +1,7 @@
 import type { Camera, Material, Matrix4, Object3D, Scene } from "three";
 
 import type { IGeometryOwnership } from "./geometry-capture.js";
+import type { MatrixWorldPass } from "./matrix-world.js";
 import { ProjectionMirror } from "./projection-apply.js";
 import {
   createProjectionScanWorkspace,
@@ -63,11 +64,13 @@ export type ProjectionExactReason =
   | "sprite"
   | "points"
   | "transparent"
+  | "vertexDisplaced"
   | "renderOrder"
   | "tooFewToBatch"
   | "batchOverflow"
   | "batchVelocityPatchMissing"
   | "negativeScale"
+  | "nonUniformScale"
   | "unsupportedGeometry";
 
 export interface IRenderProjectionReport {
@@ -90,6 +93,8 @@ export interface IRenderProjectionReport {
   /** The batch split by lane, so a report reader can tell which grouping did the folding. */
   readonly instancedBatches: number;
   readonly materialBatches: number;
+  /** Palette draws on the skinned lane: rigs sharing geometry and material, one draw per pass. */
+  readonly skinnedBatches: number;
   /** Sources that kept a draw of their own, with the reason each one did. */
   readonly exactObjects: number;
   readonly exact: Partial<Record<ProjectionExactReason, number>>;
@@ -126,6 +131,12 @@ export interface IRenderProjectionOptions {
   readonly enabled?: boolean;
   /** Allocates per-sub-draw previous matrices for the material-batching lane. */
   readonly velocity?: boolean | (() => boolean);
+  /**
+   * The engine's world-matrix walk, when the frame owns one. The authored scene is refreshed here
+   * rather than by three's renderer, because the renderer is handed the mirror: without this the
+   * authored scene would never be walked and every proxy would be one frame stale.
+   */
+  readonly matrixWorld?: MatrixWorldPass;
   readonly onReport?: (report: IRenderProjectionReport) => void;
 }
 
@@ -148,6 +159,7 @@ export class SceneRenderProjection {
   /** Absent when the game opted out: an opted-out projection never builds one. */
   readonly #mirror: ProjectionMirror | undefined;
   readonly #velocity: boolean | (() => boolean);
+  readonly #matrixWorld: MatrixWorldPass | undefined;
   readonly #velocityTracker = new VelocityTracker();
   readonly #scanWorkspace = createProjectionScanWorkspace();
   #deoptimized = true;
@@ -171,6 +183,7 @@ export class SceneRenderProjection {
     this.#enabled = options.enabled ?? true;
     this.#velocity = options.velocity ?? false;
     this.#velocityActive = resolveVelocityEnabled(this.#velocity);
+    this.#matrixWorld = options.matrixWorld;
     this.#mirror = this.#enabled ? new ProjectionMirror(this.#velocityActive) : undefined;
     this.#onReport = options.onReport;
   }
@@ -271,14 +284,22 @@ export class SceneRenderProjection {
       if (scan.plan.action === "decline") {
         mirror.releaseAll();
         this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
+        // A scene with nothing in it yet is still loading, and walking it costs nothing: look
+        // again next frame rather than drawing the first second of the level unprojected.
+        if (scan.renderables === 0) this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
       } else {
         // The renderer is handed the mirror, so the authored scene's world matrices are refreshed
-        // here. Forcing (`updateMatrixWorld(true)`) overrode a game's deliberate static marking and
-        // recomposed every node every frame; honouring `matrixWorldAutoUpdate` and Three's own
-        // `matrixWorldNeedsUpdate` propagation is the contract every Three renderer uses. A game
-        // that turns the flag off has promised to update the scene itself, and a subtree marked
-        // `matrixWorldAutoUpdate = false` under a still parent is skipped instead of walked.
-        if (this.#source.matrixWorldAutoUpdate === true) this.#source.updateMatrixWorld();
+        // here. With the engine's walk installed that is the visible-only pass, which mirrors three
+        // for every visible node and defers a hidden subtree until it shows; without it, honouring
+        // `matrixWorldAutoUpdate` and Three's own `matrixWorldNeedsUpdate` propagation is the
+        // contract every Three renderer uses. A game that turns the flag off has promised to update
+        // the scene itself, and a subtree marked `matrixWorldAutoUpdate = false` under a still
+        // parent is skipped instead of walked.
+        if (this.#matrixWorld !== undefined) {
+          this.#matrixWorld.apply(this.#source);
+        } else if (this.#source.matrixWorldAutoUpdate === true) {
+          this.#source.updateMatrixWorld();
+        }
         mirror.prepare(scan.exactLane, scan.exactLaneCount);
         const lightFailure = mirror.apply(scan.plan);
         if (lightFailure !== undefined) {
@@ -338,6 +359,7 @@ export class SceneRenderProjection {
           batches: r.batches,
           instancedBatches: r.instancedBatches,
           materialBatches: r.materialBatches,
+          skinnedBatches: r.skinnedBatches,
           projectedObjects: r.projectedObjects,
           exactObjects: r.exactObjects,
           exact: r.exact,
@@ -373,6 +395,7 @@ export class SceneRenderProjection {
       batches,
       instancedBatches: this.#deoptimized ? 0 : (this.#mirror?.instancedBatchCount ?? 0),
       materialBatches: this.#deoptimized ? 0 : (this.#mirror?.materialBatchCount ?? 0),
+      skinnedBatches: this.#deoptimized ? 0 : (this.#mirror?.skinnedBatchCount ?? 0),
       exactObjects,
       // A declined frame renders the authored scene, so its plan is one draw per authored
       // renderable — the number the projection is trying to beat, not zero.

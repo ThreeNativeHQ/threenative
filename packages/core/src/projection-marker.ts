@@ -1,3 +1,4 @@
+import type { IMatrixWorldReport } from "./matrix-world.js";
 import type { IRenderCameraCullReport } from "./render-camera-cull.js";
 import type { IRenderProjectionReport, ProjectionExactReason } from "./renderProjection.js";
 
@@ -48,7 +49,20 @@ export interface IProjectionWindowJson {
     readonly exemptMarked: number;
     readonly exemptShadowCasters: number;
     readonly exemptWithoutBounds: number;
+    readonly exemptDynamicBounds: number;
     readonly exemptFrustumCulled: number;
+  };
+  /**
+   * The world-matrix walk's own count for this window.
+   *
+   * `mode` is the resolved `renderer.matrixWorld` and `visited` is the nodes the engine walked on
+   * the last world-render frame, summed over the authored scene and any projection mirror. Present
+   * whenever the engine ran the walk — turning the default off with `"all"` does not turn its
+   * measurement off, and the two numbers side by side are the cost the convention removed.
+   */
+  readonly matrixWorld?: {
+    readonly mode: string;
+    readonly visited: number;
   };
   readonly window: number;
 }
@@ -79,6 +93,7 @@ export function formatProjectionWindow(
   window: number,
   drawsActual: number | undefined,
   cull?: IRenderCameraCullReport,
+  matrixWorld?: IMatrixWorldReport,
 ): string {
   const payload: IProjectionWindowJson = {
     ...(drawsActual === undefined ? {} : { drawsActual }),
@@ -95,12 +110,16 @@ export function formatProjectionWindow(
             exemptMarked: cull.exemptMarked,
             exemptShadowCasters: cull.exemptShadowCasters,
             exemptWithoutBounds: cull.exemptWithoutBounds,
+            exemptDynamicBounds: cull.exemptDynamicBounds,
             exemptFrustumCulled: cull.exemptFrustumCulled,
           },
         }),
     drawsPlanned: report.drawsPlanned,
     exact: report.exact,
     exactObjects: report.exactObjects,
+    ...(matrixWorld === undefined
+      ? {}
+      : { matrixWorld: { mode: matrixWorld.mode, visited: matrixWorld.visited } }),
     projecting: report.projecting,
     ...(report.reason === undefined ? {} : { reason: report.reason }),
     reasonCode: report.reasonCode,

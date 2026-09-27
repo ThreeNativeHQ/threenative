@@ -1,6 +1,6 @@
 ---
 name: prd-lifecycle
-description: Keep a PRD honest from first phase to merge — give every phase its own checkboxes, tick them as work lands, run one draft PR per PRD with a red-to-green progress label, and move the file to done/ in the commit that finishes it. Use when starting, resuming, reviewing, re-scoping or closing a PRD, when a PRD looks stuck, or when a finished PRD is about to be reopened. Not for writing a PRD from scratch — that is prd-creator.
+description: Keep a PRD honest from first phase to merge — give every phase its own checkboxes, each box its inline proof, tick them as work lands, run one draft PR per PRD with a red-to-green progress label, and move the file to done/ (or BLOCKED/<reason>/ when only blocked work is left) in the commit that finishes it. Use when starting, resuming, reviewing, re-scoping or closing a PRD, when a PRD looks stuck or hard to tick, or when a finished PRD is about to be reopened. Not for writing a PRD from scratch — that is prd-creator.
 ---
 
 # prd-lifecycle
@@ -22,16 +22,17 @@ The rewrites also dropped every per-phase checkbox, leaving five compound accept
 PRD. Measured on 2026-09-11: **80 of 143 open PRDs have no phase checkboxes at all**, so
 `pnpm prd:progress` cannot report on them. A PRD that cannot show progress does not get worked on.
 
-## The four rules
+## The five rules
 
 ### 1. Every phase carries its own boxes
 
 Acceptance criteria are the *last* thing to go green. A PRD whose only boxes sit under
 *Acceptance criteria* shows 0% until it is 100%, so nobody ever ticks anything and the work looks
-dead. Give each phase a short checklist — files wired, required test passing, observed red, user
-verification — and tick those as the phase lands.
+dead. Give each phase a short checklist — files wired, required test passing, the proof the phase
+claims — and tick those as the phase lands.
 
-`prd-creator`'s phase template already has these boxes. Do not compress them away to save space.
+`prd-creator`'s phase template already has these boxes. Do not compress them away to save space;
+R5 caps the PRD at 3 phases and about 8 boxes, and anything bigger is a second PRD.
 
 Check before you start work:
 
@@ -39,10 +40,11 @@ Check before you start work:
 pnpm prd:progress docs/PRDs/<batch>/PRD-<id>-<slug>.md
 ```
 
-It exits 1 with `no phase checkboxes` when the PRD is in the broken shape. Fix the shape first —
-add the boxes from the phase prose — then start.
+It exits 1 with `no phase checkboxes` when the PRD is in the broken shape, and warns once per box
+that names no `proof:` marker (R1). Fix the shape first — add the boxes from the phase prose and
+their proofs — then start.
 
-### 2. One box, one claim
+### 2. One box, one claim, and a proof to run
 
 A criterion that conjoins independent facts can never move from `[ ]` to `[x]`, because some clause
 is always out of reach:
@@ -52,22 +54,35 @@ is always out of reach:
 
 That is four OS/arch targets times four properties — about sixteen verifications, several needing a
 Windows host, a macOS host and Apple notarization — in one checkbox. Split it: one box per platform,
-per artifact, per property. A box you cannot reach yet is still its own box, with its blocker named
-on the line below.
+per artifact, per property.
 
-### 3. Tick as it lands, in the same commit
+A clause nobody can reach is not a box at all: it is a line under `## Blocked on` naming who or what
+unblocks it (R3). It does not count toward progress, and it never becomes an untickable box.
+
+And every box names its proof inline — `proof: \`pnpm native:verify:desktop\``, `proof: CI job
+\`native-desktop\``, `proof: PR #123` — so anyone can tick it once that proof is green (R1).
+
+### 3. No ceremony boxes (R2)
+
+An observed revert check, an independent reviewer's PASS, a written evidence record, an artificial
+negative control, a caller census: none of these is work, and a box nobody can honestly tick is a box
+nobody ticks. They belong in the PR body or the PR template. This skill's own rule list is the
+example: everything below is checkable work.
+
+### 4. Tick as it lands, in the same commit
 
 The PRD is live state, not a plan written once.
 
-- `- [ ]` → `- [x]` when the item is done **and** verified. A box ticked on unrun work is the same
-  lie as a claimed gate.
+- `- [ ]` → `- [x]` when the item is done **and** its proof is green. A box ticked on unrun work is
+  the same lie as a claimed gate.
 - Write the result beside the item where it carries evidence — the command, the number, the exit
   code, the artifact path. One line, in the PRD.
-- Partial or abandoned items stay `- [ ]` with a note underneath saying what is left. Never delete
-  an item to make the list look finished.
+- Partial or abandoned work stays `- [ ]` with a note underneath saying what is left. Delete an item
+  only when a decision made it moot, and record what, who, date and why under `## Decisions` (R4) —
+  never to make the list look finished, and never to un-file ticked work.
 - Move the status line with the boxes. All-ticked plus `NOT STARTED` is drift.
 
-### 4. Never un-file a finished PRD by rewriting it
+### 5. Never un-file a finished PRD by rewriting it
 
 Re-scoping is not a reason to pull a PRD out of `done/`. That deletes the ticked boxes and the
 landed commits that justified them, and the work reads as never done.
@@ -136,19 +151,26 @@ gh pr edit <number> --add-label "$LABEL"
 
 - All boxes ticked and the status line says so → `git mv` to `docs/PRDs/done/` **in the commit that
   finishes it**, inside the PRD's own PR.
-- Explicitly blocked → `docs/PRDs/BLOCKED/<reason>/`, the folder naming the missing evidence. Try
-  the blocked reason once and record what happened first; several have outlived their condition.
-- Anything else — `PARTIAL`, `PROPOSED`, `NOT STARTED` — stays in its owning batch, even when a
-  dependency is not ready. A blocked dependency is not a reason to move the file.
+- **The only remaining work is `## Blocked on` items** (R6) → `git mv` to
+  `docs/PRDs/BLOCKED/<reason>/`, the folder naming what unblocks it (`requires-physical-device`,
+  `requires-release-credentials`, `requires-owner-decision`, …), then fix the links. The owner
+  validates it later. With any doable work left the PRD stays where it is and lists its blocked
+  items; only the last box is blocked, not the file.
+- Try a blocked reason once and record what happened before filing under it; several have outlived
+  their condition.
+- Anything else — `PARTIAL`, `PROPOSED`, `NOT STARTED` — stays in its owning batch.
 
 Grouped batches move whole, and never while any PRD in them is partial. A PRD that finishes ahead
 of its siblings is archived on its own.
 
 ## Checklist for this skill
 
-- [ ] `pnpm prd:progress <file>` exits 0 before work starts (phase boxes exist)
+- [ ] `pnpm prd:progress <file>` exits 0 before work starts, and names no proof-less box
 - [ ] Every compound acceptance criterion is split into one-claim boxes
+- [ ] Every box names its `proof:`; out-of-reach work sits under `## Blocked on`, not in a box
+- [ ] No ceremony boxes (revert check, reviewer PASS, evidence record, negative control, census)
 - [ ] One draft PR open, PRD checklist copied into its body
 - [ ] Each landed phase ticked in both PRD and PR, in the same push, with evidence beside it
 - [ ] Progress label re-applied on every push
-- [ ] PRD `git mv`d to `done/` in the same PR, status line agreeing with the boxes
+- [ ] PRD `git mv`d to `done/` in the same PR — or to `BLOCKED/<reason>/` when only blocked work is
+      left — with the status line agreeing with the boxes

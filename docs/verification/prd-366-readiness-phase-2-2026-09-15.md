@@ -1,7 +1,7 @@
 # PRD-366 phase 2 evidence — the same distributed game plays on desktop and Android
 
 Date: 2026-09-15
-PRD: [PRD-366](../PRDs/production-readiness/PRD-366-one-consumer-game-proves-supported-platforms.md)
+PRD: [PRD-366](../PRDs/production-readiness/critical/PRD-366-one-consumer-game-proves-supported-platforms.md)
 Branch: `prd-366/consumer-gameplay-native` (base `origin/develop` @ `26bf28a66`)
 Layer: engine (`packages/runtime-native/` verifier + `scripts/` consumer gate + the native workflow).
 

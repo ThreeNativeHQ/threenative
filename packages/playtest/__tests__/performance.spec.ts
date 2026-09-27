@@ -173,7 +173,7 @@ async function renderControl(
     callbacks.shift()?.(0);
     callbacks.shift()?.(16);
     callbacks.shift()?.(32);
-    return await bridge().sample({});
+    return await bridge().sample({ include: ["runtimeDiagnosticsSeries"] });
   } finally {
     game.stop();
     if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");

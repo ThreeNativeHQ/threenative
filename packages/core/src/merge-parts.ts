@@ -3,7 +3,9 @@ import {
   type BufferGeometry,
   Color,
   type ColorRepresentation,
+  type Material,
   Matrix4,
+  Mesh,
   Object3D,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -37,6 +39,19 @@ export interface IMergePartsOptions {
    */
   readonly preserve?: readonly ("uv" | "normal")[];
 }
+
+export interface IMergeByMaterialOptions {
+  /** Named in the error when a group's merge is refused. Say what was being built. */
+  readonly label: string;
+  /**
+   * Leaves one mesh out of its material's group and out of the result — a piece that moves at run
+   * time, or one a capture script addresses by name.
+   */
+  readonly skip?: (mesh: Mesh) => boolean;
+}
+
+/** The channels `mergeByMaterial` keeps, in the order it asks `mergeParts` for them. */
+const MERGEABLE_CHANNELS = ["normal", "uv"] as const;
 
 function placementMatrix(part: IMergePart): Matrix4 | undefined {
   if (!(part instanceof Object3D)) return part.matrix;
@@ -139,4 +154,59 @@ export function mergeParts(
   }
   if (!preserve.includes("normal")) merged.computeVertexNormals();
   return merged;
+}
+
+/**
+ * Bake a hierarchy's static meshes into one mesh per material, transforms and all.
+ *
+ * A building or a ship is dozens of boxes and cylinders that never move relative to each other, and
+ * every one of them is a draw call. Grouping by material and merging each group is the ordinary
+ * fix, and the ordinary fix is thirty lines an agent rewrites in every game, each time slightly
+ * differently: walk the tree, group by material, bake `matrixWorld` into the vertices, hand the
+ * group to `mergeParts`, build a mesh on the game's own material. The parts here are the same
+ * `IMergePart` list, so a game that already merges by hand gets the same refusals — a group that
+ * cannot merge throws naming `label:material`, not silently vanishing.
+ *
+ * Nothing here decides how anything looks: the material is the game's own instance, the geometry is
+ * exactly what was authored, and the group split follows the materials the game already made.
+ *
+ * `normal` survives when every mesh in a group carries it and is recomputed otherwise. `uv` survives
+ * when any mesh carries it, so a group where only some do is the refusal `mergeParts` raises, never
+ * a texture silently left unmapped. Skinned and instanced meshes are left alone — their vertices are not
+ * theirs to bake.
+ */
+export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] {
+  root.updateMatrixWorld(true);
+  const toRoot = new Matrix4().copy(root.matrixWorld).invert();
+  const groups = new Map<Material, Mesh[]>();
+  root.traverse((object) => {
+    // three's own discriminators, read structurally the way `assets.ts` reads `isTexture`.
+    const renderable = object as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean };
+    if (!renderable.isMesh || renderable.isSkinnedMesh || renderable.isInstancedMesh) return;
+    if (Array.isArray(renderable.material) || options.skip?.(renderable) === true) return;
+    const group = groups.get(renderable.material);
+    if (group === undefined) groups.set(renderable.material, [renderable]);
+    else group.push(renderable);
+  });
+  return [...groups].map(([material, meshes], index) => {
+    // A normal missing from one piece is recomputed; a uv missing from one piece is a refusal, since
+    // dropping it would leave the group's texture unmapped without a word.
+    const has = (mesh: Mesh, channel: "normal" | "uv") =>
+      mesh.geometry.getAttribute(channel) !== undefined;
+    const preserve = MERGEABLE_CHANNELS.filter((channel) =>
+      channel === "uv"
+        ? meshes.some((mesh) => has(mesh, channel))
+        : meshes.every((mesh) => has(mesh, channel)),
+    );
+    return new Mesh(
+      mergeParts(
+        meshes.map((mesh) => ({
+          geometry: mesh.geometry,
+          matrix: toRoot.clone().multiply(mesh.matrixWorld),
+        })),
+        { label: `${options.label}:${material.name || index}`, preserve },
+      ),
+      material,
+    );
+  });
 }

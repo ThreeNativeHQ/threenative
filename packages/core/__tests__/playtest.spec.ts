@@ -11,9 +11,10 @@ import {
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
+  Texture,
   type Vector2,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 import { type IGamePluginHooks, defineGame } from "../src/game.js";
 import { playtest } from "../src/playtest.js";
@@ -230,7 +231,9 @@ describe("playtest plugin", () => {
       await game.start();
       callbacks.shift()?.(0);
       callbacks.shift()?.(16);
-      const series = (await bridge().sample({})).runtimeDiagnosticsSeries ?? [];
+      const series =
+        (await bridge().sample({ include: ["runtimeDiagnosticsSeries"] }))
+          .runtimeDiagnosticsSeries ?? [];
       // The frame budget is on by default, so each sample also carries its phase split.
       expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
       expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
@@ -288,7 +291,7 @@ describe("playtest plugin", () => {
     try {
       const installed = bridge();
       const description = await installed.describe();
-      const snapshot = await installed.sample({});
+      const snapshot = await installed.sample({ include: ["runtimeDiagnosticsSeries"] });
       const expected = [
         "camera.observe",
         "entity.bounds",
@@ -333,13 +336,26 @@ describe("playtest plugin", () => {
             },
           },
         },
-        audio: { paused: 0, pooled: 0, queued: 0, unsupported: [], voices: 0 },
+        audio: {
+          cues: {},
+          paused: 0,
+          pooled: 0,
+          queued: 0,
+          recentCues: [],
+          unsupported: [],
+          voices: 0,
+        },
         contacts: [],
         states: {},
         tags: {},
         world: { seed: null },
       });
-      expect(snapshot.resources).toEqual({ GameState: { score: 0 }, state: { score: 0 } });
+      // `assets` is the loader's own ledger and is empty for a scene that loads none.
+      expect(snapshot.resources).toEqual({
+        GameState: { score: 0 },
+        assets: {},
+        state: { score: 0 },
+      });
       expect(snapshot.runtimeDiagnosticsSeries).toEqual([]);
       expect(drawingBufferReads).toBeGreaterThan(0);
     } finally {
@@ -632,6 +648,59 @@ describe("playtest plugin", () => {
     }
   });
 
+  it("publishes where every asset was served from, addressed by its logical path", async () => {
+    // The record a scenario asserts on. It has to survive the bridge's JSON serialisation on
+    // every target, and it has to be addressable by a dotted observation path even though the
+    // logical path it is keyed by is itself dotted.
+    vi.stubGlobal("document", {
+      body: { append: () => undefined },
+      location: { href: "file:///game.html" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("assets.manifest.json")
+          ? Response.json({
+              entries: { "native-proof.png": { output: "native-proof.a1b2c3.png" } },
+              version: 1,
+            })
+          : new Response(new Uint8Array([137, 80, 78, 71])),
+      ),
+    );
+    class LoadingScene extends Scene {
+      override async load(ctx: ICtx): Promise<void> {
+        await ctx.assets.texture("native-proof.png");
+      }
+    }
+    const game = defineGame({
+      // The decode is stubbed; the url the manifest named is the thing under test.
+      assets: { texture: async () => new Texture() },
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { load: LoadingScene },
+      start: "load",
+    });
+
+    await game.start();
+    try {
+      const resources = (await bridge().sample({})).resources;
+      expect(resources?.assets).toEqual({
+        "native-proof": { png: { url: "native-proof.a1b2c3.png", via: "manifest" } },
+      });
+      // Read the way `assert.resources` does: split the path on dots and walk the value.
+      const read = (path: string): unknown =>
+        path.split(".").reduce<unknown>((value, part) => {
+          if (typeof value !== "object" || value === null) return undefined;
+          return (value as Record<string, unknown>)[part];
+        }, resources?.assets);
+      expect(read("native-proof.png.via")).toBe("manifest");
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps state resource snapshots stable across a scene goto", async () => {
     type ScreenState = { characterName: string; screen: "menu" | "play" };
     class MenuScene extends Scene<ScreenState> {
@@ -762,6 +831,160 @@ describe("playtest holdUntilAttached", () => {
       expect(description.capabilities).toContain("runtime.components");
     } finally {
       game.stop();
+      if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
+      else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
+  it("collects per-frame render samples for a native endpoint run", async () => {
+    // The device and desktop lanes never set the browser's runner-expected global: a native host
+    // announces itself through `TN_PLAYTEST_ENDPOINT`, which is why this run carries one and not
+    // the other. Collection used to key off the browser half alone, so a `--target desktop` run
+    // answered an advertised `runtime.performance` with an empty series and every
+    // `assert.performance` on a native target failed as unobserved. Nothing here calls
+    // `enableRuntimeDiagnostics`; the announcement is the only switch.
+    const host = globalThis as Record<string, unknown>;
+    const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
+    host.TN_PLAYTEST_ENDPOINT = "native://test-mailbox";
+    const canvas = testCanvas();
+    const callbacks: Array<(time: number) => void> = [];
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: () => undefined,
+    });
+    const game = defineGame({
+      initialState: {},
+      // The boot hold is the neighbouring test's subject; this one is about collection, and
+      // holding would need a describe handshake to release it.
+      plugins: [playtest({ holdUntilAttached: false })],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          info: { render: { calls: 99, drawCalls: 7, triangles: 42 } },
+          render: () => undefined,
+          setSize: () => undefined,
+          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+        }),
+      },
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      // Enough frames to leave the first (zero-delta) frame behind: the series is one sample per
+      // presented frame with a positive delta, so a single frame proves nothing either way.
+      for (let i = 0; i < 6; i++) callbacks.shift()?.(i * 16);
+      const series =
+        (await bridge().sample({ include: ["runtimeDiagnosticsSeries"] }))
+          .runtimeDiagnosticsSeries ?? [];
+      // A non-empty series, not `every(...)` on an empty array: a vacuous green here is the
+      // defect this test exists for.
+      expect(series.length).toBeGreaterThan(0);
+      expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
+    } finally {
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
+      else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
+  it("freezes the live clock for an announced runner, so live frames cannot advance the run", async () => {
+    // The runner holds the boot and then pumps live frames through the startup compile wait.
+    // Every one of those frames used to run `onUpdate` off wall clock, so a tick-counting
+    // scenario began with game time it never asked for: racing's 3-lap outcome needs 47s of a
+    // 90s limit and DNFs early when the loaded startup wait spends the rest. The announcement is
+    // the switch, and the manual clock stays the only thing that moves the simulation.
+    const host = globalThis as Record<string, unknown>;
+    const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
+    host.TN_PLAYTEST_ENDPOINT = "native://test-mailbox";
+    let updates = 0;
+    const dts: number[] = [];
+    const canvas = testCanvas();
+    const callbacks: Array<(time: number) => void> = [];
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: () => undefined,
+    });
+    class CountingScene extends Scene {
+      override update(_ctx: unknown, dt: number): void {
+        updates += 1;
+        dts.push(dt);
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: false })],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          info: { render: { calls: 0, drawCalls: 0, triangles: 0 } },
+          render: () => undefined,
+          setSize: () => undefined,
+          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+        }),
+      },
+      scenes: { test: CountingScene },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      // Two seconds of live frames: 120 updates if the wall clock still drove the loop. What is
+      // left is the frozen clock's fixed settling pass, so the scene still lays out its per-frame
+      // state — a game whose camera-parented overlay is placed in `update` reads `NaN` bounds
+      // without it — and no real second reaches the simulation.
+      for (let i = 0; i < 120; i++) callbacks.shift()?.(i * 16.6667);
+      expect(updates).toBe(60);
+      expect(new Set(dts)).toEqual(new Set([1 / 60]));
+
+      // The runner's own advance is what moves the simulation from here.
+      await bridge().advance?.(3);
+      expect(updates).toBe(63);
+      for (let i = 120; i < 240; i++) callbacks.shift()?.(i * 16.6667);
+      expect(updates).toBe(63);
+    } finally {
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
       if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
       else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
     }

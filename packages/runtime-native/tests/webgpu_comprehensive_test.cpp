@@ -571,7 +571,7 @@ constexpr const char* kScript = R"JS((async () => {
     if (globalThis.createOffscreenCanvas2D) {
       globalThis.createOffscreenCanvas2D(64, 64);
     }
-    if (globalThis.__decodeImageData) {
+    if (globalThis.__decodeImageDataAsync) {
       const png1x1 = new Uint8Array([
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
         0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
@@ -580,8 +580,8 @@ constexpr const char* kScript = R"JS((async () => {
         0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
         0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
       ]);
-      globalThis.__decodeImageData(png1x1.buffer);
-      globalThis.__decodeImageData(new ArrayBuffer(10));
+      globalThis.__decodeImageDataAsync(png1x1.buffer, () => {});
+      globalThis.__decodeImageDataAsync(new ArrayBuffer(10), () => {});
     }
     if (typeof createImageBitmap !== "undefined") {
       try {

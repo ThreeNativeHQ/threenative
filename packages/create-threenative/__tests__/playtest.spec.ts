@@ -80,6 +80,9 @@ describe("starter playtest proof", () => {
       expect(packageJson.scripts.test).toContain('--scenario "playtests/*.playtest.json"');
       expect(packageJson.scripts.test).toContain("--browser-recipe webgpu");
       expect(packageJson.scripts.test).toContain("--headed");
+      expect(packageJson.scripts.test).toContain("pnpm build:web &&");
+      expect(packageJson.scripts.test).toContain("vite preview --host");
+      expect(packageJson.scripts.test).not.toContain("pnpm dev");
       expect(packageJson.scripts.test).not.toContain("4173");
     },
   );
@@ -403,7 +406,7 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const seed = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+      path.resolve("packages/create-threenative/template-playtests/starter/seed.playtest.json"),
       "utf8",
     );
     const pickupAudio = await readFile(
@@ -425,7 +428,7 @@ describe("starter playtest proof", () => {
   it("should assert the seeded level range instead of a generator draw", async () => {
     const seed = JSON.parse(
       await readFile(
-        path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+        path.resolve("packages/create-threenative/template-playtests/starter/seed.playtest.json"),
         "utf8",
       ),
     ) as {

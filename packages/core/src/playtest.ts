@@ -14,6 +14,7 @@ import {
 } from "@threenative/playtest/protocol";
 import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenative/playtest/three";
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
+import type { IAssetLoader } from "./assets.js";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
@@ -138,11 +139,23 @@ export function playtest<
         });
       }
       installRuntimeChannels(installation.bridge, runtime);
-      // A runner announced itself before the page loaded: it is the one consumer of per-frame
-      // render samples, so collection turns on exactly for playtest runs and stays off for
-      // every plain `pnpm dev` frame.
-      if ((globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true)
+      // A runner announced itself: it is the one consumer of per-frame render samples, so
+      // collection turns on exactly for playtest runs and stays off for every plain `pnpm dev`
+      // frame. It reads the same predicate as the boot hold below, because gating collection on
+      // the browser's half alone left every device and desktop run with an empty
+      // `runtimeDiagnosticsSeries` under an advertised `runtime.performance` — a native host
+      // announces itself through `TN_PLAYTEST_ENDPOINT`, not through the expected global.
+      if (runnerAnnounced()) {
         runtime?.enableRuntimeDiagnostics?.();
+        // Same predicate, same reason, one window later. The hold below covers the boot, and the
+        // hold ends the moment the runner attaches -- but the runner then pumps live frames for
+        // the rAF warmup and for the whole startup wait before it takes its first observation, and
+        // every one of those frames advanced the game on the wall clock. So the simulation time a
+        // tick-counting scenario sees before its own first tick was a function of how fast the
+        // machine booted. The loop is frozen here instead: from the first frame of the run, ticks
+        // are the only clock, which is what the run is already counting.
+        runtime?.freezeClock?.();
+      }
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
@@ -211,6 +224,20 @@ export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EX
  */
 function shouldHoldUntilAttached(options: IPlaytestOptions): boolean {
   if (options.holdUntilAttached !== undefined) return options.holdUntilAttached;
+  return runnerAnnounced();
+}
+
+/**
+ * Whether a runner announced itself, whichever lane it came from.
+ *
+ * Browser runners set the expected global before navigation; a native host exposes
+ * `TN_PLAYTEST_ENDPOINT` when a device or desktop transport is attached. Both decisions that
+ * depend on an announcement — holding the boot, and turning per-frame render collection on — read
+ * this one predicate: they were written separately once, and the collection half shipped with only
+ * the browser branch, so every device and desktop run answered an advertised
+ * `runtime.performance` with an empty series.
+ */
+function runnerAnnounced(): boolean {
   const host = globalThis as Record<string, unknown>;
   return host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true || host.TN_PLAYTEST_ENDPOINT !== undefined;
 }
@@ -644,9 +671,35 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // scenarios have migrated, then remove the alias in a future breaking release.
         ["state", value],
         ["GameState", value],
+        // Where every asset was actually served from, on every target and not only in a browser
+        // console log: a game whose manifest never loaded runs on the uncompiled source directory
+        // and looks healthy, and without this nothing observable says so.
+        ["assets", assetResolutions(ctx.assets)],
       ]);
     },
   };
+}
+
+/**
+ * The asset loader's `resolved` ledger, nested on the dots of each logical path.
+ *
+ * An observation path addresses a value with dots, so a logical path — which is itself dotted —
+ * cannot be a key here without being split first. Nesting keeps it lossless and makes
+ * `path: "native-proof.png.via"` read as what it is.
+ */
+function assetResolutions(assets: IAssetLoader): Record<string, JsonValue> {
+  const nested: Record<string, JsonValue> = {};
+  for (const [logical, record] of assets.resolved) {
+    const parts = logical.split(".");
+    let node = nested;
+    for (const part of parts.slice(0, -1)) {
+      const child = (node[part] ?? {}) as Record<string, JsonValue>;
+      node[part] = child;
+      node = child;
+    }
+    node[parts.at(-1) ?? logical] = { url: record.url, via: record.via };
+  }
+  return nested;
 }
 
 function cloneJsonValue(value: JsonValue): JsonValue {

@@ -2,6 +2,7 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { createHash } from "node:crypto";
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
 import {
@@ -20,6 +21,35 @@ const fourKb = [
   '    LOAD off 0x0 vaddr 0x0 paddr 0x0 align 2**12',
   '    LOAD off 0x1000 vaddr 0x1000 paddr 0x1000 align 2**12',
 ].join('\n');
+
+test('artifact CLI refuses missing artifacts and unknown arguments', () => {
+  const script = fileURLToPath(new URL('../scripts/check-android-16kb-alignment.mjs', import.meta.url));
+  for (const [args, message] of [
+    [[], /Usage: check-android-16kb-alignment/u],
+    [['/missing/game.apk'], /Android 16 KB artifact check cannot read/u],
+    [['/missing/game.aab'], /AAB verification requires --bundletool/u],
+    [['--unknown'], /Unknown option/u],
+  ]) {
+    assert.throws(() => execFileSync(process.execPath, [script, ...args], { stdio: 'pipe' }), (error) => {
+      assert.equal(error.status, 1);
+      assert.match(error.stderr.toString(), message);
+      return true;
+    });
+  }
+});
+
+test('artifact CLI executes through an installed-package directory link', () => {
+  const root = makeTempDirSync('tn-android-artifact-cli-');
+  const source = fileURLToPath(new URL('../scripts/', import.meta.url));
+  const link = join(root, 'installed runtime');
+  symlinkSync(source, link, 'junction');
+  assert.throws(() => execFileSync(process.execPath,
+    [join(link, 'check-android-16kb-alignment.mjs')], { stdio: 'pipe' }), (error) => {
+    assert.equal(error.status, 1);
+    assert.match(error.stderr.toString(), /Usage: check-android-16kb-alignment/u);
+    return true;
+  });
+});
 
 test('accepts 16 KB-aligned LOAD segments', () => {
   assert.deepEqual(parseLoadSegmentAlignments(aligned, 'libv8android.so'), [ANDROID_16KB_ALIGNMENT, ANDROID_16KB_ALIGNMENT]);

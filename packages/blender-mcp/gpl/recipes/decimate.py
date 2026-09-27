@@ -23,7 +23,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import bpy  # noqa: E402
 
-from _common import export, fail, load, meshes, request, triangles, emit  # noqa: E402
+from _common import (
+    collapse_decimate,
+    emit,
+    export,
+    fail,
+    load,
+    meshes,
+    request,
+    triangles,
+)  # noqa: E402
 
 payload = request()
 source = payload.get("source")
@@ -43,10 +52,7 @@ if before == 0:
     fail("'%s' has no triangles to decimate" % source)
 
 for item in meshes():
-    modifier = item.modifiers.new(name="TNDecimate", type="DECIMATE")
-    modifier.decimate_type = "COLLAPSE"
-    modifier.ratio = float(ratio)
-    modifier.use_collapse_triangulate = True
+    collapse_decimate(item, ratio)
 
 after = triangles()
 export(out)

@@ -1,5 +1,6 @@
 #include "mystral/runtime.h"
 #include "mystral/platform/input.h"
+#include "mystral/platform/ui_overlay.h"
 
 #include <SDL3/SDL_main.h>
 
@@ -110,6 +111,30 @@ int main(int, char**) {
             return 2;
         }
 
+        NSString* renderer = info[@"TNUIRenderer"] ?: @"native";
+        if (![renderer isEqualToString:@"native"] && ![renderer isEqualToString:@"web"]) {
+            NSLog(@"TN_UI_RENDERER_INVALID: %@", renderer);
+            [[NSNotificationCenter defaultCenter] removeObserver:safeAreaObserver];
+            return 2;
+        }
+        if ([renderer isEqualToString:@"web"]) {
+            NSString* uiRoot = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"ui"];
+            BOOL directory = NO;
+            const BOOL hasIndex =
+                [[NSFileManager defaultManager] fileExistsAtPath:[uiRoot stringByAppendingPathComponent:@"index.html"]
+                                                     isDirectory:&directory];
+            if (!hasIndex || directory) {
+                NSLog(@"TN_UI_BUNDLE_MISSING: selected WebUI has no ui/index.html");
+                [[NSNotificationCenter defaultCenter] removeObserver:safeAreaObserver];
+                return 2;
+            }
+            if (!mystral::platform::attachIosUiOverlay(uiRoot.UTF8String)) {
+                NSLog(@"TN_UI_OVERLAY_FAILED: selected WebUI could not attach");
+                [[NSNotificationCenter defaultCenter] removeObserver:safeAreaObserver];
+                return 2;
+            }
+        }
+
         const char* endpointValue = std::getenv("TN_PLAYTEST_ENDPOINT");
         const std::string endpoint = endpointValue == nullptr ? std::string() : endpointValue;
         const std::string root = mailboxRoot();
@@ -125,9 +150,12 @@ int main(int, char**) {
         }
         if (!runtime->evalScript(script, scriptPath.UTF8String)) {
             NSLog(@"TN_IOS_PROOF_FAILED: JavaScript evaluation failed");
+            mystral::platform::detachIosUiOverlay();
+            [[NSNotificationCenter defaultCenter] removeObserver:safeAreaObserver];
             return 2;
         }
         runtime->run();
+        mystral::platform::detachIosUiOverlay();
         [[NSNotificationCenter defaultCenter] removeObserver:safeAreaObserver];
         return runtime->getExitCode();
     }

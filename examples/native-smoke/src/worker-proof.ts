@@ -27,10 +27,12 @@ self.onmessage = function(event) {
     return;
   }
   if (input.kind !== "compute") throw new Error("unexpected worker proof message");
+  console.info("TN_NATIVE_WORKER_PROOF_COMPUTE_ENTER:" + JSON.stringify({ atMs: Date.now(), iterations: input.iterations }));
   var checksum = input.seed >>> 0;
   for (var index = 0; index < input.iterations; index += 1) {
     checksum = (Math.imul((checksum ^ index) >>> 0, 1664525) + 1013904223) >>> 0;
   }
+  console.info("TN_NATIVE_WORKER_PROOF_COMPUTE_COMPLETE:" + JSON.stringify({ atMs: Date.now(), checksum: checksum }));
   postMessage({
     kind: "result",
     order: input.order,
@@ -38,6 +40,7 @@ self.onmessage = function(event) {
     outputChecksum: checksum,
     workerIdentity: typeof document === "undefined" ? "dedicated-worker" : "game-thread"
   });
+  console.info("TN_NATIVE_WORKER_PROOF_RESULT_POSTED:" + JSON.stringify({ atMs: Date.now() }));
   postMessage({ kind: "late", order: input.order + 1 });
 };
 `;
@@ -78,9 +81,10 @@ interface IWorkerLateMessage {
 type IWorkerMessage = IWorkerLateMessage | IWorkerResultMessage | IWorkerStartedMessage;
 
 function fail(worker: Worker, reason: string): never {
-  worker.terminate();
   const marker = `RED observed: ${reason}`;
-  console.error(`TN_NATIVE_WORKER_PROOF_FAIL:${marker}`);
+  // Native termination joins the worker; record the deadline before that wait can obscure it.
+  console.error(`TN_NATIVE_WORKER_PROOF_FAIL:${marker} atMs=${Date.now()}`);
+  worker.terminate();
   throw new Error(marker);
 }
 
@@ -180,7 +184,9 @@ export function startWorkerProof(
           frame - startedFrame >= WORKER_MINIMUM_FRAMES
         ) {
           computeDispatched = true;
-          console.info(`TN_NATIVE_WORKER_PROOF_COMPUTE_DISPATCH:${JSON.stringify({ frame })}`);
+          console.info(
+            `TN_NATIVE_WORKER_PROOF_COMPUTE_DISPATCH:${JSON.stringify({ frame, atMs: Date.now() })}`,
+          );
           worker.postMessage({
             kind: "compute",
             iterations: WORKER_ITERATIONS,

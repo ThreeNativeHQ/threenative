@@ -378,7 +378,25 @@ test('native workflow verifies a freshly scaffolded starter on Linux', () => {
     workflow,
     /starter-linux:[\s\S]*uses: \.\/\.github\/actions\/scaffold-from-tarballs[\s\S]*template: starter[\s\S]*test:native/,
   );
-  assert.match(workflow, /native-starter-linux/);
+  assert.match(workflow, /native-starter-\$\{\{ matrix\.platform \}\}/);
+});
+
+test('native workflow proves the Linux release container on x64 and arm64', () => {
+  const workflow = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
+  const starter = workflow.match(/ {2}starter-linux:\n([\s\S]*?)\n {2}ios-simulator:/u)?.[1];
+  assert.ok(starter);
+  // The arm64 leg is the point of the matrix: a free hosted ARM runner, the same release steps,
+  // and the same scope selection as the x64 leg because it is the same job.
+  assert.match(starter, /- platform: linux-x64\n\s+runner: ubuntu-24\.04/u);
+  assert.match(starter, /- platform: linux-arm64\n\s+runner: ubuntu-24\.04-arm/u);
+  assert.match(starter, /runs-on: \$\{\{ matrix\.runner \}\}/u);
+  // The runner has no GPU, so the software Vulkan ICD and its X display are provisioned.
+  assert.match(starter, /mesa-vulkan-drivers/u);
+  assert.match(starter, /xvfb/u);
+  // The PRD states "lavapipe software Vulkan" only because the adapter is recorded, not assumed.
+  assert.match(starter, /Record the WebGPU adapter the relocated release bound/u);
+  assert.match(starter, /Adapter\|Vendor\|Backend/u);
+  assert.match(starter, /adapter\.txt/u);
 });
 
 test('native workflow retains starter evidence when verification fails', () => {

@@ -6,7 +6,7 @@ description: Use the portable ThreeNative ctx lifecycle, scheduling, randomness,
 # ThreeNative context surface
 
 These are properties on `ctx`, never imports; use them before writing equivalent game plumbing.
-The recipes are in `agent-docs/ctx-cookbook.md` and imports still require
+The recipes are in `node_modules/create-threenative/agent-docs/references/ctx-cookbook.md` and imports still require
 `engine_search_capabilities`.
 
 | Use | Instead of | Contract |

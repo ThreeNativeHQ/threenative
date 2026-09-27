@@ -634,6 +634,495 @@ describe("pipeline census", () => {
     expect(report.incompleteReasons).toContain("no pipeline creations observed");
   });
 
+  it("rejects an invalid event limit", () => {
+    expect(() => createPipelineCensus({ kind: "webgpu", limit: 0 })).toThrow(
+      /TN_PIPELINE_CENSUS_LIMIT_INVALID/u,
+    );
+    expect(() => createPipelineCensus({ kind: "webgpu", limit: 1.5 })).toThrow(
+      /TN_PIPELINE_CENSUS_LIMIT_INVALID/u,
+    );
+  });
+
+  it("marks a non-object backend install as unsupported and ignores a second renderer", () => {
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend: 42 });
+    census.installRenderer({ backend: 42 });
+
+    const report = census.snapshot();
+    expect(report.unsupported).toBe(true);
+    expect(report.incompleteReasons).toContain("backend creation observation unavailable");
+  });
+
+  it("reports a device with no observable methods as unobserved", () => {
+    const census = createPipelineCensus({ kind: "webgpu" });
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => undefined,
+      get: () => ({ pipeline: {} }),
+      device: {},
+    };
+    census.installRenderer({ backend });
+    backend.createRenderPipeline({}, null);
+
+    const report = census.snapshot();
+    expect(report.complete).toBe(false);
+    expect(report.incompleteReasons).toContain("device creation observation unavailable");
+  });
+
+  it("records a silently refused device method as unobservable", () => {
+    const { device: real } = webgpuStub();
+    const device = new Proxy(real, {
+      get: (target, property, receiver) => Reflect.get(target, property, target),
+      set: (target, property, value) => {
+        if (property === "createRenderPipeline") return true;
+        return Reflect.set(target, property, value);
+      },
+    });
+    const census = createPipelineCensus({ kind: "webgpu" });
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => undefined,
+      get: () => ({ pipeline: {} }),
+      device,
+    };
+    census.installRenderer({ backend });
+    backend.createRenderPipeline({}, null);
+    census.dispose();
+
+    const report = census.snapshot();
+    expect(report.complete).toBe(false);
+    expect(report.incompleteReasons).toContain(
+      "device method createRenderPipeline could not be observed",
+    );
+  });
+
+  it("reports async backend creations while their promises are still pending", () => {
+    const backend = {
+      createRenderPipeline: (
+        _renderObject: Record<string, unknown>,
+        promises: Promise<unknown>[] | null,
+      ) => {
+        if (Array.isArray(promises)) promises.push(new Promise<unknown>(() => undefined));
+      },
+      get: () => ({ pipeline: {} }),
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(
+          args[0] as Record<string, unknown>,
+          args[1] as Promise<unknown>[] | null,
+        );
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject(
+      renderObject(
+        { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
+        {},
+        {},
+      ),
+      [],
+    );
+
+    const report = census.snapshot();
+    expect(report.counts.pending).toBe(1);
+    expect(report.incompleteReasons).toContain("1 pipeline event(s) are pending");
+    expect(report.events[0]?.status).toBe("pending");
+  });
+
+  it("attributes a device creation nested inside a backend creation", () => {
+    const { backend, device, pipelines } = webgpuStub();
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend });
+    const hooked = device.createRenderPipeline;
+    device.createRenderPipeline = (descriptor: Record<string, unknown>) => {
+      hooked(descriptor);
+      return hooked(descriptor);
+    };
+
+    pipelines.getForRender(
+      renderObject(
+        { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
+        {},
+        {},
+      ),
+      null,
+    );
+
+    const report = census.snapshot();
+    expect(report.incompleteReasons).toContain(
+      "1 device pipeline creation(s) were nested inside a backend creation",
+    );
+  });
+
+  it("fails a backend async creation whose promise rejects", async () => {
+    const backend = {
+      createRenderPipeline: (
+        _renderObject: Record<string, unknown>,
+        promises: Promise<unknown>[] | null,
+      ) => {
+        if (Array.isArray(promises)) promises.push(Promise.reject(new Error("async-nope")));
+      },
+      get: () => ({ pipeline: {} }),
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(
+          args[0] as Record<string, unknown>,
+          args[1] as Promise<unknown>[] | null,
+        );
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject(
+      renderObject(
+        { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
+        {},
+        {},
+      ),
+      [],
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const report = census.snapshot();
+    expect(report.counts).toMatchObject({ failures: 1, pending: 0 });
+    expect(report.events[0]?.status).toBe("failed");
+    expect(report.events[0]?.error).toBe("async-nope");
+    expect(report.incompleteReasons).toContain("1 pipeline creation(s) failed");
+  });
+
+  it("fails closed when a sync render creation throws", () => {
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => {
+        throw new Error("sync-nope");
+      },
+      get: () => ({ pipeline: {} }),
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(...args);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+
+    expect(() =>
+      raw.renderObject(
+        renderObject(
+          { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
+          {},
+          {},
+        ),
+        null,
+      ),
+    ).toThrow("sync-nope");
+    const report = census.snapshot();
+    expect(report.counts.failures).toBe(1);
+    expect(report.events[0]?.error).toBe("sync-nope");
+  });
+
+  it("fails closed when a compute creation throws", () => {
+    const backend = {
+      createComputePipeline: (..._args: unknown[]) => {
+        throw new Error("compute-nope");
+      },
+      get: () => ({ pipeline: {} }),
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend });
+
+    expect(() => backend.createComputePipeline({})).toThrow("compute-nope");
+    const report = census.snapshot();
+    expect(report.counts.failures).toBe(1);
+    expect(report.events[0]?.error).toBe("compute-nope");
+  });
+
+  it("observes a direct async device creation once its promise settles", async () => {
+    const { backend, device } = webgpuStub();
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend });
+
+    const pending = device.createRenderPipelineAsync({
+      label: "direct-async",
+      vertex: { module: {} },
+      fragment: { module: {} },
+    }) as Promise<unknown>;
+    expect(census.snapshot().counts.pending).toBe(1);
+    await pending;
+
+    const report = census.snapshot();
+    expect(report.counts).toMatchObject({ creations: 1, directCreations: 1, pending: 0 });
+    expect(report.events[0]).toMatchObject({
+      label: "direct-async",
+      mode: "async",
+      status: "created",
+    });
+  });
+
+  it("fails a direct async device creation whose promise rejects", async () => {
+    const { device } = webgpuStub();
+    device.createRenderPipelineAsync = async (_descriptor: Record<string, unknown>) => {
+      throw new Error("device-async-nope");
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend: { device } });
+
+    const pending = device.createRenderPipelineAsync({ label: "direct-async-reject" });
+    await expect(pending).rejects.toThrow("device-async-nope");
+    await Promise.resolve();
+
+    const report = census.snapshot();
+    expect(report.counts.failures).toBe(1);
+    expect(report.events[0]?.error).toBe("device-async-nope");
+  });
+
+  it("times an async device method that returns no promise as a synchronous call", () => {
+    const { device } = webgpuStub();
+    device.createRenderPipelineAsync = ((_descriptor: Record<string, unknown>) => ({})) as never;
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend: { device } });
+
+    device.createRenderPipelineAsync({ label: "not-a-promise" });
+
+    const report = census.snapshot();
+    expect(report.events[0]).toMatchObject({ mode: "sync", status: "created" });
+    expect(report.events[0]?.promiseMs).toBeUndefined();
+  });
+
+  it("fails a direct device creation whose call throws", () => {
+    const { device } = webgpuStub();
+    device.createRenderPipeline = (_descriptor: Record<string, unknown>) => {
+      throw new Error("device-sync-nope");
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend: { device } });
+
+    expect(() => device.createRenderPipeline({ label: "direct-throw" })).toThrow(
+      "device-sync-nope",
+    );
+    const report = census.snapshot();
+    expect(report.counts.failures).toBe(1);
+  });
+
+  it("hashes stage sources when the backend get throws", () => {
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => undefined,
+      get: (_value: unknown): unknown => {
+        throw new Error("get-nope");
+      },
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(...args);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject(
+      renderObject(
+        { vertexProgram: { code: "hello" }, fragmentProgram: { code: "hello 🌍" } },
+        {},
+        {},
+      ),
+      null,
+    );
+
+    const report = census.snapshot();
+    expect(report.events[0]?.vertex).toEqual({ bytes: 5, hash: "a430d84680aabd0b" });
+    expect(report.events[0]?.status).toBe("failed");
+  });
+
+  it("keeps the logical pipeline identity outside webgpu reconciliation", () => {
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => undefined,
+      get: () => ({ pipeline: {} }),
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(...args);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgl2" });
+    census.installRenderer(raw);
+    raw.renderObject(
+      renderObject(
+        { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
+        {},
+        {},
+      ),
+      null,
+    );
+
+    const report = census.snapshot();
+    expect(report.complete).toBe(true);
+    expect(report.events[0]?.pipelineIdentity).toMatch(/^logical-pipeline-/u);
+  });
+
+  it("reuses identities for a repeated pipeline object and names a keyless one unknown", () => {
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => undefined,
+      get: () => ({ pipeline: {} }),
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(...args);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgl2" });
+    census.installRenderer(raw);
+    const pipeline = {
+      vertexProgram: { code: source("v") },
+      fragmentProgram: { code: source("f") },
+    };
+    raw.renderObject(renderObject(pipeline, {}, {}), null);
+    raw.renderObject(renderObject(pipeline, {}, {}), null);
+    raw.renderObject({ object: {}, material: {} }, null);
+
+    const report = census.snapshot();
+    expect(report.events).toHaveLength(3);
+    expect(report.events[0]?.pipelineIdentity).toMatch(/^logical-pipeline-/u);
+    expect(report.events[1]?.pipelineIdentity).toBe(report.events[0]?.pipelineIdentity);
+    expect(report.events[2]?.pipelineIdentity).toBe("logical-pipeline-unknown");
+    expect(report.counts.uniquePipelines).toBe(2);
+  });
+
+  it("reads a non-object device handle as unknown and reuses a repeated handle", () => {
+    const first = webgpuStub();
+    first.device.createRenderPipeline = ((_descriptor: Record<string, unknown>) => 42) as never;
+    const unknownCensus = createPipelineCensus({ kind: "webgpu" });
+    unknownCensus.installRenderer({ backend: { device: first.device } });
+    first.device.createRenderPipeline({ label: "handle-42" });
+    expect(unknownCensus.snapshot().events[0]?.pipelineIdentity).toBe("backend-pipeline-unknown");
+
+    const second = webgpuStub();
+    const shared = {};
+    second.device.createRenderPipeline = ((_descriptor: Record<string, unknown>) =>
+      shared) as never;
+    const reusedCensus = createPipelineCensus({ kind: "webgpu" });
+    reusedCensus.installRenderer({ backend: { device: second.device } });
+    second.device.createRenderPipeline({ label: "shared" });
+    second.device.createRenderPipeline({ label: "shared" });
+    const reused = reusedCensus.snapshot();
+    expect(reused.events.map(({ pipelineIdentity }) => pipelineIdentity)).toEqual([
+      reused.events[0]?.pipelineIdentity,
+      reused.events[0]?.pipelineIdentity,
+    ]);
+    expect(reused.counts.uniquePipelines).toBe(1);
+  });
+
+  it("hashes stage sources without TextEncoder", () => {
+    const previous = (globalThis as Record<string, unknown>).TextEncoder;
+    (globalThis as Record<string, unknown>).TextEncoder = undefined;
+    try {
+      const { backend, pipelines } = webgpuStub();
+      const census = createPipelineCensus({ kind: "webgpu" });
+      census.installRenderer({ backend });
+      const program = { code: "hello" };
+      pipelines.getForRender(renderObject({ vertexProgram: program }, {}, {}), null);
+
+      expect(census.snapshot().events[0]?.vertex).toEqual({
+        bytes: 5,
+        hash: "a430d84680aabd0b",
+      });
+    } finally {
+      (globalThis as Record<string, unknown>).TextEncoder = previous;
+    }
+  });
+
+  it("classifies shadow and clipped passes from the render-object context", () => {
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => undefined,
+      get: () => ({ pipeline: {} }),
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(...args);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    const pipeline = (seed: string) => ({
+      cacheKey: seed,
+      vertexProgram: { code: source(seed) },
+      fragmentProgram: { code: source(`${seed}-fragment`) },
+    });
+
+    raw.renderObject(
+      renderObject(pipeline("shadow-pass"), {}, {}),
+      null,
+      null,
+      null,
+      {},
+      null,
+      null,
+      { shadowPass: true },
+      null,
+    );
+    raw.renderObject(
+      renderObject(pipeline("clipped"), {}, {}),
+      null,
+      null,
+      null,
+      {},
+      null,
+      null,
+      {},
+      null,
+    );
+    raw.renderObject(
+      renderObject(pipeline("depth"), {}, { name: "depth-prepass" }),
+      null,
+      null,
+      null,
+      {},
+      null,
+      null,
+      null,
+      null,
+    );
+
+    expect(census.snapshot().events.map(({ pass }) => pass)).toEqual([
+      "shadow",
+      "main-clipped",
+      "shadow",
+    ]);
+  });
+
+  it("reports instancing and texture inputs as structural reasons", () => {
+    const backend = {
+      createRenderPipeline: (..._args: unknown[]) => undefined,
+      get: () => ({ pipeline: {} }),
+    };
+    const raw = {
+      backend,
+      renderObject: (...args: unknown[]) => {
+        backend.createRenderPipeline?.(...args);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject(
+      renderObject(
+        { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
+        { isInstancedMesh: true },
+        { map: {}, name: "brick" },
+      ),
+      null,
+    );
+
+    const event = census.snapshot().events[0];
+    expect(event?.reasons).toContain("instancing");
+    expect(event?.reasons).toContain("map");
+  });
+
   it("classifies main, shadow, PMREM, and output pipeline observations", () => {
     const backend = { createRenderPipeline: (..._args: unknown[]) => ({}) };
     const raw = {

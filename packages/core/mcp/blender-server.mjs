@@ -379,6 +379,21 @@ var RECIPES = Object.freeze([
       }
     ]),
     script: "retarget.py"
+  }),
+  Object.freeze({
+    description: "Export a Blender-authored world as a ThreeNative world package v1: world.json, a raw uint16 heightmap, one GLB plus a decimated LOD1 per referenced scatter asset, per-cell chunk GLBs and placements.bin. Reads render-density instances, so viewport share tricks never leak in.",
+    name: "export_world",
+    parameters: Object.freeze([
+      { description: "Path to the .blend world to read.", name: "source", required: true },
+      { description: "Directory to write the package into.", name: "out", required: true },
+      { description: "Cell edge length in metres.", name: "cell", required: true },
+      {
+        description: "Heightmap sample spacing in metres. Default 2.",
+        name: "spacing",
+        required: false
+      }
+    ]),
+    script: "export_world.py"
   })
 ]);
 function recipeNames() {
@@ -424,7 +439,7 @@ async function runRecipe(name, request, options = {}) {
 
 // src/index.ts
 var SERVER_NAME = "threenative-blender-mcp";
-var SERVER_VERSION = "0.1.2";
+var SERVER_VERSION = "0.1.3";
 var AUTHORING_INSTRUCTIONS = "Call blender_status before anything else: it answers whether this machine can convert models at all, and when it cannot it names the install command rather than failing. Blender is never installed for the user \u2014 ask first, then let them run the command. An .fbx, .blend, .obj or .dae placed in a game's assets directory is converted by the build itself; these tools are for inspecting a source before committing it and for operations the build does not perform. For anything no named tool covers, read a shipped recipe with blender_recipes and adapt it, then run it with blender_run_python.";
 var TOOL_DEFINITIONS = [
   {
@@ -473,6 +488,25 @@ var TOOL_DEFINITIONS = [
         },
         name: { description: "Recipe name. Omit to list every recipe.", type: "string" }
       },
+      type: "object"
+    }
+  },
+  {
+    annotations: { destructiveHint: true, openWorldHint: false, readOnlyHint: false },
+    name: "blender_export_world",
+    description: "Export a Blender-authored world as a ThreeNative world package v1: world.json, a raw uint16 heightmap, one GLB plus a decimated LOD1 per referenced scatter asset, per-cell chunk GLBs and placements.bin. Reads render-density instances so viewport share tricks never leak in; marks the terrain with tn_world_terrain, scatter sources with tn_asset_id and chunk collections with tn_world_chunk.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        cell: { description: "Cell edge length in metres.", type: "number" },
+        out: { description: "Directory to write the package into.", type: "string" },
+        source: { description: "Path to the .blend world to read.", type: "string" },
+        spacing: {
+          description: "Heightmap sample spacing in metres. Default 2.",
+          type: "number"
+        }
+      },
+      required: ["source", "out", "cell"],
       type: "object"
     }
   },
@@ -570,6 +604,26 @@ async function handleToolCall(params) {
     return toolText(await convertModel(source, out));
   }
   if (name === "blender_recipes") return toolText(await handleRecipes(argumentsValue));
+  if (name === "blender_export_world") {
+    const source = requiredString(argumentsValue, "source", "blender_export_world");
+    const out = requiredString(argumentsValue, "out", "blender_export_world");
+    const cell = argumentsValue.cell;
+    if (typeof cell !== "number" || !Number.isFinite(cell) || cell <= 0) {
+      throw new Error("blender_export_world 'cell' must be a number greater than zero.");
+    }
+    const spacing = argumentsValue.spacing;
+    if (spacing !== void 0 && (typeof spacing !== "number" || !Number.isFinite(spacing) || spacing <= 0)) {
+      throw new Error("blender_export_world 'spacing' must be a number greater than zero.");
+    }
+    return toolText(
+      await runRecipe("export_world", {
+        cell,
+        out,
+        source,
+        ...spacing === void 0 ? {} : { spacing }
+      })
+    );
+  }
   if (name === "blender_run_python") {
     const script = requiredString(argumentsValue, "script", "blender_run_python");
     const request = isRecord(argumentsValue.arguments) ? argumentsValue.arguments : {};

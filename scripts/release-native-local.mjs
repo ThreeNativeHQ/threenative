@@ -79,6 +79,7 @@ export function androidPayloadPlan({ repo = DEFAULT_REPO } = {}) {
     "intermediates",
     "stripped_native_libs",
     "release",
+    "stripReleaseDebugSymbols",
     "out",
     "lib",
   );

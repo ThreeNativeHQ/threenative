@@ -24,6 +24,7 @@ import {
   analyzeAppLog,
   assertEngine,
   assertPackagedAndroidBundle,
+  captureLog,
   engineFromLog,
   filterAppLog,
   inspectScreenshot,
@@ -281,4 +282,44 @@ test('--expect-engine only accepts the two engines that exist', () => {
   assert.equal(parseArgs(['--expect-engine', 'quickjs']).expectEngine, 'quickjs');
   assert.equal(parseArgs([]).expectEngine, null);
   assert.throws(() => parseArgs(['--expect-engine', 'jsc']), /must be v8 or quickjs/u);
+});
+
+test('a transient adb transport loss during log capture retries and keeps the log', () => {
+  // CI run 36074506957: 74/74 conformance cases passed, then one logcat exit 255
+  // (`adb: device offline` while the emulator was still settling) failed the whole lane. adb 255 is
+  // a transport error, so a single drop must be re-tried after wait-for-device, not surfaced as a
+  // game failure.
+  const calls = [];
+  let logcatAttempts = 0;
+  const execute = (_command, args) => {
+    calls.push(args);
+    if (args.includes('logcat') && args.includes('-d')) {
+      logcatAttempts += 1;
+      if (logcatAttempts === 1) return { status: 255, stdout: '', stderr: 'adb: device offline' };
+      return { status: 0, stdout: `${READY_MARKER}\n` };
+    }
+    return { status: 0, stdout: '' };
+  };
+  assert.equal(captureLog('fake-adb', 'emulator-5554', execute), `${READY_MARKER}\n`);
+  assert.equal(logcatAttempts, 2);
+  assert.equal(calls.filter((args) => args.includes('wait-for-device')).length, 1);
+});
+
+test('an unrecovered adb transport loss names itself, never the game', () => {
+  let logcatAttempts = 0;
+  const waits = [];
+  const execute = (_command, args) => {
+    if (args.includes('logcat') && args.includes('-d')) {
+      logcatAttempts += 1;
+      return { status: 255, stdout: '', stderr: 'adb: device offline' };
+    }
+    if (args.includes('wait-for-device')) waits.push(args);
+    return { status: 0, stdout: '' };
+  };
+  assert.throws(
+    () => captureLog('fake-adb', 'emulator-5554', execute),
+    /TN_ANDROID_ADB_TRANSPORT_LOST.*emulator-5554.*device offline/s,
+  );
+  assert.equal(logcatAttempts, 3);
+  assert.equal(waits.length, 2);
 });

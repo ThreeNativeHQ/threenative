@@ -26,6 +26,7 @@ import {
   nativeRuntimeCheck,
   probeAndroidToolchain,
   probeDesktopOverlay,
+  probeNativeHost,
   readProject,
 } from "../src/doctor.js";
 import { MCP_SERVERS } from "../src/mcp-servers.js";
@@ -96,6 +97,9 @@ const HEALTHY: IProjectSnapshot = {
     relative === "scripts/package-ios.mjs",
   runtimeManifestUrl:
     "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
+  // A host at the engine's own version: the prebuilt a project installs must at least match the
+  // engine it has to satisfy, and doctor reads this from the binary, not from the package.
+  nativeHost: { runtimeVersion: "0.4.0" },
   runtimeRoot: "/runtime-native",
 };
 
@@ -1213,6 +1217,64 @@ describe("threenative doctor edge coverage", () => {
       ),
     );
     expect(win32).toMatchObject({ status: "ok" });
+  });
+
+  it("fails closed when the installed host is older than the engine it must satisfy", () => {
+    const host = (nativeHost: { readonly reason?: string; readonly runtimeVersion?: string }) =>
+      nativeRuntimeCheck(snapshot({ nativeHost }));
+
+    // The published `runtime-native-v0.3.2` prebuilt answered exactly this, under a package whose
+    // own version said 0.4.0, and every desktop binary built with it showed no UI.
+    const stale = host({ runtimeVersion: "0.3.0" });
+    expect(stale).toMatchObject({ status: "fail" });
+    expect(stale.detail).toContain("runtime v0.3.0");
+    expect(stale.detail).toContain("older than the installed engine 0.4.0");
+    expect(stale.fix).toContain("native:build");
+
+    // A host that will not say what it is cannot be vouched for, and silence is the one shape the
+    // stale prebuilt could take without lying.
+    const silent = host({ reason: "spawn threenative-runtime ENOENT" });
+    expect(silent).toMatchObject({ status: "fail" });
+    expect(silent.detail).toContain("did not report a runtime version");
+    expect(silent.detail).toContain("ENOENT");
+
+    // A prerelease of the required release is still older than it.
+    expect(host({ runtimeVersion: "0.4.0-rc.1" })).toMatchObject({ status: "fail" });
+
+    // Equal or newer is the whole passing set, and the detail names the host it read.
+    expect(host({ runtimeVersion: "0.4.0" })).toMatchObject({
+      detail: `available (${process.platform}-${process.arch}, host runtime v0.4.0)`,
+      status: "ok",
+    });
+    expect(host({ runtimeVersion: "0.5.1" })).toMatchObject({ status: "ok" });
+
+    // A version string that cannot be compared is not a pass: the string it has to protect against
+    // is metadata that already disagreed with the binary once.
+    expect(host({ runtimeVersion: "workspace:*" })).toMatchObject({ status: "fail" });
+  });
+
+  it("reads the host's own --version, and reports a host it cannot run", () => {
+    execFileSyncMock.mockReturnValueOnce(
+      'TN_COLD_START:{"segment":"process","atMs":0.000}\nMystral Native Runtime v0.3.2\nNative WebGPU JS runtime - dawn + v8 build\n',
+    );
+    expect(probeNativeHost("/runtime-native/prebuilt/linux-x64/threenative-runtime")).toEqual({
+      runtimeVersion: "0.3.2",
+    });
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      "/runtime-native/prebuilt/linux-x64/threenative-runtime",
+      ["--version"],
+      expect.objectContaining({ encoding: "utf8" }),
+    );
+
+    execFileSyncMock.mockReturnValueOnce("Mystral CLI - Native Runtime for Mystral Engine\n");
+    expect(probeNativeHost("host-with-no-version").reason).toBe(
+      "the host did not name its runtime version",
+    );
+
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw new Error("ENOENT: no such file or directory");
+    });
+    expect(probeNativeHost("missing-host").reason).toContain("ENOENT");
   });
 
   it("handles Java probe failures and legacy JDK output", async () => {

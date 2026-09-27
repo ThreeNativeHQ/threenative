@@ -40,7 +40,7 @@ describe("bake receipt", () => {
     const result = await compileAssets({ cwd: root, transcoder: TRANSCODER });
     const receipt = await readReceipt(root);
 
-    expect(receipt.pipelineVersion).toBe(9);
+    expect(receipt.pipelineVersion).toBe(10);
     expect(result.receipt).toEqual(receipt);
     const compiled = receipt.outputs.find((output) => output.source === "rock.png");
     expect(compiled?.path).toMatch(/^rock\.[0-9a-f]{8}\.png$/u);

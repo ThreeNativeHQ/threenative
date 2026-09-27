@@ -4,6 +4,7 @@
  * Exposes AudioContext, AudioBufferSourceNode, GainNode to JavaScript.
  */
 
+#include "mystral/audio/async_audio_decode.h"
 #include "mystral/audio/audio_context.h"
 #include "mystral/js/engine.h"
 #include "runtime_scripts.h"
@@ -102,6 +103,57 @@ static js::JSValueHandle createPassiveAudioParamJS(js::Engine* engine, float ini
 
 // Track the current AudioContext being operated on (set via closure capture)
 // This is a workaround for not having 'this' binding in callbacks
+
+/** Which queued decode a completion belongs to. Process-wide, like the decoder it indexes. */
+static uint64_t nextAudioDecodeRequestId = 1;
+
+/** Defined below the decode helpers; the settle path builds the JS object from decoded PCM. */
+js::JSValueHandle createAudioBufferJS(js::Engine* engine, std::shared_ptr<AudioBuffer> buffer);
+
+/**
+ * Ask the embedded script for the promise that will settle when decode `requestId` lands.
+ *
+ * The resolvers live in JavaScript (`install-async-audio-decode.js`), because a callback the host
+ * settles later must not be a native object captured across a thread boundary: the worker hands
+ * back data, and this thread — the one that owns the engine — turns it into JS.
+ */
+static js::JSValueHandle pendingAudioDecodePromise(js::Engine* engine, uint64_t requestId,
+                                                   js::JSValueHandle onSuccess,
+                                                   js::JSValueHandle onError) {
+    js::JSValueGuard pending(*engine, engine->getGlobalProperty("__tnAudioDecodePending"));
+    if (!pending || !engine->isFunction(pending.get())) {
+        engine->throwException("async audio decoding is not installed (__tnAudioDecodePending missing)");
+        return engine->newUndefined();
+    }
+    js::JSValueGuard thisArg(*engine, engine->newUndefined());
+    js::JSValueGuard id(*engine, engine->newNumber(static_cast<double>(requestId)));
+    return engine->call(pending.get(), thisArg.get(), {id.get(), onSuccess, onError});
+}
+
+/** Settle one decode on the engine's thread: build the JS buffer, then let the script resolve it. */
+static void settleAudioDecode(uint64_t requestId, DecodedAudio decoded) {
+    auto* engine = g_jsEngine;
+    if (engine == nullptr) return;
+    js::JSValueGuard settle(*engine, engine->getGlobalProperty("__tnAudioDecodeSettle"));
+    if (!settle || !engine->isFunction(settle.get())) {
+        std::cerr << "[Audio] async audio decode drain is not installed" << std::endl;
+        return;
+    }
+    js::JSValueGuard result(
+        *engine, decoded.buffer ? createAudioBufferJS(engine, decoded.buffer) : engine->newUndefined());
+    js::JSValueGuard error(*engine, engine->newString(decoded.error.c_str()));
+    js::JSValueGuard thisArg(*engine, engine->newUndefined());
+    js::JSValueGuard id(*engine, engine->newNumber(static_cast<double>(requestId)));
+    js::JSValueGuard ignored(
+        *engine, engine->call(settle.get(), thisArg.get(), {id.get(), result.get(), error.get()}));
+    if (!decoded.error.empty()) std::cerr << "[Audio] " << decoded.error << std::endl;
+}
+
+/**
+ * Deliver finished decodes on the frame thread. Called from `processAudioEvents()`, which the host
+ * already runs once per `pollEvents()`.
+ */
+void drainAudioDecodes() { AsyncAudioDecoder::instance().drain(); }
 
 /**
  * Create AudioBuffer JS object
@@ -467,13 +519,17 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
     // the game before its first frame. That is a black screen on device with nothing in logcat
     // except the rejection, and it takes down any game that loads a sound Three's way.
     //
-    // The repair for that was a hand-rolled thenable, which fixed exactly Three's one shape.
-    // Its `then` ran the handler and returned `undefined`, so `.then(use).catch(report)` still
-    // threw on `undefined.catch`, `.then(a).then(b)` broke a chain of two, and
-    // `result instanceof Promise` was false. Decoding here is synchronous, so the Promise is
-    // already settled when it is handed back; that is the only latitude the contract allows.
-    // The legacy callbacks fire as well, which is what the Web Audio spec requires of both
-    // call styles.
+    // The repair for that was a hand-rolled thenable, which fixed exactly Three's one shape. Its
+    // `then` ran the handler and returned `undefined`, so `.then(use).catch(report)` still threw on
+    // `undefined.catch`, `.then(a).then(b)` broke a chain of two, and `result instanceof Promise`
+    // was false. That is why decoding used to be synchronous here: a *settled* promise was the only
+    // shape the hand-rolled object could fake convincingly.
+    //
+    // It is a real `Promise` now, so the decode no longer has to block the frame to settle it.
+    // `AsyncAudioDecoder` decodes on a worker and `drainAudioDecodes()` settles on the game thread;
+    // a game's whole clip set used to decode inside one frame (146 clips, ~542 ms, measured), and
+    // every frame in that window froze. Argument errors still reject immediately — there is no work
+    // to defer — and the legacy callbacks fire at settlement, which is what a browser does.
     engine->setProperty(jsCtx, "decodeAudioData",
         engine->newFunction("decodeAudioData", [ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) -> js::JSValueHandle {
             auto* engine = g_jsEngine;
@@ -484,38 +540,45 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
             const js::JSValueHandle onSuccess = callbackAt(1);
             const js::JSValueHandle onError = callbackAt(2);
 
-            std::shared_ptr<AudioBuffer> buffer;
+            // An argument that cannot be decoded is rejected now, not queued: there is nothing to
+            // defer, and a caller that passed the wrong thing should hear about it at the call.
             const char* failure = nullptr;
+            size_t length = 0;
+            void* data = nullptr;
             if (args.empty()) {
                 failure = "decodeAudioData requires an ArrayBuffer.";
             } else {
-                size_t length = 0;
-                void* data = engine->getArrayBufferData(args[0], &length);
+                data = engine->getArrayBufferData(args[0], &length);
                 if (!data || length == 0) {
                     failure = "decodeAudioData received an empty or non-ArrayBuffer argument.";
-                } else {
-                    buffer = ctxPtr->decodeAudioDataSync(static_cast<const uint8_t*>(data), length);
-                    if (!buffer) failure = "decodeAudioData could not decode the supplied audio.";
                 }
             }
-
-            const bool ok = failure == nullptr;
-            const js::JSValueHandle settled =
-                ok ? createAudioBufferJS(engine, buffer) : newAudioError(engine, failure);
-            if (!ok) std::cerr << "[Audio] " << failure << std::endl;
-
-            // Legacy callback style, delivered before the thenable is handed back so a caller
-            // using both sees the same order a browser gives it.
-            const js::JSValueHandle undefinedValue = engine->newUndefined();
-            if (ok) {
-                if (engine->isFunction(onSuccess)) engine->call(onSuccess, undefinedValue, {settled});
-            } else if (engine->isFunction(onError)) {
-                engine->call(onError, undefinedValue, {settled});
+            if (failure != nullptr) {
+                std::cerr << "[Audio] " << failure << std::endl;
+                const js::JSValueHandle rejected = newAudioError(engine, failure);
+                if (engine->isFunction(onError)) {
+                    engine->call(onError, engine->newUndefined(), {rejected});
+                }
+                return settledPromise(engine, "reject", rejected);
             }
 
-            // A settled Promise from the engine's own constructor, so `instanceof Promise`
-            // holds, handlers run as microtasks, and every chain a browser supports chains.
-            return settledPromise(engine, ok ? "resolve" : "reject", settled);
+            // Copy the encoded bytes: the decode runs on a worker and V8's backing store belongs to
+            // the caller, who may detach or reuse it the moment this returns.
+            const auto* bytes = static_cast<const uint8_t*>(data);
+            std::vector<uint8_t> copy(bytes, bytes + length);
+            const uint64_t requestId = nextAudioDecodeRequestId++;
+            // No guard on the promise: this handle is the return value, and a guard would free it
+            // as the function exits — the same corruption `mapAsync`'s promise would have had.
+            const js::JSValueHandle promise =
+                pendingAudioDecodePromise(engine, requestId, onSuccess, onError);
+            if (!promise.ptr || engine->hasException()) return promise;
+            const float sampleRate = ctxPtr->sampleRate();
+            audio::AsyncAudioDecoder::instance().decode(
+                std::move(copy), sampleRate,
+                [requestId](audio::DecodedAudio decoded) {
+                    settleAudioDecode(requestId, std::move(decoded));
+                });
+            return promise;
         })
     );
 
@@ -575,12 +638,19 @@ void initializeAudioBindings(js::Engine* engine) {
     if (!evalAudioScript(*engine, "audio-context-constructor", "audio-context-constructor.js")) {
         std::cerr << "[Audio] Failed to install AudioContext constructor" << std::endl;
     }
+    if (!evalAudioScript(*engine, "install-async-audio-decode", "install-async-audio-decode.js")) {
+        std::cerr << "[Audio] Failed to install the async audio decode drain" << std::endl;
+    }
 
     std::cout << "[Audio] Web Audio API bindings initialized" << std::endl;
 }
 
 void processAudioEvents() {
     if (!g_jsEngine) return;
+
+    // A finished decode is data waiting for a V8 object, and this is the only thread allowed to
+    // build one. Bounded per call, so a frame that took a burst of queue entries still returns.
+    drainAudioDecodes();
 
     std::vector<void*> completed;
     for (const auto& [key, node] : g_sourceNodes) {

@@ -20,6 +20,12 @@ void initializeAudioBindings(js::Engine* engine);
 void processAudioEvents();
 
 /**
+ * Deliver finished off-thread decodes to JavaScript. Called by `processAudioEvents()`, and exposed
+ * separately because a test that owns no audio device still has to be able to drain them.
+ */
+void drainAudioDecodes();
+
+/**
  * Cleanup all audio resources (call before destroying JS engine)
  */
 void cleanupAudioBindings();

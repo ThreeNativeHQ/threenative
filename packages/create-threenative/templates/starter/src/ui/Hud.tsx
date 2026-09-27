@@ -8,8 +8,8 @@ import type { GameState } from "../state.js";
  * phone or a desktop the same bundle renders in the platform's own web view over the game surface.
  * Style it however you like; nothing here is a vocabulary the framework has to understand.
  *
- * `useUiState` reads the game's *published* state, which moves at about 10 Hz rather than at the
- * frame rate, and is undefined until the game publishes its first snapshot.
+ * `useUiState` reads the game's *published* state, published once per rendered game frame by default,
+ * and is undefined until the game publishes its first snapshot.
  */
 export function Hud() {
   const state = useUiState<GameState>();

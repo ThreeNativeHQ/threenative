@@ -541,6 +541,58 @@ describe("shared model images", () => {
     expect(after).toEqual(before);
   });
 
+  it("should resize shared embedded images to PNG and stay deduplicated on a decoder-free target", async () => {
+    const root = await makeTempDir("threenative-shared-decoder-free-");
+    await mkdir(path.join(root, "assets"));
+    const input = await fixture(0);
+    await writeFile(path.join(root, "assets", "a.glb"), input);
+    await writeFile(path.join(root, "assets", "b.glb"), input);
+
+    await compileAssets({
+      config: { models: { textures: { maxSize: 16 } } },
+      concurrency: 2,
+      cwd: root,
+      platform: "android",
+    });
+
+    const directory = path.join(root, "public", "shared", "images");
+    const files = (await readdir(directory)).sort();
+    expect(files).toHaveLength(2);
+    for (const file of files) {
+      expect(file).toMatch(/^[0-9a-f]{16}\.none\.png$/u);
+      const png = PNG.sync.read(await readFile(path.join(directory, file)));
+      expect([png.width, png.height]).toEqual([16, 16]);
+    }
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as {
+      entries: Record<string, { sharedImages?: { output: string }[] } | undefined>;
+    };
+    const a = manifest.entries["a.glb"]?.sharedImages?.map((image) => image.output).sort();
+    const b = manifest.entries["b.glb"]?.sharedImages?.map((image) => image.output).sort();
+    expect(a).toHaveLength(2);
+    expect(a).toEqual(b);
+  }, 60_000);
+
+  it("should key a decoder-free shared image by its size cap", async () => {
+    const compiledAtCap = async (maxSize: number): Promise<string[]> => {
+      const root = await makeTempDir("threenative-shared-decoder-free-cap-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "a.glb"), await fixture(0));
+      await compileAssets({
+        config: { models: { textures: { maxSize } } },
+        cwd: root,
+        platform: "android",
+      });
+      return (await readdir(path.join(root, "public", "shared", "images"))).sort();
+    };
+    // Same source bytes, different caps: the cooked image must not be shared between them.
+    const sixteen = await compiledAtCap(16);
+    const eight = await compiledAtCap(8);
+    expect(sixteen).not.toEqual(eight);
+  });
+
   it("should reject a non-boolean sharedImages setting", async () => {
     const root = await makeTempDir("threenative-shared-images-config-");
     await mkdir(path.join(root, "assets"));

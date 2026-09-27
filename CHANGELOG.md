@@ -23,6 +23,62 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `TracerPool3D.spawn` accepts per-shot `widthScale`, `segmentLength` and `lifetime`
   overrides, so a game's shot-to-shot variation survives migration onto the pool.
 
+## [0.3.3] - unreleased (release candidate)
+
+The current cohort, prepared from `develop` at 0.3.3 (`create-threenative` 0.2.6). It is not yet
+published, and no `runtime-native-v0.3.3` prebuilt release exists; publishing the cohort is
+PRD-196.
+
+### Added
+
+- An installed starter runs real browser gameplay after a game-only edit (PRD-366).
+- Desktop release mode builds a complete OS container, and its game brand is inspectable
+  (PRD-365, PRD-375); the Android release artifact carries the game brand (PRD-375).
+- Rigging and humanoid retargeting through the asset MCP (PRD-383).
+- Automatic rendering-performance defaults, render-camera culling, adaptive water and reflection
+  budgets, and a force-integrated flight model (PRD-382, PRD-384).
+- A searchable site with engine comparisons and evidence-backed benchmarks.
+
+### Changed
+
+- The native performance line: launch diagnostics, frame attribution, off-thread audio and
+  cheaper UI overlay snapshots (PRD-442).
+
+## [0.3.2] - 2026-09-12
+
+### Added
+
+- `pnpm release:native` stages, creates and uploads the `runtime-native-v<version>` prebuilt
+  payload; `pnpm release` publishes the npm cohort and then the payload (PRD-378).
+- Android emits a signed release APK and AAB from the current submission SDK (PRD-212).
+
+### Fixed
+
+- The publish lane waits up to 15 minutes for npm propagation before verifying the cohort.
+- The clean-consumer Android lane provisions the debug keystore the aligner re-signs with.
+
+## [0.3.1] - 2026-09-12
+
+### Added
+
+- `pnpm release:prepare` — one safe local command prepares a cohort: it bumps the public
+  packages, syncs template pins and derived surfaces, and changes nothing else.
+- Core accounts for warm-up candidates and observed pipelines, and holds explicit warm-up first
+  use.
+
+### Fixed
+
+- Promoted consumer distribution is gated, and PRD-196 release readiness is publish-safe.
+
+## [0.3.0] - 2026-08-31
+
+### Changed
+
+- First public cohort on the 0.3.x line: `@threenative/core`, `@threenative/physics`,
+  `@threenative/playtest`, `@threenative/runtime-native` and `@threenative/ui` at 0.3.0.
+- `threenative-engine-mcp` joins the published set.
+- Every published tarball carries its README (PRD-133).
+
 ## [0.2.0] - 2026-08-16
 
 ### Changed

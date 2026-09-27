@@ -1,7 +1,7 @@
 import { readPath, jsonEqual, textValue } from '../assertion-report.js';
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
-import { evaluatePerformanceAssertion, evaluateResourceAnyOfAssertion, hasFinalPathExpectation, evaluatePathAssertion, pathValuePass, matchingSignals, evaluateWorldAssertion } from "./helpers.js";
+import { evaluatePerformanceAssertion, evaluateResourceAnyOfAssertion, hasFinalPathExpectation, evaluatePathAssertion, pathValuePass, matchingSignals, evaluateWorldAssertion, evaluateAudioAssertion } from "./helpers.js";
 
 export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
@@ -100,6 +100,11 @@ export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
       severity: "error",
       suggestion: "Expose a bounded events callback on the playtest bridge and inspect the emitted signal name and entity.",
     });
+  }
+  for (const assertion of scenarioAssertions.audio ?? []) {
+    const result = evaluateAudioAssertion(assertion, input.report.observations?.runtimeObservations);
+    assertions.push(result.assertion);
+    if (result.diagnostic !== undefined) diagnostics.push(result.diagnostic);
   }
   if (scenarioAssertions.world !== undefined) {
     const result = evaluateWorldAssertion(scenarioAssertions.world, input.report.observations?.runtimeObservations);

@@ -10,6 +10,10 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  MirroredRepeatWrapping,
+  NoColorSpace,
+  RepeatWrapping,
+  SRGBColorSpace,
   Texture,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -107,6 +111,32 @@ describe("IAssetLoader", () => {
     expect(geometryDispose).toHaveBeenCalledTimes(1);
     expect(materialDispose).toHaveBeenCalledTimes(1);
     expect(textureDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("times each asset only when the caller asked, and names the path when it does", async () => {
+    // The group totals a game logs cannot say *which* asset is slow; this seam is the engine's one
+    // place that sees every settle. Off by default and silent when off.
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    });
+    try {
+      const quiet = createAssetLoader({ model: async () => ({ scene: new Group() }) });
+      await quiet.model("quiet.glb");
+      expect(logged).toEqual([]);
+
+      (globalThis as { __TN_ASSET_TRACE__?: boolean }).__TN_ASSET_TRACE__ = true;
+      const traced = createAssetLoader({ model: async () => ({ scene: new Group() }) });
+      await traced.model("traced.glb");
+      const marker = logged.find((line) => line.startsWith("TN_ASSET:"));
+      expect(marker).toBeDefined();
+      const payload = JSON.parse((marker as string).slice("TN_ASSET:".length));
+      expect(payload).toMatchObject({ kind: "model", path: "traced.glb" });
+      expect(Number.isFinite(payload.ms)).toBe(true);
+    } finally {
+      Reflect.deleteProperty(globalThis, "__TN_ASSET_TRACE__");
+      spy.mockRestore();
+    }
   });
 
   it("loads textures through fetch and createImageBitmap when Image is unavailable", async () => {
@@ -267,6 +297,67 @@ describe("IAssetLoader", () => {
   });
 });
 
+describe("IAssetLoader.texture options", () => {
+  it("should apply the options to a copy and leave the cached instance untouched", async () => {
+    const cached = new Texture();
+    // What an image file arrives as: sRGB. A normal map is not, and asking for one must not say so
+    // to every other material sharing the same bytes.
+    cached.colorSpace = SRGBColorSpace;
+    cached.anisotropy = 16;
+    const assets = createAssetLoader({ texture: async () => cached });
+
+    const configured = await assets.texture("normal.png", {
+      anisotropy: 8,
+      data: true,
+      repeat: [2, 3],
+      wrap: RepeatWrapping,
+    });
+
+    expect(configured).not.toBe(cached);
+    expect(configured.image).toBe(cached.image);
+    expect(configured.colorSpace).toBe(NoColorSpace);
+    expect(configured.wrapS).toBe(RepeatWrapping);
+    expect(configured.wrapT).toBe(RepeatWrapping);
+    expect(configured.repeat.toArray()).toEqual([2, 3]);
+    expect(configured.anisotropy).toBe(8);
+    // The shared instance other callers of the same path hold.
+    expect(cached.colorSpace).toBe(SRGBColorSpace);
+    expect(cached.wrapS).not.toBe(RepeatWrapping);
+    expect(cached.repeat.toArray()).toEqual([1, 1]);
+    expect(cached.anisotropy).toBe(16);
+    // And a configured load is not cached, so the next one is configured again from the same bytes.
+    expect(await assets.texture("normal.png", { data: true })).not.toBe(configured);
+    expect((await assets.texture("normal.png", { data: true })).colorSpace).toBe(NoColorSpace);
+  });
+
+  it("should treat one repeat number as both axes and sRGB as the explicit non-data space", async () => {
+    const assets = createAssetLoader({ texture: async () => new Texture() });
+
+    const tiled = await assets.texture("tile.png", { data: false, repeat: 5 });
+    const wrapped = await assets.texture("tile.png", { wrap: MirroredRepeatWrapping });
+
+    expect(tiled.colorSpace).toBe(SRGBColorSpace);
+    expect(tiled.repeat.toArray()).toEqual([5, 5]);
+    expect(tiled.wrapS).not.toBe(MirroredRepeatWrapping);
+    expect(wrapped.wrapS).toBe(MirroredRepeatWrapping);
+    expect(wrapped.wrapT).toBe(MirroredRepeatWrapping);
+    // Options without `data` are colour: a loader's linear default must not wash out an albedo.
+    expect(wrapped.colorSpace).toBe(SRGBColorSpace);
+  });
+
+  it("should hand back the same cached instance when no options are given", async () => {
+    const cached = new Texture();
+    const assets = createAssetLoader({ texture: async () => cached });
+
+    const first = await assets.texture("albedo.png");
+    const second = await assets.texture("albedo.png");
+
+    expect(first).toBe(cached);
+    expect(second).toBe(cached);
+    expect(assets.progress.requested).toBe(1);
+  });
+});
+
 describe("IAssetLoader through the asset manifest", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -299,6 +390,31 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(texture).toBeInstanceOf(Texture);
     expect(fetchAsset).toHaveBeenCalledWith("/assets/my-assets.json");
     expect(requests).toEqual(["/assets/rock.a1b2c3.png"]);
+  });
+
+  it("should record the manifest output that served a load", async () => {
+    // `progress` counts loads and cannot say which url answered. A project whose manifest 404s
+    // and one whose manifest named the output are indistinguishable from the game's own side,
+    // which is how a silently-unreadable manifest became an invisible uncompiled fallback.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "rock.png": { output: "rock.a1b2c3.png", kind: "texture", bytes: 1, passes: [] },
+          },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/assets", texture: async () => new Texture() });
+
+    await assets.texture("rock.png");
+
+    expect(assets.resolved.get("rock.png")).toEqual({
+      url: "/assets/rock.a1b2c3.png",
+      via: "manifest",
+    });
   });
 
   it("should hand a game the served urls of a path its own loader has to fetch", async () => {
@@ -341,6 +457,7 @@ describe("IAssetLoader through the asset manifest", () => {
           : new Promise<Texture>((resolve) => setTimeout(() => resolve(new Texture()), 0)),
     });
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 0,
       requestedBytes: 0,
       settled: 0,
@@ -349,7 +466,9 @@ describe("IAssetLoader through the asset manifest", () => {
     const first = assets.texture("a.png");
     void assets.texture("a.png"); // cached: one request, not two
     // No manifest here, so no size is knowable and the byte ledger stays at zero throughout.
+    // A loading view reads `pending` to say *what* it is waiting for, not just how much is left.
     expect(assets.progress).toEqual({
+      pending: ["a.png"],
       requested: 1,
       requestedBytes: 0,
       settled: 0,
@@ -357,6 +476,7 @@ describe("IAssetLoader through the asset manifest", () => {
     });
     await first;
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 1,
       requestedBytes: 0,
       settled: 1,
@@ -364,7 +484,9 @@ describe("IAssetLoader through the asset manifest", () => {
     });
     await expect(assets.texture("nope.png")).rejects.toThrow(/no such texture/u);
     // A rejected load settles too: a bar that waits for a texture that failed never finishes.
+    // A rejected load leaves `pending` too, or the bar names a file nothing is waiting for.
     expect(assets.progress).toEqual({
+      pending: [],
       requested: 2,
       requestedBytes: 0,
       settled: 2,
@@ -408,6 +530,26 @@ describe("IAssetLoader through the asset manifest", () => {
     await expect(assets.model("rock.png")).resolves.toEqual({ url: "assets/rock.png" });
     // Verbatim first: a project with no pipeline at all keeps working, and pays nothing.
     expect(requests).toEqual(["rock.png", "assets/rock.png"]);
+  });
+
+  it("should record the candidate that actually answered, not the one that was tried first", async () => {
+    // The delete-test's own shape: the verbatim path 404s and the source directory serves it. The
+    // record names the winner, so a reader can tell this apart from a manifest-served load.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => manifestResponse("gone", 404)),
+    );
+    const assets = createAssetLoader({
+      basePath: "/",
+      model: async (url) => {
+        if (url !== "/assets/rock.png") throw new Error(`404: ${url}`);
+        return { url };
+      },
+    });
+
+    await assets.model("rock.png");
+
+    expect(assets.resolved.get("rock.png")).toEqual({ url: "/assets/rock.png", via: "source" });
   });
 
   it("should not reach for the source directory when the verbatim path works", async () => {
@@ -812,6 +954,14 @@ describe("IAssetLoader compressed textures", () => {
     } else {
       geometry.setAttribute("position", new BufferAttribute(raw, 3, true));
     }
+    // A cooked application scalar in [0, 1] — the vegetation wind weight — as the cook writes it.
+    const weights = Uint16Array.from([0, 32_768, 65_535]);
+    geometry.setAttribute(
+      "_wind",
+      interleaved
+        ? new InterleavedBufferAttribute(new InterleavedBuffer(weights, 1), 1, 0, true)
+        : new BufferAttribute(weights, 1, true),
+    );
     const scene = new Group();
     const mesh = new Mesh(geometry, new MeshBasicMaterial());
     mesh.scale.setScalar(5);
@@ -878,6 +1028,21 @@ describe("IAssetLoader compressed textures", () => {
       expect(bounds.max.z - bounds.min.z).toBeCloseTo(10, 2);
     },
   );
+
+  it.each([
+    ["a plain normalized scalar", false],
+    ["a meshopt-interleaved normalized scalar", true],
+  ])("should widen %s, which WebGPU cannot fetch as a float", async (_name, interleaved) => {
+    // three picks a one-component vertex format from the array type alone, so a normalized
+    // uint16 stays `uint16` where a TSL float attribute expects a float and the pipeline fails.
+    const loaded = await loadQuantized(interleaved as boolean);
+    const weight = (loaded.scene.children[0] as Mesh).geometry.getAttribute("_wind");
+
+    expect(weight.normalized).toBe(false);
+    expect(weight.array).toBeInstanceOf(Float32Array);
+    for (const [index, value] of [0, 32_768 / 65_535, 1].entries())
+      expect(weight.getX(index)).toBeCloseTo(value, 6);
+  });
 
   it("should leave a float model's positions untouched", async () => {
     vi.stubGlobal(

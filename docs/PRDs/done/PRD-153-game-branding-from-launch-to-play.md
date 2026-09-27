@@ -18,7 +18,7 @@ simulator has never run. No physical-hardware or iOS claim is made. Record:
 own web branding; phases 2 and 3 were new scope this PRD explicitly disclaimed — the installed
 Android *release artifact* and *distributed desktop app* carrying the brand, where this one closed
 on `native:verify:desktop` and made no physical-hardware claim. That new scope now lives in
-[PRD-375](../production-readiness/PRD-375-release-artifacts-carry-the-game-brand.md), which cites
+[PRD-375](../production-readiness/critical/PRD-375-release-artifacts-carry-the-game-brand.md), which cites
 this one. Re-verified on `main` 2026-09-11 before restoring: `930569b` and `620e464` are ancestors
 of `HEAD`; `packages/create-threenative/__tests__/web-brand.spec.ts` is green and
 `packages/create-threenative/templates/platformer/playtests/branding.playtest.json` is tracked. The

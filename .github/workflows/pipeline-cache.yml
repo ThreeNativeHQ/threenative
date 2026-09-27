@@ -102,8 +102,8 @@ jobs:
   patched-backend:
     name: Patched cache ABI (${{ matrix.target }})
     runs-on: ubuntu-24.04
-    # PRD-221's resumable V8 producer reserves 120 minutes plus cache-save time.
-    timeout-minutes: ${{ matrix.target == 'android-arm64' && 180 || 45 }}
+    # PRD-221's resumable V8 producer reserves 180 minutes plus cache-save time.
+    timeout-minutes: ${{ matrix.target == 'android-arm64' && 240 || 45 }}
     strategy:
       fail-fast: false
       matrix:

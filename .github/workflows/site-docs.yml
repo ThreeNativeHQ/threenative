@@ -1,0 +1,24 @@
+name: site-docs
+
+# threenative.com renders these files at build time, so a change to any of them redeploys the site:
+# the guides, the agent-docs recipes, the package READMEs, the capability manifest behind the API
+# reference, and the recorded MCP tool surfaces.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "docs/guides/**"
+      - "packages/create-threenative/agent-docs/references/**"
+      - "packages/create-threenative/*.json"
+      - "packages/create-threenative/templates/starter/.mcp.json"
+      - "packages/*/package.json"
+      - "packages/*/README.md"
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      # SITE_DEPLOY_TOKEN: fine-grained token, threenative-site only, Actions read/write.
+      - run: gh workflow run site.yml --repo ThreeNativeHQ/threenative-site --ref main
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DEPLOY_TOKEN }}

@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# The desktop half of PRD-217's UI layer: a transparent web view attached as a child of the
-# window SDL already owns, behind a C ABI the C++ host calls. Rust is not a new class of
-# dependency here — `native/physics` is already a Rust staticlib linked into the same host on
-# every desktop target — which is the whole reason this is worth trying before paying for CEF.
+# The desktop half of PRD-217's UI layer: the Linux UI is a web view rendered offscreen and handed
+# to the game as a texture (PRD-393), while Windows and macOS attach a child web view to the window
+# SDL already owns. Rust is not a new class of dependency here — `native/physics` is already a Rust
+# staticlib linked into the same host on every desktop target — which is the whole reason this is
+# worth trying before paying for CEF.
 [lib]
 name = "threenative_ui_overlay"
 crate-type = ["staticlib", "rlib"]
@@ -18,12 +19,18 @@ crate-type = ["staticlib", "rlib"]
 wry = { version = "0.48", features = ["transparent"] }
 raw-window-handle = "0.6"
 
+# The Linux UI is the same WebKit `wry` already pulls in on this platform, driven directly because
+# the embedder — not `wry` — has to own the offscreen window and read its frames back. Adding these
+# two as direct dependencies introduces no crate that is not already in this build: `wry` 0.48
+# depends on `webkit2gtk` 2.0 and `gtk` 0.18 transitively, and the pinned versions above are the
+# ones its manifest resolves to.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
-gdkx11 = "0.18"
 glib = "0.18"
-x11-dl = "2"
-libloading = "0.8"
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
+# To read the string out of a script message. Already in the graph through `webkit2gtk`, so this
+# names an existing crate rather than adding one.
+javascriptcore-rs = "1.1"
 
 # Windows shapes the wry container HWND itself, which needs the WebView2 controller and the
 # GDI region calls. Versions match wry 0.48's own so the `ICoreWebView2Controller` type is the
@@ -52,13 +59,3 @@ objc2-foundation = { version = "0.2", features = [
     "NSObject",
     "NSThread",
 ] }
-
-# The spike: attach to a window SDL already owns and report what happened. A binary rather than a
-# test because the thing under measurement is a real compositor over a real GPU surface.
-[[bin]]
-name = "tn-ui-overlay-probe"
-path = "src/bin/probe.rs"
-
-[profile.release]
-lto = "thin"
-strip = "symbols"

@@ -1733,7 +1733,7 @@ bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
         requireSurfaceTexture("offscreen surface texture", canvasContext);
         requireMethods("GPUTexture", texture, ["createView", "destroy"]);
         requireMethods("WebGPU", globalThis, [
-            "__decodeImageData", "__nativeGetContext2D", "createOffscreenCanvas2D",
+            "__decodeImageDataAsync", "__nativeGetContext2D", "createOffscreenCanvas2D",
             "createImageBitmap",
         ]);
         if (globalThis.Mystral && typeof globalThis.Mystral.loadGLTF !== "undefined") {
@@ -1800,7 +1800,7 @@ bool exercisePreservedCallTrace(mystral::Runtime& runtime) {
                 "GPUComputePassEncoder.dispatchWorkgroups", "GPUComputePassEncoder.end",
                 "GPURenderBundleEncoder.setPipeline", "GPURenderBundleEncoder.setVertexBuffer",
                 "GPURenderBundleEncoder.setBindGroup", "GPURenderBundleEncoder.draw",
-                "GPURenderBundleEncoder.finish", "WebGPU.__decodeImageData",
+                "GPURenderBundleEncoder.finish", "WebGPU.__decodeImageDataAsync",
                 "WebGPU.createOffscreenCanvas2D",
             ];
             for (const key of required)

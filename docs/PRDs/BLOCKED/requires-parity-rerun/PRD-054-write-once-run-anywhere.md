@@ -214,22 +214,54 @@ it" can never read as "it works".
 
 ## 5. Phases
 
-- **Phase 0 — make the regression a row.** Add `15-mesh-toon-material-gradientmap` as an
-  implemented scene with a web reference and an emulator capture. It must fail against
-  wgpu-native v24 and pass against v25, proving the gate detects the exact defect that shipped
-  green. Nothing else in this PRD proceeds until this row can tell those two apart.
-- **Phase 1 — Tier 1 materials, lights and geometry rows**, web reference plus desktop plus
-  emulator, with tolerances committed to the registry.
-- **Phase 2 — arbitrary game entry.** `pnpm parity --project <path>` runs the whole matrix
-  against a user's scaffolded project rather than the repo's scenes, so the probe done by hand
-  on 2026-08-09 becomes a command.
-- **Phase 3 — Tier 2 shim rows**, each asserting the documented behaviour of a stub rather
-  than an image.
-- **Phase 4 — CI.** The emulator lane runs on every change to `packages/runtime-native` or a
-  wgpu-native version bump. A dependency bump that changes the WGSL a target accepts is
-  exactly the class of change this gate exists for.
-- **Phase 5 — physical hardware**, which changes nothing above and adds one more target
-  column.
+Progress boxes were added by PRD-445 Phase 3; the phases were prose before that.
+
+### Phase 0 — make the regression a row
+
+Add `15-mesh-toon-material-gradientmap` as an implemented scene with a web reference and an
+emulator capture. It must fail against wgpu-native v24 and pass against v25, proving the gate
+detects the exact defect that shipped green. Nothing else in this PRD proceeds until this row
+can tell those two apart.
+
+- [ ] `15-mesh-toon-material-gradientmap` scene implemented with a web reference and an emulator capture
+- [ ] Row fails against wgpu-native v24.0.3.1 (pinned) and passes against v25.0.2.2 (pinned)
+
+### Phase 1 — Tier 1 materials, lights and geometry rows
+
+Web reference plus desktop plus emulator, with tolerances committed to the registry.
+
+- [ ] Every Tier 1 row runs on web, desktop and the emulator
+- [ ] Each row's tolerance is a reviewed number committed to the registry
+
+### Phase 2 — arbitrary game entry
+
+`pnpm parity --project <path>` runs the whole matrix against a user's scaffolded project rather
+than the repo's scenes, so the probe done by hand on 2026-08-09 becomes a command.
+
+- [ ] `pnpm parity --project <path>` runs the full matrix against a scaffolded project
+- [ ] The 2026-08-09 hand probe is reproducible by command
+
+### Phase 3 — Tier 2 shim rows
+
+Each asserting the documented behaviour of a stub rather than an image.
+
+- [ ] Every Tier 2 shim row asserts documented behaviour, not an image
+- [ ] No shim row is a silent skip
+
+### Phase 4 — CI
+
+The emulator lane runs on every change to `packages/runtime-native` or a wgpu-native version
+bump. A dependency bump that changes the WGSL a target accepts is exactly the class of change
+this gate exists for.
+
+- [ ] The emulator lane runs on every `packages/runtime-native` change and wgpu-native bump
+- [ ] An AVD-less run reports `blocked` and exits non-zero
+
+### Phase 5 — physical hardware
+
+Changes nothing above and adds one more target column.
+
+- [ ] The matrix runs on a named physical device and records it as its own column
 
 ## 6. Acceptance criteria
 

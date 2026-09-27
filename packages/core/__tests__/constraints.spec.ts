@@ -48,17 +48,30 @@ describe("core constraints", () => {
           file !== "particles.ts" &&
           file !== "projection-plan.ts" &&
           file !== "projection-apply.ts" &&
+          // The skinned lane draws a node twin of the game's material; every value on it is copied
+          // from the game's own material each frame. Its tighter check is below.
+          file !== "projection-skinned.ts" &&
           file !== "renderProjection.ts" &&
           file !== "renderer.ts" &&
           file !== "react-host.ts" &&
           file !== "softbody.ts" &&
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
+          // `mergeByMaterial` groups static meshes by their material's *identity* and hands each
+          // group the game's own material instance on the merged mesh. It constructs no material,
+          // configures no property of one, and reads only `name` for the error label; which
+          // materials exist, and how each looks, is entirely the game's.
+          file !== "merge-parts.ts" &&
           // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
           // constructs no material, light, colour or shader; the word "light" it trips on is
           // inside "flight".
           file !== "flight.ts" &&
           file !== "instanced-batch.ts" &&
+          // WorldCells streams a package: it reads the geometry and surface out of the package's
+          // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
+          // light, colour or shader, and reads no appearance property. The word "light" the
+          // generic filter trips on is inside `loadsInFlight`.
+          file !== "world-cells.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
@@ -96,6 +109,13 @@ describe("core constraints", () => {
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
 
+    // The same terms as `warmup.ts` for the same reason: `mergeByMaterial` reads a material's
+    // identity to decide which meshes share a draw call, and the material itself is the game's —
+    // so no property of one is ever written here, only its `name` in an error label.
+    const mergeParts = readFileSync(path.join(sourceDirectory, "merge-parts.ts"), "utf8");
+    expect(mergeParts).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
+    expect(mergeParts).not.toMatch(/\.material\s*[.=[]/u);
+
     const geometryCapture = readFileSync(path.join(sourceDirectory, "geometry-capture.ts"), "utf8");
     expect(geometryCapture).not.toMatch(
       /new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu,
@@ -115,6 +135,13 @@ describe("core constraints", () => {
     // sharing its material. It never constructs a material, never configures one, and never reads
     // a property that describes how anything looks. The assertions below are what keep that true:
     // the moment it makes an appearance decision, this fails.
+    const skinned = withoutComments(
+      readFileSync(path.join(sourceDirectory, "projection-skinned.ts"), "utf8"),
+    );
+    expect(skinned).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\s*=|new\s+\w*Light|tonemapping|\.wgsl/iu,
+    );
+    expect(skinned.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
     const warmup = readFileSync(path.join(sourceDirectory, "warmup.ts"), "utf8");
     expect(warmup).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
     expect(warmup).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
@@ -242,6 +269,17 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `world-cells.ts` is exempted on the same terms as `instanced-batch.ts`: streaming a package
+    // means naming the geometry and surface its GLBs carry and handing both to `InstancedBatch` by
+    // reference. It constructs no material, light or colour and reads no property that describes
+    // how anything looks. The assertions below are what keep that true.
+    const worldCells = readFileSync(path.join(sourceDirectory, "world-cells.ts"), "utf8");
+    expect(worldCells).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(worldCells).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(worldCells.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `gpu-scene-bvh.ts` is exempted on the same terms as `warmup.ts`: it reads a material's
     // *identity* — an integer index into the game's own surfaces — to pack triangles for the BVH's

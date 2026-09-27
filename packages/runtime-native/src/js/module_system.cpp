@@ -147,7 +147,24 @@ bool ModuleSystem::loadEsmEntry(const ResolvedModule& resolved, const std::strin
     if (!engine_) {
         return false;
     }
-    return engine_->eval(source.c_str(), resolved.resolved.path.c_str());
+    const bool evaluated = engine_->eval(source.c_str(), resolved.resolved.path.c_str());
+    // A bundle that fails to *compile* does not make `eval` return false: the SyntaxError is
+    // reported and latched, `eval` still answers true, and the launch carries on with a script that
+    // never ran. The symptom is a window that opens and draws nothing while the loop spins, and the
+    // only trace is one line in a log nobody is reading — which is exactly how a build-time mistake
+    // (`import.meta` surviving into a script that is not a module) cost a debugging session. A
+    // latched exception is a failed load, so say it in the loudest form this layer has and let the
+    // caller treat it as fatal.
+    if (engine_->hasException()) {
+        const std::string reason = engine_->getException();
+        std::cerr << "[TN_FATAL] the module did not evaluate: " << resolved.resolved.path;
+        if (!reason.empty()) {
+            std::cerr << " — " << reason;
+        }
+        std::cerr << std::endl;
+        return false;
+    }
+    return evaluated;
 }
 
 JSValueHandle ModuleSystem::require(const std::string& specifier, const std::string& referrer) {
@@ -248,13 +265,18 @@ JSValueHandle ModuleSystem::executeCjsModule(const ResolvedModule& resolved,
     std::string wrapped = makeCjsWrapper(code, resolved.resolved.path);
     JSValueHandle wrapperFn = engine_->evalScriptWithResult(wrapped.c_str(), resolved.resolved.path.c_str());
     if (!wrapperFn.ptr) {
-        std::cerr << "[Modules] Failed to compile module: " << resolved.resolved.path << std::endl;
+        // An invalid handle, not `undefined`: `undefined` is a *successful* value here, so a caller
+        // asking "did this module load" was told yes by a module that never compiled. The entry
+        // then loaded, the main loop started, and the game ran on with nothing drawn — a window and
+        // a log line, and no failure anyone could see. Fail closed: nothing evaluates, nothing
+        // returns, and the caller's own failure path gets to speak.
+        std::cerr << "[TN_FATAL] the module failed to compile: " << resolved.resolved.path << std::endl;
         engine_->freeHandle(requireFn);
         engine_->freeHandle(exportsObj);
         engine_->freeHandle(moduleObj);
         cjsCache_.erase(resolved.resolved.path);
         loading_.erase(resolved.resolved.path);
-        return engine_->newUndefined();
+        return {};
     }
 
     JSValueHandle filenameVal = engine_->newString(resolved.resolved.path.c_str());

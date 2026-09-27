@@ -143,3 +143,32 @@ test("every packager runs the gate, and each names its own target", () => {
     /assertNativeAssetsDecodable\(assets, \{\s*target: 'ios',\s*capabilities: \{ webp: deriveIosWebpSupport\(\) \},\s*\}\);/u,
   );
 });
+
+test("decodeAudioData queues the decode instead of running it on the frame thread", () => {
+  // 146 clips used to decode inside a single frame — ~542 ms of them, measured on a real game's
+  // launch — because `decodeAudioData` called the decoder inline and settled its promise from the
+  // hand-rolled thenable that could only fake a settled one. The deferred contract is what makes
+  // the promise a real one, and this keeps a later edit from quietly going back to blocking.
+  const bindings = read("src/audio/audio_bindings.cpp");
+  assert.match(
+    bindings,
+    /audio::AsyncAudioDecoder::instance\(\)\.decode\(/u,
+    "the binding must queue through AsyncAudioDecoder rather than decode inline",
+  );
+  assert.ok(
+    !/ctxPtr->decodeAudioDataSync\(/u.test(bindings),
+    "the synchronous decode entry point must not come back",
+  );
+  assert.match(
+    bindings,
+    /void processAudioEvents\(\) \{[\s\S]*?drainAudioDecodes\(\);/u,
+    "the per-frame audio hook must drain finished decodes, or no promise ever settles",
+  );
+  // The resolvers are JavaScript's: a native object cannot be captured across the worker boundary.
+  const script = read("src/runtime-scripts/install-async-audio-decode.js");
+  assert.match(script, /globalThis\.__tnAudioDecodePending = /u);
+  assert.match(script, /globalThis\.__tnAudioDecodeSettle = /u);
+  // And the decoder itself must be in the runtime's source list, or the link succeeds and the
+  // queue silently never exists.
+  assert.match(read("CMakeLists.txt"), /src\/audio\/async_audio_decode\.cpp/u);
+});

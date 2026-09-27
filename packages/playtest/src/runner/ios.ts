@@ -11,6 +11,41 @@ const execFileAsync = promisify(execFile);
 
 export type IosTransportKind = "device" | "simulator";
 
+// `log show --style compact` puts the OS's own severity token before the process, e.g.
+// `2026-09-22 15:07:18.517 Df threenative-ios[40455:17a9f] [com.apple.UIKit:AssetManager] ...`.
+// The shape is split so the two fields a verdict depends on are captured: the severity token and
+// the subsystem. Anything that does not match keeps the textual fallback, so an unrecognised
+// format cannot turn a real error green.
+const kIosCompactAppleRecord =
+  /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ (Df|Db|A|I|E|F) +\S+\[\d+:[0-9a-f]+\] \[([^\]:]+):[^\]]+\]/u;
+const kIosExplicitErrorMarker = /\[error\]|\bFATAL\b|GPUValidationError|uncaught/iu;
+// Apple stamps `F` on its own slow-launch and timing reports too, so an OS fault is the game
+// breaking only when it says something failed (a Metal command buffer aborted due to an error).
+const kIosAppleFaultFailure = /\b(?:error|fail(?:ed|ure)?|abort(?:ed)?|crash(?:ed)?)\b/iu;
+const kIosTextError = /\[error\]|\b(?:Error|Fault|FATAL|FAILED|GPUValidationError|uncaught)\b/u;
+
+// An Apple-subsystem record is the OS talking about itself. The simulator writes a handful of
+// them at every launch -- `com.apple.app_launch_measurement` even stamps its FirstFramePresentation
+// record `E` -- and none is the game failing, so an OS record's `E` token is not a console
+// error, and its `F` (fault) token is one only when the record reports a failure -- WebKit also
+// faults on a slow helper-process launch. The app's own subsystem keeps the severity token as
+// authoritative: an `E`/`F` line the app itself logged is an error even when its message carries
+// no error keyword. An
+// explicit app/JS marker (`[error]`, FATAL, a validation error, an uncaught exception) always
+// wins, however the unified log transported it. Unknown format keeps the conservative text scan.
+function classifyIosConsoleLine(text: string): "error" | "log" {
+  const compact = kIosCompactAppleRecord.exec(text);
+  if (compact !== null) {
+    if (kIosExplicitErrorMarker.test(text)) return "error";
+    if (compact[2]!.startsWith("com.apple.")) {
+      return compact[1] === "F" && kIosAppleFaultFailure.test(text) ? "error" : "log";
+    }
+    if (compact[1] === "E" || compact[1] === "F") return "error";
+    return kIosTextError.test(text) ? "error" : "log";
+  }
+  return kIosTextError.test(text) ? "error" : "log";
+}
+
 export interface IIosDriverOptions {
   appPath: string;
   bundleId: string;
@@ -68,22 +103,21 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
   }
 
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
+    if (this.pid === undefined) throw new Error("iOS console capture requires a launched process.");
+    const predicate = `processIdentifier == ${this.pid}`;
     const output = this.options.transport === "simulator"
       ? await this.run([
           "simctl", "spawn", this.device(), "log", "show", "--style", "compact", "--last", "5m",
-          "--predicate", `process == \"${this.processName()}\"`,
+          "--predicate", predicate,
         ])
       : await this.run([
           "devicectl", "device", "info", "logs", "--device", this.device(),
-          "--last", "5m", "--predicate", `process == \"${this.processName()}\"`,
+          "--last", "5m", "--predicate", predicate,
         ]);
     return output
       .split(/\r?\n/u)
-      .filter((line) => /ThreeNative|THREENATIVE|Mystral|TN_PLAYTEST/u.test(line))
-      .map((text) => ({
-        text,
-        type: /\b(?:Error|Fault|FATAL|FAILED|GPUValidationError)\b/u.test(text) ? "error" : "log",
-      }));
+      .filter((line) => line.trim().length > 0)
+      .map((text) => ({ text, type: classifyIosConsoleLine(text) }));
   }
 
   async isAlive(): Promise<boolean> {
@@ -231,10 +265,6 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
 
   private device(): string {
     return this.options.device ?? "booted";
-  }
-
-  private processName(): string {
-    return basename(this.options.appPath, ".app");
   }
 
   private mailboxPath(path: string): string {

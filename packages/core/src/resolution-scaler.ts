@@ -74,8 +74,8 @@ export const RESOLUTION_SCALER = {
   /** React to a deficit immediately; climb only on sustained evidence. Asymmetric by design. */
   downWindows: 1,
   upWindows: 4,
-  /** Asynchronous timestamp queries may trail the draw by several Three.js frame IDs. */
-  maxGpuAgeFrames: 8,
+  /** Eight frames for the sampled GPU reading plus eight for asynchronous query resolution. */
+  maxGpuAgeFrames: 16,
   /** The resize frame is itself a hitch and must never feed the controller. */
   cooldownWindows: 1,
   /**

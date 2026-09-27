@@ -278,6 +278,22 @@ describe("round:deletions", () => {
     expect(renderDeletionTable(report)).toContain("PersistentExport | 2");
   });
 
+  it("skips a framework arm whose archive has not been built yet", async () => {
+    const root = await fixtureRoot();
+    const previous = await archive(root, "previous", "framework", "exploration");
+    await ledger(root, 1, previous);
+    await ledger(root, 2, "pending");
+
+    const report = findPersistentUnusedExports(root);
+
+    expect(report.archivesChecked.map((entry) => entry.round)).toEqual([1]);
+    expect(report.unbuiltArms).toEqual([{ archive: "pending", genre: "exploration", round: 2 }]);
+    expect(report.candidates).toEqual([]);
+    expect(renderDeletionTable(report)).toContain(
+      "Round 2: framework arm for exploration has no archive yet ('pending')",
+    );
+  });
+
   it("reports a declared no-arms round without inventing deletion evidence", async () => {
     const root = await fixtureRoot();
     const previous = await archive(root, "previous", "framework", "exploration");

@@ -137,6 +137,28 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
 }
 
 describe("release candidate gate", () => {
+  it("accepts a dispatched native-platforms run, the only standalone run that workflow can have", () => {
+    const base = candidate();
+    const dispatched = {
+      ...base,
+      requiredRuns: {
+        ...base.requiredRuns,
+        native: { ...base.requiredRuns.native, event: "workflow_dispatch" },
+      },
+    };
+    expect(validateReleaseCandidate(dispatched, "ThreeNativeHQ/threenative").errors).toEqual([]);
+    const ciDispatched = {
+      ...base,
+      requiredRuns: {
+        ...base.requiredRuns,
+        ci: { ...base.requiredRuns.ci, event: "workflow_dispatch" },
+      },
+    };
+    expect(validateReleaseCandidate(ciDispatched, "ThreeNativeHQ/threenative").errors).toContain(
+      "requiredRuns.ci.event must be 'push'.",
+    );
+  });
+
   it("should accept a complete exact-candidate release input", () => {
     expect(validateReleaseCandidate(candidate(), "ThreeNativeHQ/threenative")).toEqual({
       status: "PASS",
@@ -423,11 +445,28 @@ describe("release candidate gate", () => {
     );
   });
 
-  it("should cover every prebuilt asset key with a known release platform", () => {
+  it("should cover every published non-iOS prebuilt asset key with a known release platform", () => {
     // Guards the scope check itself: an asset key matching no platform prefix would leave that
-    // platform silently uncovered, so the derivation refuses it rather than ignoring it.
+    // platform silently uncovered, so the derivation refuses it rather than ignoring it. iOS keeps
+    // its own release gate and is not a supported target, so it is not a coverage requirement.
     expect(() => platformsCoveringPublishedAssets()).not.toThrow();
-    expect(platformsCoveringPublishedAssets()).toEqual(FULL_RELEASE_SCOPE.platforms);
+    expect(platformsCoveringPublishedAssets()).toEqual(["linux", "windows", "macos", "android"]);
+  });
+
+  it("should accept a scope that excludes iOS, the unsupported target", () => {
+    // The supported cohort is web, Windows, macOS, Linux and Android. A scope naming those four
+    // native platforms and no iOS is satisfiable without Xcode; before the coverage set dropped
+    // iOS this returned FAIL demanding an ios platform whose capability the dispatch never sets.
+    const result = validateReleaseCandidate(
+      candidate({
+        releaseScope: { platforms: ["linux", "windows", "macos", "android"], signed: false },
+        credentials: { ...candidate().credentials, iosSigning: false, iosExport: false },
+        hostedCapabilities: { ...candidate().hostedCapabilities, xcode: false },
+      }),
+      "ThreeNativeHQ/threenative",
+    );
+
+    expect(result).toEqual({ status: "PASS", exitCode: 0, errors: [], blockers: [] });
   });
 
   it("should reject a mismatched package subject set or a non-publishable registry state", () => {

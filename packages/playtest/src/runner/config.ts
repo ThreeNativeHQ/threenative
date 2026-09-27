@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import { relative, resolve } from "node:path";
+import type { IPlaytestPerformanceAssertion } from "../scenario.js";
 import { WEBGPU_BROWSER_ARGS } from "./browser.js";
 
 export interface IPlaytestServerConfig {
@@ -21,7 +22,18 @@ export interface IStandalonePlaytestConfig {
   adbPath?: string;
   /** @see IAndroidDriverOptions.touchRotation */
   touchRotation?: number;
+  /**
+   * The built artifact this run is about to exercise, for `--build-report` to hash. Set by
+   * `--artifact`; desktop and iOS already name theirs, so the flag is refused there.
+   */
+  artifactPath?: string;
   artifactDirectory: string;
+  /**
+   * The `<artifact>.build-report.json` a `threenative build` published beside the artifact, carrying
+   * the profile's `performanceBudget`. Resolved and proved against the artifact under test before
+   * anything launches; its budget is merged into every scenario's `assert.performance`.
+   */
+  buildReportPath?: string;
   /**
    * Capture the run's `before.png`/`after.png` artifact frames. Default true. A scenario that
    * asserts on a frame still captures one — this only drops the convenience captures every run
@@ -29,12 +41,19 @@ export interface IStandalonePlaytestConfig {
    */
   captureArtifactScreenshots?: boolean;
   browserArgs?: readonly string[];
+  /** Write a Chrome DevTools `.cpuprofile` for this run (browser and desktop targets). */
+  cpuProfilePath?: string;
   device?: string;
   desktop?: { executable: string; hostArgs?: readonly string[] };
   endpoint?: string;
   headless: boolean;
   ios?: { appPath?: string; bundleId: string; transport: "device" | "simulator" };
   mailboxRoot?: string;
+  /**
+   * The performance ceilings the build report declared, already proved against the artifact under
+   * test. Merged into each scenario's `assert.performance`; absent when no report was passed.
+   */
+  performanceBudget?: IPlaytestPerformanceAssertion;
   port?: number;
   projectPath: string;
   scenarioPath: string;
@@ -66,10 +85,13 @@ export const PLAYTEST_FLAGS = {
   "--activity": { default: ".MystralActivity", summary: "Android launch activity", takesValue: true },
   "--user": { default: "current foreground Android user", summary: "Android user id for force-stop and launch", takesValue: true },
   "--app": { default: "required for iOS", summary: "built iOS .app bundle", takesValue: true },
+  "--artifact": { default: "none (browser and android: with --build-report)", summary: "the built artifact this run exercises, hashed to prove the build report describes it", takesValue: true },
   "--artifacts": { default: "artifacts/playtest", summary: "artifact output directory", takesValue: true },
+  "--build-report": { default: "none", summary: "the <artifact>.build-report.json threenative build published; its performanceBudget bounds every scenario, and a stale or foreign report refuses the run", takesValue: true },
   "--no-screenshots": { default: "false", summary: "skip the before/after artifact frames; scenarios that assert on a frame still capture one", takesValue: false },
   "--browser-arg": { allowDashValue: true, default: "none (repeatable)", repeatable: true, summary: "one additional Chromium argument", takesValue: true },
   "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu)", takesValue: true },
+  "--cpu-prof": { default: "none", summary: "write a Chrome DevTools .cpuprofile for this run (browser and desktop targets)", takesValue: true },
   "--bundle-id": { default: "dev.threenative.runtime", summary: "iOS application bundle identifier", takesValue: true },
   "--device": { default: "platform default", summary: "Android serial or iOS device identifier", takesValue: true },
   "--executable": { default: "required for desktop", summary: "native desktop game executable", takesValue: true },
@@ -125,6 +147,9 @@ export function formatUsage(): string {
     "                        with repeatable --host-arg, or --logcat <serial>",
     "                        bounds: --max-frame-p95 <ms>, --min-fps <fps>",
     "                        --require-windows <n> (default 2), --timeout <s>, --text",
+    "                        --allow-virtual-display accepts a frame rate the display did not",
+    "                        see (a private Xvfb, or a loop the presentation cap outran); without",
+    "                        it such a run prints no fps column and refuses a --min-fps bound",
     "  trace                 record a Chrome performance trace of a running game and name the",
     "                        functions inside its slow frames — a percentile says a frame was",
     "                        slow, a trace says which function. Take one BEFORE attributing any",
@@ -175,6 +200,16 @@ export function formatUsage(): string {
     "  2  the run never reached assertions",
     "  75  the capture lock timed out — not a test failure; rerun when the queue clears",
     "",
+    "A build's own budgets:",
+    "  threenative build publishes <artifact>.build-report.json beside the artifact it wrote, and",
+    "  --build-report hands that to a run. The report is proved against the artifact under test",
+    "  (--artifact on browser and android; --executable / --app on desktop and iOS) and its",
+    "  performanceBudget is merged into every scenario's assert.performance, so a ceiling declared",
+    "  at build time bounds the run without being retyped into each scenario. A report that is",
+    "  malformed, was built for another target, or describes bytes that have since changed exits 2",
+    "  with TN_PLAYTEST_BUILD_REPORT_INVALID or TN_PLAYTEST_BUILD_REPORT_STALE — the run measured",
+    "  nothing, which is not the same as a game that failed.",
+    "",
   ].join("\n");
 }
 
@@ -220,6 +255,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     throw new PlaytestCliUsageError("Choose --browser-recipe or --browser-arg, not both.");
   }
   const device = flags.get("--device")?.[0];
+  const cpuProfilePath = flags.get("--cpu-prof")?.[0];
   if (target === "browser" && device !== undefined) {
     if (browserRecipe !== undefined) {
       throw new PlaytestCliUsageError("Android Chrome device runs cannot honor --browser-recipe; remove it.");
@@ -248,6 +284,13 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   // bundle reaches it the same way DesktopPlaytestDriver already accepts: `--host-arg run
   // --host-arg dist/game.js`. Without this the CLI could only start a host with no game.
   const hostArgs = flags.get("--host-arg") ?? [];
+  const artifact = flags.get("--artifact")?.[0];
+  const buildReport = flags.get("--build-report")?.[0];
+  if (buildReport !== undefined && artifact === undefined && target !== "desktop" && target !== "ios") {
+    throw new PlaytestCliUsageError(
+      `--build-report on the ${target} target also needs --artifact <path>: nothing else says which build this run exercises.`,
+    );
+  }
   const browserArgs =
     explicitBrowserArgs.length > 0
       ? explicitBrowserArgs
@@ -256,6 +299,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
         : [];
   return {
     ...(flags.get("--adb")?.[0] === undefined ? {} : { adbPath: flags.get("--adb")![0] }),
+    ...(artifact === undefined ? {} : { artifactPath: artifact }),
     ...(touchRotation === undefined ? {} : { touchRotation }),
     // A scaffolded project's own `test` script is what a user runs, and it deliberately refuses a
     // software adapter — nothing about that should change to suit a runner. But CI has no GPU and
@@ -273,6 +317,8 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
     captureArtifactScreenshots: !argv.includes("--no-screenshots"),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
+    ...(buildReport === undefined ? {} : { buildReportPath: resolve(projectPath, buildReport) }),
+    ...(cpuProfilePath === undefined ? {} : { cpuProfilePath: resolve(projectPath, cpuProfilePath) }),
     ...(device === undefined ? {} : { device }),
     ...(executable === undefined
       ? {}

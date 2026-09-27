@@ -7,6 +7,7 @@
 
 #include "mystral/canvas/canvas2d.h"
 #include <iostream>
+#include <unordered_map>
 #include <cmath>
 #include <regex>
 #include <stack>
@@ -64,6 +65,39 @@ struct Color {
     uint8_t r = 0, g = 0, b = 0, a = 255;
 };
 
+/**
+ * The numbers out of a functional CSS colour, in order, with the function's name.
+ *
+ * Returns false for anything that is not `name( <number> [, <number>]* )`; a trailing `%` is
+ * consumed and ignored, which is what the callers want — `hsl` means percentages by position.
+ */
+static bool scanColorFunction(const std::string& text, std::string& name, float values[4],
+                              int& count) {
+    const size_t open = text.find('(');
+    if (open == std::string::npos || text.empty() || text.back() != ')') return false;
+    name = text.substr(0, open);
+    count = 0;
+    size_t cursor = open + 1;
+    const size_t end = text.size() - 1;
+    while (cursor < end) {
+        while (cursor < end &&
+               (std::isspace(static_cast<unsigned char>(text[cursor])) || text[cursor] == ',')) {
+            cursor += 1;
+        }
+        if (cursor >= end) break;
+        if (count == 4) return false;
+        const char* begin = text.c_str() + cursor;
+        char* stop = nullptr;
+        const double value = std::strtod(begin, &stop);
+        if (stop == begin) return false;
+        values[count] = static_cast<float>(value);
+        count += 1;
+        cursor += static_cast<size_t>(stop - begin);
+        if (cursor < end && text[cursor] == '%') cursor += 1;
+    }
+    return count > 0;
+}
+
 static Color parseColor(const std::string& colorStr, bool* valid = nullptr) {
     Color color;
     if (valid) *valid = true;
@@ -105,47 +139,46 @@ static Color parseColor(const std::string& colorStr, bool* valid = nullptr) {
         return color;
     }
 
-    // Handle rgb(r, g, b) and rgba(r, g, b, a)
-    std::regex rgbaRegex(R"(rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\))");
-    std::smatch match;
-    if (std::regex_match(colorStr, match, rgbaRegex)) {
-        color.r = std::stoi(match[1]);
-        color.g = std::stoi(match[2]);
-        color.b = std::stoi(match[3]);
-        if (match[4].matched) {
-            float alpha = std::stof(match[4]);
-            color.a = static_cast<uint8_t>(alpha * 255);
+    // `rgb(1, 2, 3)`, `rgba(1, 2, 3, 0.5)`, `hsl(210, 50%, 20%)`: a scan and a `strtod` per
+    // component. The regexes these replace compiled and matched per call, on a path a page hits
+    // once per painted rectangle — 20.6 us a rect on a real game, against 1.4 us here.
+    std::string function;
+    float values[4] = {0, 0, 0, 0};
+    int componentCount = 0;
+    if (scanColorFunction(colorStr, function, values, componentCount)) {
+        if ((function == "rgb" || function == "rgba") && componentCount >= 3) {
+            color.r = static_cast<uint8_t>(values[0]);
+            color.g = static_cast<uint8_t>(values[1]);
+            color.b = static_cast<uint8_t>(values[2]);
+            if (componentCount >= 4) color.a = static_cast<uint8_t>(values[3] * 255);
+            return color;
         }
-        return color;
-    }
+        if ((function == "hsl" || function == "hsla") && componentCount >= 3) {
+            float h = std::fmod(values[0], 360.0f);
+            if (h < 0) h += 360.0f;
+            float s = values[1] / 100.0f;
+            float l = values[2] / 100.0f;
+            float a = componentCount >= 4 ? values[3] : 1.0f;
 
-    // Handle hsl(h, s%, l%) and hsla(h, s%, l%, a)
-    std::regex hslRegex(R"(hsla?\s*\(\s*([\d.]+)\s*,\s*([\d.]+)%?\s*,\s*([\d.]+)%?\s*(?:,\s*([\d.]+))?\s*\))");
-    if (std::regex_match(colorStr, match, hslRegex)) {
-        float h = std::fmod(std::stof(match[1]), 360.0f);
-        if (h < 0) h += 360.0f;
-        float s = std::stof(match[2]) / 100.0f;
-        float l = std::stof(match[3]) / 100.0f;
-        float a = match[4].matched ? std::stof(match[4]) : 1.0f;
+            // HSL to RGB conversion
+            float c = (1.0f - std::fabs(2.0f * l - 1.0f)) * s;
+            float x = c * (1.0f - std::fabs(std::fmod(h / 60.0f, 2.0f) - 1.0f));
+            float m = l - c / 2.0f;
 
-        // HSL to RGB conversion
-        float c = (1.0f - std::fabs(2.0f * l - 1.0f)) * s;
-        float x = c * (1.0f - std::fabs(std::fmod(h / 60.0f, 2.0f) - 1.0f));
-        float m = l - c / 2.0f;
+            float r1, g1, b1;
+            if (h < 60)       { r1 = c; g1 = x; b1 = 0; }
+            else if (h < 120) { r1 = x; g1 = c; b1 = 0; }
+            else if (h < 180) { r1 = 0; g1 = c; b1 = x; }
+            else if (h < 240) { r1 = 0; g1 = x; b1 = c; }
+            else if (h < 300) { r1 = x; g1 = 0; b1 = c; }
+            else              { r1 = c; g1 = 0; b1 = x; }
 
-        float r1, g1, b1;
-        if (h < 60)       { r1 = c; g1 = x; b1 = 0; }
-        else if (h < 120) { r1 = x; g1 = c; b1 = 0; }
-        else if (h < 180) { r1 = 0; g1 = c; b1 = x; }
-        else if (h < 240) { r1 = 0; g1 = x; b1 = c; }
-        else if (h < 300) { r1 = x; g1 = 0; b1 = c; }
-        else              { r1 = c; g1 = 0; b1 = x; }
-
-        color.r = static_cast<uint8_t>((r1 + m) * 255);
-        color.g = static_cast<uint8_t>((g1 + m) * 255);
-        color.b = static_cast<uint8_t>((b1 + m) * 255);
-        color.a = static_cast<uint8_t>(a * 255);
-        return color;
+            color.r = static_cast<uint8_t>((r1 + m) * 255);
+            color.g = static_cast<uint8_t>((g1 + m) * 255);
+            color.b = static_cast<uint8_t>((b1 + m) * 255);
+            color.a = static_cast<uint8_t>(a * 255);
+            return color;
+        }
     }
 
     // Named colors (basic set)
@@ -176,7 +209,7 @@ static FontInfo parseFont(const std::string& fontStr) {
 
     // Parse CSS font string: "italic bold 16px Arial"
     // Simplified parser - handles: [style] [weight] size[px/pt] family
-    std::regex fontRegex(R"((?:(italic|oblique)\s+)?(?:(bold|normal|\d+)\s+)?(\d+(?:\.\d+)?)(px|pt|em)\s+(.+))");
+    static const std::regex fontRegex(R"((?:(italic|oblique)\s+)?(?:(bold|normal|\d+)\s+)?(\d+(?:\.\d+)?)(px|pt|em)\s+(.+))");
     std::smatch match;
 
     if (std::regex_match(fontStr, match, fontRegex)) {
@@ -197,7 +230,7 @@ static FontInfo parseFont(const std::string& fontStr) {
         info.family = match[5];
     } else {
         // Fallback: just try to extract size
-        std::regex sizeRegex(R"((\d+(?:\.\d+)?)(px|pt))");
+        static const std::regex sizeRegex(R"((\d+(?:\.\d+)?)(px|pt))");
         if (std::regex_search(fontStr, match, sizeRegex)) {
             info.size = std::stof(match[1]);
         }
@@ -213,6 +246,11 @@ static FontInfo parseFont(const std::string& fontStr) {
 struct Canvas2DState {
     std::string fillStyle = "#000000";
     std::string strokeStyle = "#000000";
+    // Parsed once where the style is set, because `makeFillPaint` runs per draw and parsing a
+    // CSS colour there cost 18 us a rect on a real game — the same work repeated for every
+    // rectangle the page paints, to say the same thing.
+    Color fillColor{0, 0, 0, 255};
+    Color strokeColor{0, 0, 0, 255};
     std::shared_ptr<CanvasGradient> fillGradient;
     std::shared_ptr<CanvasGradient> strokeGradient;
     float lineWidth = 1.0f;
@@ -254,6 +292,32 @@ bool CanvasGradient::addColorStop(float offset, const std::string& text) {
 
 #if defined(MYSTRAL_HAS_SKIA)
 
+/**
+ * The process's font manager, built on first use.
+ *
+ * Building one is not per-canvas work: on Linux it reads the fontconfig configuration and builds a
+ * FreeType scanner over the installed fonts, and the result is process state that every canvas
+ * shares - which is how a browser holds it. Measured on Midway, which creates 65 canvases while
+ * its modules load: 690 ms in total when each canvas built its own, 145 ms when they share one.
+ *
+ * That is 1.8% of this game's 30 s startup and it is deliberately *not* offered as the startup's
+ * problem - the startup's problem is that it runs inside a single frame, which is a loader/pump
+ * change. This is worth having because a font manager is process state, not because it is fast.
+ * SkFontMgr lookups are thread-safe, so one instance serves every canvas on every thread.
+ */
+sk_sp<SkFontMgr> sharedFontMgr() {
+#if defined(__APPLE__)
+    static sk_sp<SkFontMgr> manager = SkFontMgr_New_CoreText(nullptr);
+#elif defined(__ANDROID__)
+    static sk_sp<SkFontMgr> manager = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+#elif defined(__linux__) && !defined(__ANDROID__)
+    static sk_sp<SkFontMgr> manager = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+#else
+    static sk_sp<SkFontMgr> manager = SkFontMgr::RefEmpty();  // Fallback
+#endif
+    return manager;
+}
+
 struct Canvas2DContext::Impl {
     sk_sp<SkSurface> surface;
     SkCanvas* canvas = nullptr;  // Owned by surface
@@ -263,6 +327,10 @@ struct Canvas2DContext::Impl {
     sk_sp<SkFontMgr> fontMgr;
     sk_sp<SkTypeface> currentTypeface;
     SkFont currentFont;
+    /** The font string `currentFont` was resolved from; `updateFont` is a no-op while it matches. */
+    std::string resolvedFontSpec;
+    /** Resolved typefaces, keyed by the family and style that decide them. */
+    std::unordered_map<std::string, sk_sp<SkTypeface>> typefaceCache;
 
     Impl(int width, int height) {
         // Create RGBA surface using new API (SkSurfaces namespace)
@@ -277,16 +345,7 @@ struct Canvas2DContext::Impl {
             canvas->clear(SK_ColorTRANSPARENT);
         }
 
-        // Initialize font manager (platform-specific)
-#if defined(__APPLE__)
-        fontMgr = SkFontMgr_New_CoreText(nullptr);
-#elif defined(__ANDROID__)
-        fontMgr = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
-#elif defined(__linux__) && !defined(__ANDROID__)
-        fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
-#else
-        fontMgr = SkFontMgr::RefEmpty();  // Fallback
-#endif
+        fontMgr = sharedFontMgr();
         if (fontMgr) {
             currentTypeface = fontMgr->matchFamilyStyle("sans-serif", SkFontStyle::Normal());
             if (!currentTypeface) {
@@ -294,6 +353,8 @@ struct Canvas2DContext::Impl {
             }
         }
         currentFont = SkFont(currentTypeface, 10.0f);
+        // The default family is resolved above, so the default spec is already satisfied.
+        resolvedFontSpec = currentState.font;
     }
 
     void resize(int width, int height) {
@@ -346,7 +407,7 @@ struct Canvas2DContext::Impl {
         SkPaint paint;
         paint.setAntiAlias(true);
         paint.setStyle(SkPaint::kFill_Style);
-        Color c = parseColor(currentState.fillStyle);
+        const Color c = currentState.fillColor;
         paint.setColor(SkColorSetARGB(
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
             c.r, c.g, c.b
@@ -369,7 +430,7 @@ struct Canvas2DContext::Impl {
             const std::vector<SkScalar> intervals(currentState.lineDash.begin(), currentState.lineDash.end());
             paint.setPathEffect(SkDashPathEffect::Make({intervals.data(), intervals.size()}, 0.0f));
         }
-        Color c = parseColor(currentState.strokeStyle);
+        const Color c = currentState.strokeColor;
         paint.setColor(SkColorSetARGB(
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
             c.r, c.g, c.b
@@ -379,6 +440,21 @@ struct Canvas2DContext::Impl {
     }
 
     void updateFont() {
+        // `restore()` calls this after every `save()` and `setFont()` calls it on every set, so a
+        // canvas that draws text inside save/restore pairs asks for the same family hundreds of
+        // times over. Each ask ran the platform's font matcher end to end — on Linux that is
+        // fontconfig's FcPatternFilter — and it was the hottest stack in Midway's native startup
+        // and again when a HUD redraw followed a click: the main thread sat inside
+        // `SkFontMgr_fontconfig::onMatchFamilyStyle` rather than in any game or engine work, while
+        // all 109 of that startup's module compiles cost 0.07 s between them.
+        //
+        // Comparing only the *last* spec was the first fix and it was not enough: a HUD draws its
+        // labels at several sizes and weights, so the spec alternates and nearly every draw asked
+        // for a family the previous draw had not. The family and its style are what the matcher
+        // resolves, and a spec's size is not part of that — so the cache is keyed by family and
+        // style, and a size change only rebuilds the (cheap) `SkFont` around the same typeface.
+        if (resolvedFontSpec == currentState.font) return;
+        resolvedFontSpec = currentState.font;
         FontInfo fi = parseFont(currentState.font);
         SkFontStyle style = SkFontStyle(
             fi.weight,
@@ -387,24 +463,32 @@ struct Canvas2DContext::Impl {
         );
 
         if (fontMgr) {
-            currentTypeface.reset();
-            std::istringstream families(fi.family);
-            std::string family;
-            while (std::getline(families, family, ',')) {
-                const auto first = family.find_first_not_of(" \t\"'");
-                if (first == std::string::npos) continue;
-                family = family.substr(first, family.find_last_not_of(" \t\"'") - first + 1);
-                if (family == "ui-monospace") family = "monospace";
-                else if (family == "ui-serif") family = "serif";
-                else if (family == "ui-sans-serif" || family == "system-ui") family = "sans-serif";
-                currentTypeface = fontMgr->matchFamilyStyle(family.c_str(), style);
-                if (currentTypeface) break;
-            }
-            if (!currentTypeface) {
-                currentTypeface = fontMgr->matchFamilyStyle("sans-serif", style);
-            }
-            if (!currentTypeface) {
-                currentTypeface = fontMgr->matchFamilyStyle(nullptr, style);
+            const std::string cacheKey = fi.family + '\x1f' + std::to_string(fi.weight) +
+                                         (fi.italic ? "\x1fi" : "\x1fn");
+            const auto cached = typefaceCache.find(cacheKey);
+            if (cached != typefaceCache.end()) {
+                currentTypeface = cached->second;
+            } else {
+                currentTypeface.reset();
+                std::istringstream families(fi.family);
+                std::string family;
+                while (std::getline(families, family, ',')) {
+                    const auto first = family.find_first_not_of(" \t\"'");
+                    if (first == std::string::npos) continue;
+                    family = family.substr(first, family.find_last_not_of(" \t\"'") - first + 1);
+                    if (family == "ui-monospace") family = "monospace";
+                    else if (family == "ui-serif") family = "serif";
+                    else if (family == "ui-sans-serif" || family == "system-ui") family = "sans-serif";
+                    currentTypeface = fontMgr->matchFamilyStyle(family.c_str(), style);
+                    if (currentTypeface) break;
+                }
+                if (!currentTypeface) {
+                    currentTypeface = fontMgr->matchFamilyStyle("sans-serif", style);
+                }
+                if (!currentTypeface) {
+                    currentTypeface = fontMgr->matchFamilyStyle(nullptr, style);
+                }
+                typefaceCache[cacheKey] = currentTypeface;
             }
         }
 
@@ -481,11 +565,13 @@ void Canvas2DContext::restore() {
 // Fill and Stroke Styles
 void Canvas2DContext::setFillStyle(const std::string& color) {
     impl_->currentState.fillStyle = color;
+    impl_->currentState.fillColor = parseColor(color);
     impl_->currentState.fillGradient.reset();
 }
 
 void Canvas2DContext::setStrokeStyle(const std::string& color) {
     impl_->currentState.strokeStyle = color;
+    impl_->currentState.strokeColor = parseColor(color);
     impl_->currentState.strokeGradient.reset();
 }
 

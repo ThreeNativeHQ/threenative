@@ -14,9 +14,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, posix, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { downloadReleaseArtifact, releaseManifestUrl, verifyChecksum } from './install-prebuilt.mjs';
+import { listFiles, selectManifestAssets } from './asset-manifest.mjs';
 import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
 import {
   assertAndroidArtifact16KbAlignment,
@@ -25,9 +26,9 @@ import {
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GRADLE_WRAPPER_URL =
-  'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
+  'https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar';
 export const GRADLE_WRAPPER_SHA256 =
-  'd3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd';
+  '81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f';
 
 export const ANDROID_ABIS = ['arm64-v8a', 'x86_64'];
 export const ANDROID_ENGINES = ['quickjs', 'v8'];
@@ -153,6 +154,16 @@ export function findAndroidBuildTool(name, environment = process.env) {
   return undefined;
 }
 
+function onlySelfSignedCertificateErrors(output) {
+  const errors = /^Error:[ \t]*\r?\n((?:[^\r\n]+\r?\n)+)/mu.exec(output)?.[1]
+    .trim().split(/\r?\n/u).map((line) => line.trim()) ?? [];
+  const selfSigned = 'This jar contains entries whose signer certificate is self-signed.';
+  return errors.includes(selfSigned) && errors.every((line) =>
+    line === selfSigned ||
+    /^This jar contains entries whose certificate chain is invalid\. Reason: PKIX path building failed: .*: unable to find valid certification path to requested target$/u.test(line),
+  );
+}
+
 /**
  * Prove a release artifact is really signed, targets the submission SDK and is not debuggable.
  *
@@ -180,11 +191,21 @@ export function verifyAndroidReleaseArtifact(artifact, request, options = {}) {
       `TN_ANDROID_SIGNATURE_TOOL_MISSING: ${tool} is unavailable, so the ${request.format} signature cannot be verified. Install the Android build-tools, or set ANDROID_HOME.`,
     );
   }
-  const args = tool === 'apksigner' ? ['verify', '--print-certs', artifact] : ['-verify', artifact];
+  const args = tool === 'apksigner'
+    ? ['verify', '--print-certs', artifact]
+    : ['-J-Duser.language=en', '-J-Duser.country=US', '-verify', '-strict', artifact];
   const result = run(executable, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (result.error) throw result.error;
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  if (result.status !== 0) {
+  // Android signing certificates are normally self-signed (jarsigner warning bit 4).
+  // That bit also covers expired certificates, so accept only the named self-signed errors.
+  // Strict verification still rejects unsigned entries (bit 16) and invalid signatures.
+  // An entirely unsigned archive can exit 0, so positive signature evidence is required too.
+  const signatureValid = tool === 'apksigner'
+    ? result.status === 0
+    : (result.status === 0 || (result.status === 4 && onlySelfSignedCertificateErrors(output))) &&
+      /^jar verified(?:\.|, with signer errors\.)\r?$/mu.test(output);
+  if (!signatureValid) {
     throw new Error(
       `TN_ANDROID_SIGNATURE_INVALID: ${tool} rejected ${artifact}: ${output.trim() || 'unknown reason'}`,
     );
@@ -742,17 +763,6 @@ export async function ensureGradleWrapper(options = {}) {
   return output;
 }
 
-function listFiles(directory, relative = '') {
-  const files = [];
-  for (const entry of readdirSync(join(directory, relative), { withFileTypes: true })) {
-    const path = relative ? posix.join(relative, entry.name) : entry.name;
-    if (entry.isDirectory()) files.push(...listFiles(directory, path));
-    else if (entry.isFile()) files.push(path);
-    else throw new Error(`Unsupported Android asset entry: ${join(directory, path)}`);
-  }
-  return files.sort();
-}
-
 export function stageAndroidAssets(
   assets,
   destination = join(runtimeRoot, 'android', 'app', 'build', 'generated', 'threenative', 'assets', 'game'),
@@ -770,7 +780,7 @@ export function stageAndroidAssets(
   // Derived from the runtime this build is about to pack, not declared here. A hardcoded claim
   // goes stale the moment the build changes under it, which is exactly what happened to WebP.
   assertAndroidAssetsDecodable(assets, { webp: deriveAndroidWebpSupport(runtimeSource) });
-  const files = listFiles(assets);
+  const { selected: files } = selectManifestAssets(assets);
   for (const file of files) {
     const output = join(destination, file);
     mkdirSync(dirname(output), { recursive: true });
@@ -855,6 +865,36 @@ export function androidBuildRequest(mode = 'debug', format = 'apk') {
 }
 
 /**
+ * The ABI override the packager hands Gradle.
+ *
+ * A release is what Play installs on a phone, where only `arm64-v8a` runs, so release names that
+ * one slice; the `x86_64` emulator dev lane lives in debug, which keeps Gradle's both-ABI default. An explicit
+ * `-PthreenativeAbis` from the caller wins in both modes — no default overrides a named set.
+ */
+export function androidAbiGradleArgs(mode, extraGradleArgs = []) {
+  const namesAbis = extraGradleArgs.some((arg) =>
+    /^(?:-P|--project-prop=)threenativeAbis=/u.test(arg),
+  );
+  return mode === 'release' && !namesAbis ? ['-PthreenativeAbis=arm64-v8a'] : [];
+}
+
+/**
+ * The ABI set a Gradle invocation builds: its last `-PthreenativeAbis`, or `undefined` for Gradle's
+ * own default. The 16 KB census checks exactly this set, so a release (arm64-v8a) or an
+ * emulator-only (x86_64) build is not failed for the slice it deliberately left out.
+ */
+export function androidRequestedAbis(gradleArgs) {
+  const value = gradleArgs
+    .map((arg) => /^(?:-P|--project-prop=)threenativeAbis=(.*)$/u.exec(arg)?.[1])
+    .filter((entry) => entry !== undefined)
+    .at(-1);
+  return value
+    ?.split(',')
+    .map((abi) => abi.trim())
+    .filter((abi) => abi.length > 0);
+}
+
+/**
  * The exact artifacts a resolved request may produce, in preference order.
  *
  * A release APK is signed, so only `app-release.apk` satisfies it; `app-release-unsigned.apk` is a
@@ -922,14 +962,22 @@ function alignAndroidArchive(apkPath, options = {}) {
       '--ks',
       keystore,
       '--ks-pass',
-      `pass:${options.keystorePassword ?? 'android'}`,
+      'env:TN_ANDROID_KEYSTORE_PASSWORD',
       '--ks-key-alias',
       options.keystoreAlias ?? 'androiddebugkey',
       '--key-pass',
-      `pass:${options.keyPassword ?? 'android'}`,
+      'env:TN_ANDROID_KEY_PASSWORD',
       aligned,
     ],
-    { encoding: 'utf8', stdio: 'inherit' },
+    {
+      encoding: 'utf8',
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        TN_ANDROID_KEYSTORE_PASSWORD: options.keystorePassword ?? 'android',
+        TN_ANDROID_KEY_PASSWORD: options.keyPassword ?? 'android',
+      },
+    },
   );
   if (signResult.error) throw signResult.error;
   if (signResult.status !== 0)
@@ -1037,7 +1085,13 @@ export async function packageAndroid(
     const extraGradleArgs = (process.env.THREENATIVE_GRADLE_ARGS ?? '')
       .split(' ')
       .filter((entry) => entry.length > 0);
-    const baseArgs = [request.task, '-x', 'buildAndroidFirstProofBundle', ...extraGradleArgs];
+    const baseArgs = [
+      request.task,
+      '-x',
+      'buildAndroidFirstProofBundle',
+      ...androidAbiGradleArgs(request.mode, extraGradleArgs),
+      ...extraGradleArgs,
+    ];
     const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];
     const spawn = options.spawnSync ?? spawnSync;
     const result = spawn(command, args, {
@@ -1091,7 +1145,11 @@ export async function packageAndroid(
         });
       }
       // The 16 KB census runs on the artifact that ships, not on the build directory it came from.
-      const census = assertAndroidArtifact16KbAlignment(output, options.artifact16Kb ?? {});
+      const abis = androidRequestedAbis(baseArgs);
+      const census = assertAndroidArtifact16KbAlignment(output, {
+        ...(abis === undefined ? {} : { abis }),
+        ...(options.artifact16Kb ?? {}),
+      });
       for (const library of census.libraries) {
         console.log(
           `  16 KB ok: ${library.entry} (${library.compression}, offset 0x${library.dataOffset.toString(16)}, ` +

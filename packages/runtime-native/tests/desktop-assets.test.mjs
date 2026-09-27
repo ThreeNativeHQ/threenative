@@ -279,6 +279,45 @@ test('desktop packaging uses THREENATIVE_RUNTIME_SOURCE for decoder preflight', 
  * this probe existed the answer was a flat "unsupported", which rejected the WebP-packed GLBs the
  * documented `gltf-transform webp` pipeline produces — from a runtime that decodes them fine.
  */
+test('a prebuilt release is asked what it decodes instead of being assumed decoder-less', () => {
+  const root = makeTempDirSync('tn-prebuilt-probe');
+  const executable = join(root, 'prebuilt', 'linux-x64', 'threenative-runtime');
+  mkdirSync(join(root, 'prebuilt', 'linux-x64'), { recursive: true });
+  writeFileSync(executable, '');
+  const calls = [];
+  const spawn = (command, args) => {
+    calls.push({ args, command });
+    return { status: 0, stdout: 'TN_DECODERS:{"webp":true}\n' };
+  };
+  const probed = probePrebuiltDecoders(root, { spawn });
+  assert.equal(probed?.webp, true);
+  assert.equal(calls[0].command, executable);
+  // A probe must never need a display: it is a question about the binary, not about X.
+  assert.ok(calls[0].args.includes('--no-sdl'));
+  rmSync(root, { force: true, recursive: true });
+});
+
+test('a prebuilt release that answers NO is still refused, with the binary named', () => {
+  const root = makeTempDirSync('tn-prebuilt-probe-no');
+  mkdirSync(join(root, 'prebuilt', 'linux-x64'), { recursive: true });
+  writeFileSync(join(root, 'prebuilt', 'linux-x64', 'threenative-runtime'), '');
+  const spawn = () => ({ status: 0, stdout: 'TN_DECODERS:{"webp":false}\n' });
+  assert.equal(probePrebuiltDecoders(root, { spawn })?.webp, false);
+  rmSync(root, { force: true, recursive: true });
+});
+
+/** A probe that cannot run must never *grant* support: the caller keeps its refusal. */
+test('an unprobeable runtime root yields no answer at all', () => {
+  const root = makeTempDirSync('tn-prebuilt-probe-missing');
+  assert.equal(probePrebuiltDecoders(root), undefined);
+  const withBinary = makeTempDirSync('tn-prebuilt-probe-silent');
+  mkdirSync(join(withBinary, 'prebuilt', 'linux-x64'), { recursive: true });
+  writeFileSync(join(withBinary, 'prebuilt', 'linux-x64', 'threenative-runtime'), '');
+  assert.equal(probePrebuiltDecoders(withBinary, { spawn: () => ({ status: 1, stdout: '' }) }), undefined);
+  rmSync(root, { force: true, recursive: true });
+  rmSync(withBinary, { force: true, recursive: true });
+});
+
 /**
  * A source checkout says what CMake *could* build; the selected runtime says what it *did*. Those
  * disagree after `download-deps.mjs --only webp` lands libwebp beside a binary that was compiled

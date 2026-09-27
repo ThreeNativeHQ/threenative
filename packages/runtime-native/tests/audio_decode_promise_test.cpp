@@ -11,10 +11,12 @@
 #include "mystral/audio/audio_bindings.h"
 #include "mystral/js/engine.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -74,10 +76,13 @@ constexpr const char *kScript = R"JS((() => {
     callbackError = error;
   });
 
-  check("the legacy success callback still fires", () =>
-    callbackBuffer !== undefined && typeof callbackBuffer.getChannelData === "function"
+  // A browser fires these when the decode lands, not before it returns. Decoding used to be
+  // synchronous here — the one thing that made a settled promise possible from a hand-rolled
+  // thenable — and a caller that only reads the callback synchronously was relying on it.
+  check("the legacy success callback has NOT fired before the decode lands", () =>
+    callbackBuffer === undefined
       ? undefined
-      : "onSuccess received " + describe(callbackBuffer),
+      : "onSuccess ran before decodeAudioData returned: " + describe(callbackBuffer),
   );
   check("the legacy error callback still fires", () =>
     callbackError !== undefined ? undefined : "onError was not called",
@@ -110,6 +115,11 @@ constexpr const char *kScript = R"JS((() => {
   Promise.resolve()
     .then(() => resolved.then((buffer) => buffer, (error) => ({ error })))
     .then((value) => {
+      check("the legacy success callback fires when the decode lands", () =>
+        callbackBuffer !== undefined && typeof callbackBuffer.getChannelData === "function"
+          ? undefined
+          : "onSuccess received " + describe(callbackBuffer),
+      );
       check("the success Promise settles with an AudioBuffer", () =>
         value !== null && typeof value === "object" && typeof value.getChannelData === "function"
           ? undefined
@@ -179,9 +189,19 @@ bool runContract(const EngineCase &engineCase, bool &ran) {
 
     // Settling runs on the microtask queue. QuickJS drains pending jobs after each eval and V8
     // needs the explicit pump, so do both rather than assume which engine this is.
-    for (int pass = 0; pass < 8 && report.empty(); pass += 1) {
+    //
+    // The deadline is time, not a pump count: the decode lands on a worker thread, so eight passes
+    // (microseconds) race it and lose on a loaded runner — observed as a bare "the script did not
+    // reach its report" on macOS. Wait for the worker instead of guessing at its latency.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (report.empty() && std::chrono::steady_clock::now() < deadline) {
+        // The runtime delivers finished decodes from `processAudioEvents()` inside `pollEvents()`,
+        // and this loop stands in for that: the decode runs on a worker, so a harness that only
+        // pumps microtasks would wait for a completion nobody ever delivers.
+        mystral::audio::drainAudioDecodes();
         engine->processMicrotasks();
         engine->evalWithResult("undefined", "audio_decode_promise_drain.js");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     bool ok = true;

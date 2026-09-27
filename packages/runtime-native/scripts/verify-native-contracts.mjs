@@ -98,6 +98,9 @@ export const executionContracts = {
   "threenative-lifecycle-policy-test": {
     invocations: [{ args: [], passLine: "native lifecycle policy contract passed" }],
   },
+  "threenative-presentation-pacing-test": {
+    invocations: [{ args: [], passLine: "PRESENTATION_PACING_OK" }],
+  },
   "threenative-local-storage-test": {
     invocations: [{ args: [], passLine: "local_storage bindings: all assertions passed" }],
   },

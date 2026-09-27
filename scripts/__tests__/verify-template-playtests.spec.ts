@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -80,6 +80,51 @@ describe("template playtest matrix", () => {
       ]);
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("copies a template's engine-only guards in before pnpm test runs", async () => {
+    const root = await makeTempDir("threenative-template-extras-");
+    const extras = await makeTempDir("threenative-template-extras-source-");
+    const seen: string[][] = [];
+    try {
+      // A starter scaffold ships three scenarios; the other 21 are the engine's own regression
+      // guards and live outside the template. The sweep still has to run all of them, so they
+      // land in `<target>/playtests/` before the glob in the template's `test` script is read.
+      await mkdir(path.join(extras, "alpha"), { recursive: true });
+      await writeFile(
+        path.join(extras, "alpha", "coyote.playtest.json"),
+        JSON.stringify({ name: "coyote", schemaVersion: 1 }),
+      );
+      await writeFile(path.join(extras, "alpha", "models-baseline.png"), "png");
+
+      await runTemplatePlaytests(
+        ["alpha"],
+        root,
+        { "create-threenative": "/tmp/create-threenative.tgz" },
+        {
+          templatePlaytestRoot: extras,
+          createProject: async ({ target }) => {
+            await mkdir(path.join(target, "playtests"), { recursive: true });
+            await writeFile(path.join(target, "playtests", "survives.playtest.json"), "{}");
+            return { installed: true, target, template: "alpha" };
+          },
+          run: async (_command, args, cwd) => {
+            if (args[0] !== "test") return;
+            expect((await readdir(path.join(cwd, "playtests"))).sort()).toEqual([
+              "coyote.playtest.json",
+              "models-baseline.png",
+              "survives.playtest.json",
+            ]);
+            seen.push([...args]);
+          },
+        },
+      );
+
+      expect(seen).toEqual([["test"]]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+      await rm(extras, { force: true, recursive: true });
     }
   });
 

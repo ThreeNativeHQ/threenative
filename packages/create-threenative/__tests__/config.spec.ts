@@ -277,7 +277,7 @@ describe("threenative.config.ts", () => {
       },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
-      ui: { renderer: "native" },
+      ui: { renderer: "web" },
     });
   });
 
@@ -312,8 +312,14 @@ describe("threenative.config.ts", () => {
       window: { title: "fox-game", width: 1280, height: 720, maximized: false, resizable: true },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
-      ui: { renderer: "native" },
+      ui: { renderer: "web" },
     });
+  });
+
+  it.each(["web", "native"])("preserves an explicit %s UI renderer", async (renderer) => {
+    const root = await project();
+    await config(root, `export default { ui: { renderer: "${renderer}" } };`);
+    await expect(loadConfig(root)).resolves.toMatchObject({ ui: { renderer } });
   });
 
   it("uses the Vite-owned esbuild without invoking Vite's config loader", async () => {
@@ -685,6 +691,31 @@ describe("threenative.config.ts", () => {
     await config(root, 'export default { assets: { models: { sharedImages: "yes" } } };');
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
     await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.sharedImages/u);
+  });
+
+  it("hands assets.models.compact to the pipeline that receives it", async () => {
+    // The same seam: the engine grew lossless compaction, and this validator's key list is
+    // where a documented opt-out dies before an asset compiles.
+    const root = await project();
+    await config(
+      root,
+      'export default { assets: { models: { compact: { protectedNames: ["Head"], instance: { min: 3 } } } } };',
+    );
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({
+      models: { compact: { instance: { min: 3 }, protectedNames: ["Head"] } },
+    });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      skippedCompression: [],
+      written: 0,
+    });
+
+    const off = await project();
+    await config(off, "export default { assets: { models: { compact: false } } };");
+    expect((await loadConfig(off)).assets).toMatchObject({ models: { compact: false } });
   });
 
   it("hands assets.concurrency to the pipeline that receives it", async () => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
@@ -137,12 +137,18 @@ test('the protected build context requires scope and workspace evidence, not the
     expect(run({ WORKSPACE_BUILD_RESULT: result }).status, `artifacts ${result}`).not.toBe(0);
     expect(run({ CI_SCOPE_RESULT: result }).status, `scope ${result}`).not.toBe(0);
   }
-  // The native matrix is still required for the exact candidate, just not by this join: the
-  // release lane consumes the `native-platforms` rows, so a native failure cannot pass unnoticed.
-  const required = ciWorkflow.match(
-    /\n\x20{2}ci-required:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
-  )?.[0] ?? '';
-  expect(required).toContain('native-platforms');
+  // The native matrix is a required member of ci-required again: the scope plan requires it for a
+  // full selection that touches native code, targets main, or cannot prove a clean native-free
+  // pull request. When the plan exempts it, the job is skipped and ci-required.mjs counts an
+  // exempt skip as a pass; a required run that is not success fails the verdict. run-summary still
+  // reports the lane either way.
+  const jobBlock = (name) =>
+    ciWorkflow.match(
+      new RegExp(`\\n\\x20{2}${name}:\\n[\\s\\S]*?(?=\\n\\x20{2}[a-z0-9-]+:|\\s*$)`, 'u'),
+    )?.[0] ?? '';
+  expect(jobBlock('ci-required')).toContain('needs: [scope,');
+  expect(jobBlock('ci-required')).toContain('native-platforms');
+  expect(jobBlock('run-summary')).toContain('native-platforms');
 });
 
 test('the desktop parity job keeps the name the release gate requires', () => {
@@ -192,7 +198,7 @@ test('Android V8 interruption leaves time to cache and resume Ninja state', () =
     ?.split('\n')
     .map((line) => line.replace(/^ {8}/u, ''))
     .join('\n');
-  expect(script).toContain('timeout --signal=TERM --kill-after=30s 120m');
+  expect(script).toContain('timeout --signal=TERM --kill-after=30s 180m');
   expect(androidV8Action.indexOf('Save resumable V8 source state')).toBeGreaterThan(
     androidV8Action.indexOf('Build the pinned Android V8 payload'),
   );
@@ -239,7 +245,7 @@ wait "$child"
     // build shell. The timeout must fail after the fake Ninja state has been written.
     const interrupted = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '1s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '1s')],
       { cwd: runtime, env, encoding: 'utf8' },
     );
     expect(interrupted.status).toBe(124);
@@ -247,7 +253,7 @@ wait "$child"
 
     const resumed = spawnSync(
       'bash',
-      ['-euo', 'pipefail', '-c', script.replace('120m', '5s')],
+      ['-euo', 'pipefail', '-c', script.replace('180m', '5s')],
       { cwd: runtime, env: { ...env, TN_V8_RESUME: '1' }, encoding: 'utf8' },
     );
     expect(resumed.status).toBe(0);
@@ -290,6 +296,54 @@ test('desktop platform lanes build and retain executable evidence', () => {
   }
 });
 
+test('macOS runs the installed playtest against the relocated release and propagates failure', () => {
+  const step = workflow.match(
+    /- name: Play the relocated macOS release with React controls\n([\s\S]*?)(?=\n {6}- name:)/u,
+  )?.[1];
+  assert.ok(step, 'The final macOS app needs interactive gameplay verification');
+  assert.match(step, /if: matrix.platform == 'macOS'/u);
+  const script = step.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n\s+NODE/u)?.[1];
+  assert.ok(script);
+  const root = makeTempDirSync('tn-macos-release-playtest-');
+  const project = join(root, 'threenative-starter-native');
+  const container = join(root, 'Relocated Game.app');
+  const distribution = join(project, 'node_modules/@threenative/runtime-native/scripts');
+  const runner = join(project, 'node_modules/@threenative/playtest/dist/runner');
+  const recorded = join(root, 'argv.json');
+  mkdirSync(distribution, { recursive: true });
+  mkdirSync(runner, { recursive: true });
+  writeFileSync(join(distribution, 'desktop-distribution.mjs'), `
+    import assert from 'node:assert/strict';
+    export function resolveContainer(root) {
+      assert.equal(root, process.env.TN_RELEASE_CONTAINER_ROOT);
+      return { executable: 'Contents/MacOS/Game With Spaces' };
+    }
+  `);
+  writeFileSync(join(runner, 'cli.js'), `
+    require('node:fs').writeFileSync(process.env.TN_TEST_ARGV, JSON.stringify(process.argv.slice(2)));
+    process.exit(Number(process.env.TN_TEST_EXIT));
+  `);
+  try {
+    for (const code of [0, 7]) {
+      const result = spawnSync(process.execPath, ['--input-type=module'], {
+        input: script, encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, RUNNER_TEMP: root, TN_RELEASE_CONTAINER_ROOT: container,
+          TN_TEST_ARGV: recorded, TN_TEST_EXIT: String(code) },
+      });
+      assert.equal(result.status, code, result.stderr);
+      assert.deepEqual(JSON.parse(readFileSync(recorded, 'utf8')), [
+        resolve('packages/runtime-native/scenarios/starter-ui-overlay-desktop.playtest.json'),
+        '--target', 'desktop', '--executable', join(container, 'Contents/MacOS/Game With Spaces'),
+        '--project', project, '--artifacts',
+        resolve('packages/runtime-native/artifacts/release-container-macOS/gameplay'),
+        '--host-arg', '--windowed',
+      ]);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('iOS lane executes simulator proof and negative-control tests on an Apple runner', () => {
   expect(workflow).toMatch(/ios-simulator:[\s\S]*runs-on: macos-15/);
   expect(workflow).toContain('rustup target add aarch64-apple-ios-sim');
@@ -327,15 +381,37 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
 });
 
+test('iOS builds selected React UI from installed packages and checks full-screen pixels', () => {
+  const step = workflow.match(
+    /- name: Scaffold the iOS React UI consumer from local tarballs\n([\s\S]*?)\n {6}- run: >-/u,
+  )?.[1];
+  assert.ok(step);
+  assert.match(step, /template: starter/u);
+  assert.match(step, /pnpm --dir "\$target" build:ios/u);
+  assert.match(step, /node "\$target\/node_modules\/@threenative\/playtest\/dist\/runner\/cli\.js"/u);
+  assert.match(step, /ui-state-ios\.playtest\.json/u);
+  assert.match(step, /--target ios --app "\$app" --bundle-id "\$bundle_id"/u);
+  assert.match(step, /decodeUiScreenshot\(image, 96, 96\)/u);
+  assert.match(step, /published\.includes\(visible\.sequence\)/u);
+  assert.match(step, /tests\/ui-layer-host-contract\.test\.mjs/u);
+  // Not yet passing (PRD-399 P4-d): runs in the dedicated iOS dispatch, not on every pull request.
+  expect(step.match(/if: \$\{\{ inputs\.ios_only == true \}\}/gu)).toHaveLength(2);
+});
+
 test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
   expect(workflow).toContain('ios_only:');
   expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
 });
 
-test('iOS consumer proof is a required gate after the simulator proof passes', () => {
-  // Fail-closed since the simulator's worker proof passed in isolated run 33498394620.
+test('iOS consumer proof runs but cannot hold the merge verdict', () => {
+  // iOS is not a supported target (owner decision, 2026-09-23), so the simulator lane runs and
+  // reports its own red but is deliberately non-blocking — otherwise a red iOS leg holds the
+  // develop->main `ci-required` verdict. `native-release.yml` still validates the iOS rows for a
+  // release, so only the merge verdict is dropped. Mirrors
+  // scripts/__tests__/ci-structure.spec.ts's android-not-blocking / ios-blocking contract.
   const iosJob = workflow.slice(workflow.indexOf('  ios-simulator:'));
-  expect(iosJob).not.toContain('continue-on-error: true');
+  expect(iosJob).toContain('continue-on-error: true');
+  expect(iosJob).toContain('verify-ios-simulator.mjs');
   expect(workflow).not.toContain('worker proof is unresolved');
 });
 
@@ -427,7 +503,7 @@ const requiredCiJobs = [
   'typecheck', 'lint', 'test', 'budgets', 'build', 'test-native',
   'native-platforms / Windows desktop core',
   'native-platforms / macOS desktop core',
-  'native-platforms / Scaffolded starter desktop artifact',
+  'native-platforms / Scaffolded starter desktop artifact (linux-x64)',
   'native-platforms / Desktop web/native parity',
   'native-platforms / Android emulator visual parity',
 ];
@@ -774,6 +850,47 @@ test('release provenance is generated and validated before publishing release as
   expect(stripped).not.toContain('generate-native-release-provenance.mjs');
 });
 
+test('release publication uploads regular files only, never the compliance directory', () => {
+  // `release/*` expanded to `release/compliance`, the directory the SBOM step writes, and
+  // `gh release create` refused it — `read release/compliance: is a directory` — after every
+  // build had already passed (run 36149533979). The step must enumerate regular files, and a
+  // directory sitting under `release/` must never reach the upload argument list.
+  const step = releaseWorkflow.match(
+    /- name: Publish runtimes and checksum lock\n[\s\S]*?run: \|\n([\s\S]*?)(?=\n {6}- |\n {2}[a-z0-9-]+:)/u,
+  )?.[1];
+  assert.ok(step, 'the publication step must remain reachable');
+  // The command, not the comment above it that also names `gh release create`.
+  const publish = step.search(/^\s*gh release create/mu);
+  assert.ok(publish > -1, 'the step must still publish through gh release create');
+  // The upload argument is the files-only array, never the bare directory-including glob.
+  assert.match(step.slice(publish), /gh release create[^\n]*"\$\{assets\[@\]\}"/u);
+  assert.doesNotMatch(step.slice(publish), /release\/\*/u);
+
+  // Reproduce the failure on a real fixture: a genuine asset beside the compliance directory.
+  const directory = makeTempDirSync('threenative-release-assets-');
+  mkdirSync(join(directory, 'release', 'compliance'), { recursive: true });
+  writeFileSync(join(directory, 'release', 'prebuilt-lock.json'), '{}');
+  writeFileSync(join(directory, 'release', 'compliance', 'native-dependencies.cdx.json'), '{}');
+  // Negative control: the old glob really did carry the directory into the upload.
+  const glob = spawnSync('bash', ['-c', 'printf "%s\\n" release/*'], { cwd: directory, encoding: 'utf8' });
+  assert.match(glob.stdout, /^release\/compliance$/mu);
+  // The shipped expansion drops it, so `gh release create` receives only regular files.
+  const expansion = step
+    .slice(0, publish)
+    .split('\n')
+    .map((line) => line.replace(/^\x20{10}/u, ''))
+    .join('\n')
+    .trim();
+  const listed = spawnSync(
+    'bash',
+    ['-c', `set -euo pipefail\n${expansion}\nprintf '%s\\n' "\${assets[@]}"`],
+    { cwd: directory, encoding: 'utf8' },
+  );
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout.trim(), 'release/prebuilt-lock.json');
+  assert.doesNotMatch(listed.stdout, /compliance/u);
+});
+
 test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   // The release-candidate gate resolves parity/provenance reports by artifact
   // reference. These were emitted from android-emulator-parity on the premise
@@ -797,6 +914,14 @@ test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   expect(job).toContain('--web evidence/desktop/conformance/web/report.json');
   // `warn` is what let a green run ship with no reports; both uploads fail closed now.
   expect(job).not.toContain('if-no-files-found: warn');
+  // The artifact must carry `reports/parity.json`, the exact path the candidate gate resolves.
+  // upload-artifact strips everything before the first wildcard, so a bare `reports/parity.json`
+  // flattened to `parity.json` and the gate refused it ("missing the exact report path"). The
+  // leading wildcard keeps the `reports/` directory inside the artifact.
+  expect(job).toContain('path: "*/parity.json"');
+  expect(job).toContain('path: "*/provenance.json"');
+  expect(job).not.toMatch(/path: reports\/parity\.json/u);
+  expect(job).not.toMatch(/path: reports\/provenance\.json/u);
 });
 
 // --- PRD-221 phase 3: an observed page size, or no 16 KB qualification -------------------------

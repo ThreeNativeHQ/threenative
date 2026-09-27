@@ -53,6 +53,9 @@ const SLOW_STARTUP_DELAY_MS = 5_100;
 const FRAME_SAMPLE_BATCH_SIZE = 30;
 // Android logcat truncates long lines, so native samples use a smaller JSON batch.
 const NATIVE_FRAME_SAMPLE_BATCH_SIZE = 5;
+// The wall-clock a paced fixed step gives each tick, so a synthetic workload's tick budget stands
+// in for the seconds it names and the host's render loop actually presents frames while it runs.
+const PRODUCTION_TICK_INTERVAL_MS = 1_000 / 60;
 const DESKTOP_SCREENSHOT_TIMEOUT_MS = 5_000;
 const PRODUCTION_PROFILE = 'production';
 const REGRESSION_PROFILE = 'regression';
@@ -299,9 +302,10 @@ async function scaffoldPlatformer(project, tools) {
     '--template', 'platformer',
     ...localSources.flatMap(([name, source]) => [packageSourceFlag(name), source]),
   ];
-  const result = await runCommand(process.execPath, args, commandRoot);
+  // Scaffolding packs and installs the whole workspace, which is slow on hosted runners.
+  const result = await runCommand(process.execPath, args, commandRoot, undefined, 600_000);
   if (result.status !== 0) {
-    throw new ProductionEvidenceError('TN_PROD_SCAFFOLD_FAILED', 'Scaffolding the production platformer failed.');
+    throw new ProductionEvidenceError('TN_PROD_SCAFFOLD_FAILED', `Scaffolding the production platformer failed.${failureSuffix(result)}`);
   }
 }
 
@@ -319,7 +323,7 @@ function localWorkspacePackages() {
 async function packLocalPackage(directory, destination) {
   const before = new Set(await readdir(destination));
   const result = await runCommand('pnpm', ['pack', '--pack-destination', destination], directory);
-  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_PACKAGE_ARCHIVE_FAILED', `Packing local package '${basename(directory)}' failed.`);
+  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_PACKAGE_ARCHIVE_FAILED', `Packing local package '${basename(directory)}' failed.${failureSuffix(result)}`);
   const archive = (await readdir(destination)).find((entry) => entry.endsWith('.tgz') && !before.has(entry));
   if (archive === undefined) throw new ProductionEvidenceError('TN_PROD_PACKAGE_ARCHIVE_FAILED', `Packing local package '${basename(directory)}' produced no archive.`);
   return join(destination, archive);
@@ -427,8 +431,9 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
   const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
     await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options));
-    const build = await runCommand('pnpm', ['run', 'build:web'], project);
-    if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', 'The scaffolded platformer web build failed.');
+    // A production build can outlast the default timeout on slow hosted runners.
+    const build = await runCommand('pnpm', ['run', 'build:web'], project, undefined, 300_000);
+    if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', `The scaffolded platformer web build failed.${failureSuffix(build)}`);
     const artifactSha = await hashPath(join(project, 'dist'));
     const runs = [];
     const startups = [];
@@ -759,9 +764,14 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
 
 function spawnNative(artifactPath, project, options, mailboxRoot) {
   const bundle = join(project, '.threenative/build/game.js');
+  // A packaged desktop artifact embeds the instrumented game entry under its own module root, and
+  // an explicit `run <absolute path>` is resolved against that root rather than the filesystem, so
+  // the external bundle never loads and the run reports TN_PLAYTEST_BRIDGE_MISSING at zero frames.
+  // Launch the embedded entry. A bare runtime supplied through `--prebuilt-artifact` carries no
+  // embedded entry and still needs the external bundle named on the command line.
+  const launchesExternalBundle = options.prebuiltArtifact !== undefined;
   const nativeArgs = [
-    'run',
-    bundle,
+    ...(launchesExternalBundle ? ['run', bundle] : []),
     '--width', String(options.renderSize.width),
     '--height', String(options.renderSize.height),
     '--headless',
@@ -784,13 +794,13 @@ export async function installNativeProfileEntry(project, target, options) {
   const mailbox = target === 'desktop'
     ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options))}\n${mailbox}export default game;\n`;
+  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), true)}\n${mailbox}export default game;\n`;
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
-  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target);
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target, options.renderSize);
 }
 
-export async function setNativeProfileEntry(project, entry, target) {
+export async function setNativeProfileEntry(project, entry, target, renderSize = undefined) {
   const configPath = join(project, 'threenative.config.ts');
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
@@ -799,12 +809,16 @@ export async function setNativeProfileEntry(project, entry, target) {
       /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
       `$1"${entry}"$2`,
     );
+    // The packaged desktop artifact carries the game's config embedded, and the native host reads
+    // its window size from there before any command-line flag, so the profiled surface is only the
+    // requested render size when the config states it.
+    const sized = renderSize === undefined ? withEntry : applyWindowSize(withEntry, renderSize);
     const rendered = target === 'desktop'
-      ? withEntry.replace(
+      ? sized.replace(
           /(\bui\s*:\s*\{\s*renderer\s*:\s*)["'][^"']*["']/mu,
           `$1"native"`,
         )
-      : withEntry;
+      : sized;
     if (rendered !== config) {
       await writeFile(configPath, rendered);
     }
@@ -823,28 +837,80 @@ export async function setNativeProfileEntry(project, entry, target) {
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
+function applyWindowSize(config, renderSize) {
+  return config
+    .replace(/(\bwindow\s*:\s*\{[^}]*?\bwidth\s*:\s*)\d+/mu, `$1${renderSize.width}`)
+    .replace(/(\bwindow\s*:\s*\{[^}]*?\bheight\s*:\s*)\d+/mu, `$1${renderSize.height}`);
+}
+
 function productionPerformanceReader() {
   return `
+// The installed bridge answers through a promise: core's playtest plugin wraps sample() to merge
+// its runtime observation contributions asynchronously, so reading the returned snapshot inline
+// saw a thenable and dropped every draw-call and triangle reading. Keep the last resolved
+// performance read and answer it on the next frame instead.
+let tnProductionLastPerformance;
 const tnProductionReadPerformance = () => {
   const bridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
-  if (typeof bridge?.sample !== "function") return {};
-  try {
-    const snapshot = bridge.sample({});
-    if (snapshot === null || typeof snapshot !== "object" || typeof snapshot.then === "function") return {};
-    const performance = snapshot.performance;
-    return {
-      ...(Number.isFinite(performance?.drawCalls) ? { drawCalls: performance.drawCalls } : {}),
-      ...(performance?.phases !== undefined ? { phases: performance.phases } : {}),
-      ...(Number.isFinite(performance?.triangles) ? { triangles: performance.triangles } : {}),
-    };
-  } catch {
-    return {};
+  if (typeof bridge?.sample === "function") {
+    try {
+      const snapshot = bridge.sample({});
+      if (snapshot !== null && typeof snapshot === "object") {
+        if (typeof snapshot.then === "function") {
+          snapshot.then((resolved) => { tnProductionLastPerformance = resolved?.performance; }).catch(() => undefined);
+        } else {
+          tnProductionLastPerformance = snapshot.performance;
+        }
+      }
+    } catch {
+    }
   }
+  const performance = tnProductionLastPerformance;
+  return {
+    ...(Number.isFinite(performance?.drawCalls) ? { drawCalls: performance.drawCalls } : {}),
+    ...(performance?.phases !== undefined ? { phases: performance.phases } : {}),
+    ...(Number.isFinite(performance?.triangles) ? { triangles: performance.triangles } : {}),
+  };
 };
 `;
 }
 
-export function nativeFrameInstrumentation(control, warmupFrames = 0) {
+/**
+ * Pace the fixed step to wall time so a synthetic workload's tick budget is the seconds it names.
+ *
+ * The native device transport drives the simulation through `bridge.advance(ticks)`, and the host
+ * runs that loop synchronously: a single `advance(3600)` finishes in milliseconds, so the host's
+ * requestAnimationFrame loop never presents the 60 seconds of frames the scenario asked to warm up
+ * or measure, and the warmup boundary is never reached. Wrapping `advance` to wait one display
+ * interval per tick lets the host's own loop run during the wait, so the frames exist to be
+ * measured.
+ */
+export function productionExecutionHold(paceTicks = false) {
+  return `
+const tnProductionPaceEnabled = ${paceTicks === true};
+const tnProductionTickIntervalMs = ${PRODUCTION_TICK_INTERVAL_MS};
+let tnProductionPaceAt;
+let tnProductionPaceInstalled = false;
+const tnProductionInstallPace = () => {
+  if (!tnProductionPaceEnabled || tnProductionPaceInstalled) return;
+  const tnProductionBridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
+  if (typeof tnProductionBridge?.advance !== "function") return;
+  const tnProductionAdvance = tnProductionBridge.advance.bind(tnProductionBridge);
+  tnProductionBridge.advance = async (ticks) => {
+    const startedAt = performance.now();
+    tnProductionPaceAt = Math.max(tnProductionPaceAt ?? startedAt, startedAt) + ticks * tnProductionTickIntervalMs;
+    const result = await tnProductionAdvance(ticks);
+    const waitMs = tnProductionPaceAt - performance.now();
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return result;
+  };
+  tnProductionPaceInstalled = true;
+};
+tnProductionInstallPace();
+`;
+}
+
+export function nativeFrameInstrumentation(control, warmupFrames = 0, paceTicks = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
@@ -862,7 +928,9 @@ const tnProductionBusyWait = (milliseconds) => {
   while (performance.now() < deadline) {}
 };
 ${productionPerformanceReader()}
+${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
+  tnProductionInstallPace();
   const frameIndex = tnProductionFrameIndex++;
   const inWarmup = frameIndex < tnProductionWarmupFrames;
   if (frameIndex === tnProductionWarmupFrames) {
@@ -1788,7 +1856,7 @@ async function installAndroidArtifact(apk, device) {
   });
   const args = [...(device === undefined ? [] : ['-s', device]), 'install', '-r', apk];
   const result = await runCommand('adb', args, commandRoot);
-  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_ANDROID_INSTALL_FAILED', 'Installing the scaffolded Android platformer failed.');
+  if (result.status !== 0) throw new ProductionEvidenceError('TN_PROD_ANDROID_INSTALL_FAILED', `Installing the scaffolded Android platformer failed.${failureSuffix(result)}`);
 }
 
 async function hashPath(path) {
@@ -1860,7 +1928,7 @@ async function availablePort() {
   return address.port;
 }
 
-async function runCommand(command, args, cwd, env = undefined, timeout = 120_000) {
+export async function runCommand(command, args, cwd, env = undefined, timeout = 120_000) {
   const started = performance.now();
   try {
     const result = await execFileAsync(command, args, {
@@ -1870,15 +1938,28 @@ async function runCommand(command, args, cwd, env = undefined, timeout = 120_000
       maxBuffer: 32 * 1024 * 1024,
       timeout,
     });
-    return { durationMs: performance.now() - started, status: 0, stderr: result.stderr, stdout: result.stdout };
+    return { durationMs: performance.now() - started, status: 0, stderr: result.stderr, stdout: result.stdout, timeout, timedOut: false };
   } catch (error) {
     return {
       durationMs: performance.now() - started,
       status: typeof error?.code === 'number' ? error.code : 2,
       stderr: error?.stderr ?? '',
       stdout: error?.stdout ?? '',
+      timeout,
+      timedOut: error?.killed === true,
     };
   }
+}
+
+export function failureSuffix(result) {
+  if (result.timedOut === true) return `: timed out after ${Math.round(result.timeout / 1_000)} s`;
+  const lines = [result.stderr, result.stdout]
+    .filter((value) => typeof value === 'string' && value.trim().length > 0)
+    .join('\n')
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .slice(-20);
+  return lines.length === 0 ? '' : `\n${lines.join('\n')}`;
 }
 
 async function removeMailbox(root) {

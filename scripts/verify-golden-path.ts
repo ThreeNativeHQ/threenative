@@ -568,7 +568,11 @@ async function probeProjectManifestFallback(
   if (!isRecord(engine) || typeof engine.command !== "string" || !Array.isArray(engine.args)) {
     throw new Error(`TN_GOLDEN_PATH_MCP_SERVER_MISSING: ${configPath} lacks 'threenative-engine'.`);
   }
-  await rename(projectManifest, hiddenManifest);
+  // The scaffold ships no project copy, so the installed-core fallback is the only path there is.
+  // A copy that does exist is still moved aside, so a project that grows one back cannot hide a
+  // broken packaged manifest behind it.
+  const hidden = existsSync(projectManifest);
+  if (hidden) await rename(projectManifest, hiddenManifest);
   try {
     await probeMcpServer(
       "threenative-engine",
@@ -583,7 +587,7 @@ async function probeProjectManifestFallback(
       target,
     );
   } finally {
-    await rename(hiddenManifest, projectManifest);
+    if (hidden) await rename(hiddenManifest, projectManifest);
   }
 }
 
@@ -722,9 +726,8 @@ export async function assertMcpServers(target: string): Promise<void> {
     );
   }
 
-  // A project that adds @threenative/core by hand has no scaffold-owned capabilities.json.
-  // Temporarily remove the generated copy and prove the packed core shim falls back to the
-  // manifest inside its own tarball, which is the only source-less surface that adopter has.
+  // No scaffold-owned capabilities.json exists to hide behind: prove the packed core shim answers
+  // from the manifest inside its own tarball, which is the only surface a project has.
   await probeProjectManifestFallback(target, configPath, parsed.mcpServers);
 }
 
@@ -934,6 +937,7 @@ export async function writeScaffoldScript(
   options: {
     readonly cliRuntimePackages?: readonly string[];
     readonly ignoreInstallScripts?: boolean;
+    readonly noInstall?: boolean;
   } = {},
 ): Promise<string> {
   const script = path.join(directory, "scaffold.sh");
@@ -950,6 +954,7 @@ export async function writeScaffoldScript(
     target,
     "--template",
     template,
+    ...(options.noInstall ? ["--no-install"] : []),
     ...packageArgs,
   ]
     .map((argument) => (argument === target ? argument : shellQuote(argument)))
@@ -964,7 +969,7 @@ export async function scaffold(
   target: string,
   sources: PackageSources,
   templatesRoot: string,
-  options: { readonly ignoreInstallScripts?: boolean } = {},
+  options: { readonly ignoreInstallScripts?: boolean; readonly noInstall?: boolean } = {},
 ): Promise<void> {
   const templateManifest = await readManifest(path.join(templatesRoot, template, PACKAGE_FILE));
   const declared = declaredDependencies(templateManifest);
@@ -1081,6 +1086,12 @@ async function runTemplate(
       scaffold: async () => {
         await scaffold(template, target, sources, templatesRoot);
         await stat(target);
+        // The starter ships three scenarios; the guards it no longer ships live beside the
+        // templates (PRD-449). This lane is where starter's GPU scenarios run, so copy them back.
+        const guards = path.resolve(templatesRoot, "..", "template-playtests", template);
+        if (existsSync(guards)) {
+          await cp(guards, path.join(target, "playtests"), { recursive: true });
+        }
       },
       install: () =>
         runCommand("install", "pnpm", ["install", "--reporter", "append-only"], target),
@@ -1176,7 +1187,10 @@ export async function verifyPackedMutationControl(
         `TN_GOLDEN_PATH_MUTATION_INVALID: template '${template}' does not declare vite in devDependencies.`,
       );
     }
-    devDependencies.vite = undefined;
+    // A missing direct entry can be restored by a plugin's auto-installed Vite peer. A local
+    // tarball that does not exist cannot be restored by a transitive dependency.
+    const brokenVite = "file:./__threenative_missing_vite__.tgz";
+    devDependencies.vite = brokenVite;
     await writeFile(templateManifestPath, `${JSON.stringify(templateManifest, null, 2)}\n`);
 
     const staging = path.join(root, "packages");
@@ -1197,33 +1211,25 @@ export async function verifyPackedMutationControl(
     const target = path.join(root, "mutated-project");
     await scaffold(template, target, alternateSources, templateRoot(), {
       ignoreInstallScripts: true,
+      noInstall: true,
     });
     const generatedManifest = path.join(target, PACKAGE_FILE);
     const generated = await readManifest(generatedManifest);
-    if (declaredDependencies(generated).has("vite")) {
+    if (generated.devDependencies?.vite !== brokenVite) {
       throw new Error(
-        `TN_GOLDEN_PATH_MUTATION_NOT_SCAFFOLDED: generated manifest '${generatedManifest}' still contains vite. Packed source '${mutatedTarball}' sha256:${mutatedSha256}.`,
+        `TN_GOLDEN_PATH_MUTATION_NOT_SCAFFOLDED: generated manifest '${generatedManifest}' lacks the broken vite dependency. Packed source '${mutatedTarball}' sha256:${mutatedSha256}.`,
       );
     }
     process.stdout.write(
-      `golden-path alternate: generated manifest '${generatedManifest}' contains the removed vite dependency from '${mutatedTarball}'\n`,
+      `golden-path alternate: generated manifest '${generatedManifest}' contains the broken vite dependency from '${mutatedTarball}'\n`,
     );
 
-    // The mutation-control assertion only checks that the packed template lost `vite`. Running
-    // package install hooks here would make this proof depend on optional native release assets.
-    await runCommand(
-      "install",
-      "pnpm",
-      ["install", "--ignore-scripts", "--reporter", "append-only"],
-      target,
-    );
-    const port = await freePort();
     let failed = false;
     try {
       await runCommand(
-        "dev",
+        "install",
         "pnpm",
-        ["dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+        ["install", "--ignore-scripts", "--reporter", "append-only"],
         target,
       );
     } catch (error) {
@@ -1234,7 +1240,7 @@ export async function verifyPackedMutationControl(
     }
     if (!failed) {
       throw new Error(
-        `TN_GOLDEN_PATH_MUTATION_DEPENDENCY_RESTORED: mutated template '${template}' unexpectedly completed its dev command.`,
+        `TN_GOLDEN_PATH_MUTATION_DEPENDENCY_RESTORED: mutated template '${template}' unexpectedly installed its missing vite tarball.`,
       );
     }
     return {

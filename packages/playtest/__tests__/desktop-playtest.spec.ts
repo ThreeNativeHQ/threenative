@@ -85,6 +85,20 @@ test("desktop runner constructs its driver with the configured host arguments", 
   expect(constructed).toEqual([[]]);
 });
 
+test("desktop runner forwards --cpu-prof to the native host", async () => {
+  const constructed: (readonly string[] | undefined)[] = [];
+  const driverFactory = (options: { args?: readonly string[] }): IDevicePlaytestDriver => {
+    constructed.push(options.args);
+    throw new Error("captured");
+  };
+
+  await runDesktopPlaytest(
+    { ...minimalConfig("desktop"), cpuProfilePath: "/project/out.cpuprofile" },
+    { driverFactory },
+  ).catch(() => undefined);
+  expect(constructed).toEqual([["--cpu-prof=/project/out.cpuprofile"]]);
+});
+
 test("desktop CLI routing selects the shared desktop runner", async () => {
   const calls: string[] = [];
   const report = { pass: true } as never;
@@ -278,6 +292,88 @@ test.skipIf(process.platform === "win32")("desktop prepare surfaces stale screen
     expect(await driver.isAlive()).toBe(false);
   } finally {
     await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("desktop runner asks for the frame series a performance assertion reads", async () => {
+  // The bridge answers only what the request asks for, so a `performance` assertion on a device or
+  // desktop target used to evaluate against an empty series and fail as unobserved while the
+  // handshake advertised `runtime.performance`. The include list here drifted from the browser
+  // runner's; this test fails if it drifts again.
+  const projectPath = await makeTempDir("playtest-desktop-performance-");
+  const scenarioPath = join(projectPath, "scenario.json");
+  await writeFile(scenarioPath, JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: { performance: { minFps: 1 } },
+    name: "desktop-performance-scenario",
+    schemaVersion: 1,
+    steps: [{ waitTicks: 3 }],
+    target: "desktop",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
+  const moving = movingBridge();
+  const requests: Array<{ include?: readonly string[] }> = [];
+  const describe = moving.bridge.describe;
+  const sample = moving.bridge.sample;
+  const bridge: IPlaytestBridgeV1 = {
+    ...moving.bridge,
+    describe: async () => {
+      const description = await describe();
+      return {
+        ...description,
+        capabilities: [...description.capabilities, "runtime.performance"],
+      };
+    },
+    sample: async (request) => {
+      requests.push(request);
+      const snapshot = await sample(request);
+      return {
+        ...snapshot,
+        // Exactly what the native host does: the field is answered only when it was asked for.
+        ...(request.include?.includes("runtimeDiagnosticsSeries") === true
+          ? {
+              runtimeDiagnosticsSeries: [{
+                frameMs: 16,
+                phases: { hostGap: 1, overlay: 0, render: 10, residual: 4, ui: 0, update: 1 },
+              }],
+            }
+          : {}),
+      };
+    },
+  };
+  const driver = new FakeDesktopDriver(bridge);
+  const host = globalThis as typeof globalThis & {
+    __THREENATIVE_NATIVE__?: { playtestInput: { keyboard(type: string): void; pointer(): void } };
+  };
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: { keyboard: (type) => moving.setHeld(type === "keydown"), pointer: () => undefined },
+  };
+  try {
+    const report = await runDesktopPlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      desktop: { executable: "/fake/native-game" },
+      endpoint,
+      headless: true,
+      projectPath,
+      scenarioPath,
+      target: "desktop",
+      timeoutMs: 1_000,
+      trace: false,
+      url: "http://127.0.0.1:5173",
+    }, { driver, transport: new DeviceBridgeTransport(endpoint) });
+
+    expect(requests.some((request) => request.include?.includes("runtimeDiagnosticsSeries") === true))
+      .toBe(true);
+    expect(report.observations?.performanceSeries?.length ?? 0).toBeGreaterThan(0);
+    const performance = report.assertionResults?.find(({ id }) => id === "performance.minFps");
+    expect(performance?.pass).toBe(true);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+    await rm(projectPath, { force: true, recursive: true });
   }
 });
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +54,7 @@ export interface ITemplatePlaytestDependencies {
   readonly createProject?: typeof createProject;
   readonly inspectTemplates?: () => readonly ITemplatePlaytestStructure[];
   readonly run?: typeof run;
+  readonly templatePlaytestRoot?: string;
 }
 
 interface IJsonRecord {
@@ -74,6 +75,7 @@ export async function runTemplatePlaytests(
 ): Promise<readonly ITemplatePlaytestResult[]> {
   const create = dependencies.createProject ?? createProject;
   const execute = dependencies.run ?? run;
+  const extrasRoot = dependencies.templatePlaytestRoot ?? defaultTemplatePlaytestRoot();
   const results: ITemplatePlaytestResult[] = [];
   for (const template of templates) {
     const target = path.join(root, template);
@@ -82,6 +84,9 @@ export async function runTemplatePlaytests(
     try {
       await create({ install: true, packageSources, target, template });
       try {
+        // The guards a template no longer ships, so the engine keeps proving what it proved
+        // while a new game proves itself with three scenarios (PRD-449).
+        await copyExtras(path.join(extrasRoot, template), path.join(target, "playtests"));
         await execute("pnpm", ["test"], target);
       } catch (error) {
         testError = errorDetail(error);
@@ -129,6 +134,19 @@ export async function runTemplatePlaytests(
     }
   }
   return results;
+}
+
+/** Sits beside `templates/`, so it is never packed into a generated project's `files` list. */
+function defaultTemplatePlaytestRoot(): string {
+  return path.resolve(templateRoot(), "..", "template-playtests");
+}
+
+/** No extras for this template is the normal case, not a failure. */
+async function copyExtras(source: string, target: string): Promise<void> {
+  await cp(source, target, { recursive: true }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  });
 }
 
 function templateBootScenario(template: string): IJsonRecord {

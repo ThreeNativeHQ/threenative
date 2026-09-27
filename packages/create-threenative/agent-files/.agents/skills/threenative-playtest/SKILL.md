@@ -40,5 +40,5 @@ Playtests fail closed: a missing entity, absent observation, or empty assertion 
 `allowTrivial` waiver needs a 20-character reason; `true` alone is invalid, and all-waived
 triviality fails `TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING`. Use `holdTicks`/`waitTicks` for fixed-step
 time (`holdFrames`/`waitFrames` are compatibility aliases); `warmupFrames` means RAF warmup.
-Read `agent-docs/assertion-reference.md` for assertion fields and `agent-docs/debug-surface.md`
+Read `node_modules/create-threenative/agent-docs/references/assertion-reference.md` for assertion fields and `node_modules/create-threenative/agent-docs/references/debug-surface.md`
 for bridge globals. The JSON-safe bridge resource is `state`; `GameState` is a deprecated alias.

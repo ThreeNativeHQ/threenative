@@ -23,5 +23,4 @@ git add -- \
   packages/create-threenative/capabilities.json \
   packages/core/capabilities.json \
   packages/create-threenative/agent-docs/references/capability-reference.md \
-  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md \
-  packages/create-threenative/agent-files/.claude/skills/threenative-context/SKILL.md
+  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md

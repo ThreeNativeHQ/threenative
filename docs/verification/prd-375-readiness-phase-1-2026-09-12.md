@@ -1,7 +1,7 @@
 # PRD-375 phase 1 evidence — the installed Android release carries the game brand
 
 Date: 2026-09-12
-PRD: [PRD-375](../PRDs/production-readiness/PRD-375-release-artifacts-carry-the-game-brand.md)
+PRD: [PRD-375](../PRDs/production-readiness/critical/PRD-375-release-artifacts-carry-the-game-brand.md)
 Branch: `prd375/android-brand-phase1` (base `origin/develop` @ `051b5de03`)
 Layer: engine (`packages/runtime-native/`) — packaging mechanism; the artwork stays game config.
 

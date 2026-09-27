@@ -154,7 +154,16 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 
 ## 4. Execution Phases
 
+Progress boxes were added by PRD-445 Phase 3; the phases were prose before that. Boxes tick only on
+the phase's own observed evidence; none is ticked here.
+
 ### Phase 1: Strict performance assertion contract — Scenario authors get a typed assertion that cannot be ignored or satisfied without observations.
+
+- [ ] Files wired and building (the five listed)
+- [ ] Required tests green: `performance-schema`, `performance-missing-observation` in `packages/playtest/__tests__/scenario.spec.ts`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
 
 **Files (5):**
 
@@ -186,6 +195,12 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 
 ### Phase 2: Real render-loop observations — Browser and native games expose bounded, monotonic timing from the frame loop users actually run.
 
+- [ ] Files wired and building (the listed files)
+- [ ] Required tests green: `performance-bridge` in `packages/core/__tests__/playtest.spec.ts`; `packages/playtest/src/three/bridge.test.ts`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
+
 **Files (5):**
 
 - `packages/core/src/loop.ts` - EDIT: record monotonic render intervals, sequence, warm-up origin, first frame, and dropped-ring count
@@ -215,6 +230,12 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 
 ### Phase 3: Wall-clock runner sampling — The existing browser and device runners collect complete render timing without changing gameplay tick semantics.
 
+- [ ] Files wired and building (the listed files)
+- [ ] Required tests green: `runner-frame-timing` in `packages/playtest/__tests__/runner.spec.ts`; `packages/playtest/__tests__/device-playtest.spec.ts`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
+
 **Files (5):**
 
 - `packages/playtest/src/runner/runner.ts` - EDIT: poll browser timing, measure launch-to-first-frame, and pass complete observations to assertions
@@ -243,6 +264,12 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 **User Verification:** Run the same short scenario with fixed ticks doubled. Expected: gameplay ticks change while wall-clock render-frame statistics do not double.
 
 ### Phase 4: Local production evidence pipeline — Maintainers get one versioned, privacy-safe command and fail-closed report.
+
+- [ ] Files wired and building (the listed files)
+- [ ] Required tests green: `evidence-schema`, `evidence-redaction` in `packages/runtime-native/tests/production-profile.test.mjs`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
 
 **Files (5):**
 
@@ -274,6 +301,12 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 
 ### Phase 5: Same-hardware desktop and startup proof — The unmodified platformer proves web budget and native-not-slower parity on one identified machine.
 
+- [ ] Files wired and building (the listed files)
+- [ ] Required tests green: `desktop-web-budget`, `desktop-native-parity`, `startup-budget` in `packages/runtime-native/tests/production-profile.test.mjs`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
+
 **Files (5):**
 
 - `packages/runtime-native/scripts/profile-production.mjs` - EDIT: add alternating desktop web/native launches and identity checks
@@ -304,6 +337,12 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 **User Verification:** On one dGPU desktop, run the declared desktop-pair command. Expected: exact host/GPU/source plus different web/native identities, individual repetitions, startup samples, budget verdicts, and no claim about other hardware.
 
 ### Phase 6: Crash and error diagnostics — A maintainer can force each failure class and recover a distinct app-scoped diagnostic artifact.
+
+- [ ] Files wired and building (the listed files)
+- [ ] Required tests green: the five classifier rows in `packages/runtime-native/tests/production-diagnostics.test.mjs`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
 
 **Files (5):**
 
@@ -340,6 +379,12 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 
 ### Phase 7: Physical mobile resources and long soak — Claimed targets sustain the platformer and retain complete pacing, memory, thermal, battery, and liveness evidence.
 
+- [ ] Files wired and building (the listed files)
+- [ ] Required tests green: `memory-growth`, `mobile-frame-floor`, `soak-reliability`, `physical-resource-evidence`, `audio-consumption` in `packages/runtime-native/tests/production-profile.test.mjs`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
+
 **Files (5):**
 
 - `packages/runtime-native/scripts/profile-production.mjs` - EDIT: consume PRD-056/057 inputs and orchestrate physical and two-hour soak runs
@@ -373,6 +418,12 @@ Every timing statistic is computed from monotonic render-loop intervals, excludi
 **User Verification:** On each PRD-056 physical device, run the exact soak command. Expected: exact signed artifact and device-class evidence, 7,200 post-warm-up seconds, complete pacing/resources, and a target-scoped verdict only.
 
 ### Phase 8: Evidence cutover and support truth — Repository support claims reference current, privacy-safe, binary evidence and G5 can become DONE only when every target is proven.
+
+- [ ] Files wired and building (the listed files)
+- [ ] Required tests green: `evidence-rollup`, `repository-collection` in `packages/runtime-native/tests/production-profile.test.mjs`
+- [ ] Revert check observed red, then restored green
+- [ ] User verification performed on the named platform
+- [ ] Evidence recorded in `docs/verification/PRD-058.md`
 
 **Files (4):**
 

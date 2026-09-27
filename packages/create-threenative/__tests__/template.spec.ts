@@ -33,6 +33,9 @@ async function typecheckTemplates(): Promise<string[]> {
 // numbers twice, and in shooter the overlap was unreadable.
 const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
+// PRD-449: the engine guards a template without shipping them to a new game, so they live beside
+// the templates rather than inside one. `pnpm test:templates` copies them into the scaffold.
+const templatePlaytestRoot = path.resolve(templateRoot, "..", "template-playtests");
 const authoringSkills = [
   ["prd-creator", ".agent/prd/PRD.md", "explicit approval"],
   ["threenative-capabilities", "engine_search_capabilities", "@threenative/physics/navigation"],
@@ -347,10 +350,7 @@ describe("template contracts", () => {
 
   it("requires the starter boot-failure screenshot to keep its error text readable", async () => {
     const scenario = JSON.parse(
-      await readFile(
-        path.join(templateRoot, "starter/playtests/boot-failure.playtest.json"),
-        "utf8",
-      ),
+      await readFile(path.join(templatePlaytestRoot, "starter/boot-failure.playtest.json"), "utf8"),
     ) as {
       assert?: {
         visual?: Array<{
@@ -639,7 +639,7 @@ describe("template contracts", () => {
     expect(gameEntry).toContain('game.goto("play")');
 
     const restart = JSON.parse(
-      await readFile(path.join(templateRoot, "starter/playtests/restart.playtest.json"), "utf8"),
+      await readFile(path.join(templatePlaytestRoot, "starter/restart.playtest.json"), "utf8"),
     ) as {
       assert: {
         resources: Array<{
@@ -818,19 +818,14 @@ describe("template contracts", () => {
       }
     }
 
+    // One stored copy per skill: the scaffolder links `.claude/skills` into it, so a drifted
+    // second adapter is no longer expressible and only the stored body needs its markers.
     for (const [skill, ...markers] of authoringSkills) {
-      const bodies = await Promise.all(
-        [".agents/skills", ".claude/skills"].map(async (host) => {
-          const body = await readFile(
-            path.resolve("packages/create-threenative/agent-files", host, skill, "SKILL.md"),
-            "utf8",
-          );
-          for (const marker of markers)
-            expect(body, `${host}/${skill}/${marker}`).toContain(marker);
-          return body;
-        }),
+      const body = await readFile(
+        path.resolve("packages/create-threenative/agent-files/.agents/skills", skill, "SKILL.md"),
+        "utf8",
       );
-      expect(new Set(bodies).size, `${skill} host adapters drifted`).toBe(1);
+      for (const marker of markers) expect(body, `${skill}/${marker}`).toContain(marker);
     }
   });
 
@@ -913,7 +908,9 @@ describe("template contracts", () => {
       "utf8",
     );
     expect(skill.split(/\s+/u).filter(Boolean).length).toBeLessThan(260);
-    expect(skill).toContain("agent-docs/assertion-reference.md#performance");
+    expect(skill).toContain(
+      "node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance",
+    );
     expect(skill).toMatch(performanceBoundPattern);
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
@@ -1163,7 +1160,7 @@ describe("template contracts", () => {
       expect(agents).toContain("`-move.y` conversion");
     }
     const forward = JSON.parse(
-      await readFile(path.join(templateRoot, "starter/playtests/forward.playtest.json"), "utf8"),
+      await readFile(path.join(templatePlaytestRoot, "starter/forward.playtest.json"), "utf8"),
     ) as { assert?: { movement?: { minAxisDelta?: { axis?: string; min?: number } } } };
     expect(forward.assert?.movement?.minAxisDelta).toEqual({ axis: "-z", min: 0.5 });
   });

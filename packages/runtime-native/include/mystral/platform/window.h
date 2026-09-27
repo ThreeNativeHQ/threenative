@@ -24,6 +24,9 @@ bool createWindow(
  */
 void destroyWindow();
 
+/** Release keys owned by the desktop UI before it loses focus or detaches. */
+void resetUiOverlayKeyboard();
+
 /**
  * Poll SDL events
  * @return false if quit event received

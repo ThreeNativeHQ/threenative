@@ -9,6 +9,8 @@
 #include "mystral/webgpu/bindings.h"
 #include <array>
 #include <cstdlib>
+#include <string>
+#include <SDL3/SDL.h>
 #include <iostream>
 #include <iterator>
 #include <cstring>
@@ -218,6 +220,31 @@ struct DeviceRequestData {
 };
 
 // Callbacks - different signatures for Dawn vs wgpu-native
+/// A lost device is the end of the run, so say so where the player is looking.
+///
+/// Nothing can be drawn once the device is gone: the frame loop keeps ticking, presents nothing,
+/// and the process exits 0 — a hung black window that reports success. A game that dies must say
+/// it died. One fatal line for the log, the platform's own dialog for the player (SDL needs no
+/// GPU, which is the entire point here), and a non-zero status for whatever launched it.
+static void reportFatalDeviceLoss(const std::string& detail) {
+    std::cerr << "[FATAL] The GPU device was lost: " << detail << std::endl;
+    TN_CONTEXT_LOGE("The GPU device was lost: %s", detail.c_str());
+#if !defined(__ANDROID__)
+    // Modal, and that is the point for a player — but a playtest, a headless run or a CI lane has
+    // nobody to click it, and a dialog nobody dismisses turns a crash into a hang that reads as a
+    // timeout. Those lanes already have the log, which is what they assert on.
+    const bool unattended = std::getenv("MYSTRAL_HEADLESS") != nullptr ||
+                            std::getenv("TN_PLAYTEST_MAILBOX_ROOT") != nullptr ||
+                            std::getenv("CI") != nullptr;
+    if (!unattended) {
+        const std::string body =
+            "The GPU device was lost and the game cannot keep rendering.\n\n" + detail;
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ThreeNative", body.c_str(), nullptr);
+    }
+#endif
+    std::exit(1);
+}
+
 #if WGPU_USES_CALLBACK_INFO_PATTERN
 // Dawn callback signatures
 static void onAdapterRequestEnded(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message, void* userdata1, void* userdata2) {
@@ -260,6 +287,15 @@ static void onDeviceError(WGPUDevice const* device, WGPUErrorType type, WGPUStri
     // process on a validation error and logcat shows nothing at all.
     TN_CONTEXT_LOGE("Device error (%s): %s", typeStr, WGPU_PRINT_STRING_VIEW(message).c_str());
 }
+
+/// `Destroyed` is this runtime shutting its own device down, not a fault.
+static void onDeviceLost(WGPUDevice const* device, WGPUDeviceLostReason reason, WGPUStringView message, void* userdata1, void* userdata2) {
+    (void)device;
+    (void)userdata1;
+    (void)userdata2;
+    if (reason == WGPUDeviceLostReason_Destroyed) return;
+    reportFatalDeviceLoss(WGPU_PRINT_STRING_VIEW(message));
+}
 #else
 // wgpu-native callback signatures
 static void onAdapterRequestEnded(WGPURequestAdapterStatus status, WGPUAdapter adapter, char const* message, void* userdata) {
@@ -299,8 +335,24 @@ static void onDeviceError(WGPUErrorType type, char const* message, void* userdat
     }
     std::cerr << "[WebGPU] Device error (" << typeStr << "): " << (message ? message : "no message") << std::endl;
     TN_CONTEXT_LOGE("Device error (%s): %s", typeStr, message ? message : "no message");
+    // This path has no device-lost callback; it reports the loss as an error type instead.
+    if (type == WGPUErrorType_DeviceLost_Compat) reportFatalDeviceLoss(message ? message : "no message");
 }
 #endif
+
+/// Every device this runtime creates reports the same way, and three call sites used to say only
+/// half of it. Whatever is added here reaches all of them.
+static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc) {
+    WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
+    errorCallbackInfo.callback = onDeviceError;
+    deviceDesc.uncapturedErrorCallbackInfo = errorCallbackInfo;
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+    WGPUDeviceLostCallbackInfo lostCallbackInfo = {};
+    lostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+    lostCallbackInfo.callback = onDeviceLost;
+    deviceDesc.deviceLostCallbackInfo = lostCallbackInfo;
+#endif
+}
 
 #if defined(MYSTRAL_WEBGPU_WGPU)
 #if defined(MYSTRAL_WEBGPU_WGPU_MODERN)
@@ -631,9 +683,7 @@ bool Context::initializeHeadless() {
     deviceDesc.requiredFeatureCount = requiredFeatures.count;
     deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
-    WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
-    errorCallbackInfo.callback = onDeviceError;
-    deviceDesc.uncapturedErrorCallbackInfo = errorCallbackInfo;
+    installDeviceCallbacks(deviceDesc);
 
     DeviceRequestData deviceData;
 
@@ -927,9 +977,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
     // Set up error callback
-    WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
-    errorCallbackInfo.callback = onDeviceError;
-    deviceDesc.uncapturedErrorCallbackInfo = errorCallbackInfo;
+    installDeviceCallbacks(deviceDesc);
 
     DeviceRequestData deviceData;
 
@@ -1109,9 +1157,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     deviceDesc.requiredFeatureCount = requiredFeatures.count;
     deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
-    WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
-    errorCallbackInfo.callback = onDeviceError;
-    deviceDesc.uncapturedErrorCallbackInfo = errorCallbackInfo;
+    installDeviceCallbacks(deviceDesc);
 
     DeviceRequestData deviceData;
 

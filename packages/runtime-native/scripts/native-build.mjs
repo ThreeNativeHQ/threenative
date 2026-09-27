@@ -68,6 +68,19 @@ if (process.platform === 'linux' || process.platform === 'darwin' || process.pla
     `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,
   );
 }
+// Linux arm64 has no V8 or Dawn prebuilt (kuoruan/libv8 ships Linux x64 only; Dawn's
+// `ubuntu-latest` asset is x64) and a source V8 build is not allowed in CI. Build the arm64
+// desktop host with the QuickJS engine over the wgpu-native backend — the combination that does
+// have an arm64 path (`wgpu-linux-aarch64`). Command-line cache entries override the tn-linux
+// preset's V8+Dawn defaults, so the binary directory the CI lane reads stays `build/tn-linux`.
+if (process.platform === 'linux' && process.arch === 'arm64') {
+  configureArgs.push(
+    '-DMYSTRAL_USE_V8=OFF',
+    '-DMYSTRAL_USE_QUICKJS=ON',
+    '-DMYSTRAL_USE_DAWN=OFF',
+    '-DMYSTRAL_USE_WGPU=ON',
+  );
+}
 const vcpkgRoot = process.env.VCPKG_ROOT ?? process.env.VCPKG_INSTALLATION_ROOT;
 if (windows && vcpkgRoot) {
   configureArgs.push(

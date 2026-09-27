@@ -1,4 +1,5 @@
 import type { IThreeNativeConfig } from "./config.js";
+import type { MatrixWorldMode } from "./matrix-world.js";
 import type { PlatformOS } from "./platform.js";
 
 type RendererConfig = NonNullable<IThreeNativeConfig["renderer"]>;
@@ -51,6 +52,24 @@ export function resolveRendererScaleSetting(
     resolutionScale: requireScale(selected, "renderer.resolutionScale") as number,
     scaleSource: "pinned",
   };
+}
+
+/**
+ * The one place `renderer.matrixWorld` becomes the walk the frame runs.
+ *
+ * Validated here rather than inside the pass for the same reason the scale is: the pass only ever
+ * sees a resolved mode, so a game that wrote a typo has to be told which key it got wrong.
+ */
+export function resolveMatrixWorldMode(
+  config: RendererConfig | undefined,
+  fallback: MatrixWorldMode = "visible",
+): MatrixWorldMode {
+  const value = config?.matrixWorld;
+  if (value === undefined) return fallback;
+  if (value === "visible" || value === "all") return value;
+  throw new Error(
+    `renderer.matrixWorld must be "visible" or "all", received ${JSON.stringify(value)}.`,
+  );
 }
 
 /**

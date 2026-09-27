@@ -2,31 +2,31 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-41 native contract targets; 2 configured
+42 native contract targets; 2 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1053 | 919 | 87.27% |
-| `src/canvas/` | 1293 | 1039 | 80.36% |
-| `src/cli/` | 1622 | 1214 | 74.85% |
+| `src/audio/` | 1223 | 1047 | 85.61% |
+| `src/canvas/` | 1334 | 1110 | 83.21% |
+| `src/cli/` | 1643 | 1226 | 74.62% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2632 | 2199 | 83.55% |
-| `src/platform/` | 1063 | 873 | 82.13% |
+| `src/js/` | 2785 | 2212 | 79.43% |
+| `src/platform/` | 1270 | 914 | 71.97% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2295 | 1823 | 79.43% |
+| `src/runtime.cpp` | 2338 | 1856 | 79.38% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 8740 | 6926 | 79.24% |
+| `src/webgpu/` | 9661 | 7379 | 76.38% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **22476** | **18128** | **80.65%** |
+| **TOTAL** | **24032** | **18879** | **78.56%** |
 
-Source digest: `sha256:8a7a53b945219d3ba917a1fe94ac9a52f9dbe08b2a9be3c1d988652910e8d1fa`
+Source digest: `sha256:22b58cc446afb945f5615ae25b8b4e9029bbd3e5949ff0b59074a3e98f6e05b4`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -136,7 +136,7 @@ The registration test was red before `enable_testing()` and the 27 primary regis
 ```text
 FAIL should register every native executable with CTest
 The input did not match /enable_testing\(\)/
-Test Files 1 failed (1)
+Test Files 1 failed (1); Tests no tests
 ```
 
 After registration, the focused gate and full runner were green:

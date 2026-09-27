@@ -1,4 +1,4 @@
-import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, IPlaytestPerformanceAssertion } from "../scenario.js";
+import type { IPlaytestAnimationAssertion, IPlaytestAudioAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, IPlaytestPerformanceAssertion } from "../scenario.js";
 import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
 import { physicsDebugContactEvidence } from "./measures.js";
@@ -231,6 +231,82 @@ export function contactAssertionSatisfiedAtStep(
     && (!anonymous || candidates.length > 0)
     && count >= minimum
     && (assertion.maxCount === undefined || count <= assertion.maxCount);
+}
+
+/**
+ * Reads the runtime cue ledger, which is the only observation that can say what the game played.
+ *
+ * A missing ledger is a failure, not a pass: a target whose bridge never published `audio` cannot
+ * support the claim, and reporting green on an absent observation is how an audio defect ships
+ * under a green gate.
+ */
+/** Milliseconds between a play of `cue` and whatever sounded immediately before it, smallest first. */
+function smallestGapBefore(recent: readonly unknown[], cue: string): number | undefined {
+  let smallest: number | undefined;
+  for (let index = 1; index < recent.length; index += 1) {
+    const entry = recent[index];
+    const previous = recent[index - 1];
+    if (!isRecord(entry) || !isRecord(previous)) continue;
+    if (entry.cue !== cue) continue;
+    if (typeof entry.atMs !== "number" || typeof previous.atMs !== "number") continue;
+    const gap = entry.atMs - previous.atMs;
+    if (smallest === undefined || gap < smallest) smallest = gap;
+  }
+  return smallest;
+}
+
+export function evaluateAudioAssertion(
+  assertion: IPlaytestAudioAssertion,
+  observations: unknown,
+): { assertion: IPlaytestAssertionResult; diagnostic?: IPlaytestDiagnostic } {
+  const gameplay = gameplayObservations(observations);
+  const audio = isRecord(gameplay?.audio) ? gameplay.audio : undefined;
+  const cues = isRecord(audio?.cues) ? audio.cues : undefined;
+  const observed = cues === undefined ? undefined : cues[assertion.cue];
+  const plays = typeof observed === "number" ? observed : 0;
+  const minimum = assertion.minPlays ?? 1;
+  // The recent log is ordered across every bus, so the gap is measured against whatever sounded
+  // last — not against the previous play of this same cue, which is not what cuts a line off.
+  const recent = Array.isArray(audio?.recentCues) ? audio.recentCues : [];
+  const gap = smallestGapBefore(recent, assertion.cue);
+  const gapPass = assertion.minGapMs === undefined || gap === undefined || gap >= assertion.minGapMs;
+  const pass =
+    cues !== undefined &&
+    plays >= minimum &&
+    (assertion.maxPlays === undefined || plays <= assertion.maxPlays) &&
+    gapPass;
+  const result = {
+    details: {
+      cue: assertion.cue,
+      maxPlays: assertion.maxPlays ?? null,
+      minGapMs: assertion.minGapMs ?? null,
+      minPlays: minimum,
+      observed: cues === undefined ? null : plays,
+      observedGapMs: gap ?? null,
+    },
+    id: `audio.${assertion.cue}`,
+    pass,
+  };
+  return pass
+    ? { assertion: result }
+    : {
+        assertion: result,
+        diagnostic: {
+          code: "TN_PLAYTEST_AUDIO_ASSERTION_FAILED",
+          message:
+            cues === undefined
+              ? `No runtime audio ledger was published, so cue '${assertion.cue}' cannot be proved either way.`
+              : gapPass
+                ? `Cue '${assertion.cue}' played ${plays} time(s); expected at least ${minimum}${assertion.maxPlays === undefined ? "" : ` and at most ${assertion.maxPlays}`}.`
+                : `Cue '${assertion.cue}' started ${gap ?? 0} ms after the line before it, which is under the ${String(assertion.minGapMs)} ms it needs; one of them was cut off.`,
+          observedRuntimePath: "observations.json/runtimeObservations/gameplay/audio/cues",
+          severity: "error",
+          suggestion:
+            cues === undefined
+              ? "Run on a target whose bridge advertises runtime.audio, and pass `cue` to AudioBus.play/playAt for the lines under test."
+              : "Read observations.json/runtimeObservations/gameplay/audio/recentCues for when each play happened, and check the one-shot flag that gates the cue.",
+        },
+      };
 }
 
 export function evaluateWorldAssertion(

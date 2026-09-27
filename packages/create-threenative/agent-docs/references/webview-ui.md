@@ -10,10 +10,11 @@ ships, and never the game itself. The scene stays in the native runtime; only th
 | web | the page itself, beside `GameCanvas` | shipped |
 | Android | a transparent `WebView` over the SDL surface | shipped, proven on a Pixel 8 |
 | desktop (Linux) | a transparent WebKitGTK window over the game window | shipped |
-| desktop (Windows, macOS) | — | no host yet; use `ui: { renderer: "native" }` |
+| desktop (Windows) | a transparent WebView2 surface over the game | implemented; final distribution verification is platform-specific |
+| desktop (macOS) | a transparent `WKWebView` over the game | implemented; final distribution verification is platform-specific |
 | iOS | a transparent `WKWebView` over the Metal layer | written, **unproven on hardware** |
 
-Turn it off with `ui: { renderer: "native" }` in `threenative.config.ts`. That ships no web view
+`ui.renderer` defaults to `"web"`. Turn it off with `ui: { renderer: "native" }` in `threenative.config.ts`. That ships no web view
 and no extra process, and draws `View`/`Text` quads inside the rendered frame instead.
 
 ## Two things cross the boundary, and nothing else

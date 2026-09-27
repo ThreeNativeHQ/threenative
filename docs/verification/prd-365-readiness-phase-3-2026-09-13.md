@@ -94,3 +94,23 @@ pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config
   staple → re-archive sequence is tested with two archive writes) and returned NEEDS CORRECTION for
   documentation only — the README did not state that the credentialed path is host-bound. That note
   is fixed in the same commit.
+
+## 2026-09-23 — test-credential CI proof (owner decision)
+
+The owner's 2026-09-23 decision is that each developer signs their own game, ThreeNative ships no
+certificate, and `threenative build --mode release` signs with the developer's credential, proven
+with test credentials on Windows and macOS CI. Windows already had that proof (`Windows desktop
+core`, `signtool /n`). The macOS half was missing: the macOS leg signed ad-hoc (`-`), which proves
+the seal but not the credentialed path.
+
+`.github/workflows/native-platforms.yml` now generates a self-signed codeSigning identity on the
+macOS runner, builds the release container with
+`THREENATIVE_DESKTOP_CODESIGN_IDENTITY='ThreeNative CI Signing Proof'`, and reads the signature
+back independently with `codesign --verify --strict --deep` plus `codesign -dv`
+(`TN_DESKTOP_SIGNING_PROOF_SCHEME:codesign`). `scripts/__tests__/desktop-brand-launch-integration.spec.ts`
+asserts both the Windows and macOS proof steps exist and stay platform-gated.
+
+**Not run here:** the CI job itself. This is a Linux host with no macOS runner, so the box stays
+open until `macOS desktop core` and `Windows desktop core` run for the candidate. The certificate is
+self-signed and discarded; public Authenticode trust and Apple notarization remain PRD-060's.
+

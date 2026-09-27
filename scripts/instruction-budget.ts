@@ -13,9 +13,10 @@ import { expandSharedRegions, mirrorContent, readSharedFragments } from "./sync-
  *   measured content justifies it (recorded in docs/verification/instruction-budgets-*.md).
  * - Words are counted over RENDERED text: shared-marker comments stripped, HTML comments
  *   stripped, placeholders substituted — exactly what a generated project's agent reads.
- * - Long recipes live in `agent-docs/references/*.md`, shipped into each generated project as
- *   `agent-docs/*.md` and referenced by the literal relative path (backticked or linked).
- * - Every reference target must exist in the bundle, and every `CLAUDE.md` mirror must equal
+ * - Long recipes live in `packages/create-threenative/agent-docs/references/*.md` and are read
+ *   from the installed package at
+ *   `node_modules/create-threenative/agent-docs/references/<page>.md` (backticked or linked).
+ * - Every reference target must exist in that bundle, and every `CLAUDE.md` mirror must equal
  *   the generated expansion of its `AGENTS.md`.
  */
 
@@ -191,9 +192,14 @@ const PLACEHOLDERS: ReadonlyArray<readonly [string, string]> = [
   ["__PROJECT_ID__", "mygame"],
 ];
 const REFERENCE_DIRECTORY = path.join("agent-docs", "references");
-/** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
-const REFERENCE_TOKEN_PATTERN =
-  /`agent-docs\/([a-z0-9][a-z0-9./-]*\.md)`|\[[^\]]*\]\(agent-docs\/([^)#]+\.md)\)/gu;
+/** The path a generated project reads a page at: the installed `create-threenative` copy (PRD-449).
+ * Backticked paths and Markdown links share one prefix so both readers resolve identically. */
+const REFERENCE_PREFIX = "node_modules/create-threenative/agent-docs/references/";
+const REFERENCE_TOKEN_PATTERN = new RegExp(
+  `\`${REFERENCE_PREFIX}([a-z0-9][a-z0-9./-]*\\.md)\`|` +
+    `\\[[^\\]]*\\]\\(${REFERENCE_PREFIX}([^)#]+\\.md)\\)`,
+  "gu",
+);
 
 /** The text a generated project's agent actually reads from a template instruction file. */
 export function renderInstructionText(source: string): string {
@@ -208,11 +214,12 @@ export function countWords(text: string): number {
   return text.split(/\s+/u).filter((word) => word.length > 0).length;
 }
 
-/** Reference targets named by rendered instructions, normalised to `agent-docs/<file>` form. */
+/** Reference page names named by rendered instructions, normalised to the bundle file name. */
 export function referenceTargets(rendered: string): readonly string[] {
   const targets = new Set<string>();
   for (const match of rendered.matchAll(REFERENCE_TOKEN_PATTERN)) {
-    targets.add(`agent-docs/${match[1] ?? match[2]}`);
+    const referenced = match[1] ?? match[2];
+    if (referenced !== undefined) targets.add(referenced);
   }
   return [...targets].sort();
 }
@@ -258,13 +265,12 @@ export async function auditTemplate(
   }
 
   const references: string[] = [];
-  for (const target of referenceTargets(rendered)) {
-    const file = target.slice("agent-docs/".length);
-    references.push(target);
+  for (const file of referenceTargets(rendered)) {
+    references.push(`${REFERENCE_PREFIX}${file}`);
     if (!existsSync(path.join(bundleDirectory, file))) {
       violations.push({
         code: "MISSING_REFERENCE_TARGET",
-        message: `RED observed: missing generated reference: '${target}' linked from '${template}/AGENTS.md' is not in the shipped bundle`,
+        message: `RED observed: missing generated reference: '${REFERENCE_PREFIX}${file}' linked from '${template}/AGENTS.md' is not in the shipped bundle`,
       });
     }
   }

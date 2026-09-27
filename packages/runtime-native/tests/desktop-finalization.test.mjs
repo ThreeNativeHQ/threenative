@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { test } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
-import { packageDesktopContainer } from "../scripts/desktop-distribution.mjs";
+import { extractContainer, packageDesktopContainer, resolveContainer } from "../scripts/desktop-distribution.mjs";
 
 function fixture() {
   const root = makeTempDirSync("tn-desktop-finalization-");
@@ -53,51 +53,139 @@ function files(root) {
  */
 const ARCHIVERS = ["bsdtar", "tar", "zip"];
 function archive(command, args, options) {
+  if (command === "makensis") {
+    const output = /^OutFile "([^"]+)"$/mu.exec(readFileSync(args.at(-1), "utf8"))?.[1];
+    assert.ok(output);
+    writeFileSync(output, "MZ installer fixture");
+    return { status: 0 };
+  }
   assert.ok(ARCHIVERS.includes(command), `unexpected tool: ${command}`);
   return spawnSync(command, args, { encoding: "utf8", ...options });
 }
 
-for (const existing of [false, true]) {
-  test(`refuses a post-signing macOS resource change without ${existing ? "replacing an existing" : "publishing a new"} archive`, () => {
+for (const outcome of ["success", "invalid seal", "missing tool"]) {
+  test(`macOS seals the complete manifest and signed dependencies: ${outcome}`, () => {
     const subject = fixture();
+    const dependency = join(subject.root, "helper.dylib");
+    const uiDirectory = join(subject.root, "ui");
+    writeFileSync(dependency, "dependency before signing");
+    mkdirSync(uiDirectory);
+    writeFileSync(join(uiDirectory, "index.html"), "<main>React HUD</main>");
+    writeFileSync(subject.options.output, "previous good release");
     let seal;
-    let checks = 0;
     let archives = 0;
-    if (existing) writeFileSync(subject.options.output, "previous good release");
+    let outerSignatures = 0;
+    const run = (command, args, options) => {
+      if (command !== "codesign") {
+        archives++;
+        return archive(command, args, options);
+      }
+      if (outcome === "missing tool") return { error: new Error("codesign missing") };
+      const target = args.at(-1);
+      if (args.includes("--sign")) {
+        assert.equal(args.includes("--deep"), false, "sign nested code explicitly before sealing the app");
+        if (statSync(target).isFile()) {
+          writeFileSync(target, "signed dependency");
+        } else {
+          outerSignatures++;
+          const entitlementIndex = args.indexOf("--entitlements");
+          assert.ok(entitlementIndex >= 0, "the hardened JavaScript host must allow JIT memory");
+          const entitlements = readFileSync(args[entitlementIndex + 1], "utf8");
+          assert.match(entitlements, /<key>com.apple.security.cs.allow-jit<\/key>\s*<true\/>/u);
+          assert.equal(entitlements.includes("allow-unsigned-executable-memory"), false);
+          const manifest = JSON.parse(readFileSync(join(target, "Contents/Resources/threenative-container.json")));
+          assert.deepEqual(manifest.resources[manifest.executable], { signature: "codesign" });
+          assert.equal(readFileSync(join(target, manifest.dependencies[0].path), "utf8"), "signed dependency");
+          writeFileSync(join(target, manifest.executable), "runtime including embedded signature");
+          seal = files(target);
+        }
+        return { status: 0 };
+      }
+      assert.ok(args.includes("--verify") && args.includes("--strict") && args.includes("--deep"));
+      const valid = statSync(target).isFile()
+        ? readFileSync(target, "utf8") === "signed dependency"
+        : outcome !== "invalid seal" && JSON.stringify(files(target)) === JSON.stringify(seal);
+      return { status: valid ? 0 : 1, stderr: "invalid signature fixture" };
+    };
     try {
-      // Model the OS resource seal at the injected signing boundary. The production packager
-      // performs every real filesystem operation, including the manifest write that breaks it.
-      assert.throws(() => packageDesktopContainer({
-        ...subject.options,
-        platform: "darwin",
-        signing: { identity: "test identity" },
-        run(command, args, options) {
-          if (command !== "codesign") {
-            archives++;
-            return archive(command, args, options);
-          }
-          const target = args.at(-1);
-          if (args.includes("--sign")) {
-            seal = files(target);
-            return { status: 0, stdout: "", stderr: "" };
-          }
-          assert.ok(args.includes("--verify"));
-          assert.ok(args.includes("--strict"));
-          assert.ok(args.includes("--deep"));
-          checks++;
-          const valid = JSON.stringify(files(target)) === JSON.stringify(seal);
-          return { status: valid ? 0 : 1, stderr: valid ? "" : "a sealed resource was added" };
-        },
-      }), /TN_DESKTOP_CODESIGN_FINAL_VERIFY_FAILED/u);
-      assert.equal(checks, 2, "verify both the initial signature and the final staged bundle");
-      assert.equal(archives, 0, "invalid signatures must be rejected before archiving/notarizing");
-      if (existing) assert.equal(readFileSync(subject.options.output, "utf8"), "previous good release");
-      else assert.equal(existsSync(subject.options.output), false);
+      const build = () => packageDesktopContainer({
+        ...subject.options, platform: "darwin", signing: { identity: "test identity" },
+        dependencies: [{ name: "helper.dylib", source: dependency }],
+        uiDirectory, uiRenderer: "web", run,
+      });
+      if (outcome !== "success") {
+        assert.throws(build, /TN_DESKTOP_CODESIGN.*(?:FAILED|TOOL_MISSING)/u);
+        assert.equal(archives, 0);
+        assert.equal(readFileSync(subject.options.output, "utf8"), "previous good release");
+        return;
+      }
+      const built = build();
+      assert.equal(outerSignatures, 1);
+      const root = extractContainer(built.archive, join(subject.root, "moved app"), { platform: "darwin" });
+      assert.deepEqual(resolveContainer(root, { platform: "darwin", run }), built.manifest);
+      assert.throws(() => resolveContainer(root, { platform: "linux", run }), /TN_DESKTOP_CODESIGN_HOST_REQUIRED/u);
+      for (const path of [built.manifest.executable, built.manifest.dependencies[0].path, built.manifest.ui.entry, "Contents/Resources/threenative-container.json"]) {
+        const target = join(root, path);
+        const original = readFileSync(target);
+        writeFileSync(target, `${original}tampered`);
+        assert.throws(() => resolveContainer(root, { platform: "darwin", run }), /TN_DESKTOP_(?:CONTAINER|CODESIGN)/u);
+        writeFileSync(target, original);
+      }
+      assert.deepEqual(resolveContainer(root, { platform: "darwin", run }), built.manifest);
+      const manifestPath = join(root, "Contents/Resources/threenative-container.json");
+      const originalManifest = readFileSync(manifestPath);
+      for (const mutate of [
+        (manifest) => { manifest.resources[manifest.executable] = { signature: "unknown" }; },
+        (manifest) => { manifest.resources[manifest.ui.entry] = { signature: "codesign" }; },
+        (manifest) => { manifest.signed = false; },
+        (manifest) => { manifest.platform = "linux-x64"; },
+      ]) {
+        const changed = JSON.parse(originalManifest);
+        mutate(changed);
+        writeFileSync(manifestPath, JSON.stringify(changed));
+        assert.throws(() => resolveContainer(root, { platform: "darwin", run }), /TN_DESKTOP_CONTAINER_MANIFEST_INVALID/u);
+      }
+      writeFileSync(manifestPath, originalManifest);
+      assert.throws(() => resolveContainer(root, { platform: "darwin", run: () => ({ error: new Error("ENOENT") }) }), /TN_DESKTOP_CODESIGN_VERIFY_TOOL_MISSING/u);
     } finally {
       rmSync(subject.root, { force: true, recursive: true });
     }
   });
 }
+
+test.skipIf(process.platform !== "darwin")("real macOS code signing survives extraction and refuses changed payloads", () => {
+  const subject = fixture();
+  const source = join(subject.root, "main.c");
+  const dependency = join(subject.root, "helper.dylib");
+  const uiDirectory = join(subject.root, "ui");
+  writeFileSync(source, "#include <sys/mman.h>\nint main(void) { void *p = mmap(0, 16384, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0); if (p == MAP_FAILED) return 1; return munmap(p, 16384); }\n");
+  mkdirSync(uiDirectory);
+  writeFileSync(join(uiDirectory, "index.html"), "<main>UI payload</main>");
+  try {
+    for (const args of [["clang", source, "-o", subject.options.executable], ["clang", "-dynamiclib", source, "-o", dependency]]) {
+      const result = spawnSync("xcrun", args, { encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr || result.error?.message);
+    }
+    const built = packageDesktopContainer({
+      ...subject.options, platform: "darwin", arch: process.arch,
+      dependencies: [{ name: "helper.dylib", source: dependency }],
+      uiDirectory, uiRenderer: "web", signing: { identity: "-" },
+    });
+    const root = extractContainer(built.archive, join(subject.root, "relocated signed app"));
+    const manifest = resolveContainer(root);
+    assert.equal(spawnSync(join(root, manifest.executable)).status, 0);
+    for (const path of [manifest.executable, manifest.dependencies[0].path, manifest.ui.entry, "Contents/Resources/threenative-container.json"]) {
+      const target = join(root, path);
+      const original = readFileSync(target);
+      writeFileSync(target, Buffer.concat([original, Buffer.from("tampered")]));
+      assert.throws(() => resolveContainer(root), /TN_DESKTOP_(?:CONTAINER|CODESIGN)/u);
+      writeFileSync(target, original);
+    }
+    assert.deepEqual(resolveContainer(root), manifest);
+  } finally {
+    rmSync(subject.root, { force: true, recursive: true });
+  }
+});
 
 test("unsigned macOS preparation still archives without invoking codesign", () => {
   const subject = fixture();

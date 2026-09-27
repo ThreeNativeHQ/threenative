@@ -511,8 +511,34 @@ export interface IPlaytestDeviceMetricsAssertion {
   notThermallyConfounded?: boolean;
 }
 
+/**
+ * What the game actually played, by cue label.
+ *
+ * Every other audio check in this repository is about a *file* — it exists, it decodes, it is
+ * inside its byte budget, its loop seam is clean. All of them stay green while a game says its
+ * one-shot general-quarters call a second time in the middle of a match, or plays the same line
+ * twice at once, because neither is a property of the clip. This reads the runtime ledger
+ * (`runtime.audio`), which a game fills by passing `cue` to `AudioBus.play`/`playAt`.
+ */
+export interface IPlaytestAudioAssertion {
+  /** The cue label the game passed. */
+  cue: string;
+  /** Fewest times it must have sounded. Defaults to 1, so naming a cue asserts it was heard. */
+  minPlays?: number;
+  /** Most times it may have sounded. `0` proves silence; `1` proves a one-shot stayed one. */
+  maxPlays?: number;
+  /**
+   * Fewest milliseconds that must separate this cue from the cue before it.
+   *
+   * One loudspeaker cannot say two things at once. A game whose urgent line cuts another 250 ms
+   * in sounds broken rather than urgent, and nothing but the gap between two plays shows it.
+   */
+  minGapMs?: number;
+}
+
 export interface IPlaytestScenarioAssertions {
   aerodynamics?: IPlaytestAerodynamicsAssertion[];
+  audio?: IPlaytestAudioAssertion[];
   animation?: IPlaytestAnimationAssertion[];
   camera?: IPlaytestCameraAssertion;
   components?: IPlaytestComponentAssertion[];

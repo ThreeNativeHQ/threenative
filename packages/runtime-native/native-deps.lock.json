@@ -439,6 +439,32 @@
       ]
     },
     {
+      "name": "sdl3-ios",
+      "version": "3.4.16",
+      "source": {
+        "repository": "libsdl-org/SDL",
+        "revision": "release-3.4.16"
+      },
+      "license": {
+        "spdx": "Zlib",
+        "evidence": {
+          "url": "https://github.com/libsdl-org/SDL/blob/release-3.4.16/LICENSE.txt"
+        }
+      },
+      "payloads": [
+        {
+          "id": "sdl3-ios-source",
+          "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz",
+          "sha256": "7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68",
+          "bytes": 15640667,
+          "targets": [
+            "ios"
+          ],
+          "bootstrap": "upstream-release-asset-2026-09-22-plan-verified"
+        }
+      ]
+    },
+    {
       "name": "quiche",
       "version": "quiche-0.24.6-3",
       "source": {
@@ -969,10 +995,10 @@
     },
     {
       "name": "gradle-wrapper",
-      "version": "8.5.0",
+      "version": "8.13.0",
       "source": {
         "repository": "gradle/gradle",
-        "revision": "v8.5.0"
+        "revision": "v8.13.0"
       },
       "license": {
         "spdx": "Apache-2.0",
@@ -983,13 +1009,13 @@
       "payloads": [
         {
           "id": "gradle-wrapper-jar",
-          "url": "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar",
-          "sha256": "d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd",
-          "bytes": 43462,
+          "url": "https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar",
+          "sha256": "81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f",
+          "bytes": 43705,
           "targets": [
             "android"
           ],
-          "bootstrap": "two-run-fetch-2026-09-11-matches-inline-pin"
+          "bootstrap": "official-gradle-wrapper-checksum-2026-09-22"
         }
       ]
     }

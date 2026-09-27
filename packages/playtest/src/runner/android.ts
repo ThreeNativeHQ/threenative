@@ -119,9 +119,10 @@ export class AdbAndroidDriver implements IAndroidDriver {
     const user = await this.resolveUser();
     this.activeUser = user;
     await this.adb(["reverse", `tcp:${port}`, `tcp:${port}`]);
-    await this.adb(["logcat", "-c"]);
     await this.adb(["shell", "am", "force-stop", "--user", user, this.options.packageName]);
     if (viewport !== undefined) await this.presentViewport(viewport);
+    // Stopping the old app can log a broken input channel. Capture only the new launch.
+    await this.adb(["logcat", "-c"]);
     await this.adb([
       "shell",
       "am",

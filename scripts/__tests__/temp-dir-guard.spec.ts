@@ -12,6 +12,10 @@ const allowedProductionCreators = new Map<string, string>([
   ],
   ["packages/playtest/src/runner/android.ts", "Android mailbox staging is removed in finally."],
   [
+    "packages/runtime-native/scripts/verify-ui-cadence.ts",
+    "The visible UI gate removes its owned probe after success and retains failed builds for diagnosis.",
+  ],
+  [
     "packages/playtest/src/runner/captureLock.ts",
     "The holder staging directory is removed immediately after the atomic rename.",
   ],
@@ -82,6 +86,10 @@ const allowedProductionCreators = new Map<string, string>([
   [
     "packages/blender-mcp/src/bridge.ts",
     "The Blender subprocess gets a private TMPDIR so its scratch files cannot outlive it; the directory is removed in finally.",
+  ],
+  [
+    "packages/runtime-native/tests/async-image-decode.test.mjs",
+    "The decode contract compiles a standalone probe with the system compiler into a scratch root and removes it in afterAll; the test runs under `node --test` as well as vitest, so it cannot import the workspace temp-dir helper.",
   ],
   [
     "scripts/capture-blender-mcp-tools.ts",

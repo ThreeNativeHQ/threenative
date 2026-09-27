@@ -17,10 +17,10 @@ Use browser automation on the user's real Chrome when available; otherwise run
 status. A black headless capture is a capture failure until proven otherwise.
 
 For reference matching, solve lighting first: search `engine_search_capabilities` before adding
-effects, read `TN_RENDER_CHAIN`, and use `agent-docs/visual-baseline.md` and
-`agent-docs/capture-the-frame.md` for the per-file baseline and capture recipe.
+effects, read `TN_RENDER_CHAIN`, and use `node_modules/create-threenative/agent-docs/references/visual-baseline.md` and
+`node_modules/create-threenative/agent-docs/references/capture-the-frame.md` for the per-file baseline and capture recipe.
 
-For a supplied or explicitly generated target, read `agent-docs/dream-loop.md`. It is the shared
+For a supplied or explicitly generated target, read `node_modules/create-threenative/agent-docs/references/dream-loop.md`. It is the shared
 workflow for locking the target, preserving its hash, obtaining a fresh gameplay capture, and
 asking the read-only verifier for an independent `PASS`, `REQUEST_CHANGES`, or `NOT_OBSERVED`.
 Run `node scripts/visual-loop.mjs --record <run>/run.json` before and after each round; read its
@@ -38,4 +38,4 @@ visible while tuning bounds, density, and `bakeBudgetMs`.
 never hand-author a device constant. A `(0, 1]` value pins it; invalid values fail at config load.
 Both modes report `TN_FRAME_BUDGET.surface` (`resolutionScale`, `scaleSource`, sample count, and
 buffer size), and `display: config.display` must reach `defineGame`. See the pixel-budget details
-in `agent-docs/visual-baseline.md` and the engine's measurement skill.
+in `node_modules/create-threenative/agent-docs/references/visual-baseline.md` and the engine's measurement skill.

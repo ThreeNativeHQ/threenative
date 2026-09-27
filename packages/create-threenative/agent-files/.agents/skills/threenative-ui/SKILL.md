@@ -17,4 +17,4 @@ intents; `src/game.ts` decides their meaning. `useUiState<GameState>()` is undef
 snapshot, and `useUiIntent()` sends commands. Mark every touch target `data-tn-interactive`; the
 host routes marked pointer-down events to UI and unmarked touches to the game. Share state and
 components, but keep appearance in `src/ui/`. The full state, hit-region, and renderer contract is
-`agent-docs/webview-ui.md`.
+`node_modules/create-threenative/agent-docs/references/webview-ui.md`.

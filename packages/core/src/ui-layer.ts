@@ -23,6 +23,7 @@ export {
   GAME_STATE_MESSAGE,
   HIT_REGIONS_MESSAGE,
   UI_BRIDGE_GLOBALS,
+  UI_DEV_METRICS_MESSAGE,
   UI_INTENT_MESSAGE,
   UI_READY_INTENT,
   type IUiBridge,
@@ -36,7 +37,7 @@ export {
  * @situation keep a HUD in step with the game without re-rendering on the loop
  * @alias journal objective panel
  * @alias readable HUD
- * @constraint publishes at the store's throttled cadence, and not at all with no UI listening
+ * @constraint publishes once per rendered frame unless stateFlushMs selects a slower interval, and not at all with no UI listening
  * @example publishUiState(bridge, game.state);
  */
 export { publishUiState } from "./ui-state.js";

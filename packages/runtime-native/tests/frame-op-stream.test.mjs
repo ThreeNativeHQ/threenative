@@ -8,7 +8,13 @@ const source = readFileSync(
   join(import.meta.dirname, "..", "src", "runtime-scripts", "frame-op-stream.js"),
   "utf8",
 );
-const replay = nativeDefinition("replayPackedFrameOpStream").text;
+// The opcode switch and its per-opcode handle guards live in the record replay walk; the plan
+// entry point above it only chooses which layout seeds that walk.
+const replay = nativeDefinition("replayFrameRecords").text;
+const frameStream = readFileSync(
+  join(import.meta.dirname, "..", "src", "webgpu", "bindings_frame_stream.cpp"),
+  "utf8",
+);
 const bindingsState = readFileSync(
   join(import.meta.dirname, "..", "src", "webgpu", "bindings_state.h"),
   "utf8",
@@ -78,7 +84,7 @@ describe("packed frame op stream", () => {
   // out of that file indexOf returns -1, the slice is empty, and the assertion passes on nothing.
   // Looking the definition up by symbol survives the move and still reds on the regression.
   it("keeps native replay compatible with the runtime's C++17 toolchains", () => {
-    expect(replay).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
+    expect(frameStream).not.toMatch(/\b[A-Za-z][A-Za-z0-9_]*\.contains\(/u);
   });
 
   // Every native handle lookup has to stop its own record before the first backend call that uses

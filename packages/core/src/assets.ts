@@ -5,9 +5,12 @@ import {
   BufferAttribute,
   type BufferGeometry,
   Mesh,
+  NoColorSpace,
   Object3D,
+  SRGBColorSpace,
   Texture,
   type TextureLoader,
+  type Wrapping,
 } from "three";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
@@ -70,10 +73,59 @@ export interface ICompressedTextureSupport {
   readonly ready: Promise<void>;
 }
 
+/** Which pipeline served a logical path: the compile step's manifest, or the project's own files. */
+export type AssetSource = "manifest" | "source";
+
+/** Where one settled load's bytes actually came from. */
+export interface IResolvedAsset {
+  readonly url: string;
+  readonly via: AssetSource;
+}
+
+export interface ITextureOptions {
+  /**
+   * The pixels are data, not colour: a normal map, a roughness map, a mask. Data textures are
+   * sampled without a colour-space conversion, which is wrong for an albedo and right for these.
+   * Left out, the copy is sRGB — the space an image file is authored in. A loader leaves a plain
+   * image linear, which washes out every albedo, so an options call never inherits that.
+   */
+  readonly data?: boolean;
+  // A normal or roughness map asking only for `wrap` still passes `data: true`: options always pick
+  // the space. The configured copy is outside the cache, so `release` cannot reclaim it — dispose it
+  // with the material that uses it.
+  /** Both axes at once. Absent leaves the loaded texture's own wrapping. */
+  readonly wrap?: Wrapping;
+  /** Tiling counts, one for both axes or one per axis. Absent leaves the loaded texture's own. */
+  readonly repeat?: number | readonly [number, number];
+  /** Samples to take at grazing angles. Absent leaves the loaded texture's own. */
+  readonly anisotropy?: number;
+}
+
+/** What `texture(path, options)` hands back: the cached instance untouched, or a configured copy. */
+function configuredTexture(texture: Texture, options: ITextureOptions): Texture {
+  const copy = texture.clone();
+  copy.colorSpace = options.data === true ? NoColorSpace : SRGBColorSpace;
+  if (options.wrap !== undefined) copy.wrapS = copy.wrapT = options.wrap;
+  const { repeat } = options;
+  if (typeof repeat === "number") copy.repeat.setScalar(repeat);
+  else if (repeat !== undefined) copy.repeat.set(repeat[0], repeat[1]);
+  if (options.anisotropy !== undefined) copy.anisotropy = options.anisotropy;
+  return copy;
+}
+
 export interface IAssetLoader {
   readonly compressedTextures?: ICompressedTextureSupport;
   model<T = unknown>(path: string): Promise<T>;
-  texture(path: string): Promise<Texture>;
+  /**
+   * Load a texture, optionally configured in one call.
+   *
+   * @situation set color space, wrap, repeat or anisotropy on a loaded texture
+   *
+   * With no options this is the shared cached instance, exactly as before. With options it is a
+   * copy of it: the cached texture is shared by every other caller of that path, and a wrap or a
+   * colour-space write on it would silently change how another material draws.
+   */
+  texture(path: string, options?: ITextureOptions): Promise<Texture>;
   audio(path: string): Promise<AudioBuffer>;
   release(kind: "audio" | "model" | "texture", path: string): boolean;
   /**
@@ -95,11 +147,29 @@ export interface IAssetLoader {
    * stay 0 for a game with no manifest, where no size is knowable before the bytes arrive.
    */
   readonly progress: {
+    /**
+     * The logical paths asked for and not yet settled, in request order. A loading screen that
+     * only shows a ratio cannot say *what* it is waiting for, which is the difference between
+     * "still loading" and "stuck on `akagi.glb`" — and a stall report that names nothing is a
+     * bug report nobody can act on.
+     */
+    readonly pending: readonly string[];
     readonly requested: number;
     readonly requestedBytes: number;
     readonly settled: number;
     readonly settledBytes: number;
   };
+  /**
+   * Where each settled load was actually served from, keyed by the logical path asked for.
+   *
+   * `progress` counts loads and cannot say which of a path's candidate urls answered, so a game
+   * whose manifest 404s and a game whose manifest named the output look identical from the game's
+   * own side — which is how an unreadable manifest became a silent uncompiled fallback on the
+   * native hosts, where a failed read arrives as a rejected fetch rather than a 404. `via` is
+   * `"manifest"` only for the compiled output the manifest named; `"source"` is the verbatim or
+   * source-directory path, and an external url, which no manifest governs.
+   */
+  readonly resolved: ReadonlyMap<string, IResolvedAsset>;
   clear(): void;
 }
 
@@ -225,6 +295,12 @@ interface IAssetEntry {
   value?: unknown;
 }
 
+/** The candidate urls for a logical path, and the pipeline that produced them. */
+interface ICandidateUrls {
+  readonly urls: readonly string[];
+  readonly via: AssetSource;
+}
+
 interface IDisposableResource {
   dispose(): void;
 }
@@ -327,6 +403,17 @@ async function loadBitmapTexture(url: string, renderer: unknown): Promise<Textur
   texture.flipY = flipsAtUpload;
   texture.needsUpdate = true;
   return texture;
+}
+
+/** True when the caller asked for per-asset timing; read once per settle, not per frame. */
+function assetTraceEnabled(): boolean {
+  // quality-allow: the playtest runner sets this global by its exact name.
+  // biome-ignore lint/style/useNamingConvention: a global the playtest runner sets by this exact name.
+  return (globalThis as { __TN_ASSET_TRACE__?: unknown }).__TN_ASSET_TRACE__ === true;
+}
+
+function performanceNow(): number {
+  return globalThis.performance?.now() ?? Date.now();
 }
 
 function resourcePathOf(url: string): string {
@@ -452,6 +539,30 @@ function widenQuantizedPositions(root: Object3D): void {
   });
 }
 
+/**
+ * Widens every normalized one-component integer attribute to float. three picks a one-component
+ * WebGPU vertex format from the array type alone and ignores `normalized`, so a cooked scalar in
+ * [0, 1] — a baked wind weight, say — reaches the pipeline as `uint16` where a TSL float attribute
+ * expects a float, and the pipeline fails to build. Same values, read through `getX`, so a meshopt
+ * interleaved attribute widens too.
+ */
+function widenNormalizedScalars(root: Object3D): void {
+  const widened = new Set<BufferGeometry>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const geometry = object.geometry as BufferGeometry;
+    if (widened.has(geometry)) return;
+    widened.add(geometry);
+    for (const [name, attribute] of Object.entries(geometry.attributes)) {
+      if (attribute.itemSize !== 1 || !attribute.normalized) continue;
+      const values = new Float32Array(attribute.count);
+      for (let index = 0; index < attribute.count; index += 1)
+        values[index] = attribute.getX(index);
+      geometry.setAttribute(name, new BufferAttribute(values, 1));
+    }
+  });
+}
+
 /** The `{ scene }` a GLTF result carries, when it carries one. */
 function modelRoot(value: unknown): Object3D | undefined {
   if (typeof value !== "object" || value === null) return undefined;
@@ -574,6 +685,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           return { loader, ready };
         })();
   const cache = new Map<string, IAssetEntry>();
+  /** Logical path → the url that actually served it, and the pipeline that url came from. */
+  const resolvedAssets = new Map<string, IResolvedAsset>();
   const disposed: IResourceDisposalSets = {
     geometries: new WeakSet(),
     surfaces: new WeakSet(),
@@ -657,8 +770,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
    * identically, just slower* — and it could not pass while only the first was tried: the loader
    * asked for `/rock.png`, which exists nowhere in a compiled project, and the game never booted.
    */
-  const resolveCandidates = async (path: string): Promise<readonly string[]> => {
-    if (isExternalAssetPath(path)) return [path];
+  const resolveCandidates = async (path: string): Promise<ICandidateUrls> => {
+    if (isExternalAssetPath(path)) return { urls: [path], via: "source" };
     const manifest = await manifestOnce();
     if (manifest !== undefined) {
       const listed = manifest.entries[path];
@@ -666,12 +779,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       if (typeof output !== "string") {
         throw new Error(`Asset '${path}' is not listed in the asset manifest '${manifestUrl}'.`);
       }
-      return [resolvePath(basePath, output)];
+      return { urls: [resolvePath(basePath, output)], via: "manifest" };
     }
     const verbatim = resolvePath(basePath, path);
-    if (sourcePath === "") return [verbatim];
+    if (sourcePath === "") return { urls: [verbatim], via: "source" };
     const fromSource = resolvePath(basePath, `${sourcePath}/${path}`);
-    return fromSource === verbatim ? [verbatim] : [verbatim, fromSource];
+    return fromSource === verbatim
+      ? { urls: [verbatim], via: "source" }
+      : { urls: [verbatim, fromSource], via: "source" };
   };
 
   /**
@@ -683,13 +798,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
    */
   const loadFirst = async <T>(
     path: string,
-    urls: readonly string[],
+    { urls, via }: ICandidateUrls,
     load: (url: string) => Promise<T>,
   ): Promise<T> => {
     const failures: string[] = [];
     for (const url of urls) {
       try {
-        return await load(url);
+        const value = await load(url);
+        // Recorded here, where the winner is known and nowhere else: a caller that asks which
+        // url served its bytes gets the one that did, not the first one that was tried.
+        resolvedAssets.set(path, { url, via });
+        return value;
       } catch (error) {
         failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
       }
@@ -703,6 +822,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   let requestedBytes = 0;
   let settled = 0;
   let settledBytes = 0;
+  /** Logical paths asked for and not yet settled, in request order — what a loading view names. */
+  const pending = new Set<string>();
 
   /**
    * The compiled size of a logical path, or 0 when it is not knowable — no manifest, an external
@@ -733,6 +854,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       },
       () => undefined,
     );
+    // Opt-in per-asset timing, off by default and free when off: a launch that is slow because of
+    // *which* asset is slow cannot be told from the group totals a game logs, and the engine is the
+    // only place that sees every settle. Set `globalThis.__TN_ASSET_TRACE__ = true` before boot.
+    const traceStart = assetTraceEnabled() ? performanceNow() : 0;
     const entry: IAssetEntry = {
       disposed: false,
       kind: kind as AssetKind,
@@ -751,11 +876,23 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     entry.promise.catch(() => {
       if (cache.get(key) === entry) cache.delete(key);
     });
+    pending.add(path);
     const note = (): void => {
       settled += 1;
+      pending.delete(path);
       void weighed.then(() => {
         settledBytes += weight;
       });
+      if (traceStart !== 0) {
+        console.log(
+          `TN_ASSET:${JSON.stringify({
+            bytes: weight,
+            kind,
+            ms: Math.round((performanceNow() - traceStart) * 10) / 10,
+            path,
+          })}`,
+        );
+      }
     };
     entry.promise.then(note, note);
     cache.set(key, entry);
@@ -849,7 +986,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // three.js geometry call. See `widenQuantizedPositions`.
         const root = modelRoot(value);
         if (root !== undefined) widenQuantizedPositions(root);
-        // Built here, after `widenQuantizedPositions`, so the derived levels share the widened base
+        // And a normalized scalar is a trap for the WebGPU pipeline. See `widenNormalizedScalars`.
+        if (root !== undefined) widenNormalizedScalars(root);
+        // Built here, after both widenings, so the derived levels share the widened base
         // attributes instead of pinning the quantized ones.
         if (root !== undefined && discreteLod !== undefined)
           discreteLod.attach(root, await discretePolicy(path));
@@ -872,9 +1011,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         return value;
       }),
     get progress() {
-      return { requested, requestedBytes, settled, settledBytes };
+      return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
     },
-    resolve: (path) => resolveCandidates(path),
+    resolve: async (path) => (await resolveCandidates(path)).urls,
+    // A copy per read, like `progress`: a caller inspecting the record must not be able to
+    // rewrite what the loader reports for the next asset that settles.
+    get resolved(): ReadonlyMap<string, IResolvedAsset> {
+      return new Map(resolvedAssets);
+    },
     release: (kind, path) => {
       const key = `${kind}:${path}`;
       const entry = cache.get(key);
@@ -883,8 +1027,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       releaseEntry(entry);
       return true;
     },
-    texture: (path) =>
-      cached("texture", path, async (url) => {
+    texture: async (path, textureOptions) => {
+      const texture = await cached("texture", path, async (url) => {
         if (options.texture !== undefined) return options.texture(url);
         // Compiled output carries the content-addressed extension: anything ending in .ktx2
         // goes through the shared KTX2 loader, everything else stays on TextureLoader.
@@ -896,7 +1040,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         }
         const { TextureLoader: Loader } = await import("three");
         return loadWith(new Loader() as TextureLoader, url);
-      }),
+      });
+      return textureOptions === undefined ? texture : configuredTexture(texture, textureOptions);
+    },
   };
 }
 

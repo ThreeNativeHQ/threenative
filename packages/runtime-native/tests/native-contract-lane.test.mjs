@@ -87,12 +87,11 @@ test("should fail when a declared test target is not executed", () => {
   // thread contract; +1 for PRD-327 Phase 4's stall-budget hitch shape contract; +1 for the
   // screenshot capture-gate ordering contract; +1 for PRD-329's surface-format selection
   // diagnostic contract; +5 for the comprehensive coverage contracts; +1 for PRD-368's pipeline
-  // cache contract.
+  // cache contract; +1 for PRD-399's presentation-pacing contract.
   // Bump alongside any new add_executable contract target.
-  // 43 since PRD-368 registered threenative-pipeline-cache-test and
-  // threenative-pipeline-cache-lifecycle-test. The next assertion pins this against CMakeLists
+  // 44 since PRD-399 registered threenative-presentation-pacing-test. The next assertion pins this against CMakeLists
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 43);
+  assert.equal(discovered.length, 44);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 

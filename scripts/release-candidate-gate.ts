@@ -119,10 +119,19 @@ export function requiredHostedCapabilities(scope: IReleaseScope): readonly Hoste
   return REQUIRED_HOSTED_CAPABILITIES.filter((name) => names.has(name));
 }
 
-/** Platforms whose binaries the release actually publishes, derived from the asset key table. */
+/**
+ * Platforms whose binaries a non-iOS release actually publishes, derived from the asset key table.
+ *
+ * iOS keeps its own release gate and is not a supported target: the strict consumer default and the
+ * release proof cohort both publish only `!key.startsWith("ios-")` (install-prebuilt.mjs,
+ * native-release.yml), and a declared scope that names iOS can never pass while `xcode` is absent.
+ * Counting the iOS asset here made every non-iOS release unsatisfiable — the scope had to name iOS
+ * to cover it and was then BLOCKED on the missing Xcode capability.
+ */
 export function platformsCoveringPublishedAssets(): readonly ReleasePlatform[] {
   const covered = new Set<ReleasePlatform>();
   for (const key of Object.keys(PREBUILT_ASSET_NAMES)) {
+    if (key.startsWith("ios-")) continue;
     const platform = RELEASE_PLATFORMS.find((candidate) =>
       key.startsWith(PLATFORM_ASSET_PREFIXES[candidate]),
     );
@@ -478,7 +487,14 @@ function validateRun(
     errors.push(`${where}.headSha must equal candidateSha.`);
   if (value.status !== "completed") errors.push(`${where}.status must be 'completed'.`);
   if (value.conclusion !== "success") errors.push(`${where}.conclusion must be 'success'.`);
-  if (value.event !== "push") errors.push(`${where}.event must be 'push'.`);
+  // native-platforms.yml never runs on push on its own: ci.yml calls it as a reusable workflow, so
+  // the only standalone run of it is a manual dispatch on main. Demanding `push` for it made every
+  // release candidate unsatisfiable.
+  const events = workflowPath.endsWith("native-platforms.yml")
+    ? ["push", "workflow_dispatch"]
+    : ["push"];
+  if (typeof value.event !== "string" || !events.includes(value.event))
+    errors.push(`${where}.event must be ${events.map((event) => `'${event}'`).join(" or ")}.`);
   if (value.headBranch !== "main") errors.push(`${where}.headBranch must be 'main'.`);
   if (value.workflowPath !== workflowPath)
     errors.push(`${where}.workflowPath must be '${workflowPath}'.`);

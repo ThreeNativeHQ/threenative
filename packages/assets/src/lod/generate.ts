@@ -528,10 +528,13 @@ interface IAttributePack {
 /**
  * Packs the non-position attributes the simplifier may weight: normals, tangents, UV0/UV1 and
  * vertex colours. A normalized change of `1/weight` over distance `d` is about a change of `d` in
- * position, so normalized attributes get weight 1.
+ * position, so normalized attributes get weight 1. Application data (`_` semantics) is left out:
+ * its range is the application's own, and every level shares it unchanged.
  */
 function packAttributes(primitive: Primitive, vertexCount: number): IAttributePack {
-  const semantics = primitive.listSemantics().filter((semantic) => semantic !== "POSITION");
+  const semantics = primitive
+    .listSemantics()
+    .filter((semantic) => semantic !== "POSITION" && !semantic.startsWith("_"));
   const accessors = semantics
     .map((semantic) => ({ accessor: primitive.getAttribute(semantic), semantic }))
     .filter(
@@ -829,6 +832,12 @@ async function buildJoinedRungs(
   for (const node of nodes) {
     const mesh = node.getMesh();
     if (mesh === null || hasMeshBelow.has(node)) continue;
+    // An `EXT_mesh_gpu_instancing` node draws its mesh once per instance; joining it would
+    // collapse every placed copy onto the batch node's own transform, so it stays authored.
+    if (node.getExtension("EXT_mesh_gpu_instancing") !== null) {
+      reason("boundary-unsafe");
+      continue;
+    }
     if ((meshRefs.get(mesh) ?? 0) > 1) {
       reason("boundary-unsafe");
       continue;

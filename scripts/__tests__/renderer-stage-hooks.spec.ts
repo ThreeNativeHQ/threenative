@@ -146,6 +146,70 @@ describe("renderer stage hooks", () => {
     expect(report.stages["renderer.renderObjects"]?.timing).toBe("inclusive");
   });
 
+  it("reports the slowest single call, so one call doing a pass cannot read as a per-call cost", () => {
+    // Measured in three 0.185.1: `nodes.updateBefore` averages ~5.7 µs over ~394 calls a frame,
+    // and one of those calls renders the shadow map at 3,600 µs. A report carrying only the
+    // total makes that look like an expensive per-draw stage, which is a wrong conclusion this
+    // repository's performance record had to retract. Three cheap calls and one slow one:
+    const { renderer } = makeRenderer();
+    const hooks = installRendererStageHooks(renderer, {
+      clock: fakeClock([0, 1, 1, 2, 2, 3, 3, 103]),
+      threeVersion: EXPECTED_THREE_VERSION,
+    });
+
+    for (let index = 0; index < 4; index += 1) (renderer._projectObject as FakeMethod)();
+    const stage = hooks.snapshot({ measuredFrameCount: 1 }).stages["renderer.projectObject"];
+
+    expect(stage?.calls).toBe(4);
+    expect(stage?.inclusiveMs).toBe(103);
+    // The mean says 25.75 ms a call; the truth is three calls of 1 ms and one of 100.
+    expect(stage?.maxMs).toBe(100);
+    expect((stage as { inclusiveMs: number; calls: number }).inclusiveMs / 4).toBeCloseTo(25.75);
+  });
+
+  it("refuses a report whose stages omit the slowest-call field", () => {
+    // Built from a real snapshot and then stripped, so the test cannot pass by tripping some
+    // earlier schema rule instead of the one it is about.
+    const { renderer } = makeRenderer();
+    const hooks = installRendererStageHooks(renderer, {
+      clock: fakeClock([0, 1]),
+      threeVersion: EXPECTED_THREE_VERSION,
+    });
+    (renderer._projectObject as FakeMethod)();
+    const report = hooks.snapshot({ measuredFrameCount: 1 });
+    expect(() => validateRendererStageReport(report)).not.toThrow();
+
+    const stripped = {
+      ...report,
+      stages: Object.fromEntries(
+        Object.entries(report.stages).map(([name, value]) => {
+          const { maxMs: _dropped, ...rest } = value as { maxMs: number };
+          return [name, rest];
+        }),
+      ),
+    };
+    expect(() => validateRendererStageReport(stripped)).toThrow(/maxMs/u);
+  });
+
+  it("rejects a version-1 report, because its stages cannot carry a slowest call", () => {
+    // The bump exists so the two shapes are distinguishable. A version-1 report has no `maxMs`,
+    // which reads as a stage whose calls are uniform — the assumption that turned a shadow-map
+    // render into a per-draw cost. Accepting it silently would defeat the point of adding the
+    // field at all.
+    const { renderer } = makeRenderer();
+    const hooks = installRendererStageHooks(renderer, {
+      clock: fakeClock([0, 1]),
+      threeVersion: EXPECTED_THREE_VERSION,
+    });
+    (renderer._projectObject as FakeMethod)();
+    const report = hooks.snapshot({ measuredFrameCount: 1 });
+
+    expect(report.version).toBe(2);
+    expect(() => validateRendererStageReport({ ...report, version: 1 })).toThrow(
+      /version must be 2/u,
+    );
+  });
+
   it("can reset after warmup so snapshots describe only measured frames", () => {
     const { renderer } = makeRenderer();
     const hooks = installRendererStageHooks(renderer, {
@@ -325,7 +389,7 @@ describe("renderer stage hooks", () => {
     (renderer._renderObjects as FakeMethod)();
     const report = hooks.snapshot();
 
-    expect(rendererStageReportSchema.version).toBe(1);
+    expect(rendererStageReportSchema.version).toBe(2);
     expect(validateRendererStageReport(report)).toEqual(report);
     expect(() =>
       validateRendererStageReport({

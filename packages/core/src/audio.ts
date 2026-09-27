@@ -15,6 +15,15 @@ export interface IAudioBusOptions {
 }
 
 export interface IAudioPlayOptions {
+  /**
+   * What this cue is, for anything reading back what the game played — a playtest above all.
+   *
+   * Nothing about the sound changes. Every other audio check answers "is the file right": that it
+   * exists, decodes, and is inside its byte budget. None of them can answer "did the game say the
+   * general-quarters line twice", which is the class of defect players actually report, so the bus
+   * keeps a ledger of the labels it was given.
+   */
+  readonly cue?: string;
   readonly fade?: number;
   readonly loop?: boolean;
   readonly volume?: number;
@@ -51,6 +60,18 @@ export interface IAudioPlayOptions {
 }
 
 export interface IAudioRuntimeSnapshot {
+  /**
+   * How many times each labelled cue has sounded, across every live bus.
+   *
+   * This is the only observation that can answer "what did the game actually say, and how often".
+   * Every other audio check in the repository is about the *file* — that it exists, decodes and is
+   * inside its budget — and all of them stay green while a one-shot line plays a second time
+   * halfway through a match, which is the defect players report. A game opts a cue in by passing
+   * `cue` to `play`/`playAt`; unlabelled sounds never appear here.
+   */
+  readonly cues: Readonly<Record<string, number>>;
+  /** The most recent labelled cues in the order they sounded, bounded per bus. */
+  readonly recentCues: ReadonlyArray<{ readonly atMs: number; readonly cue: string }>;
   readonly queued: number;
   readonly voices: number;
   /** Retired voices held for reuse. Bounded by peak concurrency, never by session length. */
@@ -70,7 +91,56 @@ export interface IAudioRuntimeSnapshot {
   readonly unsupported: readonly string[];
 }
 
-const buses = new Set<AudioBus>();
+/**
+ * The live buses and the cue ledger, held on `globalThis` rather than in this module.
+ *
+ * Two reasons, and the second is why this is not over-engineering. The ledger has to outlive the
+ * bus, because a scene change disposes one and builds another and the question being asked is
+ * "did this one-shot line play again after the restart". And core ships one bundle per entry point
+ * with no shared chunks (`splitting: false`), so a game importing `@threenative/core` and
+ * `@threenative/core/playtest` loads **two copies of this module**, each with its own state: the
+ * playtest bridge runs in the second copy, so every audio observation it ever published — voices,
+ * pooled, paused, unsupported — described an empty registry no game had touched, and read as a
+ * clean zero rather than "not measured". State something else reads back has to outlive the copy
+ * it was written into.
+ */
+const AUDIO_STATE = Symbol.for("threenative.audio.runtime");
+
+interface IAudioRuntimeState {
+  readonly buses: Set<AudioBus>;
+  readonly cueCounts: Map<string, number>;
+  cueLog: Array<{ atMs: number; cue: string }>;
+}
+
+function audioState(): IAudioRuntimeState {
+  const host = globalThis as Record<symbol, unknown>;
+  const existing = host[AUDIO_STATE] as IAudioRuntimeState | undefined;
+  if (existing !== undefined) return existing;
+  const created: IAudioRuntimeState = { buses: new Set(), cueCounts: new Map(), cueLog: [] };
+  host[AUDIO_STATE] = created;
+  return created;
+}
+
+/** Records one labelled cue. Bounded: a session that plays for hours keeps the last 200. */
+function noteCue(cue: string | undefined): void {
+  if (cue === undefined || cue.length === 0) return;
+  const state = audioState();
+  state.cueCounts.set(cue, (state.cueCounts.get(cue) ?? 0) + 1);
+  state.cueLog.push({ atMs: Math.round(globalThis.performance?.now() ?? Date.now()), cue });
+  if (state.cueLog.length > 200) state.cueLog = state.cueLog.slice(-200);
+}
+
+/**
+ * Forgets every recorded cue.
+ *
+ * @situation clear the recorded audio cue counts between tests so one test cannot read another's plays
+ * @example resetAudioCueLedger();
+ */
+export function resetAudioCueLedger(): void {
+  const state = audioState();
+  state.cueCounts.clear();
+  state.cueLog = [];
+}
 
 const DEFAULT_MAX_VOICES = 48;
 /** Above 20 kHz a low-pass is inaudible, so this doubles as "no filter". */
@@ -158,7 +228,7 @@ export class AudioBus {
     for (const event of ["keydown", "pointerdown", "touchstart"] as const) {
       this.#gestureTarget?.addEventListener(event, this.#gesture);
     }
-    buses.add(this);
+    audioState().buses.add(this);
   }
 
   get queued(): number {
@@ -299,6 +369,7 @@ export class AudioBus {
   play(buffer: AudioBuffer, options: IAudioPlayOptions = {}): ThreeAudio {
     assertBuffer(buffer);
     assertOptions(options);
+    noteCue(options.cue);
     const entry = this.#claimFlat(options.loop ?? false);
     const voice = entry.voice as ThreeAudio;
     configureVoice(voice, options);
@@ -322,6 +393,7 @@ export class AudioBus {
   ): PositionalAudio {
     assertBuffer(buffer);
     assertOptions(options);
+    noteCue(options.cue);
     if (typeof (this.listener.context as { createPanner?: unknown }).createPanner !== "function")
       throw new Error("AudioBus.playAt needs createPanner(); this runtime has none.");
     const entry = this.#claimPositional(options.loop ?? false);
@@ -394,7 +466,7 @@ export class AudioBus {
       if (this.#gesture !== undefined)
         this.#gestureTarget?.removeEventListener(event, this.#gesture);
     }
-    buses.delete(this);
+    audioState().buses.delete(this);
   }
 
   #queueOrStart(entry: PooledVoice, options: IAudioPlayOptions): void {
@@ -629,18 +701,32 @@ export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
   let pooled = 0;
   let paused = 0;
   const unsupported = new Set<string>();
-  for (const bus of buses) {
+  const state = audioState();
+  for (const bus of state.buses) {
     queued += bus.queued;
     voices += bus.voices;
     pooled += bus.pooled;
     paused += bus.pausedVoices;
     for (const option of bus.unsupported) unsupported.add(option);
   }
-  return { paused, pooled, queued, unsupported: [...unsupported].sort(), voices };
+  return {
+    cues: Object.fromEntries(state.cueCounts),
+    paused,
+    pooled,
+    queued,
+    recentCues: state.cueLog.map((entry) => ({ ...entry })),
+    unsupported: [...unsupported].sort(),
+    voices,
+  };
 }
 
 /** Every numeric contract on a cue, checked before a voice is claimed rather than after. */
 function assertOptions(options: IAudioPlayOptions): void {
+  // A cue that is not a label is a mistake the ledger would swallow: a number, an object, or an
+  // empty string all read as "unlabelled" in the counts and the miscount is silent.
+  if (options.cue !== undefined && (typeof options.cue !== "string" || options.cue.length === 0)) {
+    throw new TypeError("cue must be a non-empty string.");
+  }
   if (
     options.cutoffSeconds !== undefined &&
     (!Number.isFinite(options.cutoffSeconds) || options.cutoffSeconds <= 0)

@@ -233,6 +233,40 @@ describe("compileAssets", () => {
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
   });
 
+  it("should let a caller that probed the runtime drop decoders on desktop too", async () => {
+    // A desktop host is V8 except on the Linux arm64 lane, which builds QuickJS over wgpu-native.
+    // `platform: "desktop"` alone would keep meshopt/KTX2 and ship an asset the runtime cannot
+    // decode; the build reads the engine from the runtime binary and passes the real capability.
+    const root = await makeTempDir("threenative-compile-runtime-decoders-");
+    await mkdir(path.join(root, "assets"));
+    const source = rgbaPng({
+      blue: (x, y) => (x * 3 + y * 5) % 256,
+      green: (x, y) => (x * 11 + y * 7) % 256,
+      height: 32,
+      red: (x, y) => (x * 17 + y * 13) % 256,
+      width: 32,
+    });
+    await writeFile(path.join(root, "assets", "rock.png"), source);
+
+    const result = await compileAssets({
+      cwd: root,
+      platform: "desktop",
+      runtimeDecoders: { ktx2: false, meshopt: false },
+      transcoder: TRANSCODER,
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+
+    expect(manifest.entries["rock.png"]?.output).toMatch(/\.png$/u);
+    expect(result.skippedCompression).toContainEqual({
+      bytes: source.length,
+      files: 1,
+      kind: "texture",
+      reason: "platform",
+    });
+  });
+
   it("should write separate model attribute buffers for desktop native output", async () => {
     const root = await makeTempDir("threenative-compile-desktop-layout-");
     await mkdir(path.join(root, "assets"));
@@ -1063,6 +1097,56 @@ describe("compileAssets and assets.models.virtual", () => {
     } as unknown as IAssetSourceConfig;
     await expect(compileAssets({ config: bogus, cwd: root })).rejects.toThrow(
       /TN_ASSETS_CONFIG_UNKNOWN_KEY.*assets\.models\.virtual\.minTriangls/u,
+    );
+  });
+});
+
+describe("compileAssets and assets.models.compact", () => {
+  it("should accept compact: false and an object override, and reject the keys it cannot honour", async () => {
+    const root = await makeTempDir("threenative-compile-compact-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "character.glb"), await buildFixtureGlb());
+
+    await compileAssets({
+      config: {
+        models: { compact: false, textures: "none", virtual: "none" },
+      } as IAssetSourceConfig,
+      cwd: root,
+    });
+
+    const bogus = {
+      models: { compact: { flatten: "yes" } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: bogus, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*assets\.models\.compact\.flatten must be a boolean/u,
+    );
+
+    const unknown = {
+      models: { compact: { joins: true } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: unknown, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_UNKNOWN_KEY.*assets\.models\.compact\.joins/u,
+    );
+
+    const badMin = {
+      models: { compact: { instance: { min: 1 } } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: badMin, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*assets\.models\.compact\.instance\.min must be an integer of at least 2/u,
+    );
+
+    const badNames = {
+      models: { compact: { protectedNames: [1] } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: badNames, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*protectedNames must be an array of strings/u,
+    );
+
+    const badPattern = {
+      models: { compact: { protectedPattern: "(" } },
+    } as unknown as IAssetSourceConfig;
+    await expect(compileAssets({ config: badPattern, cwd: root })).rejects.toThrow(
+      /TN_ASSETS_CONFIG_INVALID.*protectedPattern is not a valid regular expression/u,
     );
   });
 });

@@ -332,9 +332,13 @@ function strictlyIncreasing(values) {
 
 function maximumMetric(metrics, key) {
   if (Array.isArray(metrics.intervals) && metrics.intervals.length > 0) {
-    const values = metrics.intervals.map((sample) => sample?.[key]);
-    if (values.some((value) => !finiteMetric(value))) return undefined;
-    return Math.max(...values);
+    // The first frame of each collection window settles before the asynchronous renderer read
+    // resolves, so it carries no draw-call or triangle reading. Match the producer, which takes the
+    // maximum over the readings that exist; a series with no reading at all stays unmeasured.
+    const values = metrics.intervals
+      .map((sample) => sample?.[key])
+      .filter((value) => finiteMetric(value));
+    return values.length > 0 ? Math.max(...values) : undefined;
   }
   return finiteMetric(metrics[key]) ? metrics[key] : undefined;
 }

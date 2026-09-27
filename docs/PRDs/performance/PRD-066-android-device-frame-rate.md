@@ -132,13 +132,13 @@ reason to assume it wins.
 
 - `packages/runtime-native/android/app/build.gradle.kts` — DONE: `-O2` on the debug variant's
   `cFlags`/`cppFlags`, with the comment explaining why the `arguments` route does not work.
-- **Still owed by this phase:**
-  - A test that fails when the debug variant's native build carries no optimization flag.
-    Assert on the generated `build.ninja` or on the configured flags, not on frame rate.
-  - Confirm the release variant is genuinely `-O2` or better and say so with a cache dump.
-  - Decide whether `usePrebuiltRuntime` prebuilts are optimized. **Unknown and unverified.**
-    If the published prebuilt `.so` files were produced by a debug build, every scaffolded
-    consumer inherits the 4.5 fps and Phase 1 has not actually shipped.
+
+Progress boxes were added by PRD-445 Phase 3; this phase had none.
+
+- [x] `-O2` set on the debug variant's `cFlags`/`cppFlags` in `build.gradle.kts`
+- [ ] A test fails when the debug variant's native build carries no optimization flag (assert on the generated `build.ninja` or the configured flags, not on frame rate)
+- [ ] Release variant confirmed `-O2` or better, with a cache dump
+- [ ] `usePrebuiltRuntime` prebuilts shown optimized (unknown and unverified: a debug-built `.so` makes every scaffolded consumer inherit 4.5 fps)
 
 ### Phase 2 — spike: price the three branches on this device
 

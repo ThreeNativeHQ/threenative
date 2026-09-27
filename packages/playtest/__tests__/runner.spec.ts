@@ -1452,6 +1452,19 @@ test("legacy frame aliases stay separate from canonical tick helpers", () => {
   expect(playtestStepWaitTicks({ release: true, waitTicks: 5 })).toBe(5);
 });
 
+test("an authored hold counts for a pointer step, not only a key press", () => {
+  // A touch stick anchors on one step and moves on the next. When holdTicks was read only for
+  // `press` steps, every pointer step discarded its hold, advanced one live frame, and the car
+  // read a machine-dependent few ticks of throttle — the racing touch-controls flake.
+  expect(
+    playtestStepHoldTicks({ holdTicks: 45, pointers: [{ id: 1, x: 0.2, y: 0.5 }], release: true }, 0),
+  ).toBe(45);
+  // A pointer step with no authored hold is still not a hold step.
+  expect(
+    playtestStepHoldTicks({ pointers: [{ id: 1, x: 0.2, y: 0.5 }], release: true } as never, 0),
+  ).toBe(0);
+});
+
 test("runner carries performance samples in their separate report channel", () => {
   const currentScenario = scenario({ performance: { maxFrameMsP95: 20 } });
   const snapshot: IPlaytestObservationSnapshot = {

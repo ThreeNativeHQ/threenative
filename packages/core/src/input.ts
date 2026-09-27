@@ -158,6 +158,22 @@ function pointerLockDocument(): PointerLockDocument | undefined {
 const browserGamepads: InputPlatformSource = () =>
   (globalThis.navigator as Navigator | undefined)?.getGamepads?.() ?? [];
 
+/**
+ * Ask the browser to lock the pointer to `target`, the capture every first-person mouse look needs.
+ *
+ * Returns the platform's own promise when it has one, so the caller can wait for the lock the way
+ * the browser reports it, and `undefined` when the platform answered synchronously. A target that
+ * cannot capture at all throws rather than leaving a game with a camera that never turns.
+ */
+export function captureMouse(target: EventTarget): Promise<void> | undefined {
+  const lockTarget = target as PointerLockTarget;
+  if (typeof lockTarget.requestPointerLock !== "function") {
+    throw new Error("Pointer capture is unavailable on the input target.");
+  }
+  const result = lockTarget.requestPointerLock();
+  return result === undefined ? undefined : Promise.resolve(result);
+}
+
 export class InputMap {
   readonly raw: IRawInputState;
   #bindings: InputBindings;
@@ -329,11 +345,7 @@ export class InputMap {
   /** Request pointer capture explicitly from a named game gesture. Relative bindings request it on canvas click by default. */
   captureMouse(): void {
     if (this.raw.pointer.captured) return;
-    const target = this.#pointerTarget as PointerLockTarget;
-    if (typeof target.requestPointerLock !== "function") {
-      throw new Error("Pointer capture is unavailable on the input target.");
-    }
-    const result = target.requestPointerLock();
+    const result = captureMouse(this.#pointerTarget);
     if (result === undefined) {
       this.#syncCaptured(true);
       return;

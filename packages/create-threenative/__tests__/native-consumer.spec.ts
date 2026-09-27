@@ -29,6 +29,10 @@ async function callerFixture(): Promise<{ root: string; log: string }> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await mkdir(path.join(runtime, "scripts"), { recursive: true });
   await writeFile(path.join(root, "package.json"), '{"name":"consumer-test","type":"module"}');
+  await writeFile(
+    path.join(root, "threenative.config.ts"),
+    'export default { ui: { renderer: "native" } };\n',
+  );
   await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
   await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
   await writeFile(
@@ -46,7 +50,11 @@ async function callerFixture(): Promise<{ root: string; log: string }> {
     await writeFile(
       path.join(runtime, `scripts/package-${target}.mjs`),
       `
-      import { writeFileSync } from 'node:fs';
+      import { mkdirSync, writeFileSync } from 'node:fs';
+      import { dirname } from 'node:path';
+      const output = process.argv[process.argv.indexOf('--output') + 1];
+      mkdirSync(dirname(output), { recursive: true });
+      writeFileSync(output, 'packaged');
       writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));
     `,
     );
@@ -305,7 +313,12 @@ posixTest("desktop packaging forwards install options and emits an artifact", as
   const consumer = path.join(fixture.root, "consumer");
   await mkdir(path.join(consumer, "scripts"), { recursive: true });
   await copyFile(path.join(runtimeRoot, "package.json"), path.join(consumer, "package.json"));
-  for (const script of ["package-desktop.mjs", "install-prebuilt.mjs", "asset-preflight.mjs"]) {
+  for (const script of [
+    "package-desktop.mjs",
+    "install-prebuilt.mjs",
+    "asset-preflight.mjs",
+    "asset-manifest.mjs",
+  ]) {
     await copyFile(
       path.join(runtimeRoot, "scripts", script),
       path.join(consumer, "scripts", script),

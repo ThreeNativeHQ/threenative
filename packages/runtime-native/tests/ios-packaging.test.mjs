@@ -1,18 +1,22 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PNG } from 'pngjs';
 import { afterEach, test } from 'vitest';
 
 import {
+  SDL3_IOS_VERSION,
   compileIosAssets,
+  hasIosSceneManifestFields,
   packageIosSimulator,
+  renderIosInfoPlist,
   runIosPackageCli,
   stageIosSimulatorApp,
 } from '../scripts/package-ios.mjs';
+import { SDL3_ANDROID_VERSION } from '../scripts/package-android.mjs';
 import { PREBUILT_ASSET_NAMES } from '../scripts/install-prebuilt.mjs';
 import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
@@ -25,6 +29,23 @@ const infoPlist = `<plist><dict>
     <string>UIInterfaceOrientationLandscapeLeft</string>
     <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+          <key>UISceneConfigurationName</key>
+          <string>Default Configuration</string>
+          <key>UISceneDelegateClassName</key>
+          <string>SDLUIKitSceneDelegate</string>
+        </dict>
+      </array>
+    </dict>
+  </dict>
 </dict></plist>`;
 const binaryInfoPlist = Buffer.from(
   [
@@ -56,6 +77,39 @@ test('iOS actool receives a partial-info-plist output sink when compiling an app
   assert.equal(args[partialInfoPlist + 1], '/dev/null');
 });
 
+test('iOS launch screens reference named assets only when packaging compiles their catalog', () => {
+  const host = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.doesNotMatch(host, /<key>UI(?:Color|Image)Name<\/key>/u);
+  assert.doesNotMatch(renderIosInfoPlist(host), /<key>UI(?:Color|Image)Name<\/key>/u);
+  for (const config of [
+    { bootSplash: {} },
+    { app: { icon: 'icon.png' } },
+    { app: { icons: { ios: { dark: 'dark.png' } } } },
+  ]) {
+    const plist = renderIosInfoPlist(host, config);
+    assert.equal((plist.match(/<key>UILaunchScreen<\/key>/gu) ?? []).length, 1);
+    assert.match(plist, /<key>UIColorName<\/key>\s*<string>LaunchBackground<\/string>/u);
+  }
+});
+
+test('iOS names the app icon only when a branded icon source is actually compiled', () => {
+  const host = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.doesNotMatch(
+    renderIosInfoPlist(host, { app: { icons: { ios: {} } } }),
+    /<key>CFBundleIconName<\/key>/u,
+  );
+  for (const config of [
+    { app: { icon: 'icon.png' } },
+    { app: { icons: { ios: { dark: 'dark.png' } } } },
+    { app: { icons: { ios: { tinted: 'tinted.png' } } } },
+  ]) {
+    assert.match(
+      renderIosInfoPlist(host, config),
+      /<key>CFBundleIconName<\/key>\s*<string>AppIcon<\/string>/u,
+    );
+  }
+});
+
 test('iOS staging converts Xcode binary Info.plist archives before applying metadata', () => {
   const root = makeTempDirSync('threenative-ios-binary-plist-');
   roots.push(root);
@@ -85,6 +139,38 @@ test('iOS staging converts Xcode binary Info.plist archives before applying meta
   assert.equal(report.infoPlistFormat, 'binary');
   assert.equal(report.orientation, 'portrait');
   assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'), /UIInterfaceOrientationPortrait/u);
+});
+
+test('iOS app staging preserves WebUI selection, its files and the host launch contract', () => {
+  const root = makeTempDirSync('threenative-ios-web-ui-');
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const ui = join(root, 'built-ui');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp);
+  mkdirSync(ui);
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'game');
+  for (const [name, body] of Object.entries({ 'index.html': '<script src="ui.js"></script>',
+    'ui.js': 'console.log("React bundle")', 'ui.css': 'body{margin:0}' })) {
+    writeFileSync(join(ui, name), body);
+  }
+  const inputs = { bundle, output, templateApp, config: { ui: { renderer: 'web' } } };
+  stageIosSimulatorApp({ ...inputs, ui });
+  assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'),
+    /<key>TNUIRenderer<\/key>\s*<string>web<\/string>/u);
+  for (const name of ['index.html', 'ui.js', 'ui.css']) {
+    assert.deepEqual(readFileSync(join(output, 'ui', name)), readFileSync(join(ui, name)));
+  }
+  assert.throws(() => stageIosSimulatorApp(inputs), /TN_UI_BUNDLE_MISSING/u);
+  stageIosSimulatorApp({ ...inputs, config: { ui: { renderer: 'native' } } });
+  assert.equal(existsSync(join(output, 'ui')), false);
+  assert.match(readFileSync(join(output, 'Info.plist'), 'utf8'),
+    /<key>TNUIRenderer<\/key>\s*<string>native<\/string>/u);
+  assert.throws(() => stageIosSimulatorApp({ ...inputs, config: { ui: { renderer: 'invalid' } } }),
+    /TN_UI_RENDERER_INVALID/u);
 });
 
 test('staging replaces the bundle and records every packaged game asset checksum', () => {
@@ -158,6 +244,7 @@ test('iOS no-config staging preserves the compatibility version in the artifact'
   const plist = readFileSync(join(output, 'Info.plist'), 'utf8');
   assert.match(plist, /<key>CFBundleShortVersionString<\/key>\s*<string>0\.1\.13<\/string>/u);
   assert.equal(report.version, '0.1.13');
+  assert.equal(report.launchBackground, undefined);
 });
 
 test('iOS staging allows missing assets, clears stale files, and rejects a file path', () => {
@@ -230,6 +317,16 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     output,
     templateApp,
     compileIcon: (catalog, compiled) => {
+      const plist = readFileSync(join(output, 'Info.plist'), 'utf8');
+      const colorName = /<key>UIColorName<\/key>\s*<string>([^<]+)<\/string>/u.exec(plist)?.[1];
+      assert.ok(colorName, 'the launch screen names its compiled background color');
+      const color = JSON.parse(readFileSync(join(catalog, `${colorName}.colorset/Contents.json`), 'utf8'));
+      assert.deepEqual(color.colors[0].color.components, {
+        alpha: 1,
+        blue: 42 / 255,
+        green: 27 / 255,
+        red: 13 / 255,
+      });
       assert.deepEqual(JSON.parse(readFileSync(join(catalog, 'Contents.json'), 'utf8')), {
         info: { author: 'xcode', version: 1 },
       });
@@ -277,7 +374,7 @@ test('iOS staging maps configured app fields and compiles a declared icon into t
     /<key>TNWindowHeight<\/key>\s*<integer>777<\/integer>/u,
     /<key>TNWindowResizable<\/key>\s*<false\/>/u,
     /<key>CFBundleIconName<\/key>\s*<string>AppIcon<\/string>/u,
-    /<key>UILaunchScreen<\/key>[\s\S]*?<key>UIColorName<\/key>\s*<string>TNLaunchBackground<\/string>/u,
+    /<key>UILaunchScreen<\/key>[\s\S]*?<key>UIColorName<\/key>\s*<string>LaunchBackground<\/string>/u,
     /<key>UIImageName<\/key>\s*<string>LaunchImage<\/string>/u,
   ]) {
     assert.match(plist, pattern);
@@ -351,6 +448,63 @@ test('iOS packaging fails closed off darwin-arm64 and on a corrupt local host', 
   );
 });
 
+test('iOS simulator packaging stages the UI bundle the build selected', async () => {
+  // The CLI hands the packager `--ui` for a web renderer; `packageIosSimulator` must carry it to
+  // staging. Dropping it made the packager declare `web` from the resolved config and then fail
+  // TN_UI_BUNDLE_MISSING with the bundle sitting on disk, which is the packaged-game defect.
+  const root = makeTempDirSync('threenative-ios-forward-ui-');
+  roots.push(root);
+  const templateApp = join(root, 'stub-host.app');
+  const bin = join(root, 'bin');
+  const archive = join(root, 'host.zip');
+  const bundle = join(root, 'game.js');
+  const ui = join(root, 'built-ui');
+  const output = join(root, 'dist', 'game.app');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'Info.plist'), infoPlist);
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  mkdirSync(ui, { recursive: true });
+  writeFileSync(join(ui, 'index.html'), '<script src="ui.js"></script>');
+  writeFileSync(join(ui, 'ui.js'), 'console.log("React bundle")');
+  // `ditto` is Apple-only; host extraction is not under test, so a stub copies the prepared app.
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'ditto'), `#!/usr/bin/env node
+const { cpSync } = require('node:fs');
+const { join } = require('node:path');
+const args = process.argv.slice(2);
+cpSync(process.env.TN_STUB_IOS_APP, join(args[args.length - 1], 'stub-host.app'), { recursive: true });
+`);
+  chmodSync(join(bin, 'ditto'), 0o755);
+  writeFileSync(archive, 'host-archive');
+
+  const previousPath = process.env.PATH;
+  const previousStub = process.env.TN_STUB_IOS_APP;
+  process.env.PATH = `${bin}:${previousPath ?? ''}`;
+  process.env.TN_STUB_IOS_APP = templateApp;
+  try {
+    const report = await packageIosSimulator({
+      arch: 'arm64',
+      archive,
+      bundle,
+      config: { ui: { renderer: 'web' } },
+      output,
+      platform: 'darwin',
+      sha256: createHash('sha256').update('host-archive').digest('hex'),
+      ui,
+    });
+    assert.equal(report.output, output);
+    assert.deepEqual(readFileSync(join(output, 'ui', 'index.html')), readFileSync(join(ui, 'index.html')));
+    assert.deepEqual(readFileSync(join(output, 'ui', 'ui.js')), readFileSync(join(ui, 'ui.js')));
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousStub === undefined) delete process.env.TN_STUB_IOS_APP;
+    else process.env.TN_STUB_IOS_APP = previousStub;
+  }
+});
+
 test('iOS CLI forwards the declared orientation before host validation', async () => {
   const forwarded = [];
   const report = await runIosPackageCli(
@@ -412,6 +566,89 @@ test('simulator verification builds only the arm64 architecture carried by the h
   assert.match(verifier, /-DPLATFORM=SIMULATORARM64/);
   assert.match(verifier, /-DCMAKE_OSX_ARCHITECTURES=arm64/);
   assert.match(verifier, /result\.stdout[\s\S]*result\.stderr/);
+});
+
+test('iOS render preserves the TN3187 scene manifest across orientations', () => {
+  const host = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.equal(hasIosSceneManifestFields(host), true);
+  for (const orientation of ['landscape', 'portrait', 'sensor']) {
+    const plist = renderIosInfoPlist(host, { display: { orientation } });
+    assert.equal(hasIosSceneManifestFields(plist), true);
+  }
+});
+
+test('iOS scene guard rejects a wrong delegate and a comment spoof', () => {
+  const wrongDelegate = infoPlist.replaceAll('SDLUIKitSceneDelegate', 'CustomDelegate');
+  assert.equal(hasIosSceneManifestFields(wrongDelegate), false);
+  const commentSpoof =
+    '<plist><dict><key>UISupportedInterfaceOrientations</key><array></array>' +
+    '<!-- UIApplicationSceneManifest SDLUIKitSceneDelegate --></dict></plist>';
+  assert.equal(hasIosSceneManifestFields(commentSpoof), false);
+  const commentKeypairSpoof =
+    '<plist><dict><!-- <key>UIApplicationSceneManifest</key><dict></dict>' +
+    '<key>UISceneDelegateClassName</key><string>SDLUIKitSceneDelegate</string> --></dict></plist>';
+  assert.equal(hasIosSceneManifestFields(commentKeypairSpoof), false);
+  const root = makeTempDirSync('threenative-ios-wrong-delegate-');
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  for (const [label, plist] of [['wrong-delegate', wrongDelegate], ['comment-spoof', commentSpoof], ['comment-keypair-spoof', commentKeypairSpoof]]) {
+    writeFileSync(join(templateApp, 'Info.plist'), plist);
+    assert.throws(
+      () => stageIosSimulatorApp({ bundle, output: join(root, `${label}.app`), templateApp }),
+      /TN_IOS_SCENE_MANIFEST_MISSING/u,
+      label,
+    );
+  }
+});
+
+test('iOS selects SDL 3.4.16 while Android and desktop stay on 3.2.30', () => {
+  assert.equal(SDL3_IOS_VERSION, '3.4.16');
+  assert.equal(SDL3_ANDROID_VERSION, '3.2.30');
+  const lock = JSON.parse(
+    readFileSync(new URL('../native-deps.lock.json', import.meta.url), 'utf8'),
+  );
+  const versionOf = (name) => lock.components.find((entry) => entry.name === name)?.version;
+  assert.equal(versionOf('sdl3-ios'), '3.4.16');
+  assert.equal(versionOf('sdl3'), '3.2.30');
+  assert.equal(versionOf('sdl3-android'), '3.2.30');
+  const downloader = readFileSync(
+    new URL('../scripts/download-deps.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(downloader, /import \{ SDL3_IOS_VERSION \} from '\.\/package-ios\.mjs'/u);
+  assert.match(downloader, /const iosDeps = \[[^\]]*'sdl3-ios'[^\]]*\]/u);
+  const cmake = readFileSync(new URL('../CMakeLists.txt', import.meta.url), 'utf8');
+  assert.match(cmake, /MYSTRAL_PLATFORM STREQUAL "ios"\)\s*\n\s*set\(SDL3_DIR \$\{THIRD_PARTY_DIR\}\/sdl3-ios\)/u);
+  const verifier = readFileSync(
+    new URL('../scripts/verify-ios-simulator.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(verifier, /download-deps\.mjs', '--only', 'sdl3-ios'/u);
+});
+
+test('iOS staging rejects a prebuilt host that predates the scene manifest', () => {
+  const root = makeTempDirSync('threenative-ios-legacy-host-');
+  roots.push(root);
+  const templateApp = join(root, 'template.app');
+  const output = join(root, 'game.app');
+  const bundle = join(root, 'game.js');
+  mkdirSync(templateApp, { recursive: true });
+  writeFileSync(
+    join(templateApp, 'Info.plist'),
+    '<plist><dict><key>UISupportedInterfaceOrientations</key><array></array></dict></plist>',
+  );
+  writeFileSync(join(templateApp, 'threenative-ios'), 'prebuilt-host');
+  writeFileSync(join(templateApp, 'native-smoke.js'), 'old-game');
+  writeFileSync(bundle, 'new-game');
+  assert.throws(
+    () => stageIosSimulatorApp({ bundle, output, templateApp }),
+    /TN_IOS_SCENE_MANIFEST_MISSING/u,
+  );
 });
 
 test('iOS staging runs the same gate, with iOS capabilities rather than Android ones', () => {

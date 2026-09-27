@@ -136,7 +136,7 @@ const BRIEF_NAMES = [
   "platformer",
   "topdown-action",
 ] as const;
-const SOURCE_PATTERN = /^(brief|template):([a-z0-9-]+)#(.+)$/u;
+const SOURCE_PATTERN = /^(brief|sandbox|template):([a-z0-9-]+)#(.+)$/u;
 const HEADING_PATTERN = /^\s{0,3}#{1,6}\s+(.+?)\s*#?\s*$/u;
 
 function recallError(message: string): CapabilityRecallError {
@@ -392,14 +392,17 @@ function briefBullets(text: string): readonly { readonly index: number; readonly
 }
 
 function parseSource(source: string): {
-  readonly kind: "brief" | "template";
+  readonly kind: "brief" | "sandbox" | "template";
   readonly name: string;
   readonly key: string;
 } {
   const match = SOURCE_PATTERN.exec(source);
-  if (match === null || (match[1] !== "brief" && match[1] !== "template")) {
+  if (
+    match === null ||
+    (match[1] !== "brief" && match[1] !== "sandbox" && match[1] !== "template")
+  ) {
     throw recallError(
-      `source '${source}' must be brief:<genre>#<bullet-index> or template:<name>#<heading>`,
+      `source '${source}' must be brief:<genre>#<bullet-index>, sandbox:<game>#<file> or template:<name>#<heading>`,
     );
   }
   const kind = match[1];
@@ -413,6 +416,10 @@ function parseSource(source: string): {
 
 async function resolveSource(row: ICapabilityRecallRow, root: string): Promise<void> {
   const parsed = parseSource(row.source);
+  // A sandbox pointer is provenance only. The games live outside this repository and are not
+  // tracked, so there is no in-repo file for the source check to open; a brief bullet and a
+  // template heading keep the exact-match guarantee because both are checked in.
+  if (parsed.kind === "sandbox") return;
   const file =
     parsed.kind === "brief" ? briefFile(root, parsed.name) : templateFile(root, parsed.name);
   let text: string;

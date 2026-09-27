@@ -389,9 +389,30 @@ function getPid(adb, serial, execute = run) {
   return String(result.stdout).trim().split(/\s+/).find(Boolean) || null;
 }
 
-function captureLog(adb, serial, execute = run) {
-  const result = execute(adb, adbArgs(serial, 'logcat', '-d', '-v', 'threadtime'), { timeoutMs: 15000 });
-  return String(result.stdout || '');
+// adb exit 255 is a transport error -- the emulator goes "device offline" repeatedly while it is
+// still settling, so a single drop is not a game failure. CI run 36074506957 failed a whole
+// multitouch lane whose 74 conformance cases had all passed, on one logcat 255. Retry after a
+// bounded wait-for-device and, if the transport never returns, say so in the error: a lost device
+// must read as an adb transport failure, never as a failing game.
+function adbTransport(adb, serial, args, execute = run, options = {}, attempts = 3) {
+  let last = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = execute(adb, adbArgs(serial, ...args), { allowFailure: true, ...options });
+    if (result.status === 0) return result;
+    last = result;
+    if (attempt < attempts) {
+      execute(adb, adbArgs(serial, 'wait-for-device'), { allowFailure: true, timeoutMs: 60000 });
+    }
+  }
+  const stderr = String(last?.stderr || last?.stdout || '').trim();
+  throw new GateError(
+    `TN_ANDROID_ADB_TRANSPORT_LOST: adb ${args[0]} failed ${attempts} times on ${serial} (last status ${last?.status})${stderr ? `: ${stderr}` : ''}`,
+    { serial, attempts, status: last?.status, stderr },
+  );
+}
+
+export function captureLog(adb, serial, execute = run) {
+  return String(adbTransport(adb, serial, ['logcat', '-d', '-v', 'threadtime'], execute, { timeoutMs: 15000 }).stdout || '');
 }
 
 function delay(milliseconds) {
@@ -602,7 +623,9 @@ export async function verifyAndroidFirstProof(options, dependencies = {}) {
   }
 
   if (!options.screenshotPath) throw new GateError('Android proof requires a screenshot path.');
-  const png = execute(tools.adb, adbArgs(serial, 'exec-out', 'screencap', '-p'), { binary: true, timeoutMs: 30000 }).stdout;
+  // Same post-launch one-shot transport risk as captureLog: a dropped device here must retry, not
+  // fail a lane whose proof already passed.
+  const png = adbTransport(tools.adb, serial, ['exec-out', 'screencap', '-p'], execute, { binary: true, timeoutMs: 30000 }).stdout;
   const dimensions = inspectScreenshot(png);
   mkdirSync(dirname(options.screenshotPath), { recursive: true });
   writeFileSync(options.screenshotPath, png);
