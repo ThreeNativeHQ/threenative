@@ -448,7 +448,8 @@ describe("VirtualShadowNode per-level refresh and region invalidation", () => {
       renderer: { shadowMap: { enabled: true } },
     } as never);
     for (const levelNode of [...built.levelNodes, ...built.moverNodes]) {
-      (levelNode as unknown as { updateShadow(frame: unknown): void }).updateShadow = () => undefined;
+      (levelNode as unknown as { updateShadow(frame: unknown): void }).updateShadow = () =>
+        undefined;
     }
     light.add(light.target);
     return built;

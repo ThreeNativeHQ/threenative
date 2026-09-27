@@ -20,11 +20,11 @@ import {
   type UniformNode,
 } from "three/webgpu";
 import {
+  DirectionalClipmap,
   type IBoundsLike,
   type IClipWindow,
-  DirectionalClipmap,
-  projectBounds,
   ShadowInvalidationTracker,
+  projectBounds,
 } from "./virtual-shadow-pages.js";
 
 /** One clipmap axis' view of a world region, as the interval it covers in light space. */
@@ -226,7 +226,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     return "VirtualShadowNode";
   }
 
-  readonly options: Required<Omit<IVirtualShadowOptions, "marker" | "refreshStep" | "selectionGuard">> & {
+  readonly options: Required<
+    Omit<IVirtualShadowOptions, "marker" | "refreshStep" | "selectionGuard">
+  > & {
     readonly markerEvery: number;
     /** Per level, finest first; the last entry stands in for every level past it. */
     readonly refreshStep: readonly number[];
@@ -291,7 +293,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // centre, and `selectionGuard - refreshStep <= 1 - refreshStep` always holds.
     // Both are scalar-or-per-level, finest first, the last entry standing in for every level past
     // it — one level re-rendering on a different cadence is the whole point.
-    const perLevel = (value: number | readonly number[], valid: (v: number) => boolean): number[] => {
+    const perLevel = (
+      value: number | readonly number[],
+      valid: (v: number) => boolean,
+    ): number[] => {
       const values = Array.isArray(value) ? [...(value as readonly number[])] : [value as number];
       for (const entry of values) {
         if (!valid(entry)) {
@@ -624,7 +629,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // The regions `invalidateRegion` was handed, resolved once onto the two axes every level's
     // window is built on. The per-level test below is then four comparisons, not a projection per
     // level per region per frame.
-    const projected = (this.#projectedRegions ??= []);
+    this.#projectedRegions ??= [];
+    const projected = this.#projectedRegions;
     projected.length = 0;
     for (const region of this.#regions) {
       projected.push({

@@ -2518,7 +2518,8 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#castRefreshedAt = now;
     this.#castFollow.set(x, 0, z);
     this.#castMoved = false;
-    const region = this.#castRegion ?? (this.#castRegion = emptyBounds());
+    this.#castRegion ??= emptyBounds();
+    const region = this.#castRegion;
     let changed = false;
     for (const [key, caster] of this.#casters) {
       const shared = this.#shared.get(key);
@@ -2554,7 +2555,8 @@ export class WorldCells extends Group implements IComputeDriven {
     const z = this.#castFollow.z;
     const source = batch.instanceMatrix.array as Float32Array;
     const target = caster.instanceMatrix.array as Float32Array;
-    const box = (caster.boundingBox ??= new Box3());
+    caster.boundingBox ??= new Box3();
+    const box = caster.boundingBox;
     const point = this.#castPoint;
     // What the records in the buffer are, from the last refresh. A refresh that writes back the
     // same records draws the same shadow, so the levels that cover them need no redraw: this is
@@ -2596,7 +2598,8 @@ export class WorldCells extends Group implements IComputeDriven {
     matrix.clearUpdateRanges();
     if (drawn > 0) {
       matrix.addUpdateRange(0, drawn * 16);
-      box.getBoundingSphere((caster.boundingSphere ??= new Sphere()));
+      caster.boundingSphere ??= new Sphere();
+      box.getBoundingSphere(caster.boundingSphere);
     }
     matrix.needsUpdate = true;
     caster.count = drawn;

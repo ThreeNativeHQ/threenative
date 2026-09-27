@@ -64,7 +64,8 @@ function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
 /** The real render belongs to three's renderer; the draw itself is not what these tests measure. */
 function stubLevelRenders(node: VirtualShadowNode): void {
   for (const levelNode of [...node.levelNodes, ...node.moverNodes]) {
-    (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => undefined;
+    (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () =>
+      undefined;
   }
 }
 

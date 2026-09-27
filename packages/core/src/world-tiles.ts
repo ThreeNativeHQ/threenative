@@ -2068,7 +2068,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       // Out of room: the body is owed, and every later `follow` asks for it again.
       else if (!budget.admit(created)) {
         this.#deferredAdmissions = 1;
-        continue;
       }
     }
   }

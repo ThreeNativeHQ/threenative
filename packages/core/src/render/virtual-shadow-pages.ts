@@ -329,7 +329,11 @@ export class DirectionalClipmap {
     // level can least afford on the coarse one, and the fine level is the one a walking camera
     // re-renders most: at 20 m/s over 24/96/320 m extents a shared 0.125 re-rendered the fine window
     // about 9 times a second to hold a shadow the eye reads at 1/8 of its own width.
-    const perLevel = (value: number | readonly number[], name: string, valid: (v: number) => boolean) => {
+    const perLevel = (
+      value: number | readonly number[],
+      name: string,
+      valid: (v: number) => boolean,
+    ) => {
       const values = Array.isArray(value) ? [...(value as readonly number[])] : [value as number];
       for (const entry of values) {
         if (!valid(entry)) {
@@ -343,7 +347,11 @@ export class DirectionalClipmap {
       "selectionGuard",
       (v) => Number.isFinite(v) && v > 0 && v <= 1,
     );
-    const steps = perLevel(refreshStep, "refreshStep", (v) => Number.isFinite(v) && v >= 0 && v < 1);
+    const steps = perLevel(
+      refreshStep,
+      "refreshStep",
+      (v) => Number.isFinite(v) && v >= 0 && v < 1,
+    );
     for (let level = 0; level < guards.length; level += 1) {
       if ((steps[level] as number) >= (guards[level] as number)) {
         throw new RangeError(
@@ -469,7 +477,10 @@ export class DirectionalClipmap {
       Math.abs(projected.v - this.centerLight.v),
     );
     for (let level = 0; level < this.levelCount; level += 1) {
-      if (distance <= (this.clipExtents[level] as number) * this.#perLevel(this.selectionGuard, level))
+      if (
+        distance <=
+        (this.clipExtents[level] as number) * this.#perLevel(this.selectionGuard, level)
+      )
         return level;
     }
     return this.levelCount - 1;

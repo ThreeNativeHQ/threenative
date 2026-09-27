@@ -100,9 +100,15 @@ export function parkMesh(mesh: InstancedMesh): boolean {
   mesh.instanceMatrix.array.fill(0);
   mesh.instanceMatrix.needsUpdate = true;
   let forGeometry = meshPool.get(mesh.geometry);
-  if (forGeometry === undefined) meshPool.set(mesh.geometry, (forGeometry = new Map()));
+  if (forGeometry === undefined) {
+    forGeometry = new Map();
+    meshPool.set(mesh.geometry, forGeometry);
+  }
   let forMaterial = forGeometry.get(mesh.material as Material);
-  if (forMaterial === undefined) forGeometry.set(mesh.material as Material, (forMaterial = []));
+  if (forMaterial === undefined) {
+    forMaterial = [];
+    forGeometry.set(mesh.material as Material, forMaterial);
+  }
   if (forMaterial.length >= MESH_POOL_MAX_PER_PAIR) {
     releasePooled(mesh);
     return false;
