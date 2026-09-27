@@ -15,7 +15,13 @@ Remaining: one hosted run — a `v*` tag push whose `clean-room` job reports `pa
 `pnpm typecheck`, `pnpm lint`, `pnpm budgets`, and `pnpm check:docs` pass. The first full test
 run was red on the packed mutation control and MCP ancestor-manifest lookup. After merging PR
 #360's fixes into this branch, `pnpm test` passed: 492 files, 6,138 tests passed, 8 skipped,
-exit 0. The hosted tag gate above remains open.
+exit 0. After reconciling current `origin/develop` again on 2026-09-27, the focused tests still
+passed and the public-registry `pnpm:android` clean-room leg passed locally with JDK 17 + Android SDK,
+verifying the APK's five `arm64-v8a` entries byte-for-byte against `runtime-native-v0.3.3`. The
+full `pnpm tsx scripts/verify-registry-install.ts` run remains red before the Android npm leg:
+`npm:install` fails in published-package dependency installation at `sharp@0.34.5` (`Please add
+node-addon-api to your dependencies`), while the `pnpm` manager's scaffold/install/build/test/
+gameplay/doctor/native/android/mcp steps pass. The hosted tag gate above remains open.
 
 Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
 tree, and the candidate cohort is prepared and committed: eleven packages at
