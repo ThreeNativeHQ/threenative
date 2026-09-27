@@ -223,14 +223,14 @@ export function defaultManifestPath(cwd = process.cwd()): string {
   // committed copies between 115 and 231 entries against the same engine. Walk up so an MCP host
   // that launches from a nested working directory still finds the project root.
   for (let directory = path.resolve(cwd); ; directory = path.dirname(directory)) {
-    const installed = path.join(
-      directory,
-      "node_modules",
-      "@threenative",
-      "core",
-      "capabilities.json",
-    );
-    if (existsSync(installed)) return installed;
+    const nodeModules = path.join(directory, "node_modules");
+    const installed = path.join(nodeModules, "@threenative", "core", "capabilities.json");
+    if (existsSync(installed)) {
+      const relative = path.relative(realpathSync(directory), realpathSync(nodeModules));
+      // An ancestor's node_modules symlink can belong to another project entirely.
+      if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+        return installed;
+    }
     const parent = path.dirname(directory);
     if (parent === directory) break;
   }

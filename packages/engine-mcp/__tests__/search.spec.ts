@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -712,6 +712,21 @@ describe("threenative-engine-mcp", () => {
       expect(defaultManifestPath(root)).toBe(path.resolve("packages/core/capabilities.json"));
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores an ancestor node_modules symlink owned by another project", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-bare-link-");
+    const other = await makeTempDir("threenative-engine-mcp-other-");
+    try {
+      const foreign = path.join(other, "@threenative", "core", "capabilities.json");
+      await mkdir(path.dirname(foreign), { recursive: true });
+      await writeFile(foreign, JSON.stringify({ entries: [], notOwned: [], version: 2 }));
+      await symlink(other, path.join(root, "node_modules"), "dir");
+      expect(defaultManifestPath(root)).toBe(path.resolve("packages/core/capabilities.json"));
+    } finally {
+      await rm(root, { force: true, recursive: true });
+      await rm(other, { force: true, recursive: true });
     }
   });
 

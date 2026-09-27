@@ -153,6 +153,12 @@ function compiledName(logicalPath: string, bytes: Buffer): string {
 }
 
 /**
+ * How many macrotasks a model's bytes take to answer. Above the old fixed drain of 12, so the
+ * wait has to be the attachment itself.
+ */
+const MODEL_LATENCY_TASKS = 24;
+
+/**
  * Serve the package the way the asset pipeline writes it: every file under a content-addressed
  * name, reachable only through `assets.manifest.json`, with the authored names 404ing. A real
  * `Response` carries `headers`, and the loader reads the manifest's content type off it.
@@ -177,6 +183,10 @@ function stubCompiledFetch(): { requested: string[] } {
       requested.push(url);
       if (url.endsWith("assets.manifest.json")) return fileResponse(Buffer.from(body));
       const buffer = served.get(url);
+      // A model's bytes land later than the terrain's, so a chunk attaches after residency is
+      // already at 9 and after any fixed number of drained macrotasks. A test that waits a round
+      // count instead of the attachment is only green until the schedule shifts under it.
+      if (buffer !== undefined && url.endsWith(".glb")) await flush(MODEL_LATENCY_TASKS);
       return buffer === undefined ? notFound : fileResponse(buffer);
     }),
   );
@@ -1129,7 +1139,13 @@ describe("WorldCells", () => {
     follow.position.x = center.x;
     follow.position.z = center.z;
     world.update();
+    // Drain the world's own work (scatter batches attach here), then wait for the chunk model
+    // itself: residency reports 9 before the model attaches, and that gap is however many
+    // macrotasks the loader took, so a drained round count alone is not a wait.
     await flushed(world);
+    await vi.waitFor(() => {
+      expect(world.getObjectByName("world-chunk")).toBeDefined();
+    });
 
     // The models came through the loader too: batches exist, and the one cell carrying a chunk
     // attached it. A model served by an authored name would have 404ed instead.
