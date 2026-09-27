@@ -95,7 +95,7 @@ export { createAssetLoader } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
-export type { IAssetLoader, IAssetLoaderOptions } from "./assets.js";
+export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
 export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
 /**
  * Route effects through a named audio bus.
@@ -137,6 +137,7 @@ export type {
 } from "./config.js";
 /**
  * Create a deterministic random source for portable gameplay.
+ * @situation get a seeded deterministic random number generator — the same mulberry32 a game would hand-roll
  * @situation seed enemy patrol choices
  * @situation reproduce the same procedural level in a playtest
  * @constraint use the returned source instead of Math.random for replayable behavior
@@ -278,6 +279,44 @@ export type {
 export { mergeParts } from "./merge-parts.js";
 export type { IMergePart, IMergePartsOptions } from "./merge-parts.js";
 /**
+ * Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in.
+ *
+ * @situation collapse a building or ship of dozens of boxes into one draw call per material
+ * @situation consolidate the static parts of a group before adding it to the scene
+ * @constraint the material is the game's own instance and the split follows the materials the game
+ * already made; nothing here decides appearance
+ * @constraint the meshes come back in root's local space and unparented, with the originals still in the
+ * tree: add them to root and remove the sources yourself, or both draw
+ * @constraint a skinned or instanced mesh, and a mesh with several materials, is left out — its
+ * vertices are not its own to bake
+ * @constraint a group where only some meshes carry uv throws naming the label rather than losing the
+ * texture mapping; a missing normal is recomputed
+ * @override skip leaves one mesh out of its group and out of the result
+ * @example const [hull, deck] = mergeByMaterial(ship, { label: "ship" });
+ * // a piece that must keep moving at run time:
+ * const [steady] = mergeByMaterial(ship, { label: "ship", skip: (mesh) => mesh.name === "radar" });
+ */
+export { mergeByMaterial } from "./merge-parts.js";
+export type { IMergeByMaterialOptions } from "./merge-parts.js";
+/**
+ * Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
+ * @situation read a debug toggle from the URL or an environment variable
+ * @constraint a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`
+ * @constraint `0` and `false` are off, so a saved URL cannot turn a switch back on
+ * @example import { debugFlag } from "@threenative/core";
+ * if (debugFlag("freeCam")) camera.flyMode = true;
+ */
+export { debugFlag } from "./debug.js";
+/**
+ * Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
+ * @situation expose a game object to a capture script or the console in dev builds
+ * @constraint development builds only; a production build publishes nothing
+ * @example import { exposeDebug } from "@threenative/core";
+ * exposeDebug("player", player);
+ * // then from the console: __THREENATIVE__.debug.player
+ */
+export { exposeDebug } from "./debug.js";
+/**
  * Draw a model too detailed for the screen to resolve, without submitting the part it cannot.
  *
  * **This is on, and a game does not call it.** Any primitive of 65,536 triangles or more bakes to a
@@ -380,6 +419,21 @@ export { updateModelLods } from "./model-lod.js";
  */
 export { baseGeometryOf } from "./model-lod.js";
 /**
+ * The screen pixels one world unit covers at `depth` for this camera and viewport.
+ *
+ * Perspective divides the projected scale by the depth; orthographic has no depth term and uses the
+ * frustum height instead. This is the number a level of detail is chosen against: multiply a
+ * level's world-space error by it and you have the on-screen error a player can see, which is the
+ * comparison `updateModelLods` makes from the baked chain.
+ *
+ * @situation pick a level of detail from an object's projected size in pixels on screen
+ * @situation know how many screen pixels a world-space error covers at a given distance
+ * @constraint a non-positive viewport height, a non-positive frustum height or an unprojectable camera throws
+ * @constraint a non-positive depth has no projected scale and returns Infinity
+ * @example const pixels = lodPixelScale(camera, canvas.clientHeight, mesh.position.distanceTo(camera.position));
+ */
+export { lodPixelScale } from "./model-lod.js";
+/**
  * Keep an object drawn even when the render camera cannot resolve it.
  *
  * The engine's projected-size gate is on by default: an object whose world bounding sphere
@@ -412,6 +466,7 @@ export { alwaysRender } from "./render-camera-cull.js";
  * again. A class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a
  * hidden node that holds bones is walked, so no skeleton or view matrix goes stale.
  *
+ * @situation update the world matrices of the visible objects each frame instead of the whole scene
  * @situation the per-frame world matrix walk is hot in a profile
  * @situation stop multiplying matrices for hidden models, LOD levels and merged stand-ins
  * @situation a game needs every node walked, exactly as three's own updateMatrixWorld does
@@ -427,6 +482,7 @@ export type { IMatrixWorldReport, MatrixWorldMode } from "./matrix-world.js";
  * Read where the frame's milliseconds went, per presented frame, on any platform; each
  * `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and
  * triangles each render pass submitted.
+ * @situation show an on-screen frame time meter with p50, p95 and p99 percentiles
  * @situation find out why a game runs slowly on a phone
  * @situation attribute a frame to present wait, simulation, three.js render, or overlay
  * @situation tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp
@@ -538,18 +594,32 @@ export type { ISceneShape, ISceneWarning } from "./profiling/scene-warning.js";
  * @constraint staticness is authored, never guessed; no heuristic watches gameplay and decides for you
  * @constraint it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless
  * @constraint a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
- * @example markStatic(island); invalidateStatic(drawbridge);
+ * @example invalidateStatic(drawbridge);
  */
 export {
   STATIC_TRANSFORM_MARKER,
   invalidateStatic,
   isStatic,
-  markStatic,
   refreshStaticTransforms,
   resetStaticTransforms,
   staticTransformCensus,
   unmarkStatic,
 } from "./static-transform.js";
+/**
+ * Freeze a subtree nobody moves: `markStatic(root)` composes its transforms once and stops the
+ * per-frame recompose.
+ *
+ * It is the call a game makes on scenery, terrain, buildings and props. The engine re-arms a root
+ * whose own transform the game changes; a write deeper inside a frozen subtree is announced with
+ * `invalidateStatic(object)`.
+ *
+ * @situation freeze a static mesh or subtree so its matrices are not recomputed every frame
+ * @situation stop the engine recomposing the transforms of props, terrain and buildings each frame
+ * @constraint staticness is authored, never guessed; no heuristic watches gameplay and decides for you
+ * @constraint a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened
+ * @example markStatic(island); invalidateStatic(drawbridge);
+ */
+export { markStatic } from "./static-transform.js";
 export type { IStaticTransformCensus } from "./static-transform.js";
 /**
  * Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes
@@ -1257,3 +1327,35 @@ export type {
   IRawInputPointerEdge,
   IRawInputState,
 } from "./input.js";
+/**
+ * The map a game reads input through: named actions, 2D vectors and scalar axes resolved from
+ * keyboard, gamepad, mouse, wheel, pinch and touch.
+ *
+ * `defineGame({ input })` builds one and hands it to the running game as `ctx.input`, so the usual
+ * route is a binding in the config and `ctx.input.axis("move")` in the update. Construct one
+ * directly to drive a menu, a replay or a test outside a running game.
+ *
+ * @situation map WASD keys to a movement axis instead of reading the held key set in the update loop
+ * @situation read a jump, a fire or a reload as one named action bound to key, gamepad button and mouse button together
+ * @situation read mouse look, wheel zoom or a two-finger pinch as an axis the frame loop already ticks
+ * @constraint `buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it
+ * @constraint scroll, pinch and pointer-relative sources are declared on the binding and read through `axis(name)`; a game adds no window listener of its own
+ * @example const game = defineGame({ input: { move: { up: ["KeyW"], down: ["KeyS"], left: ["KeyA"], right: ["KeyD"] } }, scenes: { Play } });
+ * // inside the scene, per frame: ctx.input.axis("move") is 0 at rest and 1 at full tilt
+ */
+export { InputMap } from "./input.js";
+/**
+ * Lock the pointer to the game's surface: the capture every first-person mouse look needs.
+ *
+ * A browser grants capture only from a user gesture, so call it from a click or a pointerdown
+ * handler. A relative binding such as `look: { pointerRelative: true }` already requests capture on
+ * the first canvas click; this is the same request for a game that starts capture from another
+ * named gesture, and `ctx.input.captureMouse()` is the map's own way to ask.
+ *
+ * @situation lock the mouse pointer so first-person mouse look keeps the cursor out of the way
+ * @situation stop the cursor leaving the window in the middle of a turn
+ * @constraint the browser grants capture only from a user gesture and a refusal is reported, never swallowed
+ * @constraint a relative binding requests capture on canvas click unless `captureOnClick: false` opts out
+ * @example canvas.addEventListener("click", () => captureMouse(canvas));
+ */
+export { captureMouse } from "./input.js";

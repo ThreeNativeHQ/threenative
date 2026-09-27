@@ -8,21 +8,27 @@
  * including `audio/*.ogg`, fps-framework's 100 `.glb`/`.jpg`, lumen-hall's and menu-spike's
  * `basis/basis_transcoder.*`. Dropping those breaks KTX2 on native.
  *
- * So the rule is inverted: copy everything EXCEPT what is provably junk, and print every skip.
+ * So the rule is inverted: keep everything EXCEPT what is provably not shipped, and print every skip.
  *
  * 1. Editor and VCS leftovers anywhere in the tree, by basename — `*.orig`, `*.rej`, `*.bak`,
  *    `*.swp`, `*~`, `.DS_Store`, `Thumbs.db`, `.gitkeep`.
- * 2. Superseded digest outputs, only when a manifest is present: a `<stem>.<8 hex>.<ext>` whose
- *    manifest names a different-hash `<stem>.*.<ext>` in the same directory and not this one.
- *    A digest-shaped file whose stem the manifest never names is kept — it may be hand-placed.
+ * 2. Digest outputs, only when a manifest is present: any `<stem>.<8 hex>.<ext>` the current
+ *    manifest and receipt do not name. That is the compiler's own naming space, so a file wearing
+ *    it is a cook output — and one this cook did not emit is a leftover of a previous one, whose
+ *    bytes no game loads. It is reported with the file it would have replaced when a same-stem,
+ *    same-extension sibling does exist.
  * 3. Everything else, including hand-placed files and the bookkeeping the runtime needs
  *    (the manifest and the bake receipt both ship, as they did before this rule).
  *
  * A file the manifest names but disk lacks fails closed with `TN_ASSETS_MANIFEST_MISSING`. With
  * no manifest, rule 1 still applies and rule 2 does not.
+ *
+ * One selector, every target: the three native packagers stage through this function, and
+ * `threenative build --target web` deletes the `dropped` set from the Vite outDir, which copies
+ * the whole output root.
  */
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, posix } from "node:path";
 
 export const ASSET_MANIFEST_NAME = "assets.manifest.json";
@@ -105,8 +111,7 @@ function digestParts(file) {
  * The manifest-named path that supersedes `file`, or `null` when nothing does.
  *
  * Only a same-directory named file with the same `<stem>` and `<ext>` but a different hash
- * supersedes; a digest-shaped file whose stem the manifest never names is kept, because it may be
- * hand-placed rather than an older output.
+ * supersedes; the answer is only used to name the replacement in the skip line.
  */
 function supersededBy(file, named) {
   const digest = digestParts(file);
@@ -121,12 +126,9 @@ function supersededBy(file, named) {
 }
 
 /**
- * The files to copy from a compiled asset directory: everything except provable junk.
- *
- * Editor leftovers are skipped everywhere, printed with `(editor leftover)`. With a manifest, a
- * digest output superseded by a differently-hashed sibling is skipped and printed with
- * `(superseded by <path>)`, and a file the manifest named but disk lacks fails closed with
- * `TN_ASSETS_MANIFEST_MISSING`. Without a manifest only the editor rule applies.
+ * What one packaging run stages: the files to copy, the files it dropped, and how many of the
+ * kept ones no manifest or receipt declared — a hand-placed runtime file, which is legitimate
+ * and is reported so the number is never a surprise inside an APK.
  */
 export function selectManifestAssets(assets, { log = console.log } = {}) {
   const manifestPath = join(assets, ASSET_MANIFEST_NAME);
@@ -168,6 +170,8 @@ export function selectManifestAssets(assets, { log = console.log } = {}) {
   }
 
   const selected = [];
+  const dropped = [];
+  const unmanaged = [];
   for (const file of present) {
     if (hasManifest && named.has(file)) {
       selected.push(file);
@@ -175,16 +179,31 @@ export function selectManifestAssets(assets, { log = console.log } = {}) {
     }
     if (isEditorLeftover(file)) {
       log(`ThreeNative packaging: skipped ${file} (editor leftover)`);
+      dropped.push(file);
       continue;
     }
-    if (hasManifest) {
+    if (hasManifest && digestParts(file) !== null) {
       const superseding = supersededBy(file, named);
-      if (superseding !== null) {
-        log(`ThreeNative packaging: skipped ${file} (superseded by ${superseding})`);
-        continue;
-      }
+      log(
+        `ThreeNative packaging: skipped ${file} (cook output this build does not declare${
+          superseding === null ? "" : `, superseded by ${superseding}`
+        })`,
+      );
+      dropped.push(file);
+      continue;
     }
     selected.push(file);
+    if (!named.has(file)) unmanaged.push(file);
   }
-  return selected;
+  // Only a project with a manifest can be unmanaged relative to one; without it, the whole
+  // directory is hand-placed by definition and the line would name every file in the game.
+  if (hasManifest && unmanaged.length > 0) {
+    const bytes = unmanaged.reduce((total, file) => total + statSync(join(assets, file)).size, 0);
+    log(
+      `ThreeNative packaging: ${unmanaged.length} unmanaged file(s), ${bytes} bytes, are not declared by ${ASSET_MANIFEST_NAME}.`,
+    );
+    return { dropped, selected, unmanagedBytes: bytes, unmanagedFiles: unmanaged.length };
+  }
+  return { dropped, selected, unmanagedBytes: 0, unmanagedFiles: 0 };
 }
+

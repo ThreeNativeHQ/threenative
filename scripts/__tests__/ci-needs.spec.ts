@@ -244,13 +244,13 @@ describe("PRD-373 measured queue and execution time", () => {
   it("keeps runner queue time distinct from execution time", () => {
     const summary = formatJobTimings([
       {
-        name: "website",
+        name: "typecheck",
         created_at: "2026-09-10T00:00:00Z",
         started_at: "2026-09-10T00:02:00Z",
         completed_at: "2026-09-10T00:02:45Z",
       },
     ]);
-    expect(summary).toContain("| website | 120s | 45s |");
+    expect(summary).toContain("| typecheck | 120s | 45s |");
     expect(summary).toContain("Queue");
     expect(summary).toContain("Execution");
   });

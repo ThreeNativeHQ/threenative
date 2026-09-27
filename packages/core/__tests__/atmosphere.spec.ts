@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   Atmosphere,
   type IAtmosphereParameters,
+  directionFromSolarPosition,
   directionalTransmittance,
+  resolveAtmosphereParameters,
   solarPosition,
+  updateAtmosphereParameters,
   zenithTransmittance,
 } from "../src/atmosphere/index.js";
 import type { IRendererLike } from "../src/renderer.js";
@@ -195,5 +198,220 @@ describe("solarPosition", () => {
     input.timeOfDay += 1;
     expect(solarPosition(input, target)).toBe(target);
     expect(target).not.toEqual(first);
+  });
+
+  it("derives normalized directions from solar elevation and azimuth", () => {
+    const overhead = directionFromSolarPosition(90, 0);
+    expect(overhead.x).toBeCloseTo(0);
+    expect(overhead.y).toBeCloseTo(1);
+    expect(overhead.z).toBeCloseTo(0);
+
+    const east = directionFromSolarPosition(0, 90);
+    expect(east.x).toBeCloseTo(1);
+    expect(east.y).toBeCloseTo(0);
+    expect(east.z).toBeCloseTo(0);
+
+    const north = directionFromSolarPosition(0, 0);
+    expect(north.z).toBeCloseTo(1);
+    expect(north.length()).toBeCloseTo(1);
+  });
+
+  it("rejects non-finite elevation or azimuth", () => {
+    for (const [elevation, azimuth] of [
+      [Number.NaN, 0],
+      [0, Number.POSITIVE_INFINITY],
+    ]) {
+      expect(() => directionFromSolarPosition(elevation as number, azimuth as number)).toThrow(
+        "solarPosition elevation and azimuth must be finite",
+      );
+    }
+  });
+
+  it("parses a date string and rejects an invalid date", () => {
+    const fromString = solarPosition({
+      date: "2024-06-21T12:00:00.000Z",
+      latitude: 45,
+      longitude: 0,
+    });
+    expect(fromString.elevation).toBeCloseTo(68.44, 1);
+
+    expect(() => solarPosition({ date: "not-a-date", latitude: 45, longitude: 0 })).toThrow(
+      "solarPosition.date must be valid",
+    );
+  });
+
+  it("requires all three positional arguments", () => {
+    expect(() => solarPosition(new Date("2024-06-21T12:00:00Z"), 45, undefined as never)).toThrow(
+      "solarPosition positional form requires date, latitude, and longitude",
+    );
+  });
+
+  it("rejects out-of-range or non-finite location inputs", () => {
+    const base = { latitude: 0, longitude: 0 };
+    expect(() => solarPosition({ ...base, latitude: 91 })).toThrow("solarPosition.latitude");
+    expect(() => solarPosition({ ...base, latitude: Number.NaN })).toThrow(
+      "solarPosition.latitude",
+    );
+    expect(() => solarPosition({ ...base, longitude: -181 })).toThrow("solarPosition.longitude");
+    expect(() => solarPosition({ ...base, utcOffset: 25 })).toThrow("solarPosition.utcOffset");
+    expect(() => solarPosition({ ...base, utcOffset: Number.NaN })).toThrow(
+      "solarPosition.utcOffset",
+    );
+  });
+
+  it("rejects missing or non-finite day and time inputs", () => {
+    expect(() => solarPosition({ timeOfDay: 12, latitude: 0, longitude: 0 })).toThrow(
+      "solarPosition requires date or dayOfYear and timeOfDay",
+    );
+    expect(() =>
+      solarPosition({ dayOfYear: Number.NaN, timeOfDay: 12, latitude: 0, longitude: 0 }),
+    ).toThrow("solarPosition dayOfYear and timeOfDay must be finite");
+  });
+});
+
+describe("atmosphere coefficients", () => {
+  it("rejects a zero or non-finite direction for transmittance", () => {
+    expect(() => directionalTransmittance(earth, new Vector3())).toThrow(
+      "Atmosphere direction must be finite and non-zero",
+    );
+    expect(() => directionalTransmittance(earth, new Vector3(Number.NaN, 1, 0))).toThrow(
+      "Atmosphere direction must be finite and non-zero",
+    );
+  });
+
+  it("keeps directional transmittance inside the physical unit interval", () => {
+    for (const direction of [new Vector3(0, 1, 0), new Vector3(0, -1, 0), new Vector3(1, 0.2, 0)]) {
+      const transmittance = directionalTransmittance(earth, direction);
+      for (const component of transmittance.toArray()) {
+        expect(component).toBeGreaterThan(0);
+        expect(component).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("applies a partial parameter patch without disturbing the rest", () => {
+    const resolved = resolveAtmosphereParameters(earth);
+    const patched = updateAtmosphereParameters(resolved, { rayleigh: [0.008, 0.016, 0.04] });
+
+    expect(patched.rayleigh.toArray()).toEqual([0.008, 0.016, 0.04]);
+    expect(patched.mie.toArray()).toEqual(resolved.mie.toArray());
+    expect(patched.ozone.toArray()).toEqual(resolved.ozone.toArray());
+    expect(patched.planetRadius).toBe(earth.planetRadius);
+    expect(patched.atmosphereRadius).toBe(earth.atmosphereRadius);
+  });
+
+  it("rejects a patch that breaks physical validation", () => {
+    const resolved = resolveAtmosphereParameters(earth);
+    expect(() => updateAtmosphereParameters(resolved, { rayleigh: [-1, 0, 0] })).toThrow(
+      "Atmosphere.rayleigh",
+    );
+    expect(() =>
+      updateAtmosphereParameters(resolved, { atmosphereRadius: earth.planetRadius }),
+    ).toThrow("Atmosphere.atmosphereRadius must be greater than planetRadius");
+  });
+});
+
+describe("Atmosphere instance surface", () => {
+  it("returns a defensive clone of its resolved parameters", () => {
+    const atmosphere = new Atmosphere(earth);
+    const expected = resolveAtmosphereParameters(earth).rayleigh.toArray();
+    const parameters = atmosphere.parameters;
+    expect(parameters.rayleigh.toArray()).toEqual(expected);
+
+    parameters.rayleigh.set(9, 9, 9);
+    expect(atmosphere.parameters.rayleigh.toArray()).toEqual(expected);
+    expect(atmosphere.released).toBe(false);
+    expect(atmosphere.hash).toBe(atmosphere.luts.hash);
+  });
+
+  it("evaluates the numeric radiance branch from the supplied coefficients", () => {
+    const atmosphere = new Atmosphere(earth);
+    const resolved = resolveAtmosphereParameters(earth);
+    const radiance = atmosphere.radiance(new Vector3(0, 1, 0)) as Vector3;
+
+    expect(radiance).toBeInstanceOf(Vector3);
+    expect(radiance.x).toBeCloseTo(resolved.rayleigh.x * 0.75 + resolved.mie.x);
+    expect(radiance.y).toBeCloseTo(resolved.rayleigh.y * 0.75 + resolved.mie.y);
+    expect(radiance.z).toBeCloseTo(resolved.rayleigh.z * 0.75 + resolved.mie.z);
+    expect(() => atmosphere.radiance([0, 0, 0] as const)).toThrow(
+      "Atmosphere direction must not be zero",
+    );
+  });
+
+  it("accepts every setSunDirection overload and reports it back", () => {
+    const atmosphere = new Atmosphere(earth);
+
+    atmosphere.setSunDirection(90, 0);
+    expect(atmosphere.getSunDirection().y).toBeCloseTo(1);
+
+    atmosphere.setSunDirection(new Vector3(1, 0, 0));
+    expect(atmosphere.getSunDirection().x).toBeCloseTo(1);
+
+    atmosphere.setSunDirection({ elevation: 0, azimuth: 90 });
+    expect(atmosphere.getSunDirection().x).toBeCloseTo(1);
+
+    const target = new Vector3();
+    expect(atmosphere.getSunDirection(target)).toBe(target);
+  });
+
+  it("validates malformed numeric directions on the sampling paths", () => {
+    const atmosphere = new Atmosphere(earth);
+    expect(() => atmosphere.sunTransmittance(new Vector3(0, 0, 0))).toThrow(
+      "Atmosphere direction must not be zero",
+    );
+    expect(() => atmosphere.radiance([Number.NaN, 1, 0] as const)).toThrow(
+      "Atmosphere direction must contain finite numbers",
+    );
+  });
+
+  it("treats a Vector3 direction like the array form: finite, non-zero, normalized", () => {
+    const atmosphere = new Atmosphere(earth);
+    expect(() => atmosphere.setSunDirection(new Vector3(0, 0, 0))).toThrow(
+      "Atmosphere direction must not be zero",
+    );
+    expect(() => atmosphere.radiance(new Vector3(Number.NaN, 1, 0))).toThrow(
+      "Atmosphere direction must contain finite numbers",
+    );
+
+    atmosphere.setSunDirection(new Vector3(0, 2, 0));
+    expect(atmosphere.getSunDirection().length()).toBeCloseTo(1);
+    expect((atmosphere.radiance(new Vector3(0, 2, 0)) as Vector3).toArray()).toEqual(
+      (atmosphere.radiance([0, 1, 0] as const) as Vector3).toArray(),
+    );
+  });
+
+  it("dispatches once per renderer and rebakes after a coefficient change", () => {
+    const dispatched: unknown[] = [];
+    const target = renderer(dispatched);
+    const atmosphere = new Atmosphere(earth);
+    atmosphere.attachRenderer(target);
+    expect(dispatched).toHaveLength(3);
+
+    atmosphere.attachRenderer(target);
+    expect(dispatched).toHaveLength(3);
+
+    atmosphere.setCoefficients({ mie: [0, 0, 0] });
+    atmosphere.process();
+    expect(dispatched).toHaveLength(6);
+
+    atmosphere.detach();
+    atmosphere.detach();
+    atmosphere.process();
+    expect(atmosphere.released).toBe(true);
+    expect(() => new Atmosphere(earth).process()).toThrow(
+      "Atmosphere is not attached to a renderer",
+    );
+  });
+
+  it("refuses to change or attach after release", () => {
+    const atmosphere = new Atmosphere(earth);
+    atmosphere.detach();
+    expect(atmosphere.released).toBe(true);
+    expect(() => atmosphere.setAtmosphere({ rayleigh: [0, 0, 0] })).toThrow(
+      "Atmosphere cannot change after release",
+    );
+    expect(() => atmosphere.attachRenderer(renderer([]))).toThrow(
+      "Atmosphere cannot be attached after release",
+    );
   });
 });

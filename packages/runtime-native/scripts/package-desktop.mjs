@@ -378,7 +378,7 @@ export function stageDesktopFiles(
     if (existsSync(join(assets, '.threenative'))) {
       throw new Error('TN_NATIVE_ASSET_RESERVED_PATH: public/.threenative is reserved.');
     }
-    const selected = selectManifestAssets(assets);
+    const { selected } = selectManifestAssets(assets);
     for (const file of selected) {
       const output = join(staging, file);
       mkdirSync(dirname(output), { recursive: true });

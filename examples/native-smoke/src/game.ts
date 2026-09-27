@@ -1,6 +1,7 @@
 import {
   type ICtx,
   Scene,
+  debugFlag,
   defineGame,
   getPlatform,
   isMobile,
@@ -30,6 +31,8 @@ import { type IWorkerProof, startWorkerProof } from "./worker-proof.js";
 interface ISmokeState extends INetworkingState {
   airborne: boolean;
   currentPointers: number;
+  /** `debugFlag("probe")`, read once at load: `?probe` in a browser, `TN_DEBUG_PROBE` natively. */
+  debugProbe: boolean;
   frames: number;
   preparedFrames: number;
   preparationErrors: number;
@@ -283,6 +286,7 @@ class NativeSmoke extends Scene<ISmokeState> {
   static override readonly initialState: ISmokeState = {
     airborne: false,
     currentPointers: 0,
+    debugProbe: debugFlag("probe"),
     frames: 0,
     preparedFrames: 0,
     preparationErrors: 0,

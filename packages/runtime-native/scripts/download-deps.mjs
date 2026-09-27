@@ -1238,15 +1238,15 @@ export async function downloadDep(name, options = {}) {
     mkdirSync(destDir, { recursive: true });
     const missing = dep.headers.filter((header) => !existsSync(join(destDir, header)));
     if (missing.length === 0) {
-      const receipt = readReceipt(destDir, lock.lockHash);
-      if (!receipt) {
-        throw new Error(
-          `TN_NATIVE_DEP_RECEIPT_MISSING: '${name}' has files but no receipt for the current lock; rerun with --force to replace the stale cache.`,
-        );
+      if (readReceipt(destDir, lock.lockHash)) {
+        console.log(`${name} already exists at ${destDir}`);
+        console.log('Skipping (use --force to re-download)');
+        return true;
       }
-      console.log(`${name} already exists at ${destDir}`);
-      console.log('Skipping (use --force to re-download)');
-      return true;
+      // Same as every other dependency: any lock bump invalidates every receipt, so a stale
+      // cache is replaced rather than failing the whole native build.
+      console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+      missing.push(...dep.headers);
     }
     try {
       const verified = [];

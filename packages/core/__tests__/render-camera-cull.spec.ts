@@ -385,6 +385,7 @@ describe("render camera cull", () => {
         batches: 0,
         instancedBatches: 0,
         materialBatches: 0,
+        skinnedBatches: 0,
         exactObjects: 0,
         exact: {},
         drawsPlanned: 2,

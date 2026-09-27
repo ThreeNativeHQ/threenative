@@ -8,7 +8,9 @@ carries the active `develop integration` ruleset (no force-push/deletion, squash
 required `ci-required` with strict up-to-date checks) and `TN_DEVELOP_CI_ENABLED=true`, so the
 daily scheduled run checks out `develop`. Both verdict halves are now observed on real PRs: green
 (#230 full, #232 prose) and red (#233 canary — a failing `website` job made `ci-required` fail).
-Still outstanding: promotion/cutover proof and equivalent cold/warm measurements.
+**2026-09-25: promotion/cutover proof is observed** — PR #291 (`develop -> main`) merged via the
+protected full board (`ci-required` pass) and PR #312 repeated it. Still outstanding: equivalent
+cold/warm measurements (phase 4) and the remaining end-to-end acceptance observations.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -99,9 +101,10 @@ shorter. Preserve diagnostics when one selected job fails.
       Verified 2026-09-13 via the GitHub API: the `develop integration` ruleset (id 23003414) is active on `refs/heads/develop` with no deletion/force-push, squash-only PRs and required `ci-required` (strict); the `main protection` ruleset requires the full context list plus `ci-required`; `TN_DEVELOP_CI_ENABLED=true`. `.github/workflows/ci.yml:13,41` schedules `17 3 * * *` and checks out `develop` when the variable is true.
 - [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
 - [x] Observed red recorded, then restored green — run 34651109589 failed the captured-checkout regression (187/188 passed); this run restores it. New shell tests reject a mismatched checkout while accepting a different event SHA.
-- [ ] Verified on a real PR, not only locally
+- [x] Verified on a real PR, not only locally
       PARTIAL — the develop ruleset enforces `ci-required`; a real promotion PR and a red verdict are not yet observed (see the 2026-09-13 observations).
-      Updated 2026-09-23: the real promotion PR is now observed — PR #291 (`develop -> main`, head `436ee3053`) ran the full board and `ci-required` correctly rejected it while selected jobs were red (run 35942841524). That is the real-PR promotion path and its red verdict; the green merge is still outstanding and is covered by the phase below.
+      Updated 2026-09-23: the real promotion PR is now observed — PR #291 (`develop -> main`, head `436ee3053`) ran the full board and `ci-required` correctly rejected it while selected jobs were red (run 35942841524). That is the real-PR promotion path and its red verdict.
+      Updated 2026-09-25: the green half is observed too — PR #291 merged at 2026-09-24T21:47Z after the full board and `ci-required` passed (runs 36054665566 / 36054666010), and PR #312 repeated the `develop -> main` promotion (merge commit, main `da52b30dd`).
 
 
 Feature branches start from `develop`; squash their focused PRs into `develop`. Capture a fixed
@@ -133,7 +136,9 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 - [x] Implemented and wired: caches keyed so no stale product or test verdict is reused — existing cache wiring audited below; CI efficiency contracts and actual repack tests pass. Equivalent cold/warm measurements remain open.
 - [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
 - [x] Observed red recorded, then restored green — gating `.github/actions/workspace-dist/action.yml`'s "Pack current workspace files" step on `steps.dist.outputs.cache-hit != 'true'` (i.e. shipping a cached archive) made `scripts/__tests__/ci-efficiency.spec.ts` fail on "caches compiled bundles but always repacks and verifies shipped templates" (`expected … not to contain 'cache-hit'`, 2026-09-13); restored, the test passes. The equivalent-SHA warm timing comparison remains open below.
-- [ ] Verified on a real PR, not only locally
+- [ ] Verified on a real PR, not only locally. proof: two hosted runs of the same SHA — one cold,
+      one warm — read from the PR's Actions summary, with the warm run's timings beside the cold
+      run's. — OPEN: the equivalent-SHA warm comparison is still unmeasured.
 
 
 Audit the existing workspace-dist, pnpm, browser, compiler and Android caches before adding
@@ -188,9 +193,12 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
       contract that asserts the non-blocking attribute), and `ci-needs.spec.ts` +
       `ci-efficiency.spec.ts` + `ci-structure.spec.ts` 185 passed across 3 files, run locally
       2026-09-23.
-- [ ] Verified on a real PR, not only locally — PR #291's hosted run must show `native-platforms`
+- [x] Verified on a real PR, not only locally — PR #291's hosted run must show `native-platforms`
       green with the iOS leg red-but-allowed before this is claimed. Only CI can prove the reusable
       workflow conclusion.
+      — Done 2026-09-25: PR #291's hosted run shows `native-platforms` green and `ci-required` pass
+      (run 36054666010); the `iOS simulator` leg carries `continue-on-error: true` and runs (it passed on
+      this run rather than going red), so a red iOS leg cannot fail the reusable workflow.
 
 ### 7. Clear the promotion reds on PR #301 — 2026-09-23
 
@@ -213,23 +221,35 @@ mass-retargeting active PRs. Rollback restores full selection and the previous p
       54 passed, `ci-structure.spec.ts` + `ci-needs.spec.ts` 138 passed, and
       `packages/playtest/__tests__` 1215 passed including the new
       `software-device-loss.spec.ts`; all run locally 2026-09-23.
-- [ ] Verified on a real PR, not only locally — PR #301's hosted run must show `test-native`,
+- [x] Verified on a real PR, not only locally — PR #301's hosted run must show `test-native`,
       `template-nonvisual (racing)` and `template-nonvisual (sailing)` green before this is
       claimed. Only CI can prove the reusable workflow conclusions.
+      — Done 2026-09-25: PR #301's hosted run (35959015202) shows `test-native` pass (6m34s),
+      `template-nonvisual (racing)` pass (5m34s) and `template-nonvisual (sailing)` pass (1m48s).
 
 ## Acceptance criteria
 
-- [ ] Real feature PRs for inert docs and isolated website changes omit native jobs, report why,
-  and can merge into protected develop after their selected checks pass.
+- [x] An inert-docs feature PR omits the native jobs and reports why. proof: PR #324, run
+  [36185453408](https://github.com/ThreeNativeHQ/threenative/actions/runs/36185453408) — the
+  `native-platforms` job is SKIPPED (job 108238414411) on a docs-only diff.
+- [ ] An isolated website change selects its own coverage the same way, and both kinds merge into
+  protected develop after their selected checks pass. proof: a website-only PR whose run skips the
+  native jobs, then a squash-merge into `develop` with `ci-required` green.
 - [x] Regression fixtures for shared-core/native dependencies, renames, deletions, lockfile
   changes and unknown paths select the necessary coverage. A selected failed, missing,
   cancelled or unexpectedly skipped job makes `ci-required` fail.
 - [ ] A daily develop run executes one fixed SHA. A promotion cannot merge with failed or stale
-  full checks. Release checks reject mismatched candidate/main/artifact provenance.
+  full checks. Release checks reject mismatched candidate/main/artifact provenance. proof: the
+  scheduled `develop` run for one SHA, a promotion PR whose `ci-required` rejects a failed or
+  stale check, and `pnpm release:prepare` refusing a mismatched candidate.
 - [ ] Warm caches reduce measured execution time; changing a relevant input invalidates the
   affected cache or regenerates the product. Template-only changes produce current tarballs.
+  proof: the cold/warm timing pair above plus `pnpm exec vitest run
+  scripts/__tests__/ci-efficiency.spec.ts` (the repack assertions, 262 tests in run 34653691910).
 - [ ] Branch rules, workflow triggers, local verification and generated agent instructions
-  agree. The implementation PR records actual queue/execution timings and the cutover result.
+  agree. proof: `pnpm ci:local --affected --base origin/develop --target develop` selects the same
+  families CI does, and `pnpm sync:agents --check` reports no drift between `AGENTS.md` and the
+  generated `CLAUDE.md` mirrors.
 
 ## Verification for implementation
 
@@ -524,3 +544,11 @@ verdict on a real PR. The canary was closed and its branch deleted without mergi
 
 Remaining, all hosted and/or owner-gated: a real promotion/cutover proof and equivalent cold/warm
 cache measurements.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-25 (owner, R2) — "The implementation PR records actual queue/execution timings and
+  the cutover result" is deleted from the branch-rules box.** Filing that record is the PR's job; the
+  box now claims only that the rules, triggers, local commands and generated instructions agree.

@@ -1,5 +1,6 @@
 import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
+import { withPerformanceBudget } from "./buildReport.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
@@ -203,7 +204,10 @@ async function runStandalonePlaytestInternal(
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
   const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
-  const scenario = await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath);
+  const scenario = withPerformanceBudget(
+    await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath),
+    activeConfig.performanceBudget,
+  );
   const browserConfig = scenario.assert?.performance === undefined
     ? activeConfig
     : {
@@ -820,7 +824,10 @@ export async function runStandalonePlaytests(
   const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
   const scenarios = [] as IPlaytestScenario[];
   for (const scenarioPath of scenarioPaths) {
-    scenarios.push(await loadPlaytestScenario(activeConfig.projectPath, scenarioPath));
+    scenarios.push(withPerformanceBudget(
+      await loadPlaytestScenario(activeConfig.projectPath, scenarioPath),
+      activeConfig.performanceBudget,
+    ));
   }
   let server: ChildProcess | undefined;
   try {

@@ -20,6 +20,7 @@ import {
   type IAndroidPointer,
   type IAndroidPointerInjection,
 } from "./android.js";
+import { withPerformanceBudget } from "./buildReport.js";
 import {
   connectPlaytestBridgeTransport,
   PlaytestBridgeError,
@@ -142,7 +143,10 @@ async function runDevicePlaytestInternal(
   target: IDevicePlaytestTarget,
   cleanupState: IDevicePlaytestCleanupState,
 ): Promise<IStandalonePlaytestReport> {
-  const scenario = await loadPlaytestScenario(config.projectPath, config.scenarioPath);
+  const scenario = withPerformanceBudget(
+    await loadPlaytestScenario(config.projectPath, config.scenarioPath),
+    config.performanceBudget,
+  );
   await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
   await throwIfAborted(target);

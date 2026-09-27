@@ -1,4 +1,4 @@
-packages: ['packages/*', 'examples/*', 'site']
+packages: ['packages/*', 'examples/*']
 
 # `pnpm install` stops on an interactive "remove the existing node_modules and reinstall?"
 # confirmation when a checkout's modules directory was not created by this pnpm. A fresh worktree

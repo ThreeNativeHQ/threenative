@@ -1,4 +1,4 @@
-import { Mesh, type Object3D, PerspectiveCamera, Scene } from "three";
+import { type Box3, Mesh, type Object3D, PerspectiveCamera, Scene, type Sphere } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { TN_DISCRETE_LOD, baseGeometryOf, updateModelLods } from "../src/model-lod.js";
@@ -184,6 +184,41 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     expect(mesh.geometry.getAttribute("position")).toBe(base.getAttribute("position"));
     // LOD0 is still recoverable for picking.
     expect(baseGeometryOf(mesh)).toBe(base);
+  }, 120_000);
+
+  it("shares the base's bounds with every level, so bounds padded after load reach them", async () => {
+    // A vertex-displacement material makes a game pad the base's bounds after the model loads, so
+    // the renderer does not cull the object the shader pushed out of shape. Every level shares the
+    // base's vertex attributes, so its bounds are the base's bounds: a level that kept a copy is
+    // culled early against bounds frozen at bake time, and the mesh vanishes at distance.
+    stubFetch(cookedGlb());
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("hull.glb");
+    const mesh = firstMesh(value.scene);
+    const base = baseGeometryOf(mesh);
+    base.computeBoundingSphere();
+    base.computeBoundingBox();
+    const sphere = base.boundingSphere as Sphere;
+    const box = base.boundingBox as Box3;
+    sphere.radius *= 4;
+    box.expandByScalar(5);
+
+    const scene = new Scene();
+    scene.add(mesh);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 100);
+    camera.updateMatrixWorld(true);
+    expect(updateModelLods(scene, camera, 1080)).toBe(COARSE_TRIANGLES);
+
+    // The level that just went onto the mesh reports the padded bounds, by identity: the base's own
+    // objects, so a later pad reaches this level and every sibling level with it.
+    const level = mesh.geometry;
+    expect(level).not.toBe(base);
+    expect(level.boundingSphere).toBe(sphere);
+    expect(level.boundingBox).toBe(box);
+    // And the padding was a real one, so the assertions above are not comparing two empty values.
+    expect(sphere.radius).toBeGreaterThan(1);
+    expect(box.max.y).toBeGreaterThan(1);
   }, 120_000);
 
   it("refines to full detail when the camera is close", async () => {

@@ -850,6 +850,47 @@ test('release provenance is generated and validated before publishing release as
   expect(stripped).not.toContain('generate-native-release-provenance.mjs');
 });
 
+test('release publication uploads regular files only, never the compliance directory', () => {
+  // `release/*` expanded to `release/compliance`, the directory the SBOM step writes, and
+  // `gh release create` refused it — `read release/compliance: is a directory` — after every
+  // build had already passed (run 36149533979). The step must enumerate regular files, and a
+  // directory sitting under `release/` must never reach the upload argument list.
+  const step = releaseWorkflow.match(
+    /- name: Publish runtimes and checksum lock\n[\s\S]*?run: \|\n([\s\S]*?)(?=\n {6}- |\n {2}[a-z0-9-]+:)/u,
+  )?.[1];
+  assert.ok(step, 'the publication step must remain reachable');
+  // The command, not the comment above it that also names `gh release create`.
+  const publish = step.search(/^\s*gh release create/mu);
+  assert.ok(publish > -1, 'the step must still publish through gh release create');
+  // The upload argument is the files-only array, never the bare directory-including glob.
+  assert.match(step.slice(publish), /gh release create[^\n]*"\$\{assets\[@\]\}"/u);
+  assert.doesNotMatch(step.slice(publish), /release\/\*/u);
+
+  // Reproduce the failure on a real fixture: a genuine asset beside the compliance directory.
+  const directory = makeTempDirSync('threenative-release-assets-');
+  mkdirSync(join(directory, 'release', 'compliance'), { recursive: true });
+  writeFileSync(join(directory, 'release', 'prebuilt-lock.json'), '{}');
+  writeFileSync(join(directory, 'release', 'compliance', 'native-dependencies.cdx.json'), '{}');
+  // Negative control: the old glob really did carry the directory into the upload.
+  const glob = spawnSync('bash', ['-c', 'printf "%s\\n" release/*'], { cwd: directory, encoding: 'utf8' });
+  assert.match(glob.stdout, /^release\/compliance$/mu);
+  // The shipped expansion drops it, so `gh release create` receives only regular files.
+  const expansion = step
+    .slice(0, publish)
+    .split('\n')
+    .map((line) => line.replace(/^\x20{10}/u, ''))
+    .join('\n')
+    .trim();
+  const listed = spawnSync(
+    'bash',
+    ['-c', `set -euo pipefail\n${expansion}\nprintf '%s\\n' "\${assets[@]}"`],
+    { cwd: directory, encoding: 'utf8' },
+  );
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout.trim(), 'release/prebuilt-lock.json');
+  assert.doesNotMatch(listed.stdout, /compliance/u);
+});
+
 test('a dedicated job publishes gate-schema candidate evidence reports', () => {
   // The release-candidate gate resolves parity/provenance reports by artifact
   // reference. These were emitted from android-emulator-parity on the premise

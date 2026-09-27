@@ -4,6 +4,7 @@ import {
   type IRenderPerformanceMetrics,
   createAfterPhysicsPhase,
 } from "../src/loop.js";
+import { FRAME_PASS_KINDS, type IRenderPassSample } from "../src/render-pass-budget.js";
 
 describe("FixedStepLoop", () => {
   it("should reject a maxSteps that can never run an update", () => {
@@ -198,6 +199,76 @@ describe("FixedStepLoop", () => {
     expect(loop.tick()).toBe(3);
   });
 
+  it("rejects an invalid settle count without freezing the clock", () => {
+    const loop = new FixedStepLoop({ onUpdate: () => undefined });
+    expect(() => loop.freezeClock(-1)).toThrow(/settleSteps/u);
+    expect(() => loop.freezeClock(1.5)).toThrow(/settleSteps/u);
+    expect(loop.clockFrozen).toBe(false);
+  });
+
+  it("advances no frames after the clock is frozen before the run", () => {
+    // A browser playtest runner announces itself before the page loads and then pumps live frames
+    // through the whole startup compile wait. Those frames used to advance a tick-counting
+    // simulation by wall clock, so the run began with an arbitrary amount of game time already
+    // spent -- and racing's `elapsed` DNFs a 90s race that the scenario needs only 47s to finish.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop.freezeClock();
+    expect(loop.clockFrozen).toBe(true);
+    loop.start(0);
+
+    // Two seconds of live frames at 60 Hz: 120 updates if the clock still drove the loop, and the
+    // one fixed settling pass the freeze owes the world instead -- 60 steps, every one of them the
+    // same 1/60s whatever the machine is doing.
+    for (let frame = 1; frame <= 120; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
+
+    expect(dts).toHaveLength(60);
+    expect(new Set(dts)).toEqual(new Set([1 / 60]));
+    expect(loop.tick()).toBe(60);
+
+    // The manual clock is still the one that moves the simulation, and it does not re-arm the
+    // settle: a run must not gain a second world per step the runner counts.
+    expect(loop.advance(3)).toBe(3);
+    expect(loop.tick()).toBe(63);
+    for (let frame = 121; frame <= 240; frame += 1) expect(loop.stepFrame(frame * 16.6667)).toBe(0);
+    expect(dts).toHaveLength(63);
+    expect(loop.tick()).toBe(63);
+  });
+
+  it("settles on the first live frame after the freeze, not on a held boot frame", () => {
+    // The boot hold covers the load, and the scene has not entered while it is set, so a settle
+    // spent there would settle nothing. The arm survives it and fires when the loop is live.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop.freezeClock(3);
+    loop.setHeld(true);
+    loop.start(0);
+    loop.stepFrame(16.6667);
+    loop.stepFrame(33.3333);
+    expect(dts).toEqual([]);
+
+    loop.setHeld(false);
+    loop.stepFrame(50);
+    expect(dts).toHaveLength(3);
+    loop.stepFrame(66.6667);
+    expect(dts).toHaveLength(3);
+  });
+
+  it("settles nothing when the freeze is asked for no steps", () => {
+    // The count is the knob, and zero is a real answer: a caller that wants the world exactly as
+    // the game built it says so rather than having it settle anyway.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop.freezeClock(0);
+    loop.start(0);
+    loop.stepFrame(16.6667);
+    expect(dts).toEqual([]);
+    expect(loop.tick()).toBe(0);
+    expect(loop.clockFrozen).toBe(true);
+    expect(() => loop.freezeClock(-1)).toThrow(/settleSteps/u);
+    expect(() => loop.freezeClock(1.5)).toThrow(/settleSteps/u);
+  });
+
   it("reports the actual callback duration separately from presentation timestamps", () => {
     let clock = 0;
     const frameDurations: number[] = [];
@@ -317,6 +388,55 @@ describe("FixedStepLoop metrics collection", () => {
     expect(loop.stepFrame(121 * 16.6667)).toBe(1);
     expect(steps).toEqual([1 / 60]);
     expect(loop.tick()).toBe(1);
+  });
+});
+
+describe("FixedStepLoop retained render samples", () => {
+  // One frame of 30 nested render() calls across all four kinds: a shadow-casting cathedral with a
+  // post chain. The retained sample used to carry one entry per call, so a full window no longer
+  // fitted the playtest bridge's payload and `assert.performance` died before frame 0.
+  function nestedPasses(): IRenderPassSample[] {
+    return Array.from({ length: 30 }, (_, index) => ({
+      draws: index + 1,
+      kind: FRAME_PASS_KINDS[index % 4] ?? "nested",
+      triangles: (index + 1) * 10,
+    }));
+  }
+  function makeNestedLoop() {
+    return new FixedStepLoop({
+      collectMetrics: true,
+      onRender: () => ({ drawCalls: 465, passes: nestedPasses(), triangles: 4_650 }),
+      onUpdate: () => undefined,
+    });
+  }
+
+  it("keeps one entry per pass kind, summed over that frame's render calls", () => {
+    const loop = makeNestedLoop();
+    loop.start(0);
+    // The first frame only establishes the previous-render timestamp; samples start from the second.
+    loop.stepFrame(16);
+    loop.stepFrame(32);
+
+    // Summed per kind, not the first call of each: 1+5+...+29 draws is the whole main lane.
+    expect(loop.runtimeDiagnosticsSeries()[0]?.passes).toEqual([
+      { draws: 120, kind: "main", triangles: 1_200 },
+      { draws: 128, kind: "shadow", triangles: 1_280 },
+      { draws: 105, kind: "reflection", triangles: 1_050 },
+      { draws: 112, kind: "nested", triangles: 1_120 },
+    ]);
+  });
+
+  it("serialises a full 1,024-sample window under the bridge's 1 MB payload ceiling", () => {
+    // The ceiling the runner enforces on every observation (`assertBoundedPayload`), restated
+    // rather than imported: core does not depend on the playtest package.
+    const loop = makeNestedLoop();
+    loop.start(0);
+    // One frame only establishes the previous-render timestamp, so samples start from the second.
+    for (let frame = 1; frame <= 1_026; frame += 1) loop.stepFrame(frame * 16);
+    const series = loop.runtimeDiagnosticsSeries();
+
+    expect(series).toHaveLength(1_024);
+    expect(JSON.stringify(series).length).toBeLessThan(1_000_000);
   });
 });
 

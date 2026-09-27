@@ -81,6 +81,17 @@ def uv_layers():
     return sum(len(item.data.uv_layers) for item in meshes())
 
 
+def collapse_decimate(item, ratio):
+    """Add the collapse-decimate modifier `decimate` uses, so other recipes reuse that recipe's
+    operation instead of copying it. It measures nothing and writes nothing; the caller decides
+    what to export."""
+    modifier = item.modifiers.new(name="TNDecimate", type="DECIMATE")
+    modifier.decimate_type = "COLLAPSE"
+    modifier.ratio = float(ratio)
+    modifier.use_collapse_triangulate = True
+    return modifier
+
+
 def export(out):
     directory = os.path.dirname(out)
     if directory and not os.path.isdir(directory):

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PlaytestScenarioError } from "../scenario.js";
+import { resolveBuildReport } from "./buildReport.js";
 import {
   formatUsage,
   parseStandalonePlaytestArgs,
@@ -102,6 +103,20 @@ export function classifyRunnerError(
     };
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (message.startsWith("TN_PLAYTEST_BUILD_REPORT_STALE")) {
+    return diagnostic(
+      "TN_PLAYTEST_BUILD_REPORT_STALE",
+      message,
+      "Rebuild the artifact, or point --build-report at the build this run is exercising; a budget measured on other bytes bounds nothing.",
+    );
+  }
+  if (message.startsWith("TN_PLAYTEST_BUILD_REPORT_INVALID")) {
+    return diagnostic(
+      "TN_PLAYTEST_BUILD_REPORT_INVALID",
+      message,
+      "Regenerate the report with `threenative build`; a hand-edited or foreign report cannot be adopted.",
+    );
+  }
   if (message.startsWith("TN_PLAYTEST_DEVICE_FAILED")) {
     return diagnostic(
       "TN_PLAYTEST_DEVICE_FAILED",
@@ -284,7 +299,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (argv[0] === "record-to-scenario") {
       return await recordToScenarioCommand(argv.slice(1));
     }
-    config = parseStandalonePlaytestArgs(argv);
+    // Before anything launches: a report that is malformed, aimed at another target, or describing
+    // bytes that are no longer on disk has not measured this run, so it is exit 2 and not a verdict.
+    config = await resolveBuildReport(parseStandalonePlaytestArgs(argv));
     assertCpuProfileTargetSupported(config.target ?? "browser", config.cpuProfilePath);
     const scenarioPaths = config.scenarioPaths ?? [config.scenarioPath];
     const reports = config.target === "browser"

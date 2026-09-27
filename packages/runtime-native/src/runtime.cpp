@@ -95,6 +95,18 @@
 #include <SDL3/SDL.h>
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
+#include <crt_externs.h>
+#endif
+
+// The process environment, for forwarding `TN_DEBUG_*`. Apple's headers declare no `environ`
+// (a dylib cannot link it) and Windows spells it `_environ`.
+#if defined(_WIN32)
+static char** tnEnviron() { return _environ; }
+#elif defined(__APPLE__)
+static char** tnEnviron() { return *_NSGetEnviron(); }
+#else
+extern char** environ;
+static char** tnEnviron() { return environ; }
 #endif
 
 namespace mystral {
@@ -2098,6 +2110,17 @@ private:
             if (value != nullptr && value[0] != '\0') {
                 jsEngine_->setProperty(env, flag, jsEngine_->newString(value));
             }
+        }
+        // The engine's debug switches, every `TN_DEBUG_*` variable, for `debugFlag()`. A prefix
+        // rather than the two named flags above because the set is open — a game reads
+        // `TN_DEBUG_` plus whatever it named its own switch — and a prefix is safe to forward where
+        // a `TN_*` glob is not: this is a namespace only a developer sets on purpose, so no
+        // variable a machine carries for itself can land in a game's hands through it.
+        for (char** entry = tnEnviron(); entry != nullptr && *entry != nullptr; ++entry) {
+            const char* value = std::strchr(*entry, '=');
+            if (value == nullptr || std::strncmp(*entry, "TN_DEBUG_", 9) != 0) continue;
+            const std::string name(*entry, static_cast<size_t>(value - *entry));
+            jsEngine_->setProperty(env, name.c_str(), jsEngine_->newString(value + 1));
         }
         jsEngine_->setProperty(process, "env", env);
 

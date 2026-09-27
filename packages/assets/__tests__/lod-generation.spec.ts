@@ -43,6 +43,8 @@ async function torusGlb(
   options: {
     alpha?: "BLEND" | "MASK";
     custom?: boolean;
+    customRange?: number;
+    extraUv?: boolean;
     joints?: boolean;
     morph?: boolean;
     name?: string;
@@ -87,7 +89,20 @@ async function torusGlb(
   if (options.custom === true)
     primitive.setAttribute(
       "_CUSTOM",
-      accessor(document, buffer, "VEC2", new Float32Array(count * 2)),
+      accessor(
+        document,
+        buffer,
+        "VEC2",
+        Float32Array.from(
+          { length: count * 2 },
+          (_, i) => ((i * 97) % 1000) * (options.customRange ?? 0),
+        ),
+      ),
+    );
+  if (options.extraUv === true)
+    primitive.setAttribute(
+      "COLOR_1",
+      accessor(document, buffer, "VEC4", new Float32Array(count * 4)),
     );
   if (options.morph === true) primitive.addTarget(document.createPrimitiveTarget());
   const name = options.name ?? "hull";
@@ -357,7 +372,8 @@ async function cook(
   options: Parameters<typeof modelPass>[0],
   logicalPath = "hull.glb",
 ): Promise<IModelLodSummary> {
-  const result = await modelPass(options).apply(input, logicalPath);
+  // Isolate the LOD generator from scene-graph compaction, which has its own spec.
+  const result = await modelPass({ compact: false, ...options }).apply(input, logicalPath);
   if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
   if (result.entry?.lod === undefined) throw new Error("the pass produced no lod summary");
   return result.entry.lod as IModelLodSummary;
@@ -385,6 +401,35 @@ describe("automatic discrete LOD generation", () => {
     expect(summary.trianglesAfter).toBeLessThan(summary.trianglesBefore);
     expect(LOD_ERROR_TARGETS.length).toBeGreaterThanOrEqual(summary.levels);
     expect(summary.reasons).not.toContain("too-small");
+  }, 120_000);
+
+  it("bakes a chain over an application attribute and keeps sharing it", async () => {
+    // glTF reserves the `_` prefix for application data — a per-vertex wind weight, say. A level
+    // only swaps the index buffer over the base vertices, so the attribute is shared exactly the
+    // way COLOR_0 is; refusing it cost the grove's tree bark every level.
+    const input = await mediumGlb({ custom: true });
+    const result = await modelPass({ compact: false, lod: GENERATE, virtual: "none" }).apply(
+      input,
+      "hull.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("unchanged");
+    const summary = result.entry?.lod as IModelLodSummary;
+    expect(summary.reasons).not.toContain("unsupported-attributes");
+    expect(summary.generated).toBe(1);
+    const document = await readWithLod(result.buffer);
+    const primitive = document.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    expect(primitive?.getAttribute("_CUSTOM")).not.toBeNull();
+  }, 120_000);
+
+  it("keeps application data out of the simplifier's error", async () => {
+    // Its range is the application's: raw ids in the hundreds would outweigh every geometric term
+    // and inflate the error, while a level shares the data unchanged whatever the simplifier does.
+    const plain = await cook(await mediumGlb(), { lod: GENERATE, virtual: "none" });
+    const tagged = await cook(await mediumGlb({ custom: true, customRange: 1 }), {
+      lod: GENERATE,
+      virtual: "none",
+    });
+    expect(tagged.primitives[0]?.levels).toEqual(plain.primitives[0]?.levels);
   }, 120_000);
 
   it("records the chain in the artifact and round-trips it", async () => {
@@ -583,7 +628,13 @@ describe("automatic discrete LOD generation", () => {
         build: () => rawGlb({ indices: [0, 1, 2], minVertices: 3, mode: 0 }),
         reason: "unsupported-topology",
       },
-      { build: () => smallGlb({ custom: true }), reason: "unsupported-attributes" },
+      {
+        // The default prune drops an unused COLOR_1 before eligibility sees it; keep it to prove
+        // a standard semantic the chain does not share is still declined by name.
+        build: () => smallGlb({ extraUv: true }),
+        lod: { lod: GENERATE, passes: { prune: false }, virtual: "none" },
+        reason: "unsupported-attributes",
+      },
       { build: () => smallGlb({ joints: true }), reason: "deforming" },
       { build: () => smallGlb({ morph: true }), reason: "deforming" },
       { build: () => smallGlb({ alpha: "BLEND" }), reason: "material-unsupported" },
@@ -864,7 +915,7 @@ describe("assets.lod through the public compiler", () => {
       config: {
         audio: "none",
         lod: { generation: { join: true, maxLevels: 1 } },
-        models: { virtual: "none", textures: "none" },
+        models: { compact: false, virtual: "none", textures: "none" },
         textures: "none",
       },
       cwd: root,
@@ -948,6 +999,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
   it("joins a 300-primitive carrier into one draw per material, leaving LOD0 authored", async () => {
     const input = await joinCarrierGlb(300, 3);
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 1, join: true } },
       virtual: "none",
     }).apply(input, "carrier.glb");
@@ -1041,6 +1093,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
   it("simplifies the joined rung when a discrete chain is configured", async () => {
     const input = await joinCarrierGlb(12, 3);
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 4, join: true, errorTargets: [0.06] } },
       virtual: "none",
     }).apply(input, "hull.glb");
@@ -1064,6 +1117,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
     // no multi-primitive mesh anywhere, so the within-mesh join produced nothing at all.
     const input = await siblingCarrierGlb(146, 3);
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 1, join: true } },
       virtual: "none",
     }).apply(input, "carrier.glb");
@@ -1103,6 +1157,7 @@ describe("opt-in join far rung (draw count, not triangle density)", () => {
     // transform between container and mesh. Its far mesh and draws must not move.
     const input = await joinCarrierGlb(12, 3, { tubular: 8, radial: 6 });
     const result = await modelPass({
+      compact: false,
       lod: { generation: { maxLevels: 1, join: true } },
       virtual: "none",
     }).apply(input, "carrier.glb");

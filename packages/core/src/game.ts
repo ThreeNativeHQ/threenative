@@ -148,6 +148,14 @@ export interface IGamePluginRuntime {
   /** The frame's cost attribution so far, or undefined when the game turned the budget off. */
   readonly frameBudgetWindow?: () => IFrameBudgetWindow | undefined;
   /**
+   * Stop the live clock, so a rendered frame simulates nothing and banks no wall-clock time.
+   *
+   * A run that counts fixed-step ticks must not also accumulate real seconds into the same
+   * simulation, and the frames before its first `advance()` are exactly where a boot's seconds
+   * used to land. Optional: a runtime without a clock just never freezes one.
+   */
+  readonly freezeClock?: () => void;
+  /**
    * Hold start-scene entry until `gate` settles.
    *
    * The returned promise settles after `Scene.enter()` has run. A runner can therefore release the
@@ -1803,6 +1811,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const runtime: IGamePluginRuntime = {
       fixedStep: (ticks) => gameLoop.advance(ticks),
       frameBudgetWindow: () => this.#frameBudget?.window(),
+      freezeClock: () => gameLoop.freezeClock(),
       enableRuntimeDiagnostics: () => {
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);

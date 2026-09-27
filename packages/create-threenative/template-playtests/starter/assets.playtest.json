@@ -52,6 +52,18 @@
         "path": "status",
         "equals": "won",
         "changed": true
+      },
+      {
+        "allowTrivial": "How an asset was served is settled the moment it loads and never changes, so this row proves the cooked output answered rather than the uncompiled source fallback that looks identical on screen.",
+        "id": "assets",
+        "path": "native-proof.png.via",
+        "equals": "manifest"
+      },
+      {
+        "allowTrivial": "How an asset was served is settled the moment it loads and never changes, so this row proves the cooked output answered rather than the uncompiled source fallback that looks identical on screen.",
+        "id": "assets",
+        "path": "native-proof.glb.via",
+        "equals": "manifest"
       }
     ],
     "visibility": [

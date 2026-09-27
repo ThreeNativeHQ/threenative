@@ -11,10 +11,12 @@
 #include "mystral/audio/audio_bindings.h"
 #include "mystral/js/engine.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -187,13 +189,19 @@ bool runContract(const EngineCase &engineCase, bool &ran) {
 
     // Settling runs on the microtask queue. QuickJS drains pending jobs after each eval and V8
     // needs the explicit pump, so do both rather than assume which engine this is.
-    for (int pass = 0; pass < 8 && report.empty(); pass += 1) {
+    //
+    // The deadline is time, not a pump count: the decode lands on a worker thread, so eight passes
+    // (microseconds) race it and lose on a loaded runner — observed as a bare "the script did not
+    // reach its report" on macOS. Wait for the worker instead of guessing at its latency.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (report.empty() && std::chrono::steady_clock::now() < deadline) {
         // The runtime delivers finished decodes from `processAudioEvents()` inside `pollEvents()`,
         // and this loop stands in for that: the decode runs on a worker, so a harness that only
         // pumps microtasks would wait for a completion nobody ever delivers.
         mystral::audio::drainAudioDecodes();
         engine->processMicrotasks();
         engine->evalWithResult("undefined", "audio_decode_promise_drain.js");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     bool ok = true;
