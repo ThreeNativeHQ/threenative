@@ -12,12 +12,12 @@ PRD-153's own web branding and is already delivered — `web-brand.spec.ts` gree
 tracked, re-confirmed by the readiness assessment — so it is dropped here rather than re-litigated.
 What remains is what PRD-153 explicitly did not claim: the installed Android **release artifact** and
 the **distributed desktop app** showing the developer brand.
-[PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) is restored to `done/`; this PRD
+[PRD-153](../../done/PRD-153-game-branding-from-launch-to-play.md) is restored to `done/`; this PRD
 extends it.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 platform packaging, +1 OS appearance validation).
 **Problem:** Game-owned branding controls exist, but their appearance on final distributed native artifacts has not been established for this release path.
 
-Batch contract and dependency order: [production-readiness](README.md). Baseline: [the assessment](../../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](../README.md). Baseline: [the assessment](../../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Integration ledger
 
@@ -31,7 +31,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 The report changed name/icon paths/theme color only in the installed game and verified web output. app.icon/app.icons/bootSplash and generated src/render/loading.ts already exist. Desktop staging currently proves a runtime SDL window icon, not executable/Finder/installed launcher metadata. Original PRD-153 closed with unverified device lanes.
 
-Appearance stays game-generated source; native resource conversion/application is engine plumbing. [PRD-365](PRD-365-consumer-desktop-distribution.md) owns desktop containers/resource embedding; [PRD-212](../done/PRD-212-published-install-builds-android.md) owns signed Android packaging. This PRD owns the authored inputs, loading/handoff behavior and visible proof, avoiding duplicate packagers.
+Appearance stays game-generated source; native resource conversion/application is engine plumbing. [PRD-365](../../done/PRD-365-consumer-desktop-distribution.md) owns desktop containers/resource embedding; [PRD-212](../../done/PRD-212-published-install-builds-android.md) owns signed Android packaging. This PRD owns the authored inputs, loading/handoff behavior and visible proof, avoiding duplicate packagers.
 
 ## Approach and boundaries
 
