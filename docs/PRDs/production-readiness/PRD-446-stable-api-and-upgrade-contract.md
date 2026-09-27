@@ -1,8 +1,7 @@
 # PRD-446 — Stable API and upgrade contract
 
-**Status:** PARTIAL — phases 1 and the phase 2 policy landed and verified (`prd:50%`); the phase 2
-runtime deprecation warning and all of phase 3 open.
-**Complexity:** 6 → MEDIUM; touches release scripts and CI, no runtime code.
+**Status:** PARTIAL — phases 1 and 2 verified (`prd:50%`); phase 3 remains open.
+**Complexity:** 6 → MEDIUM; touches release scripts, CI, and the physics deprecation warning.
 **Depends on:** [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
 (1.0) of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
 
@@ -157,16 +156,37 @@ Out of scope, closed with evidence elsewhere: an upgrade CLI command or codemod 
   naming those removals. Type-only exports and version-bump enforcement remain open for 1.0; the
   policy states the promise without claiming those gates ship yet.
   Linked from `README.md`'s Docs list by anchor. The one-time `console.warn` and the
-  capability-manifest `deprecated` marker are written as **requirements of a deprecation**, with an
-  explicit line that neither ships yet — the box below is the open part, not this one.
-- [ ] Deprecated symbols warn once at runtime and are marked deprecated in capability detail.
+  capability-manifest `deprecated` marker are written as requirements of a deprecation and
+  implemented in the box below.
+- [x] Deprecated symbols warn once at runtime and are marked deprecated in capability detail.
   proof: a red test per half, then the focused green (a `__tests__/*.spec.ts` for the once-per-process
   warning and for the manifest marker read back through `engine_capability_detail`).
-  Open: no runtime code in this lane. `CONTRIBUTING.md` now states both as requirements; what is
-  missing is the implementation — a once-per-process `console.warn` beside the `@deprecated` tag and
-  a `deprecated` marker on the `packages/create-threenative/capabilities.json` entry read by
-  `engine_capability_detail` (the manifest currently contains zero `deprecat` matches). Needs a
-  red test per half.
+  Implementation and its red-green are verified below.
+  Runtime half: one guard in the seam all four node classes already route through,
+  `requirePhysicsSimulation` (`packages/physics/src/simulation.ts:1284`), fires once per process
+  (module-level flag) whenever the `world` option is *supplied* — it runs before every resolution
+  path, so a caller passing `world` next to a `physics` context still hears it, and the current
+  `physics` path stays silent. Red with the guard after the `physics.simulation` early return:
+  `warns on the supplied option even when a context resolves the simulation first` failed on
+  `expected "warn" to be called 1 times, but got 0 times`. Green: `pnpm exec vitest run
+  packages/physics/__tests__/deprecation.spec.ts`
+  → 2 passed; physics lane `pnpm exec vitest run packages/physics/__tests__/` → 26 files / 182 tests
+  passed.
+  Manifest half: one optional entry field `deprecated`, absent rather than empty when untagged, fed
+  by a new `@deprecatedOption` capability tag (`scripts/build-capability-manifest.ts:238`) instead of
+  `@deprecated` — TypeScript reads that tag as deprecating the whole exported class, so the four
+  node classes carry `@deprecatedOption` and the real `@deprecated` tags on the `world` option
+  fields stay. `ICapabilityEntry` declares and validates it, so `engine_capability_detail` returns
+  the note naming `world` and `physics` for those four and `undefined` for `CollisionShape3D`;
+  `generate-capability-reference.ts` renders it. Red: the builder spec failed on the missing
+  `deprecated` field and the detail spec on `RigidBody3D: expected '' to contain '\`world\`'`. Green:
+  `pnpm exec vitest run scripts/__tests__/capability-manifest.spec.ts
+  packages/engine-mcp/__tests__/search.spec.ts` → 81 tests passed, widened to the engine-mcp,
+  recall, duplicate and api-surface lanes → 8 files / 142 tests passed.
+  `pnpm capabilities:sync` regenerated both manifest copies (356 entries; 4 carry `deprecated`:
+  `Area3D`, `CharacterBody3D`, `Joint3D`, `RigidBody3D`); `pnpm capabilities:check`,
+  `tsx scripts/generate-capability-reference.ts --check`, `pnpm api:surface:check`, `pnpm typecheck`
+  and `pnpm lint` exit 0. Not run in this lane: full `pnpm test` and the native lanes.
 - [x] `SECURITY.md` supported-versions table follows the policy. proof: same
   `pnpm check:docs` and strict prose lane runs above (exit 0, 179 tests).
   The table supports each package's latest published minor line and drops older minor lines of that

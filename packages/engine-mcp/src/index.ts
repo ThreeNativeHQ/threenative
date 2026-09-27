@@ -16,6 +16,8 @@ export interface ICapabilityEntry {
   readonly constraints: readonly string[];
   readonly overrides?: readonly string[];
   readonly requires?: readonly string[];
+  /** Absent unless something on this entry is deprecated; each string names what, and what to use. */
+  readonly deprecated?: readonly string[];
 }
 
 export interface INotOwnedCapability {
@@ -260,6 +262,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
 function validateManifest(value: unknown, file: string): ICapabilityManifest {
   if (
     !isRecord(value) ||
@@ -290,12 +296,11 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       !Array.isArray(raw.situations) ||
       !Array.isArray(raw.aliases) ||
       !Array.isArray(raw.constraints) ||
-      (raw.requires !== undefined && !Array.isArray(raw.requires)) ||
+      (raw.requires !== undefined && !isStringArray(raw.requires)) ||
+      (raw.deprecated !== undefined && !isStringArray(raw.deprecated)) ||
       !raw.situations.every((situation) => typeof situation === "string") ||
       !raw.aliases.every((alias) => typeof alias === "string") ||
-      !raw.constraints.every((constraint) => typeof constraint === "string") ||
-      (Array.isArray(raw.requires) &&
-        !raw.requires.every((requirement) => typeof requirement === "string"))
+      !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
