@@ -465,12 +465,17 @@ function pairState(pair: NeighborPair): number[] | undefined {
   return [...levelState(aLevel), ...levelState(bLevel)];
 }
 
-function levelState(level: ILevelGeometry): [number, number, number] {
+function levelState(level: ILevelGeometry): number[] {
   const geometry = level.geometry;
+  // The stitch places the bridge in world space from the level's own world matrix, so a level that
+  // moved has to move the key too - otherwise the diagnostic that reads those coordinates would be
+  // skipped by exactly the case it exists to catch.
+  level.mesh.updateMatrixWorld();
   return [
     geometry.id,
     (geometry.getAttribute("position") as BufferAttribute).version,
     (geometry.getAttribute("normal") as BufferAttribute).version,
+    ...level.mesh.matrixWorld.elements,
   ];
 }
 
@@ -493,9 +498,14 @@ function bridgeState(bridge: IStitchBridge): number[] {
     mesh.id,
     mesh.parent?.id ?? -1,
     mesh.visible ? 1 : 0,
+    // The attachment check reads `mesh.geometry`, and the triangle check reads the bridge's
+    // normals, so both belong in the key. A gate that omits what the diagnostic inspects skips it
+    // for the very edit it was written to catch.
+    (mesh.geometry as BufferGeometry | undefined)?.id ?? -1,
     ...mesh.matrixWorld.elements,
     geometry.id,
     (geometry.getAttribute("position") as BufferAttribute).version,
+    (geometry.getAttribute("normal") as BufferAttribute | undefined)?.version ?? -1,
     index?.id ?? -1,
     index?.version ?? -1,
     geometry.drawRange.start,

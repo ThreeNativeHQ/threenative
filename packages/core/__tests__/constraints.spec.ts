@@ -99,6 +99,10 @@ describe("core constraints", () => {
           // the game must supply — every colour, angle, intensity, density and exposure is a
           // required option. It constructs the objects those values need and chooses none of them.
           file !== "render/daylight.ts" &&
+          // The pool is a Map keyed by the caller's own geometry and material so a recycled
+          // InstancedMesh keeps the surface it was drawn with. It names a Material only as a key
+          // type, reads no property that describes how anything looks, and constructs none.
+          file !== "render/mesh-pool.ts" &&
           // The splat terrain surface builds its material from the world package's own table:
           // textures, tiles, tints, thresholds and noise scales are all the package's values.
           file !== "world-terrain-splat.ts" &&

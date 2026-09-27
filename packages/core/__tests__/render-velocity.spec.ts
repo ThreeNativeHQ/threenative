@@ -128,19 +128,28 @@ function buildVelocityUpdateNodes(object: Object3D, node: Node): IInspectableVel
 }
 
 function runObjectUpdate(builder: IInspectableVelocityBuilder, object: Object3D): void {
-  const event = [...builder.nodes].find((node) => node.constructor.name === "EventNode");
-  if (event === undefined) throw new Error("velocity fixture did not build an object update");
-  event.update({ frameId: 1, object });
+  // The installed patch gives the instanced-attribute path a frame-sync event as well, so the
+  // object update is no longer the only EventNode. Three runs them all for a frame, and so does
+  // this: picking the first one silently skipped the write of the scheduled history.
+  const events = [...builder.nodes].filter((node) => node.constructor.name === "EventNode");
+  if (events.length === 0) throw new Error("velocity fixture did not build an object update");
+  for (const event of events) event.update({ frameId: 1, object });
 }
 
 function previousBuffer(
   builder: IInspectableVelocityBuilder,
   current: ArrayLike<number>,
 ): Float32Array {
-  const buffer = [...builder.nodes].find(
-    (node) =>
-      node.isBufferNode === true && node.value instanceof Float32Array && node.value !== current,
-  )?.value;
+  // The installed patch puts the previous matrices on the instanced-attribute path, so a history
+  // column is a buffer node over an interleaved buffer rather than a node over a raw array. Either
+  // way the history is the one whose array is not the live buffer this node graph reads now.
+  const buffer = [...builder.nodes]
+    .filter((node) => node.isBufferNode === true)
+    .map((node) => node.value)
+    .map((value) =>
+      value instanceof Float32Array ? value : (value as { array?: unknown } | undefined)?.array,
+    )
+    .find((array) => array instanceof Float32Array && array !== current);
   if (!(buffer instanceof Float32Array)) throw new Error("velocity fixture did not build history");
   return buffer;
 }
