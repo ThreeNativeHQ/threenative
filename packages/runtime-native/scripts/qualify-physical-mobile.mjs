@@ -18,7 +18,8 @@ import {
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
-const defaultScenario = joinPath(workspaceRoot, "examples/native-smoke/playtests/physical-mobile-lifecycle.playtest.json");
+const defaultProject = joinPath(workspaceRoot, "examples/native-smoke");
+const defaultScenario = joinPath(defaultProject, "playtests/physical-mobile-lifecycle.playtest.json");
 const commitPattern = /^[0-9a-f]{7,64}$/iu;
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 const REQUIRED_PREREQUISITE_REPORT_CONTROLS = {
@@ -76,6 +77,12 @@ Required execution options:
   --ios-app PATH               signed/provisioned .app (iOS)
   --candidate-sha SHA          exact source SHA for the candidate
   --out PATH                   ignored raw output directory
+
+Declared consumer subject (defaults to examples/native-smoke):
+  --project PATH               game project root; its app.id is the identity qualified
+  --scenario PATH              playtest scenario inside that project
+  --application-id ID          override the project's app.id
+  --activity CLASS             Android launch activity (default: com.threenative.runtime.MystralActivity)
 
 Prerequisite options:
   --prerequisite NAME=PATH     repeat for prd053, prd054, prd046, and prd048
@@ -140,6 +147,10 @@ export function parseArgs(argv, cwd = process.cwd()) {
     app: null,
     candidateSha: null,
     out: resolvePath(".runtime/prd056/run", cwd),
+    project: defaultProject,
+    scenario: defaultScenario,
+    applicationId: null,
+    activity: null,
     durationMs: 30_000,
     cadenceMs: 1_000,
     prerequisiteReports: {},
@@ -182,6 +193,18 @@ export function parseArgs(argv, cwd = process.cwd()) {
       index += 1;
     } else if (arg === "--out") {
       options.out = resolvePath(requireValue(argv, index, arg), cwd);
+      index += 1;
+    } else if (arg === "--project") {
+      options.project = resolvePath(requireValue(argv, index, arg), cwd);
+      index += 1;
+    } else if (arg === "--scenario") {
+      options.scenario = resolvePath(requireValue(argv, index, arg), cwd);
+      index += 1;
+    } else if (arg === "--application-id") {
+      options.applicationId = requireValue(argv, index, arg);
+      index += 1;
+    } else if (arg === "--activity") {
+      options.activity = requireValue(argv, index, arg);
       index += 1;
     } else if (arg === "--duration-ms" || arg === "--duration") {
       options.durationMs = positiveInteger(requireValue(argv, index, arg), arg);
@@ -444,24 +467,95 @@ function readPrerequisiteReports(options, { candidateSha, platform, deviceIdenti
   return { valid: errors.length === 0, errors, records };
 }
 
+/**
+ * The application this qualification drives, and the activity it launches.
+ *
+ * A consumer's `app.id` in `threenative.config.ts` is what `package-android.mjs` writes into the
+ * gradle template, so the runtime's own `applicationId` only survives in a project that declares
+ * none. Both this orchestrator and the playtest CLI it invokes used to name a package instead of
+ * reading one — a package the consumer never installed, which renders a plausible scene at a
+ * plausible frame rate and answers a question nobody asked. Resolve the identity once, from the
+ * declared project, and use it for the launch, the telemetry, the runner and the device readback.
+ */
+const DEFAULT_ANDROID_APPLICATION_ID = "com.threenative.game";
+const ANDROID_LAUNCH_ACTIVITY_CLASS = "com.threenative.runtime.MystralActivity";
+
+export function declaredApplicationId(project) {
+  const config = joinPath(project, "threenative.config.ts");
+  if (!existsSync(config)) return null;
+  const match = /id\s*:\s*["'`]([^"'`]+)["'`]/u.exec(readFileSync(config, "utf8"));
+  return match === null || match[1].includes("__") ? null : match[1];
+}
+
+function readScenarioName(scenario) {
+  if (!existsSync(scenario)) return null;
+  try {
+    const name = JSON.parse(readFileSync(scenario, "utf8")).name;
+    return typeof name === "string" && name.length > 0 ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+export function subjectIdentity(options) {
+  const project = options.project ?? defaultProject;
+  const scenario = options.scenario ?? defaultScenario;
+  const configuredApplicationId = declaredApplicationId(project);
+  return {
+    project,
+    scenario,
+    configuredApplicationId,
+    scenarioName: readScenarioName(scenario),
+    applicationId: options.applicationId ?? configuredApplicationId ?? DEFAULT_ANDROID_APPLICATION_ID,
+    activity: options.activity ?? ANDROID_LAUNCH_ACTIVITY_CLASS,
+  };
+}
+
+/**
+ * What the declared subject must satisfy before a device is touched.
+ *
+ * The project and scenario checks are common: either platform drives a scenario out of the project
+ * it was handed, and a run that drove some other one answered a question nobody asked.
+ *
+ * The package-id checks are Android's, and only Android's. This orchestrator resolves an Android
+ * `applicationId` because that is what it launches, `pidof`s and reads `gfxinfo`/`meminfo` for. An
+ * iOS artifact carries a *bundle* identifier read from `codesign`, and the iOS lane launches through
+ * `--app` and never names a package at all, so holding a bundle id to an Android package rule would
+ * block a run on a field it does not read. iOS identity stays where it was: the signed artifact's own.
+ */
+function subjectBlockers(options, subject, artifact) {
+  const blockers = [];
+  if (!existsSync(subject.project)) blockers.push(`declared project is missing at ${subject.project}`);
+  if (subject.scenarioName === null) blockers.push(`declared scenario is missing or names no scenario at ${subject.scenario}`);
+  else if (relative(subject.project, subject.scenario).startsWith("..")) blockers.push(`declared scenario ${subject.scenario} is outside the declared project ${subject.project}`);
+  if (options.platform !== "android") return blockers;
+  if (!/^[A-Za-z0-9_.-]+$/u.test(subject.applicationId)) blockers.push(`declared application id '${subject.applicationId}' is not a safe package name`);
+  if (options.applicationId !== null && options.applicationId !== undefined && subject.configuredApplicationId !== null && options.applicationId !== subject.configuredApplicationId) blockers.push(`--application-id ${options.applicationId} does not match the declared project's app.id ${subject.configuredApplicationId}`);
+  if (artifact !== undefined && artifact !== null && artifact.applicationId !== undefined && artifact.applicationId !== subject.applicationId) blockers.push(`supplied artifact applicationId ${artifact.applicationId} does not match the declared project ${subject.applicationId}`);
+  return blockers;
+}
+
 export function preflight(options, {
   cwd = workspaceRoot,
   source = undefined,
   artifactSha256 = undefined,
   artifactSourceSha = undefined,
+  artifact = undefined,
 } = {}) {
   const blockers = [];
   const platform = options.platform;
   const identity = classifyPhysicalDevice(platform, options.device);
+  const subject = subjectIdentity(options);
   if (platform === null) blockers.push("--platform android|ios is required");
   if (identity.kind === "missing") blockers.push(`${platform ?? "physical"} device identifier is required`);
   if (identity.kind === "emulator" || identity.kind === "simulator") blockers.push(`${identity.code}: ${options.device} is not a physical device`);
   if (options.app === null) blockers.push(`${appFlag(platform ?? "android")} signed artifact path is required`);
   if (options.candidateSha === null) blockers.push("--candidate-sha is required");
   blockers.push(...missingPrerequisiteBlockers(options));
+  blockers.push(...subjectBlockers(options, subject, artifact));
   if (!options.out.includes(".runtime/prd056/") && !options.out.endsWith(".runtime/prd056")) blockers.push("raw output must be ignored under .runtime/prd056/");
-  if (identity.kind === "emulator" || identity.kind === "simulator") return { status: "blocked", code: identity.code, blockers, source: null };
-  if (blockers.length > 0 && options.candidateSha === null) return { status: "blocked", code: "TN_QUALIFY_INPUT_REQUIRED", blockers, source: null };
+  if (identity.kind === "emulator" || identity.kind === "simulator") return { status: "blocked", code: identity.code, blockers, source: null, subject };
+  if (blockers.length > 0 && options.candidateSha === null) return { status: "blocked", code: "TN_QUALIFY_INPUT_REQUIRED", blockers, source: null, subject };
   const resolvedSource = source ?? sourceIdentity(cwd);
   if (resolvedSource.headSha !== options.candidateSha) blockers.push(`candidate SHA mismatch: requested ${options.candidateSha}, checkout HEAD ${resolvedSource.headSha}`);
   if (resolvedSource.worktree !== "clean") blockers.push("source worktree is dirty; physical evidence requires committed HEAD");
@@ -481,6 +575,7 @@ export function preflight(options, {
     code: blockers.length === 0 ? "TN_QUALIFY_PREFLIGHT_PASS" : "TN_QUALIFY_PREFLIGHT_BLOCKED",
     blockers,
     source: resolvedSource,
+    subject,
     artifactSha256,
     prerequisites: prerequisiteResult.records,
   };
@@ -692,22 +787,26 @@ function installAndroid(adb, serial, app, options = {}) {
 }
 
 /**
- * The application this qualification drives, and the activity it launches.
+ * The APK that is on the device, not the one handed to `adb install`.
  *
- * Both carried the pre-rename Mystral identity when this orchestrator was written. The Android
- * identity was renamed while the orchestrator sat on an unlanded branch, so it would have launched a
- * package that no longer exists and then read `gfxinfo` and `meminfo` for it — collecting empty
- * telemetry from a process that never started. `android/app/build.gradle.kts` and
- * `AndroidManifest.xml` are the source of truth; keep this in step with them.
+ * A phone that has been used for this work carries several ThreeNative installs, and a stale
+ * install of the same id is worse: it launches, renders and reports telemetry without ever being
+ * the artifact whose signature and provenance were just verified.
  */
-const ANDROID_APPLICATION_ID = "com.threenative.game";
-const ANDROID_LAUNCH_ACTIVITY = `${ANDROID_APPLICATION_ID}/com.threenative.runtime.MystralActivity`;
+function assertInstalledAndroidArtifact(adb, serial, applicationId, artifactSha256, run) {
+  const located = run(adb, ["-s", serial, "shell", "pm", "path", applicationId]);
+  const installed = located.status === 0 ? /^package:(\/\S+\.apk)$/u.exec(located.stdout.trim()) : null;
+  if (installed === null) throw new QualificationError(`No installed APK for '${applicationId}' on ${serial}.`, { code: "TN_QUALIFY_ANDROID_INSTALL_BLOCKED" });
+  const digest = run(adb, ["-s", serial, "shell", "sha256sum", installed[1]]).stdout.trim().split(/\s+/u)[0];
+  if (digest !== artifactSha256) throw new QualificationError(`Installed '${applicationId}' is ${digest}, not the supplied artifact ${artifactSha256}.`, { code: "TN_QUALIFY_ARTIFACT_PROVENANCE_MISMATCH" });
+  return installed[1];
+}
 
-function launchAndroid(adb, serial, options = {}) {
+function launchAndroid(adb, serial, subject, options = {}) {
   const run = options.command ?? command;
-  const result = run(adb, ["-s", serial, "shell", "am", "start", "-W", "-n", ANDROID_LAUNCH_ACTIVITY], { timeout: 30_000 });
+  const result = run(adb, ["-s", serial, "shell", "am", "start", "-W", "-n", `${subject.applicationId}/${subject.activity}`], { timeout: 30_000 });
   if (result.status !== 0) throw new QualificationError(`Android launch failed: ${result.stderr || result.stdout}`, { code: "TN_QUALIFY_ANDROID_LAUNCH_FAILED", status: "fail" });
-  const pid = run(adb, ["-s", serial, "shell", "pidof", ANDROID_APPLICATION_ID]);
+  const pid = run(adb, ["-s", serial, "shell", "pidof", subject.applicationId]);
   const value = Number(pid.stdout.trim().split(/\s+/u)[0]);
   if (!Number.isInteger(value) || value <= 0) throw new QualificationError("Android launch did not report a live process id.", { code: "TN_QUALIFY_ANDROID_LAUNCH_FAILED", status: "fail" });
   return value;
@@ -753,16 +852,17 @@ export function parsePlaytestReport(stdout) {
   return reports.at(-1) ?? null;
 }
 
-function runLifecycleScenario(options, { target, device, adb, app }, dependencies = {}) {
+function runLifecycleScenario(options, { target, device, adb, app, subject }, dependencies = {}) {
   const cli = joinPath(workspaceRoot, "packages/playtest/dist/runner/cli.js");
   if (!existsSync(cli)) throw new QualificationError("Playtest CLI is missing; run pnpm --filter @threenative/playtest build.", { code: "TN_QUALIFY_TOOL_REQUIRED" });
-  const args = [cli, defaultScenario, "--target", target, "--device", device, "--project", joinPath(workspaceRoot, "examples/native-smoke"), "--artifacts", joinPath(options.out, "playtest"), "--timeout", String(Math.max(options.durationMs, 60_000))];
-  if (target === "android") args.push("--adb", adb);
+  const args = [cli, subject.scenario, "--target", target, "--device", device, "--project", subject.project, "--artifacts", joinPath(options.out, "playtest"), "--timeout", String(Math.max(options.durationMs, 60_000))];
+  if (target === "android") args.push("--adb", adb, "--package", subject.applicationId, "--activity", subject.activity);
   else args.push("--ios-transport", "device", "--app", app);
   const startedAt = new Date((dependencies.now ?? Date.now)()).toISOString();
   const result = (dependencies.command ?? command)(process.execPath, args, { cwd: workspaceRoot, timeout: Math.max(options.durationMs + 30_000, 90_000) });
   const report = parsePlaytestReport(result.stdout);
   if (result.status !== 0 || report?.pass !== true) throw new QualificationError(`Physical lifecycle scenario failed: ${report?.diagnostics?.map((item) => item.message).join("; ") || result.stderr || "assertion failure"}`, { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  if (report.scenario !== subject.scenarioName) throw new QualificationError(`The device ran scenario '${report.scenario}', not the declared '${subject.scenarioName}' from ${subject.scenario}.`, { code: "TN_QUALIFY_SCENARIO_MISMATCH", status: "fail" });
   const reportPath = joinPath(options.out, "playtest/report.json");
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -819,6 +919,7 @@ function parseGfxinfoFrameIntervals(stdout) {
 function collectSampledAndroidValue({
   adb,
   serial,
+  applicationId,
   durationMs,
   cadenceMs,
   commandRunner,
@@ -836,12 +937,12 @@ function collectSampledAndroidValue({
     const delay = target - now();
     if (delay > 0) sleep(delay);
     const at = new Date(now()).toISOString();
-    const frame = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "gfxinfo", ANDROID_APPLICATION_ID, "framestats"]);
+    const frame = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "gfxinfo", applicationId, "framestats"]);
     const frameIntervals = frame.status === 0 ? parseGfxinfoFrameIntervals(frame.stdout) : [];
     if (frameIntervals.length === 0) errors.frame.push(frame.stderr || `no frame intervals at ${at}`);
     else for (const value of frameIntervals) frameSamples.push({ at, value });
 
-    const memory = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "meminfo", ANDROID_APPLICATION_ID]);
+    const memory = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "meminfo", applicationId]);
     const memoryKb = /TOTAL\s+(\d+)/iu.exec(memory.stdout)?.[1];
     if (memory.status !== 0 || memoryKb === undefined) errors.memory.push(memory.stderr || `TOTAL row unavailable at ${at}`);
     else memorySamples.push({ at, value: Number(memoryKb) * 1024 });
@@ -857,17 +958,18 @@ function collectSampledAndroidValue({
     else batterySamples.push({ at, value: Number(batteryPercent) });
   }
   return {
-    frame: errors.frame.length === 0 ? availableCollector(`adb shell dumpsys gfxinfo ${ANDROID_APPLICATION_ID} framestats`, "ms", frameSamples) : unavailableCollector(`adb shell dumpsys gfxinfo ${ANDROID_APPLICATION_ID} framestats`, "ms", errors.frame.join("; ")),
-    memory: errors.memory.length === 0 ? availableCollector(`adb shell dumpsys meminfo ${ANDROID_APPLICATION_ID}`, "bytes", memorySamples) : unavailableCollector(`adb shell dumpsys meminfo ${ANDROID_APPLICATION_ID}`, "bytes", errors.memory.join("; ")),
+    frame: errors.frame.length === 0 ? availableCollector(`adb shell dumpsys gfxinfo ${applicationId} framestats`, "ms", frameSamples) : unavailableCollector(`adb shell dumpsys gfxinfo ${applicationId} framestats`, "ms", errors.frame.join("; ")),
+    memory: errors.memory.length === 0 ? availableCollector(`adb shell dumpsys meminfo ${applicationId}`, "bytes", memorySamples) : unavailableCollector(`adb shell dumpsys meminfo ${applicationId}`, "bytes", errors.memory.join("; ")),
     thermal: errors.thermal.length === 0 ? availableCollector("adb shell dumpsys thermalservice", "state", thermalSamples) : unavailableCollector("adb shell dumpsys thermalservice", "state", errors.thermal.join("; ")),
     battery: errors.battery.length === 0 ? availableCollector("adb shell dumpsys battery", "percent", batterySamples) : unavailableCollector("adb shell dumpsys battery", "percent", errors.battery.join("; ")),
   };
 }
 
-export function collectAndroidTelemetry(adb, serial, durationMs, cadenceMs, dependencies = {}) {
+export function collectAndroidTelemetry(adb, serial, durationMs, cadenceMs, dependencies = {}, applicationId = DEFAULT_ANDROID_APPLICATION_ID) {
   const telemetry = collectSampledAndroidValue({
     adb,
     serial,
+    applicationId,
     durationMs,
     cadenceMs,
     commandRunner: dependencies.command ?? command,
@@ -1122,13 +1224,15 @@ function runAndroidQualification(options, preflightResult, artifact, dependencie
   if (adb === null) throw new QualificationError("adb is unavailable; physical Android qualification is blocked.", { code: "TN_QUALIFY_TOOL_REQUIRED" });
   const run = dependencies.command ?? command;
   const now = dependencies.now ?? Date.now;
+  const subject = preflightResult.subject;
   const device = inspectAndroidDevice(adb, options.device, { command: run });
   const installStartedAt = new Date(now()).toISOString();
   installAndroid(adb, options.device, options.app, { command: run });
+  assertInstalledAndroidArtifact(adb, options.device, subject.applicationId, artifact.artifactSha256, run);
   const launchStartedAt = new Date(now()).toISOString();
-  const pid = launchAndroid(adb, options.device, { command: run });
-  const lifecycleRun = runLifecycleScenario(options, { target: "android", device: options.device, adb, app: options.app }, { command: run, now });
-  const telemetry = collectAndroidTelemetry(adb, options.device, options.durationMs, options.cadenceMs, { command: run, now, sleep: dependencies.sleep });
+  const pid = launchAndroid(adb, options.device, subject, { command: run });
+  const lifecycleRun = runLifecycleScenario(options, { target: "android", device: options.device, adb, app: options.app, subject }, { command: run, now });
+  const telemetry = collectAndroidTelemetry(adb, options.device, options.durationMs, options.cadenceMs, { command: run, now, sleep: dependencies.sleep }, subject.applicationId);
   const telemetryErrors = telemetryFailure(telemetry);
   if (telemetryErrors.length > 0) throw new QualificationError(`Android telemetry is incomplete: ${telemetryErrors.join("; ")}`, { code: "TN_QUALIFY_TELEMETRY_INCOMPLETE", details: telemetryErrors });
   const artifactObservationPath = writeArtifactObservation(options, artifact);
@@ -1156,7 +1260,7 @@ function runAndroidQualification(options, preflightResult, artifact, dependencie
   });
   const reportPath = joinPath(options.out, "physical-device-evidence.json");
   writeFileSync(reportPath, `${JSON.stringify(evidence, null, 2)}\n`);
-  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath });
+  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath, subject });
 }
 
 function verifyIosArtifact(path, candidateSha, options = {}) {
@@ -1215,7 +1319,7 @@ function runIosQualification(options, preflightResult, artifact, dependencies = 
   const now = dependencies.now ?? Date.now;
   const device = inspectIosDevice(options.device, { command: run, findExecutable: locate });
   const installStartedAt = new Date(now()).toISOString();
-  const lifecycleRun = runLifecycleScenario(options, { target: "ios", device: options.device, app: options.app }, { command: run, now });
+  const lifecycleRun = runLifecycleScenario(options, { target: "ios", device: options.device, app: options.app, subject: preflightResult.subject }, { command: run, now });
   const collectedTelemetry = collectIosTelemetry({ path: options.iosTelemetry, durationMs: options.durationMs, cadenceMs: options.cadenceMs });
   const telemetryErrors = telemetryFailure(collectedTelemetry);
   if (telemetryErrors.length > 0) throw new QualificationError(`iOS signed-device telemetry is incomplete: ${telemetryErrors.join("; ")}`, { code: "TN_QUALIFY_TELEMETRY_INCOMPLETE", details: telemetryErrors });
@@ -1248,7 +1352,7 @@ function runIosQualification(options, preflightResult, artifact, dependencies = 
   });
   const reportPath = joinPath(options.out, "physical-device-evidence.json");
   writeFileSync(reportPath, `${JSON.stringify(evidence, null, 2)}\n`);
-  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath });
+  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath, subject: preflightResult.subject });
 }
 
 export function qualifyPhysicalMobile(options, dependencies = {}) {
@@ -1274,6 +1378,7 @@ export function qualifyPhysicalMobile(options, dependencies = {}) {
     source: dependencies.source,
     artifactSha256: artifact.artifactSha256,
     artifactSourceSha: artifact.sourceSha,
+    artifact,
   });
   if (preflightResult.status !== "pass") return resultFor("blocked", preflightResult.code, { blockers: preflightResult.blockers, source: preflightResult.source });
   try {
@@ -1312,7 +1417,7 @@ export function main(argv = process.argv.slice(2)) {
       return result.status === "pass" ? 0 : result.status === "fail" ? 1 : 2;
     }
     const result = qualifyPhysicalMobile(options);
-    if (result.status === "blocked" || result.status === "fail") writeResult(options.out, result);
+    writeResult(options.out, result);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result.status === "pass" ? 0 : result.status === "fail" ? 1 : 2;
   } catch (error) {

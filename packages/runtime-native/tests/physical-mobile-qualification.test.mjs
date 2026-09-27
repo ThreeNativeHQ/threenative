@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 import {
   REQUIRED_GATE_IDS,
+  REQUIRED_PREREQUISITES,
   createEvidenceFixture,
   hashIdentifier,
   sha256File,
@@ -25,6 +26,7 @@ import {
   qualifyPhysicalMobile,
   readArtifactProvenance,
   sampleOffsets,
+  subjectIdentity,
   validatePrerequisiteReport,
   verifyAndroidArtifact,
 } from "../scripts/qualify-physical-mobile.mjs";
@@ -144,6 +146,147 @@ function productionGateEvidence() {
     redObservation: `RED observed: ${gateId} rejected malformed input`,
     exitCode: 1,
   }));
+}
+
+const CONSUMER_APP_ID = "com.threenative.starternative";
+const CONSUMER_SCENARIO_NAME = "consumer-lifecycle";
+
+/**
+ * A declared consumer subject: a project with its own `app.id`, its own scenario, and the signed
+ * artifact a `pnpm build:android` would leave under `dist-native/`. The application id is the whole
+ * point of declaring a project — a phone holds several ThreeNative installs, and running the wrong
+ * package renders a plausible scene that answers a question nobody asked.
+ */
+function consumerSubject(root, { applicationId = CONSUMER_APP_ID, scenarioName = CONSUMER_SCENARIO_NAME } = {}) {
+  const project = join(root, "game");
+  mkdirSync(join(project, "playtests"), { recursive: true });
+  mkdirSync(join(project, "dist-native"), { recursive: true });
+  writeFileSync(join(project, "threenative.config.ts"), `export default { app: { id: '${applicationId}' } };\n`);
+  const scenario = join(project, `playtests/${scenarioName}.playtest.json`);
+  writeFileSync(scenario, `${JSON.stringify({ schemaVersion: 1, name: scenarioName, target: "android", subject: "starter", steps: [] }, null, 2)}\n`);
+  const app = join(project, "dist-native/app-release.apk");
+  writeFileSync(app, "signed consumer artifact bytes");
+  const artifactSha256 = sha256File(app);
+  writeFileSync(`${app}.provenance.json`, `${JSON.stringify({
+    schemaVersion: 1,
+    platform: "android",
+    sourceSha: LANE_CANDIDATE_SHA,
+    artifactSha256,
+    packageVersion: "0.3.3",
+    signing: { signerId: "CN=Observed signer", certificateFingerprint: "d".repeat(64), profileFingerprint: null, expiresAt: "2027-08-09T00:00:00.000Z", applicationId, debuggable: false },
+  }, null, 2)}\n`);
+  return { project, scenario, scenarioName, applicationId, app, artifactSha256 };
+}
+
+/** One physical Pixel 8 on adb: the properties, installs and telemetry a real run reads back. */
+function adbReply(properties, { installedSha256, applicationId }, args) {
+  const line = args.join(" ");
+  if (args.includes("getprop")) return { status: 0, stdout: `${properties[args.at(-1)] ?? ""}\n`, stderr: "" };
+  if (line.includes("SurfaceFlinger")) return { status: 0, stdout: "GLES: Adreno (TM) 740\n", stderr: "" };
+  if (line.includes("wm ")) return { status: 0, stdout: "Physical size: 1080x2400\n", stderr: "" };
+  if (line.includes("settings put")) return { status: 0, stdout: "", stderr: "" };
+  if (line.includes("settings get")) return { status: 0, stdout: "0\n", stderr: "" };
+  if (line.includes("install")) return { status: 0, stdout: "Success\n", stderr: "" };
+  if (line.includes("pm path")) return { status: 0, stdout: `package:/data/app/${applicationId}/base.apk\n`, stderr: "" };
+  if (line.includes("sha256sum")) return { status: 0, stdout: `${installedSha256}  ${args.at(-1)}\n`, stderr: "" };
+  if (line.includes("am start")) return { status: 0, stdout: "Status: ok\n", stderr: "" };
+  if (line.includes("pidof")) return { status: 0, stdout: "7123\n", stderr: "" };
+  if (line.includes("gfxinfo")) return { status: 0, stdout: "Flags,IntendedVsync,FrameCompleted\n0,1000000000,1012500000\n", stderr: "" };
+  if (line.includes("meminfo")) return { status: 0, stdout: "  TOTAL 2048\n", stderr: "" };
+  if (line.includes("thermalservice")) return { status: 0, stdout: "Status: nominal\n", stderr: "" };
+  if (line.includes("battery")) return { status: 0, stdout: "  level: 88\n", stderr: "" };
+  return { status: 0, stdout: "", stderr: "" };
+}
+
+const PIXEL_8_PROPERTIES = {
+  "ro.kernel.qemu": "0",
+  "ro.hardware": "husky",
+  "ro.product.cpu.abi": "arm64-v8a",
+  "ro.product.name": "husky",
+  "ro.product.manufacturer": "Google",
+  "ro.product.model": "Pixel 8",
+  "ro.build.version.release": "17",
+  "ro.build.id": "AP4A.250000.000",
+};
+
+/** The signing tools, the physical phone and the playtest CLI it drives. Nothing here is a device. */
+function physicalDeviceHost({ installedSha256, applicationId, out, report }) {
+  const calls = [];
+  let clock = Date.parse("2026-09-27T10:00:00.000Z");
+  const device = { installedSha256, applicationId };
+  const command = (executable, args) => {
+    calls.push({ executable, args });
+    if (executable === "apksigner") return { status: 0, stdout: `certificate SHA-256 digest: ${"d".repeat(64)}\n`, stderr: "" };
+    if (executable === "unzip") return { status: 0, stdout: "lib/arm64-v8a/libmystral-runtime.so\n", stderr: "" };
+    if (executable === "adb") return adbReply(PIXEL_8_PROPERTIES, device, args);
+    mkdirSync(join(out, "playtest"), { recursive: true });
+    writeFileSync(join(out, "playtest/after.png"), "captured consumer frame");
+    return { status: 0, stdout: `${JSON.stringify(report, null, 2)}\n`, stderr: "" };
+  };
+  return { command, calls, findExecutable: (name) => name, now: () => clock, sleep: (duration) => { clock += duration; } };
+}
+
+/** Drives one declared consumer qualification end to end against the stubbed physical phone. */
+function withConsumerRun(callback, {
+  subject = {},
+  provenanceApplicationId = null,
+  device = DEVICE_IDENTIFIER,
+  installedSha256 = null,
+  reportOverrides = {},
+  options = {},
+} = {}) {
+  const root = makeTempDirSync("prd366-consumer-");
+  const out = join(workspaceRoot, ".runtime/prd056/consumer-run");
+  try {
+    const declared = consumerSubject(root, subject);
+    const scenarioName = declared.scenarioName;
+    if (provenanceApplicationId !== null) {
+      const provenancePath = `${declared.app}.provenance.json`;
+      writeFileSync(provenancePath, JSON.stringify({
+        ...JSON.parse(readFileSync(provenancePath, "utf8")),
+        signing: { ...JSON.parse(readFileSync(provenancePath, "utf8")).signing, applicationId: provenanceApplicationId },
+      }));
+    }
+    const gateEvidence = join(root, "gate-evidence.json");
+    writeFileSync(gateEvidence, JSON.stringify({ gates: productionGateEvidence() }));
+    const report = {
+      pass: true,
+      scenario: scenarioName,
+      assertionResults: [{ id: "visibility.player", pass: true }],
+      diagnostics: [],
+      observations: {
+        resources: { GameState: { before: { sessionNonce: "consumer-session" }, after: productionLifecycleState("consumer-session") } },
+        runtimeDiagnostics: { recentRuntimeErrors: [] },
+      },
+      ...reportOverrides,
+    };
+    const host = physicalDeviceHost({ installedSha256: installedSha256 ?? declared.artifactSha256, applicationId: declared.applicationId, out, report });
+    const artifactOverrides = Object.fromEntries(REQUIRED_PREREQUISITES.map((name) => [name, { artifactSha256: declared.artifactSha256 }]));
+    withPrerequisiteReports((paths) => callback({
+      declared,
+      host,
+      out,
+      gateEvidence,
+      result: qualifyPhysicalMobile({
+        platform: "android",
+        device,
+        app: declared.app,
+        candidateSha: LANE_CANDIDATE_SHA,
+        out,
+        project: declared.project,
+        scenario: declared.scenario,
+        gateEvidence,
+        control: null,
+        durationMs: 200,
+        cadenceMs: 100,
+        prerequisiteReports: paths,
+        ...options,
+      }, { ...host, source: sourceIdentity() }),
+    }), artifactOverrides);
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+    rmSync(out, { force: true, recursive: true });
+  }
 }
 
 test("a complete physicalDeviceEvidenceV1 fixture validates without coercing values", () => {
@@ -331,35 +474,89 @@ test("prerequisite reports fail closed for stale SHA, wrong target/device, wrong
 });
 
 test("preflight consumes the complete exact-candidate prerequisite set", () => {
-  withPrerequisiteReports((paths, directory) => {
-    const app = join(directory, "candidate.apk");
-    writeFileSync(app, "candidate bytes");
+  const root = makeTempDirSync("prd366-preflight-");
+  try {
+    const declared = consumerSubject(root);
     const options = {
       platform: "android",
       device: DEVICE_IDENTIFIER,
-      app,
+      app: declared.app,
       candidateSha: LANE_CANDIDATE_SHA,
       out: join(workspaceRoot, ".runtime/prd056/preflight"),
-      prerequisiteReports: paths,
+      project: declared.project,
+      scenario: declared.scenario,
     };
-    const valid = preflight(options, { source: sourceIdentity(), artifactSha256: ARTIFACT_SHA, artifactSourceSha: LANE_CANDIDATE_SHA });
-    assert.equal(valid.status, "pass");
-    assert.deepEqual(Object.keys(valid.prerequisites).sort(), ["prd046", "prd048", "prd053", "prd054"]);
-  });
-  withPrerequisiteReports((paths, directory) => {
-    const app = join(directory, "candidate.apk");
-    writeFileSync(app, "candidate bytes");
-    const result = preflight({
-      platform: "android",
+    const artifactOverrides = Object.fromEntries(REQUIRED_PREREQUISITES.map((name) => [name, { artifactSha256: declared.artifactSha256 }]));
+    withPrerequisiteReports((paths) => {
+      const valid = preflight({ ...options, prerequisiteReports: paths }, {
+        source: sourceIdentity(),
+        artifactSha256: declared.artifactSha256,
+        artifactSourceSha: LANE_CANDIDATE_SHA,
+        artifact: { applicationId: declared.applicationId },
+      });
+      assert.equal(valid.status, "pass", JSON.stringify(valid.blockers));
+      assert.deepEqual(Object.keys(valid.prerequisites).sort(), ["prd046", "prd048", "prd053", "prd054"]);
+      assert.equal(valid.subject.applicationId, declared.applicationId);
+      assert.equal(valid.subject.scenarioName, declared.scenarioName);
+    }, artifactOverrides);
+    withPrerequisiteReports((paths) => {
+      const result = preflight({ ...options, prerequisiteReports: paths }, { source: sourceIdentity(), artifactSha256: declared.artifactSha256, artifactSourceSha: LANE_CANDIDATE_SHA });
+      assert.equal(result.status, "blocked");
+      assert.ok(result.blockers.some((blocker) => blocker.includes("prd054.candidateSha")));
+    }, { prd054: { candidateSha: "e38439c" } });
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test("an iOS preflight keeps project and scenario validation and never judges the Android package id", () => {
+  const root = makeTempDirSync("prd366-ios-preflight-");
+  try {
+    const declared = consumerSubject(root);
+    const options = {
+      platform: "ios",
       device: DEVICE_IDENTIFIER,
-      app,
+      app: declared.app,
       candidateSha: LANE_CANDIDATE_SHA,
-      out: join(workspaceRoot, ".runtime/prd056/preflight"),
-      prerequisiteReports: paths,
-    }, { source: sourceIdentity(), artifactSha256: ARTIFACT_SHA, artifactSourceSha: LANE_CANDIDATE_SHA });
-    assert.equal(result.status, "blocked");
-    assert.ok(result.blockers.some((blocker) => blocker.includes("prd054.candidateSha")));
-  }, { prd054: { candidateSha: "e38439c" } });
+      out: join(workspaceRoot, ".runtime/prd056/ios-preflight"),
+      project: declared.project,
+      scenario: declared.scenario,
+    };
+    const artifactOverrides = Object.fromEntries(REQUIRED_PREREQUISITES.map((name) => [name, { artifactSha256: declared.artifactSha256, target: "ios" }]));
+    // `verifyIosArtifact` reports a codesign bundle id, which `app.id` is not obliged to equal.
+    withPrerequisiteReports((paths) => {
+      const bundle = preflight({ ...options, prerequisiteReports: paths }, {
+        source: sourceIdentity(),
+        artifactSha256: declared.artifactSha256,
+        artifactSourceSha: LANE_CANDIDATE_SHA,
+        artifact: { applicationId: "dev.threenative.runtime" },
+      });
+      assert.equal(bundle.status, "pass", JSON.stringify(bundle.blockers));
+      const bare = consumerSubject(root, { applicationId: "placeholder" });
+      rmSync(join(bare.project, "threenative.config.ts"));
+      const noAppId = preflight({ ...options, project: bare.project, scenario: bare.scenario, prerequisiteReports: paths }, {
+        source: sourceIdentity(),
+        artifactSha256: declared.artifactSha256,
+        artifactSourceSha: LANE_CANDIDATE_SHA,
+        artifact: { applicationId: "dev.threenative.runtime" },
+      });
+      assert.equal(noAppId.status, "pass", JSON.stringify(noAppId.blockers));
+      const absent = preflight({ ...options, prerequisiteReports: paths, scenario: join(declared.project, "playtests/absent.playtest.json") }, { source: sourceIdentity() });
+      assert.equal(absent.status, "blocked");
+      assert.ok(absent.blockers.some((blocker) => blocker.includes("absent.playtest.json")));
+      const outside = makeTempDirSync("prd366-ios-elsewhere-");
+      try {
+        writeFileSync(join(outside, "foreign.playtest.json"), JSON.stringify({ schemaVersion: 1, name: "foreign", steps: [] }));
+        const escaped = preflight({ ...options, prerequisiteReports: paths, scenario: join(outside, "foreign.playtest.json") }, { source: sourceIdentity() });
+        assert.equal(escaped.status, "blocked");
+        assert.ok(escaped.blockers.some((blocker) => blocker.includes("outside the declared project")));
+      } finally {
+        rmSync(outside, { force: true, recursive: true });
+      }
+    }, artifactOverrides);
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
 });
 
 test("artifact provenance is derived from the supplied artifact bytes and rejects a wrong artifact", () => {
@@ -590,6 +787,127 @@ test("findExecutable falls back to the Android SDK when PATH has nothing", () =>
   } finally {
     rmSync(root, { force: true, recursive: true });
   }
+});
+
+test("the native-smoke subject stays the default and its absent lifecycle scenario fails closed by name", () => {
+  const parsed = parseArgs([]);
+  assert.ok(parsed.project.endsWith("examples/native-smoke"));
+  assert.ok(parsed.scenario.startsWith(parsed.project));
+  assert.equal(parsed.applicationId, null);
+  const result = preflight(parsed, { source: sourceIdentity() });
+  assert.equal(result.status, "blocked");
+  assert.ok(result.blockers.some((blocker) => blocker.includes("physical-mobile-lifecycle.playtest.json")));
+});
+
+test("the declared subject resolves one application id, project and scenario for both platforms", () => {
+  const root = makeTempDirSync("prd366-subject-");
+  try {
+    const declared = consumerSubject(root);
+    const identity = subjectIdentity({ project: declared.project, scenario: declared.scenario, applicationId: null, activity: null });
+    assert.equal(identity.applicationId, CONSUMER_APP_ID);
+    assert.equal(identity.scenarioName, CONSUMER_SCENARIO_NAME);
+    assert.equal(identity.activity, "com.threenative.runtime.MystralActivity");
+    assert.equal(subjectIdentity({ project: declared.project, scenario: declared.scenario, applicationId: "com.example.override", activity: null }).applicationId, "com.example.override");
+    const noConfig = join(root, "no-config");
+    mkdirSync(noConfig, { recursive: true });
+    assert.equal(subjectIdentity({ project: noConfig, scenario: declared.scenario, applicationId: null, activity: null }).applicationId, "com.threenative.game");
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test("a declared consumer project qualifies on the device that actually holds its artifact", () => {
+  withConsumerRun(({ declared, host, result }) => {
+    assert.equal(result.status, "pass", JSON.stringify(result));
+    assert.equal(result.code, "TN_QUALIFY_PHYSICAL_PASS");
+    assert.equal(result.subject.applicationId, CONSUMER_APP_ID);
+    assert.equal(result.subject.scenarioName, CONSUMER_SCENARIO_NAME);
+    const evidence = JSON.parse(readFileSync(result.report, "utf8"));
+    assert.equal(evidence.signing.applicationId, CONSUMER_APP_ID);
+    assert.equal(evidence.source.artifactSha256, declared.artifactSha256);
+    assert.equal(evidence.execution.assertionCount, 1);
+    const scenarioCall = host.calls.find((call) => call.executable === process.execPath);
+    const args = scenarioCall.args;
+    assert.equal(args[1], declared.scenario);
+    assert.equal(args[args.indexOf("--project") + 1], declared.project);
+    assert.equal(args[args.indexOf("--package") + 1], CONSUMER_APP_ID);
+    assert.equal(args[args.indexOf("--activity") + 1], "com.threenative.runtime.MystralActivity");
+    const launch = host.calls.find((call) => call.args.includes("am") && call.args.includes("start"));
+    assert.ok(launch.args.at(-1).startsWith(`${CONSUMER_APP_ID}/`), launch.args.at(-1));
+  });
+});
+
+test("should reject a consumer run whose device is an emulator, before anything is installed", () => {
+  withConsumerRun(({ host, result }) => {
+    assert.equal(result.status, "blocked");
+    assert.equal(result.code, "TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED");
+    assert.ok(!host.calls.some((call) => call.args.includes("install")));
+    assert.ok(!host.calls.some((call) => call.executable === process.execPath));
+  }, { device: "emulator-5554" });
+});
+
+test("should reject a stale installed artifact instead of launching what the device already had", () => {
+  withConsumerRun(({ host, result }) => {
+    assert.equal(result.status, "blocked");
+    assert.equal(result.code, "TN_QUALIFY_ARTIFACT_PROVENANCE_MISMATCH");
+    assert.ok(!host.calls.some((call) => call.args.includes("am") && call.args.includes("start")));
+  }, { installedSha256: "a".repeat(64) });
+});
+
+test("should reject a declared subject that does not match the installed artifact", () => {
+  withConsumerRun(({ result }) => {
+    assert.equal(result.status, "blocked");
+    assert.equal(result.code, "TN_QUALIFY_PREFLIGHT_BLOCKED");
+    assert.ok(result.blockers.some((blocker) => blocker.includes("com.threenative.starternative") && blocker.includes("com.example.other")));
+  }, { provenanceApplicationId: "com.example.other" });
+  withConsumerRun(({ result }) => {
+    assert.equal(result.status, "blocked");
+    assert.ok(result.blockers.some((blocker) => blocker.includes("app.id")));
+  }, { options: { applicationId: "com.example.declared" } });
+});
+
+test("should reject a scenario that is absent, outside its project, or not the one that ran", () => {
+  const root = makeTempDirSync("prd366-subject-");
+  try {
+    const declared = consumerSubject(root);
+    const missing = preflight({ platform: "android", device: DEVICE_IDENTIFIER, app: declared.app, candidateSha: LANE_CANDIDATE_SHA, out: join(workspaceRoot, ".runtime/prd056/subject"), project: declared.project, scenario: join(declared.project, "playtests/absent.playtest.json") }, { source: sourceIdentity() });
+    assert.equal(missing.status, "blocked");
+    assert.ok(missing.blockers.some((blocker) => blocker.includes("absent.playtest.json")));
+
+    const elsewhere = makeTempDirSync("prd366-elsewhere-");
+    try {
+      writeFileSync(join(elsewhere, "foreign.playtest.json"), JSON.stringify({ schemaVersion: 1, name: "foreign", steps: [] }));
+      const outside = preflight({ platform: "android", device: DEVICE_IDENTIFIER, app: declared.app, candidateSha: LANE_CANDIDATE_SHA, out: join(workspaceRoot, ".runtime/prd056/subject"), project: declared.project, scenario: join(elsewhere, "foreign.playtest.json") }, { source: sourceIdentity() });
+      assert.equal(outside.status, "blocked");
+      assert.ok(outside.blockers.some((blocker) => blocker.includes("outside the declared project")));
+    } finally {
+      rmSync(elsewhere, { force: true, recursive: true });
+    }
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+  withConsumerRun(({ result }) => {
+    assert.equal(result.status, "fail");
+    assert.equal(result.code, "TN_QUALIFY_SCENARIO_MISMATCH");
+  }, { reportOverrides: { scenario: "some-other-scenario" } });
+});
+
+test("should reject a consumer run without lifecycle or persisted-state evidence", () => {
+  withConsumerRun(({ result }) => {
+    assert.equal(result.status, "fail");
+    assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_CONTINUITY");
+  }, {
+    reportOverrides: {
+      observations: {
+        resources: { GameState: { before: { sessionNonce: "consumer-session" }, after: { ...productionLifecycleState("consumer-session"), stateContinuity: false } } },
+        runtimeDiagnostics: { recentRuntimeErrors: [] },
+      },
+    },
+  });
+  withConsumerRun(({ result }) => {
+    assert.equal(result.status, "fail");
+    assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_CONTINUITY");
+  }, { reportOverrides: { assertionResults: [] } });
 });
 
 test("PATH still wins over the SDK, and an explicit override wins over both", () => {
