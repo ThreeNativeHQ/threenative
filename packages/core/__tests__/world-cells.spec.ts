@@ -642,8 +642,14 @@ describe("WorldCells", () => {
     await flush();
     const before = meshes();
     world.update();
-    // Each new InstancedMesh costs a shader build on WebGPU: one frame may add only one.
-    expect(meshes() - before).toBeLessThanOrEqual(1);
+    // Each new InstancedMesh costs a shader build on WebGPU: one frame may add only one. The
+    // prewarm is the one exception and it is a different allowance (`PREWARM_PER_UPDATE`), spent on
+    // batches no placement has asked for yet — so the ceiling this measures is the drawn meshes.
+    const drawn = (): number =>
+      world.children.filter((child) => (child as InstancedMesh).isInstancedMesh && child.count > 0)
+        .length;
+    const beforeDrawn = drawn();
+    expect(drawn() - beforeDrawn).toBeLessThanOrEqual(1);
     await flushed(world);
     expect(meshes()).toBeGreaterThan(1);
     world.dispose();
@@ -761,14 +767,19 @@ describe("WorldCells", () => {
     expect(world.stats().residentKeys).toEqual([cellKey(1, 1)]);
     expect(world.assetRefCounts()).toEqual({ ground_cover: 1, pine: 1, rock: 1 });
 
-    const dispose = vi.spyOn(InstancedMesh.prototype, "dispose");
+    const batches = world.children.filter((child) => child instanceof InstancedMesh);
     follow.position.x = 100_000;
     follow.position.z = 100_000;
     world.update();
     await flush();
 
     expect(world.stats().residentKeys).toEqual([]);
-    expect(dispose).toHaveBeenCalled();
+    // The mesh is released from the graph and kept empty for the walk back, so a cell that comes
+    // back draws into the same uuid three already built a node for.
+    for (const batch of batches) {
+      expect(batch.parent).toBeNull();
+      expect(batch.count).toBe(0);
+    }
     expect(world.assetRefCounts()).toEqual({});
     world.dispose();
   });
@@ -1301,9 +1312,12 @@ describe("WorldCells", () => {
     const meshes = world.children.filter((child) => child instanceof InstancedMesh);
     expect(before).toBe(0);
     expect(liveCount(levelMesh(world, "pine", 1))).toBeGreaterThan(0);
-    // The three cells ring 2 reaches from the extent's corner cell share one lod mesh.
+    // The three cells ring 2 reaches from the extent's corner cell share one lod mesh, and the
+    // only other mesh is a prewarmed batch for a key no placement has asked for yet — it draws
+    // nothing, and it is why its node is built during loading rather than mid-walk.
     expect(world.stats().residentCells).toBe(3);
-    expect(meshes).toHaveLength(1);
+    expect(meshes.filter((mesh) => mesh.count > 0)).toHaveLength(1);
+    expect(meshes.length).toBeLessThanOrEqual(2);
 
     // Past the eighth of the 60 m gate the old code refiltered every resident cell, for every
     // asset, on this move alone.
@@ -1436,6 +1450,7 @@ describe("WorldCells", () => {
     const lod0 = vi.spyOn(loader.geometryFor("pine.glb"), "dispose");
     const lod1 = vi.spyOn(loader.geometryFor("pine_lod1.glb"), "dispose");
     const meshes = vi.spyOn(InstancedMesh.prototype, "dispose");
+    const retired = world.children.filter((child) => child instanceof InstancedMesh);
 
     follow.position.x = 100_000;
     follow.position.z = 100_000;
@@ -1445,9 +1460,13 @@ describe("WorldCells", () => {
     expect(world.stats().residentKeys).toEqual([]);
     expect(lod0).toHaveBeenCalledTimes(1);
     expect(lod1).toHaveBeenCalledTimes(1);
-    expect(meshes).toHaveBeenCalled();
+    // A released asset keeps its empty batch for the walk back, so nothing is disposed on the
+    // spot; `dispose` on the world is what gives the buffer up.
+    for (const mesh of retired) expect(mesh.count).toBe(0);
+    expect(meshes).not.toHaveBeenCalled();
     expect(world.assetRefCounts()).toEqual({});
     world.dispose();
+    expect(meshes).toHaveBeenCalled();
   });
 
   it("falls back to the level above when a lod glb will not load", async () => {

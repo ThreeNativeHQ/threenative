@@ -19,7 +19,16 @@ import {
   ShadowBaseNode,
   type UniformNode,
 } from "three/webgpu";
-import { DirectionalClipmap, ShadowInvalidationTracker } from "./virtual-shadow-pages.js";
+import {
+  type IBoundsLike,
+  type IClipWindow,
+  DirectionalClipmap,
+  projectBounds,
+  ShadowInvalidationTracker,
+} from "./virtual-shadow-pages.js";
+
+/** One clipmap axis' view of a world region, as the interval it covers in light space. */
+type ILightAxisRange = { low: number; high: number };
 
 /**
  * Options for {@link VirtualShadowNode}. Every value is a mechanism parameter; the light's own
@@ -42,8 +51,21 @@ export interface IVirtualShadowOptions {
   /**
    * Fraction of a level's extent inside which a fragment still selects that level, `(0, 1]`,
    * default 0.9 — the outer ring falls through to the next level so the edge is never sampled.
+   * `selectionGuard` minus `refreshStep`, since a window trails its centre by that much. One value
+   * for every level, or one per level finest first, the last entry standing in for the rest.
    */
-  readonly selectionGuard?: number;
+  readonly selectionGuard?: number | readonly number[];
+  /**
+   * Fraction of a level's extent its window may trail the followed centre by before it re-renders,
+   * `[0, selectionGuard)`, default 0.125 — `refreshStep: 0` keeps the old one-texel step. The step
+   * is rounded to a whole number of that level's texels, so a walking camera re-renders a level
+   * ~`1/refreshStep` times less often while the shadow texels stay on one fixed world grid. Costs
+   * that much of `selectionGuard`, which it is already reduced by, so a window never reaches past
+   * the trailing edge of a map rendered before the centre moved. One value for every level, or one
+   * per level finest first, the last entry standing in for the rest — the fine level is the one a
+   * walking camera re-renders most, so it is the one that wants the larger step.
+   */
+  readonly refreshStep?: number | readonly number[];
   /** How far behind the window centre each level camera sits, in world units. Default 200. */
   readonly lightDistance?: number;
   /** Depth range each level camera covers past its centre, in world units. Default 400. */
@@ -78,6 +100,18 @@ export const VIRTUAL_SHADOW_MARKER = "TN_VIRTUAL_SHADOW";
  * Keep it free of other uses; the main camera never needs it (tracked objects keep layer 0).
  */
 export const VIRTUAL_SHADOW_MOVER_LAYER = 29;
+/**
+ * The object layer a shadow-only caster is put on, so each level's own shadow camera renders it and
+ * the main camera never sees it. The level cameras have it enabled already; an object that exists
+ * only as a shadow caster calls `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)`.
+ */
+// The layer a shadow-only object is put on: a level's own shadow camera renders it, the main
+// camera never sees it. Three skips an object whose layers do not meet the camera's, and it
+// overwrites a shadow camera's mask with the main camera's whenever that mask is layer 0 and
+// nothing else — so enabling this bit on the level cameras is also what pins their mask, and a
+// caster that lives only on it is reachable from the cascade and from nothing else. 28 is below the
+// mover layer and off the main camera, which renders layer 0.
+export const VIRTUAL_SHADOW_CASTER_LAYER = 28;
 const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
@@ -105,6 +139,17 @@ interface ILevel {
   readonly extentUniform: UniformNode<"float", number>;
   minX: number;
   minY: number;
+  /**
+   * Where this level's *rendered* map sits, relative to the centre the fragment test measures
+   * from. A level whose re-render was deferred still holds an older window, and its selection has
+   * to be made against that window rather than the followed centre: the sampler reads through this
+   * level's own camera, so testing against anything else is what makes a fragment reach past a
+   * rendered map.
+   */
+  readonly offsetU: UniformNode<"float", number>;
+  readonly offsetV: UniformNode<"float", number>;
+  /** This level's own guarded extent fraction, for the same reason. */
+  readonly guardUniform: UniformNode<"float", number>;
 }
 
 type ShadowWithFilter = DirectionalLight["shadow"] & { filterNode?: unknown };
@@ -181,8 +226,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
     return "VirtualShadowNode";
   }
 
-  readonly options: Required<Omit<IVirtualShadowOptions, "marker">> & {
+  readonly options: Required<Omit<IVirtualShadowOptions, "marker" | "refreshStep" | "selectionGuard">> & {
     readonly markerEvery: number;
+    /** Per level, finest first; the last entry stands in for every level past it. */
+    readonly refreshStep: readonly number[];
+    /** The per-level `selectionGuard` each level's own window is drawn with. */
+    readonly selectionGuard: readonly number[];
   };
   readonly clipmap: DirectionalClipmap;
   /**
@@ -192,6 +241,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
   readonly tracker: ShadowInvalidationTracker;
   #levels: ILevel[] = [];
   #invalidateAll = false;
+  /** Regions handed to `invalidateRegion`, read and cleared by the next `updateBefore`. */
+  #regions: IBoundsLike[] = [];
+  /** The same regions, resolved onto the clipmap's axes; scratch, so a frame allocates nothing. */
+  #projectedRegions: { u: ILightAxisRange; v: ILightAxisRange }[] | undefined;
   #casters = new Map<string, Object3D>();
   #casterChildren = new Map<string, Set<Object3D>>();
   #moverLayerStates = new Map<Object3D, { originallyEnabled: boolean; references: number }>();
@@ -233,11 +286,50 @@ export class VirtualShadowNode extends ShadowBaseNode {
       }
     }
     // A page is a texel here: the clipmap's page snapping is exactly texel snapping.
+    // The window now trails its followed centre by up to `refreshStep` extents, so the selection
+    // guard gives exactly that much back: a window only reaches `1 - refreshStep` extents past the
+    // centre, and `selectionGuard - refreshStep <= 1 - refreshStep` always holds.
+    // Both are scalar-or-per-level, finest first, the last entry standing in for every level past
+    // it — one level re-rendering on a different cadence is the whole point.
+    const perLevel = (value: number | readonly number[], valid: (v: number) => boolean): number[] => {
+      const values = Array.isArray(value) ? [...(value as readonly number[])] : [value as number];
+      for (const entry of values) {
+        if (!valid(entry)) {
+          throw new RangeError(
+            `TN_VIRTUAL_SHADOW_INVALID: refreshStep must be in the range [0, 1), got ${String(entry)}.`,
+          );
+        }
+      }
+      // One value for every level, filled in: what the node keeps is one entry per level whatever
+      // the game handed it, so a caller reading `options` back sees the level it asked for.
+      return values.length === 1
+        ? Array.from({ length: clipExtents.length }, () => values[0] as number)
+        : values;
+    };
+    const steps = perLevel(
+      options.refreshStep ?? 0.125,
+      (v) => Number.isFinite(v) && v >= 0 && v < 1,
+    );
+    const guards = perLevel(
+      options.selectionGuard ?? 0.9,
+      (v) => Number.isFinite(v) && v > 0 && v <= 1,
+    );
+    for (let level = 0; level < steps.length; level += 1) {
+      if ((steps[level] as number) >= (guards[level] as number)) {
+        throw new RangeError(
+          `TN_VIRTUAL_SHADOW_INVALID: refreshStep must be in the range [0, ${String(guards[level])}), got ${String(steps[level])}.`,
+        );
+      }
+    }
+    const at = (values: readonly number[], level: number): number =>
+      values[Math.min(level, values.length - 1)] as number;
+    const guardedExtent = clipExtents.map((_, level) => at(guards, level) - at(steps, level));
     this.clipmap = new DirectionalClipmap({
       clipExtents,
       direction: { x: 0, y: 1, z: 0 },
       pagesPerAxis: mapSize,
-      selectionGuard: options.selectionGuard ?? 0.9,
+      refreshStep: steps,
+      selectionGuard: guardedExtent,
     });
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
@@ -248,7 +340,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       mapSize,
       moverMapSize,
       markerEvery: marker === false ? 0 : marker === true ? DEFAULT_MARKER_EVERY : marker,
-      selectionGuard: options.selectionGuard ?? 0.9,
+      refreshStep: steps,
+      selectionGuard: guardedExtent,
     };
     this.#stats = {
       cached: 0,
@@ -352,7 +445,27 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** Force every level to re-render on the next frame — a tree fell, a door opened. */
   invalidateAll(): void {
     this.#invalidateAll = true;
+    this.#regions.length = 0;
     this.tracker.invalidateAll();
+  }
+
+  /**
+   * Force only the levels whose current window covers `bounds`, on the next frame. A streamed world
+   * that hands its shadow casters over has a moving near set, and a blanket `invalidateAll()` on
+   * every refresh redrew all three levels for a change that lands in one corner of one of them. A
+   * level whose window does not cover the region draws the same thing either way, so skipping it is
+   * the same frame with fewer draws in it.
+   *
+   * `bounds` is `{ min: {x,y,z}, max: {x,y,z} }`, a plain object so a game can hand one over without
+   * importing three. Regions are consumed by the next `updateBefore`; one that arrives before the
+   * levels exist is dropped, because their first frame renders all of them anyway.
+   */
+  invalidateRegion(bounds: IBoundsLike): void {
+    if (this.#levels.length === 0) return;
+    this.#regions.push({
+      max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
+      min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+    });
   }
 
   #init(): void {
@@ -370,6 +483,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
       levelShadow.camera.near = 1;
       levelShadow.camera.far = this.options.lightDistance + this.options.depthRange;
       levelShadow.camera.updateProjectionMatrix();
+      // The caster-only layer, so a mesh that exists to be a shadow caster draws into this level's
+      // map and not into the main pass. It also fixes this camera's layer mask, which three would
+      // otherwise take from the main camera.
+      levelShadow.camera.layers.enable(VIRTUAL_SHADOW_CASTER_LAYER);
       // Cached: the stock node renders only when asked — and not before this node has placed
       // the level, which happens in `updateBefore`. A render requested here would run on the
       // first frame from an unplaced light, and three's per-frame guard would then keep that
@@ -393,6 +510,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         light,
         minX: Number.NaN,
         minY: Number.NaN,
+        offsetU: uniform(0),
+        offsetV: uniform(0),
+        guardUniform: uniform(
+          this.options.selectionGuard[index] ?? this.options.selectionGuard.at(-1) ?? 0,
+        ),
         moverShadow,
         // One placeholder light serves both maps: the stock node reads only its placement.
         // quality-allow: the stock shadow node reads only position, target and shadow off its light
@@ -408,7 +530,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (builder.renderer.shadowMap.enabled === false) return null;
     this.#init();
     const levels = this.#levels;
-    const guard = this.options.selectionGuard;
     const centerU = this.#centerU;
     const centerV = this.#centerV;
     const moversActive = this.#moversActive;
@@ -418,7 +539,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
       this.setupShadowPosition(builder);
       const u = positionWorld.dot(vec3(basisU as never)).sub(centerU as never);
       const v = positionWorld.dot(vec3(basisV as never)).sub(centerV as never);
-      const distance = max(abs(u), abs(v)).toVar("virtualShadowDistance");
       const coarsest = levels[levels.length - 1];
       if (coarsest === undefined) return vec4(1, 1, 1, 1);
       const moverResult = (level: ILevel) =>
@@ -430,14 +550,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
       for (let index = levels.length - 2; index >= 0; index -= 1) {
         const level = levels[index];
         if (level === undefined) continue;
-        If(
-          distance.lessThanEqual(
-            (level.extentUniform as never as ReturnType<typeof float>).mul(float(guard)),
-          ),
-          () => {
-            result.assign(min(vec4(level.node as never), moverResult(level)));
-          },
+        // This level's own window, so a level holding an older window still selects the map it
+        // actually has. `u`/`v` are measured from the followed centre; `offsetU`/`offsetV` carry the
+        // difference back to the rendered window's centre.
+        const distance = max(abs(u.add(level.offsetU)), abs(v.add(level.offsetV))).toVar(
+          `virtualShadowDistance${String(index)}`,
         );
+        If(distance.lessThanEqual(level.extentUniform.mul(level.guardUniform)), () => {
+          result.assign(min(vec4(level.node as never), moverResult(level)));
+        });
       }
       return result;
       // quality-allow: Three's Fn invocation loses the concrete node type.
@@ -500,27 +621,82 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const invalidatedKeys = this.tracker.consumeInvalidatedKeys();
     const invalidatedLevels = new Set<number>();
     for (const key of invalidatedKeys) invalidatedLevels.add(Number(key.split(":")[0]));
+    // The regions `invalidateRegion` was handed, resolved once onto the two axes every level's
+    // window is built on. The per-level test below is then four comparisons, not a projection per
+    // level per region per frame.
+    const projected = (this.#projectedRegions ??= []);
+    projected.length = 0;
+    for (const region of this.#regions) {
+      projected.push({
+        u: projectBounds(region, this.clipmap.basisU),
+        v: projectBounds(region, this.clipmap.basisV),
+      });
+    }
+    this.#regions.length = 0;
     const canRender = (frame as { renderer?: unknown }).renderer !== undefined;
 
     let moved = 0;
     let invalidated = 0;
     let rendered = 0;
     try {
+      const half = this.clipmap.pagesPerAxis / 2;
+      // The window each level's map was actually rendered with. A level that does not get this
+      // frame's window keeps this one, and `level.minX/minY` stays put, so it is still "moved" next
+      // frame and still due.
+      const centreOf = (window: IClipWindow): { cu: number; cv: number } => ({
+        cu: (window.minX + half) * window.pageWorldSize,
+        cv: (window.minY + half) * window.pageWorldSize,
+      });
       this.#levels.forEach((level, index) => {
         const window = windows[index];
         if (window === undefined) return;
         const windowMoved =
           directionChanged || window.minX !== level.minX || window.minY !== level.minY;
-        level.minX = window.minX;
-        level.minY = window.minY;
+        const { cu, cv } = centreOf(window);
+        // This level's own window against the regions handed to `invalidateRegion`. A window that
+        // does not reach a region draws the same shadow either way.
+        let regionDirty = false;
+        for (const region of projected) {
+          if (
+            region.u.low <= cu + level.extent &&
+            region.u.high >= cu - level.extent &&
+            region.v.low <= cv + level.extent &&
+            region.v.high >= cv - level.extent
+          ) {
+            regionDirty = true;
+            break;
+          }
+        }
+        if (windowMoved) moved += 1;
+        if (invalidateAll || invalidatedLevels.has(index) || regionDirty) invalidated += 1;
+        const due =
+          canRender &&
+          (windowMoved ||
+            invalidateAll ||
+            invalidatedLevels.has(index) ||
+            regionDirty ||
+            source.shadow.needsUpdate);
+        if (due) {
+          level.minX = window.minX;
+          level.minY = window.minY;
+          rendered += 1;
+        }
+        // The level camera sits on the window its map was rendered with, deferred or not. A level
+        // that has never rendered has no window to hold, so it takes this frame's.
+        const held =
+          due || Number.isNaN(level.minX)
+            ? window
+            : { minX: level.minX, minY: level.minY, pageWorldSize: window.pageWorldSize };
+        const { cu: hu, cv: hv } = centreOf(held as IClipWindow);
         // The window's centre in light space, snapped to whole texels, back in world space at the
         // camera's own depth along the light — that is what keeps the map stable under motion.
-        const half = this.clipmap.pagesPerAxis / 2;
         const centre = this.clipmap.unproject({
-          u: (window.minX + half) * window.pageWorldSize,
-          v: (window.minY + half) * window.pageWorldSize,
+          u: hu,
+          v: hv,
           w: this.clipmap.centerLight.w,
         });
+        level.offsetU.value = this.clipmap.centerLight.u - hu;
+        level.offsetV.value = this.clipmap.centerLight.v - hv;
         level.light.target.position.set(centre.x, centre.y, centre.z);
         level.light.position.set(
           centre.x + this.clipmap.basisW.x * this.options.lightDistance,
@@ -529,18 +705,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
         );
         level.light.updateMatrixWorld(true);
         level.light.target.updateMatrixWorld(true);
-        if (windowMoved) moved += 1;
-        if (invalidateAll || invalidatedLevels.has(index)) invalidated += 1;
-        if (
-          windowMoved ||
-          invalidateAll ||
-          invalidatedLevels.has(index) ||
-          source.shadow.needsUpdate
-        ) {
-          // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
+        // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
+        if (due) {
           // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
-          if (canRender) (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
-          rendered += 1;
+          (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
         }
       });
       source.shadow.needsUpdate = false;
@@ -580,6 +748,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   override dispose(): void {
+    this.#regions.length = 0;
     for (const level of this.#levels) {
       level.light.removeFromParent();
       level.light.target.removeFromParent();

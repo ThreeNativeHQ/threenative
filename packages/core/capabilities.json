@@ -3159,7 +3159,8 @@
       "constraints": [
         "the light must be a DirectionalLight with `castShadow` and a target in the scene",
         "clipExtents are half-widths in world units, finest first, strictly increasing",
-        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves"
+        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves",
+        "call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does"
       ],
       "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
       "importPath": "@threenative/core",
@@ -3736,13 +3737,15 @@
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
         "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has",
-        "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose"
+        "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
+        "`prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number",
+        "`shadows.castDistance` needs `shadows.cast`; it puts a shadow-only companion mesh on `VIRTUAL_SHADOW_CASTER_LAYER` per castable batch and `shadows.invalidate` is called once after a rebuild"
       ],
       "example": "const world = await WorldCells.load({ url: \"/world/world.json\", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });\nscene.add(world);\nworld.update();",
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
+        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `shadows.castDistance` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
       ],
       "package": "@threenative/core",
       "signature": "export class WorldCells extends Group implements IComputeDriven { … }",

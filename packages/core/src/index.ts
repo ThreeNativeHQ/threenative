@@ -780,6 +780,7 @@ export type { IVelocityRenderPass } from "./render/velocity.js";
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
  * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+ * @constraint call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
@@ -787,6 +788,7 @@ export type { IVelocityRenderPass } from "./render/velocity.js";
  * sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });
  */
 export {
+  VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_MOVER_LAYER,
   VirtualShadowNode,

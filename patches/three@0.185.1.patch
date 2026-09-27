@@ -28,7 +28,27 @@ diff --git a/build/three.webgpu.js b/build/three.webgpu.js
 index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a18392c88f865 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
-@@ -18500,7 +18500,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+@@ -18320,7 +18320,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+ 
+ 		const uniformBufferSize = matrixCount * 16 * 4;
+ 
+-		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( false ) {
+ 
+ 			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
+ 
+@@ -18414,7 +18415,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
+ 
+-		if ( uniformBufferSize > builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( true ) {
+ 
+ 			interleavedMatrix = _matrixBuffers.get( matrices );
+ 
+@@ -18500,7 +18502,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
  
  			const previousInstanceData = _previousInstanceMatrices.get( object );
  
@@ -38,7 +58,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  		} );
  
-@@ -18599,6 +18600,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18599,6 +18602,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
  
  	const matricesTexture = batchMesh._matricesTexture;
@@ -46,7 +66,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
  	const j = float( indirectId ).mul( 4 ).toInt().toConst();
-@@ -18626,6 +18628,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18626,6 +18630,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  
  	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
  
@@ -66,7 +86,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
  
  	const batchingNormal = bm.mul( transformedNormal ).xyz;
-@@ -18777,7 +18792,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+@@ -18777,7 +18794,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
  
  			if ( skeletonData !== undefined ) {
  
@@ -76,7 +96,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  			}
  
-@@ -18844,7 +18860,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
+@@ -18844,7 +18862,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
  
  			if ( state !== undefined ) {
  
@@ -86,7 +106,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  			}
  
-@@ -29911,6 +29928,18 @@ class RenderObject {
+@@ -29911,6 +29930,18 @@ class RenderObject {
  		 */
  		this._sourceMaterial = renderer._currentSourceMaterial;
  
@@ -105,7 +125,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  		/**
  		 * An event listener which is defined by `RenderObjects`. It performs
  		 * clean up tasks when `dispose()` on this render object.
-@@ -30098,7 +30127,7 @@ class RenderObject {
+@@ -30098,7 +30129,7 @@ class RenderObject {
  	 */
  	getChainArray() {
  
@@ -114,7 +134,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  	}
  
-@@ -30680,6 +30709,8 @@ class RenderObjects {
+@@ -30680,6 +30711,8 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = material;
  		_chainKeys$3[ 2 ] = renderContext;
  		_chainKeys$3[ 3 ] = lightsNode;
@@ -123,7 +143,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  		//
  
-@@ -30707,9 +30738,18 @@ class RenderObjects {
+@@ -30707,9 +30740,18 @@ class RenderObjects {
  
  			}
  
@@ -144,7 +164,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  					renderObject.dispose();
  
-@@ -30719,6 +30759,8 @@ class RenderObjects {
+@@ -30719,6 +30761,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -153,7 +173,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  				}
  
  			}
-@@ -30731,6 +30773,7 @@ class RenderObjects {
+@@ -30731,6 +30775,7 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = null;
  		_chainKeys$3[ 2 ] = null;
  		_chainKeys$3[ 3 ] = null;
@@ -161,7 +181,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  		//
  
-@@ -39725,7 +39768,8 @@ class VelocityNode extends TempNode {
+@@ -39725,7 +39770,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -171,7 +191,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  		//
  
-@@ -53841,7 +53885,7 @@ class NodeBuilder {
+@@ -53841,7 +53887,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -180,7 +200,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  	}
  
-@@ -62731,6 +62775,7 @@ class Renderer {
+@@ -62731,6 +62777,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -188,7 +208,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +62801,7 @@ class Renderer {
+@@ -62756,6 +62803,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -196,7 +216,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +62809,15 @@ class Renderer {
+@@ -62763,7 +62811,15 @@ class Renderer {
  
  			}
  
@@ -213,7 +233,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +62879,7 @@ class Renderer {
+@@ -62825,6 +62881,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -221,7 +241,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  		}
  
-@@ -78999,15 +78999,22 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -78999,15 +79001,22 @@ class WGSLNodeBuilder extends NodeBuilder {
  		let snippet;
  
  		if ( depthSnippet ) {
@@ -245,7 +265,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  				snippet += '.x';
  
  			}
-@@ -79586,7 +79641,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +79643,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -255,7 +275,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  			} else {
  
-@@ -80329,9 +80385,12 @@ ${ flowData.code }
+@@ -80329,9 +80387,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -271,7 +291,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  
  				if ( needsSampler ) {
  
-@@ -83814,6 +83873,14 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +83875,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -286,7 +306,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f7de72cffef2eb577abb0b90051a1839
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +83993,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +83995,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -347,7 +367,27 @@ diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
 index b89834b9166c75fd946ade24db265bf8c367d244..c7b7bdd7a31d852a581d4bc75a1e1afc1d214e5e 100644
 --- a/src/nodes/accessors/Instance.js
 +++ b/src/nodes/accessors/Instance.js
-@@ -220,7 +220,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+@@ -40,7 +40,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+ 
+ 		const uniformBufferSize = matrixCount * 16 * 4;
+ 
+-		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( false ) {
+ 
+ 			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
+ 
+@@ -134,7 +135,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+ 
+ 		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
+ 
+-		if ( uniformBufferSize > builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( true ) {
+ 
+ 			interleavedMatrix = _matrixBuffers.get( matrices );
+ 
+@@ -220,7 +222,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
  
  			const previousInstanceData = _previousInstanceMatrices.get( object );
  
@@ -656,7 +696,27 @@ diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
 index f707acc24f5711fdae065ce920b08435b0869c1b..4c679d417f79af7994f296c005fcfaf3416c3f7a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
-@@ -78999,15 +78999,22 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -18320,7 +18320,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+ 
+ 		const uniformBufferSize = matrixCount * 16 * 4;
+ 
+-		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( false ) {
+ 
+ 			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
+ 
+@@ -18414,7 +18415,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
+ 
+-		if ( uniformBufferSize > builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( true ) {
+ 
+ 			interleavedMatrix = _matrixBuffers.get( matrices );
+ 
+@@ -78999,15 +79001,22 @@ class WGSLNodeBuilder extends NodeBuilder {
  		let snippet;
  
  		if ( depthSnippet ) {

@@ -46,13 +46,26 @@ const builder = {
 } as unknown as NodeBuilder;
 
 function frameFor(camera: PerspectiveCamera): NodeFrame {
-  return { camera } as unknown as NodeFrame;
+  // A renderer, because a level only re-renders and only settles its window on a frame that can
+  // draw: a frame with none never holds a window, and a node asked twice renders twice.
+  return { camera, renderer: {} } as unknown as NodeFrame;
 }
 
 function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
   const node = new VirtualShadowNode(light, { marker: false, ...options });
   node.setup(builder);
+  // The real render belongs to three's renderer: a level render is what a frame with a renderer
+  // asks for, and this is the draw that is not the node's business under test. The tests that
+  // watch the draw spy on these.
+  stubLevelRenders(node);
   return node;
+}
+
+/** The real render belongs to three's renderer; the draw itself is not what these tests measure. */
+function stubLevelRenders(node: VirtualShadowNode): void {
+  for (const levelNode of [...node.levelNodes, ...node.moverNodes]) {
+    (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => undefined;
+  }
 }
 
 interface IShaderGraphBuilder extends NodeBuilder {
@@ -245,7 +258,9 @@ describe("VirtualShadowNode", () => {
 
   it("should re-render only the level whose window moved by a whole texel", () => {
     const { camera, light } = world();
-    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    // `refreshStep: 0` keeps the one-texel step this measures; the default holds the window still
+    // until the centre has moved a fraction of the extent, which the test below covers.
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64, refreshStep: 0 });
     camera.position.set(0, 5, 0);
     node.updateBefore(frameFor(camera));
     // 0.3 crosses the finest texel (0.25) but not the coarse one (1.0).
@@ -255,6 +270,27 @@ describe("VirtualShadowNode", () => {
     // Negative control: a level that never moves is never re-rendered.
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
+  });
+
+  it("should hold a window still until the centre has moved `refreshStep` of its extent", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    node.updateBefore(frameFor(camera));
+    // The finest extent is 8 m and the default step is an eighth of it, so 0.5 m is a fifth of a
+    // step: the window holds and the level is served from cache.
+    camera.position.set(0.5, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ moved: 0, rendered: 0, cached: 2 });
+    // Past the step it re-renders, on the fixed world grid the step is a whole number of texels of.
+    camera.position.set(1.5, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ moved: 1, rendered: 1 });
+  });
+
+  it("should refuse a refreshStep that would cost the selection guard its trailing edge", () => {
+    const { light } = world();
+    expect(() => setupNode(light, { clipExtents: [8, 32], refreshStep: 0.9 })).toThrow(RangeError);
   });
 
   it("should keep the mover contribution neutral and skip mover renders with no tracked casters", () => {
@@ -370,6 +406,7 @@ describe("VirtualShadowNode", () => {
     try {
       const node = new VirtualShadowNode(light, { clipExtents: [8], marker: 2 });
       node.setup(builder);
+      stubLevelRenders(node);
       node.updateBefore(frameFor(camera));
       node.updateBefore(frameFor(camera));
       const lines = info.mock.calls

@@ -169,9 +169,11 @@ function drain(world: WorldCells, limit = 4000): number[] {
   const spent: number[] = [];
   for (let frame = 0; frame < limit; frame += 1) {
     world.update();
-    const { backlog, spentMs } = world.stats().admission;
+    const { backlog, deferred, spentMs } = world.stats().admission;
     spent.push(spentMs);
-    if (backlog === 0) return spent;
+    // Deferred terrain work counts as owed: a tile the budget refused is wanted again next pass,
+    // and one pass is forced past the budget, so the ring closes a frame after the queue empties.
+    if (backlog === 0 && deferred === 0) return spent;
   }
   throw new Error(`WorldCells still owed ${String(world.stats().admission.backlog)} units.`);
 }
@@ -210,7 +212,10 @@ describe("WorldCells admission budget", () => {
     const spent = drain(cells);
     expect(spent.length).toBeGreaterThan(2);
     for (const frame of spent) expect(frame).toBeLessThanOrEqual(BUDGET_MS + UNIT_MS);
-    expect(cells.stats().admission).toEqual({ backlog: 0, deferred: 0, spentMs: BUDGET_MS });
+    // Nothing is owed, and the frame that finished the ring spent what was left of the budget
+    // rather than a whole one: the forced tile is one unit, and the rest of the pass had none.
+    expect(cells.stats().admission).toMatchObject({ backlog: 0, deferred: 0 });
+    expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(BUDGET_MS);
     expect(cells.stats().failures).toBe(0);
     cells.dispose();
   });
