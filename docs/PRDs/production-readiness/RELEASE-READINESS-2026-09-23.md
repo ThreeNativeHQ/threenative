@@ -130,8 +130,8 @@ to 0.3.3 and not released.
 Also in R2, nearly done and worth finishing rather than re-planning:
 [PRD-365](../done/PRD-365-consumer-desktop-distribution.md) desktop containers is **done** (closed
 2026-09-27, 24/24 phase boxes and 20/20 acceptance — the public-registry consumer launch in its last
-box), and [PRD-375](../BLOCKED/requires-owner-provider-checkpoint/PRD-375-release-artifacts-carry-the-game-brand.md) branding is the open
-one (11/12, 3/5).
+box), and [PRD-375](../done/PRD-375-release-artifacts-carry-the-game-brand.md) branding closed 2026-09-27
+(18/18 phase boxes, 5/5 acceptance, owner-confirmed on the operator-backed Linux container).
 
 ### R3 — production 1.0 (after the beta; not in `critical/`)
 
