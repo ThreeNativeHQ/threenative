@@ -247,7 +247,7 @@ Unit and fixture tests exercise logic; hardware tests establish measurements. Ne
 
 The slowdown sensitivity control must execute real work on the qualified lane; synthetic timestamps validate statistical code only. Its implementation and instrumentation must not leak into the scored candidate build. Test report/table/chart/CSV consistency against one canonical derived dataset. Test deterministic regeneration, legacy compatibility, empty data, timeouts, crashes and unsupported cells.
 
-## Phase 1: Freeze sources, fixtures and the campaign contract
+### Phase 1: Freeze sources, fixtures and the campaign contract
 
 Open one draft implementation PR before starting this phase, following `docs/PRDs/AGENTS.md`; keep all phases in that PR. The requested planning-only commit on `develop` does not assert implementation progress.
 
@@ -257,7 +257,7 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 - [ ] Freeze conformance tolerances and visual qualification rules.
 - [ ] Freeze publication plan fields, ordering policy and resource-limit policy after unscored qualification.
 
-## Phase 2: Extend and prove the shared measurement path
+### Phase 2: Extend and prove the shared measurement path
 
 - [ ] Add the v2 result contract without changing the meaning of legacy reports/baselines.
 - [ ] Collect browser publication evidence from a production build with recorded identity.
@@ -267,7 +267,7 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 - [ ] Complete A/A calibration and retain the minimal-meter overhead measurements.
 - [ ] Prove the paired-block statistics with known-ratio and high-variance fixtures.
 
-## Phase 3: Cubes and independent Three.js meshes
+### Phase 3: Cubes and independent Three.js meshes
 
 - [ ] Implement the locked Bevy many-cubes adapter with deterministic updates for every timed behavior.
 - [ ] Pass many-cubes execution/visual conformance against the TN fixture.
@@ -276,7 +276,7 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 - [ ] Retain a real hardware comparison for the many-cubes family.
 - [ ] Retain a real hardware comparison for the independent-mesh family.
 
-## Phase 4: Animation, Godot rendering workloads and City
+### Phase 4: Animation, Godot rendering workloads and City
 
 - [ ] Pass foxes conformance with independently animated staggered skeletons.
 - [ ] Retain a real hardware comparison for the foxes family.
@@ -287,7 +287,7 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 - [ ] Pass City conformance for both frozen fixture sizes and both movement states.
 - [ ] Retain a real hardware comparison for the City family.
 
-## Phase 5: Deliver the offline report generator
+### Phase 5: Deliver the offline report generator
 
 - [ ] Render every expanded plan cell with its actual coverage/outcome state.
 - [ ] Prove table/chart/CSV consistency with the canonical derived dataset.
@@ -298,7 +298,7 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 - [ ] Pass escaping/path-safety tests using malicious fixture text.
 - [ ] Prove deterministic substantive regeneration from the retained bundle.
 
-## Phase 6: Qualify the campaign and hand over actual results
+### Phase 6: Qualify the campaign and hand over actual results
 
 - [ ] Execute the frozen required matrix on the identified physical desktop, retaining every attempt.
 - [ ] Obtain seven valid paired blocks for the publication-grade primary comparisons at supported loads.
