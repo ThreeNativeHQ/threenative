@@ -126,19 +126,27 @@ describe("PRD-449 campaign progress monitor", () => {
 
   it("lists every kept attempt in chronological order, invalid and unreadable included", async () => {
     const root = await campaignDir();
-    await mkdir(path.join(root, "block-2"), { recursive: true });
+    const runs = path.join(root, "runs");
+    await mkdir(path.join(runs, "block-2"), { recursive: true });
     await writeFile(
-      path.join(root, "block-2", "run.json"),
+      path.join(runs, "block-2", "run.json"),
       JSON.stringify({ recordedAt: "2026-09-02T09:00:00Z", runStatus: "invalid" }),
     );
     await writeFile(
-      path.join(root, "aaa-early.json"),
+      path.join(runs, "aaa-early.json"),
       JSON.stringify({
         recordedAt: "2026-09-01T09:00:00Z",
         rungs: [{ frameMs: [12.3], p95: 9.9 }],
       }),
     );
-    await writeFile(path.join(root, "zzz-truncated.json"), "{ truncated");
+    await writeFile(path.join(runs, "zzz-truncated.json"), "{ truncated");
+    // Frozen Godot source and compatibility records live beside `runs/`; they are inputs, not
+    // attempts, so an attempt table that lists them is reporting a benchmark nobody ran.
+    await mkdir(path.join(root, "godot-benchmarks", "src"), { recursive: true });
+    await writeFile(
+      path.join(root, "godot-benchmarks", "src", "extension_api.json"),
+      JSON.stringify({ recordedAt: "2026-09-03T09:00:00Z", rungs: [] }),
+    );
 
     const attempts = await readAttempts(root);
     expect(attempts.map((attempt) => attempt.status)).toEqual([
@@ -147,6 +155,12 @@ describe("PRD-449 campaign progress monitor", () => {
       "unreadable",
     ]);
     expect(attempts[1]?.timeSource).toBe("record");
+    // Sources are relative to the campaign root, where progress.html is written.
+    expect(attempts.map((attempt) => attempt.source)).toEqual([
+      "runs/aaa-early.json",
+      "runs/block-2/run.json",
+      "runs/zzz-truncated.json",
+    ]);
 
     const html = renderProgressHtml(
       data({
@@ -162,8 +176,13 @@ describe("PRD-449 campaign progress monitor", () => {
         }),
       }),
     );
-    expect(html.indexOf("aaa-early.json")).toBeLessThan(html.indexOf("block-2/run.json"));
-    expect(html.indexOf("block-2/run.json")).toBeLessThan(html.indexOf("zzz-truncated.json"));
+    expect(html.indexOf("runs/aaa-early.json")).toBeLessThan(html.indexOf("runs/block-2/run.json"));
+    expect(html.indexOf("runs/block-2/run.json")).toBeLessThan(
+      html.indexOf("runs/zzz-truncated.json"),
+    );
+    expect(html).not.toContain("extension_api.json");
+    expect(html).toContain('href="runs/aaa-early.json"');
+    expect(html).toContain('href="runs/block-2/run.json"');
     expect(html).toContain("invalid");
     expect(html.indexOf("bb22cc3")).toBeLessThan(html.indexOf("aa11bb2"));
     // A run's own numbers stay in that run's file; the page reports only its status and path.
@@ -173,7 +192,8 @@ describe("PRD-449 campaign progress monitor", () => {
   it("escapes untrusted text and links only paths inside the campaign root", async () => {
     const root = await campaignDir();
     const hostileName = "<img src=x onerror=alert(1)>.json";
-    await writeFile(path.join(root, hostileName), JSON.stringify({ runStatus: HOSTILE }));
+    await mkdir(path.join(root, "runs"), { recursive: true });
+    await writeFile(path.join(root, "runs", hostileName), JSON.stringify({ runStatus: HOSTILE }));
     const attempts = await readAttempts(root);
 
     const html = renderProgressHtml(
@@ -188,10 +208,12 @@ describe("PRD-449 campaign progress monitor", () => {
     expect(html).toContain("&lt;img");
     expect(html).toContain("&lt;/script&gt;");
     // An in-root file is linked with a percent-encoded relative href, never raw markup.
-    expect(html).toContain(`href="${encodeURIComponent(hostileName)}"`);
+    expect(html).toContain(`href="runs/${encodeURIComponent(hostileName)}"`);
 
-    expect(safeArtifactHref(root, path.join(root, "run.json"))).toBe("run.json");
-    expect(safeArtifactHref(root, path.join(root, "block-1", "run.json"))).toBe("block-1/run.json");
+    expect(safeArtifactHref(root, path.join(root, "runs", "run.json"))).toBe("runs/run.json");
+    expect(safeArtifactHref(root, path.join(root, "runs", "block-1", "run.json"))).toBe(
+      "runs/block-1/run.json",
+    );
     expect(safeArtifactHref(root, path.join(root, "..", "escape.json"))).toBeNull();
     expect(safeArtifactHref(root, path.join(root, "https:", "evil.json"))).toBeNull();
     expect(safeArtifactHref(root, root)).toBeNull();

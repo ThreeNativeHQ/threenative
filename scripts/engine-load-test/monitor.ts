@@ -15,6 +15,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const PRD_FILE =
   "docs/PRDs/performance/benchmarking/PRD-449-cross-engine-benchmarks-and-html-report.md";
 const ARTIFACT_SUBDIR = path.join("artifacts", "engine-load-test", "prd-449");
+const RUNS_SUBDIR = "runs";
 const PAGE_NAME = "progress.html";
 const UNIT = "\x1f";
 const RECORD_TIME_KEYS = ["recordedAt", "generatedAt", "timestamp", "startedAt"];
@@ -154,9 +155,11 @@ async function readAttempt(rootDir: string, absolutePath: string): Promise<IAtte
   return attempt;
 }
 
-/** Every retained JSON file under the campaign root is listed, including malformed and failed
- *  ones — a deleted or overwritten attempt cannot be shown, and an unreadable one is named
- *  rather than dropped. */
+/** Every retained JSON file under the campaign's `runs/` subtree is listed, including malformed
+ *  and failed ones — a deleted or overwritten attempt cannot be shown, and an unreadable one is
+ *  named rather than dropped. Only `runs/` is scanned: the campaign root also holds frozen source
+ *  trees and compatibility records, which are inputs, not attempts. `source` stays relative to
+ *  the campaign root, where `progress.html` is written, so its links resolve. */
 export async function readAttempts(rootDir: string): Promise<IAttempt[]> {
   const found: IAttempt[] = [];
   const walk = async (dir: string): Promise<void> => {
@@ -171,12 +174,13 @@ export async function readAttempts(rootDir: string): Promise<IAttempt[]> {
       }
     }
   };
+  const runsRoot = path.join(rootDir, RUNS_SUBDIR);
   try {
-    if (!(await stat(rootDir)).isDirectory()) return [];
+    if (!(await stat(runsRoot)).isDirectory()) return [];
   } catch {
     return [];
   }
-  await walk(rootDir);
+  await walk(runsRoot);
   return [...found].sort(
     (a, b) => Date.parse(a.time) - Date.parse(b.time) || a.source.localeCompare(b.source),
   );
