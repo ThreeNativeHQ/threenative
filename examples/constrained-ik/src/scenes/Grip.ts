@@ -30,12 +30,12 @@ const GRIP = new Vector3(0, 1.42, 0.1);
 const FORWARD = new Vector3(0, 0, 1);
 /** The rifle box, with its origin at the grip rather than at its middle. */
 const rifleGeometry = new BoxGeometry(0.07, 0.1, 0.7).translate(0, 0, 0.2);
-/** Frames below this one are not counted into the running worst case. */
-const WARMUP_FRAMES = 10;
+/** Ticks below this one are not counted into the running worst case. */
+const WARMUP_TICKS = 10;
 /**
  * The authored two-handed hold the idle clip plays, the same pose
  * `examples/integrations/ik/tests/admission.test.mjs` validates. The mixer re-applies it every
- * frame, so each solve is a small correction from the animation, never from last frame's solve.
+ * tick, so each solve is a small correction from the animation, never from the last solve.
  */
 const HOLD: Record<string, readonly [number, number, number, number]> = {
   spine: [0.411505113, -0.157050673, -0.050945871, 0.896327589],
@@ -105,7 +105,7 @@ function idleClip(): AnimationClip {
   );
 }
 
-/** One joint's rotational allowance, as an offset from whatever pose the mixer supplied this frame. */
+/** One joint's rotational allowance, as an offset from whatever pose the mixer supplied this tick. */
 function jointSpec(joint: Bone, limit: number): IJointSpec {
   return {
     axes: ["x", "y", "z"],
@@ -124,10 +124,17 @@ function lengthOf(joint: Bone): number {
 
 /**
  * A rifle grip held by two hands, and the measurement of how well the opt-in adapter puts them
- * there: the post-solve residual on the last frame, the running worst over the run, and the largest
+ * there: the post-solve residual on the last tick, the running worst over the run, and the largest
  * bone-length change the solve caused.
  */
 export class Grip extends Scene {
+  #step: (() => void) | null = null;
+
+  /** Animation then IK, once per fixed tick; render reads whatever the last tick left. */
+  override update(): void {
+    this.#step?.();
+  }
+
   override enter(ctx: ICtx) {
     const camera = ctx.camera as PerspectiveCamera;
     camera.position.set(1.6, 1.7, 1.9);
@@ -195,7 +202,7 @@ export class Grip extends Scene {
       (joint) => ({ before: 0, joint, length: 0 }),
     );
 
-    let frames = 0;
+    let ticks = 0;
     let converged = true;
     let allConverged = true;
     let maxMetres = 0;
@@ -213,9 +220,9 @@ export class Grip extends Scene {
     const aim: [number, number, number, number] = [0, 0, 0, 1];
 
     /** The rifle's pose, in world metres: yaw ±0.5 rad and pitch -0.2..0.3 rad, as the admission trace. */
-    const aimAt = (frame: number): void => {
+    const aimAt = (tick: number): void => {
       rotation.setFromEuler(
-        euler.set(-(0.05 + 0.25 * Math.sin(frame / 45)), Math.sin(frame / 60) * 0.5, 0),
+        euler.set(-(0.05 + 0.25 * Math.sin(tick / 45)), Math.sin(tick / 60) * 0.5, 0),
       );
       grip.copy(GRIP);
       foregrip.copy(FORWARD).applyQuaternion(rotation).multiplyScalar(FOREGRIP_METRES).add(grip);
@@ -230,13 +237,13 @@ export class Grip extends Scene {
       { position: foregrip.toArray(), quaternion: aim },
     ];
 
-    // Posed by rendered frame rather than wall time, so every platform's capture of frame N shows
-    // the same pose and the measurement is the same number everywhere.
-    ctx.beforeRender(() => {
-      frames += 1;
-      mixer.setTime(frames / 60);
+    // Posed by tick rather than wall time, so tick N solves the same pose on every platform and
+    // the measurement is the same number everywhere.
+    this.#step = () => {
+      ticks += 1;
+      mixer.setTime(ticks / 60);
       for (const m of measured) m.before = lengthOf(m.joint);
-      aimAt(frames);
+      aimAt(ticks);
 
       const started = performance.now();
       const report: IIKReport = ik.update(targets());
@@ -255,7 +262,7 @@ export class Grip extends Scene {
       }
       converged = report.converged;
       allConverged = allConverged && report.converged;
-      if (frames > WARMUP_FRAMES) {
+      if (ticks > WARMUP_TICKS) {
         worstMetres = Math.max(worstMetres, maxMetres);
         worstRadians = Math.max(worstRadians, maxRadians);
         worstLengthDrift = Math.max(worstLengthDrift, maxLengthDrift);
@@ -263,13 +270,13 @@ export class Grip extends Scene {
 
       rifle.position.copy(grip);
       rifle.quaternion.copy(rotation);
-    });
+    };
 
     ctx.entities.add("ik", {
       debug: () => ({
         allConverged,
         converged,
-        frames,
+        ticks,
         maxLengthDrift,
         maxMetres,
         maxRadians,

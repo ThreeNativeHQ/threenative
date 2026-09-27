@@ -29,14 +29,20 @@
       "label": "yaw-returned",
       "release": true,
       "waitTicks": 60
+    },
+    {
+      "kind": "wait",
+      "label": "long-sweep",
+      "release": true,
+      "waitTicks": 900
     }
   ],
   "assert": {
     "components": [
       {
-        "component": "frames",
+        "component": "ticks",
         "entity": "ik",
-        "gte": 60,
+        "gte": 1000,
         "changed": true
       },
       {
@@ -60,7 +66,7 @@
       {
         "component": "worstLengthDrift",
         "entity": "ik",
-        "lte": 0.000001,
+        "lte": 1e-6,
         "allowTrivial": "A worst-so-far counter can only grow and starts at zero; the run is what proves no solve ever stretched a bone."
       }
     ],
