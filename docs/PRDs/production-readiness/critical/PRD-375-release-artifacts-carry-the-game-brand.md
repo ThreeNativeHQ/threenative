@@ -5,6 +5,8 @@ prd_contract: v1
 # PRD-375 — A consumer can brand launch, loading and packaged apps
 
 **Status:** PARTIAL — Android release branding and Linux desktop branding have passed their recorded gates. The macOS icon-content verifier passed real Apple-tool and native-release runs at earlier PR head `97a33e5b`; a fresh independent read-only review at `39394c0c0` found no actionable defect. Windows and macOS `--brand-only` and capture lanes must rerun on this merged candidate before their machine claims close. The owner still needs to inspect the Linux launch and operator-backed captures. Revised 2026-09-27.
+
+**2026-09-27 checkout gate:** `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm budgets`, and `pnpm check:docs` passed. The macOS icon and desktop verifier suites passed 68 tests (3 skipped). The first full suite lacked local native contract executables; after building the V8 and QuickJS variants, `pnpm test` passed: 492 files, 6,132 tests passed, 8 skipped, exit 0. This does not replace the fresh hosted macOS/Windows or owner-inspection boxes below.
 Renumbered 2026-09-11. Phase 1 evidence: [prd-375-readiness-phase-1-2026-09-12.md](../../../verification/prd-375-readiness-phase-1-2026-09-12.md).
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was
