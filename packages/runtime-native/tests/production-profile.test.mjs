@@ -49,6 +49,12 @@ const temporary = [];
 const sourceSha = 'a'.repeat(64);
 const artifactSha = sha256(Buffer.from('fixture-artifact'));
 
+// `vm.runInNewContext` has no module system, so a slice that carries a neighbouring helper's
+// `export` keyword would throw before the code under test ever runs.
+function sliceSource(source, start, end) {
+  return source.slice(source.indexOf(start), source.indexOf(end)).replace(/^export /gmu, '');
+}
+
 test('desktop runner exceptions retain failed evidence rather than disappearing', () => {
   const error = new Error('TN_PLAYTEST_OPERATION_TIMEOUT: advance');
   const output = [{ text: 'native bridge connected', type: 'log' }];
@@ -67,7 +73,7 @@ test('desktop runner exceptions retain failed evidence rather than disappearing'
 
 test('desktop cleanup tolerates a child process group that already exited', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
   const context = {
     join,
     process: {
@@ -102,7 +108,7 @@ test('desktop cleanup tolerates a child process group that already exited', asyn
 
 test('desktop cleanup observes a Windows child that exits synchronously when killed', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
   const child = new EventEmitter();
   child.exitCode = null;
   child.signalCode = null;
@@ -136,7 +142,7 @@ test('desktop cleanup observes a Windows child that exits synchronously when kil
 
 test('desktop cleanup does not wait forever when a Windows kill emits no exit event', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
   const child = new EventEmitter();
   child.exitCode = null;
   child.signalCode = null;
@@ -210,7 +216,7 @@ test('native report retention redacts unsafe host console paths without dropping
 
 test('desktop child receives the transport mailbox root and writes a raw post-present screenshot request', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
   const project = '/fixture/scaffold';
   const mailboxRoot = join(project, '.runtime-mailbox');
   const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
@@ -253,7 +259,7 @@ test('production desktop mailbox uses atomic request writes', () => {
 
 test('packaged desktop artifacts launch their embedded entry while bare runtimes still name the bundle', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
   const project = '/fixture/scaffold';
   const mailboxRoot = join(project, '.runtime-mailbox');
   const launched = [];
@@ -1602,7 +1608,7 @@ test('slow-startup delays the live fixture launch beyond the five-second budget'
 // (whose cleanup kill replaces the child's status) fails here rather than in a production run.
 function loadPrivateDisplayCommand({ display, platform, wrapperPresent = true }) {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
-  const helper = source.slice(source.indexOf('function privateDisplayCommand('), source.indexOf('function spawnNative('));
+  const helper = sliceSource(source, 'function privateDisplayCommand(', 'function spawnNative(');
   assert.notEqual(helper.length, 0, 'profile-production.mjs must select its display through privateDisplayCommand');
   const scripts = fileURLToPath(new URL('../scripts/', import.meta.url));
   const context = {
