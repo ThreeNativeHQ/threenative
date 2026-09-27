@@ -105,7 +105,7 @@ to 0.3.3 and not released.
    (owner decision, 2026-09-11); promoting it to `latest` is not.
 2. **The promotion PR is stuck.** #291 waits on checks, and its body describes a squash-versus-merge
    conflict that the root `AGENTS.md` already settles: main accepts merge commits only. Owner:
-   [PRD-373](critical/PRD-373-selective-ci-and-develop-promotion.md) (18/20 phase boxes, 1/5 acceptance).
+   [PRD-373](../done/PRD-373-selective-ci-and-develop-promotion.md) (28/28 phase boxes, 5/5 acceptance).
 3. **Security and honesty debt a stranger sees first**: the high `sharp` advisory, `SECURITY.md`
    naming the wrong supported line, no 0.3.x changelog, stale `CURRENT-CHALLENGES.md` and
    `alpha-bar.md`, and a red site deploy on `main`. No PRD owned these. **New:
