@@ -99,6 +99,24 @@ test("desktop runner forwards --cpu-prof to the native host", async () => {
   expect(constructed).toEqual([["--cpu-prof=/project/out.cpuprofile"]]);
 });
 
+test("desktop runner gives the driver the run's screenshot budget", async () => {
+  // A run can pass its 300-frame gate and still need longer than the driver's 5s default to
+  // produce one screenshot on a loaded arm64 runner, which then fails
+  // TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE. The transport already spends config.timeoutMs.
+  const constructed: (number | undefined)[] = [];
+  const driverFactory = (options: { screenshotTimeoutMs?: number }): IDevicePlaytestDriver => {
+    constructed.push(options.screenshotTimeoutMs);
+    throw new Error("captured");
+  };
+
+  await runDesktopPlaytest(
+    { ...minimalConfig("desktop"), timeoutMs: 30_000 },
+    { driverFactory },
+  ).catch(() => undefined);
+
+  expect(constructed).toEqual([30_000]);
+});
+
 test("desktop CLI routing selects the shared desktop runner", async () => {
   const calls: string[] = [];
   const report = { pass: true } as never;

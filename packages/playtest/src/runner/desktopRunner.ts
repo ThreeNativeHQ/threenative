@@ -101,6 +101,7 @@ export async function runDesktopPlaytest(
       ...(providedDisplay === undefined ? {} : { env: providedDisplay.env }),
       executable,
       mailboxRoot: root,
+      screenshotTimeoutMs: config.timeoutMs,
     });
     transport = dependencies.transport ?? new DeviceMailboxTransport(
       new LocalDeviceMailbox(),
