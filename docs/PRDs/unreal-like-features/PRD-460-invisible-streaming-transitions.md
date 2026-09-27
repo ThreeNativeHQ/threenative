@@ -1,9 +1,9 @@
-# PRD-454 — Invisible streaming: a dithered fade for arriving props and a crossfade across LOD levels
+# PRD-460 — Invisible streaming: a dithered fade for arriving props and a crossfade across LOD levels
 
 **Status:** NOT STARTED
 **Complexity:** 6 (MEDIUM); risk override: none. About 7 implementation files across `core` and the example's render source, a new per-instance attribute on every batch, and a fade timeline that has to survive an eviction mid-ramp.
 **Owner:** unassigned (drafted by Claude, 2026-09-26)
-**Depends on:** PRD-453 (the admission budget owns *when* a batch appears; this PRD owns *how* it appears). Prerequisite landing separately: transparent scatter drawn as cutout, and multi-primitive scatter assets.
+**Depends on:** PRD-459 (the admission budget owns *when* a batch appears; this PRD owns *how* it appears). Prerequisite landing separately: transparent scatter drawn as cutout, and multi-primitive scatter assets.
 
 ## Context
 

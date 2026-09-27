@@ -1,4 +1,4 @@
-# docs/PRDs/world-streaming
+# World streaming PRDs (459–461, and 458)
 
 A streamed world that is **smooth**, **invisible**, and **sized for the map**. Read `/AGENTS.md` and
 `docs/PRDs/AGENTS.md` first; [PRD-448](../done/unreal-like-features/PRD-448-world-cells-blender-export-and-streaming.md)
@@ -10,11 +10,12 @@ the frame it costs and the edge you can see.
 
 | # | PRD | Outcome | Order | Depends on |
 | --- | --- | --- | --- | --- |
-| 1 | [453 — one admission budget per frame](PRD-453-smooth-streaming-one-admission-budget-per-frame.md) | Streaming stops costing a frame: p95 ≤ 16.7 ms, max ≤ 33 ms, prefetched ahead of the camera, pipelines warm before first draw | First | — |
-| 2 | [454 — invisible streaming transitions](PRD-454-invisible-streaming-transitions.md) | No pop: a dithered fade as instances arrive and leave, a crossfade across LOD levels, hysteresis on the cull gate | After 453 (453 owns *when* a batch appears, 454 owns *how*) | 453 |
-| 3 | [455 — view distance basics](PRD-455-view-distance-basics.md) | Terrain radius independent of the prop ring, colliders only near the player, fog that puts the stream edge out of sight, a default recipe for a 2 km map | Independent of 1 and 2; **blocked on the in-flight `terrain.streamRadius` / `terrain.colliderRadius` options** | in-flight change |
+| 1 | [459 — one admission budget per frame](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) | Streaming stops costing a frame: p95 ≤ 16.7 ms, max ≤ 33 ms, prefetched ahead of the camera, pipelines warm before first draw | First | — |
+| 2 | [460 — invisible streaming transitions](PRD-460-invisible-streaming-transitions.md) | No pop: a dithered fade as instances arrive and leave, a crossfade across LOD levels, hysteresis on the cull gate | After 459 (459 owns *when* a batch appears, 460 owns *how*) | 459 |
+| 3 | [461 — view distance basics](PRD-461-view-distance-basics.md) | Terrain radius independent of the prop ring, colliders only near the player, fog that puts the stream edge out of sight, a default recipe for a 2 km map | Independent of 1 and 2; **blocked on the in-flight `terrain.streamRadius` / `terrain.colliderRadius` options** | in-flight change |
+| 4 | [458 — open worlds hold 60 fps by default](PRD-458-open-worlds-hold-60-fps-by-default.md) | Clustered batches culled per camera and shadow level, safe one-level-per-frame shadows, foliage cutout + AutoLOD, material dedupe by default; 60 fps on the machinefall map | After 459 (uses its budget and prewarm) | 459, 453, 456, 457, 377 |
 
-All three are `NOT STARTED`. Two prerequisites already landed on `feat/world-cells-scatter-lod`:
+459–461 are `NOT STARTED`; 458 is `PROPOSED`. Two prerequisites already landed on `feat/world-cells-scatter-lod`:
 `aded4a85a` (per-instance package `lods`, rebuild skip, the `rebuildsPerUpdate` cap) and `f7164f850`
 (terrain seam/LOD thrash, ~39 ms/frame). Landing separately, and treated as **prerequisites rather
 than scope**: multi-primitive scatter assets, transparent scatter drawn as cutout, and the

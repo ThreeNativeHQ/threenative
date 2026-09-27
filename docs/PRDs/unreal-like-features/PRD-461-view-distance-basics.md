@@ -1,9 +1,9 @@
-# PRD-455 — View distance basics: terrain radius, near-only colliders, and fog that hides the stream edge
+# PRD-461 — View distance basics: terrain radius, near-only colliders, and fog that hides the stream edge
 
 **Status:** NOT STARTED
 **Complexity:** 1 (LOW); risk override: none. Three implementation files (`core` twice, the example's render source), and the rest is a recipe, guidance and its proof. It cannot start before the in-flight change below.
 **Owner:** unassigned (drafted by Claude, 2026-09-26)
-**Depends on:** the in-flight scatter/terrain change, which is **prerequisite, not this PRD's scope**: `terrain.streamRadius` and `terrain.colliderRadius` options, multi-primitive scatter assets, and transparent scatter drawn as cutout. PRD-453 and PRD-454 are independent of it and neither waits for it.
+**Depends on:** the in-flight scatter/terrain change, which is **prerequisite, not this PRD's scope**: `terrain.streamRadius` and `terrain.colliderRadius` options, multi-primitive scatter assets, and transparent scatter drawn as cutout. PRD-459 and PRD-460 are independent of it and neither waits for it.
 
 ## Context
 

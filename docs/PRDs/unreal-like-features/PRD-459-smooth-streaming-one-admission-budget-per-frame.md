@@ -1,4 +1,4 @@
-# PRD-453 — Smooth streaming: one admission budget per frame, prefetched ahead of the camera
+# PRD-459 — Smooth streaming: one admission budget per frame, prefetched ahead of the camera
 
 **Status:** NOT STARTED
 **Complexity:** 6 (MEDIUM); risk override: none. About 8 implementation files across `core` and `playtest`, one new per-frame budget, and an admission queue that resumes across frames.
