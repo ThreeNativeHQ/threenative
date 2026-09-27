@@ -10,7 +10,7 @@ PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pn
 
 **Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 Android 60 Hz
 UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
-controls and web/native parity · PRD-375 branding remains open (PRD-365 is closed: 2026-09-27, its CI
+controls and web/native parity · PRD-375 branding machine gates are closed and it is blocked only on owner visual inspection (PRD-365 is closed: 2026-09-27, its CI
 signing proof green and its registry-consumer run passed; public Authenticode/notarization superseded
 because each developer signs their own) · PRD-445 is filed in
 [`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
@@ -42,10 +42,11 @@ target, and no public text may claim iOS until a later decision adds it.
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
-**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): six files**
-(nine on 2026-09-23; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25 because
-its only remaining work is blocked, and PRD-365 moved to `done/` on 2026-09-27 because its last box —
-the public-registry consumer launch — passed).
+**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/) or in their
+explicit `BLOCKED/` folders when only external work remains.** On 2026-09-27 PRD-375 moved to
+`BLOCKED/requires-owner-provider-checkpoint/` because all machine gates passed and only the owner
+look remains; PRD-365 moved to `done/` because its last box — the public-registry consumer launch —
+passed; PRD-445 had already moved to `BLOCKED/requires-release-credentials/` on 2026-09-25.
 The 1.0 PRDs under R3 stay in their own folders and block nothing until the beta ships.
 
 ## What was measured today
@@ -129,7 +130,7 @@ to 0.3.3 and not released.
 Also in R2, nearly done and worth finishing rather than re-planning:
 [PRD-365](../done/PRD-365-consumer-desktop-distribution.md) desktop containers is **done** (closed
 2026-09-27, 24/24 phase boxes and 20/20 acceptance — the public-registry consumer launch in its last
-box), and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-brand.md) branding is the open
+box), and [PRD-375](../BLOCKED/requires-owner-provider-checkpoint/PRD-375-release-artifacts-carry-the-game-brand.md) branding is the open
 one (11/12, 3/5).
 
 ### R3 — production 1.0 (after the beta; not in `critical/`)
