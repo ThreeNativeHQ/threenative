@@ -1,6 +1,6 @@
 # PRD-449: Reproducible cross-engine benchmarks and an auditable HTML report
 
-**Status:** NOT STARTED — specification only; no new benchmark results are claimed.
+**Status:** PARTIAL — implementation monitor shipped; no benchmark results are claimed.
 **Date:** 2026-09-25
 **Target branch:** `develop`
 **Reviewed ThreeNative snapshot:** `e0aa293127feebfc07e0874b7b6b3fa8697e157d`
@@ -200,6 +200,8 @@ Each family has a load-versus-frame-time chart whose values exactly match the ta
 
 Experiment detail includes the upstream source link, adaptation patch, requested/actual scene census, effective engine flags, screenshots at matching frames, timing scope, all run/block results, environmental exclusions with reasons, memory/upload/draw diagnostics, and exact reproduction commands. Preserve slower TN results as prominently as wins. All metrics must resolve to their raw source records and derivation version.
 
+Show measured KPIs per family and cell: completed-work ms/frame, p50/p95/p99, over-budget frames, largest tested load within the declared frame budget, memory, submitted draws/triangles, and CPU/GPU/presentation observations where available. Put unavailable metrics and their reasons beside the values; never collapse different workloads into one score. For every over-budget or slower TN cell, trace the dominant measured cost to its raw spans/counters and name a ranked next hypothesis, predicted effect and falsifier. If attribution is incomplete, say so instead of assigning a bottleneck or summing overlapping spans.
+
 ### 9.2 Artifact and usability requirements
 
 `report.html` works through `file://` with **zero network requests**, without a local server or CDN. Embed summary data, CSS, small JavaScript/SVG charts and representative compressed captures. Full raw traces may stay in the companion bundle; report interpretation and all comparison tables must work with the HTML alone. Avoid embedding gigabytes of raw samples.
@@ -209,6 +211,8 @@ Provide keyboard-accessible filters, readable table alternatives for charts, tex
 Escape untrusted names/logs and script-embedded JSON, including `</script>`. Treat logs as text, reject path traversal in artifact links, and do not leak device serials, local home paths, credentials or environment secrets into a public report. Checksums establish artifact integrity, not independent authenticity.
 
 The implementation is not complete with an HTML template, unit fixtures, screenshots alone or a report populated with historical/upstream/example numbers. It must deliver an accessible retained campaign bundle containing actual measurements from all six families. Link the HTML and bundle from the existing performance state record, within the repository's evidence-retention rules; large raw artifacts are not committed merely to satisfy this PRD.
+
+After the measured report, start a resumable agent optimization campaign from its ranked bottlenecks using the existing `native-performance-loop` workflow. Freeze the judge, real-game and holdout workloads, hardware/quality identity, original baseline, incumbent, noise band and stop budget before the first candidate. Each iteration profiles, predicts, changes one owner, runs paired A/B on physical hardware, checks representative gameplay and a regression sentinel, records keep/reject/invalid with raw evidence, then re-profiles. Synthetic throughput alone cannot promote a win. The loop records an exact resume action and never claims to run after its process stops.
 
 ## 10. Implementation shape and proposed interface
 
@@ -289,6 +293,7 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 
 ### Phase 5: Deliver the offline report generator
 
+- [x] Provide an offline implementation monitor showing PRD boxes, chronological commits and retained campaign records. proof: `pnpm bench:engines:monitor`; `pnpm exec vitest run scripts/__tests__/engine-load-test-monitor.spec.ts` (4 passed); `file://` screenshot inspected on 2026-09-27. Legacy overwritten attempts remain explicitly unavailable until the v2 store lands.
 - [ ] Render every expanded plan cell with its actual coverage/outcome state.
 - [ ] Prove table/chart/CSV consistency with the canonical derived dataset.
 - [ ] Expose uncertainty, optimization class and comparability beside each displayed ratio.
@@ -307,9 +312,11 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 - [ ] Retain qualified native presentation evidence for the 100-fox comparison.
 - [ ] Demonstrate actual slowdown sensitivity on the qualified measurement lane.
 - [ ] Generate the final HTML containing real TN-versus-upstream measurements for all six families.
+- [ ] Show measured KPI panels and evidence-linked bottleneck hypotheses for over-budget or slower TN cells. proof: offline `report.html` inspection and bundle-derived KPI/attribution consistency tests.
 - [ ] Retain the downloadable raw-data/provenance bundle with verified checksums.
 - [ ] Reproduce at least one comparison per family from the bundle's documented commands in a clean build directory.
 - [ ] Link the delivered report and findings from the existing runtime performance state record.
+- [ ] Run and retain a resumable agent performance iteration derived from the report, with physical-hardware paired A/B, real-game and holdout checks, a keep/reject decision, and the next hypothesis. proof: `native-performance-loop` campaign dashboard and raw iteration bundle linked from `runtime-perf-state.md`.
 - [ ] Run relevant repository gates and record their actual outcomes beside the implementation evidence.
 
 A family is not complete without at least one supported load with valid TN and upstream measurements. Required high-load resource failures and genuinely unsupported feature variants remain visible and qualified; they do not authorize skipping an entire family. Open or unavailable evidence leaves its own checkbox open. Never change acceptance thresholds simply to make ThreeNative look faster.
