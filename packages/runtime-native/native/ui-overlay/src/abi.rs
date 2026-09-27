@@ -59,11 +59,10 @@ pub extern "C" fn tn_ui_overlay_attach(
         return -5;
     };
     crate::HIT_REGIONS.with(|regions| regions.borrow_mut().clear());
-    // WebKit can attach yet paint nothing through DMA buffers on NVIDIA/GBM.
-    // Keep an explicit environment value as the diagnostic override.
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    }
+    // Deliberately no `WEBKIT_DISABLE_DMABUF_RENDERER` default here. Forcing it disables WebKit's
+    // DMA-buffer path on every Linux host, including the arm64 lane where it is not needed, and an
+    // operator whose NVIDIA/GBM host paints nothing through DMA buffers can still set it. A forced
+    // global rendering mode is not ours to choose per platform from inside an attach call.
     OVERLAY.with(|slot| {
         if slot.borrow().is_some() {
             return -1;
