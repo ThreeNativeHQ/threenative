@@ -74,7 +74,7 @@ function sceneWithSpecializedObjects(): {
 }
 
 describe("SceneRenderProjection and the installed output pipeline", () => {
-  it("shares generated matrix declarations across independently allocated projection batches", () => {
+  it("shares the generated instanced matrix attributes across independently allocated batches", () => {
     const declarations: string[] = [];
     for (const count of [8, 8]) {
       const scene = new Scene();
@@ -93,13 +93,11 @@ describe("SceneRenderProjection and the installed output pipeline", () => {
         const builder = new WGSLNodeBuilder(mesh, renderer) as WGSLNodeBuilder & {
           setShaderStage(stage: string): void;
           flowStagesNode(node: unknown, output: string): void;
+          getUniforms(stage: string): string;
           getAttributes(stage: string): string;
         };
         builder.setShaderStage("vertex");
         builder.flowStagesNode(instancedMesh(mesh), "void");
-        // The patched Three takes instance matrices off the uniform path — the uniform path
-        // re-uploads them every draw — so the declaration that must match across batches is the
-        // instanced attribute set, and the matrix is the four `vec4<f32>` columns it names.
         declarations.push(builder.getAttributes("vertex"));
       } finally {
         projection.dispose();
@@ -107,8 +105,10 @@ describe("SceneRenderProjection and the installed output pipeline", () => {
         material.dispose();
       }
     }
-    expect(declarations[0]).toContain("nodeAttribute0 : vec4<f32>");
-    expect(declarations[0]).toContain("nodeAttribute3 : vec4<f32>");
+    // The instance matrix reaches the vertex stage as four vec4 instanced attributes,
+    // one per mat4 column, instead of a uniform mat4x4 array.
+    const columns = /@location\( \d+ \) nodeAttribute\d+ : vec4<f32>/g;
+    expect(declarations[0]?.match(columns)).toHaveLength(4);
     expect(declarations[1]).toBe(declarations[0]);
   });
 

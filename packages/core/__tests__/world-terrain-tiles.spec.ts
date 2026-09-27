@@ -1579,7 +1579,11 @@ describe("TerrainTiles", () => {
       tiles.follow({ x: 2, z: 0 });
       const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
       if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
-      bridge.geometry.getAttribute("position").setY(0, Number.NaN);
+      const position = bridge.geometry.getAttribute("position");
+      position.setY(0, Number.NaN);
+      // Written the way any writer that reaches the screen writes: a buffer change the renderer is
+      // told about. A settled bridge skips its diagnostic until some rendered buffer's version moves.
+      position.needsUpdate = true;
 
       expect(() => tiles.process()).toThrow(/bridge coordinates must be finite/u);
     } finally {
