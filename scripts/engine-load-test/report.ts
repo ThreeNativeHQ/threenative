@@ -144,27 +144,33 @@ export class BenchError extends Error {
   }
 }
 
-function requireObject(value: unknown, path: string): Record<string, unknown> {
+// Exported for the v2 campaign reader (`campaign-report.ts`), which parses the same way. Adding the
+// keyword changes no legacy behaviour; the helpers were already the only fail-closed path here.
+export function requireObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path} must be an object`);
   return value as Record<string, unknown>;
 }
 
-function requireString(source: Record<string, unknown>, key: string, path: string): string {
+export function requireString(source: Record<string, unknown>, key: string, path: string): string {
   const value = source[key];
   if (typeof value !== "string" || value.length === 0)
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a non-empty string`);
   return value;
 }
 
-function requireNumber(source: Record<string, unknown>, key: string, path: string): number {
+export function requireNumber(source: Record<string, unknown>, key: string, path: string): number {
   const value = source[key];
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a finite number`);
   return value;
 }
 
-function requireBoolean(source: Record<string, unknown>, key: string, path: string): boolean {
+export function requireBoolean(
+  source: Record<string, unknown>,
+  key: string,
+  path: string,
+): boolean {
   const value = source[key];
   if (typeof value !== "boolean")
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a boolean`);
