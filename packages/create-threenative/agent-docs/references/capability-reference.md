@@ -960,6 +960,23 @@ export function createReplayDriver( recording: Recording, target: EventTarget, p
 const driver = createReplayDriver(recording, ctx.renderer.domElement);
 ```
 
+### `Daylight`
+
+`class` — An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye, hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.
+
+```ts
+export class Daylight extends Group implements IComputeDriven { … }
+```
+
+- **Use when:** daytime sky, sun and shadows for a large outdoor map · distant terrain should fade into the sky instead of a coloured wall · match a Blender look-dev scene's sun, sky and exposure in the game
+- **Constraints:** every value is required; there is no default sun, sky, haze or exposure · `skySize` must keep the sky box's corners inside the camera's far plane · shadowExtents follow `VirtualShadowNode`: half-widths, finest first, strictly increasing
+- **Overrides:** sky uniforms stay live on `daylight.sky`; the light and fill are `daylight.sun` and `daylight.fill`
+
+```ts
+const daylight = new Daylight({ follow: ctx.camera, sunDirection, sunColor, sunIntensity: 4, shadowExtents: [24, 96, 320], sky: { turbidity: 3, rayleigh: 1.4, mieCoefficient: 0.004, mieDirectionalG: 0.8 }, fill: { sky, ground, intensity: 1.1 }, haze: { color: horizon, density: 0.0011 }, exposure: 2 ** -0.6, skySize: 1600 });
+ctx.add(daylight);
+```
+
 ### `debugFlag`
 
 `function` — Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
@@ -2850,6 +2867,23 @@ export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWor
 const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));
 ```
 
+### `loadTerrainSplat`
+
+`function` — The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Nothing here is a look choice: textures, tiles, tints, thresholds and noise scales all come from the package's table, which the game authors once and its DCC shares.
+
+```ts
+export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }
+```
+
+- **Use when:** terrain textured by splat masks exported from Blender with the world package · the game's terrain should match the DCC's terrain material without a second copy
+- **Constraints:** the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by the `export_terrain_layers.py` recipe · WebGPU allows 16 sampled textures per stage: planes + diffuse maps + normal maps must fit
+- **Overrides:** every value comes from the package's table; the returned material is the game's to adjust
+
+```ts
+const surface = await loadTerrainSplat({ assets: ctx.assets, url: "world/world.json" });
+const world = await WorldCells.load({ assets: ctx.assets, url: "world/world.json", surface, follow, ring: 2 });
+```
+
 ### `loadWorldHeightmap`
 
 `function` — Fetch a raw little-endian uint16 heightmap and expose it as samples.
@@ -2875,7 +2909,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven { … }
 
 - **Use when:** stream terrain without cracks · keep generated terrain resident around a moving player · put a generated terrain tile into a game-owned physics world
 - **Constraints:** sampleHeight and surface are required game choices; no landform or surface preset is installed · residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
-- **Overrides:** tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets
+- **Overrides:** tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, and budgets
 
 ```ts
 const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
@@ -2898,15 +2932,15 @@ const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer
 
 ### `WorldCells`
 
-`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game.
+`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances.
 
 ```ts
 export class WorldCells extends Group implements IComputeDriven { … }
 ```
 
 - **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
-- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell
-- **Overrides:** ring, budgets, terrain tile size/resolution, load `concurrency` and the package's per-asset maxDistance
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
+- **Overrides:** ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
 
 ```ts
 const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });

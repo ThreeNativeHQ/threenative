@@ -792,6 +792,23 @@ export {
   VirtualShadowNode,
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
+/**
+ * An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye,
+ * hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.
+ *
+ * @situation daytime sky, sun and shadows for a large outdoor map
+ * @situation distant terrain should fade into the sky instead of a coloured wall
+ * @situation match a Blender look-dev scene's sun, sky and exposure in the game
+ * @constraint every value is required; there is no default sun, sky, haze or exposure
+ * @constraint `skySize` must keep the sky box's corners inside the camera's far plane
+ * @constraint shadowExtents follow `VirtualShadowNode`: half-widths, finest first, strictly increasing
+ * @override sky uniforms stay live on `daylight.sky`; the light and fill are `daylight.sun` and `daylight.fill`
+ * @example
+ * const daylight = new Daylight({ follow: ctx.camera, sunDirection, sunColor, sunIntensity: 4, shadowExtents: [24, 96, 320], sky: { turbidity: 3, rayleigh: 1.4, mieCoefficient: 0.004, mieDirectionalG: 0.8 }, fill: { sky, ground, intensity: 1.1 }, haze: { color: horizon, density: 0.0011 }, exposure: 2 ** -0.6, skySize: 1600 });
+ * ctx.add(daylight);
+ */
+export { Daylight } from "./render/daylight.js";
+export type { IDaylightOptions } from "./render/daylight.js";
 export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtual-shadow.js";
 /**
  * Attach hundreds of built objects to the scene in slices, presenting a frame between each.

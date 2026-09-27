@@ -109,14 +109,73 @@ scene.add(world);
   residency has hysteresis and does not thrash on a cell boundary.
 - `budgets` are hard caps. A cap that is reached increments `stats().pressure` and skips the
   farthest cell; it never throws mid-frame.
-- `createCollider`, `terrain` (tile size, resolution, LOD distances, skirt depth) and `loadModel`
-  are optional overrides.
+- `rebuildsPerUpdate` caps how many cell-asset batches one `update` refilters, nearest cell first;
+  it defaults to 16. A cell that did not get its turn keeps drawing what it has.
+- `terrain` carries the composed `TerrainTiles` options: tile size, resolution, LOD factors and
+  distances, skirt depth, plus the two radii below.
+- `transparentScatter` is how a scattered part whose own material is `transparent` is drawn —
+  `"cutout"` (default) or `"blend"`.
+- `createCollider` and `loadModel` are optional overrides.
+
+### Terrain reaches further than the props
+
+`terrain.streamRadius` is the terrain residency radius in tiles, and it defaults to `ring`, so a
+world streams ground and props over the same square. Raise it alone to put the ground out to the
+horizon while the props stay near: the default `lodDistances` are `tileSize` multiples, so the far
+tiles of the wider ring take the coarser levels on their own. `terrain.colliderRadius` is the
+separate Chebyshev radius that gets a `createCollider` body, and it also defaults to `ring`; a tile
+crossing it has its body created or disposed as it goes, so a wide render ring does not cost a
+physics body for every tile in it.
+
+```ts
+const world = await WorldCells.load({
+  assets: ctx.assets,
+  url: "world/world.json",
+  surface: new MeshNormalMaterial(),
+  follow: player,
+  ring: 2,
+  budgets: { residentCells: 49, instances: 200_000, bytes: 8_000_000 },
+  // Ground out to 81 tiles, colliders only on the 25 nearest, props over the ring's 25 cells.
+  terrain: { streamRadius: 4, colliderRadius: 2 },
+});
+```
 
 `WorldCells` implements the framework's compute-driven contract with `processCadence: "render"`, so
 registering it with `ctx.add(world)` is enough: the loop calls `update(renderer)` once per rendered
 frame. Prop `maxDistance` batches are refiltered only after the follow point has moved an eighth of
 the cull distance, and a chunk or asset load that completes after its cell was evicted is disposed
 rather than attached.
+
+A refilter that cannot change anything is skipped, not deferred. Every placement of a cell lies
+inside that cell's `cellSize` square, so the distances from where the batch was built and from where
+the follow point is now bracket every distance its placements can have had; when no `lods` switch or
+cull distance of the asset falls in that span, the same placements draw at the same levels, and the
+batch is measured against the position it was actually built from on the next move. What is genuinely
+stale is refiltered nearest cell first, `rebuildsPerUpdate` of them per frame, so a fast player
+streams a few stale-but-drawn batches rather than rebuilding every resident cell in one frame.
+
+An asset's `lods` are consumed with it: every level is loaded through the same loader, limiter and
+asset pipeline as the asset's own GLB, and each placement is drawn by the level its own distance
+selects — `lods[i]` beyond its `distance`, the asset's own GLB nearer than that. That is one
+`InstancedBatch` per level per cell, refiltered on the same trigger as `maxDistance` (an eighth of
+the nearest distance the batching can be crossed at, whichever boundary that is), so the switch is a
+hard one: nothing crossfades and a placement that crosses pops. A level that will not load falls
+back to the one above it and is counted like any other failed load, and a `lods` entry at or beyond
+`maxDistance` is never loaded at all, because an instance that far out is culled anyway.
+
+A GLB is drawn per part, not per model. Several primitives in one GLB — a tree's bark `OPAQUE` and
+needles `BLEND` — load as a `Group` of one child `Mesh` each, and each of them gets its own
+`InstancedBatch` with its own geometry and material, named `cell:asset:level:part`. The placement's
+instance matrix is the placement composed with the part's own transform inside the model, so a part
+that sits above the model origin draws above the placement. `SkinnedMesh` parts are skipped: an
+instanced copy would draw one rest pose.
+
+A part whose own material is `transparent` draws as an alpha cutout by default, because an
+`InstancedMesh` cannot sort its instances: a blended material would draw in submission order and pay
+overdraw. The part gets one clone of its material per asset — never per cell, and never by mutating
+the GLB's own — with `transparent: false`, `depthWrite: true` and an `alphaTest` of the material's
+own cutout point, or `0.5` when it names none. The clone is released with the rest of the asset.
+`transparentScatter: "blend"` draws the material as authored instead.
 
 Read back what is happening with `stats()`:
 
@@ -126,6 +185,7 @@ Read back what is happening with `stats()`:
 | `instances` | Placement instances the resident cells hold, before the `maxDistance` filter. |
 | `loadsInFlight` | Asset and chunk loads that have not settled. |
 | `evictions` | Cells released so far. |
+| `rebuilds` | Cell-asset batches refiltered so far, across every update. |
 | `failures` | Asset or chunk loads that rejected. |
 | `pressure` | Requests rejected by a budget: `cells`, `instances`, `bytes`. |
 

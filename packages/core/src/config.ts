@@ -417,6 +417,11 @@ export interface IThreeNativeConfig {
     /** Source-relative globs omitted from builds; excluded bytes are still reported. */
     readonly exclude?: readonly string[];
     /**
+     * How many cook workers a bake may run at once; absent means the driver's default,
+     * min(4, cores - 1). Not part of any cache key, so changing it re-cooks nothing.
+     */
+    readonly concurrency?: number;
+    /**
      * Automatic discrete LOD. `assets.lod: {}` opts in with the balanced default; `false` or
      * `{ enabled: false }` is the absolute kill switch, and per-asset overrides key off canonical
      * source asset paths. Omission currently bakes nothing — the default-on front door opens only
