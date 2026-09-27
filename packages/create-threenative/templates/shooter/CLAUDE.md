@@ -29,15 +29,6 @@ piece with portable Three.js. Keep the loop, scenes, input, registry, and playte
 globals, dynamic `import()`, and raw physics handles. **Report what blocked you** (API, expectation,
 result, replacement); never stall the game.
 
-A fix inside `@threenative/*` may **start** as a game-side patch
-(`patches/@threenative+<package>@<version>.patch`, wired through pnpm `patchedDependencies`, every
-hunk commented with the game it came from) so you can iterate and measure it against the game. The
-patch is temporary: **once the fixes are settled** — measured, reviewed, regression checks green —
-move them into the engine **through one pull request** on the ThreeNative repository, batching every
-settled hunk with the checks that prove it rather than opening one PR per fix. Delete the game
-patch when a release carrying the merged fixes is pinned. A mechanism that stays in a game patch is
-a bug in the process: the next game hits the same wall.
-
 ## Workflow skills
 
 - `.agents/skills/prd-creator/SKILL.md` / `.claude/skills/prd-creator/SKILL.md` — game plan and approval gate.
@@ -48,7 +39,7 @@ a bug in the process: the next game hits the same wall.
 - `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets.
 - `.agents/skills/threenative-ui/SKILL.md` / `.claude/skills/threenative-ui/SKILL.md` — native-safe UI.
 - `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
-- Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above.
+- Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above.
 
 ## Commands and map
 
