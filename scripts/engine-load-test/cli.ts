@@ -5,6 +5,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  type IWorkloadAxes,
+  parseAxesRecord,
+} from "../../examples/engine-load-test/src/workload.js";
 import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
 import { driveBenchmarkPage, serveDirectory, startProcess, waitForUrl } from "./browser.js";
 import {
@@ -35,6 +39,7 @@ const DEFAULT_LANE_MANIFEST = path.join(repoRoot, "scripts/performance-regressio
 const execFileAsync = promisify(execFile);
 
 interface ILadderOptions {
+  axes: IWorkloadAxes;
   frames: number;
   ladder: string;
   modes: string;
@@ -50,6 +55,17 @@ function flag(name: string): string | undefined {
 
 function ladderOptions(): ILadderOptions {
   return {
+    // Every axis is optional; unset ones resolve to the PRD-117 scene so `positionHash` and the
+    // Godot port stay equivalent until an axis is deliberately moved.
+    axes: parseAxesRecord({
+      geometry: flag("geometry"),
+      hierarchyDepth: flag("hierarchy-depth"),
+      material: flag("material"),
+      mutationRate: flag("mutation-rate"),
+      passCount: flag("passes"),
+      shadowCasterShare: flag("shadow-caster-share"),
+      visibleFraction: flag("visible-fraction"),
+    }),
     frames: Number(flag("frames") ?? 600),
     ladder: flag("ladder") ?? "256,1024,4096,16384",
     modes: flag("modes") ?? "L1,L2",
@@ -66,6 +82,13 @@ function query(options: ILadderOptions): string {
     modes: options.modes,
     repeats: String(options.repeats),
     warmup: String(options.warmup),
+    geometry: options.axes.geometry,
+    material: options.axes.material,
+    hierarchyDepth: String(options.axes.hierarchyDepth),
+    visibleFraction: String(options.axes.visibleFraction),
+    mutationRate: String(options.axes.mutationRate),
+    shadowCasterShare: String(options.axes.shadowCasterShare),
+    passes: String(options.axes.passCount),
   });
   if (options.sourceSha !== undefined) params.set("sourceSha", options.sourceSha);
   return params.toString();
@@ -344,7 +367,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 

@@ -3,10 +3,10 @@
 import { createServer } from 'node:http';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { PNG } from 'pngjs';
@@ -61,6 +61,25 @@ const PRODUCTION_TICK_INTERVAL_MS = 1_000 / 60;
 const DESKTOP_SCREENSHOT_TIMEOUT_MS = 5_000;
 const PRODUCTION_PROFILE = 'production';
 const REGRESSION_PROFILE = 'regression';
+// A selected scenario can be longer than the old fixed 30 s cap: the default scaffold alone runs
+// a 60 s warmup plus a 60 s window. The budget grows with the frames the written workload asks
+// for at the playtest runner's own per-tick allowance, and a base covers browser/host startup and
+// first-use compilation instead of capping the run at an arbitrary 30 s.
+const PLAYTEST_TIMEOUT_BASE_MS = 60_000;
+const PLAYTEST_FRAME_BUDGET_MS = 250;
+export function playtestTimeoutMs(scenario) {
+  const frameCount = (value) => (Number.isFinite(value) && value > 0 ? value : 0);
+  const warmupFrames = frameCount(scenario?.warmupFrames);
+  const frames = (Array.isArray(scenario?.steps) ? scenario.steps : []).reduce(
+    (total, step) => total
+      + frameCount(step?.holdFrames)
+      + frameCount(step?.waitFrames)
+      + frameCount(step?.holdTicks)
+      + frameCount(step?.waitTicks),
+    0,
+  );
+  return PLAYTEST_TIMEOUT_BASE_MS + (warmupFrames + frames) * PLAYTEST_FRAME_BUDGET_MS;
+}
 
 function installedPackageFile(packageName, file) {
   try {
@@ -100,8 +119,10 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     prebuiltArtifact: undefined,
     physicalEvidence: undefined,
     profile: PRODUCTION_PROFILE,
+    project: undefined,
     renderSize: undefined,
     repetitions: 3,
+    scenario: undefined,
     sourceSha: undefined,
     target: undefined,
     warmup: 60,
@@ -121,9 +142,11 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     else if (flag === '--prebuilt-artifact') { explicit.add('prebuiltArtifact'); options.prebuiltArtifact = nextValue(argv, ++index, flag); }
     else if (flag === '--physical-evidence') { explicit.add('physicalEvidence'); options.physicalEvidence = nextValue(argv, ++index, flag); }
     else if (flag === '--profile') options.profile = nextValue(argv, ++index, flag);
+    else if (flag === '--project') { explicit.add('project'); options.project = nextValue(argv, ++index, flag); }
     else if (flag === '--regression') options.profile = REGRESSION_PROFILE;
     else if (flag === '--render-size') { explicit.add('renderSize'); options.renderSize = parseRenderSize(nextValue(argv, ++index, flag)); }
     else if (flag === '--repetitions') { explicit.add('repetitions'); options.repetitions = positiveInteger(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--scenario') { explicit.add('scenario'); options.scenario = nextValue(argv, ++index, flag); }
     else if (flag === '--source-sha') { explicit.add('sourceSha'); options.sourceSha = nextValue(argv, ++index, flag); }
     else if (flag === '--target') { explicit.add('target'); options.target = nextValue(argv, ++index, flag); }
     else if (flag === '--warmup') { explicit.add('warmup'); options.warmup = positiveNumber(nextValue(argv, ++index, flag), flag); }
@@ -141,6 +164,15 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
   return validateProductionOptions(options);
 }
 
+// Lexical containment: both paths were resolved from the same --project root in normalizeOptions,
+// so a symlinked project still passes and the staging re-anchor stays inside the copy. A scenario
+// that escapes (../outside.json or an absolute outside path) is refused before it can be read
+// outside staging or overwrite a generated scenario path.
+function scenarioInsideProject(project, scenario) {
+  const rel = relative(project, scenario);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
 export function validateProductionOptions(input) {
   const options = normalizeOptions(input);
   if (options.help) return options;
@@ -155,6 +187,15 @@ export function validateProductionOptions(input) {
   }
   if (options.control !== undefined && !supportedControls.has(options.control)) {
     throw new ProductionEvidenceError('TN_PROD_CONTROL_UNSUPPORTED', `Production control '${options.control}' is not supported.`);
+  }
+  if (options.scenario !== undefined && options.project === undefined) {
+    throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', '--scenario requires --project so an existing project is measured against its own scenario.');
+  }
+  if (options.scenario !== undefined && !scenarioInsideProject(options.project, options.scenario)) {
+    throw new ProductionEvidenceError('TN_PROD_SCENARIO_OUTSIDE_PROJECT', `--scenario '${basename(options.scenario)}' must live inside --project '${basename(options.project)}'.`);
+  }
+  if (options.target === 'fixture' && options.project !== undefined) {
+    throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', '--project is not valid for the fixture negative control.');
   }
   if (options.target === 'fixture' && options.control === undefined) {
     throw new ProductionEvidenceError('TN_PROD_FIXTURE_CONTROL_REQUIRED', 'The fixture target is available only as an explicit negative control.');
@@ -206,7 +247,7 @@ export async function runProductionProfile(input, dependencies = {}) {
 
 export async function collectProduction(options, context, runId) {
   const tools = resolveProductionTools();
-  if (tools.scaffoldCli === undefined || !await fileExists(tools.scaffoldCli)) {
+  if (options.project === undefined && (tools.scaffoldCli === undefined || !await fileExists(tools.scaffoldCli))) {
     throw new ProductionEvidenceError(
       'TN_PROD_SCAFFOLDER_UNAVAILABLE',
       "The installed 'create-threenative' package does not expose its built scaffolder; install it or run the repository build first.",
@@ -223,11 +264,20 @@ export async function collectProduction(options, context, runId) {
   // three minutes it takes to pack the workspace and build a platformer nobody may judge.
   const webDisplay = webArmRequested(options) ? await rateBearingDisplay(tools) : undefined;
 
-  const temporaryRoot = await mkdtemp(join(tmpdir(), 'threenative-production-'));
+  // Keep staging on the checkout's volume (Windows packaging cannot cross volumes), but outside
+  // the repository workspace. A project under repo/.runtime is discovered by pnpm as part of the
+  // parent workspace, so its install populates the workspace root and leaves the staged project's
+  // node_modules missing. The checkout sibling keeps the same-volume guarantee without inheriting
+  // pnpm-workspace.yaml.
+  const stagingParent = inRepositoryCheckout
+    ? join(dirname(commandRoot), '.threenative-profile-production')
+    : tmpdir();
+  await mkdir(stagingParent, { recursive: true });
+  const temporaryRoot = await mkdtemp(join(stagingParent, 'threenative-production-'));
   const project = join(temporaryRoot, 'platformer');
   const startedAt = new Date().toISOString();
   try {
-    await scaffoldPlatformer(project, tools);
+    await stageProductionProject(options, project, tools);
     tools.workloadSourceHash = await hashPath(join(project, 'src'));
     const scenarios = await writeRunScenarios(project, options);
     const artifactsRoot = join(project, 'artifacts', 'production');
@@ -236,12 +286,16 @@ export async function collectProduction(options, context, runId) {
     const native = nativeTargets.has(options.target) || options.target === 'desktop-pair'
       ? await collectNative(project, scenarios, artifactsRoot, options, tools)
       : undefined;
+    const resolutionScaleSetting = native === undefined
+      ? undefined
+      : await readResolutionScaleSetting(project, options);
     return assembleEvidence({
       context,
       native,
       options,
       performanceBounds: scenarios.performanceBounds,
       project,
+      resolutionScaleSetting,
       runId,
       startedAt,
       web,
@@ -259,6 +313,10 @@ function normalizeOptions(input = {}) {
   const defaultRenderSize = input.hostedSoftware === true && target === 'desktop'
     ? { height: 720, width: 1280 }
     : { height: 1080, width: 1920 };
+  const project = input.project === undefined ? undefined : resolve(input.project);
+  const scenario = input.scenario === undefined
+    ? undefined
+    : project === undefined ? resolve(input.scenario) : resolve(project, input.scenario);
   return {
     audioEvidence: input.audioEvidence,
     coldStarts: input.coldStarts ?? (regression ? REGRESSION_COLLECTION_PROFILE.coldStarts : 1),
@@ -270,9 +328,11 @@ function normalizeOptions(input = {}) {
     out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
     prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
     physicalEvidence: input.physicalEvidence,
+    project,
     renderSize: renderSize ?? defaultRenderSize,
     profile,
     repetitions: input.repetitions ?? (regression ? 1 : 3),
+    scenario,
     sourceSha: input.sourceSha,
     target,
     warmup: input.warmup ?? (regression ? 5 : 60),
@@ -281,6 +341,47 @@ function normalizeOptions(input = {}) {
 
 function warmupFramesFor(options) {
   return Math.max(0, Math.ceil((options.warmup ?? 0) * 60));
+}
+
+// Directories the judge regenerates itself. Copying a previous build measures stale bytes and
+// copying node_modules moves gigabytes; node_modules is linked into the staged copy instead.
+const PROJECT_SKIP_ENTRIES = new Set(['.runtime-mailbox', '.threenative', 'artifacts', 'dist', 'dist-native', 'node_modules']);
+
+// The default scaffold is built and thrown away. An existing project is copied first so every
+// instrumented file, scenario and build output lands in the copy and the source is never touched.
+export async function stageProductionProject(options, project, tools, dependencies = {}) {
+  if (options.project === undefined) {
+    await (dependencies.scaffoldPlatformer ?? scaffoldPlatformer)(project, tools);
+    return project;
+  }
+  const copy = dependencies.cp ?? cp;
+  const link = dependencies.symlink ?? symlink;
+  // Realpath first: a symlinked --project must stage a copy of the target, never write through it.
+  const source = await realpath(options.project).catch(() => undefined);
+  const details = source === undefined ? undefined : await stat(source).catch(() => undefined);
+  if (details === undefined || !details.isDirectory()) {
+    throw new ProductionEvidenceError('TN_PROD_PROJECT_MISSING', `--project '${basename(options.project)}' is not an existing project directory.`);
+  }
+  await copy(source, project, {
+    // Dereference so a nested symlink (for example src/main.ts into another checkout) becomes a
+    // real staged file; instrumentation then writes the copy instead of through to its source.
+    dereference: true,
+    recursive: true,
+    filter: (candidate) => {
+      const top = relative(source, candidate).split(sep)[0];
+      return top === '' || !PROJECT_SKIP_ENTRIES.has(top);
+    },
+  });
+  // node_modules is skipped by the filter above and linked wholesale, never copied or instrumented.
+  if (existsSync(join(source, 'node_modules'))) {
+    await link(join(source, 'node_modules'), join(project, 'node_modules'));
+  }
+  if (options.scenario !== undefined) {
+    // The staged copy is the only project the judge may read; re-anchor a scenario named inside
+    // the source so runs measure the staged snapshot, not the file the developer may still edit.
+    options.scenario = join(project, relative(options.project, options.scenario));
+  }
+  return project;
 }
 
 async function scaffoldPlatformer(project, tools) {
@@ -344,22 +445,18 @@ function packageSourceFlag(name) {
   throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
-function nativeDiagnostics(assertions) {
-  return {
-    ...assertions,
-    diagnostics: {
-      ...assertions.diagnostics,
-      noConsoleErrors: true,
-      noRuntimeDiagnostics: true,
-      runtimeReady: true,
-      noNetworkErrors: false,
-      networkErrorsOptOutReason: 'Native mailbox transports have no browser network observer; console and runtime diagnostics remain required.',
-    },
-  };
+function nativeAssertions(assertions, timeoutMs, hostedSoftware) {
+  const { diagnostics: _browserOnly, ...supported } = assertions;
+  return { ...supported, startup: supported.startup ?? (hostedSoftware
+    ? { maxCompileSettledMs: timeoutMs }
+    : { maxReadyMs: timeoutMs }) };
 }
 
 export async function writeRunScenarios(project, options) {
-  const source = JSON.parse(await readFile(join(project, platformerScenario), 'utf8'));
+  const scenarioPath = options.scenario ?? join(project, platformerScenario);
+  const source = JSON.parse(await readFile(scenarioPath, 'utf8').catch(() => {
+    throw new ProductionEvidenceError('TN_PROD_SCENARIO_MISSING', `Production scenario '${basename(scenarioPath)}' was not found.`);
+  }));
   const sourceAssertions = source.assert && typeof source.assert === 'object' && !Array.isArray(source.assert)
     ? source.assert
     : {};
@@ -373,14 +470,24 @@ export async function writeRunScenarios(project, options) {
   const { assert: _sourceAssertions, ...scenarioSource } = source;
   const workloadFrames = Math.max(1, Math.ceil(options.duration * 60));
   const warmupFrames = Math.max(0, Math.ceil(options.warmup * 60));
+  // An existing project's own scenario is the workload: its steps are what the game actually does
+  // (a menu click, a flight), and replacing them with a forward run exercises nothing. The
+  // scaffolded default has no authored workload, so it keeps the synthetic run the warmup and
+  // duration size.
+  const workloadSteps = options.project === undefined
+    ? [
+        { holdFrames: Math.min(60, workloadFrames), kind: 'input', press: 'ArrowRight', release: true },
+        { kind: 'wait', release: true, waitFrames: workloadFrames },
+      ]
+    : scenarioSource.steps;
+  if (!Array.isArray(workloadSteps) || workloadSteps.length === 0) {
+    throw new ProductionEvidenceError('TN_PROD_SCENARIO_STEPS_MISSING', `Production scenario '${basename(scenarioPath)}' defines no workload steps.`);
+  }
   const workload = {
     ...scenarioSource,
     assert: workloadAssertions,
     artifacts: { screenshots: 'after' },
-    steps: [
-      { holdFrames: Math.min(60, workloadFrames), kind: 'input', press: 'ArrowRight', release: true },
-      { kind: 'wait', release: true, waitFrames: workloadFrames },
-    ],
+    steps: workloadSteps,
     viewport: options.renderSize,
     warmupFrames,
   };
@@ -394,7 +501,18 @@ export async function writeRunScenarios(project, options) {
           waitFrames: 1,
         })),
       ]
-    : workload.steps;
+    : workload.steps.map((step) => {
+        if (step.kind !== 'click' || step.at === undefined || 'entity' in step.at) return step;
+        const viewport = scenarioSource.viewport ?? options.renderSize;
+        const { x, y } = step.at;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(viewport.width)
+          || !Number.isFinite(viewport.height) || viewport.width <= 0 || viewport.height <= 0
+          || x < 0 || y < 0 || x > viewport.width || y > viewport.height) {
+          throw new ProductionEvidenceError('TN_PROD_NATIVE_CLICK_INVALID', `Click step '${step.label ?? ''}' lies outside its source viewport.`);
+        }
+        const { at: _at, kind: _kind, ...pointerStep } = step;
+        return { ...pointerStep, pointerPosition: { buttons: 1, x: x / viewport.width, y: y / viewport.height } };
+      });
   const startup = {
     ...scenarioSource,
     assert: { diagnostics: { noConsoleErrors: true, runtimeReady: true } },
@@ -403,9 +521,10 @@ export async function writeRunScenarios(project, options) {
     viewport: options.renderSize,
     warmupFrames: 0,
   };
+  const timeoutMs = playtestTimeoutMs(workload);
   const nativeWorkload = {
     ...workload,
-    assert: nativeDiagnostics(workload.assert),
+    assert: nativeAssertions(workload.assert, timeoutMs, options.hostedSoftware),
     artifacts: {
       screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
         ? 'after'
@@ -413,7 +532,7 @@ export async function writeRunScenarios(project, options) {
     },
     steps: nativeWorkloadSteps,
   };
-  const nativeStartup = { ...startup, assert: nativeDiagnostics(startup.assert), artifacts: { screenshots: 'after' } };
+  const nativeStartup = { ...startup, assert: nativeAssertions(startup.assert, timeoutMs, options.hostedSoftware), artifacts: { screenshots: 'after' } };
   const workloadPath = join(project, 'playtests/production-performance.run.playtest.json');
   const startupPath = join(project, 'playtests/production-startup.run.playtest.json');
   const nativeWorkloadPath = join(project, 'playtests/production-performance.native.playtest.json');
@@ -427,6 +546,7 @@ export async function writeRunScenarios(project, options) {
     nativeStartupPath,
     nativeWorkloadPath,
     startupPath,
+    timeoutMs,
     workloadPath,
   };
 }
@@ -463,8 +583,12 @@ async function rateBearingDisplay(tools) {
 }
 
 async function collectWeb(project, scenarios, artifactsRoot, options, tools, display) {
+  // The marker endpoint the judge is told to report its first frame to. The game's own samples ride
+  // the console (a fetch from the page is an in-flight request Chromium reports as ERR_ABORTED at
+  // teardown, which the scenario's own noNetworkErrors policy would fail the run for).
+  const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
-    await installWebProfileEntry(project, options.control, warmupFramesFor(options));
+    await installWebProfileEntry(project, options.control, warmupFramesFor(options), options.project === undefined);
     // A production build can outlast the default timeout on slow hosted runners.
     const build = await runCommand('pnpm', ['run', 'build:web'], project, undefined, 300_000);
     if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', `The scaffolded platformer web build failed.${failureSuffix(build)}`);
@@ -472,14 +596,16 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools, dis
     const runs = [];
     const startups = [];
     for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
-      const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), tools.playtestCli);
+      const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), markerServer, tools.playtestCli, scenarios.timeoutMs);
       startups.push(startup);
       for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
         runs.push(await runWebScenario(
           project,
           scenarios.workloadPath,
           join(artifactsRoot, `web-${coldStart + 1}-${repetition + 1}`),
+          markerServer,
           tools.playtestCli,
+          scenarios.timeoutMs,
         ));
       }
     }
@@ -494,6 +620,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools, dis
       startups,
     };
   } finally {
+    await markerServer.close();
   }
 }
 
@@ -502,35 +629,34 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools, dis
  * WebGPU from its CPU rasteriser even with the recipe's `--enable-features=Vulkan`, so a machine
  * that has a display must run the web arm headed: measured on one RTX 2080, headless reported
  * `google / swiftshader` and headed `nvidia / turing`. The scene-overview probe already makes the
- * same choice (`packages/playtest/src/runner/sceneOverview.ts`).
+ * same choice (`packages/playtest/src/runner/sceneOverview.ts`). The web arm is refused outright
+ * when the runner would measure it on a private Xvfb (`webRateDisplayFault`), so an unconditional
+ * `--headed` here costs no headless lane its frames.
  */
-export function webScenarioArguments({ artifactPath, env = process.env, playtestCli, port, project, scenarioPath }) {
-  return [
-    playtestCli,
-    scenarioPath,
-    '--artifacts', artifactPath,
-    '--browser-recipe', 'webgpu',
-    ...(env.DISPLAY === undefined ? [] : ['--headed']),
-    '--project', project,
-    '--server-command', `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
-    '--timeout', '30000',
-    '--url', `http://127.0.0.1:${port}`,
-  ];
-}
-
-async function runWebScenario(project, scenarioPath, artifactDirectory, playtestCli) {
+async function runWebScenario(project, scenarioPath, artifactDirectory, markerServer, playtestCli, timeoutMs) {
   await mkdir(artifactDirectory, { recursive: true });
   const port = await availablePort();
-  const args = webScenarioArguments({
-    artifactPath: relative(project, artifactDirectory),
+  const relativeArtifact = relative(project, artifactDirectory);
+  const args = [
     playtestCli,
-    port,
-    project,
-    scenarioPath: relative(project, scenarioPath),
-  });
+    relative(project, scenarioPath),
+    '--artifacts', relativeArtifact,
+    '--browser-recipe', 'webgpu',
+    // The judge reports its first frame here, and the runner exempts that one request from the
+    // network-failure policy. The game's own samples ride the console instead.
+    '--judge-marker-url', markerServer.url,
+    '--headed',
+    '--project', project,
+    '--server-command', `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+    '--timeout', String(timeoutMs),
+    '--url', `http://127.0.0.1:${port}`,
+  ];
   const command = await browserCommand(args);
+  // The game stamps its first frame with `Date.now()`, so the elapsed clock here is wall time.
   const startedAt = Date.now();
-  const result = await runCommand(command.command, command.args, commandRoot, undefined, 180_000);
+  // The outer process has to outlive the inner operation budget it hands the CLI, or a scenario
+  // the CLI is still legitimately running would be killed from outside.
+  const result = await runCommand(command.command, command.args, commandRoot, undefined, timeoutMs + PLAYTEST_TIMEOUT_BASE_MS);
   const report = parsePlaytestReport(result.stdout);
   return normalizeRun(
     result,
@@ -555,12 +681,16 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
       `The scaffolded platformer ${target} build failed.${details.length === 0 ? '' : `\n${details.slice(-4_000)}`}`,
     );
   }
-  const artifactPath = options.prebuiltArtifact ?? await nativeArtifactPath(project, target);
+  // A desktop prebuilt artifact supplies the runtime used to build the game; launch the packaged
+  // game executable, not the bare runtime CLI.
+  const artifactPath = target !== 'desktop' && options.prebuiltArtifact !== undefined
+    ? options.prebuiltArtifact
+    : await nativeArtifactPath(project, target);
   const artifactSha = await hashPath(artifactPath);
   const runs = [];
   const startups = [];
   for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
-    const startup = await runNativeScenario(project, target, scenarios.nativeStartupPath, join(artifactsRoot, `native-startup-${coldStart + 1}`), options, artifactPath, tools);
+    const startup = await runNativeScenario(project, target, scenarios.nativeStartupPath, join(artifactsRoot, `native-startup-${coldStart + 1}`), options, artifactPath, tools, scenarios.timeoutMs);
     startups.push(startup);
     for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
       runs.push(await runNativeScenario(
@@ -571,6 +701,7 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
         options,
         artifactPath,
         tools,
+        scenarios.timeoutMs,
       ));
     }
   }
@@ -586,10 +717,10 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   };
 }
 
-async function runNativeScenario(project, target, scenarioPath, artifactDirectory, options, artifactPath, tools) {
+async function runNativeScenario(project, target, scenarioPath, artifactDirectory, options, artifactPath, tools, timeoutMs) {
   await mkdir(artifactDirectory, { recursive: true });
   if (target === 'desktop') {
-    return await runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools);
+    return await runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools, timeoutMs);
   }
   const modulePath = await playtestRunnerPath(project, tools);
   if (modulePath === undefined) {
@@ -615,7 +746,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
     projectPath: project,
     scenarioPath: relative(project, scenarioPath),
     target,
-    timeoutMs: 30_000,
+    timeoutMs,
     trace: false,
     url: 'http://127.0.0.1:41777',
   };
@@ -639,7 +770,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
   }
 }
 
-async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools) {
+async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory, options, artifactPath, tools, timeoutMs) {
   const modulePath = await playtestRunnerPath(project, tools);
   if (modulePath === undefined) {
     return { elapsedMs: undefined, report: undefined, screenshot: undefined, series: undefined, status: 2 };
@@ -651,8 +782,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   const responsePath = join(mailboxRoot, 'tn-playtest-response.json');
   const runner = await import(pathToFileURL(modulePath).href);
   const mailbox = new runner.LocalDeviceMailbox();
-  const timeoutMs = 30_000;
-  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath }, timeoutMs);
+  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
   const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
   const transport = {
     capabilities: innerTransport.capabilities,
@@ -728,6 +858,32 @@ export function profileConfigPath(project, configPath = undefined) {
   return configPath ?? join(project, '.threenative', 'build', 'config.json');
 }
 
+export function rendererResolutionScaleSetting(config, target) {
+  const renderer = config?.renderer ?? {};
+  const scale = target.startsWith('android')
+    ? renderer.android?.resolutionScale ?? renderer.resolutionScale
+    : renderer.resolutionScale;
+  if (scale === undefined) return 'unset';
+  if (scale === 'auto') return scale;
+  if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0 || scale > 1) {
+    throw new ProductionEvidenceError('TN_PROD_RENDERER_SCALE_INVALID', 'Built config has an invalid renderer resolutionScale.');
+  }
+  return String(scale);
+}
+
+async function readResolutionScaleSetting(project, options) {
+  let config;
+  try {
+    config = JSON.parse(await readFile(profileConfigPath(project, options.config), 'utf8'));
+  } catch (error) {
+    throw new ProductionEvidenceError(
+      'TN_PROD_RENDERER_SCALE_MISSING',
+      `Could not read the built renderer config: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return rendererResolutionScaleSetting(config, options.target);
+}
+
 function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   let child;
   let output = '';
@@ -763,7 +919,7 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
       if (stopping !== undefined) return stopping;
       stopping = (async () => {
         if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
-        const cleanupTimeoutMs = options.desktopCleanupTimeoutMs ?? 2_000;
+        const cleanupTimeoutMs = options.desktopCleanupTimeoutMs ?? 10_000;
         const waitForExit = new Promise((resolve, reject) => {
           let timer;
           let settled = false;
@@ -809,6 +965,26 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   };
 }
 
+// `xvfb-run` can replace a successful child's status with its cleanup failure. Use the
+// repository wrapper in headless Linux and preserve the child's own status.
+function privateDisplayCommand(executable, args) {
+  if (process.platform !== 'linux' || process.env.DISPLAY !== undefined) {
+    return { args, command: executable };
+  }
+  const wrapper = join(scriptDirectory, 'xvfb.sh');
+  if (!existsSync(wrapper)) {
+    throw new ProductionEvidenceError(
+      'TN_PROD_XVFB_WRAPPER_UNAVAILABLE',
+      `Headless Linux profiling needs the packaged display wrapper '${wrapper}', which is missing.`,
+    );
+  }
+  return { args: [wrapper, executable, ...args], command: '/bin/sh' };
+}
+
+export function nativeLaunchesExternalBundle(artifactPath, options) {
+  return options.prebuiltArtifact !== undefined && artifactPath === options.prebuiltArtifact;
+}
+
 function spawnNative(artifactPath, project, options, mailboxRoot) {
   const bundle = join(project, '.threenative/build/game.js');
   // A packaged desktop artifact embeds the instrumented game entry under its own module root, and
@@ -816,16 +992,15 @@ function spawnNative(artifactPath, project, options, mailboxRoot) {
   // the external bundle never loads and the run reports TN_PLAYTEST_BRIDGE_MISSING at zero frames.
   // Launch the embedded entry. A bare runtime supplied through `--prebuilt-artifact` carries no
   // embedded entry and still needs the external bundle named on the command line.
-  const launchesExternalBundle = options.prebuiltArtifact !== undefined;
+  const launchesExternalBundle = nativeLaunchesExternalBundle(artifactPath, options);
   const nativeArgs = [
     ...(launchesExternalBundle ? ['run', bundle] : []),
     '--width', String(options.renderSize.width),
     '--height', String(options.renderSize.height),
     '--headless',
   ];
-  const command = process.platform === 'linux' && process.env.DISPLAY === undefined ? 'xvfb-run' : artifactPath;
-  const args = command === 'xvfb-run' ? ['-a', '-s', '-screen 0 1600x900x24', artifactPath, ...nativeArgs] : nativeArgs;
-  return spawn(command, args, {
+  const command = privateDisplayCommand(artifactPath, nativeArgs);
+  return spawn(command.command, command.args, {
     cwd: project,
     detached: process.platform !== 'win32',
     env: { ...process.env, TN_PLAYTEST_MAILBOX_ROOT: mailboxRoot, SDL_VIDEODRIVER: process.platform === 'linux' ? 'x11' : process.env.SDL_VIDEODRIVER },
@@ -841,13 +1016,13 @@ export async function installNativeProfileEntry(project, target, options) {
   const mailbox = target === 'desktop'
     ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), true)}\n${mailbox}export default game;\n`;
+  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), options.project === undefined)}\n${mailbox}export default game;\n`;
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
-  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target, options.renderSize);
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', options.renderSize);
 }
 
-export async function setNativeProfileEntry(project, entry, target, renderSize = undefined) {
+export async function setNativeProfileEntry(project, entry, renderSize = undefined) {
   const configPath = join(project, 'threenative.config.ts');
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
@@ -860,14 +1035,8 @@ export async function setNativeProfileEntry(project, entry, target, renderSize =
     // its window size from there before any command-line flag, so the profiled surface is only the
     // requested render size when the config states it.
     const sized = renderSize === undefined ? withEntry : applyWindowSize(withEntry, renderSize);
-    const rendered = target === 'desktop'
-      ? sized.replace(
-          /(\bui\s*:\s*\{\s*renderer\s*:\s*)["'][^"']*["']/mu,
-          `$1"native"`,
-        )
-      : sized;
-    if (rendered !== config) {
-      await writeFile(configPath, rendered);
+    if (sized !== config) {
+      await writeFile(configPath, sized);
     }
     if (withEntry !== config) {
       const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
@@ -968,6 +1137,7 @@ if (typeof tnProductionRequestAnimationFrame !== "function") {
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
+let tnProductionPresentation;
 let tnProductionSamples = [];
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
@@ -1019,9 +1189,9 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
  * parser and one clock serve both. It used to POST to a marker server, which the playtest's own
  * `noNetworkErrors` policy then failed the run for: Chromium reports every in-flight `fetch` as
  * `net::ERR_ABORTED` when the runner tears the page down, so the profile failed its own runs for
- * its own instrumentation. Nothing the game does is observed any less.
+ * its own instrumentation. The judge still owns `--judge-marker-url`; only the game's samples moved.
  */
-export function webFrameInstrumentation(control, warmupFrames = 0) {
+export function webFrameInstrumentation(control, warmupFrames = 0, paceTicks = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
@@ -1032,6 +1202,7 @@ if (typeof tnProductionRequestAnimationFrame !== "function") {
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
+let tnProductionPresentation;
 let tnProductionSamples = [];
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
@@ -1039,7 +1210,18 @@ const tnProductionBusyWait = (milliseconds) => {
   while (performance.now() < deadline) {}
 };
 ${productionPerformanceReader()}
+${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
+  tnProductionInstallPace();
+  // One browser presentation can invoke every callback registered for it with the same
+  // DOMHighResTimeStamp. Counting each callback would push a zero-length interval and make meanFps
+  // indeterminate, so only the first callback for a presentation is the frame; the rest still run
+  // their callback unchanged.
+  if (Number.isFinite(timestamp) && timestamp === tnProductionPresentation) {
+    callback(timestamp);
+    return;
+  }
+  tnProductionPresentation = Number.isFinite(timestamp) ? timestamp : undefined;
   const frameIndex = tnProductionFrameIndex++;
   const inWarmup = frameIndex < tnProductionWarmupFrames;
   if (frameIndex === tnProductionWarmupFrames) {
@@ -1076,14 +1258,70 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-async function installWebProfileEntry(project, control, warmupFrames = 0) {
+async function installWebProfileEntry(project, control, warmupFrames = 0, paceTicks = false) {
   const markerPath = join(project, 'src/profile-production-marker.ts');
   const mainPath = join(project, 'src/main.ts');
   const markerImport = 'import "./profile-production-marker.js";';
   const main = await readFile(mainPath, 'utf8');
-  const source = webFrameInstrumentation(control, warmupFrames);
+  const source = webFrameInstrumentation(control, warmupFrames, paceTicks);
   await writeFile(markerPath, source);
   if (!main.includes(markerImport)) await writeFile(mainPath, `${markerImport}\n${main}`);
+}
+
+
+async function createFrameMarkerServer(port = 0) {
+  const events = [];
+  const waiters = [];
+  const server = createServer((request, response) => {
+    if (request.method !== 'POST') {
+      response.writeHead(405).end();
+      return;
+    }
+    const chunks = [];
+    request.on('data', (chunk) => chunks.push(chunk));
+    request.on('end', () => {
+      let payload = {};
+      try {
+        payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch {
+        // The request is still a first-frame signal even if the optional batch is malformed.
+      }
+      const event = { ...payload, receivedAt: performance.now() };
+      events.push(event);
+      for (const waiter of waiters.splice(0)) waiter();
+      response.setHeader('access-control-allow-origin', '*');
+      response.writeHead(204).end();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new ProductionEvidenceError('TN_PROD_MARKER_SERVER_FAILED', 'The first-frame marker server did not expose a TCP port.');
+  return {
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+    get length() { return events.length; },
+    url: `http://127.0.0.1:${address.port}/first-frame`,
+    waitFor: async (from, timeoutMs) => {
+      if (events.length > from) return markerEvents(events.slice(from));
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, timeoutMs);
+        const waiter = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        waiters.push(waiter);
+      });
+      return markerEvents(events.slice(from));
+    },
+  };
+}
+
+function markerEvents(events) {
+  const firstFrame = events.find(({ kind }) => kind === 'first-frame');
+  const samples = events.flatMap(({ kind, samples: batch }) => kind === 'samples' && Array.isArray(batch) ? batch : []);
+  return { firstFrame, samples };
 }
 
 async function normalizeRun(
@@ -1200,7 +1438,7 @@ function frameSeriesFromReport(report) {
   return series.length === 0 ? undefined : series;
 }
 
-export function assembleEvidence({ context, native, options, performanceBounds, project, runId, startedAt, web }) {
+export function assembleEvidence({ context, native, options, performanceBounds, project, resolutionScaleSetting, runId, startedAt, web }) {
   const arms = [web, native].filter((arm) => arm !== undefined);
   const regression = options.profile === REGRESSION_PROFILE;
   const expectedRuns = collectionLaunchPlan(options).filter((entry) => entry === 'steady').length;
@@ -1255,7 +1493,7 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
   }
   const artifactHashes = arms.map(({ artifactSha, bundleSha }) => `${artifactSha}:${bundleSha ?? artifactSha}`);
   const target = options.target;
-  const identity = identityFor(options, web, native, artifactHashes);
+  const identity = identityFor(options, web, native, artifactHashes, resolutionScaleSetting);
   const evidence = {
     artifact: {
       applicationClass: target === 'desktop-pair' ? 'platformer-desktop-pair' : arms[0]?.applicationClass ?? 'platformer-production',
@@ -1264,9 +1502,14 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     },
     artifacts: [],
     budget: {
-      maxP99FrameMs: 33,
-      maxStartupMs: target.includes('physical') ? 8_000 : 5_000,
-      minMeanFps: target.includes('physical') ? 59.4 : 60,
+      // The scaffolded platformer is judged by the default steady-state budget. An existing project
+      // is judged only by the bounds its own scenario authors: a known ~40 fps game must not fail
+      // before A/B on a default it never claimed.
+      ...(options.project === undefined ? {
+        maxP99FrameMs: 33,
+        maxStartupMs: target.includes('physical') ? 8_000 : 5_000,
+        minMeanFps: target.includes('physical') ? 59.4 : 60,
+      } : {}),
       ...(regression ? {
         minDurationSeconds: REGRESSION_COLLECTION_PROFILE.durationSeconds,
         minFrameSamples: REGRESSION_COLLECTION_PROFILE.minFrameSamples,
@@ -1603,13 +1846,14 @@ export function webRateIdentity(web) {
   return { webDisplay: display.kind === 'existing' ? `session:${display.display}` : display.kind };
 }
 
-function identityFor(options, web, native, artifactHashes) {
+function identityFor(options, web, native, artifactHashes, resolutionScaleSetting) {
   const common = {
     // Only observed hardware data may certify a promoted comparison. Missing fields remain absent.
     ...webRateIdentity(web),
     workloadHash: web?.workloadHash ?? native?.workloadHash,
     renderHeight: options.renderSize.height,
     renderWidth: options.renderSize.width,
+    ...(resolutionScaleSetting === undefined ? {} : { resolutionScaleSetting }),
   };
   if (options.target === 'desktop-pair') {
     return {
@@ -1701,6 +1945,8 @@ function profileCommand(options) {
     ...(options.device === undefined ? [] : ['--device <selected>']),
     ...(options.hostedSoftware ? ['--hosted-software'] : []),
     ...(options.prebuiltArtifact === undefined ? [] : ['--prebuilt-artifact <existing-build>']),
+    ...(options.project === undefined ? [] : ['--project <existing-project>']),
+    ...(options.scenario === undefined ? [] : ['--scenario <production-scenario>']),
   ].join(' ');
 }
 
@@ -1884,12 +2130,32 @@ async function readOptionalArtifact(path) {
   }
 }
 
-async function nativeArtifactPath(project, target) {
+export async function nativeArtifactPath(project, target) {
   const directory = join(project, 'dist-native');
-  const entries = await readdir(directory);
-  const candidate = entries.find((entry) => target === 'ios' ? entry.endsWith('.app') : target === 'android' ? entry.endsWith('.apk') : true);
+  const entries = (await readdir(directory, { withFileTypes: true }))
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const candidate = target === 'ios'
+    ? entries.find((entry) => entry.isDirectory() && entry.name.endsWith('.app'))
+    : target === 'android'
+      ? entries.find((entry) => entry.isFile() && entry.name.endsWith('.apk'))
+      : await desktopExecutableEntry(directory, entries);
   if (candidate === undefined) throw new ProductionEvidenceError('TN_PROD_NATIVE_ARTIFACT_MISSING', `The scaffolded ${target} build produced no native artifact.`);
-  return join(directory, candidate);
+  return join(directory, candidate.name);
+}
+
+// A desktop build stages the `ui/` web bundle beside the executable, so the artifact is the one
+// regular file the host can run - never the first directory that happens to sort first.
+async function desktopExecutableEntry(directory, entries) {
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (process.platform === 'win32') {
+      if (entry.name.endsWith('.exe')) return entry;
+      continue;
+    }
+    if (((await stat(join(directory, entry.name))).mode & 0o111) !== 0) return entry;
+  }
+  return undefined;
 }
 
 async function playtestRunnerPath(project, tools) {
@@ -1964,10 +2230,7 @@ function isNonBlankFrame(value) {
 }
 
 async function browserCommand(args) {
-  if (process.platform !== 'linux' || process.env.DISPLAY !== undefined) return { args, command: process.execPath };
-  const result = await runCommand('which', ['xvfb-run'], commandRoot);
-  if (result.status !== 0) return { args, command: process.execPath };
-  return { args: ['-a', '-s', '-screen 0 1600x900x24', process.execPath, ...args], command: 'xvfb-run' };
+  return privateDisplayCommand(process.execPath, args);
 }
 
 async function availablePort() {
