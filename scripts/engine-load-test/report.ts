@@ -2,6 +2,8 @@
 // were not the same scene, and only then compute a knee. A missing field, a wrong type, or an
 // empty sample array is an error here — never a default, never a skip.
 
+import { DEFAULT_AXES, type IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
+
 export const KNEE_THRESHOLD_MS = 20;
 export const ARMS = [
   "tn-web",
@@ -47,12 +49,14 @@ export interface IPerformancePromotionPolicy {
 }
 
 export interface IRunReportRung {
+  collapseMs?: number[];
   drawCalls: number;
   frameMs: number[];
   mode: RenderMode;
   objectCount: number;
   positionHash: string;
   repeat: number;
+  stepMs?: number[];
   triangles: number;
   visibleObjects: number;
 }
@@ -70,6 +74,7 @@ export interface IDeviceCondition {
 
 export interface IRunReport {
   arm: Arm;
+  axes?: IWorkloadAxes;
   build: { notes: string; type: BuildType };
   device: { battery: number | null; label: string };
   deviceCondition?: IDeviceCondition;
@@ -164,6 +169,58 @@ function requireBoolean(source: Record<string, unknown>, key: string, path: stri
   if (typeof value !== "boolean")
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a boolean`);
   return value;
+}
+
+// The matrix axes a run reports. Absent on Godot reports and on reports written before the axes
+// existed, so the field is optional; present, it is validated like everything else.
+function parseRunAxes(value: unknown): IWorkloadAxes {
+  const source = requireObject(value, "report.axes");
+  const geometry = requireString(source, "geometry", "report.axes");
+  const material = requireString(source, "material", "report.axes");
+  if (geometry !== "shared" && geometry !== "unique")
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.axes.geometry ${geometry} is not a mode`);
+  if (material !== "shared" && material !== "unique")
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.axes.material ${material} is not a mode`);
+  const hierarchyDepth = requireNumber(source, "hierarchyDepth", "report.axes");
+  const mutationRate = requireNumber(source, "mutationRate", "report.axes");
+  const passCount = requireNumber(source, "passCount", "report.axes");
+  const shadowCasterShare = requireNumber(source, "shadowCasterShare", "report.axes");
+  const visibleFraction = requireNumber(source, "visibleFraction", "report.axes");
+  if (!Number.isInteger(hierarchyDepth) || hierarchyDepth < 0)
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "report.axes.hierarchyDepth is not a depth");
+  if (!Number.isInteger(passCount) || passCount < 1)
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "report.axes.passCount is not a pass count");
+  for (const [name, fraction] of [
+    ["mutationRate", mutationRate],
+    ["shadowCasterShare", shadowCasterShare],
+    ["visibleFraction", visibleFraction],
+  ] as const) {
+    if (fraction < 0 || fraction > 1)
+      throw new BenchError("TN_BENCH_BAD_SHAPE", `report.axes.${name} is not a fraction`);
+  }
+  return {
+    geometry,
+    hierarchyDepth,
+    material,
+    mutationRate,
+    passCount,
+    shadowCasterShare,
+    visibleFraction,
+  };
+}
+
+// Field-by-field so a reordered but equal record still compares equal; the report's `axes` is built
+// in one order, but a test or a future writer need not preserve it.
+function sameWorkloadAxes(left: IWorkloadAxes, right: IWorkloadAxes): boolean {
+  return (
+    left.geometry === right.geometry &&
+    left.hierarchyDepth === right.hierarchyDepth &&
+    left.material === right.material &&
+    left.mutationRate === right.mutationRate &&
+    left.passCount === right.passCount &&
+    left.shadowCasterShare === right.shadowCasterShare &&
+    left.visibleFraction === right.visibleFraction
+  );
 }
 
 function parseProvisional(value: unknown, path: string, required: boolean): string[] | undefined {
@@ -335,9 +392,27 @@ export function parseRunReport(value: unknown): IRunReport {
       if (typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
         throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.frameMs holds a non-finite sample`);
     }
+    const timingSeries: Partial<Pick<IRunReportRung, "stepMs" | "collapseMs">> = {};
+    for (const field of ["stepMs", "collapseMs"] as const) {
+      const samples = rung[field];
+      if (samples === undefined) continue;
+      if (
+        !Array.isArray(samples) ||
+        samples.length !== frameMs.length ||
+        samples.some(
+          (sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0,
+        )
+      )
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `${path}.${field} must match frameMs with finite nonnegative samples`,
+        );
+      timingSeries[field] = samples as number[];
+    }
     return {
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
+      ...timingSeries,
       mode: mode as RenderMode,
       objectCount: requireNumber(rung, "objectCount", path),
       positionHash: requireString(rung, "positionHash", path),
@@ -349,6 +424,7 @@ export function parseRunReport(value: unknown): IRunReport {
 
   return {
     arm: arm as Arm,
+    ...(root.axes === undefined ? {} : { axes: parseRunAxes(root.axes) }),
     build: { notes: typeof build.notes === "string" ? build.notes : "", type: buildType },
     device: {
       battery: (battery as number | null) ?? null,
@@ -1241,6 +1317,15 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
     );
   }
 
+  // `positionHash` covers only the initial placements, so two different matrix cells can hash alike.
+  // A missing record is the PRD-117 default scene, permitted only against another missing record or
+  // an explicit default; a nondefault TN cell against a Godot report that never carried axes fails
+  // here rather than sailing through on the hash.
+  const leftAxes = left.axes ?? DEFAULT_AXES;
+  const rightAxes = right.axes ?? DEFAULT_AXES;
+  if (!sameWorkloadAxes(leftAxes, rightAxes))
+    push("axes", renderAxes(leftAxes), renderAxes(rightAxes));
+
   // Grouped, never last-wins: a hash that diverges on a single repeat is exactly the failure this
   // gate exists to catch, and keying one rung per ladder step would hide every repeat but the last.
   const leftHashes = groupRungs(left);
@@ -1394,6 +1479,10 @@ export function renderArmMarkdown(report: IRunReport): string {
       `- device condition: battery ${report.deviceCondition.batteryPercent}%, ${report.deviceCondition.charging ? "charging" : "discharging"}, thermal ${report.deviceCondition.thermalStatus}, screen ${report.deviceCondition.screenOn ? "on" : "off"}`,
     );
   }
+  if (report.axes !== undefined) {
+    // The matrix cell this row belongs to; Godot reports carry no axes and print no line.
+    lines.splice(6, 0, `- axes: ${renderAxes(report.axes)}`);
+  }
   if (report.provisional !== undefined && report.provisional.length > 0) {
     lines.splice(7, 0, `- provisional: ${report.provisional.join(", ")}`);
   }
@@ -1411,6 +1500,18 @@ export function renderArmMarkdown(report: IRunReport): string {
 
 export function formatKnee(value: number | null): string {
   return value === null ? "below the first rung" : String(value);
+}
+
+export function renderAxes(axes: IWorkloadAxes): string {
+  return [
+    `geometry ${axes.geometry}`,
+    `material ${axes.material}`,
+    `hierarchy ${axes.hierarchyDepth}`,
+    `visible ${axes.visibleFraction}`,
+    `mutation ${axes.mutationRate}`,
+    `shadow-casters ${axes.shadowCasterShare}`,
+    `passes ${axes.passCount}`,
+  ].join(", ");
 }
 
 export function renderComparisonMarkdown(comparison: IComparison): string {

@@ -3,11 +3,13 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import type { IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
 
 const BEGIN = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END = "ENGINE_LOAD_TEST_JSON_END";
 
 export interface IDesktopLadder {
+  axes: IWorkloadAxes;
   frames: number;
   ladder: string;
   modes: string;
@@ -99,10 +101,17 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
   const buildEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     TN_BENCH_FRAMES: String(options.frames),
+    TN_BENCH_GEOMETRY: options.axes.geometry,
+    TN_BENCH_HIERARCHY_DEPTH: String(options.axes.hierarchyDepth),
     TN_BENCH_LADDER: options.ladder,
+    TN_BENCH_MATERIAL: options.axes.material,
     TN_BENCH_MODES: options.modes,
+    TN_BENCH_MUTATION_RATE: String(options.axes.mutationRate),
+    TN_BENCH_PASSES: String(options.axes.passCount),
     TN_BENCH_REPEATS: String(options.repeats),
+    TN_BENCH_SHADOW_CASTER_SHARE: String(options.axes.shadowCasterShare),
     TN_BENCH_TARGET: "native",
+    TN_BENCH_VISIBLE_FRACTION: String(options.axes.visibleFraction),
     TN_BENCH_WARMUP: String(options.warmup),
   };
   await new Promise<void>((resolve, reject) => {

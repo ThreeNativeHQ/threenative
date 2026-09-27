@@ -70,7 +70,12 @@ import {
   resolveRendererAntialias,
   resolveRendererScaleSetting,
 } from "./renderer-config.js";
-import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
+import {
+  type IRendererLike,
+  type IRendererOptions,
+  type RendererKind,
+  createRenderer,
+} from "./renderer.js";
 import { ResolutionScaler } from "./resolution-scaler.js";
 import type {
   ICtx,
@@ -579,10 +584,31 @@ function resetRendererPerformanceMetrics(raw: unknown): void {
   if (typeof reset === "function") reset.call(info);
 }
 
-function addRenderPerformanceMetrics(
-  world: IRenderPerformanceMetrics,
+/**
+ * One frame's two render calls, combined.
+ *
+ * The two renderers' `info` do not mean the same thing, and the old sum only ever held for one of
+ * them. `WebGLRenderer` ends every `render()` with `info.reset()`, so the world sample and the
+ * overlay sample are disjoint and add up. WebGPU never resets: the engine owns the
+ * requestAnimationFrame loop, so it calls `info.reset()` itself once per frame before the world
+ * draw (see the render block), which leaves the overlay sample *cumulative* — world plus overlay.
+ * Adding it to the world sample reported every world draw twice, and the packed racing scenario
+ * read 358 draw calls against a 330 ceiling on a frame that submits far fewer.
+ *
+ * The world pass split belongs to the world call in both renderers and rides the same sample, so
+ * it is carried across rather than summed — a summed split attributes the world's shadow and
+ * reflection passes to the overlay too.
+ */
+function combineRenderPerformanceMetrics(
+  kind: RendererKind,
+  world: IRenderPerformanceMetrics | undefined,
   overlay: IRenderPerformanceMetrics,
 ): IRenderPerformanceMetrics {
+  const passes = world?.passes;
+  if (kind === "webgpu") {
+    return passes === undefined ? overlay : { ...overlay, passes };
+  }
+  if (world === undefined) return overlay;
   return {
     ...(world.drawCalls === undefined || overlay.drawCalls === undefined
       ? {}
@@ -590,6 +616,7 @@ function addRenderPerformanceMetrics(
     ...(world.triangles === undefined || overlay.triangles === undefined
       ? {}
       : { triangles: world.triangles + overlay.triangles }),
+    ...(passes === undefined ? {} : { passes }),
   };
 }
 
@@ -1765,9 +1792,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           frameBudget?.addOverlay(budgetNow() - overlayStart);
           if (!this.#renderMetricsEnabled) return undefined;
           const overlayMetrics = rendererPerformanceMetrics(renderer.raw);
-          return worldMetrics === undefined
-            ? overlayMetrics
-            : addRenderPerformanceMetrics(worldMetrics, overlayMetrics);
+          return combineRenderPerformanceMetrics(renderer.kind, worldMetrics, overlayMetrics);
         }
         return this.#renderMetricsEnabled ? worldMetrics : undefined;
       },
