@@ -8,7 +8,10 @@ device, no Apple identity, no release credential, no CI minute is required.
 
 **2026-09-25:** the desktop production judge now passes a healthy run (PR #304,
 `packages/runtime-native/scripts/production-evidence.mjs`; box 1 of Phase 4 green). The Phase 4
-negative controls and the unmodified-platformer web/native parity proof remain open.
+negative controls have now been observed red with restored desktop baselines green. On one RTX 2080
+host, the unmodified platformer's final 1920×1080 paired run failed the web budget at 35.62 FPS
+mean and 110.4 ms p99; native reached 174.06 FPS and 17.30 ms p99, and startup p95 was 1,803 ms.
+Web and native process/artifact identities differed. Tier 1 remains not reached.
 
 **Complexity: 6 → MEDIUM mode.** Two red conformance rows, one blocked row decision, one
 unrun emulator matrix, one same-hardware performance proof, one ledger.
@@ -185,7 +188,17 @@ The identity check is what stops the parity gate comparing the browser against i
 - [ ] The unmodified platformer holds the web budget and is no slower natively on one identified
   host, web and native resolving to different process and artifact identities. proof: `pnpm parity`
   plus the production-evidence judge on that host, web and native resolving to different process
-  and artifact identities.
+  and artifact identities. The 2026-09-25 paired production judge exited 1 with
+  `TN_PROD_PERFORMANCE_BUDGET`: web 35.62 FPS mean against ≥60 and 110.4 ms p99 against ≤33;
+  native 174.06 FPS mean and 17.30 ms p99; startup p95 1,803 ms against ≤5,000. The distinct
+  web/native identities and all three negative controls were observed, but the web budget is red.
+
+**2026-09-27 checkout gate:** `pnpm typecheck`, `pnpm lint` (with ignored measurement artifacts
+temporarily outside the scan), `pnpm budgets`, and the focused production-profile suite (54/54)
+pass. `pnpm test` is red on three full-suite cases: the WorldCells attachment wait and engine MCP
+manifest search are corrected on PR #360, which is not yet in this branch's `develop` base; the
+packed golden-path mutation test timed out at 120 seconds under this concurrent suite. None of
+these results closes the web performance box above.
 
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 

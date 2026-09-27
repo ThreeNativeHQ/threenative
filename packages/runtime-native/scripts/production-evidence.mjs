@@ -37,7 +37,12 @@ export function meanFps(frameIntervalsMs) {
   // over one of them discarded every other reading and blocked the comparison that had them.
   // Excluding them can only understate the frame rate, and a series with nothing measurable left
   // is still unmeasured.
-  const measurable = frameIntervalsMs.filter((value) => Number.isFinite(value) && value > 0);
+  //
+  // The exemption is the clock's alone: NaN, a negative and Infinity are malformed readings, and
+  // dropping them would publish a passing frame rate computed from the samples that happened to
+  // survive. Any invalid nonzero reading leaves the whole series unmeasured.
+  if (frameIntervalsMs.some((value) => !Number.isFinite(value) || value < 0)) return undefined;
+  const measurable = frameIntervalsMs.filter((value) => value > 0);
   if (measurable.length === 0) return undefined;
   const mean = measurable.reduce((total, value) => total + value, 0) / measurable.length;
   return 1_000 / mean;
@@ -46,7 +51,7 @@ export function meanFps(frameIntervalsMs) {
 /** How many of a series the clock could not resolve, so the evidence never hides the loss. */
 export function unmeasurableIntervalCount(frameIntervalsMs) {
   if (!Array.isArray(frameIntervalsMs)) return 0;
-  return frameIntervalsMs.length - frameIntervalsMs.filter((value) => Number.isFinite(value) && value > 0).length;
+  return frameIntervalsMs.filter((value) => value === 0).length;
 }
 
 export function oneSecondFrameFloors(intervals) {

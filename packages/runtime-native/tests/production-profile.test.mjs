@@ -1308,9 +1308,19 @@ test('one interval the clock cannot resolve does not void every other reading', 
   assert.equal(Math.round(meanFps(intervals) * 100) / 100, 62.5);
   assert.equal(meanFps([0, 0]), undefined);
   assert.equal(meanFps([]), undefined);
-  assert.equal(meanFps([16, Number.NaN, 16]), Math.round(meanFps([16, 16]) * 100) / 100);
   assert.equal(unmeasurableIntervalCount(intervals), 1);
   assert.equal(unmeasurableIntervalCount([16, 16]), 0);
+});
+
+test('one malformed sample voids the series, because only a zero is the clock, not a defect', () => {
+  // The zero-length exemption is for the clock alone. NaN, a negative and Infinity are malformed
+  // readings, so dropping them from the series would silently publish a passing frame rate from
+  // the surviving good ones; the series stays unmeasured and the budget fails on the missing mean.
+  assert.equal(meanFps([16, Number.NaN, 16]), undefined);
+  assert.equal(meanFps([16, -1, 16]), undefined);
+  assert.equal(meanFps([16, Number.POSITIVE_INFINITY, 16]), undefined);
+  assert.equal(meanFps([Number.NaN, 0]), undefined);
+  assert.equal(unmeasurableIntervalCount([16, Number.NaN, 16]), 0);
 });
 
 test('the web arm runs headed wherever a display exists, because headless WebGPU is SwiftShader', () => {
