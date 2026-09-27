@@ -43,10 +43,10 @@ const GRIP = new Vector3(0, 1.42, 0.1);
 const HOLD = {
   spine: [0.411505113, -0.157050673, -0.050945871, 0.896327589],
   chest: [0.199890628, -0.146086411, 0.186203637, 0.950805292],
-  r_shoulder: [0.539380498, 0.021168731, 0.148062556, 0.828672458],
-  r_elbow: [-0.802057547, 0.328967737, -0.387378558, 0.313722442],
-  l_shoulder: [0.782780428, -0.051889252, -0.425276231, 0.45133406],
-  l_elbow: [-0.992100629, -0.0927252, 0.019103443, -0.082300895],
+  rShoulder: [0.539380498, 0.021168731, 0.148062556, 0.828672458],
+  rElbow: [-0.802057547, 0.328967737, -0.387378558, 0.313722442],
+  lShoulder: [0.782780428, -0.051889252, -0.425276231, 0.45133406],
+  lElbow: [-0.992100629, -0.0927252, 0.019103443, -0.082300895],
 };
 
 const clamp = (n) => Math.min(1, Math.max(-1, n));
@@ -109,12 +109,12 @@ function rig({ position = [1, 0, -2], yaw = 0.4, scale = 1 } = {}) {
   const pelvis = at("pelvis", body, 0, 1, 0);
   const spine = at("spine", pelvis, 0, 0.25, 0);
   const chest = at("chest", spine, 0, 0.25, 0);
-  const rShoulder = at("r_shoulder", chest, -0.2, 0.15, 0);
-  const rElbow = at("r_elbow", rShoulder, 0, -0.3, 0);
-  const rHand = at("r_hand", rElbow, 0, -0.28, 0);
-  const lShoulder = at("l_shoulder", chest, 0.2, 0.15, 0);
-  const lElbow = at("l_elbow", lShoulder, 0, -0.3, 0);
-  const lHand = at("l_hand", lElbow, 0, -0.28, 0);
+  const rShoulder = at("rShoulder", chest, -0.2, 0.15, 0);
+  const rElbow = at("rElbow", rShoulder, 0, -0.3, 0);
+  const rHand = at("rHand", rElbow, 0, -0.28, 0);
+  const lShoulder = at("lShoulder", chest, 0.2, 0.15, 0);
+  const lElbow = at("lElbow", lShoulder, 0, -0.3, 0);
+  const lHand = at("lHand", lElbow, 0, -0.28, 0);
   const bones = [pelvis, spine, chest, rShoulder, rElbow, rHand, lShoulder, lElbow, lHand];
   const by = Object.fromEntries(bones.map((bone) => [bone.name, bone]));
   for (const [name, q] of Object.entries(HOLD)) by[name].quaternion.set(...q);
@@ -176,18 +176,18 @@ const worldOf = (bone) => ({
   position: bone.getWorldPosition(new Vector3()),
   quaternion: bone.getWorldQuaternion(new Quaternion()),
 });
-const rigResiduals = (r, frame) => [worldOf(r.by.r_hand), worldOf(r.by.l_hand)];
+const rigResiduals = (r, frame) => [worldOf(r.by.rHand), worldOf(r.by.lHand)];
 const measure = (hands, frame) => {
   const [right, left] = hands;
   const rifle = new Quaternion(...frame.rifle);
   return [
     {
-      bone: "r_hand",
+      bone: "rHand",
       metres: distance(right.position, new Vector3(...frame.grip)),
       radians: angleOf(right.quaternion, rifle),
     },
     {
-      bone: "l_hand",
+      bone: "lHand",
       metres: distance(left.position, new Vector3(...frame.fore)),
       radians: angleOf(left.quaternion, rifle),
     },
@@ -196,7 +196,7 @@ const measure = (hands, frame) => {
 /** Aim error: the rifle the right hand implies against the rifle that was asked for. */
 const aimResidual = (r, frame) =>
   aimError(
-    FORWARD.clone().applyQuaternion(worldOf(r.by.r_hand).quaternion),
+    FORWARD.clone().applyQuaternion(worldOf(r.by.rHand).quaternion),
     FORWARD.clone().applyQuaternion(new Quaternion(...frame.rifle)),
   );
 
@@ -255,14 +255,14 @@ function ccdArm() {
   const solver = new CCDIKSolver(host.mesh, [
     {
       target: host.index.get("grip_goal"),
-      effector: host.index.get("r_hand"),
-      links: host.chain("r_elbow", "r_shoulder", "chest", "spine"),
+      effector: host.index.get("rHand"),
+      links: host.chain("rElbow", "rShoulder", "chest", "spine"),
       iteration: ITERATIONS,
     },
     {
       target: host.index.get("foregrip_goal"),
-      effector: host.index.get("l_hand"),
-      links: host.chain("l_elbow", "l_shoulder", "chest", "spine"),
+      effector: host.index.get("lHand"),
+      links: host.chain("lElbow", "lShoulder", "chest", "spine"),
       iteration: ITERATIONS,
     },
   ]);
@@ -293,13 +293,13 @@ function attachmentArm() {
   const r = rig();
   const rifle = new Object3D(); // the grip offset is identity: the hand's origin is the grip
   rifle.name = "rifle";
-  r.by.r_hand.add(rifle);
+  r.by.rHand.add(rifle);
   const host = ccdHost(r, ["foregrip_goal"]);
   const solver = new CCDIKSolver(host.mesh, [
     {
       target: host.index.get("foregrip_goal"),
-      effector: host.index.get("l_hand"),
-      links: host.chain("l_elbow", "l_shoulder"),
+      effector: host.index.get("lHand"),
+      links: host.chain("lElbow", "lShoulder"),
       iteration: ITERATIONS,
     },
   ]);
@@ -333,66 +333,74 @@ function attachmentArm() {
   };
 }
 
+const TOLERANCES = {
+  rMetres: METRES,
+  lMetres: METRES,
+  rRadians: RADIANS,
+  lRadians: RADIANS,
+  aimRadians: RADIANS,
+  drift: DRIFT,
+};
+
+/** Median solve time of one prepared frame, in microseconds, over REPEATS runs. */
+function timeFrame(arm, frame) {
+  const samples = [];
+  for (let i = 0; i < REPEATS; i++) {
+    arm.prepare(frame);
+    const t0 = performance.now();
+    arm.run();
+    samples.push((performance.now() - t0) * 1000);
+  }
+  return samples;
+}
+
+/** Every tolerance one measured frame breaks, plus a missed convergence for the candidate. */
+function violationsOf(arm, frame, row) {
+  const found = Object.entries(TOLERANCES)
+    .filter(([metric, tolerance]) => row[metric] > tolerance)
+    .map(([metric, tolerance]) => ({
+      arm: arm.name,
+      frame,
+      metric,
+      value: row[metric],
+      tolerance,
+    }));
+  if (arm.name === "candidate" && !row.converged)
+    found.push({ arm: arm.name, frame, metric: "converged", value: 0, tolerance: 1 });
+  return found;
+}
+
+function measureArm(arm, frames, violations) {
+  const rows = [];
+  const micros = [];
+  for (const frame of frames) {
+    arm.prepare(frame);
+    arm.run();
+    const row = arm.metrics();
+    violations.push(...violationsOf(arm, rows.length, row));
+    rows.push(row);
+    micros.push(...timeFrame(arm, frame));
+  }
+  const pick = (metric) => rows.map((row) => row[metric]);
+  arm.dispose?.();
+  return {
+    arm: arm.name,
+    maxMetres: Math.max(...pick("rMetres"), ...pick("lMetres")),
+    medianMetres: median(pick("rMetres").concat(pick("lMetres"))),
+    maxRadians: Math.max(...pick("rRadians"), ...pick("lRadians")),
+    medianRadians: median(pick("rRadians").concat(pick("lRadians"))),
+    maxAimRadians: Math.max(...pick("aimRadians")),
+    maxLengthDrift: Math.max(...pick("drift")),
+    medianMicros: Math.round(median(micros)),
+  };
+}
+
 test("A-D: a rigid two-handed rifle hold converges where the position-only baselines cannot", () => {
   const frames = trace(rig().body);
-  const arms = [candidateArm(), ccdArm(), attachmentArm()];
-  const summaries = [];
   const violations = [];
-  const tolerances = {
-    rMetres: METRES,
-    lMetres: METRES,
-    rRadians: RADIANS,
-    lRadians: RADIANS,
-    aimRadians: RADIANS,
-    drift: DRIFT,
-  };
-  for (const arm of arms) {
-    const rows = [];
-    const micros = [];
-    for (const frame of frames) {
-      arm.prepare(frame);
-      arm.run();
-      const row = arm.metrics();
-      rows.push(row);
-      const samples = [];
-      for (let i = 0; i < REPEATS; i++) {
-        arm.prepare(frame);
-        const t0 = performance.now();
-        arm.run();
-        samples.push((performance.now() - t0) * 1000);
-      }
-      micros.push(...samples);
-      for (const [metric, tolerance] of Object.entries(tolerances))
-        if (row[metric] > tolerance)
-          violations.push({
-            arm: arm.name,
-            frame: rows.length - 1,
-            metric,
-            value: row[metric],
-            tolerance,
-          });
-      if (arm.name === "candidate" && !row.converged)
-        violations.push({
-          arm: arm.name,
-          frame: rows.length - 1,
-          metric: "converged",
-          value: 0,
-          tolerance: 1,
-        });
-    }
-    const pick = (metric) => rows.map((row) => row[metric]);
-    summaries.push({
-      arm: arm.name,
-      maxMetres: Math.max(...pick("rMetres"), ...pick("lMetres")),
-      medianMetres: median(pick("rMetres").concat(pick("lMetres"))),
-      maxRadians: Math.max(...pick("rRadians"), ...pick("lRadians")),
-      medianRadians: median(pick("rRadians").concat(pick("lRadians"))),
-      maxAimRadians: Math.max(...pick("aimRadians")),
-      maxLengthDrift: Math.max(...pick("drift")),
-      medianMicros: Math.round(median(micros)),
-    });
-    arm.dispose?.();
-  }
+  const summaries = [candidateArm(), ccdArm(), attachmentArm()].map((arm) =>
+    measureArm(arm, frames, violations),
+  );
   for (const summary of summaries) console.log(JSON.stringify(summary));
   const failing = violations.filter((v) => v.arm === "candidate");
   assert.deepEqual(
