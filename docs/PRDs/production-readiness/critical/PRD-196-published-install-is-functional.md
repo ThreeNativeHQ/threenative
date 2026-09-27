@@ -12,10 +12,10 @@ packages, and the `clean-room` runner carries the JDK 17 and Android SDK the `an
 Remaining: one hosted run — a `v*` tag push whose `clean-room` job reports `pass npm:android`.
 
 **2026-09-27 checkout gate:** focused registry-install and CI-structure tests pass 152/152;
-`pnpm typecheck`, `pnpm lint`, `pnpm budgets`, and `pnpm check:docs` pass. `pnpm test` remains
-red on the packed mutation test's 120-second timeout and the MCP ancestor-manifest lookup;
-both fixes are on PR #360, which has not yet merged into this branch's `develop` base. The hosted
-tag gate above remains open.
+`pnpm typecheck`, `pnpm lint`, `pnpm budgets`, and `pnpm check:docs` pass. The first full test
+run was red on the packed mutation control and MCP ancestor-manifest lookup. After merging PR
+#360's fixes into this branch, `pnpm test` passed: 492 files, 6,138 tests passed, 8 skipped,
+exit 0. The hosted tag gate above remains open.
 
 Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
 tree, and the candidate cohort is prepared and committed: eleven packages at
