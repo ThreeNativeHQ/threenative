@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The adapter source this game imports by path is checked by its own `strict` tsconfig in
+  // examples/integrations/ik; these three repo-wide extras are relaxed only because tsc follows
+  // that import. The game's own files pass without them.
+  "compilerOptions": {
+    "isolatedModules": false,
+    "noUncheckedIndexedAccess": false,
+    "verbatimModuleSyntax": false
+  },
+  "include": ["src/**/*.ts", "vite.config.ts"]
+}

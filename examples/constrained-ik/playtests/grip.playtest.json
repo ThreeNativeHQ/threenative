@@ -1,0 +1,76 @@
+{
+  "name": "constrained-ik-grip-web",
+  "schemaVersion": 1,
+  "subject": "the opt-in ConstrainedIK adapter puts both hands on a moving rifle pose inside a running ThreeNative game, converges within 5 mm and 0.01 rad, and moves no bone length",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "grip-settled",
+      "release": true,
+      "waitTicks": 45
+    },
+    {
+      "kind": "wait",
+      "label": "yaw-swept",
+      "release": true,
+      "waitTicks": 45
+    },
+    {
+      "kind": "wait",
+      "label": "yaw-returned",
+      "release": true,
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "component": "frames",
+        "entity": "ik",
+        "gte": 60,
+        "changed": true
+      },
+      {
+        "component": "allConverged",
+        "entity": "ik",
+        "equals": true,
+        "allowTrivial": "Every frame is fed the same reachable pose, so a converged run is the claim; the flag is already true at the baseline observation and the run is what keeps it true."
+      },
+      {
+        "component": "worstMetres",
+        "entity": "ik",
+        "lte": 0.005,
+        "allowTrivial": "A worst-so-far counter can only grow and starts inside the tolerance; the run is what proves it stayed there while the pose swept."
+      },
+      {
+        "component": "worstRadians",
+        "entity": "ik",
+        "lte": 0.01,
+        "allowTrivial": "A worst-so-far counter can only grow and starts inside the tolerance; the run is what proves it stayed there while the pose swept."
+      },
+      {
+        "component": "worstLengthDrift",
+        "entity": "ik",
+        "lte": 0.000001,
+        "allowTrivial": "A worst-so-far counter can only grow and starts at zero; the run is what proves no solve ever stretched a bone."
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "name": "rifle"
+        },
+        "visible": true
+      }
+    ]
+  }
+}
