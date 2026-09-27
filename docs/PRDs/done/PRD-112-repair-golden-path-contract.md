@@ -195,7 +195,7 @@ the focused tests fail on parser disagreement or command execution.
 while a separately packed mutated template scaffolds successfully and then fails because its
 generated dependency is truly broken.
 
-**Files (9):**
+**Files (10):**
 
 - `scripts/verify-golden-path.ts` — EDIT: allow the pack source for the temporary scaffolder to be
   explicit and preserve tarball/source identity in diagnostics.
@@ -208,6 +208,7 @@ generated dependency is truly broken.
 - `packages/create-threenative/__tests__/scaffold.spec.ts` — EDIT: pin the corrected sailing scaffold tree hash.
 - `packages/engine-mcp/src/index.ts` and `packages/engine-mcp/__tests__/search.spec.ts` — EDIT: reject an ancestor `node_modules` symlink outside its project when selecting an installed manifest.
 - `packages/core/mcp/engine-server.mjs` — REBUILD: keep the bundled engine MCP server in sync with its source fix.
+- `packages/core/__tests__/world-cells.spec.ts` — EDIT: reproduce delayed compiled-model attachment and wait for that object before asserting it in the full-suite gate.
 
 **Implementation.**
 
@@ -278,6 +279,12 @@ advertised journey and recovery commands; helper or test existence alone is not 
 ## Verification Evidence
 
 Contract conformance: prd_contract: v1
+
+**2026-09-27 hosted CI repair:** PR #360's `test-unit (3/3)` first failed at
+`packages/core/__tests__/world-cells.spec.ts:813`: the test drained 12 event-loop turns and
+asserted an object whose model load can finish later under shard load. A delayed-model fixture
+reproduced the same missing-object assertion; waiting for the attachment passes the focused
+WorldCells suite 16/16 and five repeated runs. The hosted rerun remains pending.
 
 Observed implementation and gate evidence:
 
