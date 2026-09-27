@@ -1200,6 +1200,90 @@ describe("IGame", () => {
     }
   });
 
+  it("reads a frame's cumulative WebGPU counters instead of counting the world twice", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    // WebGPU never resets `info` itself — the engine owns the requestAnimationFrame loop and resets
+    // once per frame before the world draw — so the overlay sample already contains the world's
+    // submissions. `WebGLRenderer` ends every `render()` with its own reset, which is the only case
+    // where summing the two samples is right; the WebGL test above is that case.
+    const renderInfo = { drawCalls: 0, triangles: 0 };
+    let diagnostics: (() => readonly IRenderPerformanceSample[]) | undefined;
+    let frame: ((time: number) => void) | undefined;
+    class LayerScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.scene.add(new Mesh());
+        ctx.canvasLayer.scene.add(new Mesh());
+        ctx.canvasLayer.scene.name = "overlay";
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            runtime?.enableRuntimeDiagnostics?.();
+            diagnostics = runtime?.runtimeDiagnosticsSeries;
+            return undefined;
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        webgpuFactory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          info: {
+            render: renderInfo,
+            reset: () => {
+              renderInfo.drawCalls = 0;
+              renderInfo.triangles = 0;
+            },
+          },
+          init: async () => undefined,
+          render: (scene: unknown) => {
+            const overlay = (scene as { name?: string }).name === "overlay";
+            renderInfo.drawCalls += overlay ? 1 : 3;
+            renderInfo.triangles += overlay ? 2 : 30;
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: LayerScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      // The retained series starts on the second frame: the first has no interval to measure.
+      frame(16);
+      frame(32);
+      const last = (diagnostics?.() ?? []).at(-1);
+      // 3 world + 1 overlay draws. The old sum read 7 on this frame — every world draw twice.
+      expect(last?.drawCalls).toBe(4);
+      expect(last?.triangles).toBe(32);
+      // The world pass split rides the same sample, and it belongs to the world call alone.
+      expect(last?.passes).toEqual([{ draws: 3, kind: "main", triangles: 30 }]);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should read input from a custom target when inputTarget is provided", async () => {
     const customTarget = new EventTarget();
     const unrelatedTarget = new EventTarget();
