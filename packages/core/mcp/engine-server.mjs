@@ -131,14 +131,13 @@ function defaultManifestPath(cwd = process.cwd()) {
   const override = process.env.THREENATIVE_CAPABILITIES_MANIFEST;
   if (override !== void 0 && override.trim().length > 0) return path.resolve(cwd, override);
   for (let directory = path.resolve(cwd); ; directory = path.dirname(directory)) {
-    const installed = path.join(
-      directory,
-      "node_modules",
-      "@threenative",
-      "core",
-      "capabilities.json"
-    );
-    if (existsSync(installed)) return installed;
+    const nodeModules = path.join(directory, "node_modules");
+    const installed = path.join(nodeModules, "@threenative", "core", "capabilities.json");
+    if (existsSync(installed)) {
+      const relative = path.relative(realpathSync(directory), realpathSync(nodeModules));
+      if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+        return installed;
+    }
     const parent = path.dirname(directory);
     if (parent === directory) break;
   }
