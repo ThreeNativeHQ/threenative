@@ -1,6 +1,6 @@
 # Release readiness — 2026-09-23
 
-## Status 2026-09-25
+## Status 2026-09-27
 
 **R1 shipped.** 0.3.3 is published (`@threenative/core` `latest`=`next`=`0.3.3`; `create-threenative`
 `0.2.6`) with [runtime-native-v0.3.3](https://github.com/ThreeNativeHQ/threenative/releases/tag/runtime-native-v0.3.3)
@@ -8,14 +8,18 @@
 PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
 `alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
 
-**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-112
-repair re-run of the seven-template packed journey after the racing fix (#305) · PRD-399 Android 60 Hz
+**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 Android 60 Hz
 UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
-controls and web/native parity · PRD-365/375 CI signing proof green, public Authenticode/notarization
-superseded (each developer signs their own), registry-consumer rows remain · PRD-445 is filed in
+controls and web/native parity · PRD-375 branding remains open (PRD-365 is closed: 2026-09-27, its CI
+signing proof green and its registry-consumer run passed; public Authenticode/notarization superseded
+because each developer signs their own) · PRD-445 is filed in
 [`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
 20 boxes ticked; the `site` deploy is green on `main`, run 36063649413, so only an upstream
 `threenative-sculpt-mcp` release and three owner calls remain).
+
+**R2 progress:** [PRD-112 repair](../done/PRD-112-repair-golden-path-contract.md) is done. The
+packed journey passed all ten discovered templates and its mutated-package negative control;
+`pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passed on 2026-09-27.
 
 **Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
 `max(50 ms, 4 panel frames)` with in-frame behind the off flag.
@@ -38,9 +42,10 @@ target, and no public text may claim iOS until a later decision adds it.
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
-**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): eight files**
+**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): six files**
 (nine on 2026-09-23; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25 because
-its only remaining work is blocked).
+its only remaining work is blocked, and PRD-365 moved to `done/` on 2026-09-27 because its last box —
+the public-registry consumer launch — passed).
 The 1.0 PRDs under R3 stay in their own folders and block nothing until the beta ships.
 
 ## What was measured today
@@ -100,7 +105,7 @@ to 0.3.3 and not released.
    (owner decision, 2026-09-11); promoting it to `latest` is not.
 2. **The promotion PR is stuck.** #291 waits on checks, and its body describes a squash-versus-merge
    conflict that the root `AGENTS.md` already settles: main accepts merge commits only. Owner:
-   [PRD-373](critical/PRD-373-selective-ci-and-develop-promotion.md) (18/20 phase boxes, 1/5 acceptance).
+   [PRD-373](../done/PRD-373-selective-ci-and-develop-promotion.md) (28/28 phase boxes, 5/5 acceptance).
 3. **Security and honesty debt a stranger sees first**: the high `sharp` advisory, `SECURITY.md`
    naming the wrong supported line, no 0.3.x changelog, stale `CURRENT-CHALLENGES.md` and
    `alpha-bar.md`, and a red site deploy on `main`. No PRD owned these. **New:
@@ -110,10 +115,10 @@ to 0.3.3 and not released.
 
 1. **One consumer game, installed from the registry, on every supported target.** Owner:
    [PRD-366](critical/PRD-366-one-consumer-game-proves-supported-platforms.md) — phase 3 open, 0/5 acceptance.
-2. **The packed golden path is red.** The 7-template packed gate fails on `action-rpg`
-   ("Execution context was destroyed"). Owner:
+2. **The packed golden path is green (closed 2026-09-27).** The ten-template packed gate and its
+   mutated-package negative control pass. Owner:
    [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
-   its [repair](critical/PRD-112-repair-golden-path-contract.md).
+   its [repair](../done/PRD-112-repair-golden-path-contract.md).
 3. **Native React UI misses its latency bound on a 60 Hz phone.** Real Pixel 8, p95 55.35 ms against
    50 ms; it passes only on the 120 Hz panel, and that run was below the battery floor. Owner:
    [PRD-399](critical/PRD-399-playable-dev-distributables.md) (5/18 boxes).
@@ -122,8 +127,10 @@ to 0.3.3 and not released.
    progress). Related, not release-blocking: [PRD-400](../performance/PRD-400-the-frame-gets-cheaper-one-measured-cost-at-a-time.md) (1/17), [PRD-358](../performance/PRD-358-cross-platform-performance-regression-ci.md) (6/18).
 
 Also in R2, nearly done and worth finishing rather than re-planning:
-[PRD-365](critical/PRD-365-consumer-desktop-distribution.md) desktop containers (23/24 phase boxes, 19/24
-acceptance) and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-brand.md) branding (11/12, 3/5).
+[PRD-365](../done/PRD-365-consumer-desktop-distribution.md) desktop containers is **done** (closed
+2026-09-27, 24/24 phase boxes and 20/20 acceptance — the public-registry consumer launch in its last
+box), and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-brand.md) branding is the open
+one (11/12, 3/5).
 
 ### R3 — production 1.0 (after the beta; not in `critical/`)
 
@@ -158,7 +165,7 @@ flowchart TD
     Q --> R2
     L[PRD-399 Android UI latency at 60 Hz] --> R2
     J[PRD-064 desktop production judge passes] --> R2
-    D[PRD-365 + PRD-375 finish] --> R2
+    D[PRD-375 finish (PRD-365 closed 2026-09-27)] --> R2
     R2([R2: public beta])
     R2 --> A[PRD-446 stable API + N-1 upgrade proof]
     R2 --> W[PRD-054 parity + PRD-057 audio]
@@ -189,7 +196,7 @@ cohort that R1 and R2 fix.
 4. **Desktop signing.** **Decided (owner, 2026-09-23): each developer signs their own game** with
    their own certificate; ThreeNative ships no certificate of its own. The framework's job is that
    `threenative build --mode release` signs with the developer's credentials, proven with test
-   credentials on Windows and macOS CI ([PRD-365](critical/PRD-365-consumer-desktop-distribution.md) phase 3).
+   credentials on Windows and macOS CI ([PRD-365](../done/PRD-365-consumer-desktop-distribution.md) phase 3).
 
 ## Housekeeping found while inspecting
 

@@ -111,7 +111,18 @@ export async function waitForStartupReady(
         "Let the application reach startup readiness — check that its loading gate can complete headlessly — or remove the runtime.startup capability if it has no startup phase.",
       ));
     }
-    await pump();
+    try {
+      await pump();
+    } catch (error) {
+      if (
+        error instanceof PlaytestBridgeError &&
+        error.diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT"
+      ) {
+        observed = BUSY;
+        continue;
+      }
+      throw error;
+    }
     observed = await pollStartup(bridge);
   }
   return {

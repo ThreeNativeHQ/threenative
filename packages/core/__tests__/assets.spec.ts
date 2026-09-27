@@ -954,6 +954,14 @@ describe("IAssetLoader compressed textures", () => {
     } else {
       geometry.setAttribute("position", new BufferAttribute(raw, 3, true));
     }
+    // A cooked application scalar in [0, 1] — the vegetation wind weight — as the cook writes it.
+    const weights = Uint16Array.from([0, 32_768, 65_535]);
+    geometry.setAttribute(
+      "_wind",
+      interleaved
+        ? new InterleavedBufferAttribute(new InterleavedBuffer(weights, 1), 1, 0, true)
+        : new BufferAttribute(weights, 1, true),
+    );
     const scene = new Group();
     const mesh = new Mesh(geometry, new MeshBasicMaterial());
     mesh.scale.setScalar(5);
@@ -1020,6 +1028,21 @@ describe("IAssetLoader compressed textures", () => {
       expect(bounds.max.z - bounds.min.z).toBeCloseTo(10, 2);
     },
   );
+
+  it.each([
+    ["a plain normalized scalar", false],
+    ["a meshopt-interleaved normalized scalar", true],
+  ])("should widen %s, which WebGPU cannot fetch as a float", async (_name, interleaved) => {
+    // three picks a one-component vertex format from the array type alone, so a normalized
+    // uint16 stays `uint16` where a TSL float attribute expects a float and the pipeline fails.
+    const loaded = await loadQuantized(interleaved as boolean);
+    const weight = (loaded.scene.children[0] as Mesh).geometry.getAttribute("_wind");
+
+    expect(weight.normalized).toBe(false);
+    expect(weight.array).toBeInstanceOf(Float32Array);
+    for (const [index, value] of [0, 32_768 / 65_535, 1].entries())
+      expect(weight.getX(index)).toBeCloseTo(value, 6);
+  });
 
   it("should leave a float model's positions untouched", async () => {
     vi.stubGlobal(
