@@ -1,6 +1,6 @@
 # Release readiness — 2026-09-23
 
-## Status 2026-09-25
+## Status 2026-09-27
 
 **R1 shipped.** 0.3.3 is published (`@threenative/core` `latest`=`next`=`0.3.3`; `create-threenative`
 `0.2.6`) with [runtime-native-v0.3.3](https://github.com/ThreeNativeHQ/threenative/releases/tag/runtime-native-v0.3.3)
@@ -8,14 +8,17 @@
 PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
 `alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
 
-**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-112
-repair re-run of the seven-template packed journey after the racing fix (#305) · PRD-399 Android 60 Hz
+**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 Android 60 Hz
 UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
 controls and web/native parity · PRD-365/375 CI signing proof green, public Authenticode/notarization
 superseded (each developer signs their own), registry-consumer rows remain · PRD-445 is filed in
 [`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
 20 boxes ticked; the `site` deploy is green on `main`, run 36063649413, so only an upstream
 `threenative-sculpt-mcp` release and three owner calls remain).
+
+**R2 progress:** [PRD-112 repair](../done/PRD-112-repair-golden-path-contract.md) is done. The
+packed journey passed all ten discovered templates and its mutated-package negative control;
+`pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passed on 2026-09-27.
 
 **Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
 `max(50 ms, 4 panel frames)` with in-frame behind the off flag.
@@ -38,7 +41,7 @@ target, and no public text may claim iOS until a later decision adds it.
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
-**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): eight files**
+**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): seven files**
 (nine on 2026-09-23; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25 because
 its only remaining work is blocked).
 The 1.0 PRDs under R3 stay in their own folders and block nothing until the beta ships.
@@ -110,10 +113,10 @@ to 0.3.3 and not released.
 
 1. **One consumer game, installed from the registry, on every supported target.** Owner:
    [PRD-366](critical/PRD-366-one-consumer-game-proves-supported-platforms.md) — phase 3 open, 0/5 acceptance.
-2. **The packed golden path is red.** The 7-template packed gate fails on `action-rpg`
-   ("Execution context was destroyed"). Owner:
+2. **The packed golden path is green (closed 2026-09-27).** The ten-template packed gate and its
+   mutated-package negative control pass. Owner:
    [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
-   its [repair](critical/PRD-112-repair-golden-path-contract.md).
+   its [repair](../done/PRD-112-repair-golden-path-contract.md).
 3. **Native React UI misses its latency bound on a 60 Hz phone.** Real Pixel 8, p95 55.35 ms against
    50 ms; it passes only on the 120 Hz panel, and that run was below the battery floor. Owner:
    [PRD-399](critical/PRD-399-playable-dev-distributables.md) (5/18 boxes).

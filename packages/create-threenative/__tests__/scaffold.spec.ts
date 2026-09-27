@@ -458,7 +458,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "0f3f275da70d5c79aec0a96df75b607c0bc3cdb82d27d9e78359ecba1f4e0b16",
+  sailing: "9cab5790d91dbb0dfe59b100c217e3479b00b940dfc3edccf9016bf5a62b4bd7",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
