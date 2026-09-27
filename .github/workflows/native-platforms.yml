@@ -103,7 +103,12 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Called from ci.yml this is the same run as `build-artifacts`, which already holds the one
+      # reservation this key allows; a standalone dispatch has no such job, so this job is the run's
+      # only saver either way. The other two consumers are restore-only.
       - uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: ./.github/actions/playwright-chromium
       - name: Capture commit-keyed browser reference
         run: |
@@ -365,8 +370,15 @@ jobs:
           restore-keys: cargo-android-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
+      # Restore-only: a standalone dispatch runs this alongside web-reference and desktop-parity on
+      # the same key, and only the first of them gets the one reservation the cache service grants
+      # this key. `github.event_name == 'workflow_dispatch'` is true for all three, so gating on the
+      # event decided nothing; web-reference needs only `scope`, publishes, and this job needs it,
+      # so it can never restore a key this run will not save.
       - name: Build browser reference workspace imports
         uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
@@ -822,8 +834,14 @@ jobs:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
       # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
+      # Restore-only, and it needs web-reference: on a standalone dispatch that job takes the one
+      # reservation this key allows instead of racing for it. `inputs.ios_only` does not create a
+      # second saver either — it skips this job and web-reference together, and no `ios_only`-only
+      # job restores these bundles at all.
       - name: Build browser reference workspace imports
         uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
