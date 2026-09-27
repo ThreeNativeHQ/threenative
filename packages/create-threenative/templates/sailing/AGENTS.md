@@ -27,6 +27,15 @@ piece with portable Three.js/plain code. Keep the loop, scenes, input, registry,
 bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report what blocked you**
 (API, expectation, result, replacement); never stall the game.
 
+A fix inside `@threenative/*` may **start** as a game-side patch
+(`patches/@threenative+<package>@<version>.patch`, wired through pnpm `patchedDependencies`, every
+hunk commented with the game it came from) so you can iterate and measure it against the game. The
+patch is temporary: **once the fixes are settled** — measured, reviewed, regression checks green —
+move them into the engine **through one pull request** on the ThreeNative repository, batching every
+settled hunk with the checks that prove it rather than opening one PR per fix. Delete the game
+patch when a release carrying the merged fixes is pinned. A mechanism that stays in a game patch is
+a bug in the process: the next game hits the same wall.
+
 ## Workflow skills
 
 - `.agents/skills/prd-creator/SKILL.md` / `.claude/skills/prd-creator/SKILL.md` — game plan and approval gate.
