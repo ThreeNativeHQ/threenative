@@ -25,6 +25,13 @@ export interface IDaylightOptions {
   readonly sunIntensity: number;
   /** Half-widths of the shadow windows in world units, finest first, strictly increasing. */
   readonly shadowExtents: readonly number[];
+  /**
+   * How far a window may trail the camera before it re-renders, as a fraction of its own extent:
+   * one value for every level, or one per level finest first, the last entry standing in for the
+   * rest. One for all of them spends the hysteresis the fine level can least afford on the coarse
+   * one, which is the level a walking camera re-renders least. Default 0.125.
+   */
+  readonly refreshStep?: number | readonly number[];
   /** Preetham sky parameters, as three's `SkyMesh` takes them. */
   readonly sky: {
     readonly turbidity: number;
@@ -106,6 +113,9 @@ export class Daylight extends Group implements IComputeDriven {
     this.sun.castShadow = true;
     this.sun.shadow.shadowNode = new VirtualShadowNode(this.sun, {
       clipExtents: [...options.shadowExtents],
+      // A game that wants the fine level on a different cadence than the coarse two says so here,
+      // per level, instead of taking one step for all of them.
+      ...(options.refreshStep === undefined ? {} : { refreshStep: options.refreshStep }),
     });
     this.add(this.sun);
     this.add(this.sun.target);

@@ -1512,6 +1512,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #peakBytes = 0;
   #peakTiles = 0;
   #lodTransitions = 0;
+  // The last `follow` ran out of admission budget before it wanted everything, so the next one
+  // has to run even if the follow point has not moved. Cleared at the top of `follow`.
+  #deferredAdmissions = 0;
   #maxLodPop = 0;
   #maxLodTransitionFrames = 0;
   // These diagnostics are lifetime maxima for this residency owner. Zero is the deliberate
@@ -1631,6 +1634,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#lodTransitions;
   }
 
+  /**
+   * Resident tiles mid LOD morph right now, so `process` is still owed. A blend is
+   * `LOD_TRANSITION_FRAMES` frames long and only `process` advances it, so a caller that skips
+   * `process` while its follow point is standing still would freeze every blend on frame one.
+   */
+  get blendingTiles(): number {
+    let blending = 0;
+    for (const tile of this.#resident.values()) if (tile.lodTransition !== undefined) blending += 1;
+    return blending;
+  }
+
   /** Maximum per-render-frame displacement of the visible LOD surface during transitions. */
   get maxLodPop(): number {
     return this.#maxLodPop;
@@ -1654,6 +1668,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Number of mixed-LOD edge reconciliations observed during this residency lifetime. */
   get stitchedEdgeCount(): number {
     return this.#stitchedEdges;
+  }
+
+  /**
+   * A tile or a collider the last `follow` wanted and its budget refused, so the next one is owed
+   * work even for an unmoved follow point. `0` once a pass wanted nothing it did not get.
+   */
+  get deferredAdmissions(): number {
+    return this.#deferredAdmissions;
   }
 
   get warmupNodes(): readonly unknown[] {
@@ -1680,6 +1702,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     budget?: IAdmissionBudget,
   ): void {
     if (this.#released) throw new Error("TerrainTiles cannot follow after release.");
+    // This pass starts owing nothing; a refusal below sets the flag that owes the next one, so
+    // `deferredAdmissions` is exactly "the last pass did not get everything it wanted".
+    this.#deferredAdmissions = 0;
     const x = finite(position.x, "follow x");
     const z = finite(position.z, "follow z");
     const hadFocus = this.#focus !== undefined;
@@ -1713,6 +1738,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (!selectedKeys.has(tile.key)) this.#evict(tile);
     }
     const targets = new Map<IResidentTile, number>();
+    // Tiles built by this pass, so the first one is forced past the budget. A budget that is
+    // already spent when `follow` runs admits nothing, and a ring that never converges is a hole
+    // that never closes; one tile per pass is the floor that closes it, and `selected` is sorted
+    // nearest first, so the forced one is the nearest tile still missing.
+    let built = 0;
     for (const candidate of selected) {
       const key = keyFor(candidate.tileX, candidate.tileZ);
       const resident = this.#resident.get(key);
@@ -1730,8 +1760,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       }
       // One tile is one unit: every level is built and the collider made inside it. A refused tile
       // is wanted again by the next `follow`, so it is deferred, never dropped.
-      const tile = this.#admitCandidate(candidate, centerX, centerZ, budget);
+      const tile = this.#admitCandidate(candidate, centerX, centerZ, budget, built === 0);
       if (tile === undefined) continue;
+      built += 1;
       if (this.residentBytes + tile.bytes > this.residentByteBudget) {
         this.#disposeTile(tile);
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
@@ -1962,12 +1993,15 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * and the game's `createCollider` called — so one tile is one unit of a frame's budget. A refused
    * tile is `undefined`, and the next `follow` wants it again: it was not drawn before either, so
    * deferring it leaves a gap rather than a hole.
+   *
+   * `forced` is the pass's first tile, which the budget may not refuse: see the call site.
    */
   #admitCandidate(
     candidate: { distance: number; tileX: number; tileZ: number },
     centerX: number,
     centerZ: number,
     budget: IAdmissionBudget | undefined,
+    forced = false,
   ): IResidentTile | undefined {
     let tile: IResidentTile | undefined;
     const created = (): void => {
@@ -1978,8 +2012,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         this.#wantsCollider(candidate.tileX, candidate.tileZ, centerX, centerZ),
       );
     };
-    if (budget === undefined) created();
-    else if (!budget.admit(created)) return undefined;
+    if (budget === undefined || forced) created();
+    else if (!budget.admit(created)) {
+      this.#deferredAdmissions = 1;
+      return undefined;
+    }
     return tile;
   }
 
@@ -1992,6 +2029,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    *
    * A body the budget refuses is the same deferral as a refused tile: the tile is inside
    * `colliderRadius` with no body for a frame or two, and the next `follow` still wants one.
+   *
+   * Except under and beside the followed point. One tile build spends the whole 2 ms budget on its
+   * own, so the collider pass behind it was refused every time a tile was admitted — and the
+   * resident set is walked in insertion order, not nearest first, so the tiles the player is
+   * standing on were as likely as any other to be the ones refused. A body under or beside the
+   * walk point is the one thing a deferred admission may not take: a probe under the walk point
+   * asks the physics world for ground that is not there yet. Nine bodies at most, and the ring's
+   * other tiles keep their deferral.
    */
   #updateColliders(centerX: number, centerZ: number, budget?: IAdmissionBudget): void {
     const createCollider = this.#createCollider;
@@ -2013,9 +2058,18 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           tileZ: tile.tileZ,
         });
       };
-      if (budget === undefined) created();
+      // The 3x3 ring around the followed point is never refused; see above.
+      if (
+        budget === undefined ||
+        Math.max(Math.abs(tile.tileX - centerX), Math.abs(tile.tileZ - centerZ)) <= 1
+      ) {
+        created();
+      }
       // Out of room: the body is owed, and every later `follow` asks for it again.
-      else if (!budget.admit(created)) continue;
+      else if (!budget.admit(created)) {
+        this.#deferredAdmissions = 1;
+        continue;
+      }
     }
   }
 
