@@ -18,6 +18,12 @@ export function exportGeometry(source: BufferGeometry): BufferGeometry {
       throw new Error(
         `CSG interleaved attribute '${name}' is not supported; deinterleave it before authoring.`,
       );
+    if (
+      (name === "normal" && attribute.itemSize !== 3) ||
+      (name === "uv" && attribute.itemSize !== 2) ||
+      (name === "color" && attribute.itemSize !== 3 && attribute.itemSize !== 4)
+    )
+      throw new Error(`CSG ${name} attribute layout is not supported.`);
     attributes[name] = {
       array: attribute.array as NumericArray,
       itemSize: attribute.itemSize,
@@ -45,26 +51,46 @@ export function exportGeometry(source: BufferGeometry): BufferGeometry {
   }
   return geometry;
 }
+/** Baking a reflection removes the object transform, so winding must follow it. */
+export function applySolidTransform(geometry: BufferGeometry, matrix: Matrix4): void {
+  geometry.applyMatrix4(matrix);
+  if (matrix.determinant() < 0 && geometry.index) {
+    const indices = geometry.index.array;
+    for (let i = 0; i < indices.length; i += 3) {
+      const second = indices[i + 1];
+      indices[i + 1] = indices[i + 2];
+      indices[i + 2] = second;
+    }
+    geometry.index.needsUpdate = true;
+  }
+}
 function brushFrom(mesh: Mesh): Brush {
   mesh.updateWorldMatrix(true, false);
   const matrix = mesh.matrixWorld;
   if (
     matrix.elements.some((value) => !Number.isFinite(value)) ||
+    !Number.isFinite(matrix.determinant()) ||
     Math.abs(matrix.determinant()) < 1e-12
   )
     throw new Error(`CSG '${mesh.name || "input"}' has a singular or non-finite world transform.`);
   const geometry = exportGeometry(mesh.geometry);
-  geometry.applyMatrix4(matrix);
-  if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
-  const brush = new Brush(geometry, mesh.material);
-  brush.updateMatrixWorld(true);
-  return brush;
+  try {
+    applySolidTransform(geometry, matrix);
+    if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+    const brush = new Brush(geometry, mesh.material);
+    brush.updateMatrixWorld(true);
+    return brush;
+  } catch (error) {
+    geometry.dispose();
+    throw error;
+  }
 }
 /** Offline only. Inputs and their shared materials remain owned by the caller. */
 export function evaluateSolid(left: Mesh, right: Mesh, operation: SolidOperation): ISolidResult {
   const operationMap = { union: ADDITION, subtract: SUBTRACTION, intersect: INTERSECTION };
+  if (!Object.hasOwn(operationMap, operation))
+    throw new Error(`CSG unsupported operation '${operation}'.`);
   const opcode = operationMap[operation];
-  if (opcode === undefined) throw new Error(`CSG unsupported operation '${operation}'.`);
   let a: Brush | undefined;
   let b: Brush | undefined;
   let result: Brush | undefined;
@@ -85,10 +111,12 @@ export function evaluateSolid(left: Mesh, right: Mesh, operation: SolidOperation
     const evaluator = new Evaluator();
     evaluator.attributes = names;
     evaluator.useGroups = true;
-    result = evaluator.evaluate(a, b, opcode);
+    // Own the target before the donor can throw; finally must release it on failure too.
+    result = new Brush(new BufferGeometry(), a.material);
+    evaluator.evaluate(a, b, opcode, result);
     result.updateMatrixWorld(true);
     const geometry = exportGeometry(result.geometry);
-    geometry.applyMatrix4(result.matrixWorld);
+    applySolidTransform(geometry, result.matrixWorld);
     const mesh = new Mesh(geometry, result.material as Material | Material[]);
     mesh.name = `csg-${operation}`;
     mesh.matrix.copy(new Matrix4());

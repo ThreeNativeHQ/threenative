@@ -20,7 +20,8 @@ function box(t) {
   mesh.geometry.clearGroups();
   t.after(() => {
     mesh.geometry.dispose();
-    mesh.material.dispose();
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+      material.dispose();
   });
   return mesh;
 }
@@ -49,7 +50,7 @@ async function reload(t, bytes) {
   return gltf.scene;
 }
 
- test("single-material meshes ignore geometry material indices, as Three.js does", async (t) => {
+test("single-material meshes ignore geometry material indices, as Three.js does", async (t) => {
   const mesh = box(t);
   mesh.geometry.addGroup(0, 18, 0);
   mesh.geometry.addGroup(18, 18, 5);
@@ -159,3 +160,29 @@ test("doorway survives Khronos validation and the actual Three.js GLTFLoader", a
   assert.equal(hit(0), false);
   assert.equal(hit(1.5), true);
 });
+
+for (const indexed of [true, false]) {
+  test(`active triangles and two materials survive GLB export (indexed=${indexed})`, async (t) => {
+    const mesh = box(t);
+    if (!indexed) {
+      const geometry = mesh.geometry.toNonIndexed();
+      mesh.geometry.dispose();
+      mesh.geometry = geometry;
+    }
+    const outer = mesh.material;
+    outer.name = "outer";
+    const inner = new MeshStandardMaterial({ color: 0x804020 });
+    inner.name = "inner";
+    mesh.material = [outer, inner];
+    mesh.geometry.addGroup(0, 18, 0);
+    mesh.geometry.addGroup(18, 18, 1);
+    mesh.geometry.setDrawRange(6, 24);
+    const original = Array.from(mesh.geometry.getAttribute("position").array);
+    const document = await validate(await writeSolidGlb(mesh));
+    const primitives = document.getRoot().listMeshes()[0].listPrimitives();
+    assert.deepEqual(primitives.map((p) => p.getIndices().getCount()), [12, 12]);
+    assert.deepEqual(primitives.map((p) => p.getMaterial().getName()), ["outer", "inner"]);
+    assert.deepEqual(Array.from(mesh.geometry.getAttribute("position").array), original);
+    assert.deepEqual(mesh.geometry.drawRange, { start: 6, count: 24 });
+  });
+}

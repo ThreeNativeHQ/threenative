@@ -1,6 +1,6 @@
 import { Accessor, Document, NodeIO } from "@gltf-transform/core";
-import { DoubleSide, type Mesh, type MeshStandardMaterial } from "three";
-import { exportGeometry } from "./csg.js";
+import { BackSide, DoubleSide, type Mesh, type MeshStandardMaterial } from "three";
+import { applySolidTransform, exportGeometry } from "./csg.js";
 
 /** Bounded authoring bridge: standard untextured PBR solids only, no DOM/FileReader shims. */
 export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
@@ -8,11 +8,12 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
   try {
     mesh.updateWorldMatrix(true, false);
     if (
+      mesh.matrixWorld.elements.some((value) => !Number.isFinite(value)) ||
       !Number.isFinite(mesh.matrixWorld.determinant()) ||
       Math.abs(mesh.matrixWorld.determinant()) < 1e-12
     )
       throw new Error("CSG export transform is singular or non-finite.");
-    geometry.applyMatrix4(mesh.matrixWorld);
+    applySolidTransform(geometry, mesh.matrixWorld);
     if (!geometry.index || geometry.index.count === 0)
       throw new Error("CSG result is empty; no GLB was written.");
     const document = new Document();
@@ -30,6 +31,8 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
           throw new Error(
             `CSG export material '${source.name}' is not an admitted standard PBR material.`,
           );
+        if (material.side === BackSide)
+          throw new Error(`CSG export material '${source.name}' uses unsupported BackSide.`);
         for (const value of Object.values(material))
           if (value && typeof value === "object" && "isTexture" in value)
             throw new Error(
@@ -45,13 +48,17 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
             material.opacity,
             material.metalness,
             material.roughness,
-            e.r,
-            e.g,
-            e.b,
-            material.emissiveIntensity,
-          ].every(Number.isFinite)
+            material.alphaTest,
+            e.r * material.emissiveIntensity,
+            e.g * material.emissiveIntensity,
+            e.b * material.emissiveIntensity,
+          ].every((value) => Number.isFinite(value) && value >= 0 && value <= 1) ||
+          !Number.isFinite(material.emissiveIntensity) ||
+          material.emissiveIntensity < 0
         )
-          throw new Error(`CSG export material '${source.name}' has non-finite factors.`);
+          throw new Error(
+            `CSG export material '${source.name}' has factors outside the admitted glTF range.`,
+          );
         return document
           .createMaterial(source.name)
           .setBaseColorFactor([r, g, b, material.opacity])
@@ -75,13 +82,15 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
       color: "COLOR_0",
     };
     for (const [name, attribute] of Object.entries(geometry.attributes)) {
-      const semantic = semantics[name];
-      if (!semantic)
+      if (!Object.hasOwn(semantics, name))
         throw new Error(`CSG export attribute '${name}' has no admitted glTF semantic.`);
+      const semantic = semantics[name];
       const values = new Float32Array(attribute.count * attribute.itemSize);
       for (let i = 0; i < attribute.count; i++)
         for (let c = 0; c < attribute.itemSize; c++)
           values[i * attribute.itemSize + c] = attribute.getComponent(i, c);
+      if (!values.every(Number.isFinite))
+        throw new Error(`CSG export attribute '${name}' must fit finite float32 values.`);
       const size = attribute.itemSize;
       if (size < 2 || size > 4)
         throw new Error(`CSG export attribute '${name}' has unsupported size ${size}.`);
@@ -101,7 +110,7 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
       ? geometry.groups
       : [{ start: 0, count: geometry.index.count, materialIndex: 0 }];
     for (const group of groups) {
-      const material = materials[group.materialIndex ?? 0];
+      const material = materials[Array.isArray(mesh.material) ? (group.materialIndex ?? 0) : 0];
       if (!material) throw new Error("CSG export group references a missing material.");
       const sourceIndices = geometry.index.array.subarray(group.start, group.start + group.count);
       // Allocate an owned ArrayBuffer; do not widen the result back to ArrayBufferLike.

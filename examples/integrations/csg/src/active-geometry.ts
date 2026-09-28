@@ -110,7 +110,8 @@ export function compactTriangles(input: IGeometryBuffers): ICompactedGeometry {
   }
   return {
     attributes,
-    indices: sourceVertices.length <= 65536 ? new Uint16Array(indexValues) : indexValues,
+    // glTF reserves 0xffff; 65,536 unique vertices therefore require uint32.
+    indices: sourceVertices.length < 65536 ? new Uint16Array(indexValues) : indexValues,
     groups,
   };
 }

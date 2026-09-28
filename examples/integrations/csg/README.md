@@ -9,14 +9,22 @@ npm test
 npm run generate -- /absolute/path/to/game/assets/doorway.glb
 ```
 
-The generator refuses overwrites. Run the game's ordinary asset cook next and use `ctx.assets.model('doorway.glb')`. Create collision from the authored LOD0 geometry. No CSG code is needed at runtime.
+The generator refuses overwrites. Run the game's ordinary asset cook next and use `ctx.assets.model('doorway.glb')`. Create collision from the authored LOD0 geometry. The generated GLB does not require the authoring program to load it; the complete engine cook, collision and platform route still needs qualification.
 
-`evaluateSolid(left, right, 'subtract' | 'union' | 'intersect')` calls three-bvh-csg and preserves caller geometries/materials. `result.dispose()` releases output geometry only. `writeSolidGlb(result.mesh)` writes actual GLB bytes through glTF Transform, normalizing active draw ranges and material groups without DOM/FileReader shims.
+`evaluateSolid(left, right, 'subtract' | 'union' | 'intersect')` calls three-bvh-csg with owned scratch geometry. Caller geometries and shared materials retain their lifetime. `result.dispose()` releases output geometry only and is idempotent. The evaluation target is owned before the donor runs, so a thrown evaluation also reaches cleanup.
 
-The exporter admits static, untextured standard PBR solids with position/normal/UV/color attributes. Textures, physical materials, morph targets and interleaved buffers fail explicitly. Boolean inputs must be watertight; this is not a CAD validator or topology repair tool. Empty results cannot be exported as misleading original meshes.
+`writeSolidGlb(result.mesh)` writes GLB bytes through glTF Transform without DOM/FileReader shims. It compacts active triangles and groups, bakes world transforms with corrected winding for reflections, and retains Three.js single-material group behavior.
 
-`npm test` builds strict TypeScript, runs CPU contracts and then executes the real donor/GLB round-trip suite. Missing dependencies fail, never skip. The dedicated PR workflow runs it because root Vitest excludes examples.
+## Admitted inputs
 
-Executed locally: 10 CPU tests passed after their failing baseline; the dependency-free module also passes strict TypeScript 5.8.3 checking. The complete `npm test` was attempted and failed at build because dependency downloads are unavailable. Donor, GLB, GPU, native, collision-playtest and full repository results are not claimed. Generate/review the lockfile and qualify inside the actual framework before merging. This standalone Three pin does not apply the framework renderer patch.
+Use static, untextured standard PBR solids. Position and normal attributes have three components, UVs two, and colors three or four. Unknown glTF semantics, malformed layouts, non-finite float32 values and invalid PBR factors fail explicitly. Base color, opacity, metalness, roughness, alpha cutoff and the final emissive factor must fit the supported glTF ranges; HDR emissive-strength extensions are not supplied.
 
-Three.js, three-bvh-csg and glTF Transform retain their own MIT notices as dependencies. No demo assets were copied; the geometry fixture is authored here.
+Textures, physical materials, BackSide, morph targets and interleaved buffers are not admitted. Boolean inputs must be watertight; this is not a CAD validator or topology repair tool. Empty results cannot be exported as misleading original meshes.
+
+## Checks
+
+`npm test` builds strict TypeScript, runs 13 dependency-free contracts and then the 31 configured donor/export/CLI cases. These include Khronos GLB validation, actual Three.js GLTFLoader readback, reflected winding, indexed/nonindexed active material groups, normalized colors, invalid-input diagnostics and failure/disposal paths. Missing dependencies fail, never skip. `npm run test:contracts` can run the CPU-only subset without downloading the donor.
+
+The dedicated workflow runs on relevant PRs and pushes because root Vitest excludes examples. Current execution evidence and open gates live in the [PRD](../../../docs/PRDs/threejs-integrations/PRD-threejs-csg-cook.md): configured cases are not a claim that they passed. Generate/review the lockfile and qualify inside the actual framework before merging. This standalone Three pin does not apply the framework renderer patch.
+
+The installed dependencies retain their own license notices. No demo assets were copied; the geometry fixtures are authored here. The Khronos validator is a development dependency, not part of asset generation or runtime loading.
