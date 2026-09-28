@@ -1,6 +1,7 @@
 # PRD-446 — Stable API and upgrade contract
 
-**Status:** PARTIAL — phases 1 and 2 verified (`prd:50%`); phase 3 remains open.
+**Status:** PARTIAL — phases 1 and 2 verified; phase 3 is wired and unit-proven, but its real
+`scripts/release.ts` run is unverified, so no phase-3 box claims a release (`prd:75%`).
 **Complexity:** 6 → MEDIUM; touches release scripts, CI, and the physics deprecation warning.
 **Depends on:** [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
 (1.0) of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
@@ -198,14 +199,95 @@ Out of scope, closed with evidence elsewhere: an upgrade CLI command or codemod 
 
 ### Phase 3 — A game upgrades from N-1
 
-- [ ] Upgrade proof for `starter` on web: previous `latest` → candidate, scenario passes.
-- [ ] Upgrade proof for `platformer` on web.
-- [ ] Red: a candidate with an unannounced breaking change fails the upgrade proof.
-- [ ] The upgrade proof runs in the release preflight before any cohort moves `latest`.
+The lane is a mode of the clean-room installer, not a second one: `verifyRegistryInstall` already
+scaffolds from the registry `latest`, refuses a lockfile resolving from this machine, edits the game,
+builds it and drives a real web scenario. Given a `candidate` — packed tarballs plus cohort versions —
+it inserts two steps, `surface` and `upgrade`, claims web only (`doctor`, the native host and the MCP
+table describe the *published* tree, which the post-publish lane still runs in full), and stops the
+case at the first red step. `stepPlan(upgrade)` is the single list the not-run bookkeeping reads.
+
+**What identifies the candidate.** Not the version. A cohort in development can carry the same
+version as the `latest` it upgrades from, so `node_modules/<name>/package.json` reading the right
+number proves nothing. Two checks run instead, both fail-closed: `assertCandidateInstalled` names the
+version the consumer really resolved (`TN_REGISTRY_UPGRADE_VERSION_MISMATCH`), and
+`assertCandidateIntegrity` compares the SHA-512 of each packed tarball against the `integrity` the
+installed lockfile records for it (`TN_REGISTRY_UPGRADE_INTEGRITY_MISMATCH`). That field is what pnpm
+writes as `packages.<name>.resolution.integrity` and npm as `packages["node_modules/<name>"].integrity`
+for a `file:` tarball; the reader handles both line shapes, and the two real formats were checked
+once against live `pnpm pack` + `pnpm add` (pnpm 10.25.0, lockfileVersion 9.0) and `npm install
+--package-lock-only` (lockfileVersion 3) output. *Limit, stated rather than hidden: this proves the
+resolution the manager recorded, not a re-hash of the unpacked tree on disk.*
+
+**Cost.** One package manager per template, `UPGRADE_PACKAGE_MANAGERS = ["pnpm"]`, because that is the
+lockfile carrying the integrity. Two templates therefore cost two clean rooms, not four. The
+post-publish clean room still runs npm and pnpm in full — that lane is about the published registry,
+not about a candidate.
+
+- [ ] Upgrade proof for `starter` on web: previous `latest` → candidate, scenario passes. proof: a
+  real `pnpm tsx scripts/release.ts` run whose `Upgrade proof — starter` block is all `pass`.
+  **The real run is unverified.** Wired and unit-proven: `pnpm exec vitest run
+  scripts/__tests__/verify-registry-install.spec.ts` → 33 passed. The step list is exactly `pnpm:
+  scaffold, install, lockfile, surface, upgrade, edit, build, test, gameplay`; the install carried the
+  packed tarball; the playtest carried `playtests/survives.playtest.json` (`UPGRADE_SCENARIO`, five
+  non-empty assertion families in both `starter` and `platformer` in this checkout) and not the
+  registry lane's `production-readiness` guard; the upgrade step reported the cohort and the
+  candidate's SHA-512. Red-green on the byte check: `rejects a matching version whose bytes are not
+  the candidate's, which is the case a version cannot catch` installs the right version with a foreign
+  integrity and reads `TN_REGISTRY_UPGRADE_INTEGRITY_MISMATCH`; `fails closed when no lockfile records
+  the candidate's integrity at all` covers the missing-lockfile and no-integrity branches. Nothing was
+  published, no dist-tag moved, no version bumped.
+- [ ] Upgrade proof for `platformer` on web. proof: the same run's `Upgrade proof — platformer` block.
+  `UPGRADE_PROOF_TEMPLATES = ["starter", "platformer"]`, and `upgrades the previous latest onto the
+  packed candidate, on both named templates` asserts each template receives the same tarballs and
+  cohort versions. **The real run is unverified.** Its runtime is unknown from here: `platformer`
+  ships far more scenarios than `starter`, so its own `test` script decides how long this lane takes.
+- [x] Red: a candidate with an unannounced breaking change fails the upgrade proof. proof: the
+  `surface` step red below, plus phase 1's real `pnpm api:surface:check` exit 1.
+  The proof runs the existing `api:surface:check` before it installs a byte and refuses a red
+  candidate. Red: `refuses a candidate whose public break is unannounced, before installing a byte of
+  it` failed with the tarball install already run and the matrix carrying on. Green: the `surface`
+  step ends the case, no install was attempted, and `upgrade` and `gameplay` read `Not run`. The gate
+  is not reimplemented — it is the same script phase 1 proved red on a deleted export, so a silent
+  break cannot reach the upgrade step by a second route. Box ticked on the unit proof; the release
+  run that exercises it end to end is the open preflight box below.
+- [x] A failed candidate install stops the case, so no unproven tree is built or played. proof:
+  `stops the case when the candidate install fails, so no unproven tree is built or played` in the
+  33-pass run above (exit 0).
+  Red: the step was recorded and the lane went on to `edit`, `build`, `test` and a real playtest of a
+  tree the candidate never reached. Green: `edit`, `build`, `test` and `gameplay` all read
+  `Not run: the candidate install failed, so no candidate bytes reached this game.`, and the playtest
+  runner was never invoked. Unit proof, which is the whole claim: the control flow is the assertion.
+- [ ] The upgrade proof runs in the release preflight, after the unpublished-version check and before any cohort moves `latest`. proof: a real `pnpm tsx scripts/release.ts --yes` run reaching the publish loop with both upgrade blocks green. **The real run is unverified.**
+  `release.ts` proves the exact cohort absent from npm (`unpublishedReleasePackages`), then packs it
+  (`packReleaseSet` returns the name → tarball map instead of packing into a directory it deletes),
+  then `proveUpgradeFromLatest` runs the clean room per template and throws
+  `TN_RELEASE_UPGRADE_RED`. Order is asserted structurally, as the existing post-build gate is: the
+  cohort check sits after the post-build preflight and before `proveUpgradeFromLatest`. Both halves
+  are load-bearing — the cohort check is what makes "the candidate version" a real identity on the
+  release path, and the proof has to precede the publish because once `latest` has moved there is no
+  N-1 left to upgrade from. It is not skipped by `--skip-gates`, so the `npm-release` lane's
+  `release.ts --yes --skip-gates` gets it. Candidate versions are `publishSet(REPO)` output and are
+  not one number: in this checkout `@threenative/core` is 0.3.3 and `@threenative/assets` is 0.3.4, so
+  the spec reads the real version from `packages/core/package.json` instead of inventing one.
 
 ## Acceptance criteria
 
 - [ ] An unannounced removal of a public symbol cannot reach `develop`.
 - [ ] Every breaking change in the candidate has a `CHANGELOG.md` migration note.
-- [ ] `starter` and `platformer` upgrade from the previous `latest` to the candidate without edits beyond the migration notes.
-- [ ] `pnpm release:prepare` refuses a `1.0.0` version while any box above is open.
+- [ ] `starter` and `platformer` upgrade from the previous `latest` to the candidate without edits beyond the migration notes. proof: the two `Upgrade proof` blocks of a real `pnpm tsx scripts/release.ts` run. Follows from the two phase 3 runs above: the only edit the lane
+  makes is the `dist/`-observable marker, it is applied *after* the upgrade step, and a candidate
+  with no announced break requires no migration edit at all.
+- [ ] `pnpm release:prepare` refuses a `1.0.0` version while any box above is open. proof:
+  `pnpm exec vitest run scripts/__tests__/prepare-release.spec.ts` → 7 passed, including
+  `refuses while the real PRD-446 has open boxes, and names them`, plus a real `pnpm
+  release:prepare` against a `1.0.0` cohort.
+  `assertOneZeroGatesClosed` counts unticked phase and acceptance boxes through the repository's own
+  reader (`progressOf`, the one behind `pnpm prd:progress`) rather than a second one that could
+  disagree with it, and `main()` calls it *before* `syncReleaseMetadata` writes anything — the bump
+  nobody wants to walk back never lands. It refuses only when a selected version is exactly
+  `1.0.0`; every other cohort is untouched. Red was structural, not simulated: the guard did not
+  exist, and `accepts the same PRD once every phase and acceptance box is ticked` is the half that
+  stops a refusal from being an unconditional throw. A gate PRD that has moved throws
+  `TN_RELEASE_1_0_0_GATE_MISSING` rather than passing. `RELEASE_1_0_0_GATES` names PRD-446; a second
+  cohort that gates 1.0 adds its file there. **A real `release:prepare` run was not made** — the
+  task forbade it — so only the refusal logic is proven, not the command's exit code.

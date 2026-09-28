@@ -41,8 +41,20 @@ import {
   stageNativeRelease,
   uploadNativeRelease,
 } from "./release-native-local.js";
+import {
+  type IRegistryInstallReport,
+  type IVerifyRegistryInstallOptions,
+  verifyRegistryInstall,
+} from "./verify-registry-install.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
+
+/**
+ * The templates PRD-446 phase 3 names. Each one is scaffolded from the previous registry `latest`,
+ * upgraded onto the packed candidate and played on web, because an upgrade contract that only
+ * covers one template is a contract about that template.
+ */
+export const UPGRADE_PROOF_TEMPLATES = ["starter", "platformer"] as const;
 
 export interface IReleaseCohort {
   readonly bundledMcpServers: readonly string[];
@@ -274,15 +286,50 @@ async function waitForRegistry(name: string, version: string): Promise<void> {
   );
 }
 
-async function packReleaseSet(packages: readonly { name: string }[]): Promise<void> {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "threenative-release-pack-"));
-  try {
-    for (const { name } of packages) {
-      run("pnpm", ["--filter", name, "pack", "--pack-destination", destination], `pack ${name}`);
-    }
-  } finally {
-    await rm(destination, { force: true, recursive: true });
+/** What `pnpm pack` names a package's tarball, given its published name and candidate version. */
+export function packedTarballName(name: string, version: string): string {
+  const prefix = name.startsWith("@") ? `${name.slice(1).replace("/", "-")}-` : `${name}-`;
+  return `${prefix}${version}.tgz`;
+}
+
+function packReleaseSet(
+  packages: readonly IPublishPackage[],
+  destination: string,
+): Readonly<Record<string, string>> {
+  const tarballs: Record<string, string> = {};
+  for (const item of packages) {
+    run(
+      "pnpm",
+      ["--filter", item.name, "pack", "--pack-destination", destination],
+      `pack ${item.name}`,
+    );
+    tarballs[item.name] = path.join(destination, packedTarballName(item.name, item.version));
   }
+  return tarballs;
+}
+
+/**
+ * PRD-446 phase 3: prove a game written against the previous registry `latest` still upgrades onto
+ * this packed candidate and still plays, before any cohort moves `latest`.
+ *
+ * The candidate is the packed tarballs rather than a tag, so the proof is available before anything
+ * irreversible has happened — and once `latest` has moved there is no N-1 left to test, which is
+ * exactly why this cannot run after the publish the clean-room lane already waits for.
+ *
+ * One package manager per template, the one whose lockfile records the packed tarball's SHA-512, so
+ * the clean room can prove which bytes it installed; see `UPGRADE_PACKAGE_MANAGERS`.
+ */
+export function proveUpgradeFromLatest(
+  packages: readonly IPublishPackage[],
+  tarballs: Readonly<Record<string, string>>,
+  verify: (
+    options: IVerifyRegistryInstallOptions,
+  ) => IRegistryInstallReport = verifyRegistryInstall,
+): readonly IRegistryInstallReport[] {
+  const versions = new Map(packages.map((item) => [item.name, item.version]));
+  return UPGRADE_PROOF_TEMPLATES.map((template) =>
+    verify({ candidate: { tarballs, versions }, template }),
+  );
 }
 
 async function main(argv: readonly string[]): Promise<void> {
@@ -375,8 +422,37 @@ async function main(argv: readonly string[]): Promise<void> {
       throw new Error("TN_RELEASE_POST_BUILD_PREFLIGHT_RED: the built tree is not publishable.");
   }
 
+  // The exact cohort must be absent from the registry before anything is proved against it: the
+  // upgrade proof installs these versions as tarballs, and a version npm already serves can resolve
+  // from the registry instead, so the proof would credit the old bytes under the candidate's name.
+  // Checked here, before the pack, and answered once — the publish loop below uses this answer.
+  const publishPackages = unpublishedReleasePackages(packages, npmLookup(REPO));
+  const publishNames = new Set(publishPackages.map((item) => item.name));
+
+  // Pack the candidate, then prove the previous `latest` upgrades onto it. Both happen before the
+  // first publish, because neither is possible afterwards: `latest` has moved, and the immutable
+  // version is on npm.
+  const packed = await mkdtemp(path.join(os.tmpdir(), "threenative-release-pack-"));
+  try {
+    const tarballs = packReleaseSet(packages, packed);
+    const upgrades = proveUpgradeFromLatest(packages, tarballs);
+    for (const [index, report] of upgrades.entries()) {
+      const template = UPGRADE_PROOF_TEMPLATES[index] as string;
+      process.stdout.write(`\nUpgrade proof — ${template} (registry latest -> candidate):\n`);
+      for (const item of report.steps)
+        process.stdout.write(
+          `  ${item.ok ? "pass" : "FAIL"}  ${item.name}\n        ${item.detail}\n`,
+        );
+    }
+    if (upgrades.some((report) => report.exitCode !== 0))
+      throw new Error(
+        "TN_RELEASE_UPGRADE_RED: a game on the previous latest does not upgrade onto this candidate. Nothing was published.",
+      );
+  } finally {
+    await rm(packed, { force: true, recursive: true });
+  }
+
   if (!publish) {
-    await packReleaseSet(packages);
     process.stdout.write(
       "\nDry run packed every publishable package. Nothing was published. Re-run with --yes to publish, which cannot be undone.\n",
     );
@@ -394,8 +470,6 @@ async function main(argv: readonly string[]): Promise<void> {
       "\nPublishing without --provenance: npm can only attest a build from CI, and this is not CI.\n",
     );
   }
-  const publishPackages = unpublishedReleasePackages(packages, npmLookup(REPO));
-  const publishNames = new Set(publishPackages.map((item) => item.name));
   for (const name of order) {
     if (!publishNames.has(name)) continue;
     const version = versions.get(name);

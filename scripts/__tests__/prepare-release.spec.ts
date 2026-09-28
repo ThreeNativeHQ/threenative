@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import type { RegistryLookup } from "../check-publish-state.js";
-import { nextPatch, selectReleaseVersions } from "../prepare-release.js";
+import { assertOneZeroGatesClosed, nextPatch, selectReleaseVersions } from "../prepare-release.js";
 
 describe("release preparation", () => {
   it("increments only the patch component", () => {
@@ -48,5 +51,36 @@ describe("release preparation", () => {
         state: "unreachable",
       })),
     ).toThrow(/TN_RELEASE_REGISTRY_UNREACHABLE/u);
+  });
+});
+
+/**
+ * PRD-446: 1.0.0 is the version that promises a game on N keeps working on N+1, so the cohort may not
+ * claim it while the proof of that promise is open. The refusal is measured against the real PRD.
+ */
+describe("the 1.0.0 refusal", () => {
+  const gate = "docs/PRDs/production-readiness/PRD-446-stable-api-and-upgrade-contract.md";
+
+  it("refuses while the real PRD-446 has open boxes, and names them", () => {
+    expect(() => assertOneZeroGatesClosed()).toThrow(
+      new RegExp(`TN_RELEASE_1_0_0_GATES_OPEN[\\s\\S]*${gate.replaceAll(".", "\\.")}`, "u"),
+    );
+  });
+
+  it("accepts the same PRD once every phase and acceptance box is ticked", async () => {
+    const root = await makeTempDir("threenative-gates-closed-");
+    const source = path.join(root, gate);
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    const markdown = fs
+      .readFileSync(path.resolve(import.meta.dirname, "../..", gate), "utf8")
+      .replace(/^- \[ \]/gmu, "- [x]");
+    fs.writeFileSync(source, markdown);
+    expect(() => assertOneZeroGatesClosed(root, [gate])).not.toThrow();
+  });
+
+  it("fails closed when the gate PRD has moved rather than retiring its promise", () => {
+    expect(() => assertOneZeroGatesClosed("/nowhere", [gate])).toThrow(
+      /TN_RELEASE_1_0_0_GATE_MISSING/u,
+    );
   });
 });
