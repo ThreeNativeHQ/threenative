@@ -391,8 +391,8 @@ function comparisonKey(run: ICampaignRunRecord): string {
   ]);
 }
 
-function renderPilotTrace(data: IMonitorData): string {
-  const latest = (data.pilots ?? [])
+function latestHardwarePilot(data: IMonitorData): IAttempt | undefined {
+  return (data.pilots ?? [])
     .filter(
       (attempt) =>
         attempt.pilot &&
@@ -403,6 +403,10 @@ function renderPilotTrace(data: IMonitorData): string {
         ),
     )
     .at(-1);
+}
+
+function renderPilotTrace(data: IMonitorData): string {
+  const latest = latestHardwarePilot(data);
   if (!latest?.pilot) return "";
   const pilot = latest.pilot;
   const traces = pilot.rungs
@@ -535,6 +539,23 @@ export function renderProgressHtml(data: IMonitorData): string {
     })
     .join("");
   const latest = iterations.at(-1);
+  const currentPilot = latestHardwarePilot(data);
+  const spans = currentPilot?.pilot?.rungs
+    .map(
+      (rung) =>
+        `${rung.mode} / ${rung.objectCount} objects / repeat ${rung.repeat}: completed-work mean ${typeof rung.completedWorkMeanMs === "number" ? `${rung.completedWorkMeanMs.toFixed(3)} ms/frame` : "unavailable"}; CPU submit mean ${rung.cpuSubmitMeanMs === undefined ? "unavailable" : `${rung.cpuSubmitMeanMs.toFixed(3)} ms/frame`}.`,
+    )
+    .join(" ");
+  const currentObservation =
+    latest?.bottleneck ??
+    (spans
+      ? `${spans} Exploratory, cadence-inclusive browser delivery. Stage/GPU attribution is unavailable.`
+      : "No observed spans yet; stage/GPU attribution is unavailable.");
+  const nextHypothesis =
+    latest?.nextHypothesis ??
+    (currentPilot
+      ? "Profile CPU submission and individual render stages to test which consumes CPU time; measure GPU work separately before assigning a bottleneck."
+      : "Awaiting a qualified baseline and an explicit iteration record.");
   const attempts = data.attempts
     .map(
       (attempt) =>
@@ -566,7 +587,7 @@ export function renderProgressHtml(data: IMonitorData): string {
 ${renderPilotTrace(data)}
 ${pilotRows ? `<section class="panel"><div class="section-head"><h2>Unqualified pilots</h2><span class="badge">Exploration only</span></div><p class="note">Real observations with no qualified iteration linkage. Different devices, builds and workloads are not comparable; these are not evidence of improvement.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Pilot observations; scroll horizontally for all columns"><table class="pilot-table"><thead><tr><th>Run / build</th><th>GPU / renderer</th><th>Workload</th><th>Frame p95</th></tr></thead><tbody>${pilotRows}</tbody></table></div></section>` : ""}
 <section class="panel"><div class="section-head"><h2>Iteration decisions</h2><span class="badge">${iterations.length} recorded</span></div>${iterationRows ? `<div class="table-wrap"><table><thead><tr><th>Decision</th><th>Experiment</th><th>Candidate</th><th>Δ baseline / incumbent</th><th>Raw run evidence</th></tr></thead><tbody>${iterationRows}</tbody></table></div>` : `<p class="note">No decisions recorded. Keep, reject and invalid outcomes appear here when an iteration links its three run IDs.</p>`}${(data.iterationErrors ?? []).map((error) => `<p class="error">${e(error)}</p>`).join("")}</section>
-<div class="grid"><section class="panel"><h2>Current experiment</h2><div class="state"><div class="label">Bottleneck</div><p>${e(latest?.bottleneck ?? "Not measured yet")}</p></div><div class="state"><div class="label">Next hypothesis</div><p>${e(latest?.nextHypothesis ?? "Awaiting a qualified baseline and an explicit iteration record.")}</p></div><p class="note">${latest ? `From recorded iteration ${e(latest.id)}; statements are recorded hypotheses, not inferred diagnoses.` : "No timing or improvement claim has been invented."}</p></section><section class="panel"><h2>Implementation activity</h2><p class="note" style="margin:8px 0 22px">Chronological commits · activity only</p><ol class="timeline">${commits || `<li>${e(PENDING)}</li>`}</ol>${data.git.baseError ? `<p class="error">${e(data.git.baseError)}</p>` : ""}</section></div>
+<div class="grid"><section class="panel"><h2>Current experiment</h2><div class="state"><div class="label">${latest ? "Recorded bottleneck" : "Observed spans"}</div><p>${e(currentObservation)}</p></div><div class="state"><div class="label">Next hypothesis</div><p>${e(nextHypothesis)}</p></div><p class="note">${latest ? `From recorded iteration ${e(latest.id)}; statements are recorded hypotheses, not inferred diagnoses.` : currentPilot ? `Latest hardware production pilot: ${attemptLink(data, currentPilot)}. Profiling hypothesis only; no diagnosed bottleneck or speedup.` : "No timing or improvement claim has been invented."}</p></section><section class="panel"><h2>Implementation activity</h2><p class="note" style="margin:8px 0 22px">Chronological commits · activity only</p><ol class="timeline">${commits || `<li>${e(PENDING)}</li>`}</ol>${data.git.baseError ? `<p class="error">${e(data.git.baseError)}</p>` : ""}</section></div>
 
 <section class="panel"><div class="section-head"><h2>Retained evidence</h2><span class="badge">All outcomes</span></div><div class="table-wrap"><table><thead><tr><th>Recorded</th><th>Status</th><th>Source file</th></tr></thead><tbody>${attempts || `<tr><td colspan="3">${e(PENDING)}</td></tr>`}</tbody></table></div></section>
 <details class="panel"><summary>Implementation progress · ${data.prd.done}/${data.prd.total} PRD boxes</summary><p class="small">${e(data.prd.status)}</p>${phases}${data.prd.missing ? `<p class="error">PRD file unreadable: ${e(data.prd.missing)}</p>` : ""}<p><code>${e(data.prd.file)}</code></p></details>

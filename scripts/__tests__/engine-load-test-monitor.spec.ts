@@ -457,6 +457,16 @@ it("plots exploratory pilot samples and distinguishes observed, zero, null and a
   expect(measured).toContain("Measured frames</span><strong>4</strong>");
   expect(measured).toContain("Drain policy: drain after final frame");
   expect(measured).toContain("No qualified run");
+  const currentExperiment = measured
+    .split("<h2>Current experiment</h2>")[1]
+    ?.split("</section>")[0];
+  expect(currentExperiment).toContain(
+    "completed-work mean 18.125 ms/frame; CPU submit mean 0.000 ms/frame",
+  );
+  expect(currentExperiment).toContain("Stage/GPU attribution is unavailable");
+  expect(currentExperiment).toContain("Profile CPU submission and individual render stages");
+  expect(currentExperiment).toContain("no diagnosed bottleneck or speedup");
+
   const unavailable = withObservation(null);
   expect(unavailable).toContain("Completed-work mean</span><strong>—</strong>");
   expect(unavailable).toContain("Unavailable: GPU drain unavailable &lt;unsafe&gt;");
@@ -484,4 +494,35 @@ it("plots exploratory pilot samples and distinguishes observed, zero, null and a
       }),
     ),
   ).not.toContain("Latest hardware pilot frame trace");
+});
+
+it("keeps the latest invalid or rejected iteration visible as the current experiment", () => {
+  for (const decision of ["invalid", "reject"] as const) {
+    const iteration = {
+      id: "iteration-latest",
+      sequence: 2,
+      baselineRunId: "absent-baseline",
+      incumbentRunId: "absent-incumbent",
+      candidateRunId: "absent-candidate",
+      hypothesis: "Profile dispatch",
+      bottleneck: "Recorded submission hypothesis",
+      nextHypothesis: "Repeat after fixing the invalid sample window",
+      decision,
+    };
+    const html = renderProgressHtml(
+      data({
+        iterations: [
+          { ...iteration, id: "iteration-earlier", sequence: 1, bottleneck: "Earlier hypothesis" },
+          iteration,
+        ],
+      }),
+    );
+    const panel = html.split("<h2>Current experiment</h2>")[1]?.split("</section>")[0];
+    expect(panel).toContain("Recorded submission hypothesis");
+    expect(panel).toContain("Repeat after fixing the invalid sample window");
+    expect(panel).toContain("iteration-latest");
+    expect(panel).not.toContain("Earlier hypothesis");
+    expect(panel).not.toContain("Profile CPU submission and individual render stages");
+    expect(html).toContain("No qualified iterations yet");
+  }
 });
