@@ -2,9 +2,9 @@ import {
   Box3,
   BoxGeometry,
   DirectionalLight,
-  InstancedMesh,
   FloatType,
   HalfFloatType,
+  InstancedMesh,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -22,8 +22,8 @@ import { type Node, type NodeBuilder, type NodeFrame, WGSLNodeBuilder } from "th
 import { describe, expect, it, vi } from "vitest";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
 import {
-  VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_MOVER_LAYER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
@@ -899,7 +899,7 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
    * That aiming is the renderer's to do, and this harness has no renderer.
    */
   function holds(node: VirtualShadowNode, level: number, point: Vector3): boolean {
-    const light = levelLight(node, level);
+    const light = levelLight(node, level) as unknown as DirectionalLight;
     _aim.position.copy(light.position);
     _aim.up.set(0, 1, 0);
     _aim.lookAt(light.target.position);
@@ -996,11 +996,7 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
     // What a `WorldCells` cluster is: one `InstancedMesh` covering a whole grid square, so its own
     // sphere is 24 m of square. A fern inside it is 0.3 m, and the published scale says so.
-    const fern = new InstancedMesh(
-      new SphereGeometry(0.15, 6, 4),
-      new MeshStandardMaterial(),
-      64,
-    );
+    const fern = new InstancedMesh(new SphereGeometry(0.15, 6, 4), new MeshStandardMaterial(), 64);
     fern.boundingSphere = new Sphere(new Vector3(0, 1, 0), 24);
     fern.boundingBox = new Box3(new Vector3(-12, 0, -12), new Vector3(12, 2, 12));
     fern.castShadow = true;

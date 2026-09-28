@@ -123,6 +123,10 @@ export class TerrainProbe extends Scene<TerrainState, IPhysicsContext> {
       tileResolution: TILE_RESOLUTION,
       tileSize: TILE_SIZE,
       lodDistances: [48, 96],
+      // This scene exists to measure the streamed field, and seam gap, visual seam and LOD pop are
+      // the measurements: without this they read `undefined` and the scenario's assertions have
+      // nothing to hold.
+      validate: true,
       topologyObservation: {
         columns: 1025,
         depth: 1024,

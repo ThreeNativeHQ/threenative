@@ -206,7 +206,7 @@ followCamera.updateMatrixWorld();
 function countingRenderer(uploaded: BufferGeometry[]): IRendererLike {
   return {
     compileAsync: () => Promise.resolve(),
-    uploadAttributes: (batch) => {
+    uploadAttributes: (batch: Iterable<BufferGeometry>) => {
       let created = 0;
       for (const geometry of batch) {
         uploaded.push(geometry);

@@ -527,9 +527,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const values = Array.isArray(value) ? [...(value as readonly number[])] : [value as number];
       for (const entry of values) {
         if (!valid(entry)) {
-          throw new RangeError(
-            `TN_VIRTUAL_SHADOW_INVALID: ${complaint}, got ${String(entry)}.`,
-          );
+          throw new RangeError(`TN_VIRTUAL_SHADOW_INVALID: ${complaint}, got ${String(entry)}.`);
         }
       }
       // One value for every level, filled in: what the node keeps is one entry per level whatever
@@ -1121,7 +1119,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const textures = manager?._textures;
     // A renderer that does not expose the manager (a test double, the native host) settles itself.
     if (typeof textures?.updateRenderTarget !== "function") return;
-    for (const node of [...this.#levels.map((level) => level.node), ...this.#levels.map((level) => level.moverNode)]) {
+    for (const node of [
+      ...this.#levels.map((level) => level.node),
+      ...this.#levels.map((level) => level.moverNode),
+    ]) {
       const target = (node as { shadowMap?: RenderTarget | null }).shadowMap;
       if (target) textures.updateRenderTarget(target);
     }

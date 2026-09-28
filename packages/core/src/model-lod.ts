@@ -693,12 +693,13 @@ interface IRegisteredChain {
  * so `@threenative/core` (whose asset loader registers) and `@threenative/core/world` (whose
  * `WorldCells` reads) each carry this module. A module-local map left WorldCells finding no chain.
  */
-const chains: WeakMap<BufferGeometry, IRegisteredChain> = ((
-  globalThis as { [key: symbol]: unknown }
-)[Symbol.for("threenative.discreteLodChains")] ??= new WeakMap()) as WeakMap<
-  BufferGeometry,
-  IRegisteredChain
->;
+const CHAINS_KEY = Symbol.for("threenative.discreteLodChains");
+const chainsHost = globalThis as Record<symbol, unknown>;
+const carriedChains = chainsHost[CHAINS_KEY] as
+  | WeakMap<BufferGeometry, IRegisteredChain>
+  | undefined;
+const chains: WeakMap<BufferGeometry, IRegisteredChain> = carriedChains ?? new WeakMap();
+chainsHost[CHAINS_KEY] = chains;
 
 /** Per-mesh selection state, keyed weakly by the mesh so a disposed or dropped clone drops out. */
 const controllers = new WeakMap<Mesh, ModelLod>();

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { InstancedMesh, MeshBasicMaterial } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
-import { type IWorldPackage, WorldCells } from "../src/world.js";
+import { type IWorldAsset, type IWorldPackage, WorldCells } from "../src/world.js";
 
 /**
  * A streamed package that names one model under several asset ids, which is what an exporter
@@ -28,10 +28,16 @@ const COOKED = {
   rockLod1: "cooked/rock_lod1.glb",
 } as const;
 
-const pine = committed.assets.pine;
-const rock = committed.assets.rock;
-if (pine === undefined || rock === undefined || pine.bounds === undefined)
-  throw new Error("The committed package lost an asset.");
+/** The named asset, failing closed: a package without it is a broken fixture, not a missing entry. */
+function committedAsset(name: string): IWorldAsset {
+  const asset = committed.assets[name];
+  if (asset === undefined || asset.bounds === undefined)
+    throw new Error(`The committed package lost ${name}.`);
+  return asset;
+}
+
+const pine = committedAsset("pine");
+const rock = committedAsset("rock");
 
 /**
  * Three definitions, two of them the same model: `pine_copy` is the same pine under a second

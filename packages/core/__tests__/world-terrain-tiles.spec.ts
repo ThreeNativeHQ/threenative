@@ -684,8 +684,8 @@ describe("TerrainTiles", () => {
     if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
     expect(tiles.maxSeamGap).toBeGreaterThan(0);
     expect(tiles.maxVisualSeamGap).toBeGreaterThan(0);
-    const observedMaximum = tiles.maxSeamGap;
-    const observedVisualMaximum = tiles.maxVisualSeamGap;
+    const observedMaximum = measured(tiles.maxSeamGap);
+    const observedVisualMaximum = measured(tiles.maxVisualSeamGap);
     for (let frame = 0; frame < 3; frame += 1) {
       tiles.process();
     }

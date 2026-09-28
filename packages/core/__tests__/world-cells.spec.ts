@@ -1417,7 +1417,7 @@ describe("WorldCells", () => {
     if (pine === undefined) throw new Error("the committed package has no pine asset.");
     const run = manifest.cells[1]?.runs.find((one) => one.asset === "pine");
     if (run === undefined) throw new Error("the committed package has no pine run.");
-    const cells: IWorldPackage["cells"] = [];
+    const cells: Array<IWorldPackage["cells"][number]> = [];
     for (let z = 0; z < side; z += 1)
       for (let x = 0; x < side; x += 1) cells.push({ chunks: [], runs: [run], x, z });
     stubManifestFetch({

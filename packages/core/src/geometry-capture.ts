@@ -25,8 +25,8 @@
  */
 
 import { Frustum, Matrix4, Sphere, Vector3 } from "three";
-import { markEngineRenderHook } from "./engine-render-hook.js";
 import type { Camera, Object3D } from "three";
+import { markEngineRenderHook } from "./engine-render-hook.js";
 import { baseGeometryOf, conservativeViewDepth, lodPixelScale, worldSphere } from "./model-lod.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 

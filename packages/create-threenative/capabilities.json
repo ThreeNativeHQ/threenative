@@ -3745,8 +3745,8 @@
     },
     {
       "aliases": [],
-      "constraints": [],
-      "example": "",
+      "constraints": ["off by default: it is the work it checks, every frame"],
+      "example": "const tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });\nRead the way `renderListValidationRequested` reads its own: a native launch sets the environment\nvariable, a browser asks with the query string, and a test or a harness sets the global. `0` and\n`false` are off, so a saved URL that used to enable a switch still says \"off\".",
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [],
@@ -3756,7 +3756,7 @@
         "turn terrain's per-frame seam, LOD pop and vertex checks on for one run",
         "assert the terrain geometry a game streams before it ships"
       ],
-      "summary": "Whether `TN_TERRAIN_VALIDATE` asks for terrain validation on this launch. Read the way `renderListValidationRequested` reads its own: a native launch sets the environment variable, a browser asks with the query string, and a test or a harness sets the global. `0` and `false` are off, so a saved URL that used to enable a switch still says \"off\".",
+      "summary": "Whether `TN_TERRAIN_VALIDATE` asks for terrain validation on this launch.",
       "supersedes": [],
       "symbol": "terrainValidationRequested"
     },

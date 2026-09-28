@@ -3,8 +3,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BoxGeometry, Group, InstancedMesh, Mesh, MeshBasicMaterial, type Object3D } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { IResponseLike, IWorldPackage } from "../src/world.js";
+import type { IWorldPackage } from "../src/world.js";
 import { WorldCells } from "../src/world.js";
+
+interface IResponseLike {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly headers: Headers;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+  json: () => Promise<unknown>;
+}
 
 /**
  * PRD-458: hybrid caster granularity per shadow level. A level whose window is a fraction of the
@@ -168,7 +176,7 @@ function submittedIn(
     .filter((mesh) => {
       if (mesh.count === 0) return false;
       const sphere = mesh.boundingSphere;
-      if (sphere === undefined) return false;
+      if (sphere === null) return false;
       return (
         Math.abs(sphere.center.x - centre.x) <= extent + sphere.radius &&
         Math.abs(sphere.center.z - centre.z) <= extent + sphere.radius

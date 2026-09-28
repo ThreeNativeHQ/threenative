@@ -2947,13 +2947,21 @@ const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize:
 
 ### `terrainValidationRequested`
 
-`function` — Whether `TN_TERRAIN_VALIDATE` asks for terrain validation on this launch. Read the way `renderListValidationRequested` reads its own: a native launch sets the environment variable, a browser asks with the query string, and a test or a harness sets the global. `0` and `false` are off, so a saved URL that used to enable a switch still says "off".
+`function` — Whether `TN_TERRAIN_VALIDATE` asks for terrain validation on this launch.
 
 ```ts
 export function terrainValidationRequested(): boolean { … }
 ```
 
 - **Use when:** turn terrain's per-frame seam, LOD pop and vertex checks on for one run · assert the terrain geometry a game streams before it ships
+- **Constraints:** off by default: it is the work it checks, every frame
+
+```ts
+const tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });
+Read the way `renderListValidationRequested` reads its own: a native launch sets the environment
+variable, a browser asks with the query string, and a test or a harness sets the global. `0` and
+`false` are off, so a saved URL that used to enable a switch still says "off".
+```
 
 ### `validateWorldPackage`
 

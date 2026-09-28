@@ -3,9 +3,9 @@ import { BoxGeometry, Euler, InstancedMesh, Quaternion } from "three";
 import Bindings from "three/src/renderers/common/Bindings.js";
 // @ts-expect-error Three's private geometry manager has no public declarations.
 import Geometries from "three/src/renderers/common/Geometries.js";
+import Renderer from "three/src/renderers/common/Renderer.js";
 // @ts-expect-error Three's node manager has no public declarations.
 import NodeManager from "three/src/renderers/common/nodes/NodeManager.js";
-import Renderer from "three/src/renderers/common/Renderer.js";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { NodeMaterialObserver, NodeUpdateType } from "three/webgpu";
 import { describe, expect, it } from "vitest";
@@ -27,6 +27,13 @@ const currentCall = { id: 0 };
 
 /** The counters the manager under test writes, which the manager outlives. */
 let currentCounts: ICounted | undefined;
+
+/** The armed counters, failing closed: a draw before its test armed them is a broken test, not a zero. */
+function liveCounts(): ICounted {
+  if (currentCounts === undefined)
+    throw new Error("a draw counted before its test armed the counters");
+  return currentCounts;
+}
 
 /** The render object's own bind groups, which the renderer creates once and then keeps. */
 const groups = new WeakMap<InstancedMesh, IGroup>();
@@ -170,41 +177,42 @@ function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, app
 
   let manager = geometries.get(mesh);
   if (manager === undefined) {
-    geometries.set(
-      mesh,
-      (manager = {
-        attributeCall: new WeakMap(),
-        wireframes: new WeakMap(),
-        _settledAttributes: new WeakMap(),
-        has: () => true,
-        updateAttributes(this: object, target: unknown) {
-          void (currentCounts!.attributeScans += 1);
-          return Geometries.prototype.updateAttributes.call(this, target);
+    manager = {
+      attributeCall: new WeakMap(),
+      wireframes: new WeakMap(),
+      _settledAttributes: new WeakMap(),
+      has: () => true,
+      updateAttributes(this: object, target: unknown) {
+        liveCounts().attributeScans += 1;
+        return Geometries.prototype.updateAttributes.call(this, target);
+      },
+      updateAttribute: Geometries.prototype.updateAttribute,
+      getIndex: Geometries.prototype.getIndex,
+      attributesChanged: Geometries.prototype.attributesChanged,
+      attributes: {
+        update: (attribute: object) => {
+          liveCounts().uploads.push(attribute);
         },
-        updateAttribute: Geometries.prototype.updateAttribute,
-        getIndex: Geometries.prototype.getIndex,
-        attributesChanged: Geometries.prototype.attributesChanged,
-        attributes: {
-          update: (attribute: object) => {
-            currentCounts!.uploads.push(attribute);
+      },
+      info: {
+        render: {
+          get calls() {
+            return currentCall.id;
           },
         },
-        info: {
-          render: {
-            get calls() {
-              return currentCall.id;
-            },
-          },
-        },
-      }),
-    );
+      },
+    };
+    geometries.set(mesh, manager);
   }
   // One manager per mesh, not per draw: the settled snapshot it keeps is the whole point, and a
   // manager rebuilt every draw would never see an unchanged attribute.
   Geometries.prototype.updateForRender.call(manager, renderObject);
 
   let mine = groups.get(mesh);
-  if (mine === undefined) groups.set(mesh, (mine = { bindings: [objectGroupBinding(), textureBinding()] }));
+  if (mine === undefined) {
+    mine = { bindings: [objectGroupBinding(), textureBinding()] };
+    groups.set(mesh, mine);
+  }
   const drawn = appears === undefined ? [mine] : [mine, ...appears];
   if (created.has(mesh) === false) {
     created.add(mesh);
@@ -212,12 +220,17 @@ function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, app
   }
   const entry = (key: object) => {
     let data = backendData.get(key);
-    if (data === undefined) backendData.set(key, (data = {}));
+    if (data === undefined) {
+      data = {};
+      backendData.set(key, data);
+    }
     return data;
   };
   const backend = {
     get: entry,
-    createUniformBuffer: (binding: object) => void (entry(binding).buffer = {}),
+    createUniformBuffer: (binding: object) => {
+      entry(binding).buffer = {};
+    },
     createBindings: (bindGroup: object) => {
       counts.layoutsBuilt += 1;
       entry(bindGroup).layout = { layoutGPU: {} };
@@ -257,7 +270,7 @@ function objectNode(_counts: ICounted) {
     updateType: NodeUpdateType.OBJECT,
     getUpdateType: () => NodeUpdateType.OBJECT,
     update: () => {
-      currentCounts!.objectNodeUpdates += 1;
+      liveCounts().objectNodeUpdates += 1;
     },
   };
 }
@@ -267,7 +280,7 @@ function objectBeforeNode(_counts: ICounted) {
     updateBeforeType: NodeUpdateType.OBJECT,
     getUpdateBeforeType: () => NodeUpdateType.OBJECT,
     updateBefore: () => {
-      currentCounts!.objectNodeUpdates += 1;
+      liveCounts().objectNodeUpdates += 1;
     },
   };
 }
@@ -277,7 +290,7 @@ function frameNode(_counts: ICounted) {
     updateType: NodeUpdateType.FRAME,
     getUpdateType: () => NodeUpdateType.FRAME,
     update: () => {
-      currentCounts!.frameNodeUpdates += 1;
+      liveCounts().frameNodeUpdates += 1;
     },
   };
 }
@@ -289,7 +302,7 @@ function objectGroupBinding() {
     updateRanges: [],
     groupNode: { updateType: NodeUpdateType.OBJECT, version: 1 },
     update: () => {
-      currentCounts!.objectGroupWrites += 1;
+      liveCounts().objectGroupWrites += 1;
       return true;
     },
   };
@@ -303,7 +316,7 @@ function textureBinding() {
     groupNode: { updateType: NodeUpdateType.RENDER, version: 2 },
     texture: { id: 7, version: 3 },
     update: () => {
-      currentCounts!.objectGroupWrites += 1;
+      liveCounts().objectGroupWrites += 1;
       return true;
     },
   };
@@ -425,7 +438,9 @@ describe("a settled static object skips the per-object draw work", () => {
     const first = draw(mesh, observer);
     expect(first.settled).toBe(false);
     expect(first.counts.objectGroupWrites).toBe(2);
-    expect(backendData.get(groups.get(mesh)!)?.layout?.layoutGPU, "a group with no layout").toBeDefined();
+    const drawnGroup = groups.get(mesh);
+    if (drawnGroup === undefined) throw new Error("a draw left no group to read the layout off");
+    expect(backendData.get(drawnGroup)?.layout?.layoutGPU, "a group with no layout").toBeDefined();
   });
 
   it("never skips a static object's first draw, nor one that moved", () => {
@@ -441,10 +456,11 @@ describe("a settled static object skips the per-object draw work", () => {
     observer.hasNode = false;
     observer.hasAnimation = false;
     const world = cachedWorld(mesh);
-    const frame = (renderId: number) => ({
-      renderId,
-      renderer: { getMRT: () => null },
-    }) as never;
+    const frame = (renderId: number) =>
+      ({
+        renderId,
+        renderer: { getMRT: () => null },
+      }) as never;
 
     // The renderer asks once per draw and the frame's id is the same for every object in it.
     expect(observer.needsRefresh(world, frame(1))).toBe(true);
@@ -524,16 +540,21 @@ describe("a settled static object skips the per-object draw work", () => {
     draw(mesh, observer);
     const world = cachedWorld(mesh);
     expect(observer.isSettled(world)).toBe(true);
+    // The slice the observer reads, which `worldFor` built and only a test changes.
+    const scene = world.scene as unknown as {
+      environmentIntensity: number;
+      environmentRotation: Euler;
+    };
 
     // The scene's environment is not the object's, but its value lands in the object's uniforms.
-    world.scene.environmentIntensity = 0.5;
+    scene.environmentIntensity = 0.5;
     prime(mesh, observer);
     expect(observer.isSettled(world)).toBe(false);
 
     // Re-armed: the object settles again on the state it was last seen in.
     prime(mesh, observer);
     expect(observer.isSettled(world)).toBe(true);
-    world.scene.environmentRotation.set(0, 0.5, 0);
+    scene.environmentRotation.set(0, 0.5, 0);
     prime(mesh, observer);
     expect(observer.isSettled(world)).toBe(false);
   });
@@ -556,7 +577,7 @@ describe("a settled static object skips the per-object draw work", () => {
 
     // A render that produces motion vectors needs every frame's values, static or not.
     const world = cachedWorld(mesh);
-    world.frame = { renderer: { getMRT: () => ({ has: () => true }) } };
+    (world as { frame?: unknown }).frame = { renderer: { getMRT: () => ({ has: () => true }) } };
     observer.needsRefresh(world, world.frame);
     expect(observer.isSettled(world)).toBe(false);
   });

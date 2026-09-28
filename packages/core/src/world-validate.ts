@@ -24,6 +24,8 @@ export const TERRAIN_VALIDATE_FLAG = "TN_TERRAIN_VALIDATE";
  *
  * @situation turn terrain's per-frame seam, LOD pop and vertex checks on for one run
  * @situation assert the terrain geometry a game streams before it ships
+ * @constraint off by default: it is the work it checks, every frame
+ * @example const tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });
  *
  * Read the way `renderListValidationRequested` reads its own: a native launch sets the environment
  * variable, a browser asks with the query string, and a test or a harness sets the global. `0` and
