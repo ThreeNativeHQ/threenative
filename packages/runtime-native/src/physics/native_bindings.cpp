@@ -165,8 +165,15 @@ bool isTypedArray(js::Engine *engine, js::JSValueHandle value,
   return engine->isString(name) && engine->toString(name) == expectedName;
 }
 
+struct TrimeshBuffers {
+  const float *vertices = nullptr;
+  uint32_t vertex_floats = 0;
+  const uint32_t *indices = nullptr;
+  uint32_t index_count = 0;
+};
+
 bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
-                      TnPhysicsBodyOptions &options) {
+                      TnPhysicsBodyOptions &options, TrimeshBuffers &trimesh) {
   if (!engine->isObject(value))
     return false;
   options = {id, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
@@ -199,7 +206,27 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
     options.shape_type = 1;
   else if (shapeName == "capsule")
     options.shape_type = 2;
-  else
+  else if (shapeName == "trimesh") {
+    // The mesh's data pointers stay valid for this synchronous call: the typed arrays are
+    // reachable from the options object the caller passed in, so nothing is collected mid-call.
+    options.shape_type = 3;
+    const auto vertices = engine->getProperty(shape, "vertices");
+    if (!isTypedArray(engine, vertices, "Float32Array"))
+      return false;
+    const auto indices = engine->getProperty(shape, "indices");
+    if (!isTypedArray(engine, indices, "Uint32Array"))
+      return false;
+    size_t vertexBytes = 0;
+    size_t indexBytes = 0;
+    void *vertexData = engine->getArrayBufferData(vertices, &vertexBytes);
+    void *indexData = engine->getArrayBufferData(indices, &indexBytes);
+    if (vertexData == nullptr || indexData == nullptr)
+      return false;
+    trimesh.vertices = static_cast<const float *>(vertexData);
+    trimesh.vertex_floats = static_cast<uint32_t>(vertexBytes / sizeof(float));
+    trimesh.indices = static_cast<const uint32_t *>(indexData);
+    trimesh.index_count = static_cast<uint32_t>(indexBytes / sizeof(uint32_t));
+  } else
     return false;
 
   const auto sensor = engine->getProperty(value, "sensor");
@@ -512,10 +539,18 @@ js::JSValueHandle makeSimulationObject(
             if (args.empty() || owner->nextId > kMaxExactFloatId)
               return fail(engine, "createBody requires options and an available id");
             TnPhysicsBodyOptions options{};
-            if (!parseBodyOptions(engine, args[0], owner->nextId, options) ||
-                !tn_physics_add_body(owner->simulation, &options)) {
+            TrimeshBuffers trimesh{};
+            if (!parseBodyOptions(engine, args[0], owner->nextId, options, trimesh))
               return fail(engine, "physics body options are invalid");
-            }
+            const bool added =
+                options.shape_type == 3
+                    ? tn_physics_add_trimesh_body(
+                          owner->simulation, &options, trimesh.vertices,
+                          trimesh.vertex_floats, trimesh.indices,
+                          trimesh.index_count)
+                    : tn_physics_add_body(owner->simulation, &options);
+            if (!added)
+              return fail(engine, "physics body options are invalid");
             const uint32_t id = owner->nextId++;
             return engine->newNumber(id);
           }));

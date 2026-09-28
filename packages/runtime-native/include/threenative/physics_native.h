@@ -142,6 +142,18 @@ TnPhysicsSimulation *
 tn_physics_create(const TnPhysicsWorldOptions *options);
 bool tn_physics_add_body(TnPhysicsSimulation *simulation,
                          const TnPhysicsBodyOptions *options);
+
+/**
+ * Add a body whose collider is a triangle mesh.
+ *
+ * `vertices` is a flat `x, y, z` float array of `vertex_floats` elements and `indices` a flat
+ * triangle-index array of `index_count` elements. Both are copied into the collider during this
+ * call, so the caller's buffers only have to outlive it.
+ */
+bool tn_physics_add_trimesh_body(TnPhysicsSimulation *simulation,
+                                 const TnPhysicsBodyOptions *options,
+                                 const float *vertices, uint32_t vertex_floats,
+                                 const uint32_t *indices, uint32_t index_count);
 int32_t tn_physics_create_joint(TnPhysicsSimulation *simulation,
                                  const TnPhysicsJointOptions *options);
 bool tn_physics_remove_joint(TnPhysicsSimulation *simulation, uint32_t id);
