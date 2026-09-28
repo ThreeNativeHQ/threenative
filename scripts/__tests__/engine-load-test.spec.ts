@@ -602,6 +602,19 @@ describe("engine load test workload", () => {
     expect(driverSource).not.toMatch(/hashServedModuleGraph\(sourceSha\)/u);
   });
 
+  it("should recognize workload source assets emitted by the production build", () => {
+    const entry = (url: string): IModuleGraphEntry => ({ bytes: new Uint8Array([1]), url });
+    expect(isBenchmarkWorkloadModule(entry("http://127.0.0.1:5199/assets/game-CdxDcIvp.ts"))).toBe(
+      true,
+    );
+    expect(
+      isBenchmarkWorkloadModule(entry("http://127.0.0.1:5199/assets/workload-BGzP-H1X.ts")),
+    ).toBe(true);
+    expect(
+      isBenchmarkWorkloadModule(entry("http://127.0.0.1:5199/assets/three.webgpu-BnCeQ44k.js")),
+    ).toBe(false);
+  });
+
   it("should keep graph identity stable across absolute worktree roots", async () => {
     const module = (url: string, source: string): IModuleGraphEntry => ({
       bytes: new TextEncoder().encode(source),

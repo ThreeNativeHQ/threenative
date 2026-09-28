@@ -310,6 +310,20 @@ async function checkArmPerformance(
 async function runArmCommand(arm: string, options: ILadderOptions): Promise<void> {
   const file = path.join(artifactRoot, `${flag("out") ?? arm}.json`);
   const immutable = process.argv.includes("--production");
+  if (immutable && options.sourceSha !== undefined) {
+    const [{ stdout: head }, { stdout: status }] = await Promise.all([
+      execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoRoot }),
+      execFileAsync("git", ["status", "--porcelain", "--untracked-files=normal"], {
+        cwd: repoRoot,
+      }),
+    ]);
+    if (options.sourceSha !== head.trim() || status.trim().length > 0)
+      throw new BenchError(
+        "TN_BENCH_SOURCE_MISMATCH",
+        "--source-sha for a production run must equal the full clean checkout HEAD",
+        1,
+      );
+  }
   if (immutable && existsSync(file))
     throw new BenchError(
       "TN_BENCH_OUTPUT_EXISTS",

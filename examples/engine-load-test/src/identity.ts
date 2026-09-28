@@ -14,6 +14,7 @@ export function isBenchmarkWorkloadModule(entry: IModuleGraphEntry): boolean {
   return (
     pathname === "/src/game.ts" ||
     pathname === "/src/workload.ts" ||
+    /^\/assets\/(?:game|workload)-[A-Za-z0-9_-]+\.ts$/u.test(pathname) ||
     pathname.endsWith("/examples/engine-load-test/src/game.ts") ||
     pathname.endsWith("/examples/engine-load-test/src/workload.ts")
   );

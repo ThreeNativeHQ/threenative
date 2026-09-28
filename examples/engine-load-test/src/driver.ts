@@ -242,16 +242,21 @@ async function servedModuleGraph(roots: readonly string[]): Promise<IModuleGraph
     const url = pending.shift();
     if (url === undefined || seen.has(url)) continue;
     seen.add(url);
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) throw new Error(`TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    entries.push({ bytes, url });
+    const entry = await readServedModule(url);
+    entries.push(entry);
+    const { bytes } = entry;
     const source = new TextDecoder().decode(bytes);
     for (const specifier of extractModuleSpecifiers(source)) {
       pending.push(resolveServedModuleUrl(specifier, url));
     }
   }
   return entries;
+}
+
+async function readServedModule(url: string): Promise<IModuleGraphEntry> {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:${response.status}`);
+  return { bytes: new Uint8Array(await response.arrayBuffer()), url };
 }
 
 function inferArchitecture(platform: string): string {
@@ -288,11 +293,19 @@ async function ladderIdentity(
     "device",
   );
   const sourceSha = observed(parameters.get("sourceSha"), "sourceSha");
-  const artifactModules = await servedModuleGraph([new URL(import.meta.url).href]);
-  const workloadGraph = await servedModuleGraph([
+  const entryUrl = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src;
+  if (entryUrl === undefined) throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:entry");
+  const artifactModules = await servedModuleGraph([entryUrl]);
+  const workloadUrls = [
     new URL("./game.ts", import.meta.url).href,
     new URL("./workload.ts", import.meta.url).href,
-  ]);
+  ];
+  // Vite emits these TS sources as byte-for-byte assets for the production identity. Their
+  // relative imports point at source-tree paths, not executable dist chunks, so hash the two
+  // observed assets directly. The dev server serves a traversable source graph instead.
+  const workloadGraph = productionBuild()
+    ? await Promise.all(workloadUrls.map(readServedModule))
+    : await servedModuleGraph(workloadUrls);
   const workloadModules = workloadGraph.filter(isBenchmarkWorkloadModule);
   const artifactHash = await hashServedModuleGraph(artifactModules);
   const workloadHash = await hashWorkloadModuleGraph(
