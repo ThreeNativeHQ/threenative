@@ -1,0 +1,99 @@
+{
+  "name": "csg-doorway-web",
+  "schemaVersion": 1,
+  "subject": "a Boolean-authored doorway reaches the web game through the cook, and its rendered opening and cooked collision opening are the same hole",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "cross",
+      "press": "KeyW",
+      "holdTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "crossed"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "renderedOpeningMiss",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "physicsOpeningMiss",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "renderedWallHit",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "physicsWallHit",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "passingZ",
+        "gte": 0.5,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "blockedZ",
+        "lte": -0.1,
+        "changed": true,
+        "allowTrivial": "The blocked walker starts behind the wall and the assertion's point is that it ends short of the doorway, which its starting value already satisfies; the run is what keeps it from crossing."
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "nameContains": "doorway-mesh"
+        },
+        "minCount": 1,
+        "visible": true,
+        "minTriangles": 40
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.02
+        }
+      }
+    ]
+  },
+  "artifacts": {
+    "console": true,
+    "network": true,
+    "screenshots": "before-after"
+  }
+}

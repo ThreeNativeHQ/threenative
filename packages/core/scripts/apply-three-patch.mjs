@@ -30,14 +30,13 @@ export async function applyThreePatch(options = {}) {
   const patchPath = path.join(packageRoot, "patches", PATCH_NAME);
   const patch = parsePatch(await readFile(patchPath, "utf8"), patchPath);
   const plans = await planPatch(threeRoot, patch);
+  // `planPatch` refuses any file it does not fully recognise, so every plan that is not already
+  // `patched` is safe to write — including the files an older release of this patch already
+  // touched, which is the state a project upgrading from the previous `latest` is in.
   if (plans.every((plan) => plan.status === "patched")) return "unchanged";
-  if (plans.some((plan) => plan.status !== "stock")) {
-    throw new Error(
-      `TN_THREE_PATCH_PARTIAL: ${manifestPath} is neither stock nor fully patched; refusing to modify a partial installation.`,
-    );
-  }
 
-  for (const plan of plans) await writeFile(plan.file, plan.contents, "utf8");
+  for (const plan of plans)
+    if (plan.status !== "patched") await writeFile(plan.file, plan.contents, "utf8");
   return "patched";
 }
 
@@ -217,56 +216,81 @@ async function planPatch(threeRoot, files) {
     }
     const original = await readFile(target, "utf8");
     const lines = original.replaceAll("\r\n", "\n").split("\n");
-    const status = classifyFile(lines, file.hunks);
+    const states = classifyFile(lines, file.hunks);
+    const unknown = states.findIndex((state) => state === "unknown");
+    if (unknown !== -1) {
+      throw new Error(
+        `TN_THREE_PATCH_PARTIAL: hunk ${String(unknown + 1)} of ${file.oldPath} matches neither the stock nor the patched text in ${target}; refusing to modify an installation this package does not recognise.`,
+      );
+    }
+    const status = states.every((state) => state === "patched")
+      ? "patched"
+      : states.some((state) => state === "patched")
+        ? "extended"
+        : "stock";
     if (status === "patched") {
       plans.push({ contents: original, file: target, status });
       continue;
     }
-    if (status !== "stock") {
-      throw new Error(
-        `TN_THREE_PATCH_PARTIAL: hunk state is mixed in ${target}; refusing to modify a partial installation.`,
-      );
-    }
-    plans.push({ contents: applyFile(lines, file.hunks, target).join("\n"), file: target, status });
+    plans.push({
+      contents: applyFile(lines, file.hunks, states, target).join("\n"),
+      file: target,
+      status,
+    });
   }
   return plans;
 }
 
+/**
+ * Every hunk's state in this file, in patch order: `"stock"`, `"patched"` or `"unknown"`.
+ *
+ * Per hunk rather than per file, because an upgrade lands on a file an *older release of this same
+ * package's patch* already modified. The consumer declares the patch in its own manifest, so the
+ * package manager applies it at install time — meaning a project scaffolded from the previous
+ * `latest` carries the previous patch's text, and only this release's new hunks are still stock.
+ * Both states are repairable by applying the stock remainder, and the old hunks are not re-derived
+ * from a different patch: they are this patch's own hunks, already at their patched text.
+ *
+ * A hunk in neither state is a file this package does not recognise — hand-edited, or owned by a
+ * different patch — and stays the refusal it always was.
+ */
 function classifyFile(lines, hunks) {
-  let stock = true;
-  let patched = true;
+  const states = [];
   let offset = 0;
   for (const hunk of hunks) {
-    const oldLines = hunk.lines
-      .filter((line) => line[0] === " " || line[0] === "-")
-      .map((line) => line.slice(1));
-    const newLines = hunk.lines
-      .filter((line) => line[0] === " " || line[0] === "+")
-      .map((line) => line.slice(1));
-    if (locate(lines, oldLines, hunk.oldStart - 1 + offset) === undefined) stock = false;
-    if (locate(lines, newLines, hunk.newStart - 1) === undefined) patched = false;
+    const oldLines = hunkLines(hunk, "old");
+    const newLines = hunkLines(hunk, "new");
+    if (locate(lines, newLines, hunk.newStart - 1) !== undefined) states.push("patched");
+    else if (locate(lines, oldLines, hunk.oldStart - 1 + offset) !== undefined)
+      states.push("stock");
+    else states.push("unknown");
     offset += newLines.length - oldLines.length;
   }
-  if (stock) return "stock";
-  if (patched) return "patched";
-  return "mixed";
+  return states;
 }
 
-function applyFile(lines, hunks, file) {
+function hunkLines(hunk, side) {
+  return hunk.lines
+    .filter((line) =>
+      side === "old" ? line[0] === " " || line[0] === "-" : line[0] === " " || line[0] === "+",
+    )
+    .map((line) => line.slice(1));
+}
+
+function applyFile(lines, hunks, states, file) {
   const result = [...lines];
   let offset = 0;
-  for (const hunk of hunks) {
-    const oldLines = hunk.lines
-      .filter((line) => line[0] === " " || line[0] === "-")
-      .map((line) => line.slice(1));
-    const newLines = hunk.lines
-      .filter((line) => line[0] === " " || line[0] === "+")
-      .map((line) => line.slice(1));
+  for (const [number, hunk] of hunks.entries()) {
+    const oldLines = hunkLines(hunk, "old");
+    const newLines = hunkLines(hunk, "new");
     const index = locate(result, oldLines, hunk.oldStart - 1 + offset);
-    if (index === undefined) {
-      throw new Error(`TN_THREE_PATCH_INVALID: stock hunk no longer matches ${file}.`);
+    if (states[number] === "stock") {
+      if (index === undefined)
+        throw new Error(`TN_THREE_PATCH_INVALID: stock hunk no longer matches ${file}.`);
+      result.splice(index, oldLines.length, ...newLines);
     }
-    result.splice(index, oldLines.length, ...newLines);
+    // Already-patched hunks are left alone. Their line-count change is already in the file, so
+    // the offset still moves to keep later stock hunks near their expected location.
     offset += newLines.length - oldLines.length;
   }
   return result;

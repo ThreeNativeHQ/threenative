@@ -1,5 +1,5 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
-import { Object3D } from "three";
+import { BufferAttribute, BufferGeometry, Mesh, Object3D } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { Area3D } from "../src/Area3D.js";
 import { CharacterBody3D } from "../src/CharacterBody3D.js";
@@ -151,6 +151,39 @@ describe("native physics contract", () => {
       }),
     ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*heightfield/);
     expect(createBody).not.toHaveBeenCalled();
+  });
+
+  it("hands a trimesh body's vertices and indices to the native host", () => {
+    const createBody = vi.fn(() => 7);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
+    );
+    geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2]), 1));
+
+    native.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.fromMesh(new Mesh(geometry), "trimesh").descriptor,
+      type: "fixed",
+    });
+
+    expect(createBody).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shape: expect.objectContaining({
+          indices: expect.any(Uint32Array),
+          kind: "trimesh",
+          vertices: expect.any(Float32Array),
+        }),
+      }),
+    );
   });
 
   it("rejects a non-finite or negative mass before calling the host, like the web seam", () => {

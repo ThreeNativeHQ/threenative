@@ -497,6 +497,13 @@ export interface IPlaytestObservationSnapshot {
   /** The per-object geometry capture report, present only when the request asked for one. */
   geometry?: JsonValue;
   physicsDebugSeries?: Array<{ label: string; snapshot: JsonValue; tick: number }>;
+  /**
+   * Steps the physics simulation completed, counted by the plugin that owns it at its own
+   * `simulation.step`. Not the game loop's tick: a frame can render with no step, and a step can be
+   * refused. Only present when a physics plugin installed, which is what advertises
+   * `runtime.physics`.
+   */
+  physicsSteps?: number;
   performance?: IPlaytestPerformanceObservation;
   /** Bounded shader/pipeline creation capture supplied by the engine when diagnostics are enabled. */
   pipelineCensus?: JsonValue;

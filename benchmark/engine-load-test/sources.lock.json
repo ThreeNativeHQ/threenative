@@ -1,0 +1,491 @@
+{
+  "schemaVersion": 1,
+  "prd": "docs/PRDs/performance/benchmarking/PRD-449-cross-engine-benchmarks-and-html-report.md",
+  "phase": "Phase 1 — freeze sources, fixtures and the campaign contract",
+  "recordedDate": "2026-09-27",
+  "scope": "External input identities only. No build flags, machine identity, measurement or FPS claim is recorded here. `recordedDate` is provenance, not part of any input identity. An item is `verified` only when its bytes or path identity was checked against a primary upstream source or local bytes in this checkout.",
+  "open": {
+    "threenative": {
+      "status": "open",
+      "testedCommit": null,
+      "nativeBuildFlags": null,
+      "browserBuild": null,
+      "browserIdentity": null,
+      "reason": "Deliberately unfilled. The tested TN commit, native build flags, browser build and browser identity are frozen only at publication qualification (Phase 6), not at planning. The reviewed snapshot e0aa293127feebfc07e0874b7b6b3fa8697e157d is a planning reference, not the tested commit.",
+      "fillsAt": "Phase 6 publication qualification"
+    },
+    "bevyDependencyLock": {
+      "status": "open",
+      "path": null,
+      "sha256": null,
+      "reason": "bevy commits no Cargo.lock at v0.19.0 (GitHub contents API returns 404 for Cargo.lock at c6f634ca9f406d68ba5109d921247b654cb42c10), so there is no upstream lockfile to hash. The resolved lock must be captured as a hashed execution-lock artifact when the Bevy adapters are built; until then the dependency graph of any Bevy arm is not reproducible."
+    },
+    "bevyAssetServerPin": {
+      "status": "not-used",
+      "reason": "Retired as redundant, not carried as an open input. The only remote asset host a Bevy arm could reach for is https://bevy.org/assets/ (GitHub Pages), and no arm in this campaign fetches from it: the fox family takes `assets/models/animated/Fox.glb` from bevy's own in-repo tree, already pinned at inputs.bevyFoxAsset (c6f634ca9f406d68ba5109d921247b654cb42c10), and the city family takes its Kenney kits from bevyengine/bevy_asset_files, now pinned at open.cityAssetPin. Recorded observation, kept only to explain why the host is not a candidate: that host returns HTTP 404 for models/animated/Fox.glb (re-confirmed 2026-09-27), so it could not serve the fox family unmodified anyway."
+    },
+    "cityAssetPin": {
+      "status": "resolved",
+      "commit": "086f0304449817e55d93ca25aeaac10554d6b9d5",
+      "commitDate": "2026-09-17T17:13:25Z",
+      "commitMessage": "Merge pull request #13 from stuartparmenter/fix-zero-day-release-url",
+      "repository": "bevyengine/bevy_asset_files",
+      "pinnedBaseUrl": "https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney",
+      "isDefaultBranchHead": true,
+      "localPath": "artifacts/engine-load-test/prd-449/bevy-asset-files/src (git-ignored)",
+      "localAcquisition": "git init + git fetch --depth 1 origin 086f0304449817e55d93ca25aeaac10554d6b9d5 + checkout FETCH_HEAD; rev-parse HEAD = 086f0304449817e55d93ca25aeaac10554d6b9d5, committer date 2026-09-17T10:13:25-07:00 = the commitDate above",
+      "localVerified": "the whole kenney/ tree is present locally (four kit directories, 217 files) and every concretePathsVerified path and all four License.txt blob shas recomputed with git hash-object equal the values recorded below, so the bytes a run would fetch from pinnedBaseUrl are already on disk",
+      "reason": "Frozen as this campaign's city asset SOURCE input, replacing the moving-main null. Upstream leaves bevy_city fetching https://github.com/bevyengine/bevy_asset_files/raw/main/kenney, a moving main in a separate repository that bevy v0.19.0 does not pin, so the commit above is now the input identity for the Kenney bytes. This pins the SOURCE only: it does not by itself byte-lock what a city arm loads, and it does not close the census or fixture boxes below. Enforcement is still the open export box — upstream `assets.rs` hardcodes `const BASE_URL` with no CLI or env override (line 4, consumed as `let base_url = BASE_URL;` in `load_assets`), so a campaign arm must prefetch from the commit-addressed URLs above or vendor them, which is the same canonical-fixture export PRD 5.1 already asks for.",
+      "verifiedBy": [
+        "gh api repos/bevyengine/bevy_asset_files/commits/086f0304449817e55d93ca25aeaac10554d6b9d5 -> sha, committer.date 2026-09-17T17:13:25Z, subject; repos/…/commits/main -> the same sha, so the pin is the head main resolved to on 2026-09-27 and is therefore a reachable commit, not a dangling ref",
+        "gh api repos/bevyengine/bevy_asset_files/contents/kenney/<kit>/License.txt?ref=086f0304… -> blob sha + size for all four kits, each naming its Kenney kit and CC0 1.0 (see inputs.bevyCityAssets.downloadedAssets.licenses and .licensesVerified)",
+        "curl pinnedBaseUrl/city-kit-roads/road-straight.glb -> 5264 B, sha256 c3d524d3…3ca4, git hash-object a9141e463236f7a2641653af910352449cc975e2 equal to the tree blob sha from the contents API at that commit, so the commit-addressed raw URL serves the tree bytes"
+      ]
+    }
+  },
+  "inputs": {
+    "bevy": {
+      "status": "verified",
+      "kind": "source",
+      "upstream": "https://github.com/bevyengine/bevy",
+      "version": "0.19.0",
+      "pin": {
+        "type": "git-tag",
+        "tag": "v0.19.0",
+        "commit": "c6f634ca9f406d68ba5109d921247b654cb42c10",
+        "commitDate": "2026-06-18T01:22:47Z",
+        "note": "benchmark pin, not a claim that this is the latest release"
+      },
+      "codeLicense": {
+        "declared": "MIT OR Apache-2.0",
+        "appliesTo": "source code only, not to assets/",
+        "files": [
+          {
+            "path": "LICENSE-MIT",
+            "gitBlobSha1": "9cf106272ac3b56b0c4c80218e8fc10a664ca5f4",
+            "bytes": 1036
+          },
+          {
+            "path": "LICENSE-APACHE",
+            "gitBlobSha1": "d9a10c0d8e868ebf8da0b3dc95bb0be634c34bfe",
+            "bytes": 10173
+          }
+        ]
+      },
+      "requiredPaths": [
+        {
+          "path": "examples/stress_tests/many_cubes.rs",
+          "gitBlobSha1": "04a8f87b60fb2acc830fc650571ca97da3a7d9d7",
+          "bytes": 22192,
+          "family": "bevy-many-cubes"
+        },
+        {
+          "path": "examples/stress_tests/many_foxes.rs",
+          "gitBlobSha1": "cdce2603d1dc957983ed3f603bd165da1b3e2a2d",
+          "bytes": 10542,
+          "family": "bevy-many-foxes"
+        },
+        {
+          "path": "examples/large_scenes/bevy_city/Cargo.toml",
+          "gitBlobSha1": "4e39bbc55bef9c0d221a21df8547e14afbdaab60",
+          "bytes": 286,
+          "family": "bevy-city"
+        },
+        {
+          "path": "examples/large_scenes/bevy_city/README.md",
+          "gitBlobSha1": "4b1d494d1ed540242871e1ae3abde1af2e2a43cf",
+          "bytes": 275,
+          "family": "bevy-city"
+        },
+        {
+          "path": "examples/large_scenes/bevy_city/src/main.rs",
+          "gitBlobSha1": "14d99ae3bcb3f23cb572b15063cffd18247153dd",
+          "bytes": 13810,
+          "family": "bevy-city"
+        },
+        {
+          "path": "examples/large_scenes/bevy_city/src/generate_city.rs",
+          "gitBlobSha1": "266e8bccb8dec2321582ce94cbfbfc43b3feca11",
+          "bytes": 12686,
+          "family": "bevy-city"
+        },
+        {
+          "path": "examples/large_scenes/bevy_city/src/assets.rs",
+          "gitBlobSha1": "370ae891757e3feedc9df573e272fc6e6b1daa4a",
+          "bytes": 10124,
+          "family": "bevy-city"
+        },
+        {
+          "path": "examples/large_scenes/bevy_city/src/settings.rs",
+          "gitBlobSha1": "190fc3bfd379abe4f5f03e9c7f74e5b854f3301d",
+          "bytes": 6268,
+          "family": "bevy-city"
+        },
+        {
+          "path": "Cargo.toml",
+          "gitBlobSha1": "2fa1451673c9ea2d64d2379888ad857657b5a41b",
+          "bytes": 154101,
+          "role": "workspace feature/dependency record"
+        },
+        {
+          "path": "CREDITS.md",
+          "gitBlobSha1": "c0375bd38edacdc0cb5566a5ca07776ed6945df8",
+          "bytes": 2322,
+          "role": "asset attribution record for assets/"
+        }
+      ],
+      "localCheckout": {
+        "path": "artifacts/engine-load-test/prd-449/bevy/src (git-ignored)",
+        "acquisition": "git clone --depth 1 --single-branch --branch v0.19.0 https://github.com/bevyengine/bevy.git; shallow, so its object store holds exactly one commit and cannot drift to another revision",
+        "revParseHead": "c6f634ca9f406d68ba5109d921247b654cb42c10, equal to the pin.commit above",
+        "matches": "all 10 requiredPaths blob shas and byte counts and both codeLicense files recomputed with git hash-object equal the values recorded above; Fox.glb also matches its recorded sha256 d97044e7…71f7 (162852 B). No bevy file was edited.",
+        "notClaimed": "A local tree at the pinned commit is not a build: nothing here is compiled, no lockfile is resolved (open.bevyDependencyLock stays open) and no Bevy number is measured."
+      },
+      "verifiedBy": [
+        "gh api repos/bevyengine/bevy/git/ref/tags/v0.19.0 -> object.sha c6f634ca9f406d68ba5109d921247b654cb42c10 (type commit, so the tag is lightweight and the sha is the commit)",
+        "gh api repos/bevyengine/bevy/contents/<path>?ref=c6f634ca9f406d68ba5109d921247b654cb42c10 -> blob sha + size for every requiredPaths entry",
+        "gh api repos/bevyengine/bevy/commits/c6f634ca9f406d68ba5109d921247b654cb42c10 -> committer.date 2026-06-18T01:22:47Z",
+        "gh api repos/bevyengine/bevy/contents/Cargo.lock?ref=c6f634ca9f406d68ba5109d921247b654cb42c10 -> 404 (no upstream lockfile)"
+      ]
+    },
+    "bevyFoxAsset": {
+      "status": "verified",
+      "kind": "asset",
+      "family": "bevy-many-foxes",
+      "path": "assets/models/animated/Fox.glb",
+      "repository": "bevyengine/bevy @ c6f634ca9f406d68ba5109d921247b654cb42c10",
+      "pinnedUrl": "https://raw.githubusercontent.com/bevyengine/bevy/c6f634ca9f406d68ba5109d921247b654cb42c10/assets/models/animated/Fox.glb",
+      "gitBlobSha1": "1ef5c0d05658caea339680fe581aa2c8302b3365",
+      "bytes": 162852,
+      "sha256": "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7",
+      "license": {
+        "spdx": "CC0-1.0",
+        "separateFromCodeLicense": true,
+        "attribution": "glTF animated fox from glTF Sample Models; low-poly fox by PixelMannen. Bevy records it in CREDITS.md as CC0 1.0 Universal.",
+        "licenseSourcePaths": [
+          "https://github.com/bevyengine/bevy/blob/c6f634ca9f406d68ba5109d921247b654cb42c10/CREDITS.md (blob c0375bd38edacdc0cb5566a5ca07776ed6945df8)",
+          "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox",
+          "https://opengameart.org/content/fox-and-shiba",
+          "http://creativecommons.org/publicdomain/zero/1.0/"
+        ],
+        "note": "The GLB ships no embedded license text; the attribution of record is bevy's CREDITS.md at the pinned commit, which points at the two upstream sources above. Do not restate this asset as covered by bevy's MIT/Apache-2.0 code license."
+      },
+      "verifiedBy": [
+        "curl pinnedUrl -o Fox.glb; sha256sum -> d97044e7…71f7, wc -c -> 162852",
+        "git hash-object Fox.glb -> 1ef5c0d05658caea339680fe581aa2c8302b3365, equal to the tree blob sha from the GitHub contents API at the pinned commit"
+      ]
+    },
+    "bevyCityAssets": {
+      "status": "partial",
+      "kind": "asset",
+      "family": "bevy-city",
+      "reason": "The SOURCE the city bytes come from is now pinned (bevyengine/bevy_asset_files @ 086f0304449817e55d93ca25aeaac10554d6b9d5, see open.cityAssetPin and downloadedAssets below). What is still open is everything downstream of the source: the exact set of concrete files a fixture resolves to, their byte hashes, and the generated mesh/index/material census. No byte-level lock exists until the canonical fixture is exported and hashed, which is the open Phase 1 census/fixture box, not this one.",
+      "generated": {
+        "generator": "examples/large_scenes/bevy_city (source pinned under inputs.bevy.requiredPaths)",
+        "upstreamDefaultArgs": {
+          "seed": 42,
+          "size": 30,
+          "source": "examples/large_scenes/bevy_city/src/main.rs Args (argh), default = \"42\" / default = \"30\""
+        },
+        "actualCensus": null,
+        "actualCensusReason": "Not frozen. PRD 5.1 forbids hard-coding a historical ~55k count; the small-fixture and default-fixture censuses are the open 'freeze the expanded matrix with exact actual fixture censuses' box."
+      },
+      "downloadedAssets": {
+        "upstreamBaseUrl": "https://github.com/bevyengine/bevy_asset_files/raw/main/kenney",
+        "pinnedBaseUrl": "https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney",
+        "repository": "bevyengine/bevy_asset_files",
+        "commit": "086f0304449817e55d93ca25aeaac10554d6b9d5",
+        "commitReason": "Pinned by this campaign as the frozen city asset SOURCE input; upstream itself does not pin it (it uses the moving main above). Every path below must be fetched from `pinnedBaseUrl`, never from `upstreamBaseUrl`.",
+        "pathsUsedByUpstream": [
+          "car-kit/Textures/colormap.png",
+          "car-kit/{t}.glb",
+          "city-kit-commercial/Textures/{variation}.png",
+          "city-kit-commercial/building-skyscraper-{t}.glb",
+          "city-kit-commercial/building-{t}.glb",
+          "city-kit-roads/road-crossroad-path.glb",
+          "city-kit-roads/road-straight.glb",
+          "city-kit-roads/tile-low.glb",
+          "city-kit-suburban/Textures/{variation}.png",
+          "city-kit-suburban/building-type-{t}.glb",
+          "city-kit-suburban/fence.glb",
+          "city-kit-suburban/path-stones-long.glb",
+          "city-kit-suburban/tree-large.glb",
+          "city-kit-suburban/tree-small.glb"
+        ],
+        "concretePathsVerified": {
+          "note": "A representative sample of the concrete files the patterns above resolve to, each read at the pinned commit. NOT the complete fetched set: the full concrete list and their byte hashes are only known after the fixture export/collection, so a sample is all that is claimed here. `{variation}` resolves to variation-a.png and variation-b.png (plus colormap.png) in both texture kits, which is why a guessed name such as facade_01.png does not exist upstream (contents API 404 at the pinned commit).",
+          "paths": [
+            {
+              "path": "kenney/car-kit/Textures/colormap.png",
+              "gitBlobSha1": "9a74761d93b00b2ec055b8ead2271b9d7ff25c8f",
+              "bytes": 11988
+            },
+            {
+              "path": "kenney/city-kit-commercial/Textures/variation-a.png",
+              "gitBlobSha1": "c820f53c3f5adaf21d8f42e0612f3496ac4a83da",
+              "bytes": 11020
+            },
+            {
+              "path": "kenney/city-kit-commercial/Textures/variation-b.png",
+              "gitBlobSha1": "f2caad3f5f1fb60a941fdbfe8adb6ee9a795ee94",
+              "bytes": 10897
+            },
+            {
+              "path": "kenney/city-kit-suburban/Textures/variation-a.png",
+              "gitBlobSha1": "9bf7c64e29c6666e51dfdac000aab503fdd928d2",
+              "bytes": 12109
+            },
+            {
+              "path": "kenney/city-kit-suburban/Textures/variation-b.png",
+              "gitBlobSha1": "dc48876896d971ece8d8a7fa4a6b5b873baf6f22",
+              "bytes": 12101
+            },
+            {
+              "path": "kenney/city-kit-roads/road-straight.glb",
+              "gitBlobSha1": "a9141e463236f7a2641653af910352449cc975e2",
+              "bytes": 5264,
+              "sha256": "c3d524d39ff60ae4ca418aa99e83af25ee87ddbdc3c1a021774f30314bf73ca4",
+              "bytesVerifiedFrom": "curl of the commit-addressed raw URL; git hash-object equal to the tree blob sha at the pinned commit"
+            },
+            {
+              "path": "kenney/city-kit-roads/tile-low.glb",
+              "gitBlobSha1": "219f12d8de4016b3fb1c15bb6f4b03516a0a6a53",
+              "bytes": 2816
+            },
+            {
+              "path": "kenney/city-kit-suburban/tree-large.glb",
+              "gitBlobSha1": "c82ee8706ba02f069228ae6381b471e6f5a3528d",
+              "bytes": 5812
+            }
+          ]
+        },
+        "licenses": [
+          {
+            "path": "kenney/car-kit/License.txt",
+            "gitBlobSha1": "f51ade7af6f4910d31595323a6f56106bd8a07a6",
+            "bytes": 669,
+            "pinnedUrl": "https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney/car-kit/License.txt",
+            "asset": "Car Kit (3.0)",
+            "spdx": "CC0-1.0",
+            "creationDate": "23-01-2026"
+          },
+          {
+            "path": "kenney/city-kit-commercial/License.txt",
+            "gitBlobSha1": "f71a33eba8390688b4956addd92dbfde8e40680d",
+            "bytes": 681,
+            "pinnedUrl": "https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney/city-kit-commercial/License.txt",
+            "asset": "City Kit Commercial (2.1)",
+            "spdx": "CC0-1.0",
+            "creationDate": "21-07-2025"
+          },
+          {
+            "path": "kenney/city-kit-roads/License.txt",
+            "gitBlobSha1": "db2ffe2095f8377162c2abf84051aabb47c62d1b",
+            "bytes": 690,
+            "pinnedUrl": "https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney/city-kit-roads/License.txt",
+            "asset": "City Kit Roads (2.0)",
+            "spdx": "CC0-1.0",
+            "creationDate": "13-03-2025"
+          },
+          {
+            "path": "kenney/city-kit-suburban/License.txt",
+            "gitBlobSha1": "41b40f8ff5b62b689654754d38d2b0350ee8228f",
+            "bytes": 679,
+            "pinnedUrl": "https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney/city-kit-suburban/License.txt",
+            "asset": "City Kit Suburban (2.0)",
+            "spdx": "CC0-1.0",
+            "creationDate": "23-04-2025"
+          }
+        ],
+        "licenseSourcePaths": [
+          "https://github.com/bevyengine/bevy_asset_files/blob/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney/<kit>/License.txt (each kit's own License.txt at the pinned commit, CC0 1.0, credit to Kenney optional but recorded; per-file blob shas above)",
+          "https://github.com/bevyengine/bevy/blob/c6f634ca9f406d68ba5109d921247b654cb42c10/CREDITS.md (bevy's own Kenney asset credits, CC0 1.0 Universal)",
+          "https://github.com/bevyengine/bevy/blob/c6f634ca9f406d68ba5109d921247b654cb42c10/examples/large_scenes/bevy_city/README.md (credits kenney.nl)"
+        ],
+        "bytesSha256": null,
+        "bytesSha256Reason": "Deliberately still open. The source is pinned now, but a hash here would only cover whatever subset happened to be collected, not the bytes a fixture actually loads, so a partial hash would read as a byte lock that does not exist. concretePathsVerified above records the per-file blob shas that were checked; the aggregated byte hashes of the full fetched set are filled at export/collection, the same open Phase 1 fixture box as generated.actualCensus."
+      },
+      "verifiedBy": [
+        "curl pinned main.rs | rg seed/size -> defaults 42 and 30",
+        "curl pinned assets.rs | rg -o '\\{base_url\\}[^\"]*' -> the 14 path patterns above; BASE_URL constant is https://github.com/bevyengine/bevy_asset_files/raw/main/kenney",
+        "gh api repos/bevyengine/bevy_asset_files/contents/kenney/<kit>/License.txt?ref=086f0304… -> CC0 1.0 for all four kits, blob sha + size recorded above (re-checked at the pinned commit, not main)",
+        "gh api repos/bevyengine/bevy_asset_files/commits/086f0304… -> commit exists, and commits/main resolves to the same sha",
+        "gh api repos/bevyengine/bevy_asset_files/contents/kenney/<concrete path>?ref=086f0304… -> blob sha + size for every concretePathsVerified entry; contents/kenney -> exactly the four kit directories",
+        "curl https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304…/kenney/city-kit-roads/road-straight.glb -> HTTP 200, 5264 B, sha256 c3d524d3…3ca4, git hash-object = the tree blob sha, so commit-addressed URLs serve the tree bytes"
+      ]
+    },
+    "godotBenchmarks": {
+      "status": "verified",
+      "kind": "source",
+      "upstream": "https://github.com/godotengine/godot-benchmarks",
+      "pin": {
+        "type": "commit",
+        "commit": "b059e38a81230a87293828bbf65ab247b6b2d2a8",
+        "commitDate": "2026-09-16T21:22:07Z",
+        "commitMessage": "Fix links for the contributing docs refactor (#144)",
+        "isDefaultBranchHead": true
+      },
+      "codeLicense": {
+        "spdx": "MIT",
+        "declared": "MIT License, Copyright (c) 2007-2021 Juan Linietsky, Ariel Manzur",
+        "path": "LICENSE.md",
+        "gitBlobSha1": "d3d131fdd96e2a864339c98394fd4f8dc65eb7ea",
+        "bytes": 1144
+      },
+      "requiredPaths": [
+        {
+          "path": "benchmarks/rendering/culling.gd",
+          "gitBlobSha1": "35640738bf22f67d45c5e4924de3490aa39565e6",
+          "bytes": 6845,
+          "family": "godot-culling"
+        },
+        {
+          "path": "benchmarks/rendering/lights_and_meshes.gd",
+          "gitBlobSha1": "e9ded113e727529965fcc172d23062e0e13948a7",
+          "sha256": "2b1b4088876a6fac0332a14b27d004634360786c7746133360ba35cf9f003a6c",
+          "bytes": 4366,
+          "family": "godot-lights-meshes"
+        },
+        {
+          "path": "run-benchmarks.sh",
+          "gitBlobSha1": "ac5b70c77871de1cf8c4047237c90b974acf69e3",
+          "bytes": 12450,
+          "role": "upstream CLI harness the pinned binaries were smoke-tested against"
+        },
+        {
+          "path": "project.godot",
+          "gitBlobSha1": "449426235f91f0c587381d0d28ebe6d90001c23c",
+          "bytes": 879,
+          "role": "project settings"
+        }
+      ],
+      "submodules": {
+        "gdextension/godot-cpp": "https://github.com/godotengine/godot-cpp.git (branch master, per .gitmodules) — not required by the two rendering families; not fetched"
+      },
+      "localCheckout": {
+        "path": "artifacts/engine-load-test/prd-449/godot-benchmarks/src (git-ignored)",
+        "matches": "all four requiredPaths blob shas recomputed with git hash-object equal the upstream tree shas at b059e38a81230a87293828bbf65ab247b6b2d2a8; no benchmark file was edited",
+        "onlyLocalAddition": "export_presets.cfg (untracked harness addition for the release export)"
+      },
+      "verifiedBy": [
+        "gh api repos/godotengine/godot-benchmarks/commits/b059e38a… -> sha, date, message; commits/main -> same sha",
+        "gh api repos/godotengine/godot-benchmarks/contents/<path>?ref=b059e38a… -> blob sha + size for every requiredPaths entry and LICENSE.md",
+        "git hash-object on the local extracted src/ files -> identical blob shas"
+      ]
+    },
+    "godotEngine": {
+      "status": "verified",
+      "kind": "binary",
+      "upstream": "https://github.com/godotengine/godot",
+      "version": "4.7.1.stable.official.a13da4feb",
+      "pin": {
+        "type": "git-tag",
+        "tag": "4.7.1-stable",
+        "commit": "a13da4feb8d8aefc283c3763d33a2f170a18d541",
+        "note": "engine commit, distinct from the godot-benchmarks pin above"
+      },
+      "release": "https://github.com/godotengine/godot/releases/tag/4.7.1-stable",
+      "artifacts": [
+        {
+          "role": "editor build used for --headless --path compatibility smoke and for packing the release .pck",
+          "name": "Godot_v4.7.1-stable_linux.x86_64.zip",
+          "url": "https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip",
+          "bytes": 76056717,
+          "sha256": "c7ff14fd28472c8d4f193043de30278dcf7e5241a1dcf7566b02e27addaa33ba",
+          "sha512": "4ccdab7a48eeccbe8819a2fc1f6262f8d72065d98601bcb3743fcbd7ebd39f373758a788ee3293a05ec5b2c48538266c437404312e372225cd2df273945a2de9",
+          "extractedBinary": {
+            "name": "Godot_v4.7.1-stable_linux.x86_64",
+            "bytes": 144583504,
+            "sha256": "32f8d7596c4b41185512b1c49d69f2da3be018fd784a53e349fa92a98a97bcde"
+          }
+        },
+        {
+          "role": "publication template (linux_release)",
+          "name": "Godot_v4.7.1-stable_export_templates.tpz",
+          "url": "https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_export_templates.tpz",
+          "bytes": 1280486955,
+          "sha256": "86409db6200b6f8fd3230989c2d2002851f3dd18acf11d7bdbafddf5a0dd0f72",
+          "sha512": "afcc83d8d3d298038f19c58744a0d660fa75dd4baa33cb55d1011bb2565a2a8c2381728924564cb909e37c205a23f21b521b23bd057993afd43ae4da0b2f9d47",
+          "extractedBinary": {
+            "name": "templates/linux_release.x86_64",
+            "bytes": 73470264,
+            "sha256": "2cb27aee3f7fdf763d0ae16972f6975606959a071f4cd33f6ef1429eb8385049"
+          }
+        },
+        {
+          "role": "release checksum manifest",
+          "name": "SHA512-SUMS.txt",
+          "url": "https://github.com/godotengine/godot/releases/download/4.7.1-stable/SHA512-SUMS.txt",
+          "bytes": 5682,
+          "sha256": "4c8f302a5630f34181b12cc89454ab336f3c7f25feae9d81e10f43fc25e1ae1e"
+        }
+      ],
+      "renderer": null,
+      "rendererReason": "Both pinned binaries ran the headless dummy renderer in the compatibility smoke, so no rendering backend was observed. The real renderer/backend identity is an execution-lock item, open until the Godot rendering families run on the qualified GPU lane.",
+      "localPath": "artifacts/engine-load-test/prd-449/godot-bin (git-ignored)",
+      "license": {
+        "spdx": "MIT",
+        "appliesTo": "engine binaries",
+        "source": "LICENSE.txt at tag 4.7.1-stable, blob 0e3ba08d6b2e8cf435241829c96f10b74e4356fe, 1149 B: Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md); Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur"
+      },
+      "verifiedBy": [
+        "gh api repos/godotengine/godot/git/ref/tags/4.7.1-stable -> object.sha a13da4feb8d8aefc283c3763d33a2f170a18d541",
+        "gh api repos/godotengine/godot/releases/tags/4.7.1-stable -> official asset digests (sha256) and sizes for the zip, the tpz and SHA512-SUMS.txt",
+        "curl raw LICENSE.txt at tag 4.7.1-stable + gh api contents -> MIT text, blob 0e3ba08d6b2e8cf435241829c96f10b74e4356fe",
+        "sha256sum of the three local files -> byte-identical to those official digests",
+        "sha512sum -c one.txt export-templates.sha512 -> OK for both official archives against the release's own SHA512-SUMS.txt",
+        "sha256sum of the extracted editor binary and templates/linux_release.x86_64 -> as recorded",
+        "Godot_v4.7.1-stable_linux.x86_64 --version -> 4.7.1.stable.official.a13da4feb"
+      ]
+    },
+    "three": {
+      "status": "verified",
+      "kind": "package",
+      "package": "three",
+      "version": "0.185.1",
+      "resolvedFrom": "pnpm-lock.yaml (this checkout), catalog three: 0.185.1 in pnpm-workspace.yaml",
+      "registryIntegrity": "sha512-5aojFCXKwnjBRZvUnt3WFfEcvUJgkN5LlijRFN95hMy8WVkG4I0QNcJE+OuWvuJ0bOdStrbfXn0pkd6/QyiAlg==",
+      "registryIntegrityNote": "The tarball sha512 recorded by the lockfile, i.e. the pristine registry bytes. pnpm verified it on install; the tarball itself is not retained in the workspace.",
+      "patch": {
+        "applied": true,
+        "path": "patches/three@0.185.1.patch",
+        "lockPatchHash": "7b22780379fcb9ecbcf99a640b328c347f3d6d9a26721efa1503f6f7881bdcdc",
+        "fileSha256": "7b22780379fcb9ecbcf99a640b328c347f3d6d9a26721efa1503f6f7881bdcdc",
+        "note": "The patch file's sha256 equals the lockfile patch_hash, so the patch is the exact one the lock recorded. The installed package is therefore NOT pristine three@0.185.1 bytes; any plain-Three.js arm must use these same patched bytes or the comparison is not byte-matched."
+      },
+      "installedBytes": {
+        "path": "node_modules/.pnpm/three@0.185.1_patch_hash=7b22780379fcb9ecbcf99a640b328c347f3d6d9a26721efa1503f6f7881bdcdc/node_modules/three",
+        "fileCount": 1195,
+        "treeSha256": "083a9d9d822826c1411b4e5b99795c923bee291488b23a7aed055ee685aacdf0",
+        "treeSha256Method": "find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum",
+        "moduleDigests": {
+          "build/three.module.js": {
+            "sha256": "bbf5ed13fe4373f5bd38b14ea8e62e9f157327da5638edc6d3863e08b167c9c7",
+            "bytes": 650153
+          },
+          "build/three.core.js": {
+            "sha256": "3fdb7f39019bd77cef1198d69cc6125ebbe7f7b01e993224f28555e2bb31b6e3",
+            "bytes": 1443105
+          }
+        }
+      },
+      "license": {
+        "spdx": "MIT",
+        "declared": "The MIT License, Copyright (c) 2010-2026 three.js authors",
+        "path": "LICENSE in the installed package"
+      },
+      "verifiedBy": [
+        "rg '^  three@0.185.1' pnpm-lock.yaml -> integrity sha512-5aojFC…Alg==, patched, hash 7b2278…dcdc",
+        "sha256sum patches/three@0.185.1.patch -> 7b22780379fcb9ecbcf99a640b328c347f3d6d9a26721efa1503f6f7881bdcdc (equals the lock patch_hash)",
+        "tree digest and per-file sha256sum of the installed package as recorded",
+        "node -e require package.json -> name three, version 0.185.1"
+      ]
+    }
+  },
+  "notClaimed": [
+    "Any rendering, FPS or GPU result. Every verified entry above is an input identity, not a measurement.",
+    "Completeness of this lock. It records what is verifiable on 2026-09-27; open.* lists what is deliberately unfilled and why, and a \"resolved\" or \"partial\" status is not a completeness claim.",
+    "That the city Kenney bytes are byte-locked. open.cityAssetPin is resolved as a SOURCE identity only; the full concrete fetched set, its byte hashes and the generated census stay open until export/collection, and upstream's hardcoded BASE_URL still has to be redirected at the pinned commit for a run to honour the pin.",
+    "The `Phase 1 — record the full source/build/asset lock` PRD box is NOT ticked by this file: the Bevy dependency lock, the city fixture census and byte hashes, and the TN tested commit/build/browser identity are still unresolved."
+  ]
+}

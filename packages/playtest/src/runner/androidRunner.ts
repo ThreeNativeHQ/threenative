@@ -16,9 +16,14 @@ import {
 } from "../index.js";
 import {
   AdbAndroidDriver,
+  type IAndroidAppState,
   type IAndroidDriver,
+  type IAndroidLifecycleOperation,
   type IAndroidPointer,
   type IAndroidPointerInjection,
+  type IPlaytestDeviceLifecycleObservation,
+  type IPlaytestDeviceLifecyclePhase,
+  type IPlaytestDeviceLifecycleSteps,
 } from "./android.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import {
@@ -61,9 +66,15 @@ export interface IAndroidPlaytestDependencies {
 }
 
 export interface IDevicePlaytestDriver {
+  /** Send the app behind HOME and wait until the device reports it unfocused. */
+  background?(): Promise<void>;
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
   deviceSerial?(): string | undefined;
+  /** Bring the launched app back to the foreground without force-stopping it. */
+  foreground?(): Promise<void>;
   isAlive(): Promise<boolean>;
+  /** What the device says about the app right now; the lifecycle phases are read from this. */
+  lifecycleState?(): Promise<IAndroidAppState>;
   prepare(
     endpoint: string,
     mailboxRoot?: string,
@@ -71,6 +82,7 @@ export interface IDevicePlaytestDriver {
   ): Promise<void>;
   readFile?(path: string): Promise<string | undefined>;
   removeFile?(path: string): Promise<void>;
+  rotate?(rotation: number): Promise<void>;
   runAdb?(args: readonly string[]): Promise<string>;
   screenshot(path: string): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
@@ -154,6 +166,7 @@ async function runDevicePlaytestInternal(
     scenario,
     target.name,
     typeof target.driver.tap === "function",
+    canDriveAndroidLifecycle(target.driver),
   );
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
   if (
@@ -296,8 +309,27 @@ async function runDevicePlaytestInternal(
     // `up` does. Track the open gesture separately from the button mask so a step that clears to
     // zero *and* asks for release still emits its close at the last point.
     let pointerHeld = false;
+    const lifecycle = scenario.steps.some((step) => step.lifecycle !== undefined)
+      ? new DeviceLifecycleRecorder(
+        target.driver,
+        // Only a build that installed a physics plugin owns a step counter, and it says so by
+        // advertising the capability. Anything else is reported as unmeasured, never as zero.
+        attached.description.capabilities.includes("runtime.physics"),
+        // The step count is an observation like any other, read through the same sample request
+        // the rest of the run uses rather than a channel of its own.
+        () => attached.sample(sampleRequest),
+      )
+      : undefined;
+    if (lifecycle !== undefined) await lifecycle.launch();
     for (const [index, step] of scenario.steps.entries()) {
       await throwIfAborted(target);
+      if (step.lifecycle !== undefined) {
+        // The only step kind the device performs itself, and the only one that skips the per-step
+        // observation path: while the app is unfocused nothing is servicing the bridge, so a tick
+        // or a sample here would read as a hung host. What it records instead is the device.
+        await lifecycle?.run(step.lifecycle, () => attached.advance(1));
+        continue;
+      }
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (
         target.name === "android"
@@ -510,6 +542,7 @@ async function runDevicePlaytestInternal(
       startupOutcome === undefined
         ? undefined
         : { ...startupOutcome.startup, rule: startupOutcome.rule },
+      lifecycle?.observation(),
     );
     // Same artifacts as the browser target: a diagnostic that names console.json must find it
     // there whichever target produced the run.
@@ -737,11 +770,258 @@ function isMailboxDriver(
     && typeof driver.writeFile === "function";
 }
 
+/** Whether this driver can background, foreground, rotate and then read the app back. */
+function canDriveAndroidLifecycle(driver: IDevicePlaytestDriver): boolean {
+  return typeof driver.background === "function"
+    && typeof driver.foreground === "function"
+    && typeof driver.rotate === "function"
+    && typeof driver.lifecycleState === "function";
+}
+
+/** Bounded reads proving the platform's own frame count stopped while the app was unfocused. */
+const ANDROID_LIFECYCLE_SETTLE_READS = 8;
+/** The pause between settling reads: how often the counter is looked at while the app is away. */
+const ANDROID_LIFECYCLE_SETTLE_POLL_MS = 250;
+/** How long a backgrounded surface's counter must hold still before the runner calls it paused. */
+const ANDROID_LIFECYCLE_PAUSE_HOLD_MS = 1_000;
+
+/**
+ * Drives a scenario's `lifecycle` steps and records what the device said at each one.
+ *
+ * Every value that reaches the report comes out of the driver — the pid from `pidof`, the focus
+ * and window rotation from `dumpsys window`, the frames from `dumpsys gfxinfo` — and a reading
+ * that is missing is a failed run rather than a zero. That is the whole reason this is runner-side:
+ * a `GameState` resource is the game's own account of whether it went away and came back, which is
+ * the one account that cannot be wrong in the direction anyone wants.
+ */
+class DeviceLifecycleRecorder {
+  private readonly phases: IPlaytestDeviceLifecyclePhase[] = [];
+  private readonly startedAt = Date.now();
+  private readonly physicsSteps: IPlaytestDeviceLifecycleSteps = {
+    afterAdvance: null,
+    afterForeground: null,
+    beforeBackground: null,
+  };
+  private pid = 0;
+
+  constructor(
+    private readonly driver: IDevicePlaytestDriver,
+    /** Whether the build advertises `runtime.physics`, and so owns a step counter to read. */
+    private readonly countsPhysicsSteps: boolean,
+    /** One observation through the same sample request the rest of the run uses. */
+    private readonly sample: () => Promise<IPlaytestObservationSnapshot>,
+  ) {}
+
+  /** The process the run launched, read before any step could change it. */
+  async launch(): Promise<void> {
+    const state = await this.readDevice();
+    if (state.pid === undefined) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_UNOBSERVED",
+        "`pidof` reports no process for the package this run launched, so there is no app session to follow.",
+        "Launch the activity and confirm it is running before driving lifecycle steps; a lifecycle proof needs one live process to observe.",
+      ));
+    }
+    this.pid = state.pid;
+  }
+
+  async run(
+    step: NonNullable<IPlaytestScenario["steps"][number]["lifecycle"]>,
+    advance: () => Promise<unknown>,
+  ): Promise<void> {
+    const operation = step.operation;
+    const rotation = step.operation === "rotate" ? step.rotation : undefined;
+    const driver = this.driver;
+    // Read while the app can still answer. A backgrounded host is asleep, so this is the last
+    // moment the count is readable, and the value the pause below is measured against.
+    if (operation === "background") {
+      this.physicsSteps.beforeBackground = await this.readPhysicsSteps();
+    }
+    try {
+      if (operation === "background") await driver.background?.();
+      else if (operation === "foreground") await driver.foreground?.();
+      else await driver.rotate?.(rotation as number);
+    } catch (error) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED",
+        `The device did not apply the '${operation}' lifecycle operation: ${error instanceof Error ? error.message : String(error)}`,
+        "Inspect the device for an orientation lock, a permission prompt or a system dialog over the app, then rerun the same scenario.",
+      ));
+    }
+    // The app is back and has not been advanced yet, so the count now is the count it returned
+    // with. Reading it after the advance instead would fold the runner's own step into the value
+    // the away period is supposed to be compared against.
+    if (operation === "foreground") {
+      this.physicsSteps.afterForeground = await this.readPhysicsSteps();
+    }
+    // A resumed app has to draw before its phase can claim it is drawing, and the host is asleep
+    // until something asks it a question. One tick is the whole ask.
+    if (operation !== "background") {
+      await advance();
+      this.physicsSteps.afterAdvance = await this.readPhysicsSteps();
+    }
+    const state = await this.read();
+    this.requirePhaseEffect(operation, rotation, state);
+    const settled = operation === "background" ? await this.readSettled(state) : undefined;
+    const phase = settled?.state ?? state;
+    this.phases.push({
+      at: Date.now() - this.startedAt,
+      focused: phase.focused,
+      frames: phase.frames,
+      ...(settled === undefined ? {} : { framesPaused: settled.framesPaused }),
+      phase: operation,
+      pid: phase.pid,
+      ...(rotation === undefined ? {} : { requestedRotation: rotation }),
+      ...(phase.windowRotation === undefined ? {} : { windowRotation: phase.windowRotation }),
+    });
+  }
+
+  /**
+   * The `background` phase's own claim: the surface stopped, so read the platform's frame counter
+   * until it agrees. A backgrounded app that keeps rendering reports the truth —
+   * `framesPaused: false`, for an assertion layer to bind to — rather than a settled value the
+   * runner invented on its behalf.
+   *
+   * One unchanged count is not a paused surface. A renderer that is still drawing at 10 Hz answers
+   * two quick reads with the same number, so a settling read followed by one equal read called a
+   * live 10 Hz surface stopped — the exact claim this phase exists to make. The count therefore has
+   * to hold still across a full second, and a count that moves resets the clock, so the settle is
+   * bounded in wall time as well as in reads.
+   */
+  private async readSettled(initial: IAndroidAppState & { frames: number; pid: number }): Promise<{ framesPaused: boolean; state: IAndroidAppState & { frames: number; pid: number } }> {
+    let state = initial;
+    let heldSince = Date.now();
+    for (let read = 0; read < ANDROID_LIFECYCLE_SETTLE_READS; read += 1) {
+      await delay(ANDROID_LIFECYCLE_SETTLE_POLL_MS);
+      const next = await this.read();
+      if (next.frames !== state.frames) {
+        heldSince = Date.now();
+        state = next;
+        continue;
+      }
+      if (Date.now() - heldSince >= ANDROID_LIFECYCLE_PAUSE_HOLD_MS) return { framesPaused: true, state: next };
+      state = next;
+    }
+    return { framesPaused: false, state };
+  }
+
+  /**
+   * The driver already waited for these readings; check them again here, because a phase is a
+   * claim about the device and the claim is worth more than the command's exit code.
+   */
+  private requirePhaseEffect(
+    operation: IAndroidLifecycleOperation,
+    rotation: number | undefined,
+    state: { focused: boolean; windowRotation?: number },
+  ): void {
+    if (state.focused !== (operation !== "background")) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED",
+        `After the '${operation}' operation the device still reports the app as ${state.focused ? "focused" : "unfocused"}.`,
+        "Inspect the device for an orientation lock, a permission prompt or a system dialog over the app, then rerun the same scenario.",
+      ));
+    }
+    if (rotation !== undefined && state.windowRotation !== rotation) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED",
+        `The '${operation}' operation asked for rotation ${rotation} and the device's window reports ${String(state.windowRotation)}.`,
+        "Inspect the device for an orientation lock or a fixed-orientation activity, then rerun the same scenario.",
+      ));
+    }
+  }
+
+  observation(): IPlaytestDeviceLifecycleObservation {
+    const background = this.phases.find(({ phase }) => phase === "background");
+    const last = this.phases.at(-1);
+    const { afterAdvance, afterForeground, beforeBackground } = this.physicsSteps;
+    return {
+      phases: this.phases,
+      physics: this.countsPhysicsSteps
+        ? {
+            available: true,
+            steps: { afterAdvance, afterForeground, beforeBackground },
+            stepsAdvanced: afterForeground === null || afterAdvance === null
+              ? null
+              : afterAdvance > afterForeground,
+            stepsPaused: beforeBackground === null || afterForeground === null
+              ? null
+              : afterForeground === beforeBackground,
+          }
+        : {
+            available: false,
+            reason: "the bridge does not advertise runtime.physics, so this build installs no physics plugin and nothing counts simulation steps; install rapier() to measure physics continuity across a lifecycle",
+          },
+      render: {
+        framesAdvanced: background === undefined || last === undefined
+          ? null
+          : last.frames > background.frames,
+        framesPaused: background?.framesPaused ?? null,
+      },
+      session: { pid: this.pid },
+    };
+  }
+
+  /**
+   * The runtime-owned simulation-step count, or nothing on a build that installs no physics plugin.
+   *
+   * Fails closed rather than reporting a zero: a bridge that advertises `runtime.physics` and
+   * answers with no count, a string, or a negative number has not measured the simulation, and a
+   * zero here would be indistinguishable from a game that genuinely never stepped.
+   */
+  private async readPhysicsSteps(): Promise<number | null> {
+    if (!this.countsPhysicsSteps) return null;
+    const value = (await this.sample()).physicsSteps;
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_PHYSICS_UNOBSERVED",
+        `The bridge advertises runtime.physics but reported ${JSON.stringify(value) ?? "no simulation-step count"} instead of one, so physics continuity cannot be recorded across the lifecycle.`,
+        "Install rapier(), whose runtime.physics observation carries the step count taken at simulation.step, or drop the lifecycle steps. A count a game keeps in its own state is not a measurement, and an absent one is never read as a simulation that stood still.",
+      ));
+    }
+    return value;
+  }
+
+  /** One device reading, in the process this run launched. A different pid is a failed run. */
+  private async read(): Promise<IAndroidAppState & { frames: number; pid: number }> {
+    const state = await this.readDevice();
+    if (state.pid !== this.pid) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_SESSION_CHANGED",
+        `The app process changed across the lifecycle: the run launched pid ${String(this.pid)} and the device now reports ${String(state.pid)}.`,
+        "A lifecycle proof needs one process across background, foreground and rotation. Find what killed or relaunched the app before rerunning.",
+      ));
+    }
+    return { ...state, pid: this.pid };
+  }
+
+  /** One complete device reading, or a named failure. Never a default. */
+  private async readDevice(): Promise<IAndroidAppState & { frames: number }> {
+    const state = await this.driver.lifecycleState?.();
+    if (state?.frames === undefined) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_UNOBSERVED",
+        "The device reported no frame count for this process, so a lifecycle phase cannot be recorded.",
+        "Run against a device that answers `dumpsys gfxinfo <package>` with a frame counter, or drop the lifecycle steps; an absent counter is never read as a paused surface.",
+      ));
+    }
+    return { ...state, frames: state.frames };
+  }
+}
+
 function unsupportedAssertion(
   scenario: IPlaytestScenario,
   target: "android" | "desktop" | "ios",
   hasPointerTransport: boolean,
+  canDriveLifecycle: boolean,
 ): IPlaytestProtocolDiagnostic | undefined {
+  if (scenario.steps.some((step) => step.lifecycle !== undefined)
+    && (target !== "android" || !canDriveLifecycle)) {
+    return unsupportedDiagnostic(
+      "lifecycle steps",
+      "Run lifecycle steps on --target android with the adb-backed driver. The browser, desktop and iOS lanes cannot background, foreground or rotate the app, and the phases this step reports have to be read off the device — a game-authored GameState would only restate what the scenario already said.",
+      target,
+    );
+  }
   if (scenario.steps.some((step) => step.wheel !== undefined)) {
     return unsupportedDiagnostic(
       "wheel input steps",
