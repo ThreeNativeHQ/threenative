@@ -39,8 +39,8 @@ gets clean edges from the same code. No new package, no new dependency, no new a
 
 ### Phase 2 — `starter`, the default template, gets the same light
 
-- [ ] Photo sky + environment light + AO + AA + mannequin hero; painterly stages off by default, still one line away. proof: capture
-- [ ] `starter` playtests green. proof: `TN_TEMPLATE_ONLY=starter pnpm test:templates`
+- [ ] Starter is a testing scene like `minimal` (grid arena, photo sky, mannequin) keeping its course, pickups, flag, lives and HUD; island, ocean and painterly stages deleted. proof: capture
+- [ ] `starter` playtests green. proof: `TN_GOLDEN_PATH_TEMPLATES=starter pnpm verify:golden-path`
 
 ### Phase 3 — the other templates inherit the recipe
 
@@ -56,7 +56,7 @@ body, not here (R2).
 - `minimal` is the Unreal third-person test map (grid arena, mannequin, follow camera), and the SCORE/TIME HUD is removed — owner, 2026-09-28.
 - The mannequin is Quaternius' Universal Animation Library, recoloured white — owner, 2026-09-28.
 - `shooter` is rebuilt from `sandbox/fps-framework`, keeping only its hands — owner, 2026-09-28.
-- The AstraCraft RTS template is its own PRD and PR, not this one — agent, 2026-09-28 (one PRD per PR).
+- The AstraCraft RTS template (PRD-471) and racing's vehicle physics (PRD-472) are their own PRDs but ship in this PR: "keep everything in a single PR for simplicity sake" — owner, 2026-09-28 (overrides one-PR-per-PRD for this work).
 - Engine fix found on the way: `CollisionShape3D.fromMesh` centres its box on the mesh origin, so off-centre geometry silently gets a displaced collider (it floated the mannequin 0.4 m). The template now uses `buildStaticColliders`; the engine guard is tracked as its own change.
 
 ## Blocked on
