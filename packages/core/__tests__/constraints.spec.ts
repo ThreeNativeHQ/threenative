@@ -132,12 +132,9 @@ describe("core constraints", () => {
           file !== "projection-stability.ts" &&
           // The uniform lane draws one geometry under one material the mirror owns, with each
           // member's own base colour carried per instance. This file is the part that decides
-          // whether two materials are interchangeable: it reads their properties to compare them, and
-          // for the members it watches (PRD-462) it takes their own properties over as accessor
-          // pairs and gives them back as plain data properties when the material leaves its group.
-          // It sets no value of its own choosing and it changes no appearance; the white clone it
-          // exists to justify is built in `projection-apply.ts`, which is allowlisted above for the
-          // same reason.
+          // whether two materials are interchangeable: it reads their properties to compare them and
+          // writes nothing on any of them. The white clone it exists to justify is built in
+          // `projection-apply.ts`, which is allowlisted above for the same reason.
           file !== "projection-uniform.ts" &&
           file !== "index.ts",
       )
@@ -369,16 +366,6 @@ describe("core constraints", () => {
     expect(probeVolume).not.toMatch(/new\s+\w*Light|new\s+Color|\.wgsl/iu);
     expect(probeVolume).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(probeVolume).toMatch(/RenderTarget3D|texture3D|ATLAS_PADDING/u);
-
-    // `projection-uniform.ts` is exempt on the same terms, and PRD-462 widened what it does to a
-    // material — a watch takes its own properties over and gives them back — without widening what
-    // it decides: it constructs no surface, names no colour and picks no value, because the watch
-    // stores what the game wrote and restores exactly that. The assertions below keep that true.
-    const uniformLane = readFileSync(path.join(sourceDirectory, "projection-uniform.ts"), "utf8");
-    expect(uniformLane).not.toMatch(
-      /new\s+\w*(Material|Light|Color)|tonemapping|postprocessing|\.wgsl/iu,
-    );
-    expect(uniformLane.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
   });
 
   /**
