@@ -378,10 +378,13 @@ function warmupFramesFor(options) {
 }
 
 // Only the scaffolded default needs its ticks paced to wall time, because only it has no authored
-// workload whose own step durations are the seconds the run means. A live-clock run never does: its
-// `advance` already waits that wall time, so pacing again would measure a game running at half speed.
+// workload whose own step durations are the seconds the run means. A live-clock run needs it too, and
+// not because it needs pacing twice: the wrapper is idempotent, so an `advance` that already spent
+// the interval leaves a wait of zero or less and the pace adds nothing. Excluding it left the native
+// host free to consume the frame-count workload faster than wall time, and the run published a
+// measured window shorter than the `--duration` it was asked for.
 function paceTicksFor(options) {
-  return options.project === undefined && options.liveClock !== true;
+  return options.project === undefined;
 }
 
 // Directories the judge regenerates itself. Copying a previous build measures stale bytes and
@@ -1157,8 +1160,13 @@ export function productionClockRequest(liveClock = false) {
  * interval per tick lets the host's own loop run during the wait, so the frames exist to be
  * measured.
  *
- * A live-clock run does not need this: its `advance` already waits the wall time the ticks name, so
- * pacing again here would halve the simulation rate and measure a slower game than ships.
+ * The same wrapper arms on the live clock, and it is idempotent there rather than a second wait: a
+ * wall-clock `advance` spends the span its ticks name before the wrapper reads its own deadline, so
+ * the remainder is zero or less and no wall-clock run is slowed. It is also the only thing that
+ * makes the host present the frames on any host whose `advance` did not wait them, which is what a
+ * short measured window is. Reading the live clock as "already paced, so skip the pacer" was the
+ * defect: the native host consumed the frame-count workload at its own speed, and 60 requested
+ * seconds published as a 1.5 s window.
  */
 export function productionExecutionHold(paceTicks = false) {
   return `

@@ -192,6 +192,8 @@ The identity check is what stops the parity gate comparing the browser against i
   `TN_PROD_PERFORMANCE_BUDGET`: web 35.62 FPS mean against ≥60 and 110.4 ms p99 against ≤33;
   native 174.06 FPS mean and 17.30 ms p99; startup p95 1,803 ms against ≤5,000. The distinct
   web/native identities and all three negative controls were observed, but the web budget is red.
+  The 2026-09-28 short live-clock pair below clears the 30-second/1,000-frame minimum for the first
+  time (32.00 s, 1,919 samples, `clean-end`) and is still red on the same two predicates.
 
 **2026-09-27 checkout gate:** `pnpm typecheck`, `pnpm lint` (with ignored measurement artifacts
 temporarily outside the scan), `pnpm budgets`, and the focused production-profile suite (54/54)
@@ -493,6 +495,53 @@ crossing stall — as gameplay. The reset now happens once on the warmup→measu
 (`tnProductionMeasurementStart`), and the focused test crosses the wall time after the frame count with
 a 500 ms step at the crossing: it read the crossing frame itself (index 7) as the first sample before,
 and the frame after it at 8 ms after. 77/77 in that file.
+
+**2026-09-28, the web arm's 18.8-second closure was a closed page reported as a navigation, and
+the fix is in the runner's diagnosis.** The paired collection
+`.runtime/prd064/production/live-smoke-paced/production-evidence.json` published a web playtest
+report with `pass: false` and one diagnostic, `TN_PLAYTEST_PAGE_NAVIGATED`: *"The page navigated to
+an unrecorded location … runner error: `page.evaluate: Target page, context or browser has been
+closed`"*, and the same message's own `Observed` clause reads `page closed: true; main-frame
+navigations: 1` — the one navigation being the run's own. Traced rather than assumed: the report is
+written by the `catch` that runs **before** `teardown` (`packages/playtest/src/runner/runner.ts:789`
+against `:794`), so a page this run closed itself cannot be the reported error; the scenario budget
+was 1,005,000 ms inner / 1,065,000 ms outer against a 19-second failure; the only other closer is a
+dead browser target, and the profile itself finished normally (its verdict and all seven artifacts
+were written 3.7 s after `endedAt`, which a killed collector could not do). What the runner could
+not say was *which* of those two happened, because `pageLifecycleDiagnostic`
+(`packages/playtest/src/runner/server.ts`) matched Playwright's "target closed" wording and asserted
+a navigation its own listeners had proven did not happen, with a fix aimed at the game. A page that
+closed with no recorded navigation now fails as `TN_PLAYTEST_PAGE_CLOSED`, naming the machine
+(GPU stall, OOM kill, a competing benchmark) instead of the game; the run still fails, and the
+ordinary navigation and crash paths are untouched. Red-green: the regression test drives that exact
+lifecycle (closed, zero post-handshake navigations, one initial navigation, the 18,804 ms console
+tail) and read `TN_PLAYTEST_PAGE_NAVIGATED` on the pre-fix `server.ts` and `TN_PLAYTEST_PAGE_CLOSED`
+after. `packages/playtest/__tests__/runner.spec.ts` 71/71, `pnpm --filter @threenative/playtest
+typecheck` 0, `biome check` on the three files reports only the four pre-existing warnings on lines
+18, 34 and 1571. This is the same false reading `docs/verification/runtime-perf-state.md` already
+records costing the suite its expected transport diagnostics during a GPU `ReadPixels` stall.
+
+**2026-09-28, one exclusive short live-clock pair, and the box stays open.** With no other GPU
+benchmark on the host (the `prd-449` native ladder had just finished), `DISPLAY=:0`,
+`XAUTHORITY=/run/user/1000/xauth_aTQMbZ`, `TN_PLAYTEST_HOST_DISPLAY=1`:
+`pnpm profile:production -- --target desktop-pair --render-size 1920x1080 --duration 30 --warmup 2
+--cold-starts 1 --repetitions 1 --live-clock --out .runtime/prd064/production/live-short-exclusive`
+ran 104.8 s and published a **complete** pair — all eight artifacts, `markers: run-start,
+first-workload-frame, clean-end`, `identity.webDisplay: session::0`, and a **passing** web playtest
+report (`pass: true`, no diagnostics, `renderChain.tier` and `diagnostics` both true) where the
+19-second run had none. **Web 59.97 fps mean, p50 16.70 ms, p95 16.80 ms, p99 16.80 ms, worst 16.80
+ms, 0 hitches over 32.00 s and 1,919 presented samples; native 58.06 fps mean, p50 17.01 ms, p95
+18.50 ms, p99 22.25 ms; startup p95 1,487 ms against ≤5,000.** That clears the 30-second/1,000-frame
+minimum this PRD sets, for the first time on the live clock. `TN_PROD_PERFORMANCE_BUDGET` is still
+the only failing code, on two predicates and no others: the web mean 59.97 against a ≥60 floor
+(one 16.8 ms frame in 1,919 moves it), and the "no slower natively" pair predicate
+`native.meanFps < web.meanFps` (58.06 < 59.97) — the same 60 Hz-vs-lock comparison root-caused
+above, which is not satisfiable by making native cheaper. Still open on this box and named as such:
+a *named* GPU (`report.capture.adapter` is still absent from `identity`, so the run is on the
+RTX 2080 session display by construction and not by evidence), the web counter budgets are currently
+green over an all-zero series (`drawCalls 0, triangles 0` in every live-clock collection since
+`live-smoke`, against ≤200 and ≤7,700), the C++ presentation pacer, and the three negative controls
+re-observed through the display guard. No phone lane was touched.
 
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 

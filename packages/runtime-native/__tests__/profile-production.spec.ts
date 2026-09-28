@@ -19,6 +19,7 @@ type Instrumentation = {
     control: string | undefined,
     warmupFrames?: number,
     paceTicks?: boolean,
+    liveClock?: boolean,
   ): string;
   nativeFrameInstrumentation(
     control: string | undefined,
@@ -42,8 +43,11 @@ type FrameSample = { frameMs: number; presentationMs?: number };
 
 interface SandboxHarness {
   bridge: { advance(ticks: number): Promise<unknown>; sample(): unknown };
+  /** Wall milliseconds the sandbox clock has moved since the instrumentation was evaluated. */
+  elapsedMs(): number;
   /** Every line the instrumentation reported; the web arm reports over the console, not a fetch. */
   lines: string[];
+  /** The delay of every `setTimeout` the instrumentation itself scheduled, in request order. */
   timers: number[];
   /** Registers a consumer callback through the wrapper the instrumentation installed. */
   register(callback: () => void): void;
@@ -51,13 +55,21 @@ interface SandboxHarness {
   present(timestamp: number): void;
 }
 
-function createSandbox(source: string): SandboxHarness {
+/**
+ * @param clockConsumingAdvance Model the live clock's `wallClockAdvance`, which spends the span its
+ *   ticks name before it returns. A fixed-step `advance` returns at once.
+ */
+function createSandbox(source: string, { clockConsumingAdvance = false } = {}): SandboxHarness {
   const scheduled: Array<(timestamp: number) => void> = [];
   const timers: number[] = [];
   const lines: string[] = [];
-  let clock = 1_000;
+  const origin = 1_000;
+  let clock = origin;
   const bridge = {
-    advance: async (ticks: number) => ({ clock: { mode: "fixed-step", tick: ticks }, ticks }),
+    advance: async (ticks: number) => {
+      if (clockConsumingAdvance) clock += (1_000 / 60) * ticks;
+      return { clock: { mode: "fixed-step", tick: ticks }, ticks };
+    },
     sample: () => ({}),
   };
   const sandbox: Record<string, unknown> = {
@@ -74,6 +86,7 @@ function createSandbox(source: string): SandboxHarness {
     },
     setTimeout: (callback: () => void, milliseconds: number) => {
       timers.push(milliseconds);
+      clock += milliseconds;
       callback();
       return timers.length;
     },
@@ -83,6 +96,7 @@ function createSandbox(source: string): SandboxHarness {
   runInNewContext(source, sandbox);
   return {
     bridge,
+    elapsedMs: () => clock - origin,
     lines,
     register: (callback) => {
       (sandbox.requestAnimationFrame as (callback: () => void) => number)(callback);
@@ -116,18 +130,29 @@ describe("production profile frame sampling", () => {
     ).toBe(true);
   });
 
-  it("should pace fixed-step advance to the loop tick interval", async () => {
+  it("should spend one tick interval per tick on either clock, and none on the default", async () => {
     const { webFrameInstrumentation } = await instrumentation();
-    const harness = createSandbox(webFrameInstrumentation(undefined, 0, true));
-    await harness.bridge.advance(10);
-    expect(harness.timers).toContainEqual(expect.closeTo((1_000 / 60) * 10, 0.01));
-  });
-
-  it("should pace only when the synthetic duration workload asks for it", async () => {
-    const { webFrameInstrumentation } = await instrumentation();
-    const harness = createSandbox(webFrameInstrumentation(undefined, 0));
-    await harness.bridge.advance(10);
-    expect(harness.timers).toEqual([]);
+    const perTenTicks = (1_000 / 60) * 10;
+    // A live-clock `advance` already waited the span its ticks name, so the pacer's own deadline is
+    // met when it reads it: the run must cost one interval per tick, not the two that a second wait
+    // would add, and the pacer must not even schedule that second wait.
+    const live = createSandbox(webFrameInstrumentation(undefined, 0, true, true), {
+      clockConsumingAdvance: true,
+    });
+    await live.bridge.advance(10);
+    expect(live.elapsedMs()).toBeCloseTo(perTenTicks, 3);
+    expect(live.timers).toEqual([]);
+    // A fixed-step `advance` returns at once, so the wait is the whole of the tick budget the run
+    // asked for — the host's frame pump runs inside it and the frames exist to be measured.
+    const paced = createSandbox(webFrameInstrumentation(undefined, 0, true));
+    await paced.bridge.advance(10);
+    expect(paced.elapsedMs()).toBeCloseTo(perTenTicks, 3);
+    expect(paced.timers).toEqual([expect.closeTo(perTenTicks, 0.01)]);
+    // The default run is untouched: it authors its own timing, so nothing here is wrapped.
+    const plain = createSandbox(webFrameInstrumentation(undefined, 0));
+    await plain.bridge.advance(10);
+    expect(plain.elapsedMs()).toBe(0);
+    expect(plain.timers).toEqual([]);
   });
 
   it("should compile the native instrumentation with the same hold", async () => {

@@ -1759,18 +1759,19 @@ test('the first measured frame starts the window, so a crossing stall is not rep
   }
 });
 
-test('a live-clock profile asks the game for the wall clock and stops pacing its own ticks', async () => {
+test('a live-clock profile asks the game for the wall clock and keeps the idempotent pace', async () => {
   const project = makeTempDirSync('tn-profile-live-clock-');
   temporary.push(project);
   mkdirSync(join(project, 'src'));
   writeFileSync(join(project, 'package.json'), '{}');
   writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
-  // The scaffolded default paces its ticks itself; on the live clock `advance` already waits the
-  // wall time those ticks name, so pacing again would profile the game at half speed.
+  // Both clocks pace the scaffolded workload. On the live clock `advance` already waits the wall time
+  // those ticks name, so the pacer's remainder is zero and it adds nothing; disabling it there is
+  // what let the native host consume the frame count at its own speed.
   await installNativeProfileEntry(project, 'desktop', { liveClock: true, warmup: 1 });
   const entry = readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8');
   assert.match(entry, /globalThis\.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";/u);
-  assert.match(entry, /const tnProductionPaceEnabled = false;/u);
+  assert.match(entry, /const tnProductionPaceEnabled = true;/u);
   // The default run is unchanged: no clock request, and the synthetic workload still paced.
   const paced = makeTempDirSync('tn-profile-fixed-clock-');
   temporary.push(paced);
