@@ -88,6 +88,8 @@ interface IBatch {
   /** Slots handed out so far, which is also where the next unused one begins. */
   used: number;
   capacity: number;
+  /** Whether an instance matrix was written this frame, so the upload is flagged once per batch. */
+  dirty: boolean;
 }
 
 /**
@@ -318,8 +320,13 @@ export class ProjectionMirror {
    * the caller then declines the whole frame. A batch that will not take an object gives up that
    * object, not the scene: dropping several thousand batched props because one of them was
    * awkward would be the fail-open rule applied at exactly the wrong granularity.
+   *
+   * `retireSources` is the sweep for objects that have left the scene, and a caller that has
+   * *proved* the scene's membership is unchanged — the projection's structure proof does exactly
+   * that — passes `false` and skips a per-instance walk that cannot find anything. Everything else
+   * here still runs: slots, stand-ins and lights are written every frame whatever the sweep does.
    */
-  apply(plan: IProjectionProjectPlan): string | undefined {
+  apply(plan: IProjectionProjectPlan, retireSources = true): string | undefined {
     const lightFailure = this.#syncLights(plan.lights, plan.lightCount);
     if (lightFailure !== undefined) {
       this.releaseAll();
@@ -355,6 +362,7 @@ export class ProjectionMirror {
         this.#release(mesh);
         this.#appendExact(mesh, reason);
       }
+      if (batch !== undefined) this.#flushBatch(batch);
     }
     this.#applyMaterialGroups(plan);
     this.#applySkinnedGroups(plan);
@@ -367,7 +375,7 @@ export class ProjectionMirror {
       this.#release(object);
       this.#syncProxy(object);
     }
-    this.#retire(plan.seen, plan.lights, plan.lightCount);
+    if (retireSources) this.#retire(plan.seen, plan.lights, plan.lightCount);
     // After retirement, so a slot freed this frame uploads collapsed rather than one frame late.
     for (const batch of this.#skinnedBatches.values()) batch.end();
     this.#clearExactScratch();
@@ -754,16 +762,21 @@ export class ProjectionMirror {
   #syncBatched(target: IBatch, mesh: Mesh): boolean {
     const material = mesh.material as Material;
     const geometry = mesh.geometry;
-    const previous = this.#state.get(mesh);
+    let state = this.#state.get(mesh);
 
     // A geometry, material or flag change moves the object to a different batch entirely, so the
     // old slot is released and it re-enters as if it were new. The group identity covers the
     // shadow flags and layer mask, which change nothing about where an object is but everything
-    // about which draw it may share.
-    if (previous !== undefined && previous.batch !== target) this.#release(mesh);
+    // about which draw it may share. The release takes the state with it, and the slot is gone
+    // with it, so the allocation below is what refills both.
+    if (state !== undefined && state.batch !== target) {
+      this.#release(mesh);
+      state = undefined;
+    }
     // A mesh that was on the exact lane last frame and is batchable now must not keep its
-    // stand-in, or it draws twice.
-    this.#releaseProxy(mesh);
+    // stand-in, or it draws twice. A scene with no stand-ins is the common case, and this is a map
+    // probe per object per frame, so the empty check comes before it.
+    if (this.#proxies.size > 0) this.#releaseProxy(mesh);
 
     let slot = target.instances.get(mesh);
     if (slot === undefined) {
@@ -774,35 +787,37 @@ export class ProjectionMirror {
         target.used += 1;
       }
       target.instances.set(mesh, slot);
-      this.#state.set(mesh, {
-        // Deliberately unequal to anything real, so the first reconcile below writes the matrix
-        // and the visibility rather than assuming the new slot already carries them.
+      // Deliberately unequal to anything real, so the first reconcile below writes the matrix
+      // and the visibility rather than assuming the new slot already carries them.
+      state = {
         matrixWorld: new Matrix4().multiplyScalar(0),
         visible: !mesh.visible,
         geometry,
         material,
         batch: target,
-      });
+      };
+      this.#state.set(mesh, state);
     }
-
-    const state = this.#state.get(mesh) as ISourceState;
+    const current = (state ?? this.#state.get(mesh)) as ISourceState;
     // Ancestor visibility, not the object's own flag: a prop under a hidden group does not draw,
     // and a batch has no hierarchy to inherit that from.
     const visible = this.#visibleInWorld(mesh);
-    if (visible !== state.visible || !matrixEquals(state.matrixWorld, mesh.matrixWorld)) {
-      state.matrixWorld.copy(mesh.matrixWorld);
-      state.visible = visible;
+    if (visible !== current.visible || !matrixEquals(current.matrixWorld, mesh.matrixWorld)) {
+      current.matrixWorld.copy(mesh.matrixWorld);
+      current.visible = visible;
       // An `InstancedMesh` has no per-instance visibility flag, so a hidden object is given a
       // collapsed transform. Every one of its triangles then has zero area and is discarded before
       // rasterisation — the same trick the pass this replaces used, and the only one available
       // that does not disturb the other instances.
       target.mesh.setMatrixAt(slot, visible ? mesh.matrixWorld : ZERO_MATRIX);
-      target.mesh.instanceMatrix.needsUpdate = true;
+      // One flag per batch rather than one per object, applied by the caller: the buffer is
+      // uploaded once whatever wrote into it, and a version bump per object is a setter call per
+      // object for the same single upload.
+      target.dirty = true;
     }
-    state.geometry = geometry;
-    state.material = material;
-    state.batch = target;
-    target.mesh.count = target.used;
+    current.geometry = geometry;
+    current.material = material;
+    current.batch = target;
     return true;
   }
 
@@ -812,6 +827,20 @@ export class ProjectionMirror {
       if (!node.visible) return false;
     }
     return true;
+  }
+
+  /**
+   * Ends a batch's frame: one upload flag and one draw count for every slot written into it.
+   *
+   * Both were per object before, and both are per buffer: `needsUpdate` is a version bump the
+   * renderer reads once, whatever wrote into the array behind it, and `count` is the number of slots
+   * the batch has handed out — which only the last object of the loop could state correctly anyway.
+   */
+  #flushBatch(batch: IBatch): void {
+    batch.mesh.count = batch.used;
+    if (!batch.dirty) return;
+    batch.dirty = false;
+    batch.mesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -868,6 +897,7 @@ export class ProjectionMirror {
       free: [],
       used: 0,
       capacity,
+      dirty: false,
     };
     this.#batches.set(group, batch);
     this.scene.add(mesh);
