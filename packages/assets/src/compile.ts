@@ -160,7 +160,7 @@ export interface IAssetSourceConfig {
   readonly audio?: IAudioConfig | "none";
   /**
    * The bound on how many workers a bake may use. A direct `concurrency` option overrides it;
-   * absent means the driver's default (`min(4, cores - 1)`). CI boxes and laptops differ, and
+   * absent means the driver's default (cores - 1, bounded by ~2 GB of memory a worker, at most 12). CI boxes and laptops differ, and
    * a 6.8 GB pack does not get to decide the machine's fate.
    */
   readonly concurrency?: number;
