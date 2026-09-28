@@ -23,7 +23,9 @@ import { describe, expect, it, vi } from "vitest";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
 import {
   VIRTUAL_SHADOW_MARKER,
+  VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_MOVER_LAYER,
+  VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
@@ -793,6 +795,60 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     // fragment of it — the whole gate, dropping nothing at all.
     expect(seen).toEqual(["0:f", "1:-", "2:-"]);
     expect(fern.visible).toBe(true);
+    node.dispose();
+  });
+
+  it("should take each level's cheaper caster granularity, not a fraction of the ring (PRD-458)", () => {
+    const { camera, light, scene } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 2048 });
+    const solid = new MeshStandardMaterial();
+    // One world holding both halves of three keys, as `WorldCells` writes them: 25 cluster squares
+    // of 128 m under the player, and two keys outside the ring, each with two squares and one
+    // key-wide mesh covering its own. A cluster stands in for a square, so its sphere is the
+    // square's centre — the same centre the level's window is measured from.
+    const squares: { x: number; z: number }[] = [];
+    const cluster = (x: number, z: number): void => {
+      const mesh = new Mesh(new BoxGeometry(8, 8, 8), solid);
+      mesh.position.set(x, 4, z);
+      mesh.castShadow = true;
+      mesh.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
+      scene.add(mesh);
+      squares.push({ x, z });
+    };
+    let wides = 0;
+    const wide = (x: number, z: number): void => {
+      const mesh = new Mesh(new BoxGeometry(200, 8, 200), solid);
+      mesh.position.set(x, 4, z);
+      mesh.castShadow = true;
+      mesh.layers.set(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+      scene.add(mesh);
+      wides += 1;
+    };
+    for (let x = -2; x <= 2; x += 1) for (let z = -2; z <= 2; z += 1) cluster(x * 128, z * 128);
+    for (const at of [768, -768]) {
+      cluster(at, 0);
+      cluster(at, 128);
+      wide(at, 64);
+    }
+    scene.updateMatrixWorld(true);
+    settle(node, camera);
+
+    // What each level would submit either way: the cluster squares its window covers, against the
+    // key-wide meshes waiting for it. A square inside the window is within a half-diagonal of the
+    // centre whichever way the light is turned, so `extent * sqrt(2)` is the bound that holds.
+    for (const [level, extent] of [24, 96, 320].entries()) {
+      const inWindow = squares.filter(
+        (square) => Math.hypot(square.x, square.z) <= extent * Math.SQRT2,
+      ).length;
+      const cheaper =
+        inWindow < wides ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER;
+      const mask = levelCamera(node, level).layers.mask;
+      const both = (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+      // The 48 m window: 1 square against 3 key-wide meshes, so clusters. The 192 m: 5 against 3,
+      // and the 640 m: 25 against 3, so one mesh per key. The fraction-of-the-ring rule read all
+      // three as 36% of a 768 m ring and clustered even the coarsest, at 29 draws where 3 do.
+      expect(mask & both, `level ${String(level)} took the wrong granularity`).toBe(1 << cheaper);
+    }
     node.dispose();
   });
 
