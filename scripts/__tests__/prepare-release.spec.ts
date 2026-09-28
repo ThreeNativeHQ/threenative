@@ -83,4 +83,12 @@ describe("the 1.0.0 refusal", () => {
       /TN_RELEASE_1_0_0_GATE_MISSING/u,
     );
   });
+
+  it("refuses a gate PRD with no phase boxes", async () => {
+    const root = await makeTempDir("threenative-gates-empty-");
+    const source = path.join(root, gate);
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.writeFileSync(source, "# PRD-446\n\nNo phase boxes remain.\n");
+    expect(() => assertOneZeroGatesClosed(root, [gate])).toThrow(/TN_RELEASE_1_0_0_GATE_EMPTY/u);
+  });
 });

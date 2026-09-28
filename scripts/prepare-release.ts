@@ -46,6 +46,8 @@ export function assertOneZeroGatesClosed(
         `TN_RELEASE_1_0_0_GATE_MISSING: ${source} is absent, so its open boxes are unknown.`,
       );
     const progress = progressOf(readFileSync(source, "utf8"));
+    if (progress.phaseBoxes === 0)
+      throw new Error(`TN_RELEASE_1_0_0_GATE_EMPTY: ${source} has no phase boxes to prove.`);
     const remaining =
       progress.phaseBoxes -
       progress.phaseBoxesTicked +

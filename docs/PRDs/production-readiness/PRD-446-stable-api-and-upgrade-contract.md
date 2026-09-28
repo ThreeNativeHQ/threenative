@@ -278,12 +278,13 @@ not about a candidate.
   makes is the `dist/`-observable marker, it is applied *after* the upgrade step, and a candidate
   with no announced break requires no migration edit at all.
 - [ ] `pnpm release:prepare` refuses a `1.0.0` version while any box above is open. proof:
-  `pnpm exec vitest run scripts/__tests__/prepare-release.spec.ts` → 7 passed, including
+  `pnpm exec vitest run scripts/__tests__/prepare-release.spec.ts` → 8 passed, including
   `refuses while the real PRD-446 has open boxes, and names them`, plus a real `pnpm
   release:prepare` against a `1.0.0` cohort.
   `assertOneZeroGatesClosed` counts unticked phase and acceptance boxes through the repository's own
   reader (`progressOf`, the one behind `pnpm prd:progress`) rather than a second one that could
-  disagree with it, and `main()` calls it *before* `syncReleaseMetadata` writes anything — the bump
+  disagree with it, refuses a PRD with no phase boxes, and `main()` calls it *before*
+  `syncReleaseMetadata` writes anything — the bump
   nobody wants to walk back never lands. It refuses only when a selected version is exactly
   `1.0.0`; every other cohort is untouched. Red was structural, not simulated: the guard did not
   exist, and `accepts the same PRD once every phase and acceptance box is ticked` is the half that
