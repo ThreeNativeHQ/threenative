@@ -5,7 +5,8 @@ import { type Document, Logger, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { describe, expect, it } from "vitest";
-import { TNDiscreteLod } from "../src/lod/extension.js";
+import type { ICardLevelSummary } from "../src/lod/cards.js";
+import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
 import { type IModelLodSummary, LOD_MIN_SAVING } from "../src/lod/generate.js";
 import { type IModelPassOptions, modelPass } from "../src/passes/model.js";
 import { TNVirtualGeometry } from "../src/virtual/extension.js";
@@ -126,22 +127,58 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
     expect(summary.reasons).not.toContain("material-unsupported");
   }, 300_000);
 
-  // OPEN GAP, PRD-458 §4: a needle card is two triangles, and a triangle simplifier cannot drop one
-  // without punching a hole in the silhouette, so the leaves are declined `insufficient-reduction`
-  // rather than `material-unsupported`. The card-preserving reducer the PRD asks for clusters whole
-  // cards (`meshoptimizer.simplifyPoints` with the border locked) instead of decimating them. This
-  // expected failure is the tripwire: it goes red the moment the reducer lands, and this case must
-  // be deleted in the same commit.
-  it.fails(
-    "reduces needle CARDS rather than needle triangles",
-    async () => {
-      const { summary } = await cookConifer();
-      const needles = summary.primitives.filter((entry) => entry.mesh === "leaves");
-      expect(needles.length).toBeGreaterThan(0);
-      for (const entry of needles) expect(entry.levels.length).toBeGreaterThanOrEqual(1);
-    },
-    300_000,
-  );
+  // The needle cards are the reason this PRD exists. A card is two triangles, so the triangle
+  // simplifier declines them `insufficient-reduction` — and a tree is a bark trunk plus needle
+  // cards, which used to mean no chain for the tree at all. Cards are now spent in the unit they are
+  // authored in: connected components of the index buffer, thinned by a deterministic 3D grid.
+  it("thins needle CARDS rather than needle triangles, and keeps the crown covered", async () => {
+    const { document, summary } = await cookConifer();
+    const needles = summary.primitives.filter((entry) => entry.mesh === "leaves");
+    expect(needles.length).toBeGreaterThan(0);
+    // Two derived levels on the cards, not one: the chain has to be worth selecting between.
+    expect(summary.levels).toBeGreaterThanOrEqual(2);
+    for (const entry of needles) {
+      expect(entry.strategy).toBe("cards");
+      // A card's two triangles are all-or-nothing, so a card level's saving is a whole number of
+      // cards. The gate is the same one the triangle chain lives under.
+      expect(entry.levels.length).toBeGreaterThanOrEqual(1);
+      expect(entry.cardLevels).toHaveLength(entry.levels.length);
+      let previous = entry.trianglesBefore;
+      for (const [index, level] of (entry.levels ?? []).entries()) {
+        expect(level.triangles).toBeLessThan(previous);
+        expect((previous - level.triangles) / previous).toBeGreaterThanOrEqual(LOD_MIN_SAVING);
+        previous = level.triangles;
+        const card = (entry.cardLevels ?? [])[index] as ICardLevelSummary;
+        // Every level keeps at least one card, and drops at least one.
+        expect(card.cards).toBeGreaterThan(0);
+        expect(card.keep).toBeGreaterThan(0);
+        // The crown: no occupied cell of LOD0's stratification grid is emptied at any level, which
+        // is the property that separates a grid from a random or index-order sample. Cell coverage
+        // is the ≥ 70% figure; card *area* coverage cannot be, because `TN_discrete_lod` is
+        // index-only and cannot carry the per-level scale step (`cards.ts` says so at the top) — it
+        // is the keep ratio up to the per-cell rounding, asserted here so the number cannot drift
+        // into a claim it never met.
+        expect(card.cellCoverage).toBeGreaterThanOrEqual(0.7);
+        expect(card.areaCoverage).toBeCloseTo(card.keep, 1);
+      }
+    }
+
+    // Read back out of the *shipped* bytes: the cards really are a subset of LOD0's own indices, so
+    // a stock loader draws the crown and a level, and the chain validated against the written file.
+    const leaves = document
+      .getRoot()
+      .listMeshes()
+      .find((mesh) => mesh.getName() === "leaves");
+    const primitive = leaves?.listPrimitives()[0];
+    const lod0 = Uint32Array.from(primitive?.getIndices()?.getArray() as ArrayLike<number>);
+    const chain = primitive?.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
+    expect(chain?.getStrategy()).toBe("cards");
+    for (const accessor of chain?.getIndices() ?? []) {
+      const level = Uint32Array.from(accessor.getArray() as ArrayLike<number>);
+      expect(level.length).toBeGreaterThan(0);
+      for (const index of level) expect(lod0).toContain(index);
+    }
+  }, 300_000);
 
   it("never drops a primitive or a material, and keeps every level on a LOD0 material", async () => {
     const { document, summary } = await cookConifer();

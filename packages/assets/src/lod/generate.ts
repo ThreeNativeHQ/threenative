@@ -24,6 +24,7 @@ import { MeshoptSimplifier } from "meshoptimizer";
 import { Matrix4 } from "three";
 import { type IFoliageCutoutSummary, convertFoliageCutout } from "../foliage.js";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
+import { type ICardLevelSummary, generateCardChain } from "./cards.js";
 import {
   type DiscreteLodSkipReason,
   type LodMinTrianglesScope,
@@ -195,7 +196,14 @@ export interface IModelLodPrimitiveSummary {
   readonly levels: readonly IModelLodLevel[];
   readonly mesh: string;
   readonly primitive: number;
-  readonly strategy: "discrete";
+  /**
+   * Per-level card report, present only when the chain came from card thinning rather than the
+   * triangle reducer (PRD-458 §4). Aligned with `levels`. `cellCoverage` is what the grid guarantees;
+   * `areaCoverage` is the honest un-scaled number, equal to the keep ratio, because `TN_discrete_lod`
+   * is index-only and cannot carry the per-level scale step — see `cards.ts`.
+   */
+  readonly cardLevels?: readonly ICardLevelSummary[];
+  readonly strategy: "discrete" | "cards";
   readonly trianglesBefore: number;
 }
 
@@ -587,6 +595,8 @@ function packAttributes(primitive: Primitive, vertexCount: number): IAttributePa
 interface IGeneratedChain {
   readonly absoluteErrors: number[];
   readonly baselineTriangles: number;
+  /** Per-level card report; present only on a card-thinned chain (PRD-458 §4). */
+  readonly cardLevels?: readonly ICardLevelSummary[];
   readonly counts: number[];
   readonly errorScale: number;
   readonly errors: number[];
@@ -651,6 +661,40 @@ async function generateChain(
     errors: chain.map((level) => level.error),
     indices: chain.map((level) => level.indices),
     lod0Triangles,
+  };
+}
+
+/**
+ * The card ladder for a primitive the triangle reducer could not improve (PRD-458 §4).
+ *
+ * Two gates, both from the primitive itself rather than from a setting: the material must be `MASK`
+ * (an alpha-tested card is a hole you can see, so a `BLEND` primitive keeps its `BLEND` refusal no
+ * matter how card-shaped its index buffer is), and the index buffer must decompose into cards. The
+ * chain it returns is the same shape as the triangle chain's, so everything downstream — the
+ * attachment, the writer, the runtime, the validation — is the same code path.
+ */
+function generateCardsChain(
+  primitive: Primitive,
+  maxLevels: number,
+  minSaving: number,
+): IGeneratedChain | null {
+  if (primitive.getMaterial()?.getAlphaMode() !== "MASK") return null;
+  const positions = positionsOf(primitive);
+  if (positions === null) return null;
+  const vertexCount = Math.floor(positions.length / 3);
+  const indices = sourceIndices(primitive, vertexCount);
+  const scale = MeshoptSimplifier.getScale(positions, 3);
+  const chain = generateCardChain(positions, indices, maxLevels, minSaving, scale);
+  if (chain === null) return null;
+  return {
+    absoluteErrors: [...chain.absoluteErrors],
+    baselineTriangles: chain.lod0Triangles,
+    cardLevels: chain.levels,
+    counts: [...chain.counts],
+    errorScale: scale,
+    errors: [...chain.errors],
+    indices: [...chain.indices],
+    lod0Triangles: chain.lod0Triangles,
   };
 }
 
@@ -1104,15 +1148,24 @@ export async function generateDiscreteLod(
       }
       const before = primitiveTriangleCount(primitive);
       trianglesBefore += before;
-      const chain = await generateChain(
+      // A needle card is two triangles, which the triangle reducer cannot cut without punching a
+      // hole, so it declines — and a tree is a bark trunk plus needle cards. When that happens the
+      // cards themselves are the unit to spend (PRD-458 §4), and the level it produces is an
+      // index-only view over the very same vertices, on the primitive's own material.
+      let chain = await generateChain(
         primitive,
         policy.generation.maxLevels,
         policy.generation.errorTargets,
         policy.generation.minSaving,
       );
+      const thinned =
+        chain === null
+          ? generateCardsChain(primitive, policy.generation.maxLevels, policy.generation.minSaving)
+          : null;
+      chain ??= thinned;
       if (chain === null) {
-        // The simplifier could not reach the configured saving at any target: a normal skip, not a
-        // failure, and named distinctly from the cheap pre-filter's `too-small`.
+        // Neither reducer could reach the configured saving: a normal skip, not a failure, and named
+        // distinctly from the cheap pre-filter's `too-small`.
         reasons.add("insufficient-reduction");
         skipped.push({
           mesh: mesh.getName(),
@@ -1123,7 +1176,10 @@ export async function generateDiscreteLod(
         continue;
       }
       extension ??= document.createExtension(TNDiscreteLod).setRequired(false);
-      const property = attachDiscreteLod(document, extension, primitive, chain);
+      const property = attachDiscreteLod(document, extension, primitive, {
+        ...chain,
+        strategy: thinned === null ? "discrete" : "cards",
+      });
       byteOverhead += discreteLodBytes(property);
       levels = Math.max(levels, chain.counts.length);
       const finest = chain.counts[chain.counts.length - 1] ?? before;
@@ -1136,7 +1192,8 @@ export async function generateDiscreteLod(
         })),
         mesh: mesh.getName(),
         primitive: primitiveIndex,
-        strategy: "discrete",
+        ...(chain.cardLevels === undefined ? {} : { cardLevels: chain.cardLevels }),
+        strategy: thinned === null ? "discrete" : "cards",
         trianglesBefore: before,
       });
     }
