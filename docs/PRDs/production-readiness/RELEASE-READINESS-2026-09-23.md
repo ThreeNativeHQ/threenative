@@ -24,6 +24,12 @@ packed journey passed all ten discovered templates and its mutated-package negat
 **Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
 `max(50 ms, 4 panel frames)` with in-frame behind the off flag.
 
+**Completion scope:** the owner asked to include R3 production 1.0, not stop at the R2 beta.
+PRD-446's stable-API draft is at 11/14 phase boxes, while its real N-1 upgrade and 1.0 release
+acceptance remain open. The R3 physical, parity and distribution PRDs below remain release
+blockers until their own evidence passes. PRD-375 is done in its draft branch after owner visual
+confirmation, but PR #271 is still awaiting CI and merge.
+
 **Verdict: not ready for a production (1.0) release.** ThreeNative is *already public* as an
 alpha: the repository is public under MIT and `@threenative/*@0.3.2` is the npm `latest`. By the
 project's own bar it does not currently qualify even as that alpha: `pnpm alpha:bar` prints
@@ -46,7 +52,8 @@ run. It follows the [2026-09-08 assessment](../../verification/production-readin
 (nine on 2026-09-23; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25 because
 its only remaining work is blocked, and PRD-365 moved to `done/` on 2026-09-27 because its last box —
 the public-registry consumer launch — passed).
-The 1.0 PRDs under R3 stay in their own folders and block nothing until the beta ships.
+The 1.0 PRDs under R3 stay in their own folders; independent work can proceed now, and the
+final 1.0 qualification depends on the immutable R2 consumer cohort.
 
 ## What was measured today
 
@@ -183,8 +190,8 @@ flowchart TD
 parallel with the PRD-196 cohort cut; publish under a candidate dist-tag, run PRD-196's
 installed-consumer gates against it, then move `latest`. R2's lanes are independent and can run
 in parallel once R1 lands — PRD-112 and PRD-064 are local, PRD-399 needs the Pixel. The stranger test (PRD-080) was removed by the owner and gates nothing.
-R3 starts only after R2; do not open R3 lanes early, because each one reads the published
-cohort that R1 and R2 fix.
+R3 lanes that do not need the final cohort can proceed now. The physical, store, upgrade and
+promotion claims still need the published cohort that R1 and R2 establish.
 
 ## Decisions only you can make
 
