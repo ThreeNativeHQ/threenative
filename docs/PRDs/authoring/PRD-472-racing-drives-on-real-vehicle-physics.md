@@ -1,6 +1,6 @@
 # PRD-472 — racing drives on real vehicle physics
 
-**Status: PARTIAL — phase 1 landed 2026-09-28; phases 2 and 3 open** · filed 2026-09-28 · owner:
+**Status: PARTIAL — phases 1 and 2 landed 2026-09-28; phase 3 open** · filed 2026-09-28 · owner:
 "racing template is completely fucked, you need to fix it, add proper physics".
 
 ## Why
@@ -35,7 +35,7 @@ numbers stay in the template.
 
 ### Phase 2 — the same body on native
 
-- [ ] Rust `DynamicRayCastVehicleController` behind new `tn_physics_*` entry points, `INativeSimulation` members, parity rows in `native-contract.spec.ts`, one conformance case. proof: `pnpm exec vitest run packages/physics/__tests__/native-contract.spec.ts` + conformance
+- [x] Rust `DynamicRayCastVehicleController` behind new `tn_physics_*` entry points, `INativeSimulation` members, parity rows in `native-contract.spec.ts`, one conformance case. proof: `cargo test` in `packages/runtime-native/native/physics` → 34 tests green; `pnpm exec vitest run packages/physics` → 26 files, 195 tests green; `run-conformance.mjs --target web|desktop --only-tests vehicle-raycast-suspension` → pass on both, `pixelMismatchRatio 0`, `perceptualDeltaE 0`, 0 GPU validation errors. The desktop host reports the same numbers the web spec pins: four wheels in contact at a 0.27689 m strut of the 0.30 m rest, 4000 N per rear wheel reaching 26.58 m/s in 3 s, `brake = 60` stopping it in 1.95 s, chassis carried at y 0.7669 rather than resting on its own collider (2026-09-28)
 - [ ] The racing `survives` scenario passes on desktop. proof: `--target desktop` playtest
 
 ### Phase 3 — the racing template drives
@@ -45,6 +45,12 @@ numbers stay in the template.
 
 ## Decisions
 
+- **2026-09-28, phase 2: a wheel ray excludes its own chassis on native.** Rapier `0.19.3` (web)
+  does not report the chassis collider when a wheel ray starts inside it, and the car settles on a
+  0.2769 m strut. Rapier `0.30` reports that same ray as a hit at zero distance, which reads as a
+  fully compressed strut and launches the car off the ground. The native controller therefore
+  excludes its own chassis rigid body from the ray filter as well as passing the chassis'
+  collision groups; without it the two backends disagree by 0.28 m of strut.
 - **2026-09-28, phase 1: no `centerOfMassOffset`.** Rapier 0.19.3 exposes no centre-of-mass-only
   setter. `setAdditionalMassProperties` adds mass *and* inertia, so a lowered COM would need an
   invented inertia model, and a zero-inertia point mass makes the chassis spin-happy. The option

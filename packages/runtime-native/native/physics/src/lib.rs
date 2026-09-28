@@ -12,8 +12,10 @@ const TRANSFORM_WIDTH: usize = 8;
 const SLEEP_STATE_WIDTH: usize = 2;
 const EVENT_WIDTH: usize = 4;
 const CHARACTER_STATE_WIDTH: usize = 6;
-/// One float per speed plus three per wheel: contact, suspension length, rotation.
-const VEHICLE_STATE_STRIDE: usize = 1 + 3;
+/// One float of signed speed, then `PHYSICS_VEHICLE_WHEEL_STRIDE` floats per wheel: contact,
+/// suspension length, rotation.
+const VEHICLE_SPEED_FLOATS: usize = 1;
+const VEHICLE_WHEEL_STRIDE: usize = 3;
 
 #[repr(C)]
 pub struct TnPhysicsWorldOptions {
@@ -615,14 +617,14 @@ impl Simulation {
     fn write_vehicle_state(&self, id: u32, output: &mut [f32]) -> Option<usize> {
         let vehicle = self.vehicles.get(&id)?;
         let wheels = vehicle.controller.wheels();
-        let required = VEHICLE_STATE_STRIDE * (1 + wheels.len());
+        let required = VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * wheels.len();
         if output.len() < required {
             return None;
         }
         output[0] = self.vehicle_speed(vehicle);
         for (index, wheel) in wheels.iter().enumerate() {
             let info = wheel.raycast_info();
-            let offset = VEHICLE_STATE_STRIDE * (1 + index);
+            let offset = VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * index;
             output[offset] = if info.is_in_contact { 1.0 } else { 0.0 };
             output[offset + 1] = info.suspension_length;
             output[offset + 2] = wheel.rotation;
@@ -3025,8 +3027,11 @@ mod tests {
             gravity_z: 0.0,
         })
         .expect("the simulation is created");
+        // A 0.5 m slab whose top face is at y = 0, exactly the floor the web spec builds, so the
+        // strut it settles on is the same number both backends report.
         let mut floor = fixed_box(0, 0.0, -0.25, 1);
         floor.shape_x = 200.0;
+        floor.shape_y = 0.25;
         floor.shape_z = 200.0;
         assert!(simulation.add_body(floor));
         assert!(simulation.add_body(car_body(1, CAR_RIDE + 0.05)));
@@ -3035,11 +3040,13 @@ mod tests {
     }
 
     fn vehicle_state(simulation: &Simulation) -> Vec<f32> {
-        let mut output = vec![0.0; VEHICLE_STATE_STRIDE * 5];
+        // Exactly what the JavaScript seam hands the C ABI: one speed float plus three per wheel.
+        // Over-allocating here hid a stride mistake the desktop host reported as a short buffer.
+        let mut output = vec![0.0; VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * 4];
         let count = simulation
             .write_vehicle_state(0, &mut output)
             .expect("the vehicle exists");
-        output.truncate(count);
+        assert_eq!(count, output.len(), "the read must fill exactly what it claims");
         output
     }
 
@@ -3053,14 +3060,15 @@ mod tests {
         let state = vehicle_state(&simulation);
         assert!(state[0].abs() < 0.01, "parked car read {}", state[0]);
         for wheel in 0..4 {
-            let contact = state[VEHICLE_STATE_STRIDE * (1 + wheel)];
-            let length = state[VEHICLE_STATE_STRIDE * (1 + wheel) + 1];
+            let contact = state[VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * wheel];
+            let length = state[VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * wheel + 1];
             assert_eq!(contact, 1.0, "wheel {wheel} is not on the ground");
             assert!(length > 0.0 && length < 0.3, "wheel {wheel} strut is {length}");
         }
-        // Carried by the springs, not resting on its own collider: the floor top is at 0.
+        // Carried by the springs, not resting on its own collider: the floor top is at 0, and a
+        // settled chassis rides a radius, a strut and half its own box above it.
         let y = simulation.bodies[simulation.entries[&1].body].translation().y;
-        assert!(y > 0.9, "the chassis sank to {y}");
+        assert!(y > 0.7, "the chassis sank to {y}");
     }
 
     #[test]
@@ -3122,7 +3130,7 @@ mod tests {
         assert!(simulation.bodies[body].translation().z > 41.0);
 
         assert!(simulation.remove_body(1));
-        assert!(simulation.write_vehicle_state(0, &mut [0.0; 16]).is_none());
+        assert!(simulation.write_vehicle_state(0, &mut [0.0; 4]).is_none());
         assert!(simulation.step(1.0 / 60.0, &[]));
     }
 
