@@ -351,6 +351,7 @@ export const PLAYTEST_STEP_KEYS = [
   "holdTicks",
   "kind",
   "label",
+  "lifecycle",
   "overlayMessage",
   "pitch",
   "pointerPosition",
@@ -391,6 +392,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
       "holdFrames",
       "holdTicks",
       "kind",
+      "lifecycle",
       "overlayMessage",
       "pitch",
       "pointerPosition",
@@ -484,13 +486,15 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ? "aimAt"
     : value.kind === "click"
       ? "click"
-      : value.kind === "wait"
-        ? "wait"
-        : value.kind === "input"
-          ? "input"
-          : undefined;
+      : value.kind === "lifecycle"
+        ? "lifecycle"
+        : value.kind === "wait"
+          ? "wait"
+          : value.kind === "input"
+            ? "input"
+            : undefined;
   if (value.kind !== undefined && kind === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} kind must be 'aimAt', 'click', 'input', or 'wait'.`);
+    throw invalidStep(scenarioPath, `Scenario step ${index} kind must be 'aimAt', 'click', 'input', 'lifecycle', or 'wait'.`);
   }
   const at = validateClickTarget(value.at, scenarioPath, index);
   const target = validateAimTarget(value.target, scenarioPath, index);
@@ -512,6 +516,10 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (isRecord(value.window)) {
     rejectUnknownKeys(value.window, ["height", "operation", "width"], scenarioPath, `steps[${index}].window`);
   }
+  if (isRecord(value.lifecycle)) {
+    rejectUnknownKeys(value.lifecycle, ["operation", "rotation"], scenarioPath, `steps[${index}].lifecycle`);
+  }
+  const lifecycle = validateLifecycleStep(value.lifecycle, scenarioPath, index);
   if (kind !== "click" && (at !== undefined || value.at !== undefined)) {
     throw invalidStep(scenarioPath, `Scenario step ${index} declares at, which belongs to kind 'click'.`);
   }
@@ -580,8 +588,42 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
-  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined && waitForResource === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, wheel, window, aimAt target, or waitFrames/waitTicks.`);
+  if (value.lifecycle !== undefined && lifecycle === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} lifecycle must define an operation of 'background', 'foreground', or 'rotate', and 'rotate' must name a rotation from 0 through 3.`);
+  }
+  if (kind !== "lifecycle" && value.lifecycle !== undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} declares lifecycle, which belongs to kind 'lifecycle'.`);
+  }
+  if (kind === "lifecycle") {
+    if (lifecycle === undefined) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'lifecycle' must define lifecycle.operation.`);
+    }
+    // A lifecycle step is an instant the device performs, not an input and not a tick count, and
+    // nothing on it could be honoured. `label` and `screenshot` are here for the same reason: the
+    // runner skips the per-step observation path for these steps, so accepting either would
+    // silently drop a sample the scenario asked for.
+    for (const forbidden of [
+      "holdFrames",
+      "holdTicks",
+      "label",
+      "overlayMessage",
+      "pointerPosition",
+      "pointers",
+      "press",
+      "screenshot",
+      "target",
+      "waitFrames",
+      "waitTicks",
+      "wheel",
+      "window",
+    ] as const) {
+      if (value[forbidden] !== undefined) {
+        throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'lifecycle' cannot define ${forbidden}; a lifecycle step is one device operation and nothing else.`);
+      }
+    }
+  }
+  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined && waitForResource === undefined && lifecycle === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, wheel, window, aimAt target, lifecycle operation, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} holdFrames must be a positive integer.`);
@@ -613,6 +655,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(holdTicks === undefined ? {} : { holdTicks }),
     ...(typeof value.label === "string" ? { label: value.label } : {}),
     ...(at === undefined ? {} : { at }),
+    ...(lifecycle === undefined ? {} : { lifecycle }),
     ...(overlayMessage === undefined ? {} : { overlayMessage }),
     ...(pitch === undefined ? {} : { pitch }),
     ...(pointerPosition === undefined ? {} : { pointerPosition }),
@@ -628,6 +671,30 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(wheel === undefined ? {} : { wheel }),
     ...(window === undefined ? {} : { window }),
   };
+}
+
+function validateLifecycleStep(
+  value: unknown,
+  scenarioPath: string,
+  index: number,
+): IPlaytestStep["lifecycle"] {
+  if (!isRecord(value)) return undefined;
+  const objectPath = `steps[${index}].lifecycle`;
+  const rotation = value.rotation;
+  const rotationValue = typeof rotation === "number" && Number.isInteger(rotation) && rotation >= 0 && rotation <= 3
+    ? rotation
+    : undefined;
+  if (value.operation === "rotate") {
+    if (rotationValue === undefined) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} lifecycle.operation 'rotate' must name a rotation from 0 through 3.`);
+    }
+    return { operation: "rotate", rotation: rotationValue };
+  }
+  if (value.operation !== "background" && value.operation !== "foreground") return undefined;
+  if (rotation !== undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} lifecycle.operation '${value.operation}' cannot define rotation; only 'rotate' takes one.`);
+  }
+  return { operation: value.operation };
 }
 
 function validateResourceWait(value: unknown, scenarioPath: string, index: number): IPlaytestResourceWait {

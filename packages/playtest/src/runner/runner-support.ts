@@ -189,6 +189,7 @@ export function buildReport(
   deviceMetrics: IPlaytestDeviceMetricsObservation | undefined = undefined,
   movementBaselineSnapshot: IPlaytestObservationSnapshot | undefined = undefined,
   startup: IStandalonePlaytestReport["startup"] = undefined,
+  deviceLifecycle: IPlaytestObservations["deviceLifecycle"] = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -288,6 +289,7 @@ export function buildReport(
             signals: labeledSamples.flatMap(({ signals }) => signals),
           }),
       hud,
+      ...(deviceLifecycle === undefined ? {} : { deviceLifecycle }),
       ...(deviceMetrics === undefined ? {} : { deviceMetrics }),
       ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
       network: networkEntries,

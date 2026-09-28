@@ -255,13 +255,68 @@ has never existed — absent from the repository and from every branch's history
 invocation now blocks naming that file instead of failing later inside the runner. No scenario could
 fix it: `lifecycleEvents` / `sessionNonce` / `stateContinuity` (with `framesPaused`,
 `framesAdvanced`, `surfaceValidAfterResume`, `backgroundGapIntegrated`, `maxFrameIntervalMs`,
-`physicsStepDelta`) are read out of `observations.resources.GameState.after`, and **nothing produces
-them** — no bridge channel in `packages/core/src/playtest.ts`, no runner in
-`packages/playtest/src/runner`, no native host, and no lifecycle capability in
-`packages/playtest/src/capabilities.ts`. The missing producer is a device-lifecycle observation
-channel plus a step type that backgrounds, foregrounds and rotates the app; a game-authored
-`GameState` resource would only forge the values the gate exists to read off the device, so the
-acceptance boxes stay open. The Pixel 8 was not touched.
+`physicsStepDelta`) are read out of `observations.resources.GameState.after`, and as of the slice
+below the runner produces device lifecycle phases but **nothing produces a per-phase physics-step
+count**. A game-authored `GameState` resource would only forge
+the values the gate exists to read off the device, so the acceptance boxes stay open. The Pixel 8
+was not touched.
+
+**Remaining lifecycle producer slice (2026-09-27; no physical credit):**
+
+- [ ] [engine; local] The Android playtest runner drives background, foreground and rotation as
+      explicit scenario steps, then reports device-observed lifecycle phases and render/physics
+      continuity. Missing observations fail rather than becoming game-authored `GameState` values.
+      proof: focused runner red-green test with the real step parser and Android driver boundary.
+      **Landed, and the box stays open on its physics clause.** `{ "kind": "lifecycle", "lifecycle":
+      { "operation": "background" | "foreground" | "rotate", "rotation": 0-3 } }` is a real
+      scenario step (`schema-base.ts` / `schema-validate.ts`, with rejection cases), driven through
+      `AdbAndroidDriver` as `input keyevent 3` / `am start` / `wm user-rotation lock`, each op
+      polling `dumpsys window` until the device reports the effect. The report carries
+      `observations.deviceLifecycle` — ordered phases with `pid` (`pidof`), `focused` and
+      `windowRotation` (`dumpsys window`) and `frames` (`dumpsys gfxinfo`), plus
+      `session.pid` and `render.framesPaused` / `framesAdvanced`. Missing readings fail: no frame
+      counter → `TN_PLAYTEST_ANDROID_LIFECYCLE_UNOBSERVED`, a pid that changed →
+      `..._SESSION_CHANGED`, an operation the device ignored or a refused rotation →
+      `..._NOT_APPLIED`, a lifecycle step on browser/desktop/iOS or on a driver without the
+      operations → `TN_PLAYTEST_UNSUPPORTED_ON_TARGET`; none of them reaches the report.
+      `physics` is reported as `{ available: false, reason }` naming the seam, never a zero.
+      Two things a critic caught on this slice are now fixed rather than argued: `framesPaused` is
+      only `true` once the platform's counter has held one value for a full second of settling
+      reads (two equal reads are what a backgrounded surface *still drawing at 10 Hz* produces), and
+      a `rotate` locks `wm user-rotation` on its own account so `stop()` frees that override without
+      resetting size or density. The four `dumpsys` readers stay module-private — they are not a
+      requested public API, so their `@situation` tags are gone and `pnpm capabilities:sync` put the
+      224 generated manifest/reference lines back to zero, with the lifecycle behaviour unchanged.
+      proof: `pnpm exec vitest run packages/playtest/__tests__/android-lifecycle-steps.spec.ts` —
+      **10 passed**, and the two regression cases each red exactly one case (2 failed / 8 passed)
+      when the pre-fix settle and the missing rotation flag are put back. `pnpm exec vitest run
+      packages/playtest` **1237 passed** / 3 skipped, `pnpm typecheck` exit 0, `pnpm lint` exit 0 with
+      839 warnings (none in the files this slice owns), `pnpm check:docs` 2342 links, and
+      `scripts/check-capability-docs.ts --census`,
+      `scripts/generate-capability-reference.ts --check`, `scripts/generate-ctx-surface-table.ts
+      --check`, `scripts/detect-capability-duplicates.ts examples --strict` and `pnpm caps:recall`
+      all exit 0. **Emulator check:** the external starter lifecycle scenario at
+      `/home/joao/.cache/tn-prd366-emulator/prd366-emulator/playtests/physical-mobile-lifecycle.playtest.json`
+      passed on `emulator-5554`: 944 game frames, five gameplay assertions, stable pid 4653,
+      background `framesPaused: true`, foreground frames 24 → 27, and
+      `render.framesAdvanced: true`. A requested rotation of 1 was reported as 1, but the
+      foreground was already at 1, so this does **not** prove an orientation change. A separate
+      run requested rotation 3 from foreground rotation 1 and failed closed with
+      `TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED` because `dumpsys window` remained at 1.
+      No physical collector wiring or physical run occurred for this slice; that is the second box.
+      **The missing seam, named:** a per-phase physics-step count has no producer. Android counts
+      drawn frames, not simulation steps (`dumpsys gfxinfo` has no physics counter); the host's
+      `TN_FRAME_BUDGET` `substeps` are a per-window distribution emitted once every 300 frames
+      (`packages/core/src/frame-budget.ts:785`), unusable per phase; and the bridge's `clock.tick`
+      is a game-loop tick, not a physics count. The seam that closes it is a step counter in the
+      native host's mailbox `advance` result (`IPlaytestAdvanceResult`), which is a
+      `packages/runtime-native` change outside this slice's ownership. Until that exists the box
+      cannot be ticked, because "render/physics continuity" is a conjunction and one clause is
+      unmeasured.
+- [ ] [engine; local] The physical collector consumes those runner-owned observations, binds them
+      to the exact scenario and installed APK already checked above, and rejects absent or
+      inconsistent continuity. proof: collector false-value controls and a real Android emulator
+      lifecycle scenario. An emulator pass grants no physical performance credit.
 
 **Carried in from phase 2 (2026-09-15), both with concrete evidence rather than theory:**
 
