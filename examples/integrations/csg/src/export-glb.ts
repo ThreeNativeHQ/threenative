@@ -111,7 +111,11 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
       : [{ start: 0, count: geometry.index.count, materialIndex: 0 }];
     for (const group of groups) {
       const material = materials[Array.isArray(mesh.material) ? (group.materialIndex ?? 0) : 0];
-      if (!material) throw new Error("CSG export group references a missing material.");
+      const sourceMaterial = Array.isArray(mesh.material)
+        ? mesh.material[group.materialIndex ?? 0]
+        : mesh.material;
+      if (!material || !sourceMaterial)
+        throw new Error("CSG export group references a missing material.");
       const sourceIndices = geometry.index.array.subarray(group.start, group.start + group.count);
       // Allocate an owned ArrayBuffer; do not widen the result back to ArrayBufferLike.
       const indices =
@@ -128,7 +132,11 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
             .setBuffer(buffer)
             .setArray(indices),
         );
-      for (const [semantic, attribute] of attributes) primitive.setAttribute(semantic, attribute);
+      for (const [semantic, attribute] of attributes) {
+        // glTF enables vertex colors by the primitive's attribute, not a material flag.
+        if (semantic === "COLOR_0" && !sourceMaterial.vertexColors) continue;
+        primitive.setAttribute(semantic, attribute);
+      }
       output.addPrimitive(primitive);
     }
     scene.addChild(document.createNode(mesh.name).setMesh(output));

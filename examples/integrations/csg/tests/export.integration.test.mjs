@@ -195,3 +195,76 @@ for (const indexed of [true, false]) {
     assert.deepEqual(mesh.geometry.drawRange, { start: 6, count: 24 });
   });
 }
+
+test("disabled vertex colors stay disabled through GLB reload", async (t) => {
+  const mesh = box(t);
+  mesh.geometry.addGroup(0, 18, 0);
+  mesh.geometry.addGroup(18, 18, 5);
+  const colors = new Uint8Array(24 * 3).fill(128);
+  const attribute = new BufferAttribute(colors, 3, true);
+  mesh.geometry.setAttribute("color", attribute);
+  const bytes = await writeSolidGlb(mesh);
+  const document = await validate(bytes);
+  const primitives = document.getRoot().listMeshes()[0].listPrimitives();
+  assert.deepEqual(
+    primitives.map((primitive) => primitive.getAttribute("COLOR_0")),
+    [null, null],
+  );
+  const scene = await reload(t, bytes);
+  let meshes = 0;
+  scene.traverse((node) => {
+    if (!node.isMesh) return;
+    meshes++;
+    assert.equal(node.material.vertexColors, false);
+    assert.equal(node.geometry.getAttribute("color"), undefined);
+  });
+  assert.ok(meshes > 0);
+  assert.equal(mesh.material.vertexColors, false);
+  assert.equal(mesh.geometry.getAttribute("color"), attribute);
+  assert.ok(colors.every((value) => value === 128));
+});
+
+for (const indexed of [true, false]) {
+  test(`mixed material vertex-color flags survive GLB reload (indexed=${indexed})`, async (t) => {
+    const mesh = box(t);
+    if (!indexed) {
+      const geometry = mesh.geometry.toNonIndexed();
+      mesh.geometry.dispose();
+      mesh.geometry = geometry;
+    }
+    const plain = mesh.material;
+    plain.name = "plain";
+    const painted = new MeshStandardMaterial({ vertexColors: true });
+    painted.name = "painted";
+    mesh.material = [plain, painted];
+    mesh.geometry.addGroup(0, 18, 0);
+    mesh.geometry.addGroup(18, 18, 1);
+    const count = mesh.geometry.getAttribute("position").count;
+    const colors = new Uint8Array(count * 3).fill(128);
+    const attribute = new BufferAttribute(colors, 3, true);
+    mesh.geometry.setAttribute("color", attribute);
+    const bytes = await writeSolidGlb(mesh);
+    const document = await validate(bytes);
+    const primitives = document.getRoot().listMeshes()[0].listPrimitives();
+    assert.deepEqual(
+      primitives.map((primitive) => primitive.getAttribute("COLOR_0") !== null),
+      [false, true],
+    );
+    assert.deepEqual(
+      primitives.map((primitive) => primitive.getIndices().getCount()),
+      [18, 18],
+    );
+    const scene = await reload(t, bytes);
+    const observed = {};
+    scene.traverse((node) => {
+      if (!node.isMesh) return;
+      observed[node.material.name] = node.material.vertexColors;
+      assert.equal(node.geometry.getAttribute("color") !== undefined, node.material.vertexColors);
+    });
+    assert.deepEqual(observed, { plain: false, painted: true });
+    assert.equal(plain.vertexColors, false);
+    assert.equal(painted.vertexColors, true);
+    assert.equal(mesh.geometry.getAttribute("color"), attribute);
+    assert.ok(colors.every((value) => value === 128));
+  });
+}
