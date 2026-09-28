@@ -1234,6 +1234,30 @@
     {
       "aliases": [],
       "constraints": [
+        "every value is required; there is no default sun, sky, haze or exposure",
+        "`skySize` must keep the sky box's corners inside the camera's far plane",
+        "shadowExtents follow `VirtualShadowNode`: half-widths, finest first, strictly increasing"
+      ],
+      "example": "const daylight = new Daylight({ follow: ctx.camera, sunDirection, sunColor, sunIntensity: 4, shadowExtents: [24, 96, 320], sky: { turbidity: 3, rayleigh: 1.4, mieCoefficient: 0.004, mieDirectionalG: 0.8 }, fill: { sky, ground, intensity: 1.1 }, haze: { color: horizon, density: 0.0011 }, exposure: 2 ** -0.6, skySize: 1600 });\nctx.add(daylight);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "sky uniforms stay live on `daylight.sky`; the light and fill are `daylight.sun` and `daylight.fill`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class Daylight extends Group implements IComputeDriven { … }",
+      "situations": [
+        "daytime sky, sun and shadows for a large outdoor map",
+        "distant terrain should fade into the sky instead of a coloured wall",
+        "match a Blender look-dev scene's sun, sky and exposure in the game"
+      ],
+      "summary": "An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye, hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.",
+      "supersedes": [],
+      "symbol": "Daylight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "a name in camelCase becomes UPPER_SNAKE: `debugFlag(\"freeCam\")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`",
         "`0` and `false` are off, so a saved URL cannot turn a switch back on"
       ],
@@ -3135,7 +3159,8 @@
       "constraints": [
         "the light must be a DirectionalLight with `castShadow` and a target in the scene",
         "clipExtents are half-widths in world units, finest first, strictly increasing",
-        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves"
+        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves",
+        "call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does"
       ],
       "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
       "importPath": "@threenative/core",
@@ -3628,6 +3653,28 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by the `export_terrain_layers.py` recipe",
+        "WebGPU allows 16 sampled textures per stage: planes + diffuse maps + normal maps must fit"
+      ],
+      "example": "const surface = await loadTerrainSplat({ assets: ctx.assets, url: \"world/world.json\" });\nconst world = await WorldCells.load({ assets: ctx.assets, url: \"world/world.json\", surface, follow, ring: 2 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [
+        "every value comes from the package's table; the returned material is the game's to adjust"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
+      "situations": [
+        "terrain textured by splat masks exported from Blender with the world package",
+        "the game's terrain should match the DCC's terrain material without a second copy"
+      ],
+      "summary": "The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Nothing here is a look choice: textures, tiles, tints, thresholds and noise scales all come from the package's table, which the game authors once and its DCC shares.",
+      "supersedes": [],
+      "symbol": "loadTerrainSplat"
+    },
+    {
+      "aliases": [],
       "constraints": ["a non-OK response throws; bytes are byte-swapped only on a big-endian host"],
       "example": "const data = await loadWorldHeightmap(\"/world/terrain/heightmap.u16\");",
       "importPath": "@threenative/core/world",
@@ -3650,7 +3697,7 @@
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets"
+        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, and budgets"
       ],
       "package": "@threenative/core",
       "signature": "export class TerrainTiles extends Object3D implements IComputeDriven { … }",
@@ -3687,13 +3734,18 @@
       "constraints": [
         "surface is the game's; this class creates no material, colour or geometry",
         "budgets are hard caps that report pressure instead of over-committing",
-        "model loads are bounded by `concurrency` (default `loadAll`'s six) across every resident cell, not per cell"
+        "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
+        "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
+        "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has",
+        "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
+        "`prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number",
+        "`shadows.castDistance` needs `shadows.cast`; it puts a shadow-only companion mesh on `VIRTUAL_SHADOW_CASTER_LAYER` per castable batch and `shadows.invalidate` is called once after a rebuild"
       ],
       "example": "const world = await WorldCells.load({ url: \"/world/world.json\", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });\nscene.add(world);\nworld.update();",
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "ring, budgets, terrain tile size/resolution, load `concurrency` and the package's per-asset maxDistance"
+        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `shadows.castDistance` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
       ],
       "package": "@threenative/core",
       "signature": "export class WorldCells extends Group implements IComputeDriven { … }",
@@ -3702,7 +3754,7 @@
         "keep scattered props and hand-placed chunks resident around a moving player",
         "honour per-asset draw distances and hard streaming budgets without a mid-frame throw"
       ],
-      "summary": "Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game.",
+      "summary": "Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances.",
       "supersedes": [],
       "symbol": "WorldCells"
     },
