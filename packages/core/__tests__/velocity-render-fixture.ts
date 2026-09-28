@@ -260,21 +260,49 @@ function buildVelocityUpdateNodes(object: Object3D, node: Node): IInspectableVel
 }
 
 function runObjectUpdate(builder: IInspectableVelocityBuilder, object: Object3D): void {
-  const event = [...builder.nodes].find((node) => node.constructor.name === "EventNode");
+  const event = [...builder.nodes].find(isObjectEvent);
   if (event === undefined) throw new Error("velocity fixture did not build an object update");
   event.update({ frameId: 2, object });
 }
 
-function previousBuffer(
+/**
+ * The object event, named rather than first-found.
+ *
+ * The patched Three syncs the attribute-path instance matrix on a *frame* event before the previous
+ * matrix is copied on the object event, so the first `EventNode` in the set is no longer the one
+ * that carries the snapshot — firing it leaves the previous matrices holding the current ones.
+ */
+export function isObjectEvent(node: {
+  readonly constructor: { readonly name: string };
+  readonly eventType?: string;
+}): boolean {
+  return node.constructor.name === "EventNode" && node.eventType === "object";
+}
+
+/**
+ * The history array the shader reads, wherever the patched Three keeps it: the uniform path holds
+ * it directly as a `BufferNode`'s value, the attribute path the patch forces holds it as the
+ * `InstancedInterleavedBuffer` a `BufferAttributeNode` wraps. Either way it is the buffer that is
+ * not the current one.
+ */
+export function previousBuffer(
   builder: IInspectableVelocityBuilder,
   current: ArrayLike<number>,
 ): Float32Array {
-  const buffer = [...builder.nodes].find(
-    (node) =>
-      node.isBufferNode === true && node.value instanceof Float32Array && node.value !== current,
-  )?.value;
-  if (!(buffer instanceof Float32Array)) throw new Error("velocity fixture did not build history");
+  const buffer = [...builder.nodes]
+    .map((node) => historyArray(node))
+    .find((array) => array !== undefined && array !== current);
+  if (buffer === undefined) throw new Error("velocity fixture did not build history");
   return buffer;
+}
+
+function historyArray(node: { readonly isBufferNode?: boolean; readonly value?: unknown }):
+  | Float32Array
+  | undefined {
+  if (node.isBufferNode !== true) return undefined;
+  if (node.value instanceof Float32Array) return node.value;
+  const array = (node.value as { readonly array?: unknown } | undefined)?.array;
+  return array instanceof Float32Array ? array : undefined;
 }
 
 function readBatchTexture(
