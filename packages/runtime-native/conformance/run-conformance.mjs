@@ -1354,11 +1354,24 @@ export function androidDeathExcerpt(message, appLog) {
   return tail.length > 0 ? `${message} Last app output: ${tail}` : message;
 }
 
-function androidLog(adb, serial) {
-  return String(
+export function androidLog(adb, serial) {
+  const read = () =>
     runCommand(adb, androidArgs(serial, "logcat", "-d", "-v", "threadtime"), {
+      allowFailure: true,
       timeout: 15_000,
-    }).stdout || "",
+    });
+  const first = read();
+  if (first.status === 0) return String(first.stdout || "");
+
+  // Android emulator adbd can briefly reject `logcat -d` under render/capture load, returning 255
+  // with no stderr. Treat that like the restore path's transient offline case: wait once and retry
+  // so a rendered row is not failed solely because diagnostics were momentarily unavailable.
+  runCommand(adb, androidArgs(serial, "wait-for-device"), { allowFailure: true, timeout: 30_000 });
+  const second = read();
+  if (second.status === 0) return String(second.stdout || "");
+
+  throw new Error(
+    `${adb} ${androidArgs(serial, "logcat", "-d", "-v", "threadtime").join(" ")} failed (${second.status}): ${second.stderr || second.stdout || first.stderr || first.stdout || ""}`,
   );
 }
 
