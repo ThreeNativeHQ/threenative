@@ -613,20 +613,24 @@ describe("template contracts", () => {
     expect(character).toContain("this.#coyote = Math.max(0, this.#coyote - dt);");
   });
 
-  it("should set matched sky background and fog, and reject an incomplete gradient", async () => {
+  it("should make the sky photograph the background, the environment and the fog", async () => {
+    // PRD-470: the starter's authored gradient dome is gone — the sky is a Poly Haven
+    // equirectangular photograph, so the contract is the one that survives a sky swap: the same
+    // image is the background and the environment light, the fog colour is a palette role rather
+    // than a literal, and the fade is thin enough not to wash the playable middle distance.
     const sky = await readFile(path.join(templateRoot, "starter/src/render/sky.ts"), "utf8");
-    expect(sky).toContain("scene.background = top");
-    expect(sky).toContain("resolved.top === undefined");
-    expect(sky).toContain("resolved.bottom === undefined");
-    expect(sky).toContain("throw new TypeError");
+    expect(sky).toContain("scene.background = sky");
+    expect(sky).toContain("scene.environment = sky");
+    expect(sky).toContain("scene.environmentIntensity");
+    expect(sky).toContain('import { palette } from "./palette.js"');
+    const fog = /new FogExp2\(\s*palette\.(\w+),\s*(\d+(?:\.\d+)?)\s*\)/u.exec(sky);
+    expect(fog, "starter sky must construct an exponential fog from a palette role").not.toBeNull();
     // Round 9 lost the visual column to fog reaching the playable middle distance: a blind judge
-    // chose against the build because "the distance fogs to near-white". The near plane belongs
-    // past where the next jump is, not 18 units from the camera.
-    const range = /new Fog\([^,]+,\s*(\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)\)/u.exec(sky);
-    expect(range, "starter sky must construct a Fog with a literal near and far").not.toBeNull();
-    const [near, far] = [Number(range?.[1]), Number(range?.[2])];
-    expect(near).toBeGreaterThanOrEqual(40);
-    expect(far).toBeGreaterThan(near);
+    // chose against the build because "the distance fogs to near-white". Exponential fog at this
+    // density is under 2% inside the 20 m route and only reads past a hundred metres.
+    const density = Number(fog?.[2]);
+    expect(density).toBeGreaterThan(0);
+    expect(1 - Math.exp(-((density * 20) ** 2))).toBeLessThan(0.02);
   });
 
   it("should never let fog swallow a template's sky dome", async () => {

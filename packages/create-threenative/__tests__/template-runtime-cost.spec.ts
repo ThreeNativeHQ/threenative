@@ -22,6 +22,15 @@ import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
 
+/** The clips the packaged `mannequin.glb` ships, by the name `Player.ts` plays them under. */
+const MANNEQUIN_CLIPS = [
+  "Idle_Loop",
+  "Jog_Fwd_Loop",
+  "Jump_Start",
+  "Jump_Loop",
+  "Jump_Land",
+] as const;
+
 /** The smallest skinned rig that satisfies `requiredClips`: two bones, one box, one track per clip. */
 function tinyRig(clipNames: readonly string[]): { scene: Group; animations: AnimationClip[] } {
   const root = new Bone();
@@ -184,7 +193,11 @@ function sceneContext(
   );
   const assets = {
     audio: (name: string) => Promise.resolve({ name }),
-    model: async <T>(): Promise<T> => ({ scene: proofScene }) as T,
+    // PRD-470: `starter` and `minimal` both load the packaged mannequin, and `Player` refuses a rig
+    // missing one of its five named clips, so the stub hands back a rig for that name and the
+    // proof scene for everything else.
+    model: async <T>(name: string): Promise<T> =>
+      (name === "mannequin.glb" ? tinyRig(MANNEQUIN_CLIPS) : { scene: proofScene }) as T,
     texture: async () => new Texture(),
   };
   return {
@@ -306,12 +319,8 @@ describe("generated template ordinary-frame runtime cost", () => {
       const ctx = gameContext(physics.physics);
       const player = new starter.Player(
         ctx as never,
-        {
-          accent: new MeshBasicMaterial(),
-          body: new MeshBasicMaterial(),
-          dark: new MeshBasicMaterial(),
-        },
-        new Vector3(-2, 0.5, 0),
+        tinyRig(MANNEQUIN_CLIPS),
+        new Vector3(-2, 0.9, 0),
       );
       expect(
         measureVectorAllocations(() => player.update(ctx as never, DT)),

@@ -64,7 +64,7 @@ describe("starter visual floor", () => {
     expect(environment).not.toContain("createOutlineStage");
   });
 
-  it("should keep painterly stages in generated source with a measured tier policy", async () => {
+  it("should keep painterly stages in generated source, wired but off at every tier", async () => {
     const [environment, painterly, quality, outline, kuwahara, watercolor] = await Promise.all([
       readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
       readFile(path.join(starter, "src/render/painterly.ts"), "utf8"),
@@ -85,12 +85,18 @@ describe("starter visual floor", () => {
     expect(generated.indexOf('name: "watercolor"')).toBeGreaterThanOrEqual(0);
     expect(generated.indexOf('after: "outline"')).toBeGreaterThanOrEqual(0);
     expect(generated.indexOf('after: "kuwahara"')).toBeGreaterThanOrEqual(0);
-    expect(quality).toContain("outlineEnabled: true");
-    expect(quality).toContain("kuwaharaRadius: 5");
-    expect(quality).toContain("kuwaharaResolutionScale: 0.5");
-    expect(quality).toContain("outlineEnabled: false");
-    expect(quality).toContain("kuwaharaEnabled: false");
-    expect(quality).toContain("watercolorEnabled: false");
+    // PRD-470: the shipped look is a photographed sky under one sun, so all three authored stages
+    // are off at every tier. The files, the collection and the chain seam stay, which is what
+    // makes re-enabling one a single `xxxEnabled` flip rather than a rewrite — that is the
+    // property worth protecting, so it is what these rows assert.
+    for (const stage of ["outline", "kuwahara", "watercolor"]) {
+      expect(quality, `${stage}Enabled: false`).toContain(`${stage}Enabled: false`);
+      expect(quality, `${stage}Enabled: true`).not.toContain(`${stage}Enabled: true`);
+    }
+    // Every other knob those stages need already has a default in `painterly.ts`, which is where
+    // re-enabling one now reads its strengths from.
+    expect(painterly).toContain("options.kuwaharaRadius ??");
+    expect(painterly).toContain("options.watercolorStrength ??");
     expect(kuwahara).toContain("HalfFloatType");
     expect(kuwahara).toContain("scope.own");
     expect(kuwahara).toContain("scope.dispose");
@@ -138,20 +144,29 @@ describe("starter visual floor", () => {
     expect(helper).not.toMatch(/scaled\.y\s*\.\s*mul\(axis\.y\)/u);
   });
 
-  it("should use fewer watercolor luminance bands on medium than high", () => {
+  it("should gather occlusion with fewer samples on medium than high", () => {
+    // PRD-470: the watercolour bands this used to compare are gone — that stage is off at every
+    // tier — so the tier ladder is asserted where the shipped difference now is, GTAO's samples.
     const highPreset = qualityPreset("high");
     const mediumPreset = qualityPreset("medium");
-    const highLevels = highPreset.watercolorLevels ?? 8;
-    expect(highLevels).toBe(8);
-    expect(mediumPreset.watercolorLevels).toBe(6);
-    expect(mediumPreset.watercolorLevels).toBeLessThan(highLevels);
+    const highSamples = highPreset.gtaoSamples ?? 16;
+    expect(highSamples).toBe(16);
+    expect(mediumPreset.gtaoSamples).toBe(8);
+    expect(mediumPreset.gtaoSamples).toBeLessThan(highSamples);
   });
 
-  it("should preserve most source contrast through the shipped Kuwahara mix", () => {
-    for (const tier of ["high", "medium"] as const) {
-      const strength = qualityPreset(tier).kuwaharaStrength;
-      expect(strength, tier).toBeDefined();
-      expect(1 - (strength ?? 1), tier).toBeGreaterThanOrEqual(0.6);
+  it("should ship no contrast-reducing paint stage at any tier", () => {
+    // The old assertion was that the shipped Kuwahara mix kept most of the source contrast. It
+    // cannot be true of a stage that never runs, so what is asserted now is the fact behind it:
+    // the shipped look is graded by bloom, vignette and the tone curve, and nothing smears the
+    // image's contrast on the way there.
+    for (const tier of ["high", "medium", "low"] as const) {
+      const preset = qualityPreset(tier);
+      expect(preset.kuwaharaEnabled, tier).toBe(false);
+      expect(preset.outlineEnabled, tier).toBe(false);
+      expect(preset.watercolorEnabled, tier).toBe(false);
+      expect(preset.ssrEnabled, tier).toBeFalsy();
+      expect(preset.ssgiEnabled, tier).toBeFalsy();
     }
   });
 

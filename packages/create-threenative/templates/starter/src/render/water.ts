@@ -1,10 +1,9 @@
 // Generated for you: this is the starter's game-owned water look.
-// The WaveField itself is framework plumbing; these colours, highlights and opacity are yours.
+// The WaveField itself is framework plumbing; the material, the colours and the foam are yours.
 import { DoubleSide } from "three";
-import { color, float, mix, normalize, smoothstep, vec3 } from "three/tsl";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { color, float, mix, smoothstep, transformNormalToView } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { palette } from "./palette.js";
+import { MeshStandardNodeMaterial } from "three/webgpu";
 
 export interface IWaveDisplacementSource {
   displacementNode(): Node;
@@ -12,27 +11,52 @@ export interface IWaveDisplacementSource {
   normalNode(): Node<"vec3">;
 }
 
-const SUN = normalize(vec3(0.45, 0.82, 0.3));
+/**
+ * The sea's own three colours, and deliberately not palette roles: the six in `palette.ts` are
+ * the island's, and a watercolour beside a beach is a second opinion about sand. These are albedos,
+ * not what the frame shows — a low-roughness surface under a bright sky reflects most of what
+ * reaches it, so the body is a saturated sea colour precisely so the near water reads as sea and
+ * not as a mirror of a cloud. Measured on a scaffolded starter: at the sky's own pale tones the
+ * water came back as a white field.
+ */
+const DEEP = 0x0f4c5c;
+const SHALLOW = 0x2e7f8c;
+const FOAM = 0xe6f1f2;
 
-/** Water with broad colour bands and a narrow sun glint that survives the painterly grade. */
-export function createWaterMaterial(source: IWaveDisplacementSource): MeshBasicNodeMaterial {
-  const water = new MeshBasicNodeMaterial({
-    depthWrite: false,
-    opacity: 0.94,
+/**
+ * The sea, lit by the scene.
+ *
+ * Standard, not basic, and that is the whole point. A *basic* material takes no lights at all, so
+ * the water could not respond to the sun or to the sky the rest of the scene is lit by, and its
+ * brightness had to be hand-computed — a `pow(dot(n, sun), 48)` blob standing in for a specular
+ * highlight. Water is one of the few surfaces where the specular *is* the material, so that read
+ * as plastic. Here the sun is a light and the sky is an environment (`sky.ts`), and this surface
+ * is a low-roughness physical one that reflects both.
+ */
+export function createWaterMaterial(source: IWaveDisplacementSource): MeshStandardNodeMaterial {
+  const water = new MeshStandardNodeMaterial({
+    metalness: 0,
+    // Not a mirror. At 0.02 the sun landed as one blown white disc on the swell in front of the
+    // camera; water this side of a dead calm scatters enough to spread it into a glitter path.
+    roughness: 0.14,
     side: DoubleSide,
-    transparent: true,
   });
   water.positionNode = source.displacementNode();
+  // `transformNormalToView`, not the raw vector. `normalNode` overrides `normalView`, so a
+  // material handed a world-space normal lights the surface in the camera's frame instead of the
+  // world's: the sun's reflection stopped being a place on the sea and became a column of glare
+  // pointing at the camera. The WaveField's `normalNode` is world-space, with up as +Y.
+  water.normalNode = transformNormalToView(source.normalNode());
 
+  // Colour by height: deep in the troughs, a lighter body on the shoulders, foam on the crests.
+  // The band is narrower than the wave amplitude on purpose, so the tops read as foam-lit rather
+  // than as a gentle gradient.
   const height = source.heightNode();
-  const normal = source.normalNode();
-  const facing = normal.dot(SUN).clamp(0, 1);
   const troughToCrest = smoothstep(-0.26, 0.26, height);
-  const waterMid = mix(color(palette.skyLow), color(palette.skyHigh), 0.35);
-  const body = mix(color(palette.skyLow), waterMid, troughToCrest.mul(0.16).add(0.42));
-  const litBody = body.mul(mix(float(0.92), float(1), facing));
-  const glint = color(palette.skyHigh).mul(facing.pow(48).mul(0.07));
-  const crestFoam = color(palette.player).mul(smoothstep(0.16, 0.26, height).mul(0.025));
-  water.colorNode = litBody.add(glint).add(crestFoam);
+  const body = mix(color(DEEP), color(SHALLOW), troughToCrest);
+  const crest = smoothstep(0.17, 0.27, height);
+  water.colorNode = mix(body, color(FOAM), crest);
+  // Foam is not a mirror. Roughening the crests is what stops them reading as chrome.
+  water.roughnessNode = mix(float(0.14), float(0.7), crest);
   return water;
 }
