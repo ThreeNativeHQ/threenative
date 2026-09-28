@@ -603,6 +603,12 @@ verified the field, all three markers, and 1,919 samples over 32.03 seconds. It 
 unrelaxed budget at 59.9352 FPS mean (p95 16.8 ms). This run tests the identity wiring, not clean
 source or native parity; the performance box stays open.
 
+**Clean-source rerun at `5e228ed1a` (2026-09-28):**
+`.runtime/prd064/production/web-clean-adapter/production-evidence.json` records `source.dirty=false`,
+but the workload playtest closed its page mid-run (`TN_PLAYTEST_PAGE_CLOSED`). It retained no frame
+series or adapter identity and exited `BLOCKED`; the startup sample alone does not certify the
+performance or adapter requirement. No additional code change or passing profile is inferred.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:
