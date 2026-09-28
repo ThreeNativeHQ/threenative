@@ -13,6 +13,7 @@ import {
   MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
+  Vector2,
   Vector3,
 } from "three";
 import { palette } from "./palette.js";
@@ -57,6 +58,66 @@ function gridTexture(base: number, line: number, size = 256): DataTexture {
 const _normal = new Vector3();
 
 /**
+ * A faint cast-concrete grain as a tangent-space normal map: two octaves of smoothed value noise,
+ * tiling every metre like the grid. It is what stops a large flat face reading as an untextured
+ * blockout under a low sun — the light breaks up across it instead of sliding off in one tone.
+ * Bytes, not a file, so it costs nothing to ship and runs on every target.
+ */
+function grainNormalTexture(size = 128): DataTexture {
+  const cells = [8, 32];
+  const lattice = cells.map((count) => {
+    const values = new Float32Array(count * count);
+    let seed = count * 7919;
+    for (let index = 0; index < values.length; index += 1) {
+      seed = (seed * 16807) % 2147483647;
+      values[index] = seed / 2147483647;
+    }
+    return { count, values };
+  });
+  const height = (x: number, y: number): number => {
+    let total = 0;
+    for (const [octave, { count, values }] of lattice.entries()) {
+      const u = (x / size) * count;
+      const v = (y / size) * count;
+      const x0 = Math.floor(u);
+      const y0 = Math.floor(v);
+      const fx = u - x0;
+      const fy = v - y0;
+      const sx = fx * fx * (3 - 2 * fx);
+      const sy = fy * fy * (3 - 2 * fy);
+      const at = (i: number, j: number): number =>
+        values[(((j % count) + count) % count) * count + (((i % count) + count) % count)] ?? 0;
+      const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;
+      const bottom = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * sx;
+      total += (top + (bottom - top) * sy) * (octave === 0 ? 1 : 0.5);
+    }
+    return total;
+  };
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = height(x + 1, y) - height(x - 1, y);
+      const dy = height(x, y + 1) - height(x, y - 1);
+      _normal.set(-dx * 4, -dy * 4, 1).normalize();
+      const index = (y * size + x) * 4;
+      data[index] = Math.round((_normal.x * 0.5 + 0.5) * 255);
+      data[index + 1] = Math.round((_normal.y * 0.5 + 0.5) * 255);
+      data[index + 2] = Math.round((_normal.z * 0.5 + 0.5) * 255);
+      data[index + 3] = 255;
+    }
+  }
+  const texture = new DataTexture(data, size, size);
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.generateMipmaps = true;
+  texture.minFilter = LinearMipmapLinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const grain = grainNormalTexture();
+
+/**
  * Rewrites a geometry's UVs as world metres, projected along each face's dominant axis, so one grid
  * tile is one metre on every face of every prop regardless of its size. Call it after the geometry
  * is translated into place (merged geometry included), before it is given to a mesh.
@@ -84,6 +145,8 @@ export function worldGridUVs<T extends BufferGeometry>(geometry: T): T {
 /** Light grid: floors and the ground. */
 export const floorMaterial = new MeshStandardMaterial({
   map: gridTexture(palette.floor, palette.gridLine),
+  normalMap: grain,
+  normalScale: new Vector2(0.18, 0.18),
   roughness: 0.62,
   metalness: 0,
 });
@@ -91,6 +154,8 @@ export const floorMaterial = new MeshStandardMaterial({
 /** Dark grid: walls, pillars, anything structural. */
 export const structureMaterial = new MeshStandardMaterial({
   map: gridTexture(palette.structure, palette.gridLine),
+  normalMap: grain,
+  normalScale: new Vector2(0.18, 0.18),
   roughness: 0.7,
   metalness: 0,
 });
