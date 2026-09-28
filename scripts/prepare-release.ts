@@ -25,7 +25,9 @@ const TEMPLATE_ROOT = path.join(REPO, "packages", "create-threenative", "templat
  * that gates 1.0 adds its file here.
  */
 export const RELEASE_1_0_0_GATES = [
-  "docs/PRDs/production-readiness/PRD-446-stable-api-and-upgrade-contract.md",
+  // PRD-446 was archived under `done/` when its proof landed, and the gate stays wired to it: an
+  // unticked box there refuses a 1.0.0 cohort again, and a moved file still fails closed.
+  "docs/PRDs/done/PRD-446-stable-api-and-upgrade-contract.md",
 ] as const;
 
 /**

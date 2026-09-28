@@ -59,10 +59,23 @@ describe("release preparation", () => {
  * claim it while the proof of that promise is open. The refusal is measured against the real PRD.
  */
 describe("the 1.0.0 refusal", () => {
-  const gate = "docs/PRDs/production-readiness/PRD-446-stable-api-and-upgrade-contract.md";
+  const gate = "docs/PRDs/done/PRD-446-stable-api-and-upgrade-contract.md";
 
-  it("refuses while the real PRD-446 has open boxes, and names them", () => {
-    expect(() => assertOneZeroGatesClosed()).toThrow(
+  it("accepts the real gate now that its last box is ticked, and still refuses one reopened", async () => {
+    // The shipped gate is the archived PRD-446. Its proof landed, so a 1.0.0 cohort may proceed…
+    expect(() => assertOneZeroGatesClosed()).not.toThrow();
+    // …and the refusal is still measured against that real file: one box reopened is refused by
+    // name, so the wiring cannot quietly point at a PRD that retired the promise.
+    const root = await makeTempDir("threenative-gates-open-");
+    const source = path.join(root, gate);
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.writeFileSync(
+      source,
+      fs
+        .readFileSync(path.resolve(import.meta.dirname, "../..", gate), "utf8")
+        .replace(/^- \[x\]/gmu, "- [ ]"),
+    );
+    expect(() => assertOneZeroGatesClosed(root, [gate])).toThrow(
       new RegExp(`TN_RELEASE_1_0_0_GATES_OPEN[\\s\\S]*${gate.replaceAll(".", "\\.")}`, "u"),
     );
   });

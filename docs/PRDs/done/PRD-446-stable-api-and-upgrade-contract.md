@@ -1,10 +1,14 @@
 # PRD-446 — Stable API and upgrade contract
 
-**Status:** PARTIAL — phases 1 and 2 verified; starter and platformer passed the real phase-3 dry
-run, while the publish preflight and final acceptance remain open (`prd:75%`).
+**Status:** DONE — 2026-09-28. Every phase and acceptance box is ticked (`prd:100%`). Phases 1 and
+2 were verified as they landed; phase 3's prepublication ordering was observed in a real
+`release.ts --yes` run that reached the publish loop with both upgrade blocks green, and the publish
+itself was intercepted so that nothing left the workstation. **The cohort publish is still
+unproven**, and cannot be proven from a lane without release credentials: `npm-release.yml`
+does it on a `v*` tag push, after `main` promotion.
 **Complexity:** 6 → MEDIUM; touches release scripts, CI, and the physics deprecation warning.
 **Depends on:** [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
-(1.0) of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
+(1.0) of [RELEASE-READINESS-2026-09-23](../production-readiness/RELEASE-READINESS-2026-09-23.md).
 
 ## Context
 
@@ -68,7 +72,9 @@ Out of scope, closed with evidence elsewhere: an upgrade CLI command or codemod 
   filtered it away and a published package was outside its own contract; `records every published
   package, including one whose manifest declares no exports map` proves both halves. An empty
   committed snapshot fails `TN_API_SURFACE_SNAPSHOT_EMPTY`; the focused test failed before that
-  guard and passed after it.
+  guard and passed after it. The counts here are the ones this box recorded: `#331` added two
+  published symbols after it, and the acceptance box re-recorded the snapshot (337 symbols, 10
+  passed).
 - [x] Red: deleting one exported symbol fails the check. proof: the `TN_API_SURFACE_UNANNOUNCED_BREAK`
   exit-1 run below.
   Deleted `export { formatAudioSizes } from "./report.js"` from `packages/assets/src/index.ts`,
@@ -262,7 +268,13 @@ not about a candidate.
   tree the candidate never reached. Green: `edit`, `build`, `test` and `gameplay` all read
   `Not run: the candidate install failed, so no candidate bytes reached this game.`, and the playtest
   runner was never invoked. Unit proof, which is the whole claim: the control flow is the assertion.
-- [ ] The upgrade proof runs in the release preflight, after the unpublished-version check and before any cohort moves `latest`. proof: a real `pnpm tsx scripts/release.ts --yes` run reaching the publish loop with both upgrade blocks green. **The real run is unverified.**
+- [x] The upgrade proof runs in the release preflight, after the unpublished-version check and before any cohort moves `latest`. proof: a real `pnpm tsx scripts/release.ts --yes --skip-gates --allow-missing-prebuilt` run on this tree reached the publish loop with both upgrade blocks green — the first publish command issued was `▸ publish @threenative/assets@0.3.5`, printed after `Upgrade proof — starter` and `Upgrade proof — platformer` had each listed nine `pass` steps (scaffold through gameplay). **The publish itself was intercepted**, by a `pnpm` PATH stub that fails any `publish` invocation, so nothing was published: `TN_RELEASE_PUBLISH_INTERCEPTED: pnpm --filter @threenative/assets publish --no-git-checks --access public`, then `TN_RELEASE_STEP_FAILED: publish @threenative/assets@0.3.5. Nothing further was published.` (exit 1, no registry write). What the box claims is the ordering, and that is what was observed; a real cohort publish needs release credentials and stays `npm-release.yml`'s job on a `v*` tag push after `main` promotion.
+  The first attempt at that run was red, and not because of the candidate: the starter's `test` step
+  failed two of its own playtest scenarios (`pause`, `starter-touch-controls`) with `Target page,
+  context or browser has been closed` while a local `pnpm ci:fast` drove its own browser lanes beside
+  it — 5 `reclaimedBrowserProfiles` reclamations in the red run, 0 in the clean re-run, which passed
+  all 18 steps. Run this preflight alone; the clean room's scenario is a timing-sensitive browser
+  lane on a 24-core box that is not otherwise quiet.
   `release.ts` proves the exact cohort absent from npm (`unpublishedReleasePackages`), then packs it
   (`packReleaseSet` returns the name → tarball map instead of packing into a directory it deletes),
   then `proveUpgradeFromLatest` runs the clean room per template and throws
@@ -277,15 +289,54 @@ not about a candidate.
 
 ## Acceptance criteria
 
-- [ ] An unannounced removal of a public symbol cannot reach `develop`.
-- [ ] Every breaking change in the candidate has a `CHANGELOG.md` migration note.
+- [x] An unannounced removal of a public symbol cannot reach `develop`. proof: the red-green
+  below; `pnpm exec vitest run scripts/__tests__/api-surface.spec.ts` → 10 passed;
+  `pnpm api:surface:check` → `api surface ok: 11 published packages, 337 symbols, every removal and
+  signature change announced` (exit 0).
+  The gate existed but the one command its own message names re-recorded the removal:
+  `pnpm api:surface:sync` wrote the live surface unconditionally, so a symbol deleted without a
+  migration note went green. Red: deleted `formatAudioSizes` from
+  `packages/assets/src/index.ts`, regenerated the manifest
+  (`pnpm exec tsx scripts/build-capability-manifest.ts`, 358 → 357 entries, as the pre-commit hook
+  does); `pnpm api:surface:check` exited **1** (`removed symbol @threenative/assets
+  @threenative/assets#formatAudioSizes has no Breaking entry naming it`) and
+  `pnpm api:surface:sync` exited **1** with `scripts/api-surface.json` byte-identical. Green: the
+  same removal with a `### Breaking` entry naming it under `## [Unreleased]` re-recorded
+  (`api surface recorded: 11 published packages, 336 symbols`); the same note under the dated
+  `## [0.3.2] - 2026-09-12` section did not — the heading-scope rule held in the live run, not only
+  in the spec. `recordApiSurface` refuses while the committed snapshot shows a break the next
+  release does not announce, and the pre-commit hook runs that same writer beside
+  `capabilities:sync`, so the break fails at commit time naming the symbol. The spec also asserts the
+  snapshot *equals* the live surface, not merely that it has no removals: a snapshot lagging behind
+  the tree cannot notice the next removal of a symbol it never recorded. Every probe was reverted
+  (`git checkout --`); `scripts/api-surface.json` now records develop's 2 added symbols. CI: the
+  spec runs in `test-unit` over the complete merge-base diff, and `budgets` keeps the manifest it is
+  derived from fresh (`capabilityManifestErrors`).
+- [x] Every breaking change in the candidate has a `CHANGELOG.md` migration note. proof: the
+  published registry cohort against the candidate, derived from the tarballs npm serves.
+  The shipped gate compares against the committed snapshot, which was recorded on this branch, so it
+  cannot answer for a break that landed between the last publish and that recording. The registry
+  can: `create-threenative@latest` (0.2.6) publishes the capability manifest, so the 11 `latest`
+  tarballs give the published surface exactly — `npm pack <name>@latest` for every name in
+  `publishSet`, then the published `capabilities.json` entries and each tarball's `exports` map
+  compared through the same `compareApiSurface`/`unannouncedBreaks` the gate uses. Result: published
+  latest (0.3.3 cohort, 322 symbols) vs candidate (`deriveApiSurface`, 337 symbols) → **0 removed
+  symbols, 0 removed export subpaths, 0 changed signatures, 0 unannounced breaks**. The candidate
+  therefore has no breaking change to note; its 15 added symbols are additions. The recipe is a
+  one-off (it needs the registry, and the snapshot gate covers everything after it), so it is not
+  committed.
 - [x] `starter` and `platformer` upgrade from the previous `latest` to the candidate without edits beyond the migration notes. proof: both nine-step `Upgrade proof` blocks passed in the real `pnpm release --allow-missing-prebuilt --skip-gates` run, exit 0; no package was published. The only edit the lane
   makes is the `dist/`-observable marker, it is applied *after* the upgrade step, and a candidate
   with no announced break requires no migration edit at all.
-- [ ] `pnpm release:prepare` refuses a `1.0.0` version while any box above is open. proof:
+- [x] `pnpm release:prepare` refuses a `1.0.0` version while any box above is open. proof:
   `pnpm exec vitest run scripts/__tests__/prepare-release.spec.ts` → 8 passed, including
-  `refuses while the real PRD-446 has open boxes, and names them`, plus a real `pnpm
-  release:prepare` against a `1.0.0` cohort.
+  `accepts the real gate now that its last box is ticked, and still refuses one reopened`, plus a real `pnpm
+  release:prepare` against a `1.0.0` cohort while 4 boxes were open: `TN_RELEASE_1_0_0_GATES_OPEN: a
+  1.0.0 cohort promises a stable public API, and these are still open:
+  docs/PRDs/production-readiness/PRD-446-stable-api-and-upgrade-contract.md (4 open box(es),
+  prd:75%). Nothing was written.` → exit **1**, with `git status --porcelain` byte-identical before
+  and after the run (16 entries both times, 11 of them the probe's own version lines, reverted with
+  `git checkout --`).
   `assertOneZeroGatesClosed` counts unticked phase and acceptance boxes through the repository's own
   reader (`progressOf`, the one behind `pnpm prd:progress`) rather than a second one that could
   disagree with it, refuses a PRD with no phase boxes, and `main()` calls it *before*
@@ -296,4 +347,7 @@ not about a candidate.
   stops a refusal from being an unconditional throw. A gate PRD that has moved throws
   `TN_RELEASE_1_0_0_GATE_MISSING` rather than passing. `RELEASE_1_0_0_GATES` names PRD-446; a second
   cohort that gates 1.0 adds its file there. A real `pnpm release:prepare` run passed for this 0.3.x
-  cohort; the `1.0.0` refusal remains unit-proven only, so this box stays open.
+  cohort (`Prepared candidate at 1b1c6f25f: 11 package(s), 4 MCP server(s). Nothing was published.`,
+  exit 0), and the `1.0.0` refusal above is the real run, not only the unit proof. The gate PRD moved
+  to `done/` in the commit that closed it, so `RELEASE_1_0_0_GATES` names the archived path: an
+  unticked box there still refuses 1.0, and a missing file still fails closed.
