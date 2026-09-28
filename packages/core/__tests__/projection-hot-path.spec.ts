@@ -5,6 +5,7 @@ import {
   type BatchedMesh,
   BoxGeometry,
   BufferAttribute,
+  BufferGeometry,
   Frustum,
   Group,
   InstancedMesh,
@@ -58,6 +59,73 @@ function projectionOver(scene: Scene): SceneRenderProjection {
   });
   projection.reconcile();
   return projection;
+}
+
+/**
+ * A scene of one shared geometry and material, `half` of it under a hidden-able group, reconciled
+ * until the projection has settled on its fast path. The guards below all start here: a skip that
+ * is only correct on a frame where nothing at all happened proves nothing.
+ */
+function settledScene(meshCount: number): {
+  projection: SceneRenderProjection;
+  scene: Scene;
+  meshes: Mesh[];
+  group: Group;
+} {
+  const scene = new Scene();
+  const geometry = new BoxGeometry(1, 1, 1);
+  const material = new MeshBasicMaterial();
+  const group = new Group();
+  scene.add(group);
+  const meshes: Mesh[] = [];
+  for (let index = 0; index < meshCount; index += 1) {
+    const mesh = new Mesh(geometry, material);
+    mesh.position.set(index, index * 0.5, index * 0.25);
+    (index % 2 === 0 ? group : scene).add(mesh);
+    meshes.push(mesh);
+  }
+  const projection = new SceneRenderProjection(scene, {
+    minMeshes: 4,
+    onReport: () => undefined,
+  });
+  // First reconcile captures the structure; the rest take the path under test.
+  for (let frame = 0; frame < 4; frame += 1) projection.reconcile();
+  if (projection.deoptimized) throw new Error("the fixture scene did not project");
+  return { projection, scene, meshes, group };
+}
+
+/**
+ * What the renderer was actually handed for one source object.
+ *
+ * The elements are compared, not the object: a batched slot comes back through a `Float32Array`, so
+ * the baked matrix is the authored one to single precision and never bit-identical to it.
+ */
+function baked(projection: SceneRenderProjection, mesh: Mesh): {
+  elements: number[];
+  visible: boolean;
+  lane: string;
+} {
+  const found = projection.inspect(mesh);
+  if (found === undefined) throw new Error("the mirror holds nothing for this object");
+  return {
+    elements: [...found.matrixWorld.elements],
+    lane: found.lane,
+    visible: found.visible,
+  };
+}
+
+/** The baked transform against the authored one, to the precision the batch actually stores. */
+function expectBaked(
+  projection: SceneRenderProjection,
+  mesh: Mesh,
+  visible: boolean,
+): void {
+  const found = baked(projection, mesh);
+  expect(found.visible).toBe(visible);
+  const authored = [...mesh.matrixWorld.elements];
+  found.elements.forEach((element, index) => {
+    expect(element).toBeCloseTo(authored[index] as number, 5);
+  });
 }
 
 function materialBatchProbe(): {
@@ -396,5 +464,160 @@ describe("projection hot path", () => {
     }
     for (let index = 0; index < result.plan.belowFloorCount; index += 1)
       expect(exactLaneReason(result.plan.belowFloor[index] as Mesh)).toBeUndefined();
+  });
+});
+
+/**
+ * The guards for a projection that skips work it can prove is redundant.
+ *
+ * A settled scene re-derives its classification every frame today, and a scene whose transforms
+ * all move pays for a scan whose inputs — membership, geometry, material, flags, visibility — did
+ * not change at all. Skipping it is only correct if the skip *proves* the inputs are the same, so
+ * every mutation a game can make at runtime is asserted here against the fast path: a moved object,
+ * an added and a removed one, a hidden ancestor, a reparent, a swapped material and a swapped
+ * geometry. Each would be silently stale on one frame if the proof were wrong, and a wrong frame
+ * is the one defect this whole class is built to not have.
+ */
+describe("projection fast-path guards", () => {
+  it("bakes a moved object's new matrix after settled frames", () => {
+    const { projection, meshes } = settledScene(12);
+    try {
+      const moved = meshes[3] as Mesh;
+      expectBaked(projection, moved, true);
+      moved.position.set(-4, 7, 2.5);
+      moved.rotation.y = 0.75;
+      projection.reconcile();
+      expectBaked(projection, moved, true);
+    } finally {
+      projection.dispose();
+    }
+  });
+
+  it("reflects an added and a removed object after settled frames", () => {
+    const { projection, scene, meshes } = settledScene(12);
+    try {
+      const removed = meshes[0] as Mesh;
+      const arrived = new Mesh((meshes[1] as Mesh).geometry, (meshes[1] as Mesh).material);
+      arrived.position.set(3, 3, 3);
+      scene.add(arrived);
+      (removed.parent as Group).remove(removed);
+      projection.reconcile();
+
+      expect(projection.report.sourceRenderables).toBe(12);
+      expect(projection.report.projectedObjects).toBe(12);
+      expect(projection.inspect(removed)).toBeUndefined();
+      expectBaked(projection, arrived, true);
+      // The freed slot must not leave a copy of the object it used to be drawing.
+      expect(projection.report.resultDrawCandidates).toBe(projection.report.batches);
+    } finally {
+      projection.dispose();
+    }
+  });
+
+  it("reflects a hidden ancestor and a reparent after settled frames", () => {
+    const { projection, scene, meshes, group } = settledScene(12);
+    try {
+      const hidden = meshes[2] as Mesh;
+      group.visible = false;
+      projection.reconcile();
+      // A batch has no hierarchy to inherit visibility from, so a hidden ancestor collapses the
+      // slot rather than leaving it drawing.
+      expect(baked(projection, hidden).elements).toEqual([
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      ]);
+      expect(baked(projection, hidden).visible).toBe(false);
+
+      const reparented = meshes[4] as Mesh;
+      group.visible = true;
+      scene.add(reparented);
+      projection.reconcile();
+      expectBaked(projection, reparented, true);
+    } finally {
+      projection.dispose();
+    }
+  });
+
+  it("re-classifies a swapped material and a swapped geometry", () => {
+    const { projection, meshes } = settledScene(12);
+    try {
+      const transparent = meshes[1] as Mesh;
+      const glass = new MeshBasicMaterial();
+      glass.transparent = true;
+      transparent.material = glass;
+      const regeomed = meshes[5] as Mesh;
+      regeomed.geometry = new BoxGeometry(2, 2, 2);
+      projection.reconcile();
+
+      expect(baked(projection, transparent).lane).toBe("exact");
+      expect(projection.report.exact.transparent).toBe(1);
+      // A geometry nothing else shares cannot join the group, so it keeps a draw of its own.
+      expect(baked(projection, regeomed).lane).toBe("exact");
+      expect(projection.report.exact.tooFewToBatch).toBe(1);
+      // The one surviving group still draws, minus the two objects that left it.
+      expect(projection.report.instancedBatches).toBe(1);
+      expect(projection.report.projectedObjects).toBe(10);
+    } finally {
+      projection.dispose();
+    }
+  });
+
+  it("stops re-classifying a structure that has not changed", () => {
+    const { projection, meshes } = settledScene(64);
+    try {
+      const realGetAttribute = BufferGeometry.prototype.getAttribute;
+      let reads = 0;
+      const spy = vi
+        .spyOn(BufferGeometry.prototype, "getAttribute")
+        .mockImplementation(function (this: BufferGeometry, name: string) {
+          reads += 1;
+          return realGetAttribute.call(this, name);
+        });
+      try {
+        for (let frame = 0; frame < 5; frame += 1) {
+          // Every transform moves, which is the workload the skip has to survive: the scan reads no
+          // world matrices, so a moving object is not a reason to classify it again.
+          for (const [index, mesh] of meshes.entries()) {
+            mesh.position.y = index + frame;
+            mesh.rotation.x = frame * 0.1;
+          }
+          projection.reconcile();
+        }
+      } finally {
+        spy.mockRestore();
+      }
+      // One classification for the whole run, not one per frame: the scan asks every renderable for
+      // its position attribute, and a frame that re-derived the plan would ask 64 more times.
+      expect(reads).toBeLessThan(meshes.length);
+    } finally {
+      projection.dispose();
+    }
+  });
+
+  it("re-examines a geometry whose vertex data moved", () => {
+    const { projection, meshes } = settledScene(64);
+    try {
+      const geometry = (meshes[0] as Mesh).geometry;
+      const realGetAttribute = BufferGeometry.prototype.getAttribute;
+      let reads = 0;
+      const spy = vi
+        .spyOn(BufferGeometry.prototype, "getAttribute")
+        .mockImplementation(function (this: BufferGeometry, name: string) {
+          reads += 1;
+          return realGetAttribute.call(this, name);
+        });
+      try {
+        projection.reconcile();
+        const settledReads = reads;
+        // A packed copy of this geometry is the one thing the instanced lane follows by reference
+        // and a material lane cannot, so a version move has to bring the classification back.
+        (geometry.getAttribute("position") as BufferAttribute).needsUpdate = true;
+        projection.reconcile();
+        expect(reads).toBeGreaterThan(settledReads);
+      } finally {
+        spy.mockRestore();
+      }
+    } finally {
+      projection.dispose();
+    }
   });
 });
