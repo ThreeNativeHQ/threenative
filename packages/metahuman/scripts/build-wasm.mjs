@@ -14,7 +14,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { OPENRIGLOGIC_COMMIT, openRigLogicBuildDir, openRigLogicSourceDir, verifyPinnedOpenRigLogic } from "./openriglogic.mjs";
+import {
+  OPENRIGLOGIC_COMMIT,
+  openRigLogicBuildDir,
+  openRigLogicSourceDir,
+  verifyPinnedOpenRigLogic,
+} from "./openriglogic.mjs";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const cppDir = join(packageRoot, "cpp");
@@ -99,7 +104,14 @@ export function buildWasm() {
 
   const library = staticLibrary(buildDir);
   const output = join(wasmDir, "riglogic.mjs");
-  run("em++", [join(cppDir, "tn_riglogic.cpp"), library, `-I${join(sourceDir, "include")}`, "-o", output, ...LINK]);
+  run("em++", [
+    join(cppDir, "tn_riglogic.cpp"),
+    library,
+    `-I${join(sourceDir, "include")}`,
+    "-o",
+    output,
+    ...LINK,
+  ]);
 
   const manifest = {
     openRigLogicCommit: OPENRIGLOGIC_COMMIT,

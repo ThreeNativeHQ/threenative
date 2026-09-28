@@ -300,8 +300,8 @@ There are three phases and nine progress boxes. Every box is currently open. Pro
 
 ### Phase 1 — Validated asset and evaluator contracts
 
-- [ ] The asset-contract validator accepts a matched synthetic GLB/DNA/bindings set and rejects each corruption class in §7 (hash mismatch, truncated DNA, missing mapping, NaN, bad LOD index, path escape). proof: proposed `pnpm exec vitest run packages/metahuman/__tests__/asset-contract.spec.ts`.
-- [ ] The browser WASM evaluator matches the standalone upstream evaluator on the committed synthetic DNA and, when `TN_METAHUMAN_SAMPLE_DIR` is set, on `Sample.dna`; the local run is reported as run or skipped, never as passed when skipped. proof: proposed `pnpm exec vitest run packages/metahuman/__tests__/wasm-reference.spec.ts`; include the WASM build result and pinned upstream revision.
+- [x] The asset-contract validator accepts a matched synthetic GLB/DNA/bindings set and rejects each corruption class in §7 (hash mismatch, truncated DNA, missing mapping, NaN, bad LOD index, path escape). proof: proposed `pnpm exec vitest run packages/metahuman/__tests__/asset-contract.spec.ts`. **Result 2026-09-28:** 28/28 pass, exit 0: the matched synthetic set passes, and every error code plus truncated DNA and path escapes fails with its exact code.
+- [x] The browser WASM evaluator matches the standalone upstream evaluator on the committed synthetic DNA and, when `TN_METAHUMAN_SAMPLE_DIR` is set, on `Sample.dna`; the local run is reported as run or skipped, never as passed when skipped. proof: proposed `pnpm exec vitest run packages/metahuman/__tests__/wasm-reference.spec.ts`; include the WASM build result and pinned upstream revision. **Result 2026-09-28:** 6/6 pass, exit 0, with `TN_METAHUMAN_SAMPLE_DIR` set; without it the local lane reports 2 skipped. Worst error is 4.90e-10 against the 1e-5 + 1e-4·|ref| bound. Built from OpenRigLogic `7b9e7a8` with emcc 4.0.15: `riglogic.wasm` is 1.1 MB, checksum-verified before instantiation. Also run ad hoc: Ada's 4.8 MB DNA matches the native reference to 4.98e-10 (create 94 ms, 200 evaluations in 81 ms).
 
 ### Phase 2 — Portable runtime integration
 

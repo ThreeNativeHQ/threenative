@@ -32,7 +32,11 @@ export function openRigLogicToolsDir() {
 }
 
 function git(args, cwd) {
-  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 }
 
 export function openRigLogicRevision(sourceDir = openRigLogicSourceDir()) {
@@ -45,7 +49,9 @@ export function openRigLogicRevision(sourceDir = openRigLogicSourceDir()) {
  */
 export function verifyPinnedOpenRigLogic(sourceDir = openRigLogicSourceDir()) {
   if (!existsSync(sourceDir)) {
-    throw new Error(`OpenRigLogic source is missing at ${sourceDir}. Run ensureOpenRigLogic() first.`);
+    throw new Error(
+      `OpenRigLogic source is missing at ${sourceDir}. Run ensureOpenRigLogic() first.`,
+    );
   }
   const revision = openRigLogicRevision(sourceDir);
   if (revision !== OPENRIGLOGIC_COMMIT) {

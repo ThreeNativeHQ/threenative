@@ -3759,6 +3759,78 @@
       "symbol": "WorldCells"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "absolute paths, Windows drive letters, backslashes and any `..` segment throw MetaHumanAssetError with TN_MH_PATH_ESCAPE before the path is joined onto a root"
+      ],
+      "example": "assertAssetPath(\"metahuman/specimen.glb\");",
+      "importPath": "@threenative/metahuman",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export function assertAssetPath(path: string): string { … }",
+      "situations": ["reject a MetaHuman asset path that would read outside the game's asset root"],
+      "summary": "Keeps a caller-supplied asset path inside the asset directory.",
+      "supersedes": [],
+      "symbol": "assertAssetPath"
+    },
+    {
+      "aliases": [],
+      "constraints": ["`code` is part of the public surface; renaming one is a breaking change"],
+      "example": "if (error instanceof MetaHumanAssetError && error.code === \"TN_MH_HASH_MISMATCH\") refetch();",
+      "importPath": "@threenative/metahuman",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export class MetaHumanAssetError extends Error { … }",
+      "situations": ["branch on why a MetaHuman asset or evaluator call was refused"],
+      "summary": "The rejection every check in this package raises, carrying a stable machine-readable code.",
+      "supersedes": [],
+      "symbol": "MetaHumanAssetError"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the binary's SHA-256 is checked against the shipped manifest before it is",
+        "every returned array is a copy, so no view survives a memory growth; a disposed"
+      ],
+      "example": "const rig = await RigEvaluator.create(dna); rig.setGuiControls(gui); rig.evaluate(true); rig.jointOutputs();",
+      "importPath": "@threenative/metahuman",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export class RigEvaluator implements IRigEvaluator { … }",
+      "situations": [
+        "drive a prepared MetaHuman head's expression from the browser without an Unreal import"
+      ],
+      "summary": "One MetaHuman head rig over the checksum-verified browser WASM build of the shared OpenRigLogic ABI: faceboard GUI controls in, joint deltas, blend shape weights and animated map weights out.   instantiated, and nothing is fetched from a CDN   evaluator throws instead of reading freed memory",
+      "supersedes": [],
+      "symbol": "RigEvaluator"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "fails closed: a missing key, a wrong type, a hash that differs from the bytes on",
+        "reads the rig's real names and the GLB's real node, mesh and target counts, so it"
+      ],
+      "example": "const bindings = validateMetaHumanAssets({ bindings: parsed, dnaSha256, glbSha256, rig, gltf });",
+      "importPath": "@threenative/metahuman",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export function validateMetaHumanAssets(input: IMetaHumanAssetInput): IMetaHumanBindings { … }",
+      "situations": [
+        "refuse a MetaHuman specimen whose bindings point at joints, nodes, blend shape"
+      ],
+      "summary": "Checks one prepared specimen — bindings sidecar, DNA and GLB — against the rig it claims to drive, and returns the bindings only when every name, index, domain and hash holds up.   channels, morph targets or LODs the loaded files do not contain   disk and an index past the end of its array are rejections, each with a stable code   cannot pass a hand-written sidecar the rig cannot drive",
+      "supersedes": [],
+      "symbol": "validateMetaHumanAssets"
+    },
+    {
       "aliases": ["pick up item"],
       "constraints": ["add the area to the physics context before stepping the world"],
       "deprecated": [

@@ -3,6 +3,6 @@
   "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.15 (09f52557f0d48b65b8c724853ed8f4e8bf80e669)",
   "files": {
     "riglogic.mjs": "f4e8272382078bc9fb2d20daf89319a78909f98bebe7a15fff486e1fd42d22fa",
-    "riglogic.wasm": "4c21488477b11bd3a78d9bed44089be19aee2ad6c16088e93e941dc6fb424154"
+    "riglogic.wasm": "9384f0068324ca1454c9153e6e1b3e1b61b31dd0b454fd74bf9a12ce8f9b3803"
   }
 }

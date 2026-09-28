@@ -54,21 +54,33 @@ struct Handle {
     rl4::RigInstance* instance = nullptr;
 };
 
-// Every live handle, so a freed slot stops validating even when the allocator hands
-// the same address back for the next create.
-std::vector<Handle*>& liveHandles() {
-    static std::vector<Handle*> handles;
+// Every live handle, keyed by its never-reused ID. A retired ID is erased, so a stale
+// caller can never resolve to a newer rig even when the allocator hands back the same
+// address for the next create.
+struct Slot {
+    tn_rl_handle id = 0;
+    Handle* handle = nullptr;
+};
+
+std::vector<Slot>& liveHandles() {
+    static std::vector<Slot> handles;
     return handles;
 }
 
+// Monotonic, never reused, and 0 is reserved for "invalid", so the first ID is 1.
+tn_rl_handle& nextHandleId() {
+    static tn_rl_handle next = 1;
+    return next;
+}
+
 Handle* resolve(tn_rl_handle handle) {
-    if (handle == nullptr) {
+    if (handle == 0) {
         setError("null handle");
         return nullptr;
     }
-    for (auto* candidate : liveHandles()) {
-        if (static_cast<const void*>(candidate) == handle) {
-            return candidate;
+    for (const auto& slot : liveHandles()) {
+        if (slot.id == handle) {
+            return slot.handle;
         }
     }
     setError("stale handle");
@@ -92,7 +104,7 @@ tn_rl_handle tn_rl_create(const uint8_t* dna, uint32_t length) {
     clearError();
     if (dna == nullptr || length == 0u) {
         setError("dna must be a non-empty buffer");
-        return nullptr;
+        return 0;
     }
 
     auto* handle = new Handle();
@@ -102,21 +114,21 @@ tn_rl_handle tn_rl_create(const uint8_t* dna, uint32_t length) {
     if (handle->stream == nullptr) {
         setError("out of memory creating the DNA stream");
         delete handle;
-        return nullptr;
+        return 0;
     }
     handle->stream->open();
     if (handle->stream->write(reinterpret_cast<const char*>(dna), length) != length) {
         setError("could not buffer the DNA bytes");
         rl4::MemoryStream::destroy(handle->stream);
         delete handle;
-        return nullptr;
+        return 0;
     }
 
     handle->reader = rl4::BinaryStreamReader::create(handle->stream);
     if (handle->reader == nullptr) {
         rl4::MemoryStream::destroy(handle->stream);
         delete handle;
-        return nullptr;
+        return 0;
     }
     handle->reader->read();
     if (!rl4::Status::isOk()) {
@@ -124,7 +136,7 @@ tn_rl_handle tn_rl_create(const uint8_t* dna, uint32_t length) {
         rl4::BinaryStreamReader::destroy(handle->reader);
         rl4::MemoryStream::destroy(handle->stream);
         delete handle;
-        return nullptr;
+        return 0;
     }
 
     handle->logic = rl4::RigLogic::create(handle->reader, fixedConfiguration());
@@ -133,7 +145,7 @@ tn_rl_handle tn_rl_create(const uint8_t* dna, uint32_t length) {
         rl4::BinaryStreamReader::destroy(handle->reader);
         rl4::MemoryStream::destroy(handle->stream);
         delete handle;
-        return nullptr;
+        return 0;
     }
     handle->instance = rl4::RigInstance::create(handle->logic);
     if (handle->instance == nullptr) {
@@ -142,23 +154,24 @@ tn_rl_handle tn_rl_create(const uint8_t* dna, uint32_t length) {
         rl4::BinaryStreamReader::destroy(handle->reader);
         rl4::MemoryStream::destroy(handle->stream);
         delete handle;
-        return nullptr;
+        return 0;
     }
 
-    liveHandles().push_back(handle);
-    return handle;
+    const tn_rl_handle id = nextHandleId()++;
+    liveHandles().push_back({id, handle});
+    return id;
 }
 
 void tn_rl_destroy(tn_rl_handle handle) {
-    if (handle == nullptr) {
+    if (handle == 0) {
         return;
     }
     auto& handles = liveHandles();
     for (auto it = handles.begin(); it != handles.end(); ++it) {
-        if (static_cast<const void*>(*it) != handle) {
+        if (it->id != handle) {
             continue;
         }
-        Handle* owned = *it;
+        Handle* owned = it->handle;
         handles.erase(it);
         rl4::RigInstance::destroy(owned->instance);
         rl4::RigLogic::destroy(owned->logic);

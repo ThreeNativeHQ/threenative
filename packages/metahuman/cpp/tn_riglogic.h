@@ -24,6 +24,14 @@
 // tn_rl_name(handle, TN_RL_KIND_JOINT, i) is the only parent information, so a
 // consumer walking the chain owns the composition.
 //
+// A handle is an ID, never a pointer. IDs come from a monotonic counter and are never
+// reused, so an id whose rig was destroyed can never resolve to the next rig even when
+// the allocator hands back the same address. 0 is invalid. A stale or unknown id is
+// rejected on every entry point with the last error set to "stale handle": a status
+// returning call reports TN_RL_ERR_INVALID_HANDLE (tn_rl_count keeps its documented -1,
+// which no real count is), a pointer returning call returns NULL, and tn_rl_destroy is a
+// no-op.
+//
 // Not thread safe: one handle must be used from one thread at a time, and handle
 // creation/destruction must be serialised by the caller (the browser module is
 // single threaded; the native host evaluates on its own thread).
@@ -37,8 +45,8 @@
 extern "C" {
 #endif
 
-/** Opaque owned rig handle. One RigLogic plus one RigInstance per handle. */
-typedef void* tn_rl_handle;
+/** Opaque owned rig ID. One RigLogic plus one RigInstance per ID. 0 is always invalid. */
+typedef uint32_t tn_rl_handle;
 
 /** Selectors for tn_rl_count() and tn_rl_name(). */
 enum {
@@ -66,14 +74,14 @@ enum {
 #define TN_RL_JOINT_STRIDE 10
 
 /**
- * Parse a DNA blob and create a rig handle.
+ * Parse a DNA blob and create a rig.
  *
- * Returns the new handle, or NULL with the last error set. The bytes are copied, so
+ * Returns the new non-zero handle, or 0 with the last error set. The bytes are copied, so
  * the caller keeps ownership of @p dna and may free it on return.
  */
 tn_rl_handle tn_rl_create(const uint8_t* dna, uint32_t length);
 
-/** Destroy a handle. Passing NULL is a no-op. Safe to call once per successful create. */
+/** Destroy a handle, retiring its ID forever. Passing 0 is a no-op. Safe to call once per successful create. */
 void tn_rl_destroy(tn_rl_handle handle);
 
 /**
@@ -84,8 +92,8 @@ int32_t tn_rl_count(tn_rl_handle handle, int32_t kind);
 
 /**
  * Name at @p index for a @p kind selector, or NULL with the last error set on a bad
- * index or unknown kind. The pointer is owned by the handle and stays valid until
- * tn_rl_destroy(). TN_RL_KIND_LOD has no names.
+ * index, unknown kind or stale handle. The pointer is owned by the handle and stays
+ * valid until tn_rl_destroy(). TN_RL_KIND_LOD has no names.
  */
 const char* tn_rl_name(tn_rl_handle handle, int32_t kind, uint32_t index);
 
