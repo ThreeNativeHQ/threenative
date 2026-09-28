@@ -50,11 +50,12 @@ pnpm test
 node tools/look.mjs
 ```
 
-The game boots straight into `Play`: a coastal island, pickup, crate, chasm, and flag produce `won` or
-`lost`; `R` and the React restart intent rebuild from `initialState`. Keep the packaged
-`assets/native-proof.glb` load and its console marker for the desktop asset gate. `Play.ts` owns
-gameplay, `src/render/` owns the look, `src/ui/Hud.tsx`/`Menu.tsx` own UI, and `state.ts` publishes
-JSON-safe values. Keep `playtests/survives.playtest.json` as smoke proof and update outcome tests.
+The game boots straight into `Play`: a test arena holding a pickup, a crate, a gap you must jump and
+a flag, which together produce `won` or `lost`; `R` and the React restart intent rebuild from
+`initialState`. Keep the packaged `assets/native-proof.glb` load and its console marker for the
+desktop asset gate. `Play.ts` owns gameplay, `src/render/` owns the look, `src/ui/Hud.tsx`/`Menu.tsx`
+own UI, and `state.ts` publishes JSON-safe values. Keep `playtests/survives.playtest.json` as smoke
+proof and update outcome tests.
 
 On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), local `src/render/touch-controls.ts` adds a left movement stick and right jump button; the scene passes its input to `Player`, with keyboard mapping as the desktop fallback.
 
@@ -75,16 +76,15 @@ rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled 
 tracks that bind nothing (the `<bone>.undefined` failure that plays the bind pose instead of the animation), `clipBoneCoverage` names bones the clip does not drive and which
 therefore keep the previous clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is supposed to be touching. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
-## Fused rock authoring
-`src/render/rockRidge.ts` owns the granite field, seed, bounds, ridge material handoff, and quality choice; `src/render/implicitSurface.ts` is the local renderer-independent extractor and final-array topology audit. A fused mass is one implicit field; separate debris may be instanced.
-After changing bounds, field, or resolution, run three fixed seeds and require the audit to report zero boundary edges, degenerate triangles, and winding conflicts with positive signed volume. Never hide holes with `DoubleSide` or a normal map.
-`Play.enter` attaches Preview immediately, then the classic Worker refinement swaps atomically; do not add a main-thread showcase fallback.
+## The arena is a test arena, and its look is a grid
+`src/render/arena.ts` owns the ground, the four walls, one pillar, and `platform()`, the single builder both ends of the course are cut from. A platform is a light metre-grid plate over a dark-grid body down to the ground: two meshes, so the player collides with exactly the triangles they can see, and the sides read as structure while the walking surface reads as floor. The ground has no collider — that is the pit under the gap, and why falling costs a life instead of landing on scenery. Move a platform and move its support surface in `Play.ts` and `Goal.ts` with it, or grounding will answer for a surface that is no longer there.
+`materials.ts` is the whole look: two greys and one saturated colour. Light grid where the player walks, dark grid on sides and structure, and the single `accent` hue reserved for the crate, the pickup and the flagpole — what you can touch. `worldGridUVs` makes one grid tile one metre on every face of every prop, so call it after a geometry is placed and before it is given to a mesh.
 
 ## Quality and proof
 
 `src/render/quality.ts` owns `low`, `medium`, `high`; platform selects the boot tier, and `adaptiveQuality.ts` reads `game.ts` frame windows. Fresh GPU time wins, with a named presentation fallback. After startup, two overloaded windows lower quality; five with 20% headroom raise it; cooldown is five seconds. Presentation fallback allows 5% timing jitter (`presentationTolerance`); `overloadBudgetMs` reports its threshold. Vsync-bound presentation alone cannot prove recovery headroom.
 `setupPost` exposes policy options and `targetFps`; `Play` supplies `display.maxFps` and readiness. Pin `{ tier: "low" }`; invalid tiers throw and pinned costs report. The `quality` entity and `TN_QUALITY_TIER` expose decisions; dispose on scene exit.
-The authored paint stages (`outline.ts`, `kuwahara.ts`, `watercolor.ts`) ship **off at every tier** and stay wired through `painterly.ts`, so re-enabling one is flipping its single `xxxEnabled` line in `quality.ts` — a real sun and a real sky already carry the shading, and the ink outline read as a comic stroke over a photograph. `quality.ts` owns tier, radius, resolution and strength; `TN_RENDER_CHAIN` names each stage independently, and a missing stage observation is a failure.
+The shipped chain is ambient occlusion on `high` and `medium`, bloom, vignette, the tone curve and the shared SMAA. There are no authored paint stages: a real sun and a real sky carry the shading, and a Kuwahara smear or an ink outline over a photograph only cost frames. `quality.ts` owns tier and strength, and every `xxxEnabled: true` carries the measurement that justified it; `TN_RENDER_CHAIN` names each stage independently, and a missing stage observation is a failure.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario with no assertions or missing observations fails; open a real capture after visual changes. When a frame costs more than it should, find the object first: backtick opens the overlay, whose **Geometry** tab captures one frame on **Capture** and ranks the objects that submitted its triangles beside their projected size on screen; an agent gets the same report from `"assert": { "geometry": { "limit": 25 } }` in a scenario, which needs `runtime.geometry`. Those numbers are measured submissions reconciled against the frame's own pass totals, so the remainder the rows do not account for is reported, and what cannot be measured — a packed batch's per-member draws, unknown bounds — says so with a reason instead of reading as zero.
 
 ## One shadow for a big outdoor level

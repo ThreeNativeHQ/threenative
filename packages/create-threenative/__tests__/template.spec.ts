@@ -445,24 +445,34 @@ describe("template contracts", () => {
     }
   });
 
-  it("should keep the starter ridge on one classic Worker path with disposal", async () => {
-    const [controller, worker, play] = await Promise.all([
-      readFile(path.join(templateRoot, "starter/src/render/rockRidge.ts"), "utf8"),
-      readFile(path.join(templateRoot, "starter/src/render/rockRidge.worker.ts"), "utf8"),
+  it("should build the starter's test arena from two materials and one grid", async () => {
+    const [arena, materials, palette, play, goal] = await Promise.all([
+      readFile(path.join(templateRoot, "starter/src/render/arena.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/render/materials.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/render/palette.ts"), "utf8"),
       readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/entities/Goal.ts"), "utf8"),
     ]);
-    expect(controller).toContain("new Blob");
-    expect(controller).toContain("new Worker(url)");
-    expect(controller).toContain("state.requestedGeneration");
-    expect(controller).toContain("message.generation !== state.requestedGeneration");
-    expect(controller).toContain("previous.geometry.dispose()");
-    expect(controller).toContain('error.name = "TN_ROCK_RIDGE_TOPOLOGY_INVALID"');
-    expect(controller).not.toContain('type: "module"');
-    expect(worker).toContain("createImplicitSurfaceWorkerSource");
-    expect(worker).toContain("[result.indices.buffer, result.positions.buffer]");
-    expect(worker).not.toContain("@threenative/");
-    expect(play).toContain("this.#scenery?.dispose()");
-    expect(play).toContain('ctx.entities.add("scenery.ridge", scenery)');
+    // Three roles, one saturated colour. The look is legible because nothing else is blue.
+    expect(arena).toContain("structureMaterial");
+    expect(arena).toContain("floorMaterial");
+    expect(materials).toMatch(/propMaterial[\s\S]*palette\.accent/);
+    expect(palette.match(/accent:/gu)).toHaveLength(1);
+    // UVs are world metres, so one grid tile is one metre on every face of every prop.
+    expect(arena).toContain("worldGridUVs");
+    expect(materials).toContain("export function worldGridUVs");
+    // The ground the player does not stand on: that is what makes the gap a pit.
+    expect(arena).toContain("GROUND_Y = -6");
+    expect(arena).not.toContain("new RigidBody3D");
+    // Both platforms come from the one builder, and both collide with the triangles they show.
+    expect(play).toContain("platform(");
+    expect(goal).toContain("platform(");
+    expect(play).toContain("createArena()");
+    // The kind is named, not inferred: `fromMesh` alone reads a cylinder as a box, and a
+    // geometry whose offset is baked in would then collide at the world origin.
+    expect(play).toContain('CollisionShape3D.fromMesh(mesh, "trimesh")');
+    expect(goal).toContain('CollisionShape3D.fromMesh(mesh, "trimesh")');
+    expect(play).not.toContain("Math.random(");
   });
 
   it("should use roundedBox for starter meshes and never teach the old vertical path", async () => {
@@ -495,7 +505,7 @@ describe("template contracts", () => {
     expect(play).toContain("createSpringArm");
     expect(play).toContain("createSpringArm(ctx.camera");
     expect(play).toContain("springArm");
-    expect(play).toContain("roundedBox");
+    expect(play).toContain("block(");
     expect(play).toContain("setupSky");
     expect(play).toContain("setupSky(ctx.scene");
     expect(play).toContain("KILL_PLANE");
@@ -1038,16 +1048,19 @@ describe("template contracts", () => {
     expect(failures.join("\n\n")).toBe("");
   }, 180_000);
 
-  it("should build a scaffold after deleting its optional realism effects", async () => {
+  it("should build the starter scaffold with no optional effect folder left to prune", async () => {
+    // The `effects/` folder was three optional TSL stages nobody referenced; deleting it was a
+    // supported edit, and the gate was that the scaffold still built. The folder is gone, so what
+    // is left to prove is the part that mattered: the shipped tree compiles as generated.
     const root = await makeTempDir("threenative-optional-effects-");
     try {
       const result = await createProject(
         { install: false, target: "optional-effects", template: "starter" },
         root,
       );
-      for (const file of ["lensDistortion.ts", "sparkle.ts", "gradualBackground.ts"]) {
-        await rm(path.join(result.target, "src/render/effects", file));
-      }
+      await expect(
+        readFile(path.join(result.target, "src/render/effects/lensDistortion.ts"), "utf8"),
+      ).rejects.toThrow();
       await linkScaffoldBuildDependencies(result.target);
       const vite = await findPnpmPackage("vite");
       await execFileAsync(process.execPath, [path.join(vite, "bin/vite.js"), "build"], {

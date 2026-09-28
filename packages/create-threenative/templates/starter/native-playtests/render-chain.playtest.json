@@ -10,13 +10,13 @@
   "steps": [
     {
       "kind": "input",
-      "label": "move-and-start-refinement",
+      "label": "move-across-the-platform",
       "press": "ArrowUp",
       "holdTicks": 60,
       "release": true
     },
     {
-      "label": "ridge-refined",
+      "label": "frame-settles",
       "waitTicks": 600
     }
   ],
@@ -24,50 +24,11 @@
     "screenshots": "after"
   },
   "assert": {
-    "components": [
-      {
-        "entity": "scenery.ridge",
-        "component": "state",
-        "equals": "refined",
-        "allowTrivial": "A fast Worker may refine before the native baseline sample; the final state still proves the attached result is refined."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "generation",
-        "gte": 1,
-        "allowTrivial": "A fast Worker may complete before the native baseline sample; generation one still proves the refinement dispatch ran."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "boundaryEdges",
-        "equals": 0,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached native ridge."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "degenerateTriangles",
-        "equals": 0,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached native ridge."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "windingConflicts",
-        "equals": 0,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached native ridge."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "signedVolume",
-        "gte": 1,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached native ridge."
-      }
-    ],
     "renderChain": {
-      "tier": "high"
+      "tier": "high",
+      "stages": {
+        "includes": ["ambientOcclusion", "bloom", "vignette"]
+      }
     },
     "resources": [
       {
@@ -75,6 +36,13 @@
         "path": "odometer",
         "gte": 1,
         "changed": true
+      }
+    ],
+    "visibility": [
+      {
+        "entity": "player",
+        "minProjectedPixels": 20,
+        "allowTrivial": "The player is visible from the first tick; the state rows carry the native render proof."
       }
     ]
   }

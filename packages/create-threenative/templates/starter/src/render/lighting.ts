@@ -2,17 +2,17 @@
 // ThreeNative does not read this file.
 //
 // One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
-// sun misses and puts the sky's own highlight on every silhouette — so there is no hemisphere,
-// ambient or rim light stacked on top to flatten the frame.
+// sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 import { DirectionalLight, PCFSoftShadowMap, type Scene } from "three";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-// Returns the key light: `WorldEnvironment`'s godrays stage raymarches against a shadow map, so
-// the scene hands the sun to `setupPost` and a shadowless light is refused by name instead of
-// rendering a black pass.
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
+export function setupLighting(
+  scene: Scene,
+  renderer: ShadowRenderer,
+  mobile = false,
+): { key: DirectionalLight } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
@@ -20,13 +20,15 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   const key = new DirectionalLight(0xfff1e0, 4.5);
   key.position.copy(SUN_DIRECTION).multiplyScalar(30);
   key.castShadow = true;
-  // 2048² over the 22 m route is under a centimetre a texel. Widen the extent when the level
-  // grows, accepting softer shadows, or follow the player with a `VirtualShadowNode` — the
-  // starter's `AGENTS.md` shows how.
-  key.shadow.mapSize.set(2048, 2048);
+  // One map fitted to the 28 m arena: 4096² is under a centimetre a texel, so every shadow has the
+  // same softness. Camera-centred cascades (`VirtualShadowNode`) are for open worlds; here their
+  // level boundaries showed as shadows that turned sharp halfway along. Phones take 2048².
+  const size = mobile ? 2048 : 4096;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 80;
-  const extent = 11;
+  const extent = 14;
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;
@@ -35,7 +37,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   key.shadow.bias = -0.0002;
   key.shadow.normalBias = 0.005;
   scene.add(key);
-  // In the scene, so a camera-following shadow (`VirtualShadowNode`) can aim at it.
-  scene.add(key.target);
-  return key;
+  // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
+  // shadow map, so `setupPost` needs the light itself.
+  return { key };
 }
