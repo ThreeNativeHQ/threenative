@@ -138,7 +138,7 @@ function data(overrides: Partial<IMonitorData> = {}): IMonitorData {
     git: gitState(),
     prd: {
       done: phases.reduce((sum, phase) => sum + phase.done, 0),
-      file: "docs/PRDs/performance/benchmarking/PRD-449-cross-engine-benchmarks-and-html-report.md",
+      file: "docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md",
       missing: null,
       phases,
       status,
@@ -184,7 +184,7 @@ describe("PRD-449 campaign progress monitor", () => {
       data({
         prd: {
           done: 3,
-          file: "docs/PRDs/performance/benchmarking/PRD-449-cross-engine-benchmarks-and-html-report.md",
+          file: "docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md",
           missing: null,
           phases,
           status,

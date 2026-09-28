@@ -1,6 +1,6 @@
 # PRD-449: ThreeNative vs Godot — one lean benchmark, one scoreboard
 
-**Status:** PARTIAL — repeated scoreboard landed (TN 0 wins, Godot 2, ties 4 on a loaded machine); the can't-batch per-draw fix and an idle-machine rerun remain.
+**Status:** DONE 2026-09-28 — TN wins 4, Godot 1, ties 1 on the quiet-machine scoreboard; three projection fixes kept.
 **Date:** 2026-09-25 (scope cut 2026-09-27)
 **Target branch:** `develop`
 **Owner request:** show clearly whether ThreeNative beats Godot, where it loses, and fix TN where it loses.
@@ -29,19 +29,19 @@ The original PRD planned six benchmark families (Bevy cubes, plain-Three meshes,
 
 Each row runs at 1,024 and 4,096 cubes. Protocol: 40 warm-up frames, 120 measured frames, and 3 alternating runs per arm (TN, Godot, TN, Godot…). A row is a **win** only when the gap between the medians of the run p50s exceeds the larger arm's run-to-run spread; otherwise it is a **tie**. Never pair TN-with-an-optimization-off against Godot-with-it-on: that run is TN profiling data, not a row.
 
-## Current result (2026-09-28, quiet machine, load average ~5, both TN fixes in)
+## Final result (2026-09-28, quiet machine, `pnpm bench:scoreboard 2026-09-28b`)
 
-TN wins 3, ties 2, and Godot wins 1 (p50 medians of 3 alternating runs):
+TN wins 4, ties 1, and Godot wins 1:
 
 | Row | 1,024 cubes | 4,096 cubes |
 | --- | --- | --- |
-| Shipped defaults | TN 1.27 vs Godot 1.53 ms, TN 1.2× | TN 2.65 vs 4.23 ms, TN 1.6× |
-| Explicit instancing | 1.11 vs 1.16 ms, tie | 1.48 vs 2.94 ms, TN 2.0× |
-| Can't batch | 2.56 vs 1.71 ms, tie (TN spread 1.59) | 11.17 vs 5.37 ms, Godot 2.1× (was ~9× before batch-by-uniforms) |
+| Shipped defaults | TN 1.26 vs Godot 1.64 ms, TN 1.3× | 2.28 vs 4.17 ms, TN 1.8× |
+| Explicit instancing | 1.10 vs 1.23 ms, TN 1.1× | 1.40 vs 2.73 ms, TN 2.0× |
+| Can't batch | 2.08 vs 1.73 ms, Godot 1.2× | 7.88 vs 5.95 ms, tie |
 
 Real-game holdout (`488bf8791`, racing and shooter templates, 6+6 alternating runs): no effect and no regression. Both templates stay below the projection's 200-renderable floor (96–100), so neither fix runs there; draws, triangles and pixels are unchanged within null-control noise. These fixes pay off for scenes with hundreds to thousands of objects and cost small games nothing.
 
-The remaining loss is the projection's per-frame material-change poll: about 5.6 ms of the 8.4 ms collapse at 4,096 distinct materials.
+The remaining can't-batch gap is the per-frame material drift poll. A build without the check runs L4 at 4,096 in 2.8 ms. Removing the poll needs change notification on the game's materials, which is left as its own design question.
 
 ## Phases
 
@@ -60,5 +60,10 @@ The remaining loss is the projection's per-frame material-change poll: about 5.6
 ### Phase 3: Fix TN where it loses, then close
 
 - [x] Projection reconcile. `SceneRenderProjection.reconcile()` re-walks and re-compares every authored object each frame: 1.66 ms of TN's 3.49 ms R1 frame at 4,096 cubes. Skip the provably unchanged work, keep the "game may change anything" guarantee, and re-run R1. proof: guard specs red-green, a 3+3 run A/B table, and the new R1 row on the scoreboard. Done 2026-09-27: guards `c69143921`, fix `2d856ac19` + `288198dc5`, A/B `bd52da0d7`: TN L3 4,096 median p50 10.93 → 6.08 ms (−44%), faster in 6/6 paired blocks, identical draws/triangles/hash. Core suite 1872 pass; the 6 failures (4 `packaging.spec.ts`, `render-projection-pipeline`, `three-shadow-override-cache`) reproduce at `f5639d2ac` without the fix.
-- [ ] Batch by uniforms: the projection merges meshes that share geometry and shader but differ only in material colour into its batched draw with per-instance colour, identical pixels, and per-frame colour changes honoured. proof: guard specs red-green, projection-on/off pixel match, a paired R3 A/B plus a scoreboard rerun, and a template-game before/after with no regression.
-- [ ] Close: `pnpm typecheck`, `pnpm lint` and the core suite pass, the scoreboard is linked from `docs/verification/runtime-perf-state.md`, and this PRD moves to `docs/PRDs/done/`. proof: exit codes recorded here; the closing commit.
+- [x] Batch by uniforms: the projection merges meshes that share geometry and shader but differ only in material colour into its batched draw with per-instance colour, identical pixels, and per-frame colour changes honoured. proof: guard specs red-green, projection-on/off pixel match, a paired R3 A/B plus a scoreboard rerun, and a template-game before/after with no regression. Done 2026-09-28: `7f8042277` (9 specs red→green), `1eda85f61` (drift check 1.3× cheaper, 14 spec rows); pixel match `0b726c4cf` (0.00083 mismatch, ΔE 0.031, inside 0.01/3.0); A/B `6ea9bad66` 42.9 → 10.8 ms and 2,375 → 3 draws at 4,096; scoreboard 2026-09-28b L4 4,096 7.88 vs Godot 5.95 ms (tie); template holdout `488bf8791`: no effect, no regression.
+- [x] Close: `pnpm typecheck`, `pnpm lint` and the core suite pass, the scoreboard is linked from `docs/verification/runtime-perf-state.md`, and this PRD moves to `docs/PRDs/done/`. proof: exit codes recorded here; the closing commit. Done 2026-09-28: `pnpm typecheck` exit 0, `pnpm lint` exit 0 (warnings only), bench specs 134/134 after fixing the Wayland default-param leak (`d5e667c9e`); core suite 1886 pass / 6 fail, all 6 (4 `packaging.spec.ts`, `render-projection-pipeline`, `three-shadow-override-cache`) failing identically with this PRD's core changes reverted; linked from `docs/verification/runtime-perf-state.md`.
+
+## Acceptance criteria
+
+- [x] Opening the report answers "is TN beating Godot?" in one line, with a winner pill per row and TN's losses left in view. proof: `progress.html` banner "ThreeNative wins 4, Godot wins 1, ties 1 — of 6 head-to-head rows"; `engine-load-test-monitor.spec.ts` 15/15.
+- [x] Every kept fix holds outside the benchmark (no benchmaxxing). proof: template holdout `488bf8791` (racing, shooter): no regression; projection on/off pixel match `0b726c4cf`.
