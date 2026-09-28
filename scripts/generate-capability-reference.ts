@@ -35,6 +35,7 @@ interface IManifestEntry {
   readonly situations: readonly string[];
   readonly summary: string;
   readonly supersedes: readonly string[];
+  readonly deprecated?: readonly string[];
   readonly symbol: string;
 }
 
@@ -65,6 +66,7 @@ function section(entry: IManifestEntry): string {
     ...bulletList(entry.requires ?? [], "Requires"),
     ...bulletList(entry.supersedes, "Supersedes (writing this fails `pnpm budgets`)"),
     ...bulletList(entry.overrides, "Overrides"),
+    ...bulletList(entry.deprecated ?? [], "Deprecated"),
   ];
   if (entry.example.length > 0) {
     parts.push("", "```ts", entry.example, "```");

@@ -8,20 +8,37 @@ import { readZipEntries } from "../../packages/runtime-native/scripts/check-andr
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   type CommandRunner,
+  type ICandidateCohort,
   type McpRunner,
   androidApkPrebuiltProofs,
+  assertCandidateInstalled,
+  assertCandidateIntegrity,
   assertNoLocalSpecifiers,
   assertPublishedApkPrebuilts,
   assertSupportedNodeVersion,
   assertSupportedPackageManager,
   checkLockfile,
+  childOutputTail,
   cleanRoomEnvironment,
   mcpRequests,
+  realRunner,
   registryEnvironment,
+  tarballIntegrity,
   verifyRegistryInstall,
 } from "../verify-registry-install.js";
 
 const roots: string[] = [];
+
+/**
+ * The version `@threenative/core` carries in this checkout. A release cohort is whatever
+ * `publishSet` returns — `@threenative/assets` is a patch ahead of it — so the fixture reads the
+ * real one rather than inventing a number the release would never use.
+ */
+const CORE_VERSION = (
+  JSON.parse(
+    fs.readFileSync(path.resolve(import.meta.dirname, "../../packages/core/package.json"), "utf8"),
+  ) as { version: string }
+).version;
 
 async function tempRoot(): Promise<string> {
   const root = await makeTempDir("threenative-registry-spec-");
@@ -126,6 +143,18 @@ function happyRunner(): CommandRunner {
       fs.writeFileSync(
         path.join(project, "playtests", "production-readiness.playtest.json"),
         JSON.stringify({ assert: { movement: { entity: "player" } }, name: "pr", steps: [] }),
+      );
+      // The upgrade proof drives the one scenario both templates ship, so the fixture carries it.
+      fs.writeFileSync(
+        path.join(project, "playtests", "survives.playtest.json"),
+        JSON.stringify({
+          assert: {
+            components: [{ component: "groundClearance", entity: "player", lte: 0.01 }],
+            diagnostics: { runtimeReady: true },
+          },
+          name: "s",
+          steps: [],
+        }),
       );
       fs.writeFileSync(
         path.join(project, ".mcp.json"),
@@ -1011,6 +1040,279 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 });
 
+// PRD-446 phase 3. The claim is that a game written against the previous `latest` upgrades onto the
+// candidate and still plays — so every assertion below is about which bytes ended up in the
+// project, not about whether an install command exited 0.
+describe("the PRD-446 upgrade proof", () => {
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
+  });
+
+  /** The `integrity` a manager records for a tarball, stated here so the proof is not graded on itself. */
+  function packedIntegrity(tarball: string): string {
+    return `sha512-${createHash("sha512").update(fs.readFileSync(tarball)).digest("base64")}`;
+  }
+
+  /**
+   * A real tarball on disk at the version `@threenative/core` carries in this checkout, because the
+   * identity proof hashes bytes rather than reading a name.
+   */
+  async function packedCandidate(): Promise<ICandidateCohort> {
+    const root = await tempRoot();
+    const file = path.join(root, `threenative-core-${CORE_VERSION}.tgz`);
+    fs.writeFileSync(file, `the packed @threenative/core ${CORE_VERSION} candidate bytes\n`);
+    return {
+      tarballs: { "@threenative/core": file },
+      versions: new Map([["@threenative/core", CORE_VERSION]]),
+    };
+  }
+
+  /** Resolve the candidate the way a `file:` tarball install would: the version we packed. */
+  function installCandidate(cwd: string, version: string): void {
+    const directory = path.join(cwd, "node_modules", "@threenative", "core");
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, "package.json"),
+      JSON.stringify({ name: "@threenative/core", version }),
+    );
+  }
+
+  /** The lockfile entry pnpm writes for a `file:` tarball, with an explicit integrity to grade. */
+  function writePnpmLockfile(
+    cwd: string,
+    tarballs: readonly string[],
+    integrity: (t: string) => string,
+  ): void {
+    const entries = tarballs.map((tarball) => {
+      const base = path.basename(tarball);
+      return [
+        `  '@threenative/core@file:../../${base}':`,
+        `    resolution: {integrity: ${integrity(tarball)}, tarball: file:../../${base}}`,
+        `    version: ${CORE_VERSION}`,
+      ].join("\n");
+    });
+    fs.writeFileSync(
+      path.join(cwd, "pnpm-lock.yaml"),
+      `lockfileVersion: '9.0'\n\npackages:\n\n${entries.join("\n")}\n\nsnapshots:\n\n${entries.map((entry) => entry.split("\n")[0]).join("\n")} {}\n`,
+    );
+  }
+
+  function upgradeRunner(
+    seen: { installs: string[][]; playtests: string[][] },
+    candidate: ICandidateCohort,
+    options: { integrity?: (tarball: string) => string; version?: string } = {},
+  ): CommandRunner {
+    return (command, args, cwd) => {
+      if (args.includes("threenative-playtest")) seen.playtests.push([command, ...args]);
+      if (
+        (command === "npm" || command === "pnpm") &&
+        args[0] === "install" &&
+        args.some((argument) => argument.endsWith(".tgz"))
+      ) {
+        seen.installs.push([command, ...args]);
+        installCandidate(cwd, options.version ?? CORE_VERSION);
+        writePnpmLockfile(
+          cwd,
+          Object.values(candidate.tarballs),
+          options.integrity ?? ((tarball) => packedIntegrity(tarball)),
+        );
+        return "installed the candidate cohort";
+      }
+      return happyRunner()(command, args, cwd);
+    };
+  }
+
+  it("upgrades the previous latest onto the packed candidate and plays that template's scenario", async () => {
+    const candidate = await packedCandidate();
+    const tarball = candidate.tarballs["@threenative/core"] as string;
+    const seen = { installs: [] as string[][], playtests: [] as string[][] };
+    const report = await verifyRegistryInstall({
+      candidate,
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: upgradeRunner(seen, candidate),
+      surfaceCheck: () => {},
+    });
+    expect(report.exitCode).toBe(0);
+    expect(report.steps.filter((step) => !step.ok)).toEqual([]);
+    // One manager, not two: the candidate is a set of tarballs whose identity one lockfile settles.
+    expect(report.managers).toEqual(["pnpm"]);
+    expect(report.steps.map((step) => step.name)).toEqual([
+      "pnpm:scaffold",
+      "pnpm:install",
+      "pnpm:lockfile",
+      "pnpm:surface",
+      "pnpm:upgrade",
+      "pnpm:edit",
+      "pnpm:build",
+      "pnpm:test",
+      "pnpm:gameplay",
+    ]);
+    // The upgrade is an install of the packed tarballs, onto the registry-clean project.
+    expect(seen.installs).toHaveLength(1);
+    expect(seen.installs[0]).toContain(tarball);
+    // The scenario is the template's own, not the registry lane's production-readiness guard.
+    for (const playtest of seen.playtests) {
+      expect(playtest).toContain("playtests/survives.playtest.json");
+      expect(playtest).not.toContain("playtests/production-readiness.playtest.json");
+    }
+    const upgrade = report.steps.find((step) => step.name === "pnpm:upgrade")?.detail ?? "";
+    expect(upgrade).toContain(`@threenative/core@${CORE_VERSION}`);
+    expect(upgrade).toContain(packedIntegrity(tarball));
+  });
+
+  it("claims web only, so it runs neither the native nor the MCP step", async () => {
+    const candidate = await packedCandidate();
+    const report = await verifyRegistryInstall({
+      candidate,
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: upgradeRunner({ installs: [], playtests: [] }, candidate),
+      surfaceCheck: () => {},
+    });
+    const names = report.steps.map((step) => step.name);
+    expect(names).not.toContain("pnpm:native");
+    expect(names).not.toContain("pnpm:mcp");
+    expect(names).not.toContain("pnpm:doctor");
+  });
+
+  it("refuses a candidate whose public break is unannounced, before installing a byte of it", async () => {
+    const candidate = await packedCandidate();
+    const seen = { installs: [] as string[][], playtests: [] as string[][] };
+    const report = await verifyRegistryInstall({
+      candidate,
+      parent: await tempRoot(),
+      run: upgradeRunner(seen, candidate),
+      surfaceCheck: () => {
+        throw new Error(
+          "api surface: removed symbol @threenative/core#gone has no Breaking entry naming it",
+        );
+      },
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "pnpm:surface")?.detail).toMatch(
+      /has no Breaking entry/u,
+    );
+    expect(seen.installs).toEqual([]);
+    expect(report.steps.find((step) => step.name === "pnpm:upgrade")?.detail).toMatch(/Not run/u);
+    expect(report.steps.find((step) => step.name === "pnpm:gameplay")?.detail).toMatch(/Not run/u);
+  });
+
+  it("stops the case when the candidate install fails, so no unproven tree is built or played", async () => {
+    const candidate = await packedCandidate();
+    const seen = { installs: [] as string[][], playtests: [] as string[][] };
+    const report = await verifyRegistryInstall({
+      candidate,
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        if (args.includes("threenative-playtest")) seen.playtests.push([command, ...args]);
+        if (
+          (command === "npm" || command === "pnpm") &&
+          args[0] === "install" &&
+          args.some((argument) => argument.endsWith(".tgz"))
+        )
+          throw new Error("ERR_PNPM_TARBALL_INTEGRITY  the candidate tarball does not match");
+        return happyRunner()(command, args, cwd);
+      },
+      surfaceCheck: () => {},
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "pnpm:upgrade")?.detail).toMatch(
+      /does not match/u,
+    );
+    for (const name of ["pnpm:edit", "pnpm:build", "pnpm:test", "pnpm:gameplay"])
+      expect(report.steps.find((step) => step.name === name)?.detail).toMatch(/Not run/u);
+    expect(seen.playtests).toEqual([]);
+  });
+
+  it("rejects an upgrade that left the consumer on the previous latest", async () => {
+    const candidate = await packedCandidate();
+    const report = await verifyRegistryInstall({
+      candidate,
+      parent: await tempRoot(),
+      run: upgradeRunner({ installs: [], playtests: [] }, candidate, { version: "0.3.2" }),
+      surfaceCheck: () => {},
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "pnpm:upgrade")?.detail).toMatch(
+      new RegExp(
+        `TN_REGISTRY_UPGRADE_VERSION_MISMATCH.*@0\\.3\\.2, not the candidate ${CORE_VERSION}`,
+        "u",
+      ),
+    );
+  });
+
+  it("rejects a matching version whose bytes are not the candidate's, which is the case a version cannot catch", async () => {
+    const candidate = await packedCandidate();
+    const report = await verifyRegistryInstall({
+      candidate,
+      parent: await tempRoot(),
+      // Same version installed, an integrity that is not the tarball's: the development cohort
+      // sharing `latest`'s version, resolved from the registry instead of the packed bytes.
+      run: upgradeRunner({ installs: [], playtests: [] }, candidate, {
+        integrity: () => `sha512-${"A".repeat(86)}==`,
+      }),
+      surfaceCheck: () => {},
+    });
+    expect(report.exitCode).toBe(1);
+    const detail = report.steps.find((step) => step.name === "pnpm:upgrade")?.detail ?? "";
+    expect(detail).toMatch(/TN_REGISTRY_UPGRADE_INTEGRITY_MISMATCH/u);
+    expect(detail).toContain(`sha512-${"A".repeat(86)}==`);
+    expect(report.steps.find((step) => step.name === "pnpm:gameplay")?.detail).toMatch(/Not run/u);
+  });
+
+  it("reads the candidate back out of the installed tree, and fails closed without one", async () => {
+    const candidate = await packedCandidate();
+    const tarball = candidate.tarballs["@threenative/core"] as string;
+    const root = await tempRoot();
+    installCandidate(root, CORE_VERSION);
+    expect(assertCandidateInstalled(root, candidate.versions)).toBe(
+      `@threenative/core@${CORE_VERSION}`,
+    );
+    expect(() => assertCandidateInstalled(root, new Map())).toThrow(
+      /TN_REGISTRY_UPGRADE_NO_CANDIDATE/u,
+    );
+    expect(() =>
+      assertCandidateInstalled(root, new Map([["@threenative/physics", CORE_VERSION]])),
+    ).toThrow(/TN_REGISTRY_UPGRADE_NOT_INSTALLED.*@threenative\/physics/u);
+
+    // The byte proof agrees with the manager's own lockfile field, in both formats.
+    expect(tarballIntegrity(tarball)).toBe(packedIntegrity(tarball));
+    writePnpmLockfile(root, [tarball], packedIntegrity);
+    fs.writeFileSync(
+      path.join(root, "package-lock.json"),
+      JSON.stringify({
+        packages: {
+          "node_modules/@threenative/core": {
+            integrity: packedIntegrity(tarball),
+            resolved: `file:../../${path.basename(tarball)}`,
+          },
+        },
+      }),
+    );
+    expect(assertCandidateIntegrity(root, candidate.tarballs)).toContain(packedIntegrity(tarball));
+    expect(() =>
+      assertCandidateIntegrity(root, { "@threenative/core": path.join(root, "gone.tgz") }),
+    ).toThrow(/TN_REGISTRY_UPGRADE_TARBALL_MISSING/u);
+  });
+
+  it("fails closed when no lockfile records the candidate's integrity at all", async () => {
+    const root = await tempRoot();
+    const tarball = path.join(root, "threenative-core-0.3.3.tgz");
+    fs.writeFileSync(tarball, "candidate bytes\n");
+    expect(() => assertCandidateIntegrity(root, { "@threenative/core": tarball })).toThrow(
+      /TN_REGISTRY_UPGRADE_NO_LOCKFILE/u,
+    );
+    fs.writeFileSync(
+      path.join(root, "pnpm-lock.yaml"),
+      "lockfileVersion: '9.0'\n\npackages:\n\n  '@threenative/core@0.3.3':\n    resolution: {registry: 'https://registry.npmjs.org/'}\n",
+    );
+    expect(() => assertCandidateIntegrity(root, { "@threenative/core": tarball })).toThrow(
+      /TN_REGISTRY_UPGRADE_INTEGRITY_MISMATCH.*no recorded integrity/u,
+    );
+  });
+});
+
 // pnpm exports its own settings as `npm_config_*`. npm reads them as its own config, warns
 // "Unknown env config" about each, and died on `Cannot read properties of null (reading 'matches')`
 // — reporting the freshly published packages as uninstallable while a plain `npm install` of the
@@ -1054,5 +1356,37 @@ describe("clean room environment", () => {
     expect(environment.npm_config_store_dir).toBe("/private/store");
     expect(environment.NPM_CONFIG_CACHE).toBe("/private/cache");
     expect(environment.npm_config_registry).toBeUndefined();
+  });
+});
+
+describe("a failed child command", () => {
+  it("keeps the output the child wrote to stdout, bounded", () => {
+    // pnpm reports a resolution failure on stdout, and `execFileSync`'s own message says only
+    // `Command failed: ...`. The step report used to carry the command line and not the reason.
+    const run = realRunner({ PATH: process.env.PATH ?? "" });
+    let thrown: unknown;
+    try {
+      run(
+        process.execPath,
+        [
+          "-e",
+          "process.stdout.write('ERR_PNPM_NO_MATCHING_VERSION x'.repeat(400));process.exit(1)",
+        ],
+        process.cwd(),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    expect(message).toContain("ERR_PNPM_NO_MATCHING_VERSION");
+    // Bounded: an install prints megabytes, and the report keeps the last screenful.
+    expect(message.length).toBeLessThan(4_000);
+    expect(message).toContain("\n...");
+  });
+
+  it("says nothing extra when the child was quiet", () => {
+    expect(childOutputTail(new Error("Command failed: pnpm install"))).toBe("");
+    expect(childOutputTail("not an error")).toBe("");
   });
 });
