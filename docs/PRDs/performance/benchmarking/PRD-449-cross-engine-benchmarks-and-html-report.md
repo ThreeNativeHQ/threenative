@@ -29,9 +29,17 @@ The original PRD planned six benchmark families (Bevy cubes, plain-Three meshes,
 
 Each row runs at 1,024 and 4,096 cubes. Protocol: 40 warm-up frames, 120 measured frames, and 3 alternating runs per arm (TN, Godot, TN, Godot…). A row is a **win** only when the gap between the medians of the run p50s exceeds the larger arm's run-to-run spread; otherwise it is a **tie**. Never pair TN-with-an-optimization-off against Godot-with-it-on: that run is TN profiling data, not a row.
 
-## Current result (2026-09-27, loaded machine, load average ~50)
+## Current result (2026-09-28, quiet machine, load average ~5, both TN fixes in)
 
-Shipped defaults and explicit instancing tie at both counts: the gaps are inside run-to-run spread. The can't-batch row is a real TN loss: Godot 2.68 vs TN 25.1 ms at 1,024 cubes, and 12.6 vs 104 ms at 4,096, with equal draw counts. That is about 44 µs per draw for TN against about 5 µs for Godot, and it is the next fix. Rerun on an idle machine before calling the tied rows.
+TN wins 3, ties 2, and Godot wins 1 (p50 medians of 3 alternating runs):
+
+| Row | 1,024 cubes | 4,096 cubes |
+| --- | --- | --- |
+| Shipped defaults | TN 1.27 vs Godot 1.53 ms, TN 1.2× | TN 2.65 vs 4.23 ms, TN 1.6× |
+| Explicit instancing | 1.11 vs 1.16 ms, tie | 1.48 vs 2.94 ms, TN 2.0× |
+| Can't batch | 2.56 vs 1.71 ms, tie (TN spread 1.59) | 11.17 vs 5.37 ms, Godot 2.1× (was ~9× before batch-by-uniforms) |
+
+The remaining loss is the projection's per-frame material-change poll: about 5.6 ms of the 8.4 ms collapse at 4,096 distinct materials.
 
 ## Phases
 
@@ -44,7 +52,7 @@ Shipped defaults and explicit instancing tie at both counts: the gaps are inside
 ### Phase 2: One command, three fair rows, repeated
 
 - [x] Add R3 as a unique-material mode of the existing scene in both the TN and Godot adapters (one flag each, same placement hash). proof: one TN and one Godot R3 run at 4,096 with matching placement hash and per-cube draw counts. Done 2026-09-27: `84c009343`; TN/Godot L4 placement hash `78812d31` (1,024) and `e9a32f01` (4,096) on both sides; draws 604 vs 606 and 2,375 vs 2,379 (frustum-culled per cube, no batching on either side).
-- [ ] One command runs R1–R3 × {1,024, 4,096} × 3 alternating runs per arm and writes one JSON per run. proof: the command and its run list. Partial 2026-09-27: `pnpm bench:scoreboard` added; the 2026-09-27 runs (`pilots/scoreboard-{tn,godot}-r{1,2,3}-2026-09-27.json`, all exit 0) came from an identical scratch script, so the committed command itself is not yet run.
+- [x] One command runs R1–R3 × {1,024, 4,096} × 3 alternating runs per arm and writes one JSON per run. proof: the command and its run list. Done 2026-09-28: `pnpm bench:scoreboard 2026-09-28` exit 0, six JSONs `pilots/scoreboard-{tn,godot}-r{1,2,3}-2026-09-28.json`.
 - [x] Scoreboard reads the repeats: median of run p50s, spread, and win/tie by the rule above. proof: monitor spec case for win vs tie; screenshot. Done 2026-09-27: `8d7bc5785` + newest-tag pickup; `engine-load-test-monitor.spec.ts` 15/15; screenshot inspected.
 
 ### Phase 3: Fix TN where it loses, then close
