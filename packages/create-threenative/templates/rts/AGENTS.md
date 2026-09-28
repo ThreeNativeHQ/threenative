@@ -49,14 +49,14 @@ pnpm build --target desktop
 pnpm test
 ```
 
-`src/sim/` is the whole ruleset — terrain, A*, economy, construction, production, combat, vision
-and a four-state AI — as plain TypeScript with no renderer import, so it runs headless in
-`pnpm test` and replays from a seed. `src/scenes/Play.ts` steps it on a 0.05 s accumulator inside
-the engine's frame and reads every gesture through `ctx.input`; `src/render/` draws it (terrain
-displaced by the simulation's own `terrainHeight`, instanced models per (type, team), selection
-rings and health bars as instanced geometry, fog of war sampled in the terrain material);
-`src/ui/` is the React HUD and the minimap. `playtests/survives.playtest.json` is the durable smoke
-proof and `playtests/rts-orders.playtest.json` proves box-select, a gather and a move. Add a unit
+`src/sim/` is the whole ruleset — terrain, A*, economy, construction, production, combat, vision and
+a four-state AI — as plain TypeScript with no renderer import, so it runs headless in `pnpm test`
+and replays from a seed. `src/scenes/Play.ts` steps it on a 0.05 s accumulator inside the engine's
+frame and reads every gesture through `ctx.input`; `src/render/` draws it (terrain displaced by the
+simulation's own `terrainHeight`, instanced models per (type, team), selection rings and health
+bars, fog of war in the terrain material); `src/ui/` is the React HUD, the minimap and the command
+panel, where every build, train and formation order starts as a named intent the scene resolves. `playtests/survives.playtest.json` is the durable smoke proof; `rts-orders` (select, gather, move),
+`rts-build`, `rts-train`, `rts-attack`, `rts-ai-attack` and `performance` are the rest. Add a unit
 by adding a row to `TYPES` and a shape to `render/models.ts`: the rules table is the only place a
 cost or a radius is written, and `src/ui/` reads it rather than quoting it. Match the model's
 footprint to the table's `r`, so what you see is what the pathfinder refuses to walk through.
@@ -77,7 +77,11 @@ state. Seeded randomness is deterministic only when `defineGame({ seed })` is co
 
 `src/render/sky.ts` makes `assets/sky.jpg` (Poly Haven, CC0) background, environment light and fog
 colour (re-aim `SUN_DIRECTION` when you swap it, and re-tune the fog density: it is set for a 224 m
-map); WebGPU adds a `VirtualShadowNode`. Every model is a custom TSL material, so an instanced
+map); WebGPU adds a `VirtualShadowNode`. The sky is the light, not the backdrop: the rig is wider
+than the map at its widest zoom, so `terrain.ts` draws a plain under the battlefield (grow it with
+`ZOOM_RANGE.far` or the horizon goes with it) and `materials.ts` tiles the ground grid every 16 m —
+a 4 m line, a faint 1 m one inside each square — because a metre grid crosshatches into wireframe.
+Every model is a custom TSL material, so an instanced
 batch's geometry is what you see — change `render/models.ts`, not the material. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()`
 chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers
 throw and `TN_QUALITY_TIER` reports the source. `pnpm test` proves behavior, never the look.
