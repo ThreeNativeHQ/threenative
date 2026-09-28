@@ -880,7 +880,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("carries a physical and an emulator arm of one target as separate cohort rows", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: consumerRowRunner((npm) => ({
@@ -928,7 +928,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     // `failureReport()` emits this shape for ANY abort before assertions run, so a row carrying
     // only the verifier's message cannot say what failed — which is why phase 2's one physical
     // arm64 abort is still unexplained.
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: consumerRowRunner(() => ({
@@ -967,7 +967,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("names the missing diagnostic instead of inventing a cause for a zero-assertion arm", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: consumerRowRunner(() => ({
@@ -980,7 +980,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("fails the cohort on a zero-assertion arm even when the row claims it passed", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: consumerRowRunner(() => ({
