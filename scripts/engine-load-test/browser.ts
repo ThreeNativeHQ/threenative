@@ -21,6 +21,12 @@ export const BENCH_BROWSER_ARGS = [
   "--autoplay-policy=no-user-gesture-required",
 ] as const;
 
+export function browserLaunchArgs(waylandDisplay = process.env.WAYLAND_DISPLAY): string[] {
+  return waylandDisplay
+    ? [...BENCH_BROWSER_ARGS, "--ozone-platform=wayland"]
+    : [...BENCH_BROWSER_ARGS];
+}
+
 const MIME: Record<string, string> = {
   ".css": "text/css",
   ".html": "text/html; charset=utf-8",
@@ -55,7 +61,7 @@ export function benchBrowserPath(): string | undefined {
 
 export async function driveBenchmarkPage(options: IDriveOptions): Promise<unknown> {
   const browser = await chromium.launch({
-    args: [...BENCH_BROWSER_ARGS],
+    args: browserLaunchArgs(),
     executablePath: benchBrowserPath(),
     headless: false,
   });

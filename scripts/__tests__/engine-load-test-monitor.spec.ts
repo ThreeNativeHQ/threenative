@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,9 +8,74 @@ import {
   type IMonitorData,
   parsePrdProgress,
   readAttempts,
+  readIterations,
   renderProgressHtml,
   safeArtifactHref,
 } from "../engine-load-test/monitor.js";
+
+import type { ICampaignRunRecord } from "../engine-load-test/campaign-report.js";
+
+const DIGEST_A = "a".repeat(64);
+const DIGEST_B = "b".repeat(64);
+
+function campaignRecord(overrides: Partial<ICampaignRunRecord> = {}): Record<string, unknown> {
+  return {
+    arm: {
+      arm: "tn-native",
+      backend: "vulkan",
+      build: "release",
+      buildSha256: DIGEST_A,
+      engineVersion: "0.9.0",
+      flags: { shadows: false, msaa: "off" },
+    },
+    block: 3,
+    campaignId: "prd-449-2026-09-27-a",
+    checksums: {
+      "runs/prd-449-2026-09-27-a/block-3/tn-native.json": DIGEST_B,
+      "runs/a/block-3/tn-native.frames.json": DIGEST_B,
+    },
+    conformance: { evidencePath: "conformance/tn-native.json", reason: null, status: "passed" },
+    derivationVersion: 1,
+    durations: {
+      measured: { unit: "ms", value: 30_000 },
+      startup: { reason: "not a startup profile", unit: "ms", value: null },
+      warmup: { unit: "ms", value: 10_000 },
+    },
+    experiment: {
+      executionProtocol: "deterministic-throughput",
+      fixtureRevision: "cubes@2",
+      load: "100k",
+      optimizationClass: "default",
+      renderingProfile: "common-1920x1080",
+      variant: "all-rotating",
+      workload: "bevy-many-cubes",
+    },
+    fixtureSha256: DIGEST_A,
+    machine: {
+      cpu: "AMD Ryzen 9 7950X",
+      gpu: "Radeon RX 7900 XTX",
+      operatingSystem: "Linux 6.11",
+      preflight: { competingGpuWork: false, powerMode: "performance" },
+    },
+    metrics: {
+      completedWorkMeanMsPerFrame: { unit: "ms/frame", value: 8.4 },
+      frameP99Ms: { reason: "no per-frame intervals recorded", unit: "ms", value: null },
+    },
+    order: 2,
+    planSha256: DIGEST_A,
+    rawSeries: [
+      { metric: "frameMs", path: "runs/a/block-3/tn-native.frames.json", sampleCount: 6000 },
+    ],
+    reason: null,
+    runId: "prd-449-2026-09-27-a-b03-o02",
+    schemaVersion: 2,
+    session: "session-2",
+    sourceSha256: DIGEST_B,
+    status: "valid",
+    timingDefinition: "completed-work mean over 6000 rendered frames, drained once at the boundary",
+    ...overrides,
+  };
+}
 
 const PRD = `**Status:** PARTIAL — two boxes landed
 
@@ -93,7 +159,12 @@ describe("PRD-449 campaign progress monitor", () => {
     expect(html.match(/pending — nothing recorded yet/g)).toHaveLength(2);
     expect(html).toContain("PARTIAL — two boxes landed");
     // Nothing measured is invented for a campaign that has kept nothing yet.
-    expect(html).not.toMatch(/fps|p50|p95|frameMs|ms\/frame/i);
+    expect(html).toContain("No qualified iterations yet");
+    expect(html).toContain("Latest qualified candidate");
+    expect(html).toContain("Δ original baseline");
+    expect(html).toContain("No qualified run");
+    expect(html).not.toContain("0.0%");
+    expect(html).not.toContain("<polyline");
     // Offline self-refresh, no network: a meta refresh, and the manual button still there.
     expect(html).toContain('<meta http-equiv="refresh" content="15">');
     expect(html).toContain("location.reload()");
@@ -217,5 +288,92 @@ describe("PRD-449 campaign progress monitor", () => {
     expect(safeArtifactHref(root, path.join(root, "..", "escape.json"))).toBeNull();
     expect(safeArtifactHref(root, path.join(root, "https:", "evil.json"))).toBeNull();
     expect(safeArtifactHref(root, root)).toBeNull();
+  });
+});
+
+describe("performance iteration evidence", () => {
+  it("renders real iteration trends only for matching, retained, checksummed hardware runs", async () => {
+    const root = await campaignDir();
+    await mkdir(path.join(root, "runs"));
+    await mkdir(path.join(root, "iterations"));
+    const raw = "[10,8,6]";
+    await writeFile(path.join(root, "samples.json"), raw);
+    const checksum = createHash("sha256").update(raw).digest("hex");
+    for (const [id, value] of [
+      ["baseline", 10],
+      ["incumbent", 8],
+      ["candidate", 6],
+    ] as const) {
+      await writeFile(
+        path.join(root, "runs", `${id}.json`),
+        JSON.stringify(
+          campaignRecord({
+            runId: id,
+            rawSeries: [{ metric: "frameMs", path: "samples.json", sampleCount: 3 }],
+            checksums: { "samples.json": checksum },
+            metrics: { completedWorkMeanMsPerFrame: { unit: "ms/frame", value } },
+          }),
+        ),
+      );
+    }
+    const iteration = {
+      id: "iteration-1",
+      sequence: 1,
+      baselineRunId: "baseline",
+      incumbentRunId: "incumbent",
+      candidateRunId: "candidate",
+      hypothesis: "Reduce dispatch",
+      bottleneck: "Submission",
+      nextHypothesis: "Measure batching",
+      decision: "keep",
+    };
+    await writeFile(path.join(root, "iterations", "one.json"), JSON.stringify(iteration));
+    const collected = {
+      attempts: await readAttempts(root),
+      attemptsRoot: root,
+      ...(await readIterations(root)),
+    };
+    const html = renderProgressHtml(data(collected));
+    expect(html).toContain("<polyline");
+    expect(html).toContain("6.000 ms/frame");
+    expect(html).toContain(">6.000</strong>");
+    expect(html).toContain(">-40.0%</strong>");
+    expect(html).toContain(">-25.0%</strong>");
+    expect(html).toContain("-40.0% / -25.0%");
+    expect(html).toContain('href="runs/candidate.json"');
+    expect(html).toContain("Measure batching");
+    expect(renderProgressHtml(data({ ...collected, iterations: [] }))).not.toContain("<polyline");
+    const candidate = collected.attempts.find((attempt) => attempt.run?.runId === "candidate");
+    if (!candidate?.run) throw new Error("Missing candidate fixture");
+    const originalRun = candidate.run;
+    candidate.run = {
+      ...originalRun,
+      experiment: { ...originalRun.experiment, load: "different-load" },
+    };
+    expect(renderProgressHtml(data(collected))).not.toContain("<polyline");
+    candidate.run = originalRun;
+    expect(
+      renderProgressHtml(
+        data({ ...collected, iterations: [{ ...iteration, decision: "invalid" }] }),
+      ),
+    ).not.toContain("<polyline");
+    candidate.run = { ...candidate.run, machine: { ...candidate.run.machine, gpu: "SwiftShader" } };
+    expect(renderProgressHtml(data(collected))).toContain("No qualified iterations yet");
+    expect(renderProgressHtml(data(collected))).not.toContain("-40.0%");
+    await writeFile(path.join(root, "samples.json"), "changed");
+    const corrupted = await readAttempts(root);
+    expect(corrupted.every((attempt) => attempt.evidenceError?.includes("checksum"))).toBe(true);
+    expect(renderProgressHtml(data({ ...collected, attempts: corrupted }))).not.toContain(
+      "<polyline",
+    );
+  });
+
+  it("reports malformed iteration records without fabricating a timeline", async () => {
+    const root = await campaignDir();
+    await mkdir(path.join(root, "iterations"));
+    await writeFile(path.join(root, "iterations", "broken.json"), "{}");
+    const result = await readIterations(root);
+    expect(result.iterations).toEqual([]);
+    expect(result.iterationErrors[0]).toContain("Missing id");
   });
 });

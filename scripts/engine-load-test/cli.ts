@@ -1,6 +1,7 @@
 // `pnpm bench:engines` — PRD-117's entry point. Opt-in by construction: nothing here is wired
 // into `pnpm test`, and the Godot arms are the only thing that needs Godot installed.
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +35,7 @@ import { exportGodotWeb } from "./run-godot.js";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
 const TN_PORT = 5199;
+const TN_DIST = path.join(repoRoot, "examples/engine-load-test/dist");
 const GODOT_PORT = 5198;
 const DEFAULT_LANE_MANIFEST = path.join(repoRoot, "scripts/performance-regression/lanes.json");
 const execFileAsync = promisify(execFile);
@@ -129,6 +131,49 @@ async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
   }
 }
 
+async function runTnWebProduction(options: ILadderOptions): Promise<IRunReport> {
+  await buildTnExample();
+  const server = await serveDirectory(TN_DIST, TN_PORT);
+  try {
+    await waitForUrl(`http://127.0.0.1:${TN_PORT}/index.html`, 60_000);
+    const raw = await driveBenchmarkPage({
+      onConsole: (text) => process.stderr.write(`[tn-web] ${text}\n`),
+      timeoutMs: timeoutFor(options),
+      url: `http://127.0.0.1:${TN_PORT}/index.html?${query(options)}`,
+    });
+    return parseRunReport(raw);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+// The same `vite build` a user ships, so a publication run is never a dev server with HMR. The
+// example owns the build; nothing here reaches into its config.
+async function buildTnExample(): Promise<void> {
+  try {
+    await execFileAsync("pnpm", ["--filter", "threenative-engine-load-test", "build"], {
+      cwd: repoRoot,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+  } catch (error) {
+    const stderr =
+      typeof error === "object" &&
+      error !== null &&
+      "stderr" in error &&
+      typeof error.stderr === "string"
+        ? error.stderr.trim()
+        : "";
+    throw new BenchError(
+      "TN_BENCH_TN_BUILD_FAILED",
+      `the example's production build failed: ${stderr || String(error)}`,
+      1,
+    );
+  }
+  // A build that exits clean but wrote somewhere else would otherwise time out on a 404.
+  if (!existsSync(path.join(TN_DIST, "index.html")))
+    throw new BenchError("TN_BENCH_TN_BUILD_MISSING", `${TN_DIST}/index.html does not exist`, 1);
+}
+
 async function runGodotWeb(options: ILadderOptions): Promise<IRunReport> {
   const exportDir = await exportGodotWeb(repoRoot);
   const server = await serveDirectory(exportDir, GODOT_PORT);
@@ -200,7 +245,8 @@ async function requiredBaseline(report: IRunReport): Promise<{
 }
 
 async function runRequestedArm(arm: string, options: ILadderOptions): Promise<IRunReport> {
-  if (arm === "tn-web") return runTnWeb(options);
+  if (arm === "tn-web")
+    return process.argv.includes("--production") ? runTnWebProduction(options) : runTnWeb(options);
   if (arm === "godot-web") return runGodotWeb(options);
   if (arm === "tn-desktop") return parseRunReport(await runTnDesktop(repoRoot, options));
   if (arm === "godot-desktop") return parseRunReport(await runGodotDesktop(repoRoot, options));
@@ -367,7 +413,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 

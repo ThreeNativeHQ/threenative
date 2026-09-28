@@ -26,6 +26,7 @@ import {
   positionHash,
   resolveAxes,
 } from "../../examples/engine-load-test/src/workload.js";
+import { browserLaunchArgs } from "../engine-load-test/browser.js";
 import {
   type IRunReport,
   PERFORMANCE_BASELINES,
@@ -119,6 +120,13 @@ function ladderReport(topP95: number, arm: IRunReport["arm"] = "tn-web"): IRunRe
     ],
   });
 }
+
+describe("benchmark browser selection", () => {
+  it("selects the native Wayland path when a Wayland socket is present", () => {
+    expect(browserLaunchArgs("wayland-0")).toContain("--ozone-platform=wayland");
+    expect(browserLaunchArgs(undefined)).not.toContain("--ozone-platform=wayland");
+  });
+});
 
 describe("engine load test workload", () => {
   it("extracts executable module specifiers without reading strings or comments as imports", () => {

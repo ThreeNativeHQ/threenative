@@ -472,6 +472,17 @@ async function describeAdapter(): Promise<string> {
   return parts.join(" / ");
 }
 
+// What every tn-web report says about the workload, whichever build served it.
+const BUILD_DETAILS =
+  "SceneRenderProjection consumer on three/webgpu; culling A/B uses the production planner and excludes the presentation draw";
+
+// The bundler, not the collector, decides this: Vite replaces the member expression at build time
+// and only a production bundle is built with `PROD` true. The literal access is load-bearing for
+// the same reason it is in `packages/core/src/game.ts` — any indirection survives into the bundle.
+function productionBuild(): boolean {
+  return (import.meta as unknown as { env?: { PROD?: boolean } }).env?.PROD === true;
+}
+
 async function main(): Promise<void> {
   const harness = await createLoadTestHarness(canvas, await describeAdapter(), true, axes);
   const rungs: IRungReport[] = [];
@@ -494,8 +505,7 @@ async function main(): Promise<void> {
     arm: "tn-web",
     axes,
     build: {
-      notes:
-        "vite dev build, SceneRenderProjection consumer on three/webgpu; culling A/B uses the production planner and excludes the presentation draw",
+      notes: `${productionBuild() ? "vite production build" : "vite dev build"}, ${BUILD_DETAILS}`,
       type: "release",
     },
     device: {
