@@ -463,7 +463,8 @@ export interface IThreeNativeConfig {
      */
     readonly alphaAntialiasing?: boolean;
     /**
-     * Whether the engine may render an internal mirror of the scene to collapse repeated draws.
+     * Whether the engine may render an internal mirror of the scene to collapse repeated draws,
+     * and how often that mirror proves a batched material still matches its group's shared draw.
      *
      * On by default, which is the shipping behaviour and is what an unset option means. The mirror
      * is opportunistic and correctness-preserving, but it pays a reconciliation cost per frame, so
@@ -472,8 +473,26 @@ export interface IThreeNativeConfig {
      * eligibility scan, so the opt-out costs nothing rather than declining each frame; the authored
      * scene is what renders. The `TN_RENDER_PROJECTION` marker still reports it, with its own
      * reason code rather than one of the measured declines.
+     *
+     * An object instead of `false` names the material check:
+     *
+     * - `materialChecks: "spread"` — **the default.** A bounded slice of the batched materials is
+     *   proved per frame instead of all of them, so a frame of 4,096 colour-only materials costs
+     *   512 checks rather than 4,096. A material that gains a roughness, a map or a define still
+     *   leaves its group and is drawn exactly; it is caught up to `materialCheckStaleFrames` frames
+     *   later, and `TN_RENDER_PROJECTION` reports that bound. A base-colour edit never waits: the
+     *   per-instance colour is O(1) per member and always exact.
+     * - `materialChecks: "everyFrame"` — the named alternative, and the check exactly as it shipped
+     *   before the sweep existed: every material proved every frame, at about 1.1 µs a material. Use
+     *   it when a game would rather pay the per-frame cost than accept the bound.
+     *
+     * Any other value throws at startup rather than falling back to a default nobody asked for.
      */
-    readonly projection?: boolean;
+    readonly projection?:
+      | boolean
+      | {
+          readonly materialChecks?: "spread" | "everyFrame";
+        };
     /**
      * Projected diameter, in raster pixels, below which the engine does not submit an object to
      * the render camera. On by default at a conservative **0.5 px**: an object under half a pixel

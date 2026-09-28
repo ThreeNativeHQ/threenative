@@ -136,6 +136,50 @@ describe("stable public API surface (PRD-446)", () => {
     ).toBe(1);
   });
 
+  it("passes a retyped config member once a Breaking entry names its dotted path", () => {
+    // The surface records a config member as `importPath#parent.member`, so the symbol a changelog
+    // must name carries a dot. `renderer.projection` is a symbol the gate can report as changed, so
+    // the entry that names it has to be findable — and naming half of it must not pass.
+    const recorded: IApiSurface = {
+      packages: {
+        ...SURFACE.packages,
+        "@threenative/kept": {
+          ...KEPT,
+          symbols: {
+            "src/game.ts#renderer.projection": "renderer.projection?: boolean",
+          },
+        },
+      },
+    };
+    const retyped: IApiSurface = {
+      packages: {
+        ...SURFACE.packages,
+        "@threenative/kept": {
+          ...KEPT,
+          symbols: {
+            "src/game.ts#renderer.projection":
+              "renderer.projection?: boolean | { materialChecks?: 'spread' }",
+          },
+        },
+      },
+    };
+    const findings = unannouncedBreaks(
+      recorded,
+      retyped,
+      breaking("`renderer.projection` now also accepts an object."),
+    );
+    expect(findings).toEqual([]);
+    expect(
+      unannouncedBreaks(
+        recorded,
+        retyped,
+        breaking("`renderer` now also takes an object, and so does `projection`."),
+      ),
+    ).toEqual([
+      "changed signature @threenative/kept src/game.ts#renderer.projection has no Breaking entry naming it",
+    ]);
+  });
+
   it("passes a removed export subpath once a Breaking entry names it, and only that subpath", () => {
     const recorded: IApiSurface = {
       packages: {

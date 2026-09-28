@@ -5317,14 +5317,15 @@ renderer: { minimumProjectedPixels: 2 } // in threenative.config.ts
 
 ### `renderer.projection`
 
-`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it.
+`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it, or `projection: { materialChecks: 'everyFrame' }` to keep it and pay for a per-material check on every frame.
 
 ```ts
-renderer.projection?: boolean
+renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }
 ```
 
-- **Use when:** a crowd of animated characters draws slowly · many SkinnedMesh copies of one rig, each its own draw call · the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer
-- **Constraints:** Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it. · An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame. · TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.
+- **Use when:** a crowd of animated characters draws slowly · many SkinnedMesh copies of one rig, each its own draw call · the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer · thousands of props each with their own material, one colour apart · a material edit takes a few frames to show up · check every batched material every frame anyway
+- **Constraints:** Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it. · An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame. · TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines. · `materialChecks: 'spread'` is the default: a bounded slice of the batched materials is proved per frame instead of all of them, so a frame of 4,096 colour-only materials costs 512 checks rather than 4,096. A base-colour edit is never delayed — that write is O(1) per member. · The price of `spread` is staleness on every other material edit: a material that gains a roughness, a map or a define still leaves its group and is drawn exactly, up to `materialCheckStaleFrames` frames later. TN_RENDER_PROJECTION reports that bound; `materialChecks: 'everyFrame'` sets it to 0 and restores the per-member, per-frame check. · Any other `materialChecks` value throws at startup rather than falling back to a default.
+- **Overrides:** renderer.projection: false declines the whole mirror and costs nothing to decline · renderer: { projection: { materialChecks: 'everyFrame' } } proves every batched material every frame instead of the default bounded slice
 
 ```ts
 renderer: { projection: false } // in threenative.config.ts

@@ -23,6 +23,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `TracerPool3D.spawn` accepts per-shot `widthScale`, `segmentLength` and `lifetime`
   overrides, so a game's shot-to-shot variation survives migration onto the pool.
 
+### Breaking
+
+- `@threenative/core`'s `renderer.projection` now also accepts
+  `{ materialChecks: "spread" | "everyFrame" }` and not only a boolean (PRD-462). This widens the
+  accepted values rather than removing one, so a game that passed `true` or `false` needs no
+  change: `false` still declines the mirror and `true` still takes the default. The default is
+  `materialChecks: "spread"`, which proves a bounded slice of the batched materials per frame
+  instead of all of them; `materialChecks: "everyFrame"` is the check exactly as it shipped before
+  the sweep existed, at about 1.1 µs a material per frame. Any other value throws at startup rather
+  than falling back to a default nobody asked for.
+
 ## [0.3.3] - unreleased (release candidate)
 
 The current cohort, prepared from `develop` at 0.3.3 (`create-threenative` 0.2.6). It is not yet
