@@ -1399,7 +1399,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #prewarmDrawn = 0;
   #prewarmWait = 0;
   /** Meshes still carrying a prewarm borrow, with the hook each one has to be handed back. */
-  readonly #awaited = new Map<InstancedMesh, { borrow: unknown; own: unknown }>();
+  readonly #awaited = new Map<InstancedMesh, { borrow: unknown; own: unknown; hadOwn: boolean }>();
   #prewarmSettled = false;
   #prewarmResolve: () => void = () => {
     // replaced in the field initialiser below, once `this` exists
@@ -1805,11 +1805,16 @@ export class WorldCells extends Group implements IComputeDriven {
   #awaitDraw(mesh: InstancedMesh | undefined): void {
     if (mesh === undefined) return;
     this.#prewarmOwed += 1;
-    const own = mesh.onBeforeRender;
+    // three's `Object3D` carries an inherited no-op, so reading `onBeforeRender` off a fresh mesh
+    // hands back a function that was never an own property. Writing it back as one leaves every
+    // batch that has drawn since looking permanently hooked, and the projection's `hasRenderHook`
+    // reads own properties — so the borrow has to remember whether there was one to give back.
+    const hadOwn = Object.hasOwn(mesh, "onBeforeRender");
+    const own = hadOwn ? mesh.onBeforeRender : undefined;
     const borrow = own as ((...args: unknown[]) => void) | undefined;
     const counted = (...args: unknown[]): void => {
       this.#prewarmDrawn += 1;
-      mesh.onBeforeRender = own;
+      this.#handBack(mesh, hadOwn, own);
       this.#awaited.delete(mesh);
       borrow?.(...args);
     };
@@ -1817,7 +1822,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // ignores a marked borrow, so a streamed world's prewarmed batches stay eligible for the
     // collapse they exist to be folded into. Unmarked, 202 of them permanently declined it.
     markEngineRenderHook(counted);
-    this.#awaited.set(mesh, { borrow: counted, own });
+    this.#awaited.set(mesh, { borrow: counted, own, hadOwn });
     mesh.onBeforeRender = counted as typeof mesh.onBeforeRender;
   }
 
@@ -1830,10 +1835,17 @@ export class WorldCells extends Group implements IComputeDriven {
   #releaseImpossibleBorrows(): void {
     for (const [mesh, entry] of [...this.#awaited]) {
       if (mesh.count > 0) continue;
-      if (mesh.onBeforeRender === entry.borrow)
-        mesh.onBeforeRender = entry.own as typeof mesh.onBeforeRender;
+      if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
       this.#awaited.delete(mesh);
     }
+  }
+
+  /** Give a borrowed mesh back the hook it had, or none at all when it never had one of its own. */
+  #handBack(mesh: InstancedMesh, hadOwn: boolean, own: unknown): void {
+    if (hadOwn) mesh.onBeforeRender = own as typeof mesh.onBeforeRender;
+    // Deleted rather than assigned `undefined`: three calls `object.onBeforeRender(...)`
+    // unconditionally, and an own `undefined` shadows the prototype's no-op and throws.
+    else delete (mesh as Partial<InstancedMesh>).onBeforeRender;
   }
 
   /**
@@ -1959,8 +1971,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#released) return;
     this.#released = true;
     for (const [mesh, entry] of [...this.#awaited]) {
-      if (mesh.onBeforeRender === entry.borrow)
-        mesh.onBeforeRender = entry.own as typeof mesh.onBeforeRender;
+      if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
     }
     this.#awaited.clear();
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
