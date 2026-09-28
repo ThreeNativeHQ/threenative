@@ -469,6 +469,12 @@ function attachLightmap(value: unknown, specification: ICompiledLightmap, textur
  * would silently fall back to an uncompressed RGBA32 upload, which is precisely the 16 MB
  * this exists to prevent, so the failure happens here, naming the renderer and platform.
  */
+function transcoderWorkers(): number {
+  const cores = (globalThis.navigator as { hardwareConcurrency?: number } | undefined)
+    ?.hardwareConcurrency;
+  return typeof cores === "number" && cores > 0 ? Math.max(2, Math.min(8, cores - 2)) : 4;
+}
+
 export async function createKtx2Loader(options: {
   basePath?: string;
   renderer: unknown;
@@ -476,6 +482,9 @@ export async function createKtx2Loader(options: {
   const { KTX2Loader } = await import("three/addons/loaders/KTX2Loader.js");
   const loader = new KTX2Loader();
   loader.setTranscoderPath(resolvePath(options.basePath ?? "", "basis/"));
+  // three's default is 4 transcoder workers; a streamed world decodes hundreds of textures while
+  // it moves, so use the machine's cores (leaving two for the main thread and the compositor).
+  loader.setWorkerLimit(transcoderWorkers());
   let config: Record<string, boolean> | undefined;
   try {
     // The structural contract is what matters; three's own parameter type is narrower than

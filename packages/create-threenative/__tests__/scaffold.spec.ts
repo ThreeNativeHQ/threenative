@@ -164,6 +164,18 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-09-27 on the merge of develop #289 (32ebfa885, "perf: prepare PRD-400
+  // production judge") into this branch: the canonical `three` patch every scaffold copies now
+  // carries both sides' hunks, so all ten trees move together again. Values measured through
+  // createProject on the committed merged tree.
+  // Recomputed 2026-09-27 for the merged engine perf port: the canonical `three` patch the
+  // scaffold copies into every generated project changed (three patch: instanced matrices take the
+  // attribute path), and no template source or scaffold implementation moved, so all ten trees
+  // move together by those bytes.
+  // Recomputed 2026-09-27: the game-side-patch rule moved out of every template's root
+  // instructions (the 100-line budget) and into the `file-engine-bug` skill, so all ten
+  // AGENTS.md/CLAUDE.md pairs and all ten stored skill copies lose and gain the same prose.
+  // Measured from this lane's own worktree, which carried no sibling lane's edits.
   // PRD-400 updates the shipped Three.js patch used by every generated game; these hashes are
   // the exact no-install scaffold trees measured by CI after that intentional patch update.
   // Recomputed 2026-09-25 for PRD-449 phase 2: the scaffold writes no `agent-docs/` at all, so
@@ -412,8 +424,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // this branch: the branch carries the commented build-profile example plus
   // `agent-docs/references/build-profiles.md`, and develop carries the PRD-443 compaction surface,
   // so neither side's values describe the merged tree; all ten were re-measured on the merged tree.
-  "action-rpg": "7d2a6badd43f0799d1b9844033ccec0fed2b2a8f358932b1a34c3606de8b9341",
-  defense: "84c80e3cb97eb117cc65df0a40c9ca49a22080af3f2e01176fa093973b152df6",
+  "action-rpg": "6c7fb0a65ae5fbceb368ed77d3c1e3f3bc9a083b5e3336f6b529646eb8dc6486",
+  defense: "b564f905fd4193dae2f91da0cc3f7f551752f5f28d4e39beb5e57ffa28ae7f20",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -425,16 +437,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  minimal: "a4d421404da673a776a59c20dff5817d928fcb69ab0b91f38526bd90abd9249e",
-  platformer: "cbcd5490552d6e850082f5ffc37b0afffff1b1210c42d1c7e99e4567e5823334",
-  runner: "39d1cfc0ed3929c745182f405446370a635fac2f638a7814de6f730d724a7a81",
-  puzzle: "00fc25a56a16b91a7b9e44aa783662796367d33cfe1e9fbf652f9b13689f1fe1",
-  racing: "1331c5e61f39c16530894ece4226dbf95e9537f2402f164185b6a5863dbca263",
-  shooter: "4c166a3528db37d17c6119c7ac32911aef1ae3376d57fea7f04b059ccc1dbbaa",
+  minimal: "0fab4a79ccaa6ce8d26d0d7b6532944c8d051841198c70e3191f3d29ec47e7b1",
+  platformer: "f2a50d27002711d8a8037ada6eee429532b5b95f44bed27d1366c863ffb16be0",
+  runner: "a0fe2d56ada3986daf451755f2ca1c491bdc42f285917fcde517048fe2b532a1",
+  puzzle: "49a7ed721b3aca4b85360fdc730503dffc35560ff3bf180d19a274bfa20067d7",
+  racing: "ff518db37ab6033c063de48ed8ee20c840b64c4e8d7e164ce6e2ea4474d9a742",
+  shooter: "4dc80d51bc435813a7bada70504c53f4d765e2d2930b7f0d624109e80633646a",
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
   // generated project, so only the starter tree moves.
-  starter: "3e7f2475fa851788814adb5547f558a99221c4d631a41f4b4fabec7372bcdf63",
+  starter: "451f0c23469dc9b3512b4cf061b0f60e6427514aab381a53e4a6d0ad525ef1b2",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -462,7 +474,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
   // Recomputed 2026-09-27 after merging the PRD-400 three.js velocity patch with develop's
   // PRD-112/365 scaffold changes; the value comes from the committed merged scaffold tree.
-  sailing: "106be551a7046ad3a458e618ea725dae728e75fa29dc6a137f30e5cc3d102f75",
+  sailing: "9149f6635c58ce5020239bc79efe07ff509974b7150bdd044b5e36d48612b8d4",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
