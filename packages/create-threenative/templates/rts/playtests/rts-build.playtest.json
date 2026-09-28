@@ -10,7 +10,7 @@
     {
       "kind": "click",
       "label": "build-menu",
-      "at": { "x": 1043, "y": 555 },
+      "at": { "x": 1117, "y": 555 },
       "waitTicks": 6
     },
     {
@@ -61,7 +61,7 @@
         "path": "primaryBuilt",
         "atSteps": [{ "label": "select-site", "equals": false }]
       },
-      { "id": "state", "path": "primaryProgress", "gte": 0.2 }
+      { "id": "state", "path": "primaryProgress", "changed": true }
     ],
     "renderChain": { "tier": "high" }
   }

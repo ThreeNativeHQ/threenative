@@ -169,6 +169,30 @@ describe("rts combat", () => {
     expect(shots).toBe(Math.ceil(TYPES.worker.hp / (TYPES.ranger.damage ?? 0)));
   });
 
+  it("makes an explicit attack order the unit's order and keeps it while the target lives", () => {
+    // The gesture the playtest drives reaches the rules through `command`; this is the branch
+    // behind "right-click a contact", which a scenario cannot aim: a contact only becomes
+    // pickable once it is in sight, and a visible contact is a moving one, so no fixed pixel in a
+    // scenario lands on it. The rule is therefore proved here, where the contact can be placed.
+    const game = sandbox(23);
+    const core = game.own(0).find((e) => e.type === "core");
+    if (!core) throw new Error("the seeded start has no core");
+    const ranger = game.spawn("ranger", 0, core.x + 8, core.z);
+    const contact = game.spawn("tank", 1, core.x + 16, core.z);
+    game.updateVision();
+
+    expect(game.command([ranger.id], "attack", { id: contact.id })).toMatchObject({ ok: true });
+    expect(ranger.order).toEqual({ kind: "attack", id: contact.id });
+
+    game.step();
+
+    // A ranger's reach is 8.5 m and the contact stands 8 m away, so the order survives the shot
+    // rather than falling back to idle the moment the target leaves reach.
+    expect(ranger.order).toEqual({ kind: "attack", id: contact.id });
+    expect(ranger.targetId).toBe(contact.id);
+    expect(contact.hp).toBeLessThan(contact.maxHp);
+  });
+
   it("keeps the declared air and ground target tables", () => {
     const game = sandbox(19);
     const cases: [EntityType, EntityType, boolean][] = [

@@ -109,7 +109,12 @@ function Button({
 }) {
   return (
     <button
-      className={`border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${
+      // The panel is `pointer-events-none` so its empty space hands the click to the battlefield
+      // underneath, which is what a strategy game needs: the only pixels that take a gesture are
+      // the buttons. A button inside a `none` island is inert until it opts back in, so this
+      // class is load-bearing rather than decoration — without it every order in this panel is
+      // dead to a mouse and only the keyboard can issue one.
+      className={`pointer-events-auto border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${
         active ? "border-lume bg-lume/20 text-lume" : "border-line bg-panel/80 text-text"
       } ${afford ? "" : "text-dim/60 line-through"}`}
       data-tn-interactive

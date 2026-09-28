@@ -6,14 +6,10 @@
   "warmupFrames": 20,
   "subject": "selection",
   "steps": [
-    { "kind": "wait", "label": "settle", "waitTicks": 60, "release": true },
-    {
-      "label": "contact",
-      "release": true,
-      "timeoutMs": 120000,
-      "waitForResource": { "id": "state", "path": "supplyUsed", "lte": 22 }
-    },
-    { "kind": "wait", "label": "after", "waitTicks": 60, "release": true }
+    { "kind": "wait", "label": "settle", "waitTicks": 20, "release": true },
+    { "kind": "wait", "label": "muster", "waitTicks": 800, "release": true },
+    { "kind": "wait", "label": "contact", "waitTicks": 900, "release": true },
+    { "kind": "wait", "label": "after", "waitTicks": 800, "release": true }
   ],
   "assert": {
     "diagnostics": {
@@ -22,7 +18,7 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
-    "resources": [{ "id": "state", "path": "supplyUsed", "changed": true }],
+    "resources": [{ "id": "state", "path": "kills", "gte": 1 }],
     "renderChain": { "tier": "high" }
   }
 }

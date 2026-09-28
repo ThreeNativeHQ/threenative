@@ -16,7 +16,7 @@
     {
       "kind": "click",
       "label": "train",
-      "at": { "x": 1235, "y": 493 },
+      "at": { "x": 1232, "y": 460 },
       "waitTicks": 8
     },
     { "kind": "wait", "label": "queued", "waitTicks": 20, "release": true },
