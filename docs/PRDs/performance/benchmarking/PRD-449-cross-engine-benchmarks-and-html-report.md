@@ -1,6 +1,6 @@
 # PRD-449: ThreeNative vs Godot — one lean benchmark, one scoreboard
 
-**Status:** PARTIAL — scoreboard and first TN-vs-Godot pilots landed; repeated runs, the can't-batch row and the TN fixes remain.
+**Status:** PARTIAL — repeated scoreboard landed (TN 0 wins, Godot 2, ties 4 on a loaded machine); the can't-batch per-draw fix and an idle-machine rerun remain.
 **Date:** 2026-09-25 (scope cut 2026-09-27)
 **Target branch:** `develop`
 **Owner request:** show clearly whether ThreeNative beats Godot, where it loses, and fix TN where it loses.
@@ -25,6 +25,10 @@ The original PRD planned six benchmark families (Bevy cubes, plain-Three meshes,
 
 Each row runs at 1,024 and 4,096 cubes. Protocol: 40 warm-up frames, 120 measured frames, and 3 alternating runs per arm (TN, Godot, TN, Godot…). A row is a **win** only when the gap between the medians of the run p50s exceeds the larger arm's run-to-run spread; otherwise it is a **tie**. Never pair TN-with-an-optimization-off against Godot-with-it-on: that run is TN profiling data, not a row.
 
+## Current result (2026-09-27, loaded machine, load average ~50)
+
+Shipped defaults and explicit instancing tie at both counts: the gaps are inside run-to-run spread. The can't-batch row is a real TN loss: Godot 2.68 vs TN 25.1 ms at 1,024 cubes, and 12.6 vs 104 ms at 4,096, with equal draw counts. That is about 44 µs per draw for TN against about 5 µs for Godot, and it is the next fix. Rerun on an idle machine before calling the tied rows.
+
 ## Phases
 
 ### Phase 1: Already landed
@@ -35,12 +39,12 @@ Each row runs at 1,024 and 4,096 cubes. Protocol: 40 warm-up frames, 120 measure
 
 ### Phase 2: One command, three fair rows, repeated
 
-- [ ] Add R3 as a unique-material mode of the existing scene in both the TN and Godot adapters (one flag each, same placement hash). proof: one TN and one Godot R3 run at 4,096 with matching placement hash and per-cube draw counts.
-- [ ] One command runs R1–R3 × {1,024, 4,096} × 3 alternating runs per arm and writes one JSON per run. proof: the command and its run list.
-- [ ] Scoreboard reads the repeats: median of run p50s, spread, and win/tie by the rule above. proof: monitor spec case for win vs tie; screenshot.
+- [x] Add R3 as a unique-material mode of the existing scene in both the TN and Godot adapters (one flag each, same placement hash). proof: one TN and one Godot R3 run at 4,096 with matching placement hash and per-cube draw counts. Done 2026-09-27: `84c009343`; TN/Godot L4 placement hash `78812d31` (1,024) and `e9a32f01` (4,096) on both sides; draws 604 vs 606 and 2,375 vs 2,379 (frustum-culled per cube, no batching on either side).
+- [ ] One command runs R1–R3 × {1,024, 4,096} × 3 alternating runs per arm and writes one JSON per run. proof: the command and its run list. Partial 2026-09-27: `pnpm bench:scoreboard` added; the 2026-09-27 runs (`pilots/scoreboard-{tn,godot}-r{1,2,3}-2026-09-27.json`, all exit 0) came from an identical scratch script, so the committed command itself is not yet run.
+- [x] Scoreboard reads the repeats: median of run p50s, spread, and win/tie by the rule above. proof: monitor spec case for win vs tie; screenshot. Done 2026-09-27: `8d7bc5785` + newest-tag pickup; `engine-load-test-monitor.spec.ts` 15/15; screenshot inspected.
 
 ### Phase 3: Fix TN where it loses, then close
 
-- [ ] Projection reconcile. `SceneRenderProjection.reconcile()` re-walks and re-compares every authored object each frame: 1.66 ms of TN's 3.49 ms R1 frame at 4,096 cubes. Skip the provably unchanged work, keep the "game may change anything" guarantee, and re-run R1. proof: guard specs red-green, a 3+3 run A/B table, and the new R1 row on the scoreboard.
+- [x] Projection reconcile. `SceneRenderProjection.reconcile()` re-walks and re-compares every authored object each frame: 1.66 ms of TN's 3.49 ms R1 frame at 4,096 cubes. Skip the provably unchanged work, keep the "game may change anything" guarantee, and re-run R1. proof: guard specs red-green, a 3+3 run A/B table, and the new R1 row on the scoreboard. Done 2026-09-27: guards `c69143921`, fix `2d856ac19` + `288198dc5`, A/B `bd52da0d7`: TN L3 4,096 median p50 10.93 → 6.08 ms (−44%), faster in 6/6 paired blocks, identical draws/triangles/hash. Core suite 1872 pass; the 6 failures (4 `packaging.spec.ts`, `render-projection-pipeline`, `three-shadow-override-cache`) reproduce at `f5639d2ac` without the fix.
 - [ ] Per-draw cost, only if R3 is a TN loss: the native replay costs ~2.3 µs/draw (`replayPackedFrameOpStream`); three.js per-object bookkeeping costs ~8.8 µs/draw and is not TN's to rewrite. proof: R3 A/B before/after, or "not needed: R3 is a TN win or tie".
 - [ ] Close: `pnpm typecheck`, `pnpm lint` and the core suite pass, the scoreboard is linked from `docs/verification/runtime-perf-state.md`, and this PRD moves to `docs/PRDs/done/`. proof: exit codes recorded here; the closing commit.

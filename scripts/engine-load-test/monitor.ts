@@ -511,7 +511,6 @@ const SCOREBOARD_ROWS = [
 
 const SCOREBOARD_COUNTS = [1024, 4096] as const;
 const SCOREBOARD_RUNS = [1, 2, 3] as const;
-const SCOREBOARD_DATE = "2026-09-27";
 
 const GODOT_UPSTREAM_SOURCE = "pilots/godot-lights-meshes-box1000-upstream-2026-09-27.json";
 
@@ -525,8 +524,18 @@ function scoreboardRun(data: IMonitorData, base: string): IAttempt | undefined {
   );
 }
 
-function scoreboardFiles(engine: "godot" | "tn"): string[] {
-  return SCOREBOARD_RUNS.map((run) => `scoreboard-${engine}-r${run}-${SCOREBOARD_DATE}`);
+/** The newest `pnpm bench:scoreboard` tag retained (tags are dates, so they sort), so a fresh run
+ *  replaces the scoreboard without a code edit. No tag yet means every cell reads pending. */
+function scoreboardTag(data: IMonitorData): string {
+  const tags = (data.pilots ?? []).flatMap(
+    (attempt) => /^pilots\/scoreboard-tn-r1-(.+?)\.json$/u.exec(attempt.source)?.[1] ?? [],
+  );
+  return tags.sort().at(-1) ?? "none";
+}
+
+function scoreboardFiles(data: IMonitorData, engine: "godot" | "tn"): string[] {
+  const tag = scoreboardTag(data);
+  return SCOREBOARD_RUNS.map((run) => `scoreboard-${engine}-r${run}-${tag}`);
 }
 
 type TRenderMode = IRunReport["rungs"][number]["mode"];
@@ -563,7 +572,7 @@ function engineCell(
   const p95s: number[] = [];
   let attempt: IAttempt | undefined;
   let drawCalls: number | undefined;
-  for (const base of scoreboardFiles(engine)) {
+  for (const base of scoreboardFiles(data, engine)) {
     const found = scoreboardRun(data, base);
     const pilot = found?.pilot;
     if (!pilot) continue;
@@ -703,7 +712,7 @@ function whereTnLoses(rows: IScoreboardRow[]): string {
 /** A row's own evidence: every run file that side names, linked, and the ones not retained yet
  *  named in their place rather than dropped. */
 function rawJson(data: IMonitorData, engine: "godot" | "tn"): string {
-  return scoreboardFiles(engine)
+  return scoreboardFiles(data, engine)
     .map((base) => {
       const attempt = scoreboardRun(data, base);
       return attempt
