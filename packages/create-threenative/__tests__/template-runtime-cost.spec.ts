@@ -666,7 +666,12 @@ describe("generated template ordinary-frame runtime cost", () => {
     const racingPhysics = await physicsFixture();
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
-      const frame = new Race().enter(context as never);
+      // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to
+      // run without it: a scene that quietly fell back to a flat sky would render a plausible frame
+      // and prove nothing about the look this template ships.
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never);
       const update = frame as (ctx: unknown, dt: number) => void;
       if (typeof update !== "function")
         throw new Error("Allocation fixture returned no race frame.");
@@ -704,7 +709,12 @@ describe("generated template ordinary-frame runtime cost", () => {
     const racingPhysics = await physicsFixture();
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
-      const frame = new Race().enter(context as never);
+      // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to
+      // run without it: a scene that quietly fell back to a flat sky would render a plausible frame
+      // and prove nothing about the look this template ships.
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never);
       if (typeof frame !== "function")
         throw new Error("Allocation fixture returned no race frame.");
       const originalIterator = Array.prototype[Symbol.iterator];

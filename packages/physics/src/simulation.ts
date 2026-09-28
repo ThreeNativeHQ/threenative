@@ -1490,8 +1490,14 @@ export function createWebPhysicsSimulation(
           "TN_PHYSICS_NON_FINITE: vehicle input needs a finite engineForce, brake and steering.",
         );
       const { controller, steering, traction } = requireVehicle(id, "setVehicleInput");
-      for (const wheel of traction) controller.setWheelEngineForce(wheel, input.engineForce);
-      for (const wheel of steering) controller.setWheelSteering(wheel, input.steering);
+      // Indexed, not `for…of`: a car writes engine force, brake and steering every physics step, so
+      // this runs three times a frame per car and the iterator call it avoids is the one a
+      // template's allocation sentinel measures (`create-threenative`'s `template-runtime-cost`
+      // spec refuses an array iteration in a scene's ordinary frame).
+      for (let index = 0; index < traction.length; index += 1)
+        controller.setWheelEngineForce(traction[index] as number, input.engineForce);
+      for (let index = 0; index < steering.length; index += 1)
+        controller.setWheelSteering(steering[index] as number, input.steering);
       for (let wheel = 0; wheel < controller.numWheels(); wheel += 1)
         controller.setWheelBrake(wheel, input.brake);
     },

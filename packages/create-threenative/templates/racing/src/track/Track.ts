@@ -1,11 +1,18 @@
 import { type ICtx, InstancedBatch, PathFollow3D } from "@threenative/core";
-import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
+import {
+  Area3D,
+  CollisionShape3D,
+  type IPhysicsContext,
+  RigidBody3D,
+  buildStaticColliders,
+} from "@threenative/physics";
 import {
   BoxGeometry,
   CapsuleGeometry,
   Group,
   Mesh,
   MeshStandardMaterial,
+  Object3D,
   Raycaster,
   SphereGeometry,
   Vector3,
@@ -25,6 +32,32 @@ export type TrackCtx = ICtx<GameState, IPhysicsContext>;
 
 export const TRACK_WIDTH = 7;
 export const TOTAL_LAPS = 3;
+
+/**
+ * Godot's `collision_layer` for the circuit, so a car's `collision_mask` can say what it may hit.
+ * The kerbs are on the road's layer: a wheel ray that finds one rides over it, which is what a
+ * kerb is for, and a car that puts two wheels on the rumble strip gets the same bump a real one
+ * does instead of stopping dead against an invisible wall.
+ */
+export const LAYER = { barrier: 8, car: 1, field: 4, road: 2 } as const;
+
+/**
+ * How proud of the tarmac the kerb stands, in metres. Real kerbing is 50-80 mm, and the car's
+ * chassis collider clears it by 40 mm, so this is the number that makes a kerb drivable: measured
+ * on the physics, 80 mm lifts the car 8 mm and costs no speed, and 120 mm stops it dead.
+ */
+export const KERB_HEIGHT = 0.08;
+const KERB_WIDTH = 0.5;
+
+/**
+ * The starting grid, in world metres on the `z = -18` straight between the last corner and the
+ * finish line. The player is second and the rival is on pole: the ranking playtest asserts the
+ * rival leads from the grid, and two cars that spawn in the same place is the defect this replaces.
+ */
+export const GRID = {
+  player: new Vector3(-3, 0, -18),
+  rival: new Vector3(1, 0, -18),
+} as const;
 export const ROUTE_POINTS = [
   new Vector3(10, 0, -18),
   new Vector3(18, 0, -18),
@@ -57,8 +90,8 @@ function roadSegment(
   road.receiveShadow = true;
   ctx.add(road);
   new RigidBody3D({
-    collisionLayer: 2,
-    collisionMask: 1,
+    collisionLayer: LAYER.road,
+    collisionMask: LAYER.car,
     object: road,
     physics: ctx.physics,
     shape: CollisionShape3D.box(length, 0.28, TRACK_WIDTH),
@@ -74,7 +107,42 @@ function roadSegment(
  * draws exactly what a per-segment `BoxGeometry` drew — as one draw for the whole track instead of
  * two per sector. Change `materials.curb` and every kerb changes with it; the batch picks nothing.
  */
+/**
+ * One fixed box standing where a kerb run is drawn.
+ *
+ * The kerb is 180-odd separate striped blocks, and a trimesh body per block would be ~180 fixed
+ * colliders for a shape that is one long low box. The collider is the run; the stripes stay a
+ * `InstancedBatch` because that is a drawing decision, not a collision one.
+ */
+function kerbRun(
+  ctx: TrackCtx,
+  from: Vector3,
+  direction: Vector3,
+  length: number,
+  offset: Vector3,
+  width = KERB_WIDTH,
+): void {
+  // A bare `Object3D` carries the transform: a fixed body takes its position **and** its rotation
+  // from the object it is given, and an unrotated `position` cannot describe a kerb on a diagonal.
+  const carrier = new Object3D();
+  carrier.position.set(
+    from.x + direction.x * (length / 2) + offset.x,
+    KERB_HEIGHT / 2,
+    from.z + direction.z * (length / 2) + offset.z,
+  );
+  carrier.rotation.y = Math.atan2(direction.z, direction.x);
+  new RigidBody3D({
+    collisionLayer: LAYER.road,
+    collisionMask: LAYER.car,
+    object: carrier,
+    physics: ctx.physics,
+    shape: CollisionShape3D.box(length, KERB_HEIGHT, width),
+    type: "fixed",
+  });
+}
+
 function addCurb(
+  ctx: TrackCtx,
   curbs: InstancedBatch,
   alternate: InstancedBatch,
   a: Vector3,
@@ -104,11 +172,12 @@ function addCurb(
       .addScaledVector(direction, step * (index + 0.5))
       .add(normal);
     (index % 2 === 0 ? curbs : alternate).place({
-      position: [centre.x, 0.08, centre.z],
+      position: [centre.x, KERB_HEIGHT / 2, centre.z],
       rotation: [0, Math.atan2(direction.z, direction.x), 0],
-      scale: [step * 0.98, 0.18, 0.5],
+      scale: [step * 0.98, KERB_HEIGHT, KERB_WIDTH],
     });
   }
+  kerbRun(ctx, from, direction, length, normal);
 }
 
 function gate(
@@ -244,16 +313,18 @@ export function roadRayProbe(meshes: readonly Mesh[]): IntersectRay {
 
 export function buildTrack(ctx: TrackCtx): ITrackBuild {
   const materials = createMaterials();
-  const field = new Mesh(new BoxGeometry(100, 0.3, 100), materials.field);
-  field.position.y = -0.62;
+  // The infield sits 160 mm below the tarmac, so the road reads as a raised ribbon and a car that
+  // drops a wheel off the edge falls a car's ride height rather than half a metre.
+  const field = new Mesh(new BoxGeometry(120, 0.3, 120), materials.field);
+  field.position.y = -0.31;
   field.receiveShadow = true;
   ctx.add(field);
   new RigidBody3D({
-    collisionLayer: 4,
-    collisionMask: 1,
+    collisionLayer: LAYER.field,
+    collisionMask: LAYER.car,
     object: field,
     physics: ctx.physics,
-    shape: CollisionShape3D.box(50, 0.15, 50),
+    shape: CollisionShape3D.box(60, 0.15, 60),
     type: "fixed",
   });
 
@@ -276,8 +347,8 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
     const b = ROUTE_POINTS[(index + 1) % ROUTE_POINTS.length];
     if (a === undefined || b === undefined) continue;
     roadMeshes.push(roadSegment(ctx, a, b, materials));
-    addCurb(curbs, curbsAlt, a, b, 1);
-    addCurb(curbs, curbsAlt, a, b, -1);
+    addCurb(ctx, curbs, curbsAlt, a, b, 1);
+    addCurb(ctx, curbs, curbsAlt, a, b, -1);
   }
   // A square of tarmac at every route point. Two straight sectors meeting at a right angle leave
   // the corner itself unpaved, and the frame showed grass biting into the racing line exactly
@@ -288,8 +359,8 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
     patch.receiveShadow = true;
     ctx.add(patch);
     new RigidBody3D({
-      collisionLayer: 2,
-      collisionMask: 1,
+      collisionLayer: LAYER.road,
+      collisionMask: LAYER.car,
       object: patch,
       physics: ctx.physics,
       shape: CollisionShape3D.box(TRACK_WIDTH, 0.28, TRACK_WIDTH),
@@ -298,7 +369,9 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
     roadMeshes.push(patch);
   }
 
-  // The outside corner of the kerbing, filling the right angle the two inset runs leave open.
+  // The outside corner of the kerbing, filling the right angle the two inset runs leave open. Each
+  // square gets its own collider: they are the inside of the corner, and a car that cuts across one
+  // has to feel the kerb rather than pass through it.
   for (const point of ROUTE_POINTS) {
     for (const [dx, dz] of [
       [1, 1],
@@ -306,14 +379,22 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
       [-1, 1],
       [-1, -1],
     ] as const) {
+      const x = point.x + dx * (TRACK_WIDTH / 2 + 0.28);
+      const z = point.z + dz * (TRACK_WIDTH / 2 + 0.28);
       curbs.place({
-        position: [
-          point.x + dx * (TRACK_WIDTH / 2 + 0.28),
-          0.08,
-          point.z + dz * (TRACK_WIDTH / 2 + 0.28),
-        ],
+        position: [x, KERB_HEIGHT / 2, z],
         rotation: [0, 0, 0],
-        scale: [0.5, 0.18, 0.5],
+        scale: [KERB_WIDTH, KERB_HEIGHT, KERB_WIDTH],
+      });
+      const carrier = new Object3D();
+      carrier.position.set(x, KERB_HEIGHT / 2, z);
+      new RigidBody3D({
+        collisionLayer: LAYER.road,
+        collisionMask: LAYER.car,
+        object: carrier,
+        physics: ctx.physics,
+        shape: CollisionShape3D.box(KERB_WIDTH, KERB_HEIGHT, KERB_WIDTH),
+        type: "fixed",
       });
     }
   }
@@ -323,11 +404,17 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
   const curbAltMesh = curbsAlt.build({ castShadow: true, name: "track-curbs-alt" });
   if (curbAltMesh !== undefined) ctx.add(curbAltMesh);
 
+  // Finish first: the grid stands on the `z = -18` straight *behind* the line, so the first gate a
+  // car meets is the one the lap is measured on. The old order put the mid gate first, which meant
+  // the grid had to sit before the finish line and every car crossed it on the run to the first
+  // corner — a lap counted from the wrong place.
   const gates = [
-    gate(ctx, "mid", new Vector3(18, 0, 0), new Vector3(0, 0, 1), TRACK_WIDTH),
     gate(ctx, "finish", new Vector3(10, 0, -18), new Vector3(1, 0, 0), TRACK_WIDTH),
+    gate(ctx, "mid", new Vector3(18, 0, 0), new Vector3(0, 0, 1), TRACK_WIDTH),
   ];
-  const pad = boostPad(ctx, new Vector3(14, 0, -18), materials);
+  // The pad is on the long `x = 18` straight rather than on the grid, so no car drives into a free
+  // boost on the line.
+  const pad = boostPad(ctx, new Vector3(18, 0, 6), materials);
   dressCircuit(ctx, materials);
   return { boost: pad.boost, boostArea: pad.area, gates, roadMeshes, route: RACING_LINE };
 }
@@ -343,13 +430,6 @@ export function buildTrack(ctx: TrackCtx): ITrackBuild {
  * Delete a line here and that piece of furniture is gone; nothing else depends on it.
  */
 function dressCircuit(ctx: TrackCtx, materials: ReturnType<typeof createMaterials>): void {
-  // Grass run-off inside the kerbs, a shade drier than the outfield, so the two read as two
-  // surfaces rather than one flat colour.
-  const apron = new Mesh(new BoxGeometry(52, 0.16, 52), materials.runoff);
-  apron.position.y = -0.5;
-  apron.receiveShadow = true;
-  ctx.add(apron);
-
   // Grandstands, set back past the hoardings. Placed nearer the road they climbed into the chase
   // camera and hid the corner the driver was aiming at.
   const crowd = new InstancedBatch({
@@ -393,8 +473,13 @@ function dressCircuit(ctx: TrackCtx, materials: ReturnType<typeof createMaterial
       });
     }
   }
+  // Everything the car must not drive through lives in one group, and that group is both what is
+  // drawn and what `buildStaticColliders` walks: the collider and the picture cannot come apart,
+  // because they are the same meshes.
+  const barriers = new Group();
+  ctx.add(barriers);
   const tyreMesh = tyres.build({ castShadow: true, name: "tyre-walls" });
-  if (tyreMesh !== undefined) ctx.add(tyreMesh);
+  if (tyreMesh !== undefined) barriers.add(tyreMesh);
 
   // Sponsor hoardings around all four straights, turned to **face** the road. Left unrotated they
   // presented their broad faces down the racing line, which from the chase camera looked like
@@ -431,8 +516,21 @@ function dressCircuit(ctx: TrackCtx, materials: ReturnType<typeof createMaterial
     [boardsB, "hoarding-boards-b"],
   ] as const) {
     const mesh = batch.build({ castShadow: true, name });
-    if (mesh !== undefined) ctx.add(mesh);
+    if (mesh === undefined) continue;
+    // The board is the barrier; the frame behind it is scenery, so only the boards get a body.
+    if (name.startsWith("hoarding-boards")) barriers.add(mesh);
+    else ctx.add(mesh);
   }
+
+  // **The defect this replaces:** the tyre walls and hoardings were decoration. A car's mask saw
+  // only the road and the field, so it drove through every barrier and off the circuit until a
+  // rescue teleported it back. `buildStaticColliders` turns the instanced furniture itself into
+  // fixed trimesh bodies — the collider is the triangles on screen, so a stack of three lathed
+  // tyres is a stack of three tyres to hit, not its bounding box.
+  buildStaticColliders(ctx, barriers, {
+    collisionLayer: LAYER.barrier,
+    collisionMask: LAYER.car,
+  });
 
   // A treeline outside the circuit. Deterministic placement — a seeded jitter, not Math.random —
   // so two captures of the same build frame the same world.

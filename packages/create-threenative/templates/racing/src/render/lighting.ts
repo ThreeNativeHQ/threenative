@@ -1,46 +1,45 @@
-import {
-  AmbientLight,
-  DirectionalLight,
-  HemisphereLight,
-  PCFSoftShadowMap,
-  type Scene,
-} from "three";
-import { palette } from "./palette.js";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
+// sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
+import { DirectionalLight, PCFSoftShadowMap, type Scene } from "three";
+import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-// Returns the key light: `WorldEnvironment`'s godrays stage raymarches against a shadow map, so
-// the scene hands the sun to `setupPost` and a shadowless light is refused by name instead of
-// rendering a black pass.
-//
-// The sun is **near-white**, not the accent colour. Tinting the key light yellow was how the first
-// version of this file made a green infield go olive and a grey road go brown: a strongly coloured
-// key contaminates every surface at once, and no per-material tweak can undo it. Colour belongs in
-// the materials; the sun's job is direction and contrast.
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
+export function setupLighting(
+  scene: Scene,
+  renderer: ShadowRenderer,
+  mobile = false,
+): { key: DirectionalLight } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  // Sky above, grass bounce below. The ground term is what stops undersides going to slate.
-  scene.add(new HemisphereLight(palette.skyLow, palette.field, 1.1));
-  const key = new DirectionalLight(0xfff4e2, 2.9);
-  key.position.set(-16, 26, -12);
-  key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 120;
-  key.shadow.camera.left = -55;
-  key.shadow.camera.right = 55;
-  key.shadow.camera.top = 55;
-  key.shadow.camera.bottom = -55;
-  key.shadow.bias = -0.0004;
-  key.shadow.normalBias = 0.03;
-  scene.add(key);
-  // A cool fill from the opposite side, so shadow faces separate from each other rather than all
-  // collapsing to one flat tone.
-  const rim = new DirectionalLight(palette.skyLow, 0.85);
-  rim.position.set(18, 9, 22);
-  scene.add(rim);
-  scene.add(new AmbientLight(palette.shadow, 0.55));
 
-  return key;
+  // Warm white, matched by eye to the photographed midday sun against its own sky.
+  const key = new DirectionalLight(0xfff1e0, 4.5);
+  key.position.copy(SUN_DIRECTION).multiplyScalar(40);
+  key.castShadow = true;
+  // One map fitted to the whole circuit rather than a cascade that follows the car: the racing line
+  // never leaves a 36 m square, so 30 m of extent covers the road, the kerbs and the tyre walls at
+  // 4096² — a centimetre a texel, which is what keeps the car's own shadow on the road readable.
+  // The treeline at 42 m and beyond is deliberately outside it; a tree's shadow is not what says
+  // where the track is.
+  const size = mobile ? 2048 : 4096;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 120;
+  const extent = 30;
+  key.shadow.camera.left = -extent;
+  key.shadow.camera.right = extent;
+  key.shadow.camera.top = extent;
+  key.shadow.camera.bottom = -extent;
+  // Small biases: a large normal bias is what lifted the mannequin's shadow off its own feet.
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.005;
+  scene.add(key);
+  // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
+  // shadow map, so `setupPost` needs the light itself.
+  return { key };
 }
